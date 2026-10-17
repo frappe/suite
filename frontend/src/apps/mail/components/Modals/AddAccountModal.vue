@@ -220,7 +220,6 @@ const defaultAccountRequest = {
   send_invite: true,
   expires_at: '',
   backup_email: '',
-  // Blank hands the choice to the server, which falls back to the configured default.
   quota_gb: '',
   disable_receiving: false,
   first_name: '',

@@ -19,7 +19,7 @@ migration failure needs the message intact in the traceback, and
 
 import frappe
 
-# A key no blob can occupy: canonical keys are `private/<ab>/<cd>/<sha256>`.
+# A key no blob can occupy: blob keys are `private/<site prefix>/<blob>/<filename>`.
 # Heading it answers "missing" on a healthy bucket and raises on an
 # unreachable one.
 PROBE_KEY = "private/.drive-build-gate-probe"

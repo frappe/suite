@@ -425,7 +425,7 @@ class TestBuildThenCleanup(IntegrationTestCase):
         # What `GET /nodes/<deck>/media` answers the owner's browser.
         (listed,) = content.list_media(principals_for(self.owner), self.deck_file)
         self.assertEqual(listed["node"], element["src"])
-        self.assertTrue(listed["url"].startswith(f"/f/{picture.blob}/"), listed["url"])
+        self.assertTrue(listed["url"].startswith(f"/private/files/{picture.blob}/"), listed["url"])
         # The picture's legacy `File` row sat under frappe's `Home`, attached to
         # the Presentation. Its node now holds the picture and nothing names
         # the row, so Cleanup deletes it (§14.10); the picture still renders

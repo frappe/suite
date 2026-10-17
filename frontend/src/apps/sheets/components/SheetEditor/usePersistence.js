@@ -2,13 +2,13 @@ import { ref } from 'vue'
 
 import { api, client } from '@/api'
 
+import { base64ToBytes, bytesToBase64, ENGINE_VERSION } from '../../core/snapshot-codec'
 import {
   decodeFromDownload,
   encodeForUpload,
   isDecompressionSupported,
 } from '../../utils/compress.js'
 import { isRefusal } from '../../utils/relay.js'
-import { boundsOf, packSheet, packSheetChunked, unpackSheet } from '../../utils/sheet-codec.js'
 import { recordVisit } from './driveVisit'
 
 // `merge` and the view-state getters/setters are optional — they were missing
@@ -24,7 +24,8 @@ import { recordVisit } from './driveVisit'
 //   - `requestContext` — use the open document's Drive access scope. The `/d/`
 //     surface passes the Drive session's, which adds its link credentials.
 export function usePersistence({
-  sheet,
+  // IronCalc: start(bytes | null) builds the workbook, toBytes() reads it back.
+  engine,
   formats,
   merge,
   comments,
@@ -78,15 +79,9 @@ export function usePersistence({
       const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved = JSON.parse(plain || '{}')
       if (saved.formats) formats.restore(saved.formats)
-      sheet.restore(
-        unpackSheet(saved.sheet) ?? {
-          sheets: {
-            Sheet1: {},
-          },
-          current: 'Sheet1',
-        },
-        boundsOf(saved.sheet),
-      )
+      // A sheet saved before IronCalc (no `engine`) is not carried over: it
+      // opens empty.
+      await engine.start(saved.engine ? base64ToBytes(saved.engine) : null)
       if (saved.merge && merge?.restore) merge.restore(saved.merge)
       if (saved.comments && comments?.restore) comments.restore(saved.comments)
       if (saved.validation && validation?.restore) validation.restore(saved.validation)
@@ -172,17 +167,7 @@ export function usePersistence({
     // attempts, racing with the user's keystrokes.
     let args
     try {
-      // Pack straight from live cell data — the packer builds a fresh compact
-      // structure, so it's an independent payload without snapshot()'s
-      // deepClone. The chunked packer yields to the event loop so a 2M-cell
-      // pack doesn't block input for seconds; the keepalive/unmount save can't
-      // afford to yield (the page may die first), so it packs synchronously.
-      const live = {
-        sheets: sheet.getAllRaw(),
-        current: sheet.getCurrentSheet(),
-      }
-      const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
-      const sheetsData = _workbookJson(packed)
+      const sheetsData = _workbookJson(await engine.toBytes())
       const payload = await encodeForUpload(sheetsData)
       args = {
         title,
@@ -211,30 +196,18 @@ export function usePersistence({
     return _send(args, keepalive)
   }
 
-  // The whole workbook as the JSON `sheets_data` stores, packed synchronously.
-  // The surface keeps it as the local recovery copy when access narrows.
-  // `draft` is a cell edit still in progress ({ sheet, cell, value }); the copy
-  // holds it in its cell. The live workbook is not changed.
-  function workbookJson(draft = null) {
-    let sheets = sheet.getAllRaw()
-    if (draft)
-      sheets = {
-        ...sheets,
-        [draft.sheet]: {
-          ...sheets[draft.sheet],
-          [draft.cell]: draft.value,
-        },
-      }
-    return _workbookJson(
-      packSheet({
-        sheets,
-        current: sheet.getCurrentSheet(),
-      }),
-    )
+  // The whole workbook as the JSON `sheets_data` stores. The surface keeps it
+  // as the local recovery copy when access narrows. `draft` is a cell edit
+  // still in progress ({ sheet, cell, value }); it is kept next to the
+  // workbook, which is not changed.
+  async function workbookJson(draft = null) {
+    return _workbookJson(await engine.toBytes(), draft)
   }
-  function _workbookJson(packed) {
+  function _workbookJson(bytes, draft = null) {
     return JSON.stringify({
-      sheet: packed,
+      engine: bytesToBase64(bytes),
+      engine_version: ENGINE_VERSION,
+      ...(draft ? { draft } : {}),
       formats: formats.snapshot(),
       merge: merge?.snapshot?.() ?? null,
       comments: comments?.snapshot?.() ?? null,

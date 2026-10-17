@@ -21,7 +21,6 @@ CONFIG_KEYS = [
     # Email classification
     "enable_email_classification",
     # Defaults
-    "default_disk_quota_gb",
     "enable_gravatar",
     "default_gravatar",
     "expand_mailing_list_participants",

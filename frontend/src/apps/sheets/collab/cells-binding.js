@@ -31,7 +31,7 @@ export const REMOTE_ORIGIN = Symbol('remote')
  *                                       consumer typically triggers a
  *                                       canvas repaint for that sheet.
  */
-export function bindCells({ doc, sheet, onRemoteSheetChange } = {}) {
+export function bindCells({ doc, sheet, getCurrentSheet, onRemoteSheetChange } = {}) {
   if (!doc || !sheet) throw new Error('bindCells: doc and sheet are required')
 
   const cellsRoot = doc.getMap(ROOT.CELLS)
@@ -57,7 +57,7 @@ export function bindCells({ doc, sheet, onRemoteSheetChange } = {}) {
   const _origSetCell = sheet.setCell.bind(sheet)
   sheet.setCell = function patchedSetCell(id, value, sheetName) {
     _origSetCell(id, value, sheetName)
-    const targetSheet = sheetName || sheet.getCurrentSheet()
+    const targetSheet = sheetName || getCurrentSheet()
     _localTouches.add(`${targetSheet}|${id}`)
     const valueOrUndef = value === '' || value == null ? undefined : value
     doc.transact(() => {

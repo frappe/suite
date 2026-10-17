@@ -1,9 +1,10 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 
+import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import dayjs from '@/apps/mail/utils/dayjs'
+import { dateGroup } from '@/apps/mail/utils/dateGroups'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
 /**
@@ -65,20 +66,18 @@ export const useListRows = ({
   const { isMobile } = useScreenSize()
   const { userResource } = userStore()
 
-  const groupMessagesBy = computed(() => userResource.data?.group_messages_by)
+  const groupedByDate = computed(() => !!userResource.data?.group_by_date)
 
   // Date headers are a desktop affordance: on mobile both lists render one continuous run, so there
   // is no header to click, nothing can be collapsed, and the cursor has no headers to walk. The
   // collapse state is gated on the same thing, because only a header's own click can fill it.
-  const headersVisible = computed(() => groupMessagesBy.value !== 'None' && !isMobile.value)
+  const headersVisible = computed(() => groupedByDate.value && !isMobile.value)
 
   // ── Date groups ─────────────────────────────────────────────────────────────────────────────────
 
   const groupedThreads = computed<Record<string, Thread[]>>(() =>
     threads().reduce((groups: Record<string, Thread[]>, thread: Thread) => {
-      const date = dayjs(thread.received_at).format(
-        groupMessagesBy.value === 'Day' ? 'YYYY-MM-DD' : 'YYYY-MM',
-      )
+      const date = dateGroup(thread.received_at)
       if (!groups[date]) groups[date] = []
       groups[date].push(thread)
       return groups
@@ -93,7 +92,7 @@ export const useListRows = ({
 
   const collapsedGroups = ref<string[]>([])
 
-  watch(groupMessagesBy, () => (collapsedGroups.value = []))
+  watch(groupedByDate, () => (collapsedGroups.value = []))
 
   // ── Stacks ──────────────────────────────────────────────────────────────────────────────────────
   //
@@ -195,6 +194,19 @@ export const useListRows = ({
   }
 
   /**
+   * Tab moving through the list moves the cursor with it, so the row Enter will open carries the
+   * cursor's bar — the one mark of where you are. A row of its own beside the cursor's, the focus
+   * stayed on a row the cursor had left, and the list showed two. Only keyboard focus: a click
+   * focuses the row it opens, and the open row is marked already.
+   */
+  const onListFocusIn = (event: FocusEvent) => {
+    const target = event.target as HTMLElement | null
+    if (!target?.matches(':focus-visible')) return
+    const key = target.closest<HTMLElement>('[data-row-key]')?.dataset.rowKey
+    if (key) focusedRowKey.value = key
+  }
+
+  /**
    * The row that stands for a thread on screen: its own row when rendered, the collapsed stack that
    * hides it, or — when its whole day is folded away — that day's header. Callers name a thread ("go
    * to the first mail", "open the thread that just loaded"); this is how that lands somewhere visible.
@@ -225,11 +237,15 @@ export const useListRows = ({
    * The open-row tint is desktop-only: on mobile the pane covers the list, so it would only ever be
    * seen once the reader had already left the thread it points at.
    */
+  const isOpenRow = (row: ListRow) =>
+    row.type === 'thread' && threadKey(row.thread) === openThreadID() && !isMobile.value
   const rowClasses = (row: ListRow) => ({
-    'border-l-transparent sm:border-l': true,
-    '!border-l-outline-blue-5': row.key === focusedRowKey.value,
-    '!bg-surface-blue-1':
-      row.type === 'thread' && threadKey(row.thread) === openThreadID() && !isMobile.value,
+    // Monochrome, one gray: hover, the date headers, ticked rows (MailRow) and the open row all take
+    // gray-1. "You are here" is a bar down the left side — 1.5px for the keyboard's cursor, 3px for the open row,
+    // which is how a ticked row under the cursor and the one being read tell apart.
+    [OPEN_BAR_CLASS]: isOpenRow(row),
+    [CURSOR_BAR_CLASS]: row.key === focusedRowKey.value && !isOpenRow(row),
+    '!bg-surface-gray-1': isOpenRow(row),
     '!pl-10 sm:!pl-12': row.type === 'thread' && !!row.inStack,
   })
 
@@ -253,8 +269,18 @@ export const useListRows = ({
   const toggleGroupCollapse = (key: string) => {
     // The cursor follows the click, as it does when you open a mail: Enter and a click are the same
     // gesture on the same row, and Enter can only mean that if the cursor is already there. Above the
-    // last-group guard, so clicking a header that can't fold still takes the cursor.
-    focusedRowKey.value = `group:${key}`
+    // last-group guard, so clicking a header that can't fold still takes the cursor. Not while a
+    // thread is open, though: the open row's bar already says where you are, and the cursor drawn on
+    // the header as well put a second bar in the list — unless folding this day closes that thread,
+    // which would leave the cursor on a hidden row. (From the keyboard the cursor is on the header
+    // already, so Enter there is unchanged.)
+    const open = openThreadID()
+    const foldsOpenThread =
+      !!open &&
+      !isLastGroup(key) &&
+      !collapsedGroups.value.includes(key) &&
+      !!getGroupThreads(key)?.includes(open)
+    if (!open || foldsOpenThread) focusedRowKey.value = `group:${key}`
     if (isLastGroup(key)) return
 
     if (collapsedGroups.value.includes(key))
@@ -265,8 +291,7 @@ export const useListRows = ({
     // archive it" is a bulk move worth having, and the header's own checkbox goes on showing that the
     // day is selected. Only the reading pane has to move, since it would otherwise point at a row
     // that is no longer rendered.
-    const open = openThreadID()
-    if (open && getGroupThreads(key)?.includes(open)) onOpenThreadHidden()
+    if (foldsOpenThread) onOpenThreadHidden()
   }
 
   /**
@@ -289,7 +314,7 @@ export const useListRows = ({
   }
 
   return {
-    groupMessagesBy,
+    groupedByDate,
     groupedThreads,
     getGroupThreads,
     isLastGroup,
@@ -299,6 +324,7 @@ export const useListRows = ({
     visibleThreadCount,
     navigableRows,
     focusedRowKey,
+    onListFocusIn,
     focusedRow,
     focusRow,
     focusRowKey,

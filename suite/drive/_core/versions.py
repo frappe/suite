@@ -140,7 +140,7 @@ def read_version(principals: Principals, node: str, seq: int):
 
     `version_content_url` above mints a signed URL for a browser. An app that
     wrote the bytes with its own `version_bytes` needs them in the process,
-    to publish its own history without a round trip through `/f/`. The node
+    to publish its own history without a round trip through a blob URL. The node
     is checked, not the version row: a version belongs to its node and carries
     no grant of its own (§9.1), and `_validated_version_blob` refuses bytes
     that are missing, public, or a different size than the row claims.
@@ -161,7 +161,7 @@ def version_content_url(
     *,
     expires_in: int = CONTENT_TTL_SECONDS,
 ) -> dict:
-    """Mint one readable version's signed `/f/` URL after a READ check (§6.8).
+    """Mint one readable version's signed blob URL after a READ check (§6.8).
 
     The node is checked, not the version row: a version belongs to its node and
     carries no grant of its own. `_validated_version_blob` then refuses bytes

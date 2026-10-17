@@ -1,4 +1,4 @@
-const VALUE_OPERATORS = new Set(['from', 'to', 'cc', 'bcc', 'subject', 'after', 'before'])
+const VALUE_OPERATORS = new Set(['from', 'to', 'cc', 'bcc', 'with', 'subject', 'after', 'before'])
 
 const OPERATOR_CONTEXT = {
   in: { prompt: 'Choose a folder' },
@@ -6,6 +6,7 @@ const OPERATOR_CONTEXT = {
   to: { prompt: 'Enter a recipient email address' },
   cc: { prompt: 'Enter a Cc recipient email address' },
   bcc: { prompt: 'Enter a Bcc recipient email address' },
+  with: { prompt: 'Enter an email address to find mail from or to it' },
   subject: { prompt: 'Enter words from the subject' },
   after: { prompt: 'Enter a date, for example 2026-01-01' },
   before: { prompt: 'Enter a date, for example 2026-01-31' },
@@ -14,13 +15,13 @@ const OPERATOR_CONTEXT = {
 } as const
 
 export function getMailSearchOperatorContext(query: string) {
-  const match = query.match(/(?:^|\s)(in|from|to|cc|bcc|subject|after|before|has|is):\s*$/i)
+  const match = query.match(/(?:^|\s)(in|from|to|cc|bcc|with|subject|after|before|has|is):\s*$/i)
   if (!match) return null
   return OPERATOR_CONTEXT[match[1].toLowerCase() as keyof typeof OPERATOR_CONTEXT]
 }
 
 export function getMailContactOperator(query: string) {
-  const match = query.match(/(?:^|\s)(from|to|cc|bcc):([^\s]*)$/i)
+  const match = query.match(/(?:^|\s)(from|to|cc|bcc|with):([^\s]*)$/i)
   if (!match) return null
   return { key: match[1].toLowerCase(), partial: match[2] }
 }

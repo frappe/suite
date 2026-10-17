@@ -15,7 +15,7 @@
 <script setup>
 // Thin presentational wrapper around `vue-echarts`. Receives a ChartConfig
 // and a matrix of source values; converts them to an ECharts option via
-// `engine/chart-data.js`. Everything reactive — when the matrix or config
+// `engine/chart-data.ts`. Everything reactive — when the matrix or config
 // changes, ECharts diff-updates in place.
 //
 // We lazy-register only the chart types we actually use so the bundle

@@ -2,8 +2,12 @@
   <div
     ref="container"
     data-recipient-input
-    class="relative flex min-h-7 w-full flex-1 cursor-text flex-wrap items-center gap-2 rounded-4 transition-colors"
-    :class="{ 'ring-outline-gray-3 ring-2': isDragOver && !isDragging }"
+    class="relative flex min-h-7 w-full flex-1 cursor-text flex-wrap items-center gap-1.5 rounded-4 transition-colors"
+    :class="{
+      // The field a chip is about to land in: tinted, with a hairline drawn inside its own box
+      // so it never spills past the row it sits in.
+      'bg-surface-gray-1 ring-outline-gray-3 ring-1 ring-inset': isDragOver && !isDragging,
+    }"
     @keydown.capture="handleContainerKeydown"
     @dragover.prevent="isDragOver = true"
     @dragleave="isDragOver = false"
@@ -18,9 +22,13 @@
       v-for="(v, i) in displayedRecipients"
       ref="tags"
       :key="v.email"
-      class="bg-surface-gray-2 flex min-h-7 items-center space-x-1.5 rounded-4 px-2 text-base focus:outline-none"
+      class="bg-surface-gray-2 hover:bg-surface-gray-3 text-ink-gray-8 flex min-h-7 min-w-0 items-center gap-1.5 rounded-4 text-base transition-colors focus:outline-none"
       :class="{
+        'px-2': isMobile,
+        'pl-1.5 pr-1': !isMobile,
         'ring-outline-gray-3 ring-2': focusedTagIndex === i,
+        // The chip being carried stays where it was, dimmed, until it is dropped.
+        'opacity-50': draggedEmail === v.email,
       }"
       :tabindex="isMobile ? -1 : undefined"
       :draggable="!isMobile"
@@ -32,14 +40,22 @@
       @dragend="handleDragEnd"
     >
       <Avatar :image="v.image" :label="v.display_name || v.email" size="xs" />
-      <!-- Capped on mobile whether or not the field is focused: a name too long for the
-			     row wraps the chip onto two lines otherwise, which reads as a broken box. -->
-      <span :class="{ 'max-w-40 truncate': isMobile }">
+      <!-- Capped whether or not the field is focused: a name too long for the row wraps the
+			     chip onto two lines otherwise, which reads as a broken box. The whole name and
+			     address are in the menu the chip opens. -->
+      <span class="truncate" :class="isMobile ? 'max-w-40' : 'max-w-60'">
         {{ v.display_name || v.email }}
       </span>
       <!-- Desktop only: on a phone the chip itself is the trigger, and Remove is in the
 			     sheet that opens — a second, smaller target for the same act beside it. -->
-      <X v-if="!isMobile" class="icon" @click.stop="removeValue(v.email)" />
+      <span
+        v-if="!isMobile"
+        class="text-ink-gray-5 hover:text-ink-gray-9 flex rounded-1 p-0.5"
+        :aria-label="__('Remove {0}', [v.display_name || v.email])"
+        @click.stop="removeValue(v.email)"
+      >
+        <span class="lucide-x size-3.5" aria-hidden="true" />
+      </span>
     </button>
     <span v-if="hiddenCount" class="text-ink-gray-6 text-sm">+{{ hiddenCount }}</span>
     <!-- Taken out of flow while the collapsed row is showing on mobile: the chips fill the
@@ -74,7 +90,7 @@
         <Avatar :image="item.image" :label="item.display_name || item.email || query" size="lg" />
       </template>
       <template #item-label="{ item }">
-        <ContactOption :contact="item" />
+        <ContactOption :contact="item" :query="searchText" />
       </template>
       <template #item-create="{ query }"> {{ query }} </template>
     </Combobox>
@@ -101,32 +117,34 @@
             @click="pickSuggestion(option)"
           >
             <Avatar :image="option.image" :label="option.display_name || option.email" size="lg" />
-            <ContactOption :contact="option" />
+            <ContactOption :contact="option" :query="searchText" />
           </button>
         </li>
       </ul>
     </Teleport>
 
-    <!-- Trigger-less: the chips are the trigger, and the one that was tapped is both what the
-		     menu is about and what it hangs off, so it needs no title to say whose it is. Mobile
-		     only — a desktop chip is dragged from field to field instead.
+    <!-- Trigger-less: the chips are the trigger, and the one that was clicked or tapped is both
+		     what the menu is about and what it hangs off, so it needs no title to say whose it is.
+		     On desktop the drag between fields still works beside it.
 
 		     It takes no focus on open: the caret stays where it was, which keeps the row from
 		     reflowing (an unfocused row collapses to one line) out from under the chip the menu
 		     is anchored to. -->
     <Popover
-      v-if="isMobile"
       v-model:open="isMenuOpen"
       trigger="manual"
       :reference="menuAnchor"
       :auto-focus="false"
       align="start"
     >
-      <div class="min-w-52 max-w-72 p-1">
+      <div class="min-w-52 max-w-72 p-1 sm:min-w-44">
         <!-- Who this is about, the way a contact reads in every picker: the address is what
 				     the chip cannot say — it shows the display name when there is one, truncated at
 				     160px — and it is the disambiguator between two people of the same name. -->
-        <div v-if="menuRecipient" class="flex items-center gap-2.5 px-2.5 py-2.5">
+        <div
+          v-if="menuRecipient"
+          class="flex items-center gap-2.5 px-2.5 py-2.5 sm:gap-2 sm:px-2 sm:py-1.5"
+        >
           <Avatar
             :image="menuRecipient.image"
             :label="menuRecipient.display_name || menuRecipient.email"
@@ -134,11 +152,12 @@
           />
           <ContactOption :contact="menuRecipient" size="md" />
         </div>
-        <div class="mx-2.5 mb-1 border-t" />
+        <!-- Edge to edge across the menu, as frappe-ui's dropdowns rule off a group. -->
+        <div class="border-outline-elevation-2 -mx-1 my-1 border-t" />
         <button
           v-for="item in menuOptions"
           :key="item.label"
-          class="active:bg-surface-gray-2 flex w-full items-center rounded-6 px-2.5 py-2 text-base"
+          class="active:bg-surface-gray-2 sm:hover:bg-surface-gray-2 flex w-full items-center rounded-6 px-2.5 py-2 text-base sm:h-7 sm:rounded-4 sm:px-2 sm:py-0"
           :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
           @click="runMenuOption(item)"
         >
@@ -152,14 +171,13 @@
 <script setup lang="ts">
 import { onClickOutside, refDebounced, useResizeObserver } from '@vueuse/core'
 import { Avatar, Combobox, Popover } from 'frappe-ui'
-import { X } from 'lucide-vue-next'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
-import { api, useQuery } from '@/api'
+import { api, client, useQuery } from '@/api'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
-import { userStore } from '@/apps/mail/stores/user'
 import { type DraftRecipient } from '@/apps/mail/types'
 import { isEmail } from '@/apps/mail/utils'
+import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { RECIPIENT_FIELDS, type RecipientField } from '@/apps/mail/utils/recipientFields'
 
@@ -183,7 +201,9 @@ const { field, suggestionsTo = null } = defineProps<{
 const selectedRecipients = defineModel<DraftRecipient[]>({ default: () => [] })
 
 const { isMobile } = useScreenSize()
-const store = userStore()
+// The composer's account, not the active one: a reply from another account in All Inboxes looks
+// people up, and names them, in that account's address book.
+const { accountId } = injectAccountScope()
 
 const containerRef = useTemplateRef('container')
 const tagsRef = useTemplateRef('tags')
@@ -409,15 +429,16 @@ const handleTagClick = (e: MouseEvent, i: number) => {
   e.stopPropagation()
   // Kept off the container on mobile too: a tap meant for a chip's menu must not also focus the
   // field, which would expand the row and move the chip the menu is about to hang off.
-  if (isMobile.value) return openMenu(displayedRecipients.value[i], e.currentTarget as Element)
-  focusedTagIndex.value = i
+  if (!isMobile.value) focusedTagIndex.value = i
+  openMenu(displayedRecipients.value[i], e.currentTarget as Element)
 }
 
 /**
- * The chip's menu: where else this person could be addressed, and the way to take them off the
- * mail. It stands in for the drag between fields, which a phone cannot perform — touch fires no
- * drag events at all — and reaches chips the drag never could: a collapsed row shows only the
- * names that fit on its line, and tapping the row to see the rest is what focuses it.
+ * The chip's menu: the full address (a chip shows only the name when there is one), where else this
+ * person could be addressed, and the way to take them off the mail. On
+ * a phone it also stands in for the drag between fields, which touch cannot perform — it fires no
+ * drag events at all — and reaches chips the drag never could: a collapsed row shows only the names
+ * that fit on its line, and tapping the row to see the rest is what focuses it.
  */
 const menuRecipient = ref<DraftRecipient | null>(null)
 const isMenuOpen = ref(false)
@@ -426,6 +447,7 @@ const menuAnchor = ref<Element | undefined>()
 
 const openMenu = (recipient?: DraftRecipient, anchor?: Element) => {
   if (!recipient) return
+  if (!recipient.display_name) void nameRecipient(recipient.email)
 
   menuRecipient.value = recipient
   menuAnchor.value = anchor
@@ -443,7 +465,7 @@ const FIELD_LABELS: Record<RecipientField, string> = {
   bcc: __('Bcc'),
 }
 
-const menuOptions = computed(() => {
+const menuOptions = computed<{ label: string; theme?: 'red'; onClick: () => void }[]>(() => {
   const recipient = menuRecipient.value
   if (!recipient) return []
 
@@ -490,8 +512,26 @@ const addValues = (values: string) => {
 
 const addValue = (value: string) => {
   const contact = contacts.value.find((c) => c.email === value)
-  if (contact) selectedRecipients.value.push(contact)
-  else selectedRecipients.value.push({ email: value })
+  if (contact) return selectedRecipients.value.push(contact)
+  selectedRecipients.value.push({ email: value })
+  void nameRecipient(value)
+}
+
+// An address typed in full or pasted arrives bare unless its contact happened to be among the
+// suggestions on screen. If it is a contact, the name (and photo) follow, for the chip, its menu
+// and the header the mail goes out with.
+const nameRecipient = async (email: string) => {
+  if (!accountId.value) return
+  const found = await client
+    .query(api.mail.contacts.suggest, { account: accountId.value, text: email })
+    .catch(() => [])
+  const match = found.find((option) => option.email.toLowerCase() === email.toLowerCase())
+  if (!match?.name) return
+  const named = { display_name: match.name, image: match.user_image ?? undefined }
+  const i = selectedRecipients.value.findIndex((r) => r.email === email && !r.display_name)
+  if (i !== -1) selectedRecipients.value.splice(i, 1, { ...selectedRecipients.value[i], ...named })
+  if (menuRecipient.value?.email === email && !menuRecipient.value.display_name)
+    menuRecipient.value = { ...menuRecipient.value, ...named }
 }
 
 const removeValue = (value: string) =>
@@ -503,14 +543,27 @@ const isDragOver = ref(false)
 // The drag carries the field it started in as well as the person, so the drop is one move the
 // draft performs rather than an add here and a remove over there — the two halves used to be
 // kept in step by a flag shared between every instance of this component.
+const draggedEmail = ref<string | null>(null)
+let dragStartTimer: ReturnType<typeof setTimeout> | undefined
 const handleDragStart = (e: DragEvent, recipient: DraftRecipient) => {
-  emit('showCcBcc')
-  isDragging.value = true
   e.dataTransfer?.setData('recipient', JSON.stringify({ recipient, from: field }))
+  const chip = e.currentTarget as HTMLElement | null
+  // Everything else waits for the drag to be under way: Chrome drops a drag whose page changes
+  // in the same tick it starts, and opening Cc and Bcc (so there is somewhere to drop) does.
+  dragStartTimer = setTimeout(() => {
+    emit('showCcBcc')
+    isDragging.value = true
+    draggedEmail.value = recipient.email
+    // The press that began the drag focused the chip; its ring would sit on the dimmed original.
+    focusedTagIndex.value = -1
+    chip?.blur()
+  })
 }
 
 const handleDragEnd = () => {
+  clearTimeout(dragStartTimer)
   isDragging.value = false
+  draggedEmail.value = null
   isDragOver.value = false
 }
 
@@ -528,8 +581,8 @@ const handleDrop = (e: DragEvent) => {
 
 const debouncedSearch = refDebounced(searchText, 200)
 const suggestions = useQuery(api.mail.contacts.suggest, () =>
-  store.accountId && debouncedSearch.value && debouncedSearch.value === searchText.value
-    ? { account: store.accountId, text: debouncedSearch.value }
+  accountId.value && debouncedSearch.value && debouncedSearch.value === searchText.value
+    ? { account: accountId.value, text: debouncedSearch.value }
     : false,
 )
 const contacts = computed(() =>
@@ -566,6 +619,12 @@ const options = computed(() => {
 [data-recipient-input] .recipient-combobox:not(.is-parked) {
   flex: 1 1 6rem;
   min-width: 0;
+}
+
+/* No inset of its own: an empty field's caret starts where a chip would, and the row's gap is
+   what keeps it off the chip before it. */
+[data-recipient-input] [data-slot='trigger'] {
+  padding-left: 0;
 }
 
 /* Out of flow, so the collapsed row is exactly the height of its chips, but still in the

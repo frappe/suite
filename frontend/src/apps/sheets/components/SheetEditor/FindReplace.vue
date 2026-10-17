@@ -40,8 +40,10 @@ import { Button, FormControl } from 'frappe-ui'
 import { nextTick, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
-  sheet: { type: Object, required: true },
-  grid: { type: Object, required: true },
+  // (query) => Promise<{ id, input }[]> — cells whose input contains query.
+  find: { type: Function, required: true },
+  // (before, after) — write {cellId: input} replacements as one edit.
+  write: { type: Function, required: true },
   // (id) => boolean — true when a cell is protected and must not be rewritten.
   isProtected: { type: Function, default: null },
 })
@@ -49,7 +51,7 @@ const emit = defineEmits(['close', 'navigateTo'])
 
 const findQuery = ref('')
 const replaceQuery = ref('')
-const matches = ref([])
+const matches = ref([]) // [{ id, input }] in reading order
 const matchIndex = ref(-1)
 const status = ref('')
 const panelRef = ref(null)
@@ -77,77 +79,71 @@ defineExpose({
   focusInput,
 })
 
-function _buildMatches() {
-  const q = findQuery.value.toLowerCase()
-  if (!q) {
-    matches.value = []
-    matchIndex.value = -1
-    status.value = ''
-    return
-  }
-  const data = props.sheet.getRawData()
-  const found = []
-  for (const [id, val] of Object.entries(data)) {
-    if (String(val).toLowerCase().includes(q)) found.push(id)
-  }
+// Only the newest search may set the results; typing fires one per key.
+let _search = 0
+
+async function _buildMatches() {
+  const q = findQuery.value
+  const mine = ++_search
+  const found = q ? await props.find(q) : []
+  if (mine !== _search) return false
   matches.value = found
   matchIndex.value = found.length ? 0 : -1
-  status.value = found.length ? `1 of ${found.length}` : 'No matches'
+  status.value = !q ? '' : found.length ? `1 of ${found.length}` : 'No matches'
+  return true
 }
 
-watch(findQuery, () => {
-  _buildMatches()
-  if (matches.value.length) emit('navigateTo', matches.value[0])
+watch(findQuery, async () => {
+  if ((await _buildMatches()) && matches.value.length) emit('navigateTo', matches.value[0].id)
 })
 
-function findNext() {
+async function findNext() {
   if (!matches.value.length) {
-    _buildMatches()
+    await _buildMatches()
     if (!matches.value.length) return
   }
   matchIndex.value = (matchIndex.value + 1) % matches.value.length
   status.value = `${matchIndex.value + 1} of ${matches.value.length}`
-  emit('navigateTo', matches.value[matchIndex.value])
+  emit('navigateTo', matches.value[matchIndex.value].id)
 }
 
-function replaceCurrent() {
-  if (matchIndex.value < 0 || !matches.value.length) return
-  const id = matches.value[matchIndex.value]
-  if (props.isProtected?.(id)) {
+// The input with every case-insensitive occurrence of the query replaced.
+function _replaced(input) {
+  const pattern = new RegExp(findQuery.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+  return input.replace(pattern, () => replaceQuery.value)
+}
+
+async function replaceCurrent() {
+  const m = matches.value[matchIndex.value]
+  if (!m) return
+  if (props.isProtected?.(m.id)) {
     status.value = 'Cell is protected'
     return
   }
-  const cur = String(props.sheet.getCell(id))
-  const q = findQuery.value
-  props.sheet.setCell(
-    id,
-    cur.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), replaceQuery.value),
-  )
-  _buildMatches()
+  props.write({ [m.id]: m.input }, { [m.id]: _replaced(m.input) })
+  await _buildMatches()
 }
 
-function replaceAll() {
-  const q = findQuery.value
-  if (!q) return
-  _buildMatches()
-  let count = 0,
-    skipped = 0
-  for (const id of matches.value) {
-    if (props.isProtected?.(id)) {
-      skipped++
+async function replaceAll() {
+  if (!findQuery.value) return
+  await _buildMatches()
+  const before = {}
+  const after = {}
+  let skipped = 0
+  for (const m of matches.value) {
+    if (props.isProtected?.(m.id)) {
+      skipped++ // leave protected cells untouched
       continue
-    } // leave protected cells untouched
-    const cur = String(props.sheet.getCell(id))
-    props.sheet.setCell(
-      id,
-      cur.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), replaceQuery.value),
-    )
-    count++
+    }
+    before[m.id] = m.input
+    after[m.id] = _replaced(m.input)
   }
+  const count = Object.keys(after).length
+  if (count) props.write(before, after)
+  await _buildMatches()
   status.value = skipped
     ? `Replaced ${count} cell(s), skipped ${skipped} protected`
     : `Replaced ${count} cell(s)`
-  _buildMatches()
 }
 </script>
 

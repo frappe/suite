@@ -126,6 +126,26 @@ class TestSiteLegacyFileRowsBypassesHooks(unittest.TestCase):
             self.assertEqual(db.bulk_insert.call_count, 3)
             delete_doc.assert_not_called()
 
+    def test_a_public_s3_original_survives_under_its_blob_url(self):
+        logo = frappe._dict(
+            name="logo",
+            blob="k3x9q2m7pa",
+            file_url="/api/method/suite.drive.api.s3.fetch?path=team/logo.png",
+            file_name="logo.png",
+            blob_private=0,
+            blob_driver="s3",
+            attached_to_doctype="Writer Document",
+        )
+        stored = frappe._dict(name="k3x9q2m7pa", is_private=0, key="5e1f0c3a9b7d/k3x9q2m7pa/logo.png")
+        with patch("frappe.db", new=MagicMock()) as db, patch("frappe.get_doc", return_value=stored):
+            db.get_all.return_value = ["logo"]
+            db.sql.return_value = [logo]
+            db.get_value.return_value = None
+            SiteLegacyFileRows().delete(("logo",))
+            (call,) = db.bulk_insert.call_args_list
+            copy = dict(zip(call.kwargs["fields"], call.kwargs["values"][0], strict=True))
+        self.assertEqual((copy["file_url"], copy["is_private"]), ("/files/k3x9q2m7pa/logo.png", 0))
+
     def test_returns_the_count_actually_present_not_the_count_requested(self):
         with patch("frappe.db", new=MagicMock()) as db:
             db.get_all.return_value = ["a"]

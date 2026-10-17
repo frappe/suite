@@ -8,6 +8,7 @@ from suite.mail.api.mail import (
     get_avatar,
     get_email_suggestions,
     get_mailboxes,
+    get_recent_threads_with,
     get_threads,
     move_mails,
     remove_mails_from_mailbox,
@@ -174,6 +175,27 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
 
         with self.set_user(self.receiver.email):
             self.assertEqual(search_mails(self.account, filter=None), {"rows": [], "total": 0})
+
+    def test_recent_threads_with(self):
+        subject = self.thread["subject"]
+
+        def subjects(limit: int = 10) -> list[str]:
+            return [r["subject"] for r in get_recent_threads_with(self.account, self.sender.email, limit)]
+
+        with self.set_user(self.receiver.email):
+            self.wait_until(
+                lambda: subject in subjects() or None,
+                message="A conversation with the sender is missing from their recent threads.",
+            )
+            # One row per conversation, however many of its messages match.
+            self.assertEqual(subjects().count(subject), 1)
+
+            move_mails(self.account, [self.mail_id], self.mailboxes["trash"])
+            self.wait_until(
+                lambda: subject not in subjects() or None,
+                message="A conversation only in Trash still shows in recent threads.",
+            )
+            self.assertEqual(get_recent_threads_with(self.account, "  "), [])
 
     def test_email_suggestions_and_avatar(self):
         with self.set_user(self.receiver.email):

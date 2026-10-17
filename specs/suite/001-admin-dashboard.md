@@ -126,7 +126,7 @@ Drive Root `used_bytes` already includes reservations. Reporting must subtract/s
 
 ### 6.2 Limits and buffers
 
-- Suite Cloud owns the site base allowance, supplied through `site.ping` → `limits.max_disk_gb` with its revised combined-allowance meaning. Suite Admins cannot directly raise it.
+- Suite Cloud owns the site base allowance, supplied through `tenant.ping` → `limits.max_disk_gb` with its revised combined-allowance meaning. Suite Admins cannot directly raise it.
 - Suite stores optional combined personal caps, explicit personal-buffer grants, and the optional new-user default. Personal caps do not reserve site capacity.
 - Default users are uncapped, sharing available site capacity. Bulk cap changes apply the same cap to each selected user, never a shared pool.
 - Site buffer is automatic 10% of base allowance. Personal buffer is explicitly Admin-granted 10% of the current cap, persistent until revoked. No timer in this version. Round percentage headroom down to whole bytes.
@@ -170,7 +170,7 @@ Reuse existing provider APIs; do not require a new bulk group endpoint or cross-
 | --- | --- |
 | `mail.accounts.get_quotas(emails=...)` | Site-owned email-keyed `used_disk_bytes`; batch at most 500 addresses. Do not use `disk_quota_gb` as usage. |
 | `mail.groups.get_group(email=...)` | Actual group-mailbox usage through the existing detail call. |
-| `site.ping` | Site status and `limits.max_disk_gb` allowance, after provider semantic changes. |
+| `tenant.ping` | Site status and `limits.max_disk_gb` allowance, after provider semantic changes. |
 
 Inventory must include retained/disabled mailboxes and groups, not only the enabled users on a dashboard page. Preserve identity attribution through address changes/reuse; a new holder must not inherit the deleted mailbox's cached usage or credentials. Clear/update inventory and attribution on confirmed deletion/recreation.
 
@@ -187,7 +187,7 @@ Cache successful Mail measurements on the site for **six hours**. Store per-entr
 
 Keep reporting useful under partial failure: show known breakdowns with incomplete/unknown metadata rather than a misleading complete total. Unknown and legitimate zero bytes are different values. Known stale values may be used even after TTL; TTL is a refresh policy, not a reason to lock out users.
 
-Existing Suite references: `suite/mail/api/admin.py:_attach_quotas`, group detail, and overview `site.ping`. Existing provider references: `suite_cloud/api/mail/accounts.py:get_quotas`, `suite_cloud/api/mail/groups.py:get_group`, and `suite_cloud/cloud_mail/tenancy/usage.py`.
+Existing Suite references: `suite/mail/api/admin.py:_attach_quotas`, group detail, and overview `tenant.ping`. Existing provider references: `suite_cloud/api/mail/accounts.py:get_quotas`, `suite_cloud/api/mail/groups.py:get_group`, and `suite_cloud/cloud_mail/tenancy/usage.py`.
 
 ## 8. Dashboard screens
 

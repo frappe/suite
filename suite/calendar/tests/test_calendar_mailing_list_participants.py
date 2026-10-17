@@ -20,13 +20,12 @@ from suite.calendar.doctype.calendar_event.mailing_lists import (
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import jscalendar_to_vevent
 from suite.calendar.jmap_events import participants_map
 from suite.mail.api.admin import add_mailing_list_recipients, get_mailing_list
-from suite.mail.directory import get_mailing_list_index
+from suite.mail.directory import clear_mailing_list_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 MODULE = "suite.calendar.doctype.calendar_event.mailing_lists"
 INVITATIONS = "suite.calendar.doctype.calendar_event.invitations"
 
-DOMAINS = [{"domain": "example.com"}]
 INDEX = {
     "team@example.com": ["alice@example.com", "bob@example.com"],
     "team-alias@example.com": ["alice@example.com", "bob@example.com"],
@@ -72,7 +71,6 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
         with (
             patch(f"{MODULE}._expansion_enabled", return_value=True),
             patch(f"{MODULE}._max_participants", return_value=limit),
-            patch(f"{MODULE}._domains", return_value=DOMAINS),
             patch(f"{MODULE}._mailing_list_index", return_value=INDEX if index is None else index),
         ):
             return expand_mailing_list_participants(participants)
@@ -283,22 +281,14 @@ class TestMailingListParticipantExpansion(IntegrationTestCase):
 
         index.assert_not_called()
 
-    def test_external_only_participants_skip_the_directory_lookup(self):
+    def test_external_only_participants_are_left_alone(self):
         participants = [participant("someone@example.org")]
-        with (
-            patch(f"{MODULE}._expansion_enabled", return_value=True),
-            patch(f"{MODULE}._domains", return_value=DOMAINS),
-            patch(f"{MODULE}._mailing_list_index") as index,
-        ):
-            self.assertEqual(expand_mailing_list_participants(participants), participants)
-
-        index.assert_not_called()
+        self.assertEqual(self.expand(participants), participants)
 
     def test_an_unreachable_directory_leaves_participants_alone(self):
         participants = [participant("team@example.com")]
         with (
             patch(f"{MODULE}._expansion_enabled", return_value=True),
-            patch(f"{MODULE}._domains", return_value=DOMAINS),
             patch(f"{MODULE}._mailing_list_index", return_value={}),
         ):
             self.assertEqual(expand_mailing_list_participants(participants), participants)
@@ -478,7 +468,7 @@ class TestMailingListInvite(StalwartIntegrationTestCase):
             list_email = get_mailing_list(list_id)["email"]
 
         # The list index is cached, and the list was created after this run started.
-        get_mailing_list_index.clear_cache()
+        clear_mailing_list_index()
 
         with self.set_user(self.organizer.email):
             event_id = add_calendar_event(

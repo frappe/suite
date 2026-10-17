@@ -16,7 +16,7 @@ def status(*, refresh: bool = False, domains: bool = False) -> dict:
     if refresh or not frappe.cache.get_value("suite:provider_health_attempt"):
         frappe.cache.set_value("suite:provider_health_attempt", True, expires_in_sec=60)
         try:
-            get_client().call("site.ping")
+            get_client().call("tenant.ping")
         except Exception:
             cached["stale"] = True
         else:

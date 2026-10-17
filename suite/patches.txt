@@ -77,7 +77,10 @@ execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participan
 suite.mail.patches.remove_held_queue_statuses
 suite.mail.patches.hand_over_deployment_to_suite_cloud
 suite.mail.patches.rebuild_screening_gates
+suite.mail.patches.move_screener_to_unscreened_keyword
+suite.mail.patches.turn_reject_rules_into_spam
 execute:frappe.db.set_single_value("Mail Settings", "enable_email_classification", 1)
+suite.mail.patches.group_by_date
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
@@ -90,6 +93,7 @@ suite.suite_core.patches.align_owner_with_user
 suite.suite_core.patches.remove_desk_access_from_suite_roles
 # Frappe's 25 MB per-file default is too small for Drive. Leaves a site's own value alone.
 suite.suite_core.patches.set_default_max_file_size
+suite.suite_core.patches.rename_suite_cloud_credentials
 suite.drive.patches.webdav_property_index
 # §9.2 redefined `preview_size` from a megabyte cutoff to pixels; resets any
 # value outside the pixel range to 512, idempotent, ahead of Build so its

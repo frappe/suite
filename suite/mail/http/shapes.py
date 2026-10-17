@@ -18,9 +18,9 @@ class UserAccount(TypedDict):
     in_calendar: bool
     jmap_account: str | None
     default_outgoing_email: str | None
-    on_mark_as_junk: str | None
     enable_screening: bool
     block_remote_images: bool
+    on_block_old_mail: str
 
 
 class UserInfo(TypedDict):
@@ -36,7 +36,7 @@ class UserInfo(TypedDict):
     api_key: str | None
     time_zone: str
     system_time_zone: str
-    group_messages_by: str | None
+    group_by_date: Flag
     show_reading_pane: Flag
     undo_send_period: str | None
     user_settings: str
@@ -44,6 +44,10 @@ class UserInfo(TypedDict):
     is_system_manager: bool
     is_jmap_configured: bool
     max_attachment_size: int
+    inbox_tabs: list[Literal["primary", "updates", "forums", "promotions", "social"]]
+    split_inbox: Flag
+    # Whether the site sorts mail into categories at all, so whether there is a choice of tabs to offer.
+    email_classification: bool
     is_suite_cloud_configured: bool
     accounts: list[UserAccount]
 
@@ -127,7 +131,7 @@ class ParticipantIdentity(TypedDict):
 
 class ScreenedAddress(TypedDict):
     email: str
-    action: Literal["Reject", "Spam", "Accepted"]
+    action: Literal["Spam", "Accepted"]
     creation: str
     modified: str
 
@@ -147,7 +151,7 @@ class SieveScript(TypedDict):
 
 class ScreenAddresses(AccountInput):
     emails: list[str]
-    action: NotRequired[Literal["Reject", "Spam", "Accepted"]]
+    action: NotRequired[Literal["Spam", "Accepted"]]
     override: NotRequired[bool]
 
 
@@ -170,6 +174,22 @@ class EmailSuggestion(TypedDict):
     name: str | None
     email: str
     user_image: NotRequired[str | None]
+
+
+class RecentThreadsInput(AccountInput):
+    email: str
+    limit: NotRequired[int]
+
+
+class RecentThreadMailbox(TypedDict):
+    mailbox_id: str
+
+
+class RecentThread(TypedDict):
+    thread_id: str
+    subject: str | None
+    received_at: str
+    mailboxes: list[RecentThreadMailbox]
 
 
 class AttachmentBytesInput(AccountInput):

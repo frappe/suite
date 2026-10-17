@@ -76,7 +76,7 @@
 <script setup lang="ts">
 import { Button, TabButtons } from 'frappe-ui'
 import { ArrowRight } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
@@ -106,6 +106,14 @@ const confirmed = ref<{
   blob: string
   value: InviteDetails
 }>()
+// Stands in only until the server shows the event: once a refetch finds it, that copy is newer than
+// ours (an answer given from the event's panel, say) and takes over.
+watch(
+  () => details.data,
+  (data) => {
+    if (data?.exists) confirmed.value = undefined
+  },
+)
 const currentDetails = computed(() =>
   confirmed.value?.account === account && confirmed.value.blob === attachment.blob_id
     ? confirmed.value.value
@@ -154,10 +162,13 @@ const whenLabel = computed(() =>
       })
     : '',
 )
+// Places only: a location that is just a link (a Meet room, a video call) is already in the mail
+// the strip sits on, and a bare URL here says nothing a reader can use at a glance.
+const isLink = (name: string) => /^https?:\/\//i.test(name.trim())
 const locationLabel = computed(() =>
   (invite.value?.event.locations || [])
-    .map((location) => location._name)
-    .filter(Boolean)
+    .map((location) => String(location._name ?? ''))
+    .filter((name) => name && !isLink(name))
     .join(', '),
 )
 const addInvite = useMutation(api.calendar.invites.add)
@@ -264,12 +275,17 @@ const openEventDetail = (e: MouseEvent) => {
   if (!canViewEvent.value || !event) return
   if (isMobile.value) router.push(eventDayRoute(event, account))
   else if (isOpen.value) selectedEvent.value = null
+  // As the calendar's own rows name it: the event panel answers, deletes and links by `event_id`
+  // (a grid row's `id` is one occurrence's), and the invite's event is the stored event itself.
   else if (e.currentTarget instanceof Element)
-    openEvent(event, {
-      anchor: {
-        element: e.currentTarget,
-        side: 'bottom',
+    openEvent(
+      { ...event, event_id: event.id },
+      {
+        anchor: {
+          element: e.currentTarget,
+          side: 'bottom',
+        },
       },
-    })
+    )
 }
 </script>

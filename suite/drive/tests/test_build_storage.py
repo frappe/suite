@@ -22,7 +22,7 @@ from frappe.utils import cint, get_files_path, now_datetime
 
 from suite.drive.patches.build.copy_ledger import LEDGER_FILENAME, CopyLedger
 from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
-from suite.drive.patches.build.layout import blob_key, object_key
+from suite.drive.patches.build.layout import blob_name
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.legacy_bytes import prepare_legacy_bytes
 from suite.drive.patches.build.ports import SiteFiles, SiteStorage
@@ -42,6 +42,8 @@ def storage_v2_on(**config):
     frappe.conf["storage_v2"] = 1
     frappe.conf.update(config)
     reset_file_controller()
+    # `get_driver` caches the S3 driver with the config it was built from.
+    getattr(frappe.local, "storage_driver_instances", {}).pop("s3", None)
     try:
         yield
     finally:
@@ -51,6 +53,7 @@ def storage_v2_on(**config):
             else:
                 frappe.conf[key] = value
         reset_file_controller()
+        getattr(frappe.local, "storage_driver_instances", {}).pop("s3", None)
 
 
 class ScopedStorage(SiteStorage):
@@ -94,7 +97,7 @@ class TestBuildStoragePreparation(IntegrationTestCase):
 
     def tearDown(self):
         frappe.db.delete("File", {"name": ("like", self.prefix + "%")})
-        frappe.db.delete("File Blob", {"key": ("like", f"../{self.prefix}%")})
+        frappe.db.delete("File Blob", {"key": ("like", f"{self.prefix}%")})
         super().tearDown()
 
     # fixtures
@@ -214,7 +217,7 @@ class TestBuildStoragePreparation(IntegrationTestCase):
     def test_a_second_run_links_nothing_new(self):
         self.local_file(b"idempotent bytes")
         first = self.prepare_local()
-        blobs = frappe.db.count("File Blob", {"key": ("like", f"../{self.prefix}%")})
+        blobs = frappe.db.count("File Blob", {"key": ("like", f"{self.prefix}%")})
 
         second = self.prepare_local()
 
@@ -223,7 +226,7 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         # nothing and must not report the first run's work as zero.
         self.assertEqual(second.backfill_linked, 1)
         self.assertEqual(second.backfill_blobs_created, first.backfill_blobs_created)
-        self.assertEqual(frappe.db.count("File Blob", {"key": ("like", f"../{self.prefix}%")}), blobs)
+        self.assertEqual(frappe.db.count("File Blob", {"key": ("like", f"{self.prefix}%")}), blobs)
 
     # the legacy S3 copy
 
@@ -239,16 +242,21 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.assertTrue(row.blob)
         blob = frappe.get_doc("File Blob", row.blob)
         self.drop_blob_later(blob.name)
-        self.assertEqual(blob.key, blob_key(checksum, "report.PDF"))
+        self.assertEqual(blob.name, blob_name(checksum))
+        # The framework's default site folder for this site's database.
+        site_folder = hashlib.sha256(frappe.conf.db_name.encode()).hexdigest()[:12]
+        self.assertEqual(blob.key, f"{site_folder}/{blob.name}/report.PDF")
         self.assertEqual(blob.checksum, checksum)
         self.assertEqual(blob.file_size, len(content))
         self.assertEqual(blob.driver, "s3")
         self.assertEqual(cint(blob.is_private), 1)
         self.assertEqual(blob.status, "Ready")
 
-        destination = object_key(checksum, "report.PDF")
+        destination = f"private/{blob.key}"
         self.assertEqual(self.bucket.copies, [("copy_object", key, destination)])
         self.assertEqual(self.bucket.objects[destination], content)
+        (copied,) = CopyLedger(Path(self.tmp.name) / LEDGER_FILENAME).entries()
+        self.assertEqual((copied.legacy_key, copied.destination), (key, destination))
         # The source object and its url are preserved until Cleanup (§14.10).
         self.assertEqual(self.bucket.objects[key], content)
         self.assertEqual(row.file_url, get_s3_url(key))
@@ -287,7 +295,8 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         name = self.insert_row(get_s3_url(f"{self.prefix}/team/movie.mov"), "movie.mov")
 
         blob = SiteStorage().insert_blob(
-            key=blob_key(checksum, "movie.mov"),
+            name=blob_name(checksum),
+            key=f"{blob_name(checksum)}/movie.mov",
             checksum=checksum,
             size=size,
             mime_type="video/quicktime",

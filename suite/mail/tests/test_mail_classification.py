@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-from suite.mail.api.mail import get_threads
+from suite.mail.api.mail import get_tab_counts, get_threads, set_mails_seen
 from suite.mail.doctype.mail_message.mail_message import fetch_messages
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.tests.base import StalwartIntegrationTestCase
@@ -88,3 +88,56 @@ class TestMailClassification(StalwartIntegrationTestCase):
 
         keywords = self._server_keywords(self.receiver, "inbox", thread["subject"])
         self.assertEqual([keyword for keyword in keywords if keyword.startswith("category_")], [])
+
+
+class TestInboxTabs(StalwartIntegrationTestCase):
+    """The Inbox is split into tabs by category, each with its unread threads counted."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.sender = cls.create_member()
+        cls.receiver = cls.create_member()
+        cls.disable_screening(cls.receiver)
+        cls.account = cls.personal_account(cls.receiver)
+        with cls.set_user(cls.receiver.email):
+            cls.inbox = get_mailbox_id_by_role(cls.account, "inbox", raise_exception=True)
+
+    def subjects(self, tab: str) -> list[str]:
+        with self.set_user(self.receiver.email):
+            threads = get_threads(self.account, self.inbox, limit=20, category=tab)["rows"]
+        return [thread["subject"] for thread in threads]
+
+    def unread(self) -> dict[str, int]:
+        with self.set_user(self.receiver.email):
+            return {
+                tab["category"]: tab["unread_threads"] for tab in get_tab_counts(self.account, self.inbox)
+            }
+
+    def test_a_colleagues_mail_is_in_primary_and_no_other_tab(self):
+        thread = self.deliver_mail(self.sender, self.receiver)
+
+        self.wait_until(
+            lambda: thread["subject"] in self.subjects("primary"),
+            message="A colleague's mail is missing from the Primary tab.",
+        )
+        for tab in ("updates", "forums", "promotions", "social"):
+            with self.subTest(tab=tab):
+                self.assertNotIn(thread["subject"], self.subjects(tab))
+
+    def test_a_tab_counts_its_unread_threads(self):
+        thread = self.deliver_mail(self.sender, self.receiver)
+        before = self.unread()
+        self.assertEqual(list(before), ["primary", "updates", "forums", "promotions", "social"])
+
+        with self.set_user(self.receiver.email):
+            set_mails_seen(self.account, [thread["id"]], True)
+
+        self.wait_until(
+            lambda: self.unread()["primary"] == before["primary"] - 1,
+            message="Reading a Primary thread did not take it off Primary's unread count.",
+        )
+        self.assertEqual(
+            {tab: count for tab, count in self.unread().items() if tab != "primary"},
+            {tab: count for tab, count in before.items() if tab != "primary"},
+        )

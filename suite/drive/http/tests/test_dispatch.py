@@ -1369,7 +1369,7 @@ class TestByteEgress(DriveHTTPCase):
         response = self.as_owner("GET", f"{PREFIX}/nodes/{self.file}/content")
         self.assertEqual(response.status_code, 302)
         location = response.headers["Location"]
-        self.assertTrue(location.startswith("/f/"), location)
+        self.assertTrue(location.startswith("/private/files/"), location)
         self.assertIn("e=", location)
         self.assertIn("s=", location)
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
@@ -2568,7 +2568,7 @@ class TestVersionRoutes(DriveHTTPCase):
         response = self.as_owner("GET", f"{PREFIX}/nodes/{self.node}/versions/1/content")
         self.assertEqual(response.status_code, 302)
         location = response.headers["Location"]
-        self.assertTrue(location.startswith("/f/"), location)
+        self.assertTrue(location.startswith("/private/files/"), location)
         self.assertIn("e=", location)
         self.assertIn("s=", location)
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")

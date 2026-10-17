@@ -5,7 +5,7 @@ export type DocumentMedia = (id: string) => MediaHandle
 
 // A stored media reference is one whole node id (spec §14.7), the shape
 // `suite/slides/drive.py` reads. Node ids are opaque hashes, so a `/files/`
-// path, a `/f/` url and a `data:` url all fail this.
+// path, a `/private/files/` url and a `data:` url all fail this.
 const MEDIA_NODE_ID = /^[A-Za-z0-9_-]{1,140}$/
 
 export const isMediaNodeId = (value: unknown): value is string =>

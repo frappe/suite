@@ -56,7 +56,7 @@ from suite.drive._core.errors import (
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, READ, UPLOAD
 
-# §6.8 and §10.6: one Read check on the document, then signed `/f/` URLs that
+# §6.8 and §10.6: one Read check on the document, then signed blob URLs that
 # live 15 minutes. The page re-requests at two thirds of the TTL.
 MEDIA_TTL_SECONDS = 15 * 60
 MEDIA_REFRESH_SECONDS = MEDIA_TTL_SECONDS * 2 // 3
@@ -825,7 +825,7 @@ def touch_node(node: str) -> None:
 
 
 def download_filename(title: str) -> str:
-    """Return one node title as a filename a signed `/f/` URL can carry.
+    """Return one node title as a filename a signed blob URL can carry.
 
     `signed_url_for_blob` signs the filename and puts it in the URL path, so
     the bytes only arrive if the client asks for the exact same string. A
@@ -841,7 +841,7 @@ def download_filename(title: str) -> str:
 
 
 def list_media(principals: Principals, node: str) -> list[dict]:
-    """List one readable document's media with signed, 15-minute `/f/` URLs.
+    """List one readable document's media with signed, 15-minute blob URLs.
 
     One Read check on the document answers for every picture below it, which
     is the per-picture permission cost §6.8 removes. The caller refreshes at

@@ -6,11 +6,17 @@ import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
 import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
-import { FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
+import { FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
 import { flattenMentions } from '@/apps/mail/utils/mentions'
+import {
+  forgetRemoval,
+  rememberRemoval,
+  sendRemoval,
+  type PendingRemoval,
+} from '@/apps/mail/utils/pendingRemovals'
 import { reportMutationError } from '@/platform/feedback'
 
 export const toTitleCase = (str: string) =>
@@ -125,21 +131,72 @@ export const raisePromiseToast = async (
   }
 }
 
-// Rows can update optimistically; confirmation follows the successful server write.
-export const raiseOptimisticToast = (
-  forward: Promise<unknown>,
-  success: string,
+// Rows can update optimistically; confirmation follows the successful server write. The message
+// can be read off the write's answer, where what happened decides what it says.
+export const raiseOptimisticToast = <T>(
+  forward: Promise<T>,
+  success: string | ((result: T) => string),
   undoAction?: () => void,
 ) => {
   toast.dismiss()
   void forward.then(
-    () =>
+    (result) =>
       toast.success(
-        success,
+        typeof success === 'string' ? success : success(result),
         undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined,
       ),
     raiseError,
   )
+}
+
+/**
+ * A removal the server cannot take back, offered with an Undo all the same: the caller has already
+ * taken the rows off screen, and the request waits out the toast. Undo puts them back and nothing is
+ * sent; the toast going sends it. The removal is written down meanwhile, so a page closed inside the
+ * window has it sent on the next start rather than silently kept (see pendingRemovals).
+ */
+export const commitAfterUndo = ({
+  message,
+  removal,
+  restore,
+  onSent,
+  undoSlot,
+}: {
+  message: string
+  removal: PendingRemoval
+  restore: () => void
+  /** After the server has carried it out: refresh whatever lists or counts it touched. */
+  onSent?: () => void
+  /** The app's Cmd/Ctrl+Z, offered the same Undo for as long as the toast is: `useUndo`'s slot. */
+  undoSlot?: { set: (action: () => void) => void; retire: (action: () => void) => void }
+}) => {
+  const remembered = rememberRemoval(removal)
+  let settled = false
+  const settle = (keep: boolean) => {
+    if (settled) return
+    settled = true
+    undoSlot?.retire(undo)
+    if (keep) {
+      forgetRemoval(remembered)
+      toast.dismiss(shown)
+      return restore()
+    }
+    void sendRemoval(removal)
+      .then(onSent, (error) => {
+        restore()
+        raiseError(error)
+      })
+      .finally(() => forgetRemoval(remembered))
+  }
+  const undo = () => settle(true)
+  toast.dismiss()
+  undoSlot?.set(undo)
+  const shown = toast.success(message, {
+    action: { label: __('Undo'), onClick: undo },
+    // Gone on its own, closed by hand, or pushed out by the next toast: the removal stands.
+    onAutoClose: () => settle(false),
+    onDismiss: () => settle(false),
+  })
 }
 
 export const copyToClipBoard = async (text: string) => {
@@ -446,9 +503,6 @@ export const getIcon = (mailbox: {
   icon?: string | null
   role?: string | null
 }) => {
-  // The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
-  // stray Mailbox Settings icon (it must never render as a generic folder).
-  if (mailbox._name === SCREENER_MAILBOX_NAME) return 'eye'
   if (mailbox.icon === 'spam') return 'mail-warning'
   if (mailbox.icon) return mailbox.icon
   if (mailbox.role && mailbox.role in FOLDER_ICON_MAP)
@@ -456,9 +510,7 @@ export const getIcon = (mailbox: {
   return 'folder'
 }
 
-// The Screening folder is surfaced to users as the "Screener".
-export const getMailboxName = (mailbox: MailboxData) =>
-  mailbox._name === SCREENER_MAILBOX_NAME ? __('Screener') : mailbox._name
+export const getMailboxName = (mailbox: MailboxData) => mailbox._name
 
 // Safari reads the blob behind an `<a download>` asynchronously, after the click has
 // already returned, so revoking the object URL in the same tick silently cancels the

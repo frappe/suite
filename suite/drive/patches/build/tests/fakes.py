@@ -6,8 +6,8 @@ run is reproduced by raising where a real one would be killed.
 
 Where they copy a real constraint they copy it exactly: a body is read once
 and cannot be rewound, `copy_object` refuses a source above 5 GB the way S3
-does, and `FakeStorage` enforces `File Blob`'s unique index on
-`(checksum, is_private, driver)`. Two limits they do not model:
+does, and `FakeStorage` refuses a second blob with one name the way the
+primary key does. Two limits they do not model:
 `FakeStorage` has no transaction, so a rollback in `FakeFiles` leaves its
 blobs behind; and `run_backfill` answers with a fixed dict rather than
 reading the rows. Both are covered against the real thing in
@@ -28,7 +28,6 @@ from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.ports import (
     ACTIVE,
     PERSONAL,
-    BlobConflict,
     BlobRow,
     ChainRow,
     ClaimedBlob,
@@ -58,6 +57,10 @@ from suite.drive.patches.build.state import BuildState
 # exists to police. `test_layout` pins the two against each other.
 S3_COPY_OBJECT_MAX_BYTES = 5_368_709_120
 
+# The site folder `FakeStorage` reports for the S3 driver, shaped like the
+# framework default: 12 hex characters of the database name's hash.
+KEY_PREFIX = "5e1f0c3a9b7d/"
+
 # The stamp a faked run writes on rows it authored. `creation` on a copied
 # row comes from the source and must never be this.
 BUILD_STAMP = "2026-01-01 00:00:00.000000"
@@ -66,8 +69,9 @@ BUILD_STAMP = "2026-01-01 00:00:00.000000"
 class FakeStorage:
     """`StorageGateway` over dictionaries."""
 
-    def __init__(self, *, enabled=True, driver="s3", config=None, backfill=None):
+    def __init__(self, *, enabled=True, driver="s3", config=None, backfill=None, key_prefix=KEY_PREFIX):
         self._enabled = enabled
+        self._key_prefix = key_prefix
         self._driver = driver
         self._config = config if config is not None else {"bucket": "drive-bucket"}
         self._backfill = backfill if backfill is not None else {"linked": 0, "blobs_created": 0}
@@ -82,6 +86,9 @@ class FakeStorage:
 
     def driver_config(self):
         return dict(self._config)
+
+    def key_prefix(self):
+        return self._key_prefix
 
     def run_backfill(self, batch_size):
         self.backfill_calls.append(batch_size)
@@ -100,28 +107,20 @@ class FakeStorage:
         }
         return self
 
-    def _holder(self, checksum):
-        """The row holding the unique triple, the way the index defines it."""
-        for name, blob in self.blobs.items():
-            if blob["checksum"] == checksum and blob["driver"] == "s3" and blob["is_private"] == 1:
-                return name, blob
-        return None, None
-
     def claim_blob(self, checksum):
-        name, blob = self._holder(checksum)
-        if blob and blob["status"] == "Ready":
-            return ClaimedBlob(name, blob["key"])
+        for name, blob in self.blobs.items():
+            if (blob["checksum"], blob["driver"], blob["is_private"], blob["status"]) == (
+                checksum,
+                "s3",
+                1,
+                "Ready",
+            ):
+                return ClaimedBlob(name, blob["key"])
         return None
 
-    def blocked_by(self, checksum):
-        _, blob = self._holder(checksum)
-        return blob["status"] if blob else None
-
-    def insert_blob(self, *, key, checksum, size, mime_type):
-        # `File Blob` carries a unique index on (checksum, is_private, driver).
-        if self._holder(checksum)[0]:
-            raise BlobConflict(checksum)
-        name = f"blob{len(self.blobs) + 1}"
+    def insert_blob(self, *, name, key, checksum, size, mime_type):
+        if name in self.blobs:
+            raise ValueError(f"File Blob {name} already exists")
         self.blobs[name] = {
             "key": key,
             "checksum": checksum,
@@ -275,6 +274,9 @@ class FakeBucket:
 
     def size(self, key):
         return self.sizes.get(key)
+
+    def sizes_under(self, prefix):
+        return {key: size for key, size in self.sizes.items() if key.startswith(prefix)}
 
     def copy_object(self, source_key, destination_key):
         if self.sizes.get(source_key, 0) > S3_COPY_OBJECT_MAX_BYTES:

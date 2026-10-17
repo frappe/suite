@@ -31,7 +31,7 @@
           :calendar-event="selectedEvent"
           @close="selectedEvent = null"
           @edit="openEventInCalendar"
-          @email-participants="emailParticipants"
+          @email-participants="emailEventParticipants"
         />
       </EventPopover>
       <!-- Compose prefilled with the event's participants; keyed so each
@@ -43,6 +43,7 @@
         :key="composeKey"
         v-model="showCompose"
         :mail-details="composeDetails"
+        :account="composeDetails?.account"
         @reload-mails="requestListReload()"
       />
     </div>
@@ -80,12 +81,14 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData } from '@/apps/mail/types'
 import {
   useComposeMail,
+  useDiscardingDrafts,
   useKeyboardOpen,
   useListReload,
   useMobileSearch,
   useMobileSelection,
   useScreenSize,
 } from '@/apps/mail/utils/composables'
+import { resumeRemovals } from '@/apps/mail/utils/pendingRemovals'
 import { useShellPhoneChrome } from '@/platform/phone-chrome'
 
 const store = userStore()
@@ -93,6 +96,9 @@ const { userResource } = store
 
 const { isMobile } = useScreenSize()
 const { requestListReload } = useListReload()
+const { holdDraft, releaseDraft } = useDiscardingDrafts()
+// Removals a closed page left inside their Undo window: the window is over, so they go now.
+void resumeRemovals(requestListReload, { hold: holdDraft, release: releaseDraft })
 
 const router = useRouter()
 const route = useRoute()
@@ -110,16 +116,12 @@ useShellPhoneChrome(shellChrome)
 
 const { isSearchRoute, paletteOpen } = useMobileSearch()
 const { isMobileSelectionActive } = useMobileSelection()
-const screenerActive = computed(() =>
-  ['mail-screener', 'mail-screener-sender'].includes(route.name as string),
-)
 const showComposeButton = computed(
   () =>
     shellChrome.value &&
     !isMobileSelectionActive.value &&
     !isSearchRoute.value &&
     !paletteOpen.value &&
-    !screenerActive.value &&
     route.name !== 'mail-profile',
 )
 
@@ -155,7 +157,7 @@ const openCompose = (details: ComposeMailData) => {
   // Mobile has no composer window to open — compose is a page there, and the draft
   // travels to it through the handoff.
   if (isMobile.value) {
-    openComposePage(router, store.accountId, details)
+    openComposePage(router, details.account ?? store.accountId, details)
     return
   }
   composeDetails.value = details
@@ -167,6 +169,13 @@ const openCompose = (details: ComposeMailData) => {
 
 const emailParticipants = (emails: string[]) =>
   openCompose({ to: emails.map((email) => ({ email })) })
+
+// From the event's popover: writing to everyone is where attention goes next, so the popover
+// steps aside rather than sitting over the page beside the composer.
+const emailEventParticipants = (emails: string[]) => {
+  selectedEvent.value = null
+  emailParticipants(emails)
+}
 
 // A `mailto:` link clicked inside a message. It comes through shared state because the
 // message body is an iframe — several components deep, and across a document boundary.

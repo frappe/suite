@@ -1,15 +1,21 @@
 import { watchDebounced } from '@vueuse/core'
 import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
-import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { api, useMutation, type InputOf, type OutputOf } from '@/api'
+import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
-import { processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
+import { commitAfterUndo, processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
-import { useUndo } from '@/apps/mail/utils/composables'
+import {
+  useComposeMail as useComposeRequest,
+  useDiscardingDrafts,
+  useListReload,
+  useUndo,
+} from '@/apps/mail/utils/composables'
+import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import {
   moveRecipient as moveRecipientBetweenFields,
@@ -24,11 +30,13 @@ interface EditorHost {
     commands: {
       insertContent: (content: string) => void
       focus: () => void
+      setTextSelection: (range: { from: number; to: number }) => void
     }
     state: {
       doc: {
         descendants: (fn: (node: any) => void) => void
       }
+      selection: { from: number; to: number }
     }
   }
 }
@@ -42,7 +50,7 @@ interface ComposeMailOptions {
   close: () => void
   /** Whether the composer is still on screen. Drives whether a result is worth a toast. */
   isOpen: () => boolean
-  /** Called instead of a server delete when discarding something never saved. */
+  /** Called as a discard takes the draft off screen, so a host showing it elsewhere drops it too. */
   onDiscardUnsaved?: () => void
   /**
    * Fired the moment Discard is pressed, before the composer comes off screen — unlike
@@ -88,6 +96,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // post-render effect on top of that, so a `saveDraft` gated on disposal would be a no-op exactly
   // when it is needed most, and everything typed since the last tick would go with the component.
   let disposed = false
+  const { requestCompose } = useComposeRequest()
+  const { requestListReload } = useListReload()
+  const { holdDraft, releaseDraft, restoreDraft } = useDiscardingDrafts()
   onScopeDispose(() => (disposed = true))
   const router = useRouter()
   const route = useRoute()
@@ -137,6 +148,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     in_reply_to: mailDetails?.in_reply_to || '',
     in_reply_to_id: mailDetails?.in_reply_to_id || '',
     forwarded_from_id: mailDetails?.forwarded_from_id || '',
+    composed: true,
   })
   const originalMail = ref<ComposeMailData>()
   const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
@@ -167,9 +179,37 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       isRecipientsEmpty.value &&
       isBodyEmpty.value,
   )
+  // A fresh composition the reader has not written in: its fields still what it opened with (a
+  // reply's recipients and quote, a forward's attachments) and its body only the signature and any
+  // prefill. A draft reopened from Drafts is never this — what it holds was written before.
+  const fieldsOf = () =>
+    JSON.stringify([
+      mail.to,
+      mail.cc,
+      mail.bcc,
+      mail.subject,
+      mail.attachments,
+      mail.quoted_content,
+    ])
+  const openedWith = fieldsOf()
+  const isUntouched = computed(
+    () =>
+      !isSavedDraft &&
+      fieldsOf() === openedWith &&
+      bodyText(mail.html_body) === bodyText(buildSignature(mail.from_email) + prefilledBody) &&
+      // Text alone missed a pasted or inserted image: a body that was only that read as untouched,
+      // and leaving it closed the draft without an Undo.
+      imageCount(mail.html_body) === imageCount(buildSignature(mail.from_email) + prefilledBody),
+  )
+  // The editor takes the unfolded body as new content, and leaves the quote selected: the next
+  // keystroke would type it away. The caret goes back to where the writer left it.
   const openQuotedContent = () => {
+    const editor = host()?.editor
+    const caret = editor?.state.selection
     mail.html_body += `<br>${mail.quoted_content}`
     mail.quoted_content = ''
+    if (editor && caret)
+      nextTick(() => editor.commands.setTextSelection({ from: caret.from, to: caret.to }))
   }
 
   // ── Signature ───────────────────────────────────────────────────────────────────────────────
@@ -185,6 +225,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           '</div>'
       : ''
   }
+  const imageCount = (html: string) => (html?.match(/<img\b/gi) ?? []).length
   const bodyText = (html: string) => {
     const element = document.createElement('div')
     element.innerHTML = html || ''
@@ -197,26 +238,30 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // time a draft is opened), and not when the identity changes later.
   //
   // A composition that has never been saved is the other case entirely: its empty body is merely
-  // empty, and is where a signature belongs.
-  const isSavedDraft = !!mailDetails?.id
+  // empty, and is where a signature belongs. Unless it was written in another composer first — a
+  // reply popped out of its thread before its first save. Its body is the one written there,
+  // signature included; read as a fresh one's prefill, it got a second signature above the first.
+  const isSavedDraft = !!mailDetails?.id || !!mailDetails?.composed
 
   // A fresh composition can open with prefilled content — a forward's header block. It rides
   // along untouched: the signature is inserted above it, and the pristine-body comparison
   // below includes it.
   const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
 
-  // Swap the signature when the From identity changes — but only while the body is still the
+  // Swap the signature when it changes — a different From identity, or the identities arriving
+  // after the composer opened (a fresh compose can open before they have loaded, and then starts
+  // from the account's address with no signature to put in) — but only while the body is still the
   // auto-inserted signature (or empty/prefilled), so a message the user has written isn't
   // overwritten. Compared by text so the editor's HTML normalization doesn't defeat the match.
   watch(
-    () => mail.from_email,
-    (val, oldVal) => {
+    () => buildSignature(mail.from_email),
+    (signature, previous) => {
       if (isBodyEmpty.value && isSavedDraft) return
       if (
         isBodyEmpty.value ||
-        bodyText(mail.html_body) === bodyText(buildSignature(oldVal) + prefilledBody)
+        bodyText(mail.html_body) === bodyText((previous ?? '') + prefilledBody)
       )
-        mail.html_body = buildSignature(val) + prefilledBody
+        mail.html_body = signature + prefilledBody
     },
     {
       immediate: true,
@@ -250,6 +295,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     listOwesReload = false
     reloadMails()
   }
+  // A draft is not edited in place: each save replaces it, under a new id. A list that has not
+  // reloaded since still shows it by an earlier one, so a discard has to hold all of them.
+  const formerIds = new Set<string>()
   let pendingSave: Promise<void> | undefined
   const saveDraft = async () => {
     if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
@@ -283,6 +331,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     },
   )
 
+  /**
+   * The composer is on screen. What it opened with counts as saved, so only an edit saves it —
+   * except a draft Undo brought back, whose text may never have reached the server: that is saved
+   * now, or closing it unedited lost the last of it, and a draft never saved at all went with it.
+   * Every composer calls this once mounted: the window, a thread's reply and the phone's page.
+   */
+  const onOpened = () => (mailDetails?.restored ? void saveDraft() : updateOriginalMail())
+
   // The Undo toast lives for the period the server actually held delivery for (it echoes it back
   // with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
   // lands in time). The user's own setting is only a fallback for a result without one: the
@@ -299,7 +355,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
-    if (deleteMail.isPending) return
     if (options.isUploading?.()) {
       const message = __('Please wait for attachments to finish uploading.')
       if (sendAt) throw new Error(message)
@@ -332,21 +387,65 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       if (sendAt) throw error /* Keep the composer open after refusal. */
     }
   }
+  // Discarding closes the composer at once and offers Undo; the draft is deleted only once the
+  // toast has passed (see commitAfterUndo). Undo reopens it, as it was, in the compose window — the
+  // composer that held it is gone, and nothing on the server has changed.
   const discardMail = async () => {
-    if (deleteMail.isPending) return
     isDiscarding.value = true
     try {
       await pendingSave
-      if (mail.id) await deleteMailSubmit()
-      else options.onDiscardUnsaved?.()
-      discarded = true
-      options.onDiscardStarted?.()
-      close()
     } catch {
-      /* Keep the draft open after refusal. */
-    } finally {
-      isDiscarding.value = false
+      /* A failed last save leaves the draft as the server has it, which is what Undo brings back. */
     }
+    const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
+    const account = scopeAccountId.value
+    // Discarded from a thread, it comes back to that thread on Undo — not into a composer window.
+    // Read before the composer closes: the last draft in Drafts takes the pane back to the list,
+    // and Undo returns it here.
+    const thread = isInThread && draft.id ? router.currentRoute.value.fullPath : undefined
+    discarded = true
+    options.onDiscardUnsaved?.()
+    options.onDiscardStarted?.()
+    close()
+    isDiscarding.value = false
+    // Nothing written: no toast and nothing to undo. One already autosaved (a body that is only the
+    // signature still saves) goes quietly.
+    if (isUntouched.value) {
+      if (draft.id)
+        void client
+          .mutation(api.mail.messages.deleteDraft, { account, id: draft.id })
+          .then(requestListReload, () => {})
+      return
+    }
+    // Off every list now, like a discard from the list itself; back on Undo.
+    const heldIds = draft.id ? [draft.id, ...formerIds] : []
+    heldIds.forEach(holdDraft)
+    commitAfterUndo({
+      message: __('Draft discarded.'),
+      // A draft never saved has nothing on the server to remove: only Undo's reopening matters.
+      removal: draft.id
+        ? { kind: 'draft', account, id: draft.id }
+        : { kind: 'messages', names: [] },
+      onSent: requestListReload,
+      restore: () => {
+        if (thread) {
+          // Under whichever id the list still has it, it reopens as the editor had it — and the
+          // list is brought up to date, off the ids the saves have since replaced.
+          const copy = { ...draft, account, restored: true }
+          heldIds.forEach((id) => restoreDraft(id, copy))
+          requestListReload()
+          if (router.currentRoute.value.fullPath !== thread) void router.push(thread)
+          return
+        }
+        heldIds.forEach(releaseDraft)
+        requestCompose({ ...draft, account, restored: true })
+      },
+      // Reopening a draft needs no particular list on screen, so its Cmd/Ctrl+Z outlives the view.
+      undoSlot: {
+        set: (action) => setUndoAction(action, { outlivesView: true }),
+        retire: retireUndoAction,
+      },
+    })
   }
 
   /** Reset the in-flight flags once the composer is off screen. */
@@ -435,6 +534,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at,
     undo_send_period,
   }: OutputOf<typeof api.mail.messages.create>) => {
+    if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     updateOriginalMail()
     if (error) {
@@ -549,19 +649,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     const result = await updateDraft.run(input)
     await onMailUpdateSuccess(result)
   }
-  const deleteMail = useMutation(api.mail.messages.deleteDraft)
-  async function deleteMailSubmit() {
-    const input: InputOf<typeof api.mail.messages.deleteDraft> = {
-      account: scopeAccountId.value,
-      id: mail.id,
-    }
-    await deleteMail.run(input)
-    reloadMails()
-    raiseToast(__('Draft discarded.'))
-  }
-  const isLoading = computed(
-    () => createMail.isPending || updateDraft.isPending || deleteMail.isPending,
-  )
+  const isLoading = computed(() => createMail.isPending || updateDraft.isPending)
 
   // ── Attachments ─────────────────────────────────────────────────────────────────────────────
 
@@ -631,10 +719,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     editor?.commands.focus()
   }
 
-  /** The body as the editor should receive it, and the inverse on the way back out. */
-  const editorContent = computed(() => mail.html_body.replaceAll('<div><br></div>', '<div></div>'))
+  const editorBody = createEditorBody()
+  const editorContent = computed(() => editorBody.toEditor(mail.html_body))
   const onEditorChange = (value: string) => {
-    mail.html_body = value.replaceAll('<div></div>', '<div><br></div>')
+    mail.html_body = editorBody.fromEditor(value)
     dropUnmentionedRecipients()
   }
   return {
@@ -644,11 +732,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     identities,
     getIdentity,
     updateOriginalMail,
+    onOpened,
     isDraftUpdated,
     isRecipientsEmpty,
     moveRecipient,
     isBodyEmpty,
     isMailEmpty,
+    isUntouched,
     isLoading,
     isSavingDraft,
     isDiscarding,

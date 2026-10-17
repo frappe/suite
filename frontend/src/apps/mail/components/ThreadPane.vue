@@ -5,10 +5,38 @@
   <!-- border-r only in Split View: full-width mode has nothing of its own to
 	     the right to rule off from. -->
   <div
+    ref="listColumn"
     class="sticky top-16 flex flex-col"
-    :class="!isMobile && showReadingPane ? SPLIT_LIST_CLASS : 'w-full'"
+    :class="[
+      split ? SPLIT_LIST_CLASS : 'w-full',
+      // A width saved on a wider window still leaves the pane what a drag would.
+      { 'max-w-[calc(100%-25rem)] lg:max-w-[calc(100%-30rem)]': split && listWidth },
+    ]"
+    :style="split && listWidth ? { width: `${listWidth}px` } : undefined"
   >
     <slot name="list" />
+    <!-- The divide between list and pane, dragged to share the width differently. It straddles
+	     the column's border; the line it shows on hover and while dragging is the border made
+	     heavier. Double-click hands the column back to its default share; the arrow keys move it
+	     from the keyboard. -->
+    <div
+      v-if="split"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-label="__('Resize list')"
+      :aria-valuenow="listColumn?.offsetWidth"
+      tabindex="0"
+      class="group/resize absolute -right-1.5 top-0 z-10 flex h-full w-3 cursor-col-resize justify-center focus:outline-none"
+      @pointerdown="startResize"
+      @dblclick="resetWidth"
+      @keydown.left.prevent="nudge(-16)"
+      @keydown.right.prevent="nudge(16)"
+    >
+      <span
+        class="h-full w-0.5 transition-colors group-hover/resize:bg-outline-gray-3 group-focus-visible/resize:bg-outline-gray-3"
+        :class="{ 'bg-outline-gray-3': resizing }"
+      />
+    </div>
   </div>
 
   <!-- The open thread, in place: beside the list on desktop with Split View on, a
@@ -24,7 +52,7 @@
       class="bg-surface-base"
       :class="{
         'overflow-hidden': isMobile,
-        [SPLIT_PANE_CLASS]: !isMobile && showReadingPane,
+        [SPLIT_PANE_CLASS]: split,
         'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
         'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
           isMobile,
@@ -47,9 +75,11 @@
 
 <script setup lang="ts">
 import { usePortalTarget } from 'frappe-ui'
+import { computed, onBeforeUnmount, ref, useTemplateRef } from 'vue'
 
 import { SPLIT_LIST_CLASS, SPLIT_PANE_CLASS } from '@/apps/mail/constants'
 import { useReadingPane, useScreenSize } from '@/apps/mail/utils/composables'
+import { clampListWidth, readListWidth, writeListWidth } from '@/apps/mail/utils/splitWidth'
 
 /**
  * The two halves of a thread list view: the list column, and the reading pane beside/over it.
@@ -81,4 +111,64 @@ const { isMobile } = useScreenSize()
 // MailLayout's overlay layer; see the Teleport above.
 const overlayLayer = usePortalTarget()
 const showReadingPane = useReadingPane()
+const split = computed(() => !isMobile.value && showReadingPane.value)
+
+// The list column's dragged width, or none for its default share of the screen.
+const listColumn = useTemplateRef('listColumn')
+const listWidth = ref(readListWidth())
+const resizing = ref(false)
+
+const clampTo = (width: number) => {
+  const row = listColumn.value?.parentElement?.clientWidth ?? window.innerWidth
+  return clampListWidth(width, row, window.innerWidth >= 1024)
+}
+
+// Ends the drag under way, if one is. Held here rather than in the handler so leaving the view
+// mid-drag ends it too: the handle that would hear the pointer go up goes with the view, and the
+// page was left with text selection off and the resize cursor over everything.
+let stopResize: (() => void) | undefined
+
+const startResize = (event: PointerEvent) => {
+  if (event.button !== 0 || !listColumn.value) return
+  event.preventDefault()
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture(event.pointerId)
+  const startX = event.clientX
+  const startWidth = listColumn.value.offsetWidth
+  resizing.value = true
+  // Text under a fast pointer would be selected along the way, and the cursor would flicker
+  // back to an arrow wherever the pointer outran the handle.
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+
+  const move = (e: PointerEvent) => (listWidth.value = clampTo(startWidth + e.clientX - startX))
+  const end = () => {
+    stopResize = undefined
+    resizing.value = false
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    handle.removeEventListener('pointermove', move)
+    handle.removeEventListener('pointerup', end)
+    handle.removeEventListener('pointercancel', end)
+    handle.removeEventListener('lostpointercapture', end)
+    writeListWidth(listWidth.value)
+  }
+  stopResize = end
+  handle.addEventListener('pointermove', move)
+  handle.addEventListener('pointerup', end)
+  handle.addEventListener('pointercancel', end)
+  handle.addEventListener('lostpointercapture', end)
+}
+onBeforeUnmount(() => stopResize?.())
+
+const nudge = (by: number) => {
+  if (!listColumn.value) return
+  listWidth.value = clampTo(listColumn.value.offsetWidth + by)
+  writeListWidth(listWidth.value)
+}
+
+const resetWidth = () => {
+  listWidth.value = undefined
+  writeListWidth()
+}
 </script>

@@ -175,6 +175,17 @@ describe('keys', () => {
     expect(h.commits).toEqual([])
   })
 
+  it('in a formula where no reference can go, an arrow moves the caret', () => {
+    h.editor.open('=SUM')
+    const notCancelled = h.el.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+    )
+    expect(notCancelled).toBe(true) // the browser moves the caret
+    expect(h.picker.keyStart).not.toHaveBeenCalled()
+    expect(h.commits).toEqual([])
+    expect(h.editor.isOpen()).toBe(true)
+  })
+
   it('Escape while picking cancels the pick and keeps editing', () => {
     h.editor.open('=')
     h.press('ArrowDown')

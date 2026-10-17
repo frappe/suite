@@ -19,15 +19,22 @@ function stubClient() {
       version += 1
       for (const cb of listeners) cb(version)
     },
-    readViewport: vi.fn(async (box) => {
+    // Inputs are "=r{row}c{col}", so a test can tell them from values.
+    readViewport: vi.fn(async ({ includeInputs, ...box }) => {
       client.reads.push(box)
       const values = []
+      const inputs = []
       for (let r = box.r1; r <= box.r2; r++) {
         const row = []
-        for (let c = box.c1; c <= box.c2; c++) row.push(`r${r}c${c}`)
+        const inputRow = []
+        for (let c = box.c1; c <= box.c2; c++) {
+          row.push(`r${r}c${c}`)
+          inputRow.push(`=r${r}c${c}`)
+        }
         values.push(row)
+        inputs.push(inputRow)
       }
-      return { values }
+      return includeInputs ? { values, inputs } : { values }
     }),
   }
   return client
@@ -59,6 +66,17 @@ describe('cell provider', () => {
     expect(provider.getDisplay('Sheet1', 2, 3)).toBe('r2c3')
   })
 
+  it('reads inputs with the values, so a cell on screen has its input', async () => {
+    const { provider, client } = setup()
+    expect(provider.getInput('Sheet1', 2, 3)).toBeUndefined()
+    await settle()
+    expect(client.readViewport).toHaveBeenCalledWith(
+      expect.objectContaining({ includeInputs: true }),
+    )
+    expect(provider.getInput('Sheet1', 2, 3)).toBe('=r2c3')
+    expect(provider.getDisplay('Sheet1', 2, 3)).toBe('r2c3')
+  })
+
   it('turns one paint worth of misses into one read of their bounding box', async () => {
     const { provider, client } = setup()
     for (let r = 1; r <= 3; r++) for (let c = 1; c <= 4; c++) provider.getDisplay('Sheet1', r, c)
@@ -82,14 +100,15 @@ describe('cell provider', () => {
     expect(client.reads).toHaveLength(1)
   })
 
-  it('clears and repaints on a version bump, then refetches', async () => {
-    const { provider, client, cache, requestRender } = setup()
+  it('on a version bump, paints the last value and refetches', async () => {
+    const { provider, client, requestRender } = setup()
     provider.getDisplay('Sheet1', 1, 1)
     await settle()
     client.bump()
-    expect(cache.size).toBe(0)
     expect(requestRender).toHaveBeenCalledTimes(2)
-    expect(provider.getDisplay('Sheet1', 1, 1)).toBe('')
+    expect(provider.getDisplay('Sheet1', 1, 1)).toBe('r1c1') // no blank flash
+    expect(provider.getInput('Sheet1', 1, 1)).toBeUndefined() // inputs only fresh
+    expect(provider.peekInput('Sheet1', 1, 1)).toBe('=r1c1') // painting may use the last one
     await settle()
     expect(client.reads).toHaveLength(2)
   })

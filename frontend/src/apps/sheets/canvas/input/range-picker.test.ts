@@ -29,6 +29,11 @@ describe('reference text', () => {
     expect(refReplaceStart('=SUM(A1:B', 9)).toBe(5)
     expect(refReplaceStart("=SUM('My Sheet'!A1", 18)).toBe(5)
     expect(refReplaceStart('=A1+', 4)).toBe(4)
+    expect(refReplaceStart('=SUM(B:B', 8)).toBe(5)
+    expect(refReplaceStart('=SUM(3:3', 8)).toBe(5)
+    // A function name is not a reference to replace.
+    expect(refReplaceStart('=SUM', 4)).toBe(4)
+    expect(refReplaceStart('=AVERAGE(C5)', 5)).toBe(5)
   })
 
   it('allows a ref only where one can go', () => {
@@ -42,6 +47,9 @@ describe('reference text', () => {
     expect(canInsertRef('=SUM(1', 6)).toBe(false)
     expect(canInsertRef('="abc', 5)).toBe(false)
     expect(canInsertRef('hello', 5)).toBe(false)
+    // Typing a function name, or the caret inside one.
+    expect(canInsertRef('=SUM', 4)).toBe(false)
+    expect(canInsertRef('=AVERAGE(C5)', 5)).toBe(false)
   })
 })
 

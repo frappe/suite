@@ -199,9 +199,12 @@ export interface Grid {
   setActiveDiffSheet(sheet: string | null): void
 
   autoFitCol(c: number): void
+  /** Fit a row to its contents and make it fit them from now on ("fit to data"). */
   autoFitRow(r: number): void
-  /** Grow a row to fit a committed multi-line value; the height change, or null. */
-  autoGrowRowFor(r: number, c: number, value: CellValue): { before: number; after: number } | null
+  /** Refit rows r0..r1 to their wrapped text, skipping rows sized by hand. */
+  refitRows(r0: number, r1: number): void
+  /** Refit a row for a committed value; the height change, or null. */
+  refitRowFor(r: number, c: number, value: CellValue): { before: number; after: number } | null
 
   expandRows(by?: number): void
   expandCols(by?: number): void

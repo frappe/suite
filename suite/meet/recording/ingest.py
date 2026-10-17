@@ -340,8 +340,8 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
 
     The file node and the recording row are written in one transaction, so a
     retry after any failure finds either a Ready recording or nothing. The
-    bytes go in as a content-addressed blob: a retry stores the same bytes
-    into the same blob, and the framework drops the bytes of a rolled-back
+    bytes go in as a blob deduplicated by checksum: a retry stores the same
+    bytes into the same blob, and the framework drops the bytes of a rolled-back
     store itself. The recording's storage reservation is consumed by the same
     `store_file` call that admits the bytes, so the owner's root is never
     charged for them twice.

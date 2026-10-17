@@ -1,7 +1,3 @@
-// The Screening mailbox is a plain named folder (no JMAP role), created server-side as "Screener";
-// it's surfaced to users as the "Screener".
-export const SCREENER_MAILBOX_NAME = 'Screener'
-
 export const getAttachmentOptions = () => [
   { label: __('All'), value: ' ' },
   { label: __('With Attachments'), value: 'true' },
@@ -70,3 +66,13 @@ export const SPLIT_LIST_CLASS = 'w-[28vw] min-w-64 shrink-0 border-r lg:min-w-80
 
 /** The pane takes whatever the column leaves, down to its own floor. */
 export const SPLIT_PANE_CLASS = 'min-w-56 flex-1 lg:min-w-64'
+
+/**
+ * The mail list's "you are here": a dark bar down a row's left side. 1.5px for the keyboard's
+ * cursor (a row or a date header); 3px for the thread open in the pane, so the one being read
+ * stands out from a ticked row the cursor is on.
+ */
+const BAR =
+  "relative sm:before:absolute sm:before:inset-y-0 sm:before:left-0 sm:before:rounded-r-full sm:before:bg-[var(--ink-gray-8)] sm:before:content-['']"
+export const CURSOR_BAR_CLASS = `${BAR} sm:before:w-[1.5px]`
+export const OPEN_BAR_CLASS = `${BAR} sm:before:w-[3px]`

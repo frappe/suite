@@ -1331,7 +1331,8 @@ const recurringScopeModalProps = computed(() => ({
             "
             :disabled="!missingOrganizer"
           >
-            <div class="flex items-center gap-px">
+            <!-- One pill, Save and its menu parted by a faint line inside it. -->
+            <div class="flex items-center">
               <Button
                 :label="__('Save')"
                 variant="solid"
@@ -1343,7 +1344,7 @@ const recurringScopeModalProps = computed(() => ({
               <Dropdown v-if="canSaveDraft" :options="draftOptions">
                 <Button
                   variant="solid"
-                  class="!rounded-l-none"
+                  class="!rounded-l-none border-l border-white/20 dark:border-black/20"
                   :disabled="isSaving || !isDateTimeValid || missingOrganizer"
                   :aria-label="__('More save options')"
                 >

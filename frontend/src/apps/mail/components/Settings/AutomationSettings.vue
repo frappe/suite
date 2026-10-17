@@ -5,7 +5,7 @@
         icon-left="lucide-refresh-cw"
         :label="__('Rebuild Automation')"
         :loading="rebuildAutomation.isPending"
-        :tooltip="__('Regenerate the folder automation script from your saved mailbox rules.')"
+        :tooltip="__('Regenerate the folder automation script from your saved folder rules.')"
         @click="rebuildAutomationSubmit()"
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />

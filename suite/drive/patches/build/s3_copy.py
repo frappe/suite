@@ -1,17 +1,19 @@
-"""§14.2 step 3: put legacy Drive S3 objects into the canonical layout.
+"""§14.2 step 3: put legacy Drive S3 objects into the blob layout.
 
 For each Drive `File` row whose `file_url` is a
 `suite.drive.api.s3.fetch?path=` URL and which has no blob:
 
 1. Stream the object **once** to get its sha256, its size, and enough head
    bytes to sniff a MIME type.
-2. Reuse an existing private S3 blob for that content if there is one, so
-   two Drive files with the same bytes end as one object and one blob row.
-   A `Ready` row is not proof that its object is still there, so the object
-   is headed first and re-copied when it is gone.
-3. Otherwise server-side copy it to `private/<ab>/<cd>/<sha256>[.ext]` in
-   the same bucket, single-part below 5 GB and boto3's managed multipart
-   copy above it.
+2. Reuse an existing `Ready` private S3 blob for that content if there is
+   one, so two Drive files with the same bytes end as one object and one
+   blob row. A `Ready` row is not proof that its object is still there, so
+   the object is headed first and re-copied when it is gone. A `Pending`
+   row is an upload in flight and is not reused; `File Blob` allows
+   duplicate content, so Build stores its own blob beside it.
+3. Otherwise server-side copy it into its blob folder,
+   `private/<site prefix>/<blob>/<filename>`, in the same bucket,
+   single-part below 5 GB and boto3's managed multipart copy above it.
 4. Record the legacy key, destination, size and checksum in the copy
    ledger (`copy_ledger.py`), then insert one `File Blob` with
    `driver = "s3"` and set `File.blob`.
@@ -26,9 +28,16 @@ bucket holds keys with a leading slash, bare keys at the root and keys in
 per-user folders, and none of them is normalised here or in `BotoBucket`.
 
 Resumability has three layers, cheapest first: a linked `File.blob` keeps
-the row out of the query; a matching blob row skips the copy; an object
-already complete at the destination key skips the copy too, which is what
-saves an interrupted run from sending the same 5 GB twice.
+the row out of the query; a matching blob row skips the copy; an object an
+interrupted run already copied skips the copy too, which is what saves a
+resumed run from sending the same 5 GB twice. For that last layer the blob
+name comes from the checksum (`layout.blob_name`), so the content's folder
+is known before anything is copied. The filename is not: the rerun may
+reach the content through another row first, or the first row may have been
+renamed. So the copy step lists the folder and keeps whatever object is
+there, under whatever filename it was copied with, and overwrites an
+incomplete one in place. A folder therefore holds at most one object, and a
+rerun leaves no orphan behind.
 
 The loop ends on an empty or short page. Rows that cannot be linked stay in
 the query, so the keyset cursor is what carries the loop past them; the
@@ -45,13 +54,14 @@ from frappe.storage.blob import sniff_mime
 from suite.drive.patches.build.copy_ledger import CopiedObject
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.layout import (
+    PRIVATE_NAMESPACE,
+    blob_folder,
     blob_key,
+    blob_name,
     needs_multipart_copy,
-    object_key,
     private_key,
 )
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, storage_key
-from suite.drive.patches.build.ports import BlobConflict
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
 
 # Read size while hashing a legacy object. Big enough that a multi-GB object
@@ -116,28 +126,17 @@ def _copy_one(env, bucket, prep: StoragePreparation, row) -> None:
         prep.s3_objects_reused += 1
         return
 
-    destination = object_key(digest.checksum, row.file_name)
-    _place_object(bucket, legacy_key, destination, digest.size)
-    _record_copy(env, bucket, row, legacy_key, destination, digest)
+    name = blob_name(digest.checksum)
+    key = _place_new_object(bucket, legacy_key, env.storage.key_prefix(), name, row.file_name, digest.size)
+    _record_copy(env, bucket, row, legacy_key, private_key(key), digest)
 
-    try:
-        blob = env.storage.insert_blob(
-            key=blob_key(digest.checksum, row.file_name),
-            checksum=digest.checksum,
-            size=digest.size,
-            mime_type=digest.mime_type,
-        )
-    except BlobConflict:
-        # Something else holds the unique triple and `claim_blob` would not
-        # take it. Report the row and carry on: aborting here would stop the
-        # migration and stop it again on every rerun.
-        status = env.storage.blocked_by(digest.checksum) or "unknown"
-        return _missing(
-            prep,
-            row,
-            f"a File Blob for this content already exists with status {status!r}",
-        )
-
+    blob = env.storage.insert_blob(
+        name=name,
+        key=key,
+        checksum=digest.checksum,
+        size=digest.size,
+        mime_type=digest.mime_type,
+    )
     env.files.link_blob(row.name, blob)
     prep.s3_objects_copied += 1
     prep.s3_bytes_copied += digest.size
@@ -160,13 +159,30 @@ def _record_copy(env, bucket, row, legacy_key: str, destination: str, digest) ->
 
 
 def _place_object(bucket, legacy_key: str, destination: str, size: int) -> None:
-    """Make sure the destination key holds the whole object, copying if not.
+    """Make sure an existing blob's key holds the whole object, copying if not."""
+    if bucket.size(destination) != size:
+        _copy_verified(bucket, legacy_key, destination, size)
 
-    An interrupted run can leave the object copied and the blob row
-    uninserted, so a complete object at the destination is skipped. That is
-    what saves a resumed run from sending the same 5 GB twice."""
-    if bucket.size(destination) == size:
-        return
+
+def _place_new_object(
+    bucket, legacy_key: str, key_prefix: str, name: str, filename: str | None, size: int
+) -> str:
+    """Put new content in its blob folder and return the blob key.
+
+    The folder belongs to this content alone, so whatever an interrupted run
+    left there is reused: a complete object as it is, an incomplete one by
+    copying over it. Only an empty folder takes this row's filename."""
+    found = bucket.sizes_under(private_key(blob_folder(key_prefix, name)))
+    complete = sorted(key for key, found_size in found.items() if found_size == size)
+    if complete:
+        destination = complete[0]
+    else:
+        destination = min(found, default=private_key(blob_key(key_prefix, name, filename)))
+        _copy_verified(bucket, legacy_key, destination, size)
+    return destination.removeprefix(PRIVATE_NAMESPACE)
+
+
+def _copy_verified(bucket, legacy_key: str, destination: str, size: int) -> None:
     copy_in_bucket(bucket, legacy_key, destination, size)
     # Verify by size, as the legacy backend's own copies did. A Ready blob over a
     # truncated object is worse than a stopped Build: nothing downstream

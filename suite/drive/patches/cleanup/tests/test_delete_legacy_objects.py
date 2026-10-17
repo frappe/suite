@@ -96,7 +96,7 @@ def copied(legacy_key: str, size: int = 10, *, destination: str | None = None, b
     return CopiedObject(
         file=f"file-{legacy_key}",
         legacy_key=legacy_key,
-        destination=destination or f"private/ab/cd/{abs(hash(legacy_key)):x}",
+        destination=destination or f"private/5e1f0c3a9b7d/{abs(hash(legacy_key)):x}/copy.bin",
         size=size,
         checksum="c" * 64,
         bucket=bucket,
@@ -204,8 +204,8 @@ class TestConfirmedDelete(unittest.TestCase):
             self.path,
             entries=(
                 copied("abc/referenced.pdf"),
-                copied("private/ab/cd/framework.pdf"),
-                copied("public/ab/cd/framework.pdf"),
+                copied("private/5e1f0c3a9b7d/k3x9q2m7pa/framework.pdf"),
+                copied("public/5e1f0c3a9b7d/k3x9q2m7pa/framework.pdf"),
                 copied(canonical, destination=canonical),
                 copied("abc/plain.pdf"),
             ),

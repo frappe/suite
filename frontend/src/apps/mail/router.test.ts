@@ -8,7 +8,12 @@ const state = vi.hoisted(() => ({ user: {} as Record<string, unknown> }))
 vi.mock('@/router', () => ({ default: {} }))
 vi.mock('@/boot/session', () => ({ useSessionStore: () => ({ isLoggedIn: true }) }))
 vi.mock('@/platform/session', () => ({
-  useSession: () => ({ capabilities: { value: { suiteAdmin: !!state.user.is_suite_admin } } }),
+  registerAccountReader: vi.fn(),
+  useSession: () => ({
+    user: { value: null },
+    onLogout: vi.fn(),
+    capabilities: { value: { suiteAdmin: !!state.user.is_suite_admin } },
+  }),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({

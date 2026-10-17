@@ -27,7 +27,6 @@ class MailSettings(Document):
 
         allow_signup: DF.Check
         custom_event_invites: DF.Check
-        default_disk_quota_gb: DF.Int
         default_gravatar: DF.Literal[
             "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
         ]

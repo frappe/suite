@@ -3,7 +3,7 @@
 §11.2 lets `POST /nodes` declare `blob`, `size`, and `mime`. `_validated_blob`
 proves the row is Ready, private, and matches the declared pair. It proves
 nothing about the caller, and a blob id is not a secret: §6.8 signs it into the
-`/f/` URL path, and the content redirect, every row of `GET /nodes/<id>/media`,
+blob URL path, and the content redirect, every row of `GET /nodes/<id>/media`,
 the preview expansion, and the version list all hand one out.
 
 §6.8 bounds that disclosure at fifteen minutes and rejects a day-long TTL as
@@ -152,7 +152,7 @@ class TestReadableBlobProof(StubbedDatabase):
     def test_a_readable_version_reference_is_admitted(self):
         """A version, not a live head, can be the caller's only proof.
 
-        `GET /nodes/<id>/versions` mints the same signed `/f/` URL a head
+        `GET /nodes/<id>/versions` mints the same signed blob URL a head
         blob gets, so a version-sourced row has to clear the same bar. The
         query returns the owning node's identity either way, and permission
         resolves through that node's grant chain.

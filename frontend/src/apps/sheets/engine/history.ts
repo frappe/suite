@@ -1,0 +1,189 @@
+// Undo / redo history stack.
+//
+// Two entry kinds live on the same stack:
+//   1. SNAPSHOT — produced by push(). Captures every engine's full state via
+//      the host's snapshot() callback. Heavy (deep-clones the entire sheet,
+//      ~17 MB for 5k rows) but works for any mutation.
+//   2. OP — produced by pushOp(op). Records just the inverse data for one
+//      mutation: { opType, cellRefs, before, after, subSheet, ... }. Cheap
+//      (~100 bytes). Undo/redo dispatch through applyOp / revertOp
+//      callbacks the host supplies.
+//
+// High-frequency mutations (cell edits, fills, pastes) push ops; the user
+// experiences instant undo + zero per-edit lag. Other mutations (sheet
+// add, freeze toggle, anything without natural diff data) still push
+// snapshots — they're rare enough that the 750 ms hit doesn't matter.
+//
+// Conflict-aware undo (optional):
+//   Pass `getLocalTouches: () => Set<string>` and each *snapshot* push
+//   captures the set of "sheet|cellId" keys this client touched. restore()
+//   then receives the touches so it reverts only those cells. Op entries
+//   don't need this — they already target exactly the cells they changed.
+
+type Touches = Set<string>
+
+export interface HistoryOptions<Snap, Op extends object> {
+  snapshot: () => Snap
+  restore?: ((snap: Snap, opts: { touches: Touches | null }) => void) | undefined
+  applyOp?: ((op: Op) => void) | undefined
+  revertOp?: ((op: Op) => void) | undefined
+  maxSize?: number | undefined
+  getLocalTouches?: (() => Touches) | undefined
+}
+
+type SnapEntry<Snap> = { kind: 'snap'; snap: Snap; touches: Touches | null }
+type Entry<Snap, Op> = SnapEntry<Snap> | { kind: 'op'; op: Op }
+
+export interface History<Op> {
+  push(): void
+  pushOp(op: Op): void
+  undo(): boolean
+  redo(): boolean
+  canUndo(): boolean
+  canRedo(): boolean
+  init(): void
+  reset(): void
+}
+
+// Callers always pass options; the `{}` default only keeps the old signature.
+export function createHistory<Snap, Op extends object = object>(
+  {
+    snapshot,
+    restore,
+    applyOp,
+    revertOp,
+    maxSize = 50,
+    getLocalTouches,
+  }: HistoryOptions<Snap, Op> = {} as HistoryOptions<Snap, Op>,
+): History<Op> {
+  const stack: Entry<Snap, Op>[] = []
+  let index = -1
+
+  // Snapshot push. Used by mutations that don't have a natural op
+  // representation (yet). Slow path.
+  function push() {
+    if (index < stack.length - 1) stack.splice(index + 1)
+    const touches = getLocalTouches ? getLocalTouches() : null
+    stack.push({ kind: 'snap', snap: snapshot(), touches })
+    index++
+    _evict()
+  }
+
+  // Op push. Used by mutations that ship a `{ before, after }` diff.
+  // Tens of bytes per entry instead of tens of MB.
+  function pushOp(op: Op) {
+    if (index < stack.length - 1) stack.splice(index + 1)
+    stack.push({ kind: 'op', op })
+    index++
+    _evict()
+  }
+
+  function _evict() {
+    // Keep at most maxSize entries — drop the oldest. After truncation
+    // the stack base might be an op entry whose "before" data assumes a
+    // state that's no longer recoverable from earlier history; undoing
+    // past that point is a no-op (canUndo returns false) so this is
+    // safe. Pure snapshot mode behaves identically to before.
+    if (stack.length > maxSize) {
+      stack.shift()
+      index--
+    }
+  }
+
+  function undo() {
+    if (index <= 0) return false
+    const entry = stack[index] as Entry<Snap, Op>
+    if (entry.kind === 'op') {
+      // Step PAST the op (apply its inverse), but leave the stack
+      // entry intact so redo can re-apply forward.
+      revertOp?.(entry.op)
+      index--
+    } else {
+      // Snapshot path: step back to the state of the previous entry.
+      // The touches hint travels with the entry being undone.
+      const undoingTouches = entry.touches || null
+      index--
+      if ((stack[index] as Entry<Snap, Op>).kind === 'snap') {
+        // Previous entry is itself a snapshot — restore it directly.
+        _restoreSnap(index, undoingTouches)
+      } else {
+        // Previous entry is an op, which stores only a {before,after}
+        // diff — there is no full snapshot of that point to restore.
+        // Reconstruct it from the nearest preceding snapshot, then
+        // replay the intervening ops forward. Without this the
+        // snapshot mutation being undone would never be reverted (the
+        // engine would stay in its post-mutation state) — e.g. type
+        // into a cell (op) then bold it (snapshot): the first undo
+        // must remove the bold.
+        _rebuildTo(index)
+      }
+    }
+    return true
+  }
+
+  // Bring the engine to the exact state after stack[target] by restoring
+  // the closest snapshot at or before `target` and replaying every op
+  // between it and `target`. Used when a snapshot-undo lands on an op
+  // entry (op entries carry a diff, not a full restorable state).
+  //
+  // This full-restore + replay reverts to a clean reconstructed state; in
+  // collab mode it does not honour the per-cell `touches` optimisation for
+  // this (rarer) path, trading a touch of collab precision for correctness
+  // over the previous behaviour, which silently did nothing.
+  function _rebuildTo(target: number) {
+    let base = target
+    while (base >= 0 && (stack[base] as Entry<Snap, Op>).kind !== 'snap') base--
+    if (base >= 0) _restoreSnap(base, null)
+    for (let k = base + 1; k <= target; k++) {
+      const e = stack[k] as Entry<Snap, Op>
+      if (e.kind === 'op') applyOp?.(e.op)
+    }
+  }
+
+  function redo() {
+    if (index >= stack.length - 1) return false
+    index++
+    const entry = stack[index] as Entry<Snap, Op>
+    if (entry.kind === 'op') applyOp?.(entry.op)
+    else _restoreSnap(index, null)
+    return true
+  }
+
+  // A snapshot holds the whole state at its place in the stack: every op
+  // before it is in that state and none after it. An op that tracks whether
+  // the engine holds it (an `applied` flag, as structural ops do) is told so,
+  // and replaying it afterwards sends it again.
+  // Only ever called with the index of a snapshot entry.
+  function _restoreSnap(i: number, touches: Touches | null) {
+    restore?.((stack[i] as SnapEntry<Snap>).snap, { touches })
+    stack.forEach((e, k) => {
+      if (e.kind === 'op' && 'applied' in e.op) (e.op as { applied: boolean }).applied = k < i
+    })
+  }
+
+  function canUndo() {
+    return index > 0
+  }
+  function canRedo() {
+    return index < stack.length - 1
+  }
+
+  // Seed the initial snapshot so the first undo lands on the blank state.
+  function init() {
+    if (stack.length === 0) push()
+  }
+
+  // Re-baseline: discard all history and seed a single snapshot of the
+  // CURRENT engine state. Call this after loading a doc — the pre-load
+  // init() seeded an empty snapshot, and a plain init() won't replace it
+  // (its stack-empty guard makes it a no-op once seeded). Without a
+  // re-baseline the first snapshot-based undo (e.g. insert column) would
+  // restore that empty pre-load state and blank the whole sheet.
+  function reset() {
+    stack.length = 0
+    index = -1
+    push()
+  }
+
+  return { push, pushOp, undo, redo, canUndo, canRedo, init, reset }
+}

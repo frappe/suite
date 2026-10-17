@@ -1,13 +1,7 @@
 <template>
   <!-- Mobile mirrors the search overlay's header exactly (same row, same input classes) —
 	     searching and results are one page; tapping the readonly input resumes editing. -->
-  <div
-    :class="
-      isMobile
-        ? ''
-        : 'flex flex-col gap-2.5 border-b border-l-transparent px-3.5 py-3 sm:border-l sm:px-5'
-    "
-  >
+  <div :class="isMobile ? '' : 'flex flex-col gap-2.5 border-b px-3.5 py-3 sm:px-5'">
     <!-- A flat h-14, the height every mobile header in the product stands at (see
 		     MobileTitleHeader), rather than py-2 around the input: the editor's row above is
 		     the same 56px, so dismissing it onto this swaps the row rather than resizing it.
@@ -111,6 +105,7 @@ const SEARCH_FILTER_LABELS: Record<string, string> = {
   to: __('To'),
   cc: __('Cc'),
   bcc: __('Bcc'),
+  with: __('With'),
   after: __('After'),
   before: __('Before'),
 }

@@ -27,6 +27,17 @@ describe('workbook — formulas through commands', () => {
     expect(wb.getInput('Sheet1', 4, 1)).toBe('=SUM(A1:A3)')
   })
 
+  it('duplicates a sheet under the name asked for, and reorders sheets', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '7')
+    wb.apply(cmd(CommandTypes.duplicateSheet, { sheet: 'Sheet1', name: 'Sheet1 copy' }))
+    expect(wb.getSheets()).toContain('Sheet1 copy')
+    expect(wb.getDisplayValue('Sheet1 copy', 1, 1)).toBe('7')
+    wb.apply(cmd(CommandTypes.addSheet, { name: 'Data' }))
+    wb.apply(cmd(CommandTypes.moveSheet, { sheet: 'Data', index: 0 }))
+    expect(wb.getSheets()[0]).toBe('Data')
+  })
+
   it('evaluates cross-sheet references', () => {
     const wb = createWorkbook()
     wb.apply(cmd(CommandTypes.addSheet, { name: 'Data' }))

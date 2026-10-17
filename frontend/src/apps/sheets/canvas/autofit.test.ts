@@ -67,15 +67,58 @@ describe('fitRowHeight', () => {
   })
 })
 
-describe('grownRowHeight', () => {
-  it('grows for a multi-line value', () => {
-    expect(setup({}).grownRowHeight(0, 0, 'a\nb\nc', 24)).toBe(3 * 16 + 8)
+describe('fitting a row with a pending edit', () => {
+  it('measures the edited value in place of what the cell shows', () => {
+    const fit = setup({ A1: 'one' })
+    expect(fit.fitRowHeight(0, { c: 0, value: 'a\nb\nc' })).toBe(3 * 16 + 6)
+    // A value typed into an empty cell counts too
+    expect(fit.fitRowHeight(0, { c: 1, value: 'a\nb' })).toBe(2 * 16 + 6)
   })
 
-  it('never shrinks, and ignores single lines and formulas', () => {
-    const fit = setup({})
-    expect(fit.grownRowHeight(0, 0, 'a\nb', 100)).toBeNull()
-    expect(fit.grownRowHeight(0, 0, 'one line', 24)).toBeNull()
-    expect(fit.grownRowHeight(0, 0, '="a"&CHAR(10)&"b"\n', 24)).toBeNull()
+  it('shrinks back when the edit removes the tall text', () => {
+    const fit = setup({ A1: 'a\nb\nc' })
+    expect(fit.fitRowHeight(0, { c: 0, value: 'short' })).toBe(24)
+    expect(fit.fitRowHeight(0, { c: 0, value: '' })).toBe(24)
+  })
+
+  it('keeps the shown value for a formula, whose result is not known yet', () => {
+    const fit = setup({ A1: 'x\ny' })
+    expect(fit.fitRowHeight(0, { c: 0, value: '="a"&CHAR(10)&"b"&CHAR(10)&"c"' })).toBe(2 * 16 + 6)
+  })
+})
+
+describe('hasTallText', () => {
+  it('is true for a wrapped cell or a multi-line value only', () => {
+    expect(setup({ A1: 'one line' }).hasTallText(0)).toBe(false)
+    expect(setup({ A1: 'a\nb' }).hasTallText(0)).toBe(true)
+    expect(setup({ A1: 'short' }, { A1: { textWrap: 'wrap' } }).hasTallText(0)).toBe(true)
+    expect(setup({}).hasTallText(0, { c: 0, value: 'a\nb' })).toBe(true)
+  })
+})
+
+describe('measureRows', () => {
+  it('fits every matching row in one pass and skips empty rows', () => {
+    const fit = setup(
+      { A1: 'aaaa bbbb cccc', A2: 'plain', B3: 'x\ny', A5: 'other' },
+      { A1: { textWrap: 'wrap' } },
+      50,
+    )
+    const rows = fit.measureRows((r) => r <= 3)
+    expect(Object.fromEntries(rows)).toEqual({
+      0: { height: 3 * 16 + 6, tall: true },
+      1: { height: 24, tall: false },
+      2: { height: 2 * 16 + 6, tall: true },
+    })
+  })
+})
+
+describe('wrappedRows', () => {
+  it('lists the rows with a wrapped cell in the given columns', () => {
+    const fit = setup(
+      { A1: 'long text', B2: 'long text', A3: 'not wrapped', A4: 'long' },
+      { A1: { textWrap: 'wrap' }, B2: { textWrap: 'wrap' }, A4: { textWrap: 'wrap' } },
+    )
+    expect(fit.wrappedRows(new Set([0])).sort()).toEqual([0, 3])
+    expect(fit.wrappedRows(new Set())).toEqual([])
   })
 })

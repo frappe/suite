@@ -13,11 +13,11 @@ from suite.mail.http.message_shapes import (
     DraftResult,
     Message,
     RecipientInput,
-    ScreeningSender,
     SearchFilter,
     SearchPage,
     SubmissionDetail,
     SubmissionPage,
+    TabCount,
     ThreadPage,
     UnifiedThreadPage,
 )
@@ -32,6 +32,7 @@ class Window(TypedDict):
     limit: int
     start: NotRequired[int]
     filter_by: NotRequired[str | None]
+    category: NotRequired[str | None]
 
 
 class ThreadsInput(AccountInput, Window):
@@ -40,6 +41,25 @@ class ThreadsInput(AccountInput, Window):
 
 class UnifiedThreadsInput(Window):
     folder: str
+
+
+class TabCountsInput(AccountInput):
+    mailbox: str
+
+
+class UnifiedTabCountsInput(TypedDict):
+    folder: str
+
+
+class ClearListInput(TypedDict):
+    action: Literal["read", "archive", "trash"]
+    # An account's mailbox, or a folder across every account.
+    account: NotRequired[str | None]
+    mailbox: NotRequired[str | None]
+    folder: NotRequired[str | None]
+    category: NotRequired[str | None]
+    # The list's filter: only what it shows is cleared.
+    filter_by: NotRequired[str | None]
 
 
 class SearchInput(AccountInput):
@@ -83,6 +103,25 @@ class MoveInput(IdsInput):
     clear_junk: NotRequired[bool]
 
 
+class ShownFolder(TypedDict):
+    mailbox: str
+    mailbox_id: str
+    mailbox_name: str
+
+
+class FileInput(IdsInput):
+    action: Literal["archive", "unarchive", "move", "junk", "not_junk", "trash"]
+    mailbox: NotRequired[str | None]
+    screen_action: NotRequired[str | None]
+    leaves: NotRequired[str | None]
+    shows: NotRequired[dict[str, list[ShownFolder]] | None]
+
+
+class FiledResult(TypedDict):
+    updated: list[str]
+    left_inbox: bool
+
+
 class FolderInput(IdsInput):
     mailbox_id: str
 
@@ -91,6 +130,19 @@ class Membership(TypedDict):
     id: str
     mailbox_ids: list[str]
     junk: int
+
+
+class ClearedMail(TypedDict):
+    account: str
+    ids: list[str]
+    # Where each moved message was, for Undo to put it back.
+    mails: NotRequired[list[Membership]]
+
+
+class Cleared(TypedDict):
+    cleared: list[ClearedMail]
+    # Accounts that failed part way; what they cleared first is in `cleared`.
+    failed: list[str]
 
 
 class SetFoldersInput(AccountInput):
@@ -119,8 +171,13 @@ class UndoScreenInput(SendersInput):
     ids: list[str]
 
 
-class SenderInput(AccountInput):
-    from_email: str
+class BlockInput(SendersInput):
+    ids: NotRequired[list[str]]
+
+
+class BlockResult(TypedDict):
+    # How many more of the blocked senders' messages are in the Inbox.
+    inbox: int
 
 
 class DraftAttachment(TypedDict, total=False):
@@ -247,6 +304,16 @@ _OPERATIONS: tuple[
         UnifiedThreadPage,
         {"offset": "start", "rows": "rows", "more": "has_more"},
     ),
+    (mail.get_tab_counts, "query", "tabs.counts", TabCountsInput, list[TabCount], None),
+    (
+        mail.get_unified_tab_counts,
+        "query",
+        "unified.tabCounts",
+        UnifiedTabCountsInput,
+        list[TabCount],
+        None,
+    ),
+    (mail.clear_list, "mutation", "messages.clearList", ClearListInput, Cleared, None),
     (mail.get_thread, "query", "threads.get", ThreadInput, list[Message], None),
     (
         mail.search_mails,
@@ -258,21 +325,13 @@ _OPERATIONS: tuple[
     ),
     (mail.get_mime_message, "query", "messages.mime", NameInput, MimeMessage, None),
     (mail.get_delivery_status, "query", "messages.deliveryStatus", BlobInput, DeliveryReport, None),
-    (
-        mail.get_screening_senders,
-        "query",
-        "screener.senders",
-        AccountInput,
-        list[ScreeningSender],
-        None,
-    ),
-    (mail.get_screening_sender_mails, "query", "screener.messages", SenderInput, list[Message], None),
     (mail.create_mail, "mutation", "messages.create", CreateInput, DraftResult, None),
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),
     (mail.set_flagged, "mutation", "messages.flag", FlagInput, FlagResult, None),
     (mail.set_mails_seen, "mutation", "messages.seen", SeenInput, list[str], None),
     (mail.move_mails, "mutation", "messages.move", MoveInput, type(None), None),
+    (mail.file_mails, "mutation", "messages.file", FileInput, FiledResult, None),
     (mail.add_mails_to_mailbox, "mutation", "messages.addToFolder", FolderInput, type(None), None),
     (
         mail.remove_mails_from_mailbox,
@@ -302,6 +361,8 @@ _OPERATIONS: tuple[
         None,
     ),
     (mail.undo_screening_verdict, "mutation", "screener.undo", UndoScreenInput, type(None), None),
+    (mail.block_senders, "mutation", "screening.block", BlockInput, BlockResult, None),
+    (mail.junk_senders_inbox_mail, "mutation", "screening.junkInbox", SendersInput, list[str], None),
     (
         scheduled.get_submissions,
         "query",

@@ -16,7 +16,7 @@
 
 import { createViewModel, DEFAULT_ROW_H } from '../core/view-model.js'
 import { cellId, colLabel } from '../utils/cells.js'
-import { createAutofit } from './autofit.js'
+import { createAutofit, type PendingEdit } from './autofit.js'
 import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createGeometry } from './geometry.js'
 import { createGridActions } from './grid-actions.js'
@@ -117,6 +117,8 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
   // Created later (they need the editor), but referenced by it.
   let mouse: Mouse | null = null
   let keys: Keyboard | null = null
+  // Columns resized by the drag in progress; their wrapped rows refit on release.
+  const resizedCols = new Set<number>()
 
   const pick = createRangePicker({
     activeElement: () => document.activeElement,
@@ -278,12 +280,24 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     colWidth: (c) => vm.colWidth(c),
     rowHeight: (r) => vm.rowHeight(r),
     setColWidths: (cols, w) => {
-      for (const c of cols) vm.setColWidth(c, w)
+      for (const c of cols) {
+        vm.setColWidth(c, w)
+        resizedCols.add(c)
+      }
       applyCanvasSize()
     },
+    // A row dragged to a height keeps it: it no longer fits its text.
     setRowHeights: (rows, h) => {
-      for (const r of rows) vm.setRowHeight(r, h)
+      for (const r of rows) {
+        vm.setRowHeight(r, h)
+        vm.setRowManual(r, true)
+      }
       applyCanvasSize()
+    },
+    // Before the host records the resize, so the refitted rows ride its undo step.
+    onResizeEnd: () => {
+      refitForCols(resizedCols)
+      resizedCols.clear()
     },
     autoFitCol,
     autoFitRow,
@@ -325,11 +339,49 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
 
   function autoFitCol(c: number): void {
     vm.setColWidth(c, fit.fitColWidth(c))
+    refitForCols(new Set([c]))
     relayout()
   }
+  // "Fit to data": the row fits its contents again, now and after later edits.
   function autoFitRow(r: number): void {
+    vm.setRowManual(r, false)
     vm.setRowHeight(r, fit.fitRowHeight(r))
     relayout()
+  }
+
+  // Rows fit their wrapped or multi-line text unless sized by hand, as in
+  // Google Sheets. A row with no tall text is left alone unless an earlier
+  // fit stored a height for it, which it now shrinks back from.
+  function refitRow(r: number, edit?: PendingEdit): { before: number; after: number } | null {
+    if (vm.manualRows.has(r)) return null
+    if (!(r in vm.rowH) && !fit.hasTallText(r, edit)) return null
+    const before = vm.rowHeight(r)
+    const after = fit.fitRowHeight(r, edit)
+    if (after === before) return null
+    vm.setRowHeight(r, after)
+    return { before, after }
+  }
+  // The same rule for every row `match` accepts, in one pass over the cells.
+  function refitWhere(match: (r: number) => boolean): void {
+    const measured = fit.measureRows(match)
+    const rows = new Set(measured.keys())
+    for (const k of Object.keys(vm.rowH)) if (match(Number(k))) rows.add(Number(k))
+    let changed = false
+    for (const r of rows) {
+      if (vm.manualRows.has(r)) continue
+      const m = measured.get(r)
+      if (!(r in vm.rowH) && !m?.tall) continue
+      const after = m?.height ?? DEFAULT_ROW_H
+      if (after === vm.rowHeight(r)) continue
+      vm.setRowHeight(r, after)
+      changed = true
+    }
+    if (changed) relayout()
+  }
+  // Rows whose wrapped text reflows when these columns change width.
+  function refitForCols(cols: ReadonlySet<number>): void {
+    const rows = new Set(fit.wrappedRows(cols))
+    if (rows.size) refitWhere((r) => rows.has(r))
   }
 
   // Eager mode only: keep the `data` cache current. Lazy mode reads the
@@ -463,14 +515,12 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
 
     autoFitCol,
     autoFitRow,
+    refitRows: (r0, r1) => refitWhere((r) => r >= r0 && r <= r1),
     // Called by the host on commit. The height change rides the undo op.
-    autoGrowRowFor(r, c, value) {
-      const before = vm.rowHeight(r)
-      const after = fit.grownRowHeight(r, c, value, before)
-      if (after === null) return null
-      vm.setRowHeight(r, after)
-      applyCanvasSize()
-      return { before, after }
+    refitRowFor(r, c, value) {
+      const change = refitRow(r, { c, value })
+      if (change) applyCanvasSize()
+      return change
     },
 
     expandRows(by = 1000) {

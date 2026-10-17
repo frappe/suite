@@ -791,7 +791,7 @@ class BlobStreamCase(DavCase):
         self.checksum = hashlib.sha256(self.DATA).hexdigest()
         self.blob = frappe._dict(
             name="blob1",
-            key="ab/cd/blob1",
+            key="blob1/a.txt",
             driver="local",
             is_private=1,
             checksum=self.checksum,
@@ -983,6 +983,26 @@ class TestIfRange(DavCase):
     def test_a_blob_with_no_checksum_cannot_satisfy_if_range(self):
         environ = self.environ({"Range": "bytes=0-4", "If-Range": '"deadbeef"'})
         self.assertNotIn("HTTP_RANGE", node_core._range_honouring_environ(environ, None))
+
+
+class TestGetNativeRedirect(DavCase):
+    """`drive_webdav_s3_redirect` is the only thing that lets a DAV GET redirect."""
+
+    def test_the_site_switch_decides_the_native_redirect(self):
+        row = node("file1", title="a.txt", blob="blob1", size=5)
+        blob = frappe._dict(name="blob1", file_size=5, is_private=1, status="Ready", checksum="abc")
+        for configured, allowed in ((None, False), (0, False), (1, True)):
+            with (
+                self.subTest(configured=configured),
+                patch.object(frappe, "conf", frappe._dict(drive_webdav_s3_redirect=configured)),
+                patch.object(pathmap, "resolve", return_value=resolved(row, segments=["a.txt"])),
+                patch.object(get, "require", return_value=None),
+                patch("frappe.get_doc", return_value=blob),
+                patch("frappe.storage.serve.stream_blob", return_value=Response(b"")) as stream,
+            ):
+                get.handle(self.make_ctx("GET", "/dav/a.txt"))
+
+            self.assertIs(stream.call_args.kwargs["allow_native_redirect"], allowed)
 
 
 class TestGetResponseHeaders(DavCase):

@@ -29,3 +29,42 @@ describe('history — load baseline', () => {
     expect(h.canUndo()).toBe(false)
   })
 })
+
+// Snapshots hold the engine's whole state, so after one is restored an op
+// that records whether the engine holds it (structural ops) must be resent
+// when replayed if it came after the snapshot, and not if it came before.
+describe('history — ops after a restored snapshot', () => {
+  it('marks ops before the snapshot applied and ops after it not', () => {
+    const replayed: string[] = []
+    const h = createHistory({
+      snapshot: () => 'snap',
+      restore: () => {},
+      applyOp: (op: { name: string; applied: boolean }) => {
+        replayed.push(`${op.name}:${op.applied}`)
+        op.applied = true
+      },
+      revertOp: () => {},
+    })
+    h.init()
+    const before = { name: 'before', applied: true }
+    h.pushOp(before)
+    h.push() // a snapshot step that already holds `before`
+    const after = { name: 'after', applied: true }
+    h.pushOp(after)
+    h.push() // the step being undone
+    h.undo() // rebuilds `after` on top of the middle snapshot
+    expect(before.applied).toBe(true)
+    expect(replayed).toEqual(['after:false']) // resent, since the restore dropped it
+    expect(after.applied).toBe(true)
+  })
+
+  it('leaves ops without an applied flag alone', () => {
+    const h = createHistory({ snapshot: () => 'snap', restore: () => {} })
+    h.init()
+    const edit = { before: {}, after: {} }
+    h.pushOp(edit)
+    h.push()
+    h.undo()
+    expect('applied' in edit).toBe(false)
+  })
+})

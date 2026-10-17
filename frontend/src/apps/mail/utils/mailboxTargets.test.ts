@@ -6,7 +6,6 @@ const ids = {
   inbox: 'mb-inbox',
   sent: 'mb-sent',
   drafts: 'mb-drafts',
-  screener: 'mb-screener',
   junk: 'mb-junk',
   trash: 'mb-trash',
   archive: 'mb-archive',
@@ -58,7 +57,6 @@ describe('canMoveToMailbox', () => {
   it.each([
     ['Sent', ids.sent],
     ['Drafts', ids.drafts],
-    ['the Screener', ids.screener],
   ])('never offers %s, which is not a folder anyone files into', (_name, mailboxId) => {
     expect(canMoveToMailbox(mailboxId, [], ids)).toBe(false)
   })

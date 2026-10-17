@@ -217,7 +217,7 @@ def get_user_info() -> dict | None:
             USER.username,
             USER.api_key,
             USER.time_zone,
-            USER_SETTINGS.group_messages_by,
+            USER_SETTINGS.group_by_date,
             USER_SETTINGS.show_reading_pane,
             USER_SETTINGS.undo_send_period,
             USER_SETTINGS.name.as_("user_settings"),
@@ -244,6 +244,11 @@ def get_user_info() -> dict | None:
     data.max_attachment_size = MAX_ATTACHMENT_SIZE
     # Whether mail is being sorted into categories, and so whether the lists offer them as filters.
     data.email_classification = classification.is_enabled()
+    # Whether the Inbox is split, and its tabs for when it is: kept apart, so the choice of tabs
+    # survives the split being turned off.
+    split, chosen = classification.chosen_tabs(user)
+    data.split_inbox = int(split)
+    data.inbox_tabs = [tab.value for tab in chosen]
     # The Admin Dashboard is offered only on a site connected to a Suite Cloud, and only admins
     # are told whether it is.
     data.is_suite_cloud_configured = (
@@ -266,9 +271,9 @@ def get_user_info() -> dict | None:
                 "_name",
                 "is_personal",
                 "default_outgoing_email",
-                "on_mark_as_junk",
                 "enable_screening",
                 "block_remote_images",
+                "on_block_old_mail",
             ],
         )
     }
@@ -281,9 +286,9 @@ def get_user_info() -> dict | None:
         account["in_calendar"] = apps.get(account["account"], {}).get("calendar", True)
         account["jmap_account"] = settings["name"] if settings else None
         account["default_outgoing_email"] = settings["default_outgoing_email"] if settings else None
-        account["on_mark_as_junk"] = settings["on_mark_as_junk"] if settings else "Junk Sender's Mail"
         account["enable_screening"] = bool(settings["enable_screening"]) if settings else False
         account["block_remote_images"] = bool(settings["block_remote_images"]) if settings else True
+        account["on_block_old_mail"] = (settings["on_block_old_mail"] if settings else None) or "Ask"
 
     data.user_image = data.user_image or get_avatar_url(user)
 

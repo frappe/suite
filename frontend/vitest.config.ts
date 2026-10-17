@@ -74,7 +74,7 @@ export default defineConfig({
       exclude: [
         '**/*.test.{js,ts}',
         '**/test-utils.{js,ts}',
-        'src/apps/sheets/engine/difftest/**',
+        'src/apps/sheets/core/ironcalc-gate/**',
         'src/test/**',
       ],
       reporter: ['text', 'json-summary', 'lcov', 'cobertura'],

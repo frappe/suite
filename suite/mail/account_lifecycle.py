@@ -227,7 +227,7 @@ def onboarding_options() -> dict:
     require_admin()
     if not is_suite_cloud_configured():
         return {"cloud": False, "domains": [], "account": None, "ready": True}
-    get_client().call("site.ping")
+    get_client().call("tenant.ping")
     domains = [
         domain["domain"] for domain in get_domains() if domain.get("enabled") and domain.get("is_verified")
     ]

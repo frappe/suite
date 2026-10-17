@@ -29,7 +29,7 @@ function screeningPolicy(remove: boolean) {
               !addresses.has(row.email.toLowerCase()),
           )
           if (remove) return kept
-          const action = typeof input.action === 'string' ? input.action : 'Reject'
+          const action = typeof input.action === 'string' ? input.action : 'Spam'
           return [
             ...kept,
             ...input.emails.map((email) => ({ email, action, creation: '', modified: '' })),
@@ -48,6 +48,9 @@ export const registration: OwnerRegistration = {
   }): Policy<I, O> {
     if (reference.id === 'screen_email_addresses') return screeningPolicy(false)
     if (reference.id === 'unscreen_email_addresses') return screeningPolicy(true)
+    // Blocking moves mail to Junk as well as writing the rule, so it reads as a message change.
+    if (['block_senders', 'junk_senders_inbox_mail'].includes(reference.id))
+      return messagePolicy<I, O>(reference.id)
     if (reference.id === 'create_calendar_import' || reference.id === 'create_calendar_export')
       return { effects: { invalidates: ['mail.ongoing_calendar_exchange'] } }
     if (
@@ -105,16 +108,6 @@ export const registration: OwnerRegistration = {
     if (reference.id === 'set_signature')
       return { effects: { invalidates: ['mail.get_identities'] } }
     if (reference.id === 'screen_email_address') return screeningPolicy(false)
-    if (reference.id === 'move_screening_mails_to_inbox')
-      return {
-        effects: {
-          invalidates: [
-            'mail.get_mailboxes',
-            'mail.get_unified_folders',
-            'mail.get_all_inbox_unread_count',
-          ],
-        },
-      }
     if (
       [
         'create_mail_import',
@@ -127,7 +120,19 @@ export const registration: OwnerRegistration = {
     if (reference.id === 'update_preferences')
       return {
         effects: {
-          invalidates: ['mail.get_user_info'],
+          // The Inbox's categories are preferences too: a category turned off moves its mail into
+          // Primary, so the lists and their counts follow. No other preference touches them, and a
+          // split view toggle refetching the whole list was a reload for nothing.
+          invalidates: (input) =>
+            isRecord(input) && ('inbox_tabs' in input || 'split_inbox' in input)
+              ? [
+                  'mail.get_user_info',
+                  'mail.get_threads',
+                  'mail.get_unified_threads',
+                  'mail.get_tab_counts',
+                  'mail.get_unified_tab_counts',
+                ]
+              : ['mail.get_user_info'],
           optimisticReads: {
             references: ['mail.get_user_info'],
             update(input, _query, data) {
@@ -259,11 +264,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+// A write names its account, or a `folder` across every account (clearing an All accounts folder):
+// that one reaches every account's reads, not none of them. A write naming neither (a delete by
+// account-qualified names) still reaches no account's reads, so it can't touch another account's.
 function matchingAccount(input: unknown, queryInput: unknown): boolean {
   return (
     !isRecord(input) ||
     !isRecord(queryInput) ||
     !('account' in queryInput) ||
+    (!input.account && typeof input.folder === 'string') ||
     input.account === queryInput.account
   )
 }
@@ -292,12 +301,13 @@ const messageReaders = [
   'get_unified_threads',
   'get_thread',
   'search_mails',
+  'get_recent_threads_with',
   'get_mailboxes',
   'get_unified_folders',
+  'get_tab_counts',
+  'get_unified_tab_counts',
   'get_all_inbox_unread_count',
   'inbox_summary',
-  'get_screening_senders',
-  'get_screening_sender_mails',
   'get_submissions',
   'get_scheduled_mail',
 ].map((id) => `mail.${id}`)
@@ -355,17 +365,52 @@ function messagePolicy<I, O>(id: string): Policy<I, O> {
           }
           if (!isRecord(queryInput) || !isRecord(data) || !Array.isArray(data.rows))
             return undefined
+          // A filing names the folders each message is expected in after it, so a row that stays
+          // on the list shows them — and the actions they decide — on the click.
+          if (id === 'file_mails' && isRecord(input.shows)) {
+            const shows = input.shows
+            const refile = (item: unknown): unknown =>
+              isRecord(item) && typeof item.id === 'string' && Array.isArray(shows[item.id])
+                ? { ...item, mailboxes: shows[item.id] }
+                : item
+            // Ids are per account: a merged list's row from another account is someone else's mail.
+            const elsewhere = (row: Record<string, unknown>) =>
+              typeof row.account === 'string' &&
+              typeof input.account === 'string' &&
+              row.account !== input.account
+            data = {
+              ...data,
+              rows: data.rows.map((row) =>
+                isRecord(row) && !elsewhere(row)
+                  ? {
+                      ...(refile(row) as Record<string, unknown>),
+                      ...(Array.isArray(row.messages)
+                        ? { messages: row.messages.map(refile) }
+                        : {}),
+                    }
+                  : row,
+              ),
+            }
+            if (!input.leaves) return data
+          }
+          if (!isRecord(data) || !Array.isArray(data.rows)) return undefined
           const removing = [
             'move_mails',
             'delete_messages',
             'delete_mail',
             'empty_user_mailbox',
+            'file_mails',
           ].includes(id)
           if (
             !removing ||
             (id === 'move_mails' &&
               (input.mailbox === queryInput.mailbox ||
-                (input.mailbox === 'inbox' && queryInput.folder === 'inbox')))
+                (input.mailbox === 'inbox' && queryInput.folder === 'inbox'))) ||
+            // A filing says which list the conversation leaves; every other list keeps its rows
+            // (an Archive from a folder of yours, a move from Sent) until it is read again.
+            (id === 'file_mails' &&
+              (!input.leaves ||
+                (input.leaves !== queryInput.mailbox && input.leaves !== queryInput.folder)))
           )
             return undefined
           return {

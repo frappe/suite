@@ -23,9 +23,11 @@
             :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
             @click="run(item)"
           >
+            <!-- A row's own prefix (a checkbox, say) stands where its icon would. -->
+            <component :is="item.slots.prefix" v-if="item.slots?.prefix" />
             <component
               :is="iconOf(item.icon)"
-              v-if="item.icon"
+              v-else-if="item.icon"
               class="h-4 w-4 shrink-0"
               :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-6'"
             />
@@ -70,6 +72,10 @@ interface OptionItem {
    */
   selected?: boolean
   theme?: string
+  /** Replaces the icon, as frappe-ui's Menu reads it on desktop. */
+  slots?: { prefix?: () => VNode }
+  /** Leaves the sheet open after the row is tapped, for rows ticked several in a row. */
+  keepOpen?: boolean
 }
 
 type Options = (OptionItem | { group: string; options: OptionItem[] })[]
@@ -114,7 +120,7 @@ const iconOf = (icon: OptionItem['icon']) => {
 }
 
 const run = (item: OptionItem) => {
-  open.value = false
+  if (!item.keepOpen) open.value = false
   return item.onClick?.()
 }
 

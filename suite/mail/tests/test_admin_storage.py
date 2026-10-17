@@ -15,7 +15,7 @@ class Provider:
         self.batches = []
 
     def call(self, method, **args):
-        if method == "site.ping":
+        if method == "tenant.ping":
             return {"limits": {"max_disk_gb": 100}}
         if method == "mail.accounts.list_accounts":
             emails = [f"user-{index}@example.test" for index in range(self.count)]

@@ -1,9 +1,9 @@
 """Keep framework attachments and public URLs before their Drive File rows go."""
 
 import hashlib
-from urllib.parse import quote
 
 import frappe
+from frappe.storage.url import blob_url
 
 ATTACHMENT_COLUMNS = (
     "name",
@@ -51,7 +51,7 @@ def preserve_attachments(names: tuple[str, ...]) -> None:
         copy.update(name="attachment-" + hashlib.sha256(source.name.encode()).hexdigest(), folder="Home")
         if source.blob_driver != "local":
             copy.update(
-                file_url=f"/f/{source.blob}/{quote(source.file_name or source.blob)}",
+                file_url=blob_url(frappe.get_doc("File Blob", source.blob)),
                 is_private=source.blob_private,
             )
         existing = frappe.db.get_value("File", copy["name"], list(ATTACHMENT_COLUMNS), as_dict=True)

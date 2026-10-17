@@ -13,8 +13,8 @@
   "suite_cloud_section",
   "suite_cloud_url",
   "column_break_suite_cloud",
-  "site_api_key",
-  "site_api_secret",
+  "suite_cloud_tenant",
+  "suite_cloud_secret",
   "setup_section",
   "is_onboarded"
  ],
@@ -69,18 +69,18 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "site_api_key",
+   "fieldname": "suite_cloud_tenant",
    "fieldtype": "Data",
-   "label": "Site API Key",
-   "mandatory_depends_on": "eval: doc.site_api_secret",
-   "description": "This site's key at Suite Cloud, issued when Frappe Cloud registered the site."
+   "label": "Suite Cloud Tenant",
+   "mandatory_depends_on": "eval: doc.suite_cloud_secret",
+   "description": "This site's tenant id at Suite Cloud: the name of its Suite Tenant record."
   },
   {
-   "fieldname": "site_api_secret",
+   "fieldname": "suite_cloud_secret",
    "fieldtype": "Password",
-   "label": "Site API Secret",
-   "mandatory_depends_on": "eval: doc.site_api_key",
-   "description": "This site's secret at Suite Cloud, shown once by Frappe Cloud. Rotate it from Frappe Cloud if it leaks."
+   "label": "Suite Cloud Secret",
+   "mandatory_depends_on": "eval: doc.suite_cloud_tenant",
+   "description": "This site's secret at Suite Cloud, shown once by a Suite Cloud operator with Rotate Secret."
   },
   {
    "fieldname": "setup_section",
@@ -98,7 +98,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-17 12:00:00.000000",
+ "modified": "2026-10-15 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Suite Core",
  "name": "Suite Settings",

@@ -53,6 +53,8 @@ class Copy(TypedDict):
     junk: Flag
     flagged: Flag
     draft: Flag
+    # From a sender nobody has allowed or denied yet: the mail waits in the Inbox, marked new.
+    unscreened: NotRequired[Flag]
 
 
 class Message(Copy):
@@ -74,11 +76,14 @@ class AccountTag(TypedDict, total=False):
     account_name: str
     view_mailbox: str
     inbox: str | None
+    sent: str | None
     archive: str | None
     trash: str | None
 
 
 class Thread(Copy, AccountTag):
+    # The senders of this thread's unscreened mail, in the order they first wrote.
+    unscreened_senders: NotRequired[list[str]]
     subject: str | None
     preview: str
     recipients: list[Recipient]
@@ -98,21 +103,14 @@ class UnifiedThreadPage(TypedDict):
     has_more: bool
 
 
-class SearchRow(AccountTag):
-    name: str
-    id: str
-    subject: str | None
-    preview: str
-    recipients: list[Recipient]
-    sent_at: str | None
-    received_at: str
-    from_name: str | None
-    from_email: str
-    thread_id: str
-    mailboxes: list[MailboxRef]
-    attachments: list[Attachment]
-    seen: Flag
-    user_image: NotRequired[str | None]
+class TabCount(TypedDict):
+    category: Literal["primary", "updates", "forums", "promotions", "social"]
+    unread_threads: int
+
+
+class SearchRow(Thread):
+    # The conversation's newest message that matched, which the row describes and opens on.
+    match_id: str
 
 
 class SearchPage(TypedDict):
@@ -128,6 +126,7 @@ SearchFilter = TypedDict(
         "to": str,
         "cc": str,
         "bcc": str,
+        "with": str,
         "subject": str,
         "body": str,
         "before": str,
@@ -147,16 +146,6 @@ SearchFilter = TypedDict(
     },
     total=False,
 )
-
-
-class ScreeningSender(TypedDict):
-    from_email: str
-    from_name: str | None
-    subject: str | None
-    preview: str
-    received_at: str
-    count: int
-    unread: int
 
 
 class DraftResult(TypedDict):

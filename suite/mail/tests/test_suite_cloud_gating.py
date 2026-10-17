@@ -17,10 +17,10 @@ from suite.mail.utils.user import can_use_mail
 JMAP_URL = "https://mail.c1.example.test"
 SUITE_CLOUD = {
     "suite_cloud_url": "https://cloud.example.test",
-    "site_api_key": "key",
-    "site_api_secret": "secret",
+    "suite_cloud_tenant": "key",
+    "suite_cloud_secret": "secret",
 }
-NO_SUITE_CLOUD = {"suite_cloud_url": "", "site_api_key": "", "site_api_secret": ""}
+NO_SUITE_CLOUD = {"suite_cloud_url": "", "suite_cloud_tenant": "", "suite_cloud_secret": ""}
 
 
 class SiteConnectionTestCase(IntegrationTestCase):
@@ -89,12 +89,12 @@ class TestMailAndCalendarNeedOnlyTheJmapServer(SiteConnectionTestCase):
         participants = [{"email": "team@acme.test", "kind": "individual"}]
         with (
             self.change_settings("Mail Settings", expand_mailing_list_participants=1),
-            patch("suite.calendar.doctype.calendar_event.mailing_lists.get_domains") as get_domains,
+            patch("suite.calendar.doctype.calendar_event.mailing_lists.get_mailing_list_index") as index,
             patch("suite.calendar.doctype.calendar_event.mailing_lists.log_mail_error") as log_mail_error,
         ):
             frappe.local.request_cache.clear()
             self.assertEqual(expand_mailing_list_participants(participants), participants)
-        get_domains.assert_not_called()
+        index.assert_not_called()
         log_mail_error.assert_not_called()
 
 

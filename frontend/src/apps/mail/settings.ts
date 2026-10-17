@@ -19,9 +19,6 @@ function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } =
   }
 }
 
-// The layout choice is a desktop one: a phone shows one pane at a time.
-const isDesktop = () => !window.matchMedia('(max-width: 767px)').matches
-
 export const mailSettings = {
   label: () => __('Mail'),
   condition: () => useSession().capabilities.value.jmap,
@@ -48,7 +45,7 @@ export const mailSettings = {
       id: 'mail.layout',
       label: () => __('Layout'),
       icon: 'lucide-columns-2',
-      condition: isDesktop,
+      // A phone gets it too, for the Inbox's tabs; the rest of the page is for a desktop.
       body: scoped(() => import('@/apps/mail/components/Settings/MailLayoutSettings.vue')),
     },
     {

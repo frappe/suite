@@ -152,7 +152,11 @@ describe('document session media', () => {
       if (id === 'node_get') return documentNode('root')
       if (id === 'node_media') {
         mediaCalls += 1
-        return { media: [{ node: 'm1', url: `/f/blob?e=1&s=${mediaCalls}`, expires: 1 }] }
+        return {
+          media: [
+            { node: 'm1', url: `/private/files/b7x2k9q4mz/a.png?e=1&s=${mediaCalls}`, expires: 1 },
+          ],
+        }
       }
       return {}
     })
@@ -160,7 +164,7 @@ describe('document session media', () => {
     const handle = session.media('m1')
     await vi.runAllTicks()
     for (let i = 0; i < 15; i++) await Promise.resolve()
-    expect(handle.cacheKey.value).toBe('drive-media:/f/blob')
+    expect(handle.cacheKey.value).toBe('drive-media:/private/files/b7x2k9q4mz/')
     await vi.advanceTimersByTimeAsync(MEDIA_REFRESH_MS)
     expect(mediaCalls).toBeGreaterThanOrEqual(2)
     expect(handle.cacheKey.value).not.toContain('?')

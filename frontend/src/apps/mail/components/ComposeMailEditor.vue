@@ -11,7 +11,7 @@
 	     is stretched to the pane and the composer fills that (`fillsHost`). -->
   <TextEditor
     ref="textEditor"
-    editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
+    editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
     :extensions="[
       imageExtension,
       CustomParagraphExtension,
@@ -23,13 +23,7 @@
     class="flex flex-col"
     :class="[
       { 'pointer-events-none opacity-50': !show },
-      fillsHost
-        ? 'sm:min-h-0 sm:flex-1'
-        : isInThread
-          ? ''
-          : docked
-            ? 'sm:h-[30rem]'
-            : 'sm:h-[75vh]',
+      fillsHost || windowed ? 'sm:min-h-0 sm:flex-1' : '',
     ]"
     @change="onEditorChange"
     @dragenter.prevent="handleDragEnter"
@@ -38,17 +32,135 @@
     @drop.prevent="handleDrop"
   >
     <template #top>
+      <!-- Desktop, in the composer window and in a thread alike: one row per field, each led by its
+           name in a column of its own, so the values line up down the page; neither host pads the
+           composer, so every row carries its own inset. A reply in a thread leaves From and
+           Subject out — the conversation around it says both — and switches between reply, reply
+           all and forward from the To row. -->
+      <template v-if="!isMobile">
+        <!-- Scrolls rather than pushing the window's header off screen when enough recipients
+             wrap that the fields outgrow a capped window. -->
+        <div class="max-h-[40vh] min-h-0 shrink-0 overflow-y-auto">
+          <div
+            v-if="showsFromAndSubject"
+            class="flex items-center gap-2 border-b px-4 py-2"
+            :class="{ 'border-transparent': isDragging }"
+          >
+            <span class="text-ink-gray-5 flex h-7 w-10 shrink-0 items-center text-base">
+              {{ __('From') }}
+            </span>
+            <!-- Button mode, so the trigger takes the width of the identity it shows rather than
+                 cutting a long address off mid-domain; the list is searched from the popover.
+                 Pulled left by its padding and border (8px + 1px), so the address starts where the
+                 recipient chips below do. -->
+            <Combobox
+              v-model="mail.from_email"
+              :options="identityOptions"
+              trigger="button"
+              variant="ghost"
+              class="-ml-[9px] min-w-0 max-w-full !text-ink-gray-8"
+            />
+            <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
+                 it stands, in memory, rather than fetched back from the server. Only a save
+                 actually in flight holds it up — see popOut. -->
+            <Button
+              v-if="isInThread"
+              variant="ghost"
+              class="ml-auto shrink-0"
+              :tooltip="__('Open in a window')"
+              :disabled="isLoading"
+              @click="popOut()"
+            >
+              <template #icon>
+                <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
+              </template>
+            </Button>
+          </div>
+          <div
+            class="flex items-start gap-2 border-b px-4 py-2"
+            :class="{ 'border-transparent': isDragging }"
+          >
+            <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
+              <Button variant="ghost" class="-ml-1.5" :icon="TYPE_ICON_MAP[mailDetails.type]" />
+            </Dropdown>
+            <Tooltip :text="__('Select from contacts')">
+              <button
+                type="button"
+                class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
+                @click="insertContacts('to')"
+              >
+                {{ __('To') }}
+              </button>
+            </Tooltip>
+            <RecipientInput
+              ref="toInput"
+              v-model="mail.to"
+              field="to"
+              @move="moveRecipient"
+              @show-cc-bcc="showCcBcc = true"
+            />
+            <Button
+              v-if="!(mail.cc?.length || mail.bcc?.length)"
+              variant="ghost"
+              :aria-label="showCcBcc ? __('Hide Cc and Bcc') : __('Show Cc and Bcc')"
+              :tooltip="__('Cc and Bcc')"
+              @click="toggleCcBcc"
+            >
+              <template #icon>
+                <component
+                  :is="showCcBcc ? ChevronUp : ChevronDown"
+                  class="text-ink-gray-5 h-4 w-4"
+                />
+              </template>
+            </Button>
+          </div>
+          <template v-if="showCcBcc">
+            <div
+              class="flex items-start gap-2 border-b px-4 py-2"
+              :class="{ 'border-transparent': isDragging }"
+            >
+              <Tooltip :text="__('Select from contacts')">
+                <button
+                  type="button"
+                  class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
+                  @click="insertContacts('cc')"
+                >
+                  {{ __('Cc') }}
+                </button>
+              </Tooltip>
+              <RecipientInput ref="ccInput" v-model="mail.cc" field="cc" @move="moveRecipient" />
+            </div>
+            <div
+              class="flex items-start gap-2 border-b px-4 py-2"
+              :class="{ 'border-transparent': isDragging }"
+            >
+              <Tooltip :text="__('Select from contacts')">
+                <button
+                  type="button"
+                  class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
+                  @click="insertContacts('bcc')"
+                >
+                  {{ __('Bcc') }}
+                </button>
+              </Tooltip>
+              <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
+            </div>
+          </template>
+        </div>
+        <input
+          v-if="showsFromAndSubject"
+          ref="subjectInput"
+          v-model="mail.subject"
+          :placeholder="__('Subject')"
+          :aria-label="__('Subject')"
+          class="border-outline-gray-1 text-ink-gray-9 placeholder:text-ink-gray-4 focus:border-outline-gray-1 h-11 w-full shrink-0 border-0 border-b bg-transparent px-4 text-base focus:ring-0"
+          :class="{ 'border-transparent': isDragging }"
+        />
+      </template>
       <div
-        class="flex flex-col gap-2.5 border-b pb-2.5 max-sm:px-3 max-sm:pt-2.5"
-        :class="[
-          isDragging ? 'border-transparent' : '',
-          // Bleed the rule to its container's edges while the fields stay on the content
-          // axis: every host pads this block, so without cancelling that the separator
-          // stops short of both sides and reads as underlining the fields rather than
-          // dividing the composer. The amount is whichever host it is — the message card
-          // in a thread pads by 5, the Dialog's body wrapper and ComposeDock by 6.
-          isInThread ? 'sm:-mx-5 sm:px-5' : 'sm:-mx-6 sm:px-6',
-        ]"
+        v-else
+        class="flex flex-col gap-2.5 border-b px-3 py-2.5"
+        :class="{ 'border-transparent': isDragging }"
       >
         <!-- A reply inside a thread leaves From and Subject out: the conversation around it
 				     says both. Detached into a window there is no conversation around it, so a
@@ -66,12 +178,7 @@
 						     The list is filtered from the popover's own search box instead. -->
             <Combobox
               v-model="mail.from_email"
-              :options="
-                (identities.data ?? []).map((i: Identity) => ({
-                  label: `${i._name} <${i.email}>`,
-                  value: i.email,
-                })) || []
-              "
+              :options="identityOptions"
               trigger="button"
               class="min-w-0 max-w-full !text-ink-gray-8"
             />
@@ -165,8 +272,16 @@
 			     the conversation up out of view. Given the pane to itself it has no conversation
 			     to protect and takes whatever height the fields and toolbar leave. -->
       <div
-        class="relative flex flex-1 cursor-text flex-col border-2 border-transparent py-2.5 text-sm max-sm:px-3 sm:overflow-y-auto"
+        class="relative flex cursor-text flex-col border-2 border-transparent px-3 py-2.5 text-sm sm:overflow-y-auto sm:px-4 sm:py-3"
         :class="{
+          // Docked, the body is its own height and gives way only at the window's cap; anywhere
+          // else it fills what the fields and toolbar leave.
+          'flex-1': !windowed || expanded,
+          // Docked, the window is as tall as its fields and a fixed page; expanded, the page
+          // takes whatever the window's fixed height leaves.
+          // Shrinks (and scrolls) when the window meets its height cap on a short screen.
+          'h-72 min-h-16 shrink': windowed && !expanded,
+          'min-h-0': windowed && expanded,
           'max-h-96 min-h-32': isInThread && !fillsHost,
           'sm:min-h-0': fillsHost,
           '!border-outline-gray-3 rounded-4 border-dashed': isDragging,
@@ -196,40 +311,38 @@
             @click="openQuotedContent"
           />
 
-          <!-- Attachments -->
-          <a
-            v-for="(file, index) in mail.attachments.filter(
-              (file: Attachment) => file.disposition === 'attachment',
-            )"
-            :key="index"
-            class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded-4 p-2.5"
-            :href="file.file_url"
-            target="_blank"
-            @click="openAttachment(file.blob_id, file.type)"
-          >
-            <span class="mr-1 font-medium">
-              {{ file.file_name || file.filename || file.name }}
-            </span>
-            <span class="mr-1 font-extralight">
-              ({{ formatBytes(file.file_size || file.size) }})
-            </span>
-            <FeatherIcon
-              class="ml-auto h-3.5 w-3.5"
-              name="x"
-              @click.stop.prevent="mail.attachments.splice(index, 1)"
-            />
-          </a>
-
-          <div
-            v-for="(fileUpload, id) in fileUploads.filter((fu) => fu.isUploading)"
-            :key="id"
-            class="bg-surface-gray-2 text-ink-gray-6 mb-2 rounded-4 p-2.5 text-sm"
-          >
-            <div class="mb-1.5 flex items-center">
-              <span class="mr-1 font-medium"> {{ fileUpload.name }} </span>
-              <span class="font-extralight"> ({{ formatBytes(fileUpload.size) }}) </span>
-            </div>
-            <Progress :value="fileUpload.progress" />
+          <!-- Attachments, as the pills the list shows them with: a row that wraps, each one
+               opening on a click and leaving the mail on its ✕. Files still uploading join the
+               row with their progress in place of a size. -->
+          <div v-if="attachedFiles.length || uploadingFiles.length" class="flex flex-wrap gap-2">
+            <Tooltip
+              v-for="file in attachedFiles"
+              :key="`${file.blob_id}:${file.file_url}`"
+              :text="nameOf(file)"
+            >
+              <AttachmentCapsule
+                :file-name="nameOf(file)"
+                :type="file.type"
+                :size="sizeOf(file)"
+                removable
+                truncate-middle
+                class="max-w-64"
+                @click="openFile(file)"
+                @remove="mail.attachments.splice(mail.attachments.indexOf(file), 1)"
+              />
+            </Tooltip>
+            <Tooltip
+              v-for="(upload, id) in uploadingFiles"
+              :key="`upload-${id}`"
+              :text="upload.name"
+            >
+              <AttachmentCapsule
+                :file-name="upload.name"
+                :progress="upload.progress"
+                truncate-middle
+                class="max-w-64 !cursor-default"
+              />
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -237,16 +350,14 @@
     <!-- Last child of the scroller, so `sticky bottom-0` (mobile, in the toolbar itself) pins it to
 		     the bottom of the scrollport while the fields and body scroll under it. The sheet ends where
 		     the keyboard begins, so that bottom edge is the top of the keyboard. -->
+    <!-- Neither the window nor a thread's draft card pads the composer, so the fields, the body
+         and the bar each carry their own inset. The phone's sticky bar insets itself. -->
     <template #bottom>
       <ComposeMailToolbar
         :is-recipients-empty
         :is-uploading
-        class="border-t"
-        :class="[
-          isDragging ? 'border-transparent' : '',
-          // Same bleed as the field block above, so both rules span the same width.
-          isInThread ? 'sm:-mx-5 sm:px-5' : 'sm:-mx-6 sm:px-6',
-        ]"
+        class="border-t sm:px-4 sm:pb-2.5"
+        :class="{ 'border-transparent': isDragging }"
         @select-files="(files: File[]) => uploadFiles(files)"
         @append-emoji="(emoji: string) => appendEmoji(emoji)"
         @discard-mail="discardMail"
@@ -265,16 +376,8 @@
 
 <script setup lang="ts">
 import { EditorContent } from '@tiptap/vue-3'
-import {
-  Button,
-  Combobox,
-  Dropdown,
-  Progress,
-  Tooltip,
-  UploadError,
-  useFileUpload,
-} from 'frappe-ui'
-import { Icon as FeatherIcon, TextEditor } from 'frappe-ui/experimental'
+import { Button, Combobox, Dropdown, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
+import { TextEditor } from 'frappe-ui/experimental'
 import {
   ChevronDown,
   ChevronUp,
@@ -286,6 +389,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
+import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type {
@@ -313,14 +417,15 @@ const {
   reloadMails,
   mailDetails,
   isInThread = false,
-  docked = false,
+  expanded = false,
   fillsHost = false,
 } = defineProps<{
   reloadMails: () => void
   mailDetails?: ComposeMailData
   isInThread?: boolean
-  // Docked composer: shorter than a modal, which has the screen to itself.
-  docked?: boolean
+  // The composer window expanded over the page, rather than docked in its corner: the page takes
+  // the window's height instead of a fixed one.
+  expanded?: boolean
   // The host is a flex column of a definite height, and the composer is to take all of it —
   // a draft that is the whole thread, given the reading pane to itself.
   fillsHost?: boolean
@@ -334,11 +439,17 @@ const emit = defineEmits([
   'popOut',
 ])
 const { isMobile } = useScreenSize()
+// In the desktop composer window (SendMail) rather than a thread or the phone's page.
+const windowed = computed(() => !isInThread && !isMobile.value)
+// A reply in a thread has the conversation around it to say who it is from and what it is about.
+const showsFromAndSubject = computed(() => !isInThread || !mailDetails?.type)
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
-const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
+// An upload in flight, with the name and size of the file it is carrying.
+type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: number }
+const fileUploads = ref<FileUpload[]>([])
 const pendingInlineUploads = ref(0)
 const isUploading = computed(
   () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
@@ -388,11 +499,12 @@ const {
   isLoading,
   isRecipientsEmpty,
   moveRecipient,
-  updateOriginalMail,
+  onOpened,
   saveDraft,
   payListDebt,
   sendMail,
   discardMail,
+  isUntouched,
   onClosed,
   showScheduleModal,
   openScheduleModal,
@@ -420,8 +532,32 @@ const {
     null,
 })
 
+const identityOptions = computed(() =>
+  (identities.value.data ?? []).map((i: Identity) => ({
+    label: `${i._name} <${i.email}>`,
+    value: i.email,
+  })),
+)
+
 // The composer stays mounted when it closes, so the in-flight flags have to be cleared on the way out.
 watch(show, (open) => !open && onClosed())
+// A file on the mail comes in one of two shapes: uploaded here a moment ago (file_name, file_size)
+// or already on the server (filename, size).
+type ComposeAttachment = Attachment & { file_name?: string; file_size?: number; name?: string }
+const nameOf = (file: ComposeAttachment) => file.file_name || file.filename || file.name || ''
+const sizeOf = (file: ComposeAttachment) => Number(file.file_size || file.size) || undefined
+
+// The files on the mail, as opposed to the images placed inline in its body.
+const attachedFiles = computed<ComposeAttachment[]>(() =>
+  mail.attachments.filter((file: Attachment) => file.disposition === 'attachment'),
+)
+const uploadingFiles = computed(() => fileUploads.value.filter((upload) => upload.isUploading))
+// A file already on the server opens from its blob; one uploaded here a moment ago, from its URL.
+const openFile = (file: ComposeAttachment) =>
+  file.blob_id
+    ? openAttachment(file.blob_id, file.type)
+    : window.open(file.file_url ?? undefined, '_blank')
+
 const showContactsModal = ref(false)
 const insertContactsInto = ref('')
 const insertContacts = (insertInto: string) => {
@@ -439,7 +575,7 @@ const toggleCcBcc = () => {
 // a calendar invite's participants — and the To field otherwise. The delay is the dialog's: focusing
 // during its transition doesn't take.
 onMounted(() => {
-  updateOriginalMail()
+  onOpened()
   if (mailDetails?.in_reply_to) return textEditor.value.editor.commands.focus()
 
   // Deferred, and the choice made from inside: TextEditor renders nothing until it has built its
@@ -485,6 +621,8 @@ defineExpose({
   mail,
   sendMail,
   discardMail,
+  // Nothing written yet: the window has nothing to keep, so leaving it closes it (see SendMail).
+  isUntouched,
   openScheduleModal,
 })
 
@@ -608,11 +746,13 @@ const uploadFile = async (file: File) => {
     folder: 'Home/Frappe Mail',
     upload_endpoint: '/api/method/suite.mail.api.mail.upload_file',
   })) as FileDoc
-  attachDoc(doc)
+  attachDoc(doc, file.type)
 }
-const attachDoc = (doc: FileDoc) =>
+const attachDoc = (doc: FileDoc, type?: string) =>
   mail.attachments.push({
     file_name: doc.file_name,
+    // Kept for the pill's icon; the server reads the type from the file itself.
+    type: type ?? '',
     file_url: doc.file_url,
     file_size: doc.file_size,
     disposition: 'attachment',

@@ -56,7 +56,7 @@ when it registers the site (the settings override them on a self-managed site):
 - Mail Settings, or the `mail` key of the site config: `server_url` (the JMAP URL users connect to)
   and `verify_ssl`.
 - Suite Settings, or top-level keys of the same name in the site config: `suite_cloud_url`,
-  `site_api_key` and `site_api_secret`. They are read through `get_suite_cloud_config` in
+  `suite_cloud_tenant` and `suite_cloud_secret`. They are read through `get_suite_cloud_config` in
   `suite/suite_core/utils.py`, and **Validate Suite Cloud Credentials** on Suite Settings confirms
   them.
 

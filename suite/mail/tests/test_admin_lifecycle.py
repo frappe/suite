@@ -37,7 +37,7 @@ class Provider:
     def call(self, method, **args):
         if method == self.fail:
             raise frappe.ValidationError("provider unavailable")
-        if method == "site.ping":
+        if method == "tenant.ping":
             return {"limits": {"max_disk_gb": 100}}
         if method == "mail.domains.list_domains":
             return [{"domain": "company.frappe.cloud", "enabled": True, "is_verified": True}]

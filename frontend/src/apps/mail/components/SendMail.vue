@@ -2,109 +2,157 @@
   <!-- Desktop's composer window. Mobile composes on a page of its own — see ComposeView — so
 	     nothing here has a mobile form; the openers navigate there instead of mounting this.
 
-	     Modal is the default, and is the Dialog it always was; docked and minimised are the other
-	     two states (#407).
+	     It opens docked in the bottom-right corner, so the mail being written about stays on screen
+	     beside it (#407), and expands to a larger window centred over the page. One window either
+	     way, sized by its classes rather than swapped for a Dialog: swapping containers would remount
+	     TipTap and take the draft with it.
 
-	     All three controls live in the header's `title` slot, with the Dialog's own close button
-	     turned off. Left on, it sits outside the slot as the other half of a `justify-between`
-	     row whose first half is `flex-1` — so it lands flush against ours, and the three read as
-	     8px, 8px, nothing. One row, one gap.
-
-	     The title is passed as a prop as well as drawn in the slot: the slot is what renders, and
-	     the prop is what the overlay labels itself with (`data-dialog`). -->
-  <Dialog
-    v-if="state === 'modal'"
-    v-model:open="show"
-    :title="__('Compose Mail')"
-    size="5xl"
-    :show-close-button="false"
-    :dismissible="false"
-  >
-    <template #title="{ close }">
-      <div class="flex items-center gap-2">
-        <h3 class="text-ink-gray-8 text-xl-semibold min-w-0 flex-1 truncate leading-6">
-          {{ __('Compose Mail') }}
-        </h3>
-        <Button
-          variant="ghost"
-          :aria-label="__('Minimise')"
-          :tooltip="__('Minimise')"
-          @click="minimise()"
-        >
-          <template #icon><ChevronDown class="icon" /></template>
-        </Button>
-        <Button
-          variant="ghost"
-          :aria-label="__('Dock to corner')"
-          :tooltip="__('Dock to corner')"
-          @click="state = 'dock'"
-        >
-          <template #icon><Minimize2 class="icon" /></template>
-        </Button>
-        <Button variant="ghost" :aria-label="__('Close')" :tooltip="__('Close')" @click="close()">
-          <template #icon><X class="icon" /></template>
-        </Button>
-      </div>
-    </template>
-    <template #default>
-      <div ref="host" class="flex min-h-0 flex-1 flex-col" />
-    </template>
-  </Dialog>
-
-  <ComposeDock
-    v-else
-    v-model="show"
-    :title="minimisedTitle"
-    :minimised="state === 'minimised'"
-    @expand="state = 'modal'"
-    @toggle-minimised="minimise()"
-  >
-    <div ref="host" class="flex min-h-0 flex-1 flex-col" />
-  </ComposeDock>
-
-  <!-- The editor is rendered once and teleported into whichever container is showing, rather
-	     than sitting in each one's slot: those are different components, so a state change would
-	     remount TipTap and take the draft with it. Moving DOM keeps the instance.
-
-	     `disabled` covers the tick between one container unmounting and the next mounting, when
-	     there is no target — the children render in place, and `hidden` keeps that off screen.
-
-	     Held while a target exists, not merely while `show` is true: the Dialog animates out, and
-	     dropping the editor the moment it was closed emptied the modal mid-flight — you saw it
-	     shrink to its own header on the way out. The target outlives `show` by exactly the length
-	     of that transition, then goes with it. -->
-  <Teleport v-if="show || target" :to="target" :disabled="!target">
-    <div :class="target ? 'contents' : 'hidden'">
-      <ComposeMailEditor
-        ref="composeMailEditor"
-        v-model="show"
-        :mail-details
-        :docked="state === 'dock'"
-        :reload-mails="() => emit('reloadMails')"
-        @discard-mail="emit('discardMail')"
-        @discard-started="emit('discardStarted')"
+	     Teleported to Mail's overlay layer: the layout's `isolate` paints its subtree as one unit, so
+	     a composer opened from inside a thread would otherwise lose to the thread pane, which
+	     teleports out itself. Nothing traps focus or locks scrolling — docked, the page behind is
+	     simply live; expanded, a click on the dimmed page minimises the window: clicking away from a
+	     draft means "let me look at that", not "throw this out". Restoring brings it back expanded.
+	     An empty one closes instead (see leaveExpanded). -->
+  <Teleport :to="overlayLayer ?? 'body'">
+    <Transition
+      enter-from-class="opacity-0"
+      enter-active-class="transition-opacity duration-150 ease-out"
+      leave-active-class="transition-opacity duration-100 ease-in"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="show && expanded && !minimised"
+        class="bg-black-overlay-200 dark:bg-black-overlay-700 fixed inset-0 z-40"
+        @click="leaveExpanded"
       />
-    </div>
+    </Transition>
+    <!-- Rises and fades in from the corner, and sinks back out a little faster than it came. -->
+    <!-- `appear`: the window is mounted already open, the first time and whenever its opener
+         mounts it afresh. -->
+    <Transition
+      appear
+      enter-from-class="translate-y-2 opacity-0"
+      enter-active-class="transition duration-150 ease-out"
+      leave-active-class="transition duration-100 ease-in"
+      leave-to-class="translate-y-2 opacity-0"
+    >
+      <section
+        v-if="show"
+        role="dialog"
+        :aria-label="windowName"
+        class="border-outline-gray-2 bg-surface-base fixed z-40 flex flex-col rounded-6 border shadow-xl"
+        :class="
+          minimised
+            ? 'bottom-4 right-4 w-[28rem] max-w-[calc(100vw-2rem)]'
+            : expanded
+              ? 'inset-0 m-auto h-[min(85vh,760px)] w-[min(960px,calc(100vw-4rem))]'
+              : 'bottom-4 right-4 max-h-[calc(100vh-2rem)] w-[600px] max-w-[calc(100vw-2rem)]'
+        "
+      >
+        <!-- Folded away, the bar is the whole window and one wide target that restores it, carrying
+             the button role so it is reachable without a pointer; Close stays on it, but nothing
+             else that could be mistaken for restore. Its buttons stop the click so they keep their
+             own jobs. -->
+        <header
+          class="border-outline-gray-1 bg-surface-gray-2 flex h-10 shrink-0 items-center gap-1 pl-4 pr-1.5"
+          :class="
+            minimised ? 'cursor-pointer select-none rounded-[11px]' : 'rounded-t-[11px] border-b'
+          "
+          :role="minimised ? 'button' : undefined"
+          :tabindex="minimised ? 0 : undefined"
+          :aria-label="minimised ? __('Restore') : undefined"
+          @click="minimised && (minimised = false)"
+          @keydown.enter="restore"
+          @keydown.space="restore"
+        >
+          <!-- !text-base: MailLayout's `.mail-app h2` sets every h2 in Mail a size up, and outranks a
+             plain utility. -->
+          <h2 class="text-ink-gray-9 mr-auto truncate !text-base font-medium">
+            {{ title }}
+          </h2>
+          <Button
+            v-if="!minimised"
+            variant="ghost"
+            :aria-label="__('Minimise')"
+            :tooltip="__('Minimise')"
+            @click.stop="minimised = true"
+          >
+            <template #icon><span class="lucide-minus size-4" aria-hidden="true" /></template>
+          </Button>
+          <Button
+            v-if="!minimised"
+            variant="ghost"
+            :aria-label="expanded ? __('Shrink') : __('Expand')"
+            :tooltip="expanded ? __('Shrink') : __('Expand')"
+            @click="setExpanded(!expanded)"
+          >
+            <template #icon>
+              <span
+                :class="expanded ? 'lucide-arrow-down-right' : 'lucide-arrow-up-left'"
+                class="size-4"
+                aria-hidden="true"
+              />
+            </template>
+          </Button>
+          <Button
+            variant="ghost"
+            :aria-label="__('Close')"
+            :tooltip="__('Close')"
+            @click.stop="closeWindow"
+          >
+            <template #icon><span class="lucide-x size-4" aria-hidden="true" /></template>
+          </Button>
+        </header>
+        <!-- v-show, never v-if: minimising must not take the draft's editor with it. A wrapper of
+             its own, since the editor has more than one root and v-show cannot hide that. -->
+        <div v-show="!minimised" class="flex min-h-0 flex-1 flex-col">
+          <ComposeMailEditor
+            ref="composeMailEditor"
+            v-model="show"
+            :mail-details
+            :expanded
+            :reload-mails="() => emit('reloadMails')"
+            @discard-mail="emit('discardMail')"
+            @discard-started="emit('discardStarted')"
+          />
+        </div>
+      </section>
+    </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog } from 'frappe-ui'
-import { ChevronDown, Minimize2, X } from 'lucide-vue-next'
+import { useStorage } from '@vueuse/core'
+import { Button, usePortalTarget } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
-import ComposeDock from '@/apps/mail/components/ComposeDock.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import type { ComposeMailData } from '@/apps/mail/types'
+import { provideAccountScope } from '@/apps/mail/utils/accountScope'
 
 const show = defineModel<boolean>()
 
-const { mailDetails } = defineProps<{ mailDetails?: ComposeMailData }>()
+// `startExpanded`: open over the page rather than docked — a draft popped out of a thread was
+// already being written, and leaving the thread for it asks for room.
+const {
+  mailDetails,
+  startExpanded = false,
+  account,
+} = defineProps<{
+  mailDetails?: ComposeMailData
+  startExpanded?: boolean
+  // The account to write in, when not the one around the window: the layout's window otherwise
+  // writes in the active account, and a draft from another one would save against the wrong one.
+  account?: string
+}>()
+if (account) provideAccountScope(() => account)
 
 const emit = defineEmits(['reloadMails', 'discardMail', 'discardStarted'])
 
-const editor = useTemplateRef('composeMailEditor')
+const editor = useTemplateRef<InstanceType<typeof ComposeMailEditor>>('composeMailEditor')
+// MailLayout's overlay layer; see the Teleport above.
+const overlayLayer = usePortalTarget()
 
 claimComposeWindow(show, () => editor.value?.mail?.id)
 
@@ -114,83 +162,78 @@ claimComposeWindow(show, () => editor.value?.mail?.id)
 // come from the composer rather than from the copy the thread still remembers.
 defineExpose({ mail: computed(() => editor.value?.mail) })
 
-// --- Window state (desktop) ---
-
-type ComposeState = 'modal' | 'dock' | 'minimised'
-
-const state = ref<ComposeState>('modal')
-
-// Minimising remembers where it came from, so restoring puts the composer back rather than
-// picking a presentation of its own.
-const restoreTo = ref<ComposeState>('dock')
-const minimise = () => {
-  if (state.value === 'minimised') return (state.value = restoreTo.value)
-  restoreTo.value = state.value
-  state.value = 'minimised'
+// The first compose opens docked; after that, each opens the size the reader last chose for one —
+// docked or expanded, remembered in this browser as the size of a screen is — or expanded when the
+// host asks for room. Never minimised: a request to write wants the window in front. Only a choice
+// made with Expand/Shrink (or Esc) is remembered; a pop-out opening large is the host's call.
+const prefersExpanded = useStorage('mail-compose-expanded', false)
+const expanded = ref(startExpanded || prefersExpanded.value)
+const minimised = ref(false)
+const setExpanded = (value: boolean) => {
+  expanded.value = value
+  prefersExpanded.value = value
 }
-
-// Each compose starts modal: a request to write is not a request to resume whatever the last
-// draft's window happened to be doing.
 watch(show, (open) => {
-  if (open) state.value = 'modal'
+  if (!open) return
+  expanded.value = startExpanded || prefersExpanded.value
+  minimised.value = false
 })
 
-// Folded away, the bar is all there is to tell one draft from another, so it takes the subject
-// once there is one. Expanded there is a Subject field on screen saying the same thing, and the
-// generic title is the better label for the window itself.
-const minimisedTitle = computed(() =>
-  state.value === 'minimised' ? editor.value?.mail?.subject?.trim() || undefined : undefined,
+// What the window is for: a reply or a forward popped out of a thread (or reopened from Drafts)
+// says so, rather than calling itself a new message. A popped-out draft arrives without its reply
+// type, so the mail it answers or forwards is what tells.
+const windowName = computed(() => {
+  const kind =
+    mailDetails?.type ??
+    (mailDetails?.forwarded_from_id ? 'forward' : mailDetails?.in_reply_to ? 'reply' : undefined)
+  if (kind === 'forward') return __('Forward')
+  if (kind === 'replyAll') return __('Reply all')
+  if (kind === 'reply') return __('Reply')
+  return __('New message')
+})
+
+// Folded, the bar names the draft by its subject once it has one: it is all there is to tell one
+// draft from another. Open, the Subject field says that, and the window keeps its own name.
+const title = computed<string>(() =>
+  minimised.value ? editor.value?.mail?.subject?.trim() || windowName.value : windowName.value,
 )
 
-// The container currently holding the editor. Post-flush, so it is read once the DOM has settled
-// on the new container rather than the one being torn down.
-const host = useTemplateRef<HTMLElement>('host')
-const target = ref<HTMLElement | null>(null)
-watch(host, (el) => (target.value = el ?? null), { flush: 'post', immediate: true })
-
-// Clicking away from a draft means "let me look at that", not "throw this out" — so the modal
-// minimises rather than closing. `dismissible: false` is what stops the Dialog closing itself; the
-// gesture then has to be recognised here, since it swallows reka's outside-interaction events
-// without re-emitting them.
-//
-// Anything outside the panel counts, because while the modal is up there is nothing else to hit:
-// reka takes pointer events off the body, so a press on the backdrop lands on whichever of its
-// two full-screen layers is on top — the overlay or the scroll container, and they are siblings.
-// Testing for one of them missed the other, which is why this reads as "not the content".
-//
-// The exception is the composer's own dropdowns — the From identity list, Send later — which are
-// portalled to the body and so are outside the panel too. Picking an identity must not fold the
-// window away.
-const onPointerDown = (e: PointerEvent) => {
-  if (!show.value || state.value !== 'modal') return
-  const el = e.target as HTMLElement | null
-  if (!el?.closest) return
-  if (el.closest('.dialog-content') || el.closest('[data-reka-popper-content-wrapper]')) return
-  minimise()
+// Enter and Space restore only when the bar itself has focus: it is the ancestor of Close, and
+// preventing the key on the way past would cancel the click the browser makes of it on that button.
+const restore = (e: KeyboardEvent) => {
+  if (!minimised.value || e.target !== e.currentTarget) return
+  e.preventDefault()
+  minimised.value = false
 }
 
-// Esc closed the modal before `dismissible: false` took that over, so it is reinstated here.
-// Ignored while a popover is open: it belongs to whatever is layered above, which reka closes on
-// the same key.
-// A dialog layered over this one takes the key with it, for the same reason: Send later and the
-// contacts picker are Dialogs of their own, and reka closes them without marking the event handled,
-// so backing out of the date picker closed the composer underneath it too. Counting the open ones
-// is what tells them apart — this composer is always one of them, so anything above one belongs to
-// whatever is on top.
+// Close keeps a draft to come back to — but one with nothing written is not a draft. It had already
+// saved itself (a body that is only the signature saves), so closing it left a "[No subject]" in
+// Drafts for every window opened and shut. Nothing written, it is discarded, quietly.
+const closeWindow = () => {
+  if (editor.value?.isUntouched) void editor.value.discardMail()
+  else show.value = false
+}
+
+// A click on the dimmed page beside an expanded window: with something written, "let me look at
+// that", so it folds away to come back to. With nothing written there is nothing to come back to,
+// and a folded bar left behind for an empty message was clutter — it closes, quietly, as Discard
+// closes an untouched one.
+const leaveExpanded = () => {
+  if (editor.value?.isUntouched) void editor.value.discardMail()
+  else minimised.value = true
+}
+
+// Esc docks an expanded window. Ignored while a popover is open,
+// or a dialog above this window — the contacts picker, Send later — which reka closes on the same
+// key without marking it handled.
 const onEscape = (e: KeyboardEvent) => {
-  if (e.key !== 'Escape' || e.defaultPrevented) return
-  if (!show.value || state.value !== 'modal') return
+  if (e.key !== 'Escape' || e.defaultPrevented || !show.value) return
+  if (!expanded.value || minimised.value) return
   if (document.querySelector('[data-reka-popper-content-wrapper]')) return
-  if (document.querySelectorAll('.dialog-content[data-state="open"]').length > 1) return
-  show.value = false
+  if (document.querySelector('.dialog-content[data-state="open"]')) return
+  setExpanded(false)
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', onEscape)
-  window.addEventListener('pointerdown', onPointerDown, true)
-})
-onUnmounted(() => {
-  window.removeEventListener('keydown', onEscape)
-  window.removeEventListener('pointerdown', onPointerDown, true)
-})
+onMounted(() => window.addEventListener('keydown', onEscape))
+onUnmounted(() => window.removeEventListener('keydown', onEscape))
 </script>

@@ -84,19 +84,6 @@ const shortcutGroups = computed(() => [
         [[modifier, 'Z'], __('Undo Last Action')],
       ],
     },
-
-    {
-      // The two plain verdicts first, then the qualified ones. Those two keep the keys the
-      // Actions above use, because they are the same intent — allowing the sender is implied,
-      // and the key says where their waiting mail goes.
-      title: __('Screener'),
-      shortcuts: [
-        [['A'], __('Allow Sender')],
-        [['D'], __('Deny Sender')],
-        [['E'], __('Allow Sender, Archive Their Mail')],
-        [['Delete'], __('Allow Sender, Trash Their Mail')],
-      ],
-    },
   ],
   [
     {
@@ -117,7 +104,6 @@ const shortcutGroups = computed(() => [
         [['G', __('then'), 'E'], __('Go to {0}', [mailboxName('archive')])],
         [['G', __('then'), 'T'], __('Go to {0}', [mailboxName('trash')])],
         [['G', __('then'), 'A'], __('Go to All Accounts')],
-        [['G', __('then'), 'R'], __('Go to Screener')],
       ],
     },
     {
@@ -132,8 +118,8 @@ const shortcutGroups = computed(() => [
 ])
 
 const columns = computed(() => {
-  const [compose, actions, screener, navigation, other] = shortcutGroups.value.flat()
-  return [[compose, screener], [actions, other], [navigation]]
+  const [compose, actions, navigation, other] = shortcutGroups.value.flat()
+  return [[compose], [actions, other], [navigation]]
 })
 
 const keyNames: Record<string, string> = {

@@ -73,6 +73,7 @@ const FILTER_OPERATORS: Record<string, string> = {
   to: 'to',
   cc: 'cc',
   bcc: 'bcc',
+  with: 'with',
   subject: 'subject',
   after: 'after',
   before: 'before',

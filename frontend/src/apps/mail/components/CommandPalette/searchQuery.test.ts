@@ -33,6 +33,13 @@ describe('parseMailSearchQuery', () => {
     })
   })
 
+  it('reads with: as mail exchanged with an address, beside the words searched for', () => {
+    expect(parseMailSearchQuery('offsite with:ann@example.com')).toEqual({
+      text: 'offsite',
+      with: 'ann@example.com',
+    })
+  })
+
   it('describes the active operator while its value is being entered', () => {
     expect(getMailSearchOperatorContext('invoice to:')).toEqual({
       prompt: 'Enter a recipient email address',

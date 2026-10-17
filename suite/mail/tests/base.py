@@ -39,7 +39,7 @@ def clear_mail_caches() -> None:
 
     from suite.mail import directory
 
-    directory.get_mailing_list_index.clear_cache()
+    directory.clear_mailing_list_index()
 
 
 def _stalwart_available() -> bool:

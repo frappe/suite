@@ -1,18 +1,25 @@
 """Account preferences and credentials, with normal document validation."""
 
+import json
 from typing import Literal, NotRequired, TypedDict, cast
 
 import frappe
 
 from suite.composition.http import Route
+from suite.mail.classification import normalize_tabs
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.http.shapes import AccountInput, Flag
 
 
 class UserPreferences(TypedDict, total=False):
-    group_messages_by: Literal["None", "Day", "Month"] | None
+    group_by_date: Flag
     show_reading_pane: Flag
     undo_send_period: Literal["5", "10", "20", "30"]
+    # The categories the Inbox is split into; empty for no split. Primary leads whenever any other is
+    # on, whether or not it is listed.
+    inbox_tabs: list[Literal["primary", "updates", "forums", "promotions", "social"]]
+    # Off, the Inbox is one list; the choice of tabs is kept for when it is on again.
+    split_inbox: Flag
 
 
 class Credentials(TypedDict):
@@ -35,8 +42,8 @@ class AccountPreferences(TypedDict):
     keep_forwarded_email_in_thread: Flag
     enable_screening: Flag
     block_remote_images: Flag
+    on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
-    on_mark_as_junk: Literal["Junk Sender's Mail", "Ask to Block Sender"]
 
 
 class AccountChanges(TypedDict, total=False):
@@ -46,8 +53,8 @@ class AccountChanges(TypedDict, total=False):
     keep_forwarded_email_in_thread: Flag
     enable_screening: Flag
     block_remote_images: Flag
+    on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
-    on_mark_as_junk: Literal["Junk Sender's Mail", "Ask to Block Sender"]
 
 
 class UpdateAccount(AccountInput):
@@ -91,19 +98,24 @@ def update_credentials(
 
 @frappe.whitelist(methods=["PATCH"])
 def update_preferences(
-    group_messages_by: str | None = None,
+    group_by_date: Flag | None = None,
     show_reading_pane: Flag | None = None,
     undo_send_period: str | None = None,
+    inbox_tabs: list[str] | None = None,
+    split_inbox: Flag | None = None,
 ) -> None:
     changes = {
         key: value
         for key, value in {
-            "group_messages_by": group_messages_by,
+            "group_by_date": group_by_date,
             "show_reading_pane": show_reading_pane,
             "undo_send_period": undo_send_period,
+            "split_inbox": split_inbox,
         }.items()
         if value is not None
     }
+    if inbox_tabs is not None:
+        changes["inbox_tabs"] = json.dumps([tab.value for tab in normalize_tabs(inbox_tabs)])
     doc = _user_settings()
     doc.check_permission("write")
     doc.update(changes)

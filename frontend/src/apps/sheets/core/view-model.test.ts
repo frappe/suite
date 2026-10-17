@@ -21,6 +21,20 @@ describe('sizes', () => {
     expect(vm.rowH).toEqual({ 1: 40, 5: 50 })
   })
 
+  it('rows sized by hand move with inserts, deletes and moves', () => {
+    const vm = createViewModel()
+    vm.setRowManual(2, true)
+    vm.setRowManual(6, true)
+    vm.shiftRows(2, 3)
+    expect([...vm.manualRows].sort()).toEqual([5, 9])
+    vm.shiftRows(0, -1)
+    expect([...vm.manualRows].sort()).toEqual([4, 8])
+    vm.remapRows((r) => (r === 4 ? 0 : r))
+    expect([...vm.manualRows].sort()).toEqual([0, 8])
+    vm.setRowManual(0, false)
+    expect([...vm.manualRows]).toEqual([8])
+  })
+
   it('deleting columns shifts widths back without overwriting', () => {
     const vm = createViewModel()
     vm.setColWidth(2, 60)
@@ -86,6 +100,22 @@ describe('serialize / restore', () => {
     const vm = createViewModel()
     vm.sel.anchor = { r: 4, c: 4 }
     expect(JSON.stringify(vm.serialize())).not.toContain('anchor')
+  })
+
+  it('round-trips the rows sized by hand', () => {
+    const a = createViewModel()
+    a.setRowHeight(2, 80)
+    a.setRowHeight(4, 60)
+    a.setRowManual(4, true)
+    const b = createViewModel()
+    b.restore(JSON.parse(JSON.stringify(a.serialize())))
+    expect([...b.manualRows]).toEqual([4])
+  })
+
+  it('treats every stored height in an older save as sized by hand', () => {
+    const vm = createViewModel()
+    vm.restore({ rowH: { 2: 80, 7: 40 } })
+    expect([...vm.manualRows].sort()).toEqual([2, 7])
   })
 
   it('a view without a size goes back to the default, and drops old filter tags', () => {

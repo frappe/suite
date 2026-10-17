@@ -26,13 +26,11 @@ class Limits(TypedDict, total=False):
     max_groups: int
     max_mailing_lists: int
     max_disk_gb: float
-    default_disk_quota_gb: float
 
 
 class Storage(TypedDict):
-    allocated_gb: float | None
+    used_bytes: int | None
     max_gb: float | None
-    default_quota_gb: float | None
 
 
 class Site(TypedDict):

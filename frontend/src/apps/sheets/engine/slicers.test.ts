@@ -79,6 +79,11 @@ describe('SlicerEngine', () => {
       s.remove(s.list('S1')[0].id, 'S1')
       expect(s.list('S1 copy')).toHaveLength(1) // copy survives source removal
     })
+    it('duplicate gives the copies new ids', () => {
+      const id = s.add(0, 0, 0, 'S1')
+      s.duplicateSheet('S1', 'S1 copy')
+      expect(s.list('S1 copy')[0].id).not.toBe(id)
+    })
     it('deleteSheet drops slicers', () => {
       s.add(0, 0, 0, 'S1')
       s.deleteSheet('S1')

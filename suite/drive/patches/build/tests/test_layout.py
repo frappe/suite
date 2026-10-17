@@ -1,50 +1,67 @@
-"""The canonical layout, pinned against the framework it has to match."""
+"""The blob layout, pinned against the framework it has to match."""
 
 import unittest
+from unittest.mock import patch
 
-from frappe.storage.blob import make_key, sanitized_extension
+import frappe
+from frappe.storage.blob import key_basename, make_key
 from frappe.storage.s3_driver import S3Driver
 
 from suite.drive.patches.build.layout import (
     MULTIPART_COPY_THRESHOLD,
+    blob_folder,
     blob_key,
+    blob_name,
     needs_multipart_copy,
-    object_key,
+    private_key,
 )
 from suite.drive.patches.build.tests.fakes import S3_COPY_OBJECT_MAX_BYTES
 
 SHA = "0123456789abcdef" * 4
+# sha256(b"suite-drive-build:" + SHA) cut to ten characters. Spelled out: a
+# resumed run must find the blob an older run named.
+NAME = "739d24408f"
 
 
-class TestCanonicalLayout(unittest.TestCase):
-    def test_object_key_is_the_layout_the_spec_fixes(self):
-        self.assertEqual(object_key(SHA, "report.PDF"), f"private/01/23/{SHA}.pdf")
+def s3_driver(**config) -> S3Driver:
+    """A real `S3Driver`, built from a site config the test controls."""
+    conf = frappe._dict(db_name="suite_build_db", storage_driver_config={"bucket": "b", **config})
+    with patch.object(frappe, "conf", conf):
+        return S3Driver()
 
-    def test_blob_key_is_the_object_key_without_the_privacy_prefix(self):
-        self.assertEqual(blob_key(SHA, "report.PDF"), f"01/23/{SHA}.pdf")
 
-    def test_a_file_without_a_usable_extension_keeps_a_bare_key(self):
-        for filename in (None, "", "no-extension", "x." + "a" * 11, "archive.tar.gz2!"):
-            with self.subTest(filename=filename):
-                self.assertEqual(blob_key(SHA, filename), f"01/23/{SHA}")
+class TestBlobLayout(unittest.TestCase):
+    def test_the_blob_name_derives_from_the_checksum(self):
+        self.assertEqual(blob_name(SHA), NAME)
+        self.assertNotEqual(blob_name("f" * 64), NAME)
 
-    def test_the_key_matches_frappe_make_key_and_its_extension_rule(self):
-        # `put_blob` composes exactly this (frappe/storage/blob.py:150-152);
-        # Build has to land on the same key or it would store a duplicate.
-        for filename in ("report.PDF", "note.txt", None, "no-extension"):
-            with self.subTest(filename=filename):
-                expected = make_key(SHA)
-                if ext := sanitized_extension(filename):
-                    expected = f"{expected}.{ext}"
-                self.assertEqual(blob_key(SHA, filename), expected)
-
-    def test_the_object_key_matches_the_s3_driver_private_namespace(self):
-        # `S3Driver.object_key` does not touch self, so it reads as the pure
-        # function it is. This is the check that catches a framework rename.
+    def test_the_bucket_key_is_the_layout_build_copies_into(self):
         self.assertEqual(
-            object_key(SHA, "report.PDF"),
-            S3Driver.object_key(None, blob_key(SHA, "report.PDF"), True),
+            private_key(blob_key("acme/", NAME, "Q3 report.PDF")),
+            f"private/acme/{NAME}/Q3 report.PDF",
         )
+        self.assertEqual(blob_folder("acme/", NAME), f"acme/{NAME}/")
+
+    def test_the_key_is_what_the_frameworks_s3_driver_builds(self):
+        # The driver's own prefix, from the site config, and `make_key` over
+        # it. Filenames the framework rewrites must be rewritten the same way.
+        for driver in (s3_driver(), s3_driver(prefix="acme")):
+            for filename in ("report.PDF", "a/b?.txt", None, "x" * 300 + ".pdf"):
+                with self.subTest(prefix=driver.key_prefix, filename=filename):
+                    key = blob_key(driver.key_prefix, NAME, filename)
+                    self.assertEqual(key, make_key(driver, NAME, filename))
+                    self.assertEqual(private_key(key), driver.object_key(key, is_private=True))
+
+    def test_the_default_prefix_is_the_database_name_hash(self):
+        # sha256(b"suite_build_db")[:12]
+        self.assertEqual(s3_driver().key_prefix, "57b841b5ba8c/")
+
+    def test_relocate_leaves_a_build_blob_where_it_is(self):
+        # `relocate_blobs` moves a blob unless its key already equals
+        # `make_key(target, name, key_basename(key))`.
+        driver = s3_driver()
+        key = blob_key(driver.key_prefix, NAME, "a/b?.txt")
+        self.assertEqual(make_key(driver, NAME, key_basename(key)), key)
 
 
 class TestMultipartThreshold(unittest.TestCase):

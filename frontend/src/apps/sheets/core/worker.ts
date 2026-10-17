@@ -12,7 +12,8 @@
 
 import init, { type ExtendedCellStyle } from '@ironcalc/wasm'
 
-import { MAX_VIEWPORT_CELLS } from './limits.js'
+import type { ViewportResult } from './client.js'
+import { MAX_FIND_RESULTS, MAX_VIEWPORT_CELLS } from './limits.js'
 import { createWorkbook, WorkbookError, type Workbook } from './workbook.js'
 
 export type ReadWhat = 'display' | 'input' | 'style'
@@ -34,6 +35,8 @@ export interface CellRead {
 export interface ErrorBody {
   message: string
   command?: unknown
+  /** The engine is broken (a wasm trap); every later request fails too. */
+  fatal?: true
 }
 
 export type WorkerResponse =
@@ -83,17 +86,34 @@ function isBytes(v: unknown): v is Uint8Array {
   return Object.prototype.toString.call(v) === '[object Uint8Array]'
 }
 
+// A Rust panic inside IronCalc surfaces as a wasm trap (RuntimeError).
+// After one, the engine's memory may be half-updated, so it can't be trusted.
+function isWasmTrap(e: unknown): boolean {
+  return typeof WebAssembly !== 'undefined' && e instanceof WebAssembly.RuntimeError
+}
+
+class EngineBrokenError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EngineBrokenError'
+  }
+}
+
 function errorBody(e: unknown): ErrorBody {
   if (e instanceof WorkbookError) {
     return e.command == null ? { message: e.message } : { message: e.message, command: e.command }
   }
-  return { message: e instanceof Error ? e.message : String(e) }
+  const message = e instanceof Error ? e.message : String(e)
+  return isWasmTrap(e) || e instanceof EngineBrokenError ? { message, fatal: true } : { message }
 }
 
 export function createWorkerHost(): WorkerHost {
   let wb: Workbook | null = null
+  // Set by the first wasm trap; from then on every request fails as fatal.
+  let broken: string | null = null
 
   function workbook(): Workbook {
+    if (broken) throw new EngineBrokenError(broken)
     if (!wb) throw new ProtocolError('workbook not initialised; send "init" first')
     return wb
   }
@@ -114,6 +134,16 @@ export function createWorkerHost(): WorkerHost {
     return { version: wb.getVersion(), sheets: wb.getSheets() }
   }
 
+  // Replaces the workbook with `bytes` (undo of a row/column delete). The
+  // version keeps counting up, so the client sees a change.
+  function onRestore(p: unknown) {
+    const bytes = field(p, 'bytes')
+    if (!isBytes(bytes)) throw new ProtocolError('"bytes" must be a Uint8Array')
+    const startVersion = workbook().getVersion() + 1
+    wb = createWorkbook({ loadBytes: bytes, startVersion })
+    return { version: wb.getVersion(), sheets: wb.getSheets() }
+  }
+
   // Each command succeeds or fails on its own; one bad command does not
   // stop the rest of the batch. A failed command leaves the workbook as
   // it was (workbook.apply restores multi-call commands on error).
@@ -127,12 +157,15 @@ export function createWorkerHost(): WorkerHost {
       try {
         w.apply(cmd)
       } catch (e) {
+        // A trap is not this command's failure: the whole engine is gone.
+        if (isWasmTrap(e)) throw e
         result.ok = false
         result.error = errorBody(e).message
       }
       return result
     })
-    return { version: w.getVersion(), results }
+    // The sheet list rides along, so tabs follow adds, renames and moves.
+    return { version: w.getVersion(), results, sheets: w.getSheets() }
   }
 
   // One message per screen instead of one per cell: IronCalc has no batch
@@ -149,20 +182,28 @@ export function createWorkerHost(): WorkerHost {
       throw new ProtocolError(`range exceeds ${MAX_VIEWPORT_CELLS} cells`)
     }
     const includeStyles = field(p, 'includeStyles') === true
+    const includeInputs = field(p, 'includeInputs') === true
 
     const values: string[][] = []
     const styles: ExtendedCellStyle[][] = []
+    const inputs: string[][] = []
     for (let r = r1; r <= r2; r++) {
       const valueRow: string[] = []
       const styleRow: ExtendedCellStyle[] = []
+      const inputRow: string[] = []
       for (let c = c1; c <= c2; c++) {
         valueRow.push(w.getDisplayValue(sheet, r, c))
         if (includeStyles) styleRow.push(w.getStyle(sheet, r, c))
+        if (includeInputs) inputRow.push(w.getInput(sheet, r, c))
       }
       values.push(valueRow)
       if (includeStyles) styles.push(styleRow)
+      if (includeInputs) inputs.push(inputRow)
     }
-    return includeStyles ? { values, styles } : { values }
+    const result: ViewportResult = { values }
+    if (includeStyles) result.styles = styles
+    if (includeInputs) result.inputs = inputs
+    return result
   }
 
   // Scattered reads for cold paths (editor open, Cmd+Arrow, autofit).
@@ -190,6 +231,25 @@ export function createWorkerHost(): WorkerHost {
     }
   }
 
+  // Every cell of a sheet whose input contains the query (Find & Replace).
+  function onFindCells(p: unknown) {
+    return { cells: workbook().findInputs(str(p, 'sheet'), str(p, 'query'), MAX_FIND_RESULTS) }
+  }
+
+  function onUsedCells(p: unknown) {
+    return { cells: workbook().usedCells(str(p, 'sheet')) }
+  }
+
+  function onRangeStats(p: unknown) {
+    return workbook().rangeStats(
+      str(p, 'sheet'),
+      int(p, 'r1'),
+      int(p, 'c1'),
+      int(p, 'r2'),
+      int(p, 'c2'),
+    )
+  }
+
   function onToBytes() {
     return { bytes: workbook().toBytes() }
   }
@@ -212,12 +272,21 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onReadViewport(payload) }
         case 'readCells':
           return { reqId: id, result: onReadCells(payload) }
+        case 'restore':
+          return { reqId: id, result: onRestore(payload) }
+        case 'usedCells':
+          return { reqId: id, result: onUsedCells(payload) }
+        case 'rangeStats':
+          return { reqId: id, result: onRangeStats(payload) }
+        case 'findCells':
+          return { reqId: id, result: onFindCells(payload) }
         case 'toBytes':
           return { reqId: id, result: onToBytes() }
         default:
           throw new ProtocolError(`unknown request type "${String(type)}"`)
       }
     } catch (e) {
+      if (isWasmTrap(e)) broken = `IronCalc crashed: ${e instanceof Error ? e.message : String(e)}`
       return { reqId: id, error: errorBody(e) }
     }
   }

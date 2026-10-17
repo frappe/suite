@@ -82,6 +82,8 @@ export interface MouseOptions {
   /** Set every listed column to `w` and re-layout. */
   setColWidths(cols: readonly number[], w: number): void
   setRowHeights(rows: readonly number[], h: number): void
+  /** A resize drag ended; runs before the host hears of it. */
+  onResizeEnd?(): void
   autoFitCol(c: number): void
   autoFitRow(r: number): void
   /** Scroll by a logical delta. */
@@ -127,7 +129,10 @@ export function createMouse(o: MouseOptions): Mouse {
     setColWidths: o.setColWidths,
     setRowHeights: o.setRowHeights,
     onColMove: (from, to, count) => host.onColMove?.(from, to, count),
-    onResizeEnd: () => host.onResizeEnd?.(),
+    onResizeEnd: () => {
+      o.onResizeEnd?.()
+      host.onResizeEnd?.()
+    },
     render: o.render,
   })
   const fill = createFillHandle({

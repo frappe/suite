@@ -208,7 +208,7 @@ class BuildContentCase(IntegrationTestCase):
     def drop_blobs(self) -> None:
         """Delete only the blobs no surviving row still references.
 
-        `put_blob` is content addressed, so a fixture payload can land on a
+        `put_blob` deduplicates by content, so a fixture payload can land on a
         row the site already had. Deleting by checksum alone would take the
         site's bytes with it.
         """

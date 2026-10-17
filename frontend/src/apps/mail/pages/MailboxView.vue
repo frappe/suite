@@ -3,10 +3,15 @@
   <!-- hidden on mobile: the title row carries the folder name, and the header's
 	     actions are the compose button and the sidebar sheet. Hidden (not v-if) so HeaderActions'
 	     modals stay mounted for the views' v-model bindings. -->
-  <header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
-    <div class="flex items-center space-x-2">
+  <!-- Stretched, the padding inside, so a split Inbox's tabs can run the header's full height and
+       underline on its border. -->
+  <header class="hidden items-stretch border-b px-3 sm:flex sm:px-5">
+    <!-- h-12: one height with or without the Inbox's tabs. The title's crumb stands a little taller
+         than the tabs and the actions, and the bar grew with it. -->
+    <div class="flex h-12 min-w-0 flex-1 items-center space-x-2 py-2.5">
       <!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
       <Breadcrumbs
+        v-if="!inboxTab"
         class="-ml-0.5"
         :items="[
           {
@@ -15,30 +20,26 @@
           },
         ]"
       />
+      <!-- A split Inbox's tabs stand in for its title, starting on the header's own px-5 axis so
+           the first tab's icon lines up with the checkboxes and chips below. -->
+      <InboxHeaderTabs
+        v-else
+        class="-my-2.5 min-w-0 self-stretch"
+        :tabs="inboxTabs"
+        :active="inboxTab"
+        :route-for="routeForTab"
+      />
     </div>
-    <HeaderActions />
+    <div class="flex h-12 shrink-0 items-center py-2.5">
+      <HeaderActions view-menu :inbox="mailbox === mailboxIds.inbox" />
+    </div>
   </header>
-
-  <!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
-	     screening is on and threads are waiting to be screened. -->
-  <div v-if="showScreenerBanner" class="flex items-center space-x-1 border-b py-2.5 px-5">
-    <!-- w-4 wrapper centers the dot on the checkbox column below (checkbox is w-4) -->
-    <span class="mr-1 flex w-4 shrink-0 justify-center">
-      <span class="bg-blue-500 inline-block h-2 w-2 rounded-full" />
-    </span>
-    <span class="text-ink-gray-5"
-      >{{ screenerBanner.before
-      }}<span class="font-medium text-ink-gray-8">{{ screenerBanner.phrase }}</span
-      >{{ screenerBanner.after }}</span
-    >
-    <Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
-  </div>
 
   <!-- On mobile this banner renders below the title header instead (inside the mobile
 	     header block) — above it, it read as page chrome sitting on top of the title. -->
   <div v-if="showDeleteBanner && !isMobile" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
     <span class="text-ink-gray-5">
-      {{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
+      {{ __('Items in this folder will be automatically deleted after 30 days.') }}
     </span>
     <Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
   </div>
@@ -47,11 +48,7 @@
 	     once the bottom nav exists, making the outer container scroll too). -->
   <div
     class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
-    :class="
-      showDeleteBanner || showScreenerBanner
-        ? 'h-[calc(100dvh-6.125rem)]'
-        : 'h-[calc(100dvh-3.0625rem)]'
-    "
+    :class="showDeleteBanner ? 'h-[calc(100dvh-6.125rem)]' : 'h-[calc(100dvh-3.0625rem)]'"
   >
     <!-- Loading -->
     <div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
@@ -61,7 +58,9 @@
       </div>
     </div>
 
-    <template v-else-if="threadRows.length || filter || mailbox === 'search'">
+    <template
+      v-else-if="threadRows.length || filter || filterChanged || mailbox === 'search' || inboxTab"
+    >
       <ThreadPane
         :thread-open="!!threadID"
         @touch-start="onThreadTouchStart"
@@ -97,95 +96,80 @@
 						     reads as part of the header block, not a boxed-off strip. -->
             <div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
               <span class="text-ink-gray-5">
-                {{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
+                {{ __('Items in this folder will be automatically deleted after 30 days.') }}
               </span>
               <Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
             </div>
 
+            <InboxTabs
+              v-if="inboxTab && !selections.length"
+              :tabs="inboxTabs"
+              :active="inboxTab"
+              :route-for="routeForTab"
+            />
+
             <!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
             <!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
 						     axis and the count text starts where the title does. -->
-            <div v-if="selections.length" class="flex h-12 items-center gap-1 px-1">
-              <Button
-                variant="ghost"
-                class="!h-10 !w-10 !rounded-full"
-                @click="toggleSelectAll(false)"
-              >
-                <template #icon><X class="icon !h-5 !w-5" /></template>
-              </Button>
-              <span class="flex-1 truncate text-base !font-medium">
-                {{ __('{0} selected', [String(selections.length)]) }}
-              </span>
-              <button
-                class="text-ink-gray-8 text-md shrink-0 px-2 !font-medium"
-                @click="toggleSelectAll(!isAllSelected)"
-              >
-                {{ isAllSelected ? __('Unselect All') : __('Select All') }}
-              </button>
-            </div>
+            <MobileSelectionHeader
+              v-if="selections.length"
+              :count="selections.length"
+              :all-selected="isAllSelected"
+              @toggle-all="toggleSelectAll"
+            />
             <!-- No `loading`: the bar below spans this whole header block, so it
 						     also covers selection mode and search, where this row is absent. -->
             <MailListToolbar
               v-else-if="mailbox !== 'search'"
               :title="title"
               :filter-options="FILTER_OPTIONS"
-            />
-
-            <!-- Loading bar -->
-            <LoadingBar v-if="activeThreads.isFetching" />
+            >
+              <template v-if="clearScope" #mobile-actions>
+                <ClearListMenu :scope="clearScope" :target="{ account: accountId, mailbox }" />
+              </template>
+            </MailListToolbar>
           </div>
 
           <!-- Toolbar/Actions -->
           <MailListToolbar
-            v-else
+            v-if="!isMobile"
             :title="title"
             :filter-options="FILTER_OPTIONS"
             :show-filter="!selections.length && mailbox !== 'search'"
             :show-actions="!selections.length"
             :fetching="isFetching"
-            :loading="activeThreads.isFetching"
             @refresh="refreshThreads()"
           >
             <template #lead>
               <div v-if="!isAllAccountsSearch" class="mr-5">
-                <Tooltip
-                  :text="
-                    isAllSelected ? __('Clear All (Esc)') : __('Select All ({0}+A)', [modifier])
-                  "
-                >
-                  <div
-                    class="checkbox-hitbox -m-3 cursor-pointer p-3"
-                    @click.stop.prevent="toggleSelectAll(!isAllSelected)"
-                  >
-                    <Checkbox :model-value="isAllSelected" size="md" class="pointer-events-none" />
-                  </div>
-                </Tooltip>
+                <SelectAllCheckbox
+                  :selected="isAllSelected"
+                  :some="selections.length > 0"
+                  @toggle="toggleSelectAll"
+                />
               </div>
             </template>
 
+            <!-- The filters as chips, where the selector would go. -->
+            <template v-if="!selections.length && mailbox !== 'search'" #filter>
+              <ListFilterChips
+                :filter-options="FILTER_OPTIONS"
+                :filter="filter"
+                :clear="clearFilter"
+              />
+            </template>
+
             <template #actions>
-              <template v-if="selections.length">
-                <Dropdown v-if="showReadingPane" :options="selectActions">
-                  <Button variant="ghost" :tooltip="__('Actions')">
-                    <template #icon>
-                      <Ellipsis class="icon" />
-                    </template>
-                  </Button>
-                </Dropdown>
-                <template v-else>
-                  <Button
-                    v-for="action in selectActions.filter((a) => a.condition())"
-                    :key="action.label"
-                    :tooltip="action.label"
-                    variant="ghost"
-                    @click="action.onClick"
-                  >
-                    <template #icon>
-                      <component :is="action.icon" class="icon" />
-                    </template>
-                  </Button>
-                </template>
-              </template>
+              <ClearListMenu
+                v-if="clearScope && !selections.length"
+                :scope="clearScope"
+                :target="{ account: accountId, mailbox }"
+              />
+              <SelectActionButtons
+                v-if="selections.length"
+                :actions="selectActions"
+                :collapsed="showReadingPane"
+              />
 
               <Dropdown v-if="showMoveTo" :options="moveToOptions">
                 <Button variant="ghost" :tooltip="__('Move To')">
@@ -194,17 +178,12 @@
                   </template>
                 </Button>
               </Dropdown>
-              <Dropdown v-if="showAddTo" :options="addToOptions">
-                <Button variant="ghost" :tooltip="__('Add To')">
+              <!-- Where the selection is filed, as ticks — the thread toolbar's Folders menu, for
+                   every ticked thread at once. Stays open, to file them in several. -->
+              <Dropdown v-if="folderOptions.length" :options="folderOptions">
+                <Button variant="ghost" :tooltip="__('Folders')">
                   <template #icon>
-                    <component :is="FolderPlus" class="icon" />
-                  </template>
-                </Button>
-              </Dropdown>
-              <Dropdown v-if="showRemoveFrom" :options="removeFromOptions">
-                <Button variant="ghost" :tooltip="__('Remove From')">
-                  <template #icon>
-                    <component :is="FolderMinus" class="icon" />
+                    <component :is="Folders" class="icon" />
                   </template>
                 </Button>
               </Dropdown>
@@ -215,13 +194,13 @@
           <div
             v-if="threadRows.length"
             ref="mailList"
+            @focusin="onListFocusIn"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
-                v-if="groupMessagesBy !== 'None' && !isMobile"
+                v-if="groupedByDate && !isMobile"
                 :date-key="key"
-                :monthly="groupMessagesBy === 'Month'"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
                 :focused="focusedRowKey === `group:${key}`"
@@ -232,13 +211,13 @@
                 <template #lead>
                   <div
                     v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
-                    class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-3"
+                    class="checkbox-hitbox -mx-3 -my-2.5 flex cursor-pointer items-center py-2.5 pl-3 pr-8"
                     @click.stop.prevent="toggleSelect(getGroupThreads(key), !isGroupSelected(key))"
                   >
                     <Checkbox
                       :model-value="isGroupSelected(key)"
                       size="md"
-                      class="pointer-events-none"
+                      class="pointer-events-none [&_input]:mt-0"
                     />
                   </div>
                 </template>
@@ -251,14 +230,17 @@
 									     rows below they never need the all-accounts cross-account handling. -->
                   <StackListItem
                     v-if="row.type === 'stack'"
+                    :drafts="mailbox === mailboxIds.drafts"
+                    :unarchive="true"
                     :threads="row.threads"
                     :expanded="row.expanded"
-                    :is-selected="isStackSelected(row.threads)"
+                    :is-selected="isStackSelected(row.threads.map((t) => t.thread_id))"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @toggle="toggleStack(row)"
                     @set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
                     @archive-threads="stackArchive(row.threads)"
+                    @unarchive-threads="handleUnarchiveThreads(stackIDs(row.threads))"
                     @trash-threads="stackTrash(row.threads)"
                     @delete-threads="stackDelete(row.threads)"
                     @set-selected="
@@ -272,6 +254,8 @@
                   <MailListItem
                     v-else
                     :mailbox
+                    :drafts="mailbox === mailboxIds.drafts"
+                    :unarchive="!isAllAccountsSearch"
                     :mail="row.thread"
                     :account-id="isAllAccountsSearch ? row.thread.account : undefined"
                     :account-label="
@@ -281,13 +265,15 @@
                     :selection-mode="mobileSelectionMode"
                     :is-selected="selections.includes(row.thread.thread_id)"
                     :hide-sender="row.inStack"
-                    :draggable="!isMobile && !isAllAccountsSearch"
+                    :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
+                    :screened="screener.active.value && screener.isScreened(row.thread)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
                     @drag-end="threadDrag.end()"
                     @set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
                     @archive-thread="rowArchive(row.thread)"
+                    @unarchive-thread="handleUnarchiveThreads([row.thread.thread_id])"
                     @trash-thread="rowTrash(row.thread)"
                     @delete-thread="junkOrDeleteThreads([row.thread.thread_id], false)"
                     @set-flagged="(flagged: boolean) => rowSetFlagged(row.thread, flagged)"
@@ -317,7 +303,9 @@
             <p v-else class="text-ink-gray-5">
               {{
                 mailbox !== 'search'
-                  ? __('No mails found for the selected filter.')
+                  ? filter
+                    ? __('No mails found for the selected filter.')
+                    : __('You have no mails in this folder.')
                   : hasSearchQuery
                     ? __('No results found for the given query.')
                     : __('Search your mail')
@@ -333,6 +321,7 @@
           :thread-i-d
           :threads="threadIDs"
           :messages="currentThread?.messages"
+          :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
           :can-go-next="canGoNext"
           @slide-done="threadSlide = ''"
           @reload-mails="resetThreads"
@@ -342,6 +331,8 @@
           "
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
+          @archive-thread="handleArchiveThreads([threadID!])"
+          @unarchive-thread="handleUnarchiveThreads([threadID!])"
           @move-thread="
             (moveToMailbox: string) => handleMoveThreads({ [moveToMailbox]: [threadID!] })
           "
@@ -376,112 +367,47 @@
 
   <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
   <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
-  <ScreenedEmailAddressModal />
-  <!-- Selection action bar (design: 5·Selection) — covers the shell's bottom nav
-	     while selecting: thumb reach, Delete last and red. -->
-  <!-- Fixed over the nav with safe-area padding, so entering/leaving selection mode
-	     never shifts the list. Teleported to Mail's overlay layer: inside
-	     the layout's `isolate` stacking context, no z-index could beat the nav. -->
-  <Teleport :to="overlayLayer ?? 'body'">
-    <div
-      v-if="mobileSelectionMode"
-      class="bg-surface-base fixed inset-x-0 bottom-0 z-20 border-t pb-[env(safe-area-inset-bottom)]"
-    >
-      <!-- Four labeled actions + More: seven unlabeled icons were the old screener
-		     trap (no labels, no tooltips on touch). Overflow actions and the folder
-		     menus live in the More sheet, which chains into the folder sheets. -->
-      <!-- flex-1 columns (like the nav underneath): equal widths keep the icon
-		     centers evenly spaced regardless of label length. -->
-      <div class="flex h-15 items-stretch">
-        <button
-          v-for="action in visibleSelectActions.slice(0, 4)"
-          :key="action.label"
-          class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
-          @click="action.onClick"
-        >
-          <component :is="action.icon" class="h-5 w-5" />
-          <span class="max-w-full truncate">{{
-            action.shortLabel ?? stripShortcutHint(action.label)
-          }}</span>
-        </button>
-        <button
-          v-if="moreSelectionOptions.length"
-          class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
-          @click="showMoreActions = true"
-        >
-          <Ellipsis class="h-5 w-5" />
-          <span>{{ __('More') }}</span>
-        </button>
-      </div>
-
-      <AdaptiveDropdown v-model:open="showMoreActions" :options="moreSelectionOptions" />
-      <AdaptiveDropdown
-        v-model:open="showMoveToSheet"
-        :options="moveToOptions"
-        :title="__('Move To')"
-      />
-      <AdaptiveDropdown
-        v-model:open="showAddToSheet"
-        :options="addToOptions"
-        :title="__('Add To')"
-      />
-      <AdaptiveDropdown
-        v-model:open="showRemoveFromSheet"
-        :options="removeFromOptions"
-        :title="__('Remove From')"
-      />
-    </div>
-  </Teleport>
+  <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
+  <MobileSelectionBar
+    :open="mobileSelectionMode"
+    :actions="selectActions"
+    :extra-options="folderSelectionOptions"
+  />
 </template>
 <script setup lang="ts">
-import {
-  Breadcrumbs,
-  Button,
-  Checkbox,
-  Dialog,
-  Dropdown,
-  Tooltip,
-  usePageMeta,
-  usePortalTarget,
-} from 'frappe-ui'
-import {
-  Archive,
-  CircleAlert,
-  CircleCheck,
-  Ellipsis,
-  FolderInput,
-  FolderMinus,
-  FolderPlus,
-  LoaderCircle,
-  Mail as MailIcon,
-  MailOpen,
-  RefreshCw,
-  Star,
-  StarOff,
-  Trash2,
-  X,
-} from 'lucide-vue-next'
+import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown, usePageMeta } from 'frappe-ui'
+import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
+import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import LoadingBar from '@/apps/mail/components/LoadingBar.vue'
+import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
+import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
+import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
+import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
+import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
+import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
+import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
-import ScreenedEmailAddressModal from '@/apps/mail/components/Modals/ScreenedEmailAddressModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { listScope } from '@/apps/mail/composables/useClearList'
+import { useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
+import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
-import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
+import type { Thread } from '@/apps/mail/types'
 import {
   isMac,
   raiseError,
@@ -490,16 +416,16 @@ import {
   shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
 import {
+  useDiscardingDrafts,
   useListReload,
   useMobileSearch,
-  useMobileSelection,
   useReadingPane,
   useScreenSize,
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
-import { useStoredFilter } from '@/apps/mail/utils/listFilter'
+import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
   isNavigationKey,
@@ -509,12 +435,12 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
+import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { appPageMeta } from '@/platform/page-meta'
-import { stripShortcutHint } from '@/utils/actionLabel'
 
 const {
   accountId,
@@ -529,12 +455,9 @@ const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
-const { setMobileSelectionActive } = useMobileSelection()
 const { dropViewUndo } = useUndo()
 const socket = inject('$socket')
 // MailLayout's overlay layer; see the selection bar's Teleport.
-const overlayLayer = usePortalTarget()
-const user = inject('$user') as UserResource
 const store = userStore()
 const { mailboxes, mailboxIds } = store
 
@@ -580,10 +503,13 @@ const stackingEnabled = computed(
   () => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
 )
 
+// Mail from a sender nobody has decided on yet sits in the Inbox, marked unscreened (see useScreener).
+const screener = useScreener()
+
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
-  groupMessagesBy,
+  groupedByDate,
   groupedThreads,
   getGroupThreads,
   isLastGroup,
@@ -593,6 +519,7 @@ const {
   visibleThreadCount,
   navigableRows,
   focusedRowKey,
+  onListFocusIn,
   focusedRow,
   focusRow,
   focusOnThread,
@@ -621,12 +548,6 @@ const rowThreadIDs = (row: NavRow): string[] =>
       ? row.threads.map((t) => t.thread_id)
       : (getGroupThreads(row.dateKey) ?? [])
 
-// Derived rather than stored, mirroring isGroupSelected: it can never drift from `selections`, and
-// every existing path that mutates them (Cmd+A, Esc, resetSelections, shift+arrow, a member's own
-// checkbox) keeps the stack checkbox honest for free.
-const isStackSelected = (threads: Thread[]) =>
-  threads.every((t) => selections.value.includes(t.thread_id))
-
 // A deep link or a step to the next thread can land inside a collapsed stack or a folded day — surface
 // it either way, and leave the cursor on it (see revealThread).
 watch(
@@ -640,110 +561,38 @@ watch(
 // Selection
 
 const mailThreadRef = useTemplateRef('mailThread')
-const selections = ref<string[]>([])
+// The ticked threads, and the phone's selection mode (see useListSelection).
+const {
+  selections,
+  isAllSelected,
+  mobileSelectionMode,
+  toggleSelect,
+  toggleSelectAll,
+  resetSelections,
+  isGroupSelected,
+  isStackSelected,
+} = useListSelection({
+  keys: () => threadIDs.value,
+  groupKeys: (dateKey) => getGroupThreads(dateKey),
+})
 
-// Mobile selection mode (design: 5·Selection): rows show checkboxes, the toolbar
-// turns contextual, and the action bar covers the bottom nav; the compose button hides (via the composable).
-const mobileSelectionMode = computed(() => isMobile.value && selections.value.length > 0)
-watch(mobileSelectionMode, (active) => setMobileSelectionActive(active))
-onUnmounted(() => setMobileSelectionActive(false))
-
-// Selection bar: first four condition-passing actions get labeled slots; the rest,
-// plus the folder menus, overflow into the More sheet (chained sheet opens).
-const showMoreActions = ref(false)
-const showMoveToSheet = ref(false)
-const showAddToSheet = ref(false)
-const showRemoveFromSheet = ref(false)
-const visibleSelectActions = computed(() => selectActions.value.filter((a) => a.condition()))
-const moreSelectionOptions = computed(() => [
-  ...visibleSelectActions.value.slice(4).map((a) => ({
-    label: a.label,
-    icon: a.icon,
-    onClick: a.onClick,
-  })),
+// The folder menus join the phone selection bar's More sheet, each opening as a sheet of its own.
+const folderSelectionOptions = computed(() => [
   ...(showMoveTo.value
-    ? [
-        {
-          label: __('Move To'),
-          icon: FolderInput,
-          onClick: () => (showMoveToSheet.value = true),
-        },
-      ]
+    ? [{ label: __('Move To'), icon: FolderInput, options: moveToOptions.value }]
     : []),
-  ...(showAddTo.value
-    ? [
-        {
-          label: __('Add To'),
-          icon: FolderPlus,
-          onClick: () => (showAddToSheet.value = true),
-        },
-      ]
-    : []),
-  ...(showRemoveFrom.value
-    ? [
-        {
-          label: __('Remove From'),
-          icon: FolderMinus,
-          onClick: () => (showRemoveFromSheet.value = true),
-        },
-      ]
+  ...(folderOptions.value.length
+    ? [{ label: __('Folders'), icon: Folders, options: folderOptions.value }]
     : []),
 ])
-const lastSelected = ref<string[]>()
-const isAllSelected = computed(
-  () => threadIDs.value.length && selections.value.length === threadIDs.value.length,
-)
-
-// Selecting no longer forces a collapsed date group or stack open. Ticking either one is how you act
-// on the whole set at once — collapse the pile, tick, archive — and expanding it on tick would undo
-// exactly the thing being asked for, at the worst moment. Nothing is concealed by staying collapsed:
-// the header or stack row shows its own checkbox ticked, and the toolbar counts individual threads.
-
-const toggleSelect = (
-  threadIDs: string[],
-  selected: boolean,
-  isKeyboardSelect: boolean = false,
-) => {
-  const allIDs = new Set([
-    ...threadIDs,
-    ...(isKeyboardSelect ? [] : getShiftSelectedIDs(threadIDs[0])),
-  ])
-  if (selected) selections.value = [...new Set([...selections.value, ...allIDs])]
-  else selections.value = selections.value.filter((id) => !allIDs.has(id))
-  lastSelected.value = threadIDs
-}
-const getShiftSelectedIDs = (thread: string) => {
-  if (!(isShiftPressed.value && lastSelected.value?.length)) return []
-  const currentIndex = threadIDs.value.indexOf(thread)
-  const firstIndex = threadIDs.value.indexOf(lastSelected.value[0])
-  const lastIndex = threadIDs.value.indexOf(lastSelected.value.at(-1))
-  const farthestIndex =
-    Math.abs(currentIndex - firstIndex) > Math.abs(currentIndex - lastIndex)
-      ? firstIndex
-      : lastIndex
-  const [lower, higher] = [farthestIndex, currentIndex].sort((a, b) => a - b)
-  return threadIDs.value.slice(lower, higher + 1)
-}
-const toggleSelectAll = (selected: boolean) => {
-  if (selected) selections.value = [...threadIDs.value]
-  else selections.value = []
-  lastSelected.value = undefined
-}
-const resetSelections = () => {
-  selections.value = []
-  lastSelected.value = undefined
-}
-const isGroupSelected = (key: string) =>
-  getGroupThreads(key).every((id) => selections.value.includes(id))
+// Selecting doesn't force a collapsed date group or stack open: ticking either one is how you act on
+// the whole set at once — collapse the pile, tick, archive.
 
 // Shortcuts
 
-const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
-const isShiftPressed = ref(false)
 const gPrefix = useGPrefix()
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 const handleKeyDown = (e: KeyboardEvent) => {
-  isShiftPressed.value = e.shiftKey
   const key = e.key.toLowerCase()
 
   // Handle Ctrl/Cmd+A (Select All)
@@ -802,11 +651,16 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   // Delete/Trash (Backspace on Mac, Delete on Windows)
   if (key === (isMac ? 'backspace' : 'delete')) {
     e.preventDefault()
-    if (e.shiftKey || mailbox === mailboxIds.trash) return junkOrDeleteThreads(thread_ids, false)
+    // Trash and Drafts let go for good: a draft is discarded rather than filed in Trash.
+    if (e.shiftKey || mailbox === mailboxIds.trash || mailbox === mailboxIds.drafts)
+      return junkOrDeleteThreads(thread_ids, false)
     return handleMoveThreads({
       [mailboxIds.trash]: thread_ids,
     })
   }
+
+  // Drafts offers only Discard: a draft isn't read, archived or junked.
+  if (mailbox === mailboxIds.drafts) return
 
   // Mark as read/unread (u)
   if (key === 'u') {
@@ -816,19 +670,23 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
     })
   }
 
-  // Archive (e)
+  // Archive (e): Archive and Unarchive share a place, so E does whichever it shows — and nothing
+  // where neither has anything to do.
+  const acted = threadRows.value.filter((t) => thread_ids.includes(t.thread_id))
+  const boxes = { sent: mailboxIds.sent, archive: mailboxIds.archive, inbox: mailboxIds.inbox }
+  const messagesOf = (t: Thread) => (t.messages?.length ? t.messages : [t])
   if (key === 'e') {
     e.preventDefault()
-    return mailbox === mailboxIds.sent
-      ? handleAddThreadsToMailbox(mailboxIds.archive, thread_ids)
-      : handleMoveThreads({
-          [mailboxIds.archive]: thread_ids,
-        })
+    if (acted.some((t) => archivable(messagesOf(t), boxes))) return handleArchiveThreads(thread_ids)
+    if (acted.some((t) => unarchivable(messagesOf(t), boxes)))
+      return handleUnarchiveThreads(thread_ids)
+    return
   }
 
-  // Mark as junk (!)
+  // Mark as junk (!): only mail you received is junked.
   if (key === '!') {
     e.preventDefault()
+    if (!acted.some((t) => holdsReceivedMail(messagesOf(t), mailboxIds.sent))) return
     return junkOrDeleteThreads(thread_ids, true)
   }
 }
@@ -859,121 +717,34 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
   // Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
   // takes its whole run and onto a header takes the day — the same sets their checkboxes select.
-  if (!(isShiftPressed.value && newIDs.length)) return
+  if (!(e.shiftKey && newIDs.length)) return
   const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
   toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
 }
-const handleKeyUp = (e: KeyboardEvent) => {
-  if (e.key === 'Shift') isShiftPressed.value = false
-}
-interface SelectAction {
-  label: string
-  // One-word label for the mobile selection bar; verb phrases stay in menus/tooltips.
-  shortLabel?: string
-  onClick: () => void
-  icon: typeof RefreshCw
-  condition: () => boolean
-}
-const selectActions = computed((): SelectAction[] => [
+// The actions on the ticked threads, the same set the All accounts list offers (see selectActions).
+const selectActions = buildSelectActions(
+  () => selectedRows.value,
+  () => ({
+    archive: mailbox === mailboxIds.archive,
+    trash: mailbox === mailboxIds.trash,
+    drafts: mailbox === mailboxIds.drafts,
+    sent: mailboxIds.sent,
+    archiveId: mailboxIds.archive,
+    inboxId: mailboxIds.inbox,
+  }),
   {
-    label: __('Star'),
-    onClick: () => setFlaggedByThreadIDs(selections.value, true),
-    icon: Star,
-    condition: () =>
-      selections.value.some(
-        (threadID) =>
-          threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.flagged === 0,
-      ),
+    star: () => setFlaggedByThreadIDs(selections.value, true),
+    unstar: () => setFlaggedByThreadIDs(selections.value, false),
+    archive: () => handleArchiveThreads(selections.value),
+    unarchive: () => handleUnarchiveThreads(selections.value),
+    junk: () => junkOrDeleteThreads(selections.value, true),
+    notJunk: () => handleSetSpamStatus({ 0: selections.value }),
+    trash: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
+    delete: () => junkOrDeleteThreads(selections.value, false),
+    read: () => handleSetSeen({ 1: selections.value }),
+    unread: () => handleSetSeen({ 0: selections.value }),
   },
-  {
-    label: __('Unstar'),
-    onClick: () => setFlaggedByThreadIDs(selections.value, false),
-    icon: StarOff,
-    condition: () =>
-      selections.value.some(
-        (threadID) =>
-          threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.flagged === 1,
-      ),
-  },
-  {
-    label: __('Archive (E)'),
-    onClick: () =>
-      mailbox === mailboxIds.sent
-        ? handleAddThreadsToMailbox(mailboxIds.archive, selections.value)
-        : handleMoveThreads({
-            [mailboxIds.archive]: selections.value,
-          }),
-    icon: Archive,
-    condition: () => mailbox !== mailboxIds.archive,
-  },
-  {
-    label: __('Mark as Junk (!)'),
-    shortLabel: __('Junk'),
-    onClick: () => junkOrDeleteThreads(selections.value, true),
-    icon: CircleAlert,
-    condition: () =>
-      mailbox !== mailboxIds.drafts &&
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.junk === 0,
-      ),
-  },
-  {
-    label: __('Mark as Not Junk'),
-    shortLabel: __('Not Junk'),
-    onClick: () =>
-      handleSetSpamStatus({
-        0: selections.value,
-      }),
-    icon: CircleCheck,
-    condition: () =>
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.junk === 1,
-      ),
-  },
-  {
-    label: __('Move to Trash (Delete)'),
-    shortLabel: __('Trash'),
-    onClick: () =>
-      handleMoveThreads({
-        [mailboxIds.trash]: selections.value,
-      }),
-    icon: Trash2,
-    condition: () => mailbox !== mailboxIds.trash,
-  },
-  {
-    label: __('Delete Threads (Shift+Delete)'),
-    shortLabel: __('Delete'),
-    onClick: () => junkOrDeleteThreads(selections.value, false),
-    icon: Trash2,
-    condition: () => mailbox === mailboxIds.trash,
-  },
-  {
-    label: __('Mark as Read (Shift+U)'),
-    shortLabel: __('Read'),
-    onClick: () =>
-      handleSetSeen({
-        1: selections.value,
-      }),
-    icon: MailOpen,
-    condition: () =>
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.seen === 0,
-      ),
-  },
-  {
-    label: __('Mark as Unread (U)'),
-    shortLabel: __('Unread'),
-    onClick: () =>
-      handleSetSeen({
-        0: selections.value,
-      }),
-    icon: MailIcon,
-    condition: () =>
-      selections.value.some(
-        (threadID) => threadRows.value?.find((t: Thread) => t.thread_id === threadID)?.seen === 1,
-      ),
-  },
-])
+)
 
 // Search
 
@@ -983,48 +754,6 @@ const refillPending = ref(false)
 // Current mailbox's record (carries total_emails/total_threads/unread_threads); used by the periodic
 // poll to detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
-
-// ── Screener banner ─────────────────────────────────────────────────────────────────────────────
-// An info bar mirroring the trash/junk one, shown on the inbox while Hey-style screening is on and
-// unscreened threads are waiting. The count is the Screening folder's unread count, kept fresh by the
-// periodic mailbox poll below.
-const activeAccount = computed(() => user.data?.accounts?.find((a) => a.id === accountId))
-const screeningEnabled = computed(() => !!activeAccount.value?.enable_screening)
-const screenerCount = computed(
-  () => mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.unread_threads ?? 0,
-)
-const showScreenerBanner = computed(
-  () =>
-    // On a phone the Screener row's unread count in the sidebar sheet carries this nudge; the banner is desktop-only.
-    !isMobile.value &&
-    mailbox === mailboxIds.inbox &&
-    screeningEnabled.value &&
-    screenerCount.value > 0 &&
-    (showReadingPane.value || !threadID),
-)
-// Emphasise only the count phrase ("3 new threads") while keeping the sentence a single translatable
-// unit: the full string keeps a literal {0} placeholder (no args passed) so translators control word
-// order, then we split on {0} to slot the emphasised phrase back in.
-const screenerBanner = computed(() => {
-  const one = screenerCount.value === 1
-  const phrase = one ? __('1 new thread') : __('{0} new threads', [String(screenerCount.value)])
-  const sentence = one
-    ? __('{0} is waiting to be screened.')
-    : __('{0} are waiting to be screened.')
-  const [before, after] = sentence.split('{0}')
-  return {
-    phrase,
-    before,
-    after,
-  }
-})
-const goToScreener = () =>
-  router.push({
-    name: 'mail-screener',
-    params: {
-      accountId,
-    },
-  })
 
 // Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
@@ -1084,15 +813,42 @@ watch(
 
 // Main data
 
-// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its own title (see
-// useStoredFilter) — all shared with the merged All Inboxes list. Starred is not offered inside
-// Trash, nor inside the Starred list itself, where it would filter a list to itself.
-const { filter, reloadFilter, FILTER_OPTIONS, filterTitle } = useStoredFilter({
-  scope: () => mailbox,
+// The list's filters, their menu, and its own title (see useListFilter) — all shared with the
+// merged All Inboxes list. Starred is not offered inside Trash, nor inside the Starred list itself,
+// where it would filter a list to itself.
+const {
+  filter,
+  changed: filterChanged,
+  reloadFilter,
+  clear: clearFilter,
+  FILTER_OPTIONS,
+  filterTitle,
+} = useListFilter({
   onChange: () => resetThreads(false),
   starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
+  screenable: () => mailbox === mailboxIds.inbox && screener.active.value,
 })
 const isMailboxLoaded = ref(false)
+
+// The Inbox's category tabs; `inboxTab` is the open one, and undefined in any other list or when the
+// Inbox isn't split.
+const {
+  tabs: inboxTabs,
+  active: inboxTab,
+  routeFor: routeForTab,
+  switched: tabSwitched,
+} = useInboxTabs(
+  () => mailbox === mailboxIds.inbox && 'account',
+  () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
+  () => resetThreads(false),
+)
+// What the list's menu clears (see listScope). Not offered where there is no folder to clear
+// (Starred, a search) or nothing unread to clear (Sent, Drafts).
+const clearScope = computed(() =>
+  ['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox)
+    ? undefined
+    : listScope(inboxTab.value, mailboxName.value, filter.value),
+)
 
 // Reset resource for a mailbox: the window starts at the top and runs as deep as the composable asks
 // (see resetLimit) — one page on a reset, the loaded list on a refresh, so a refresh can tell which
@@ -1106,12 +862,17 @@ const threads = useInfiniteQuery(api.mail.threads.list, () =>
         limit: PAGE_LENGTH,
         start: 0,
         filter_by: filter.value,
+        category: inboxTab.value,
       }
     : false,
 )
 const activeThreads = computed(() => (mailbox === 'search' ? searchResults : threads))
+const { isDiscarding, withoutHeldDrafts } = useDiscardingDrafts()
 const threadRows = computed(() =>
-  activeThreads.value.rows.map((row) => threadRow(row, store.accountId)),
+  activeThreads.value.rows
+    .map((row) => threadRow(row, store.accountId))
+    .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
+    .map(withoutHeldDrafts),
 )
 watch(
   () => threads.status,
@@ -1139,9 +900,14 @@ const isLoading = computed(() => {
   // across query changes — loading shows inline in the list area, never as the full spinner.
   // Checked first: entering the route resets isMailboxLoaded, which must not blank the view.
   if (mailbox === 'search') return false
+  if (tabSwitched.value && inboxTab.value) return false
+  // A new filter is a new query, pending as a mailbox's first is: checked before that.
+  if (filterChanged.value) return false
   if (!isMailboxLoaded.value) return true
   if (emptyMailbox.isPending) return true
   if (refillPending.value) return true
+  // A split Inbox keeps its tabs up while an emptied tab refills (an Undo, a refresh).
+  if (inboxTab.value) return false
   return !threadRows.value.length && activeThreads.value.isFetching
 })
 
@@ -1176,6 +942,8 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 // it announces a send or a draft saved instead (see useListReload). Drafts and Sent are the two lists
 // that answer: everywhere else the mail it wrote does not belong.
 watch(listReloadRequest, () => resetThreads(true, ['drafts', 'sent']))
+// A Screener verdict moves mail in or out of this list.
+watch(screener.version, () => refreshThreads(false))
 
 // Check for new mail without losing the reader's place: refetch the newest window and prepend only the
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
@@ -1211,7 +979,10 @@ watch(
     // loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
     // every account, so a mere account switch mustn't reset it — keep the results and scroll position.
     if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
-    isMailboxLoaded.value = false
+    // Loaded already when the list is cached (back to the Inbox, say): its status never leaves
+    // 'success' then, so the watcher above, which only hears changes, would leave the spinner up.
+    isMailboxLoaded.value = threads.status !== 'pending'
+    tabSwitched.value = false
     reloadFilter()
     focusedRowKey.value = undefined
     collapsedGroups.value = []
@@ -1243,7 +1014,6 @@ const pollForChanges = async () => {
 const onMailChanged = () => refreshThreads()
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
   reloadInterval.value = setInterval(pollForChanges, 30000)
   socket.on('new_mail_created', (updatedMailboxes: string[]) => {
     if (updatedMailboxes.includes(mailbox)) refreshThreads()
@@ -1258,7 +1028,6 @@ onMounted(() => {
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
-  window.removeEventListener('keyup', handleKeyUp)
   if (reloadInterval.value) clearInterval(reloadInterval.value)
   socket.off('mail_changed', onMailChanged)
   // Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
@@ -1330,6 +1099,8 @@ const {
   handleSyncUnseen,
   setFlaggedByThreadIDs,
   handleMoveThreads,
+  handleArchiveThreads,
+  handleUnarchiveThreads,
   handleSetSpamStatus,
   handleAddThreadsToMailbox,
   handleRemoveThreadsFromMailbox,
@@ -1340,11 +1111,8 @@ const {
   setFlaggedSubmit,
   selectedRows,
   moveToOptions,
-  addToOptions,
-  removeFromOptions,
+  folderOptions,
   showMoveTo,
-  showAddTo,
-  showRemoveFrom,
   showJunkOrDeleteThreads,
   junkOrDeleteThreadsOptions,
 } = useThreadActions({
@@ -1462,36 +1230,35 @@ const rowSetSeen = (mail: Thread, seen: boolean) =>
     : handleSetSeen({
         [Number(seen)]: [mail.thread_id],
       })
+
 const rowSetFlagged = (mail: Thread, flagged: boolean) =>
   isAllAccountsSearch.value
     ? crossAccountSetFlagged(mail, flagged)
     : setFlaggedByThreadIDs([mail.thread_id], flagged)
-const rowArchive = (mail: Thread) =>
-  isAllAccountsSearch.value
-    ? crossAccountMoveOut(
-        mail,
-        mail.archive,
-        __('Archiving...'),
-        __('Thread archived.'),
-        __('No Archive folder for this account.'),
-      )
-    : mailbox === mailboxIds.sent
-      ? handleAddThreadsToMailbox(mailboxIds.archive, [mail.thread_id])
-      : handleMoveThreads({
-          [mailboxIds.archive]: [mail.thread_id],
-        })
-const rowTrash = (mail: Thread) =>
-  isAllAccountsSearch.value
-    ? crossAccountMoveOut(
-        mail,
-        mail.trash,
-        __('Moving to Trash...'),
-        __('Thread moved to Trash.'),
-        __('No Trash folder for this account.'),
-      )
-    : handleMoveThreads({
-        [mailboxIds.trash]: [mail.thread_id],
-      })
+
+const rowArchive = (mail: Thread) => {
+  if (isAllAccountsSearch.value)
+    return crossAccountMoveOut(
+      mail,
+      mail.archive,
+      __('Archiving...'),
+      __('Thread archived.'),
+      __('No Archive folder for this account.'),
+    )
+  return handleArchiveThreads([mail.thread_id])
+}
+
+const rowTrash = (mail: Thread) => {
+  if (isAllAccountsSearch.value)
+    return crossAccountMoveOut(
+      mail,
+      mail.trash,
+      __('Moving to Trash...'),
+      __('Thread moved to Trash.'),
+      __('No Trash folder for this account.'),
+    )
+  return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+}
 
 // A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
 // rather than N of each. The row's own tooltips name the count. These take the same paths as the
@@ -1503,12 +1270,7 @@ const stackSetSeen = (threads: Thread[], seen: boolean) =>
   handleSetSeen({
     [Number(seen)]: stackIDs(threads),
   })
-const stackArchive = (threads: Thread[]) =>
-  mailbox === mailboxIds.sent
-    ? handleAddThreadsToMailbox(mailboxIds.archive, stackIDs(threads))
-    : handleMoveThreads({
-        [mailboxIds.archive]: stackIDs(threads),
-      })
+const stackArchive = (threads: Thread[]) => handleArchiveThreads(stackIDs(threads))
 const stackTrash = (threads: Thread[]) =>
   handleMoveThreads({
     [mailboxIds.trash]: stackIDs(threads),
@@ -1527,7 +1289,7 @@ async function emptyMailboxSubmit() {
 }
 const emptyMailboxOptions = computed(() => ({
   title: __('Empty {0}', [mailboxName.value]),
-  message: __(`Are you sure you want to empty the contents of this mailbox?`),
+  message: __(`Are you sure you want to empty this folder?`),
   icon: 'lucide-alert-triangle',
   theme: 'amber' as const,
   actions: [
@@ -1554,9 +1316,8 @@ const mailboxName = computed(() => {
       return mailboxObj.value?._name ?? ''
   }
 })
-const unreadThreadsPrefix = computed(() =>
-  mailboxObj.value?.unread_threads ? `(${mailboxObj.value.unread_threads})` : '',
-)
+const unreadThreads = computed(() => mailboxObj.value?.unread_threads)
+const unreadThreadsPrefix = computed(() => (unreadThreads.value ? `(${unreadThreads.value})` : ''))
 const currentThread = computed(() =>
   threadRows.value?.find((t: Thread) => t.thread_id === threadID),
 )

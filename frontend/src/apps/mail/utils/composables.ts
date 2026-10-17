@@ -1,13 +1,12 @@
 import { toast } from 'frappe-ui'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, readonly, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client } from '@/api'
 import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
-import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
-import { matchesScreenedValue, raiseOptimisticToast } from '@/apps/mail/utils'
+import type { ComposeMailData, Identity, Thread } from '@/apps/mail/types'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import {
   INBOX_FOLDER,
@@ -335,12 +334,14 @@ export const useUndo = () => {
   }
 
   // Wrap the current undo so `step` runs first — lets a side effect (e.g. a junk-list entry) be
-  // reverted on top of the primary undo without replacing it.
-  const prependUndoAction = (step: () => void) => {
+  // reverted on top of the primary undo without replacing it. A `step` that returns a promise is
+  // waited for, so the primary undo has the last word.
+  const prependUndoAction = (step: () => unknown) => {
     const prev = undoAction.value
     undoAction.value = () => {
-      step()
-      prev?.()
+      const done = step()
+      if (done instanceof Promise) void done.finally(() => prev?.())
+      else prev?.()
     }
   }
   return {
@@ -368,19 +369,68 @@ export const useComposeMail = () => ({
 // whichever list is on screen answers in its own terms — the mailbox resets Drafts and Sent, All
 // Inboxes refreshes in place, the screener reloads its senders.
 const listReloadRequest = ref(0)
+
+// Drafts discarded from a composer and still inside their Undo window: deleted only once the toast
+// has passed, so the server still lists them. A list leaves out a row made of nothing else, so a
+// conversation with a reply draft keeps its row everywhere else. Drafts is the exception: a row
+// there carries the mail its draft answers too, but is listed for the draft alone, so it goes once
+// every draft in it is held.
+const discardingDrafts = ref(new Set<string>())
+// A draft whose discard was undone from a thread, as it stood in the editor: the server may be a
+// keystroke behind it, so the thread reopens it from this rather than from what it reloads.
+const restoredDrafts = new Map<string, ComposeMailData>()
+export const useDiscardingDrafts = () => ({
+  /** The drafts being held, for a view that has to redraw as one comes back. */
+  heldDrafts: readonly(discardingDrafts),
+  /** Undo a discard in place: the draft is let back onto the lists, as it was in the editor. */
+  restoreDraft: (id: string, draft: ComposeMailData) => {
+    restoredDrafts.set(id, draft)
+    discardingDrafts.value = new Set([...discardingDrafts.value].filter((held) => held !== id))
+  },
+  /** The editor's copy of a draft just brought back, once; nothing if none is waiting. */
+  takeRestoredDraft: (id: string) => {
+    const draft = restoredDrafts.get(id)
+    // Kept under each id the draft has had; whichever the thread found it by, the rest go too.
+    for (const [key, value] of restoredDrafts) if (value === draft) restoredDrafts.delete(key)
+    return draft
+  },
+  holdDraft: (id: string) => (discardingDrafts.value = new Set([...discardingDrafts.value, id])),
+  releaseDraft: (id: string) =>
+    (discardingDrafts.value = new Set([...discardingDrafts.value].filter((held) => held !== id))),
+  isDiscarding: (
+    row: { messages?: { id: string; draft?: number | boolean }[] },
+    { inDrafts = false } = {},
+  ) => {
+    const counted = inDrafts ? row.messages?.filter((m) => m.draft) : row.messages
+    return !!counted?.length && counted.every((m) => discardingDrafts.value.has(m.id))
+  },
+  /**
+   * The row as it reads with its held drafts gone. A conversation keeps its row outside Drafts, but
+   * one led by the discarded draft took its Draft tag, preview and sender from it — those now come
+   * from the message before.
+   */
+  withoutHeldDrafts: <T extends Thread>(row: T): T => {
+    const kept = row.messages.filter((m) => !discardingDrafts.value.has(m.id))
+    if (kept.length === row.messages.length || !kept.length) return row
+    const latest = kept.at(-1)!
+    if (!discardingDrafts.value.has(row.messages.at(-1)!.id)) return { ...row, messages: kept }
+    return {
+      ...row,
+      messages: kept,
+      draft: latest.draft,
+      preview: latest.preview,
+      from_name: latest.from_name,
+      from_email: latest.from_email,
+      recipients: latest.recipients,
+    }
+  },
+  /** Whether this one message is a draft waiting out its discard's Undo. */
+  isHeld: (id: string) => discardingDrafts.value.has(id),
+})
 export const useListReload = () => ({
   listReloadRequest,
   requestListReload: () => listReloadRequest.value++,
 })
-
-// Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
-// <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
-interface BlockableSender {
-  name?: string
-  email: string
-}
-const showBlockSender = ref(false)
-const sendersToBlock = ref<BlockableSender[]>([])
 
 // The account's own addresses, lowercased — what a thread's senders are matched against to decide
 // which of them the row calls "me" (see utils/participants). Identities are per account, so a row
@@ -392,139 +442,6 @@ export const useOwnEmails = () => {
     () => new Set((identities.data ?? []).map((i: Identity) => i.email.toLowerCase())),
   )
 }
-export const useBlockSender = () => {
-  const store = userStore()
-  const { userResource, identities, screenedAddresses } = store
-  const { setUndoAction, undo, prependUndoAction } = useUndo()
-
-  // Read account/accountId off the store at call time — destructuring would snapshot the unwrapped
-  // values and miss account switches while a component stays mounted.
-  const activeAccount = computed(() =>
-    userResource.data?.accounts?.find((a) => a.id === store.accountId),
-  )
-
-  // Senders worth offering to block: drop the user's own identities and addresses already blocked,
-  // and de-duplicate by email (keeping the first occurrence's display name).
-  const blockableSenders = (
-    senders: {
-      name?: string
-      email?: string
-    }[],
-  ) => {
-    const own = new Set((identities.data ?? []).map((i: Identity) => i.email))
-    // "Already blocked" = screened with the Reject action (their mail is discarded), whether by their
-    // exact address or by a '@domain' entry covering them.
-    const blockedValues = (screenedAddresses.data ?? [])
-      .filter((a: ScreenedAddress) => a.action === 'Reject')
-      .map((a: ScreenedAddress) => a.email)
-    const isBlocked = (email: string) => blockedValues.some((v) => matchesScreenedValue(email, v))
-    const seen = new Set<string>()
-    const result: BlockableSender[] = []
-    for (const { name, email } of senders) {
-      if (!email || own.has(email) || isBlocked(email) || seen.has(email)) continue
-      seen.add(email)
-      result.push({
-        name,
-        email,
-      })
-    }
-    return result
-  }
-
-  // Block the senders chosen in the prompt ('Ask to Block Sender' confirm). Blocking becomes the new
-  // undo action: Cmd+Z unblocks (it does not also reverse the junk move, which stays).
-  const blockSenders = (senders: BlockableSender[]) => {
-    const emails = senders.map((sender) => sender.email)
-    if (!emails.length) return
-    const account = store.accountId
-    setUndoAction(() => {
-      const forward = client.mutation(
-        api.mail.screening.remove,
-        {
-          account,
-          emails,
-        },
-        {
-          silent: true,
-        },
-      )
-      const restored = emails.length === 1 ? __('Sender unblocked.') : __('Senders unblocked.')
-      raiseOptimisticToast(forward, restored)
-    })
-    const forward = client.mutation(
-      api.mail.screening.set,
-      {
-        account,
-        emails,
-        action: 'Reject',
-      },
-      {
-        silent: true,
-      },
-    )
-    const success = emails.length === 1 ? __('Sender blocked.') : __('Senders blocked.')
-    raiseOptimisticToast(forward, success, undo)
-  }
-
-  // File the senders' future mail into Junk (the default 'Junk Sender's Mail'). Side effect only — the
-  // caller renders the toast (see willJunkSenders) so the junk action shows a single toast, not two.
-  // Undoing the junk move also drops them from the junk list (composed onto that move's undo).
-  const junkSenders = (senders: BlockableSender[]) => {
-    const emails = senders.map((sender) => sender.email)
-    if (!emails.length) return
-    const account = store.accountId
-    void client
-      .mutation(api.mail.screening.set, {
-        account,
-        emails,
-        action: 'Spam',
-      })
-      .catch(() => {})
-    prependUndoAction(() =>
-      client.mutation(api.mail.screening.remove, {
-        account,
-        emails,
-      }),
-    )
-  }
-
-  // Whether marking these senders as junk will auto-file their future mail into Junk (vs prompting
-  // to block, or doing nothing when there's nothing blockable). Lets the caller show one accurate toast.
-  const willJunkSenders = (
-    senders: {
-      name?: string
-      email?: string
-    }[],
-  ) =>
-    blockableSenders(senders).length > 0 &&
-    activeAccount.value?.on_mark_as_junk !== 'Ask to Block Sender'
-
-  // Apply the account's 'on mark as junk' behaviour to the senders of a just-junked message:
-  // 'Ask to Block Sender' opens the prompt; otherwise silently junk their future mail.
-  const promptBlockSenders = (
-    senders: {
-      name?: string
-      email?: string
-    }[],
-  ) => {
-    const list = blockableSenders(senders)
-    if (!list.length) return
-    if (activeAccount.value?.on_mark_as_junk === 'Ask to Block Sender') {
-      sendersToBlock.value = list
-      showBlockSender.value = true
-      return
-    }
-    junkSenders(list)
-  }
-  return {
-    showBlockSender,
-    sendersToBlock,
-    willJunkSenders,
-    promptBlockSenders,
-    blockSenders,
-  }
-}
-
 // Navigate to the search results scoped to a sender — Gmail's "Filter messages like this". Lands on the
 // filtered view (mailbox 'search') with a "From" chip the user can refine further. Shared by the message
 // more-actions menu and the clickable sender address in a thread.

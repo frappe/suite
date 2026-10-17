@@ -9,7 +9,6 @@ CONFIG_KEY_FIELD_MAP = {
     "spamd_scanning_mode": None,
     "spamd_hybrid_scanning_threshold": None,
     # Defaults
-    "default_mail_quota": "default_disk_quota_gb",
     "gravatar_default_avatar": "default_gravatar",
     # Limits
     "exchange_max_export": None,
@@ -37,9 +36,6 @@ def execute() -> None:
     for key, field in CONFIG_KEY_FIELD_MAP.items():
         value = mail_conf.get(key) or meta.get_field(field or key).default
         if value is not None:
-            if key == "default_mail_quota":
-                value = int(int(value) // 1024**3)
-
             setattr(settings, field or key, value)
 
     settings.flags.ignore_mandatory = 1

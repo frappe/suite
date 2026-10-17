@@ -19,7 +19,7 @@ interface SheetEditorHandle {
   readonly saveState: DocumentSaveState
   flushSave(): Promise<void>
   /** The workbook, with the cell edit still in progress. */
-  workbookJson(): string
+  workbookJson(): Promise<string>
   /** True while the formula bar or the cell editor holds uncommitted text. */
   hasDraft(): boolean
   goToCell(sheet: string, cell: string): boolean
@@ -108,8 +108,8 @@ async function restoreVersion(seq: string) {
     restoring.value = false
   }
 }
-function retainRecovery() {
-  const workbook = editor.value?.workbookJson()
+async function retainRecovery() {
+  const workbook = await editor.value?.workbookJson()
   if (!workbook) return
   try {
     keepRecovery(props.session.nodeId, workbook)

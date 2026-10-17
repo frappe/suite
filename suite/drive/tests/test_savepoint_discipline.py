@@ -33,7 +33,6 @@ from suite.drive._core import nodes as node_workflows
 from suite.drive._core.errors import DriveConflict
 from suite.drive._core.principals import Principals
 from suite.drive.http import routes
-from suite.drive.patches.build.ports import BlobConflict, SiteStorage
 from suite.drive.webdav import structure
 
 USER = "actor@example.com"
@@ -236,33 +235,3 @@ class TestTheBatchRouteDoesNotFlattenADeadlock(StubbedDatabase):
         self.assertEqual(answer["failed"][0]["type"], "DriveForbidden")
         narrow = [c for c in self.db.rollback.call_args_list if c.kwargs.get("save_point")]
         self.assertEqual(len(narrow), 1)
-
-
-class TestTheBuildBlobInsertReportsItsDeadlock(StubbedDatabase):
-    """§14.2 step 2. A deadlock must not be filed as "this content exists"."""
-
-    def setUp(self):
-        super().setUp()
-        self.storage = SiteStorage()
-
-    def test_a_deadlocked_insert_is_not_reported_as_a_blob_conflict(self):
-        deadlock = frappe.QueryDeadlockError("victim")
-        blob = MagicMock()
-        blob.insert.side_effect = deadlock
-
-        with (
-            patch.object(frappe, "new_doc", return_value=blob),
-            self.assertRaises(frappe.QueryDeadlockError) as raised,
-        ):
-            self.storage.insert_blob(key="ab/cd/x", checksum="x", size=12, mime_type="text/plain")
-
-        self.assertIs(raised.exception, deadlock)
-
-    def test_a_unique_violation_still_rolls_back_narrowly_and_carries_on(self):
-        blob = MagicMock()
-        blob.insert.side_effect = frappe.UniqueValidationError("File Blob")
-
-        with patch.object(frappe, "new_doc", return_value=blob), self.assertRaises(BlobConflict):
-            self.storage.insert_blob(key="ab/cd/x", checksum="x", size=12, mime_type="text/plain")
-
-        self.db.rollback.assert_called_once_with(save_point="drive_build_insert_blob")

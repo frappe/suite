@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
-import { SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import router from '@/apps/mail/router'
 import type { UserAccount } from '@/apps/mail/types'
 import { useSession } from '@/platform/session'
@@ -10,20 +9,48 @@ import { useSession } from '@/platform/session'
 export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
 
 /** Destinations rather than places mail is read — the folder lists (desktop sidebar,
- * mobile folder sheet) render these in their own "More" section below the custom folders,
- * in this order. Typed wide (string) because mailbox data carries role as a string. */
+ * mobile folder sheet) keep these behind their More row, in this order: the mail kept first,
+ * the mail thrown out last, Trash at the very end. Typed wide (string) because mailbox data
+ * carries role as a string. */
 export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
-  'junk',
   'archive',
+  'junk',
   'trash',
 ] satisfies readonly MailboxRole[]
 
-/** Role → mailbox id map for a mailbox list (plus the named Screener). Shared with
- * utils/accountScope, which derives the same map for a non-active account's list. */
+/** The system folders the folder lists lead with, in this order; a role not named here follows
+ * them. Starred, which is no mailbox, goes in after the Inbox (see withStarred). */
+export const PRIMARY_MAILBOX_ROLES: readonly string[] = [
+  'inbox',
+  'drafts',
+  'sent',
+] satisfies readonly MailboxRole[]
+
+const primaryRank = (role?: string | null) => {
+  const rank = PRIMARY_MAILBOX_ROLES.indexOf(role ?? '')
+  return rank === -1 ? PRIMARY_MAILBOX_ROLES.length : rank
+}
+
+/** The lead folders in reading order — Inbox, Starred, Drafts, Sent, then the rest. */
+export const withStarred = <T, S>(
+  folders: T[],
+  roleOf: (folder: T) => string | null | undefined,
+  starred: S,
+): (T | S)[] => {
+  const sorted: (T | S)[] = [...folders].sort(
+    (a, b) => primaryRank(roleOf(a)) - primaryRank(roleOf(b)),
+  )
+  const afterInbox = folders.length ? sorted.findIndex((f) => roleOf(f as T) === 'inbox') + 1 : 0
+  sorted.splice(afterInbox, 0, starred)
+  return sorted
+}
+
+/** Role → mailbox id map for a mailbox list. Shared with utils/accountScope, which derives the
+ * same map for a non-active account's list. */
 export const deriveMailboxIds = (
   mailboxes?: { role?: MailboxRole | null; _name?: string; id: string }[],
-): Record<MailboxRole | 'screener', string> => {
-  const ids: Record<MailboxRole | 'screener', string> = {
+): Record<MailboxRole, string> => {
+  const ids: Record<MailboxRole, string> = {
     inbox: '',
     sent: '',
     drafts: '',
@@ -31,11 +58,9 @@ export const deriveMailboxIds = (
     junk: '',
     archive: '',
     important: '',
-    screener: '',
   }
   mailboxes?.forEach((m) => {
     if (m.role) ids[m.role] = m.id
-    else if (m._name === SCREENER_MAILBOX_NAME) ids.screener = m.id
   })
   return ids
 }
@@ -131,6 +156,33 @@ export const userStore = defineStore('mail-user', () => {
 
   const mailboxIds = computed(() => deriveMailboxIds(mailboxes.data))
 
+  // The categories the Inbox is split into, in the order of their tabs (none, no tabs), and each tab's
+  // unread count: in the active account's Inbox, and across every account's.
+  const inboxTabs = computed(() => {
+    const data = userResource.data
+    return data?.email_classification && data.split_inbox ? data.inbox_tabs : []
+  })
+  const tabCounts = useQuery(api.mail.tabs.counts, () =>
+    accountId.value && mailboxIds.value.inbox && inboxTabs.value.length
+      ? { account: accountId.value, mailbox: mailboxIds.value.inbox }
+      : false,
+  )
+  const unifiedTabCounts = useQuery(api.mail.unified.tabCounts, () =>
+    (userResource.data?.accounts.length ?? 0) > 1 && inboxTabs.value.length
+      ? // A system folder's slug is its role.
+        { folder: 'inbox' }
+      : false,
+  )
+  // In step with the mailbox counts, as the unified folders are: after any thread action and on the
+  // periodic poll.
+  watch(
+    () => mailboxes.data,
+    () => {
+      if (tabCounts.data) void tabCounts.refetch().catch(() => {})
+      if (unifiedTabCounts.data) void unifiedTabCounts.refetch().catch(() => {})
+    },
+  )
+
   // Short display labels for the merged views (All Inboxes, all-accounts search), keyed by the
   // account's full name. Only the odd ones out get labelled: the currently open account is
   // where the reader already is, so its rows stay bare ('' here — the row hides an empty
@@ -172,6 +224,9 @@ export const userStore = defineStore('mail-user', () => {
     screenedAddresses,
     globalScreenedAddresses,
     unifiedFolders,
+    inboxTabs,
+    tabCounts,
+    unifiedTabCounts,
     reset,
   }
 })

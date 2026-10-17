@@ -18,8 +18,8 @@ class SuiteSettings(Document):
 
         contact_email: DF.Data | None
         is_onboarded: DF.Check
-        site_api_key: DF.Data | None
-        site_api_secret: DF.Password | None
+        suite_cloud_secret: DF.Password | None
+        suite_cloud_tenant: DF.Data | None
         suite_cloud_url: DF.Data | None
         workspace_logo: DF.AttachImage | None
         workspace_name: DF.Data | None
@@ -30,12 +30,12 @@ class SuiteSettings(Document):
             self.warn_about_plain_http()
 
     def warn_about_plain_http(self) -> None:
-        """The site key travels with every request; over http it is readable on the way."""
+        """The tenant secret travels with every request; over http it is readable on the way."""
 
         url = (self.suite_cloud_url or "").strip().lower()
         if url and not url.startswith("https://") and not frappe.conf.developer_mode:
             frappe.msgprint(
-                _("Suite Cloud URL is not https: the site's API key would travel in the clear."),
+                _("Suite Cloud URL is not https: the tenant secret would travel in the clear."),
                 indicator="orange",
                 alert=True,
             )
@@ -50,9 +50,9 @@ class SuiteSettings(Document):
         changes = self._profile_changes()
         if changes:
             frappe.enqueue(
-                "suite.mail.directory.push_site_profile",
+                "suite.mail.directory.push_tenant_profile",
                 enqueue_after_commit=True,
-                job_id="suite-site-profile",  # a burst of saves pushes the latest values once
+                job_id="suite-tenant-profile",  # a burst of saves pushes the latest values once
                 deduplicate=True,
                 **changes,
             )
@@ -70,7 +70,7 @@ class SuiteSettings(Document):
 
     @frappe.whitelist()
     def validate_suite_cloud_credentials(self) -> dict:
-        """Pings Suite Cloud with the configured URL, key and secret and reports what it answered.
+        """Pings Suite Cloud with the configured URL, tenant id and secret and reports what it answered.
 
         Reads the effective configuration, so credentials written to the site config by Frappe
         Cloud are checked too; unsaved edits on the form are not.
@@ -78,10 +78,10 @@ class SuiteSettings(Document):
 
         frappe.only_for("System Manager")
         is_suite_cloud_configured(raise_exception=True)
-        site = suite_cloud.get_client().call("site.ping")
+        site = suite_cloud.get_client().call("tenant.ping")
 
-        message = _("Connected to Suite Cloud as site {0} on cluster {1}.").format(
-            frappe.bold(site.get("site")), frappe.bold(site.get("cluster") or site.get("jmap_url"))
+        message = _("Connected to Suite Cloud as tenant {0} on cluster {1}.").format(
+            frappe.bold(site.get("title")), frappe.bold(site.get("cluster") or site.get("jmap_url"))
         )
         indicator = "green"
         jmap_url = (site.get("jmap_url") or "").rstrip("/")

@@ -11,8 +11,15 @@
  *
  * `findQuoteRoots` normalises all of that into a list of outermost elements, one per trail.
  * Sibling-run trails (Outlook, Thunderbird with its attribution line) are wrapped in a fresh
- * `<div>` first so each trail is a single node the caller can hide and toggle. The backend's
- * `preview_from_html` applies the same rules — keep the two in step.
+ * `<div>` first so each trail is a single node the caller can hide and toggle.
+ *
+ * Not every block in that markup is history the reader has already seen. A forward travels in
+ * the same containers, and it is the message. A writer who answers inline types between the
+ * quoted lines, inside the trail. And a mail can be nothing but a quote. Each of those stays on
+ * view, or the reader opens a reply and finds it blank above a "Show trimmed content" button.
+ *
+ * The backend's `preview_from_html` strips every trail it finds, forwards and inline answers
+ * included, so the preview may say less than the reader shows but never shows what it hides.
  */
 
 const QUOTE_CLASS =
@@ -22,6 +29,13 @@ const CITE_PREFIX_CLASS = /^(?:x_)?moz-cite-prefix$/
 // Outlook on the web: an empty marker, then the header the original message follows.
 const OUTLOOK_MARKER_ID = /^(?:x_)?appendonsend$/
 const OUTLOOK_WEB_HEADER_ID = /^(?:x_)?divRplyFwdMsg$/
+// Gmail's reply and ours quote the original in a <blockquote> right under the container; around a
+// forward the same containers hold the message itself. Read from the markup, so it holds in every
+// language Gmail writes its "Forwarded message" line in.
+const QUOTING_CONTAINER_CLASS = /^(?:x_)?(?:gmail_quote|frappe_mail_quote)$/
+// The line a forward opens with: Gmail's and Proton's "Forwarded message", Apple Mail's "Begin
+// forwarded message:".
+const FORWARD_LINE = /forwarded message/i
 
 const hasClass = (el: Element, pattern: RegExp) =>
   Array.from(el.classList).some((c) => pattern.test(c))
@@ -58,6 +72,54 @@ const attributionBefore = (quote: Element) => {
   return prev && hasClass(prev, CITE_PREFIX_CLASS) ? prev : null
 }
 
+// The first line of a trail: its first child that holds anything. In a reply it is the
+// attribution, "On … wrote:".
+const firstLineNode = (trail: Element) =>
+  Array.from(trail.childNodes).find((node) => node.nodeName !== 'BR' && node.textContent?.trim())
+const firstLine = (trail: Element) => firstLineNode(trail)?.textContent ?? ''
+
+const BLOCK = /^(?:DIV|P|BLOCKQUOTE|TABLE|UL|OL|PRE|H[1-6])$/
+// The attribution line itself: Gmail's is one element, but plenty of clients write it as a run of
+// text and inline markup ("On …, <span>name</span> wrote:") that ends at a line break or a block.
+const attributionNodes = (trail: Element): Node[] => {
+  const first = firstLineNode(trail)
+  if (!first || BLOCK.test(first.nodeName)) return first ? [first] : []
+  const run: Node[] = []
+  for (let node: Node | null = first; node; node = node.nextSibling) {
+    if (node.nodeName === 'BR' || BLOCK.test(node.nodeName)) break
+    run.push(node)
+  }
+  return run
+}
+
+// The line above a cite blockquote, where iPhone Mail puts "Begin forwarded message:".
+const lineBefore = (quote: Element) => {
+  let prev = quote.previousElementSibling
+  while (prev?.tagName === 'BR') prev = prev.previousElementSibling
+  return prev?.textContent ?? ''
+}
+
+const isForward = (trail: Element) =>
+  FORWARD_LINE.test(firstLine(trail)) ||
+  (trail.tagName === 'BLOCKQUOTE' && FORWARD_LINE.test(lineBefore(trail))) ||
+  (trail.tagName !== 'BLOCKQUOTE' &&
+    hasClass(trail, QUOTING_CONTAINER_CLASS) &&
+    !trail.querySelector(':scope > blockquote'))
+
+// Text a reader would see: not the stylesheet a mail carries in its body.
+const textNodes = (root: Node) => {
+  const doc = root.ownerDocument ?? (root as Document)
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.parentElement?.closest('style, script, title') || !node.textContent?.trim()
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  })
+  const nodes: Text[] = []
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  return nodes
+}
+
 export const findQuoteRoots = (root: ParentNode): Element[] => {
   const candidates = new Set<Element>()
 
@@ -75,9 +137,69 @@ export const findQuoteRoots = (root: ParentNode): Element[] => {
     candidates.add(attribution ? wrapRun([attribution, el]) : el)
   })
 
-  // Only the outermost of each trail: hiding it hides whatever is quoted inside it.
-  return Array.from(candidates).filter((el) => {
-    for (let p = el.parentElement; p; p = p.parentElement) if (candidates.has(p)) return false
-    return true
-  })
+  // The trails directly inside `within` (or the whole message): hiding one hides whatever is
+  // quoted inside it.
+  const outermost = (within?: Element) =>
+    Array.from(candidates).filter((el) => {
+      if (el === within || (within && !within.contains(el))) return false
+      for (let p = el.parentElement; p && p !== within; p = p.parentElement)
+        if (candidates.has(p)) return false
+      return true
+    })
+
+  // What the writer typed inside a trail, around the lines they quote — anything that is neither
+  // quoted nor the attribution line, above the first quoted line as much as between them.
+  const isQuoted = (node: Node, trail: Element) => {
+    for (let p = node.parentElement; p && p !== trail; p = p.parentElement)
+      if (p.tagName === 'BLOCKQUOTE' || candidates.has(p)) return true
+    return false
+  }
+  const isAnswer = (node: Node, trail: Element) =>
+    !isQuoted(node, trail) && !attributionNodes(trail).some((line) => line.contains(node))
+  const hasWriterText = (trail: Element) => textNodes(trail).some((node) => isAnswer(node, trail))
+  const hasWriterTextAfter = (trail: Element, quote: Element) =>
+    textNodes(trail).some(
+      (node) =>
+        !quote.contains(node) &&
+        quote.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING &&
+        isAnswer(node, trail),
+    )
+  // Only a container can hold an answer: everything inside a quoted blockquote is the quoted
+  // author's, their own inline answers included, and Outlook's trail is quoted as a whole.
+  const quotesAnswers = (trail: Element) =>
+    trail.tagName !== 'BLOCKQUOTE' &&
+    hasClass(trail, QUOTE_CLASS) &&
+    !!trail.querySelector('blockquote') &&
+    hasWriterText(trail)
+  // The quoted blocks directly inside a trail the writer answered in: the trails it holds, and the
+  // plain blockquotes our own composer splits a quote into when the writer answers inside it.
+  const quotedBlocks = (trail: Element) => {
+    const blocks = new Set(
+      [...candidates, ...Array.from(trail.querySelectorAll('blockquote'))].filter(
+        (el) => el !== trail && trail.contains(el),
+      ),
+    )
+    return Array.from(blocks).filter((el) => {
+      for (let p = el.parentElement; p && p !== trail; p = p.parentElement)
+        if (blocks.has(p)) return false
+      return true
+    })
+  }
+
+  // A forward stays, and so does a trail the writer answered inside — of those, only history
+  // with nothing of theirs after it folds away.
+  const trailsIn = (trail: Element): Element[] => {
+    if (isForward(trail)) return outermost(trail).flatMap(trailsIn)
+    if (quotesAnswers(trail))
+      return quotedBlocks(trail)
+        .filter((block) => !hasWriterTextAfter(trail, block))
+        .flatMap(trailsIn)
+    return [trail]
+  }
+
+  const trails = outermost().flatMap(trailsIn)
+
+  // A mail that is nothing but a quote is shown as it is — there is nothing else to read.
+  const hidden = (node: Node) => trails.some((trail) => trail.contains(node))
+  return textNodes(root as Node).some((node) => !hidden(node)) ? trails : []
 }

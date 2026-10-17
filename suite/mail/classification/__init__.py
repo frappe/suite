@@ -15,6 +15,7 @@ Classification is layered, cheapest first. Each layer names a category or passes
 A message no layer claims is Primary.
 """
 
+import json
 from collections.abc import Callable
 
 import frappe
@@ -22,18 +23,22 @@ from frappe import _
 from jmap import MethodError
 from jmap.batch import ReadOnlyAccountError
 
-from suite.mail.classification.category import Category, get_category
+from suite.mail.classification.category import INBOX_TABS, Category, get_category, tab_filter
 from suite.mail.classification.headers import classify_by_headers
 from suite.mail.jmap import SetResult, SuiteJMAPClient, chunked_set
 from suite.mail.utils import get_config, log_mail_error
 
 __all__ = [
     "EMAIL_PROPERTIES",
+    "INBOX_TABS",
     "Category",
     "classify",
     "classify_emails",
     "get_category",
+    "inbox_tabs",
     "is_enabled",
+    "normalize_tabs",
+    "tab_filter",
     "take_echoes",
 ]
 
@@ -60,6 +65,53 @@ def is_enabled() -> bool:
     """Whether Mail Settings has incoming mail classified."""
 
     return bool(get_config("enable_email_classification"))
+
+
+def inbox_tabs(user: str | None = None) -> tuple[Category, ...]:
+    """The categories `user`'s Inbox is split into, in the order of their tabs, Primary first.
+
+    Each person picks theirs (User Settings' `inbox_tabs`); one who never has gets every category.
+    None when they turned every category off, or when mail isn't classified: there is nothing to
+    split the Inbox by. A category without a tab keeps its mail in Primary. Whether the split shows
+    at all (`split_inbox`) is the interface's to honour: the tabs work the same either way.
+    """
+
+    if not is_enabled():
+        return ()
+    _split, chosen = chosen_tabs(user or frappe.session.user)
+    return chosen
+
+
+def chosen_tabs(user: str) -> tuple[bool, tuple[Category, ...]]:
+    """Whether `user` splits their Inbox at all, and the tabs they chose for when they do.
+
+    Every category for someone who never chose; their choice is kept while the split is off.
+    """
+
+    settings = frappe.db.get_value(
+        "User Settings", {"user": user}, ["split_inbox", "inbox_tabs"], as_dict=True
+    )
+    if not settings:
+        return True, INBOX_TABS
+    chosen = settings.inbox_tabs
+    if isinstance(chosen, str):
+        chosen = json.loads(chosen)
+    split = settings.split_inbox is None or bool(settings.split_inbox)
+    return split, INBOX_TABS if chosen is None else normalize_tabs(chosen)
+
+
+def normalize_tabs(categories: list[str]) -> tuple[Category, ...]:
+    """The tabs a choice of `categories` makes: theirs, in the tabs' order, Primary first.
+
+    Primary is the Inbox's own mail, so it leads whenever there are other tabs, and alone it is no
+    split at all. A name that is no category is refused.
+    """
+
+    unknown = set(categories) - {category.value for category in Category}
+    if unknown:
+        frappe.throw(_("{0} is not a category.").format(", ".join(sorted(unknown))), frappe.ValidationError)
+    chosen = [tab for tab in INBOX_TABS if tab != Category.PRIMARY and tab.value in categories]
+    return (Category.PRIMARY, *chosen) if chosen else ()
 
 
 def classify(email: dict) -> Category:

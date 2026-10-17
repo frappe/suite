@@ -210,9 +210,46 @@ export function createCellPainter(
         const ext = _overflowExtension(r, c, efmt.align, textW - inside, getVal, cells)
         drawX -= ext.left
         drawW += ext.left + ext.right
+        if (ext.left || ext.right) {
+          _drawSpillingText(drawX, y, drawW, h, s, efmt, rightInset, x, x + w)
+          return
+        }
       }
     }
     _drawCellText(drawX, y, drawW, h, s, efmt, rightInset)
+  }
+
+  // Text spilling out of a filled cell: the ink picked off the fill (white on
+  // a dark fill) is only right inside the cell. The neighbours it spills over
+  // are unfilled (a fill blocks overflow), so that part takes the ink of an
+  // unfilled cell. Same ink both ways (no fill, or a colour the user chose):
+  // one draw.
+  function _drawSpillingText(
+    drawX: number,
+    y: number,
+    drawW: number,
+    h: number,
+    s: string,
+    fmt: CellFormat,
+    rightInset: number,
+    cellX0: number,
+    cellX1: number,
+  ): void {
+    const unfilled: CellFormat = { ...fmt }
+    delete unfilled.backgroundColor
+    const ownInk = inkFor(fmt)
+    const spillInk = inkFor(unfilled)
+    if (ownInk === spillInk) {
+      _drawCellText(drawX, y, drawW, h, s, fmt, rightInset)
+      return
+    }
+    ctx.fillStyle = ownInk
+    _drawCellText(drawX, y, drawW, h, s, fmt, rightInset, [cellX0, cellX1])
+    ctx.fillStyle = spillInk
+    if (drawX < cellX0) _drawCellText(drawX, y, drawW, h, s, unfilled, rightInset, [drawX, cellX0])
+    const drawX1 = drawX + drawW
+    if (drawX1 > cellX1)
+      _drawCellText(drawX, y, drawW, h, s, unfilled, rightInset, [cellX1, drawX1])
   }
 
   // Walk adjacent cells in the alignment direction and return how many CSS
@@ -304,11 +341,18 @@ export function createCellPainter(
     val: string,
     fmt: CellFormat,
     rightInset = 0,
+    // Extra horizontal clip [x0, x1], for drawing one stretch of the text.
+    span?: [number, number],
   ): void {
     ctx.save()
     ctx.beginPath()
     ctx.rect(x + 1, y, Math.max(0, w - 2 - rightInset), h)
     ctx.clip()
+    if (span) {
+      ctx.beginPath()
+      ctx.rect(span[0], y, span[1] - span[0], h)
+      ctx.clip()
+    }
     const { textX, textY, baseline } = _computeTextAnchor(x, y, w, h, fmt, rightInset)
     ctx.textBaseline = baseline
     ctx.fillText(val, textX, textY)

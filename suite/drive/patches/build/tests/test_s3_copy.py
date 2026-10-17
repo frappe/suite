@@ -12,7 +12,7 @@ from frappe.storage.blob import sniff_mime
 
 from suite.drive.patches.build import layout, s3_copy
 from suite.drive.patches.build.copy_ledger import CopiedObject, CopyLedger
-from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD, blob_key, object_key
+from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD
 from suite.drive.patches.build.legacy import get_s3_url
 from suite.drive.patches.build.s3_copy import (
     READ_CHUNK,
@@ -21,6 +21,7 @@ from suite.drive.patches.build.s3_copy import (
     copy_legacy_s3_objects,
 )
 from suite.drive.patches.build.tests.fakes import (
+    KEY_PREFIX,
     FakeBucket,
     FakeFiles,
     FakeStorage,
@@ -32,6 +33,13 @@ BYTES = b"the quick brown fox" * 16
 SHA = hashlib.sha256(BYTES).hexdigest()
 OTHER = b"a different object"
 OTHER_SHA = hashlib.sha256(OTHER).hexdigest()
+
+# The blob name Build derives from SHA, and the folders SHA and OTHER_SHA go in.
+NAME = "731afb6f66"
+FOLDER = f"{KEY_PREFIX}{NAME}/"
+OTHER_FOLDER = f"{KEY_PREFIX}4732b13c57/"
+# A blob some other writer named, the way `put_blob` does: at random.
+THEIRS = f"{KEY_PREFIX}k3x9q2m7pa/a.txt"
 
 
 class S3CopyCase(unittest.TestCase):
@@ -55,15 +63,15 @@ class TestOneObject(S3CopyCase):
         self.storage = FakeStorage()
         self.env, self.prep = self.run_copy(files=self.files, bucket=self.bucket, storage=self.storage)
 
-    def test_the_object_lands_at_the_canonical_key(self):
-        destination = object_key(SHA, "report.PDF")
-        self.assertEqual(destination, f"private/{SHA[:2]}/{SHA[2:4]}/{SHA}.pdf")
+    def test_the_object_lands_in_its_blob_folder_under_its_filename(self):
+        destination = f"private/5e1f0c3a9b7d/{NAME}/report.PDF"
         self.assertEqual(self.bucket.copies, [("copy_object", "team/f1", destination)])
         self.assertEqual(self.bucket.objects[destination], BYTES)
 
     def test_one_blob_row_describes_the_content(self):
-        (blob,) = self.storage.blobs.values()
-        self.assertEqual(blob["key"], blob_key(SHA, "report.PDF"))
+        ((name, blob),) = self.storage.blobs.items()
+        self.assertEqual(name, NAME)
+        self.assertEqual(blob["key"], f"5e1f0c3a9b7d/{NAME}/report.PDF")
         self.assertEqual(blob["checksum"], SHA)
         self.assertEqual(blob["file_size"], len(BYTES))
         self.assertEqual(blob["driver"], "s3")
@@ -124,9 +132,8 @@ class TestResume(S3CopyCase):
 
     def test_an_existing_blob_row_skips_the_copy(self):
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
-        destination = object_key(SHA, "a.txt")
-        bucket = FakeBucket().put("team/f1", BYTES).put(destination, BYTES)
-        storage = FakeStorage().add_blob("blob-existing", key=blob_key(SHA, "a.txt"), checksum=SHA)
+        bucket = FakeBucket().put("team/f1", BYTES).put(f"private/{THEIRS}", BYTES)
+        storage = FakeStorage().add_blob("blob-existing", key=THEIRS, checksum=SHA)
 
         _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
 
@@ -137,21 +144,23 @@ class TestResume(S3CopyCase):
 
     def test_a_blob_still_uploading_is_not_claimed(self):
         # A Pending row is an upload in flight; its object may not be there.
+        # `File Blob` allows duplicate content, so Build stores its own blob.
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES)
-        storage = FakeStorage().add_blob(
-            "blob-pending", key=blob_key(SHA, "a.txt"), checksum=SHA, status="Pending"
-        )
+        storage = FakeStorage().add_blob("blob-pending", key=THEIRS, checksum=SHA, status="Pending")
 
         _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
 
-        self.assertIsNone(files.blob_of("f1"))
+        self.assertEqual(files.blob_of("f1"), NAME)
+        self.assertEqual(sorted(storage.blobs), sorted(["blob-pending", NAME]))
+        self.assertEqual(bucket.objects[f"private/{FOLDER}a.txt"], BYTES)
         self.assertEqual(prep.s3_objects_reused, 0)
-        self.assertEqual(prep.s3_objects_copied, 0)
+        self.assertEqual(prep.s3_objects_copied, 1)
+        self.assertEqual(prep.missing_bytes, [])
 
     def test_a_complete_object_at_the_destination_is_not_copied_again(self):
         # What an interrupted run leaves: the object copied, no blob row.
-        destination = object_key(SHA, "a.txt")
+        destination = f"private/{FOLDER}a.txt"
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES).put(destination, BYTES)
 
@@ -162,7 +171,7 @@ class TestResume(S3CopyCase):
         self.assertEqual(prep.s3_objects_copied, 1)
 
     def test_a_truncated_object_at_the_destination_is_copied_again(self):
-        destination = object_key(SHA, "a.txt")
+        destination = f"private/{FOLDER}a.txt"
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES).put(destination, BYTES[:10])
 
@@ -175,7 +184,7 @@ class TestResume(S3CopyCase):
         # The skip has to be an exact size match, the way the post-copy
         # verification below it is. A `>=` would accept a longer object and
         # link a blob whose checksum its bytes do not have.
-        destination = object_key(SHA, "a.txt")
+        destination = f"private/{FOLDER}a.txt"
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES).put(destination, BYTES + b"trailing")
 
@@ -183,6 +192,46 @@ class TestResume(S3CopyCase):
 
         self.assertEqual(bucket.copies, [("copy_object", "team/f1", destination)])
         self.assertEqual(bucket.objects[destination], BYTES)
+
+    def test_a_rerun_through_another_row_keeps_the_object_already_copied(self):
+        # The first run copies for f2 and dies before its blob row commits.
+        # The rerun meets the same content through f1 first, under another
+        # filename, and must neither copy again nor leave a second object.
+        class DiesAfterTheCopy(FakeStorage):
+            def insert_blob(self, **blob):
+                raise InterruptedRun("killed after the copy")
+
+        bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", BYTES)
+        with self.assertRaises(InterruptedRun):
+            self.run_copy(
+                files=FakeFiles.with_s3_files(("f2", "team/f2", "a.txt")),
+                bucket=bucket,
+                storage=DiesAfterTheCopy(),
+            )
+
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "b.txt"), ("f2", "team/f2", "a.txt"))
+        storage = FakeStorage()
+        env, _ = self.run_copy(files=files, bucket=bucket, storage=storage)
+
+        self.assertEqual(bucket.copies, [("copy_object", "team/f2", f"private/{FOLDER}a.txt")])
+        self.assertEqual(bucket.sizes_under(f"private/{FOLDER}"), {f"private/{FOLDER}a.txt": len(BYTES)})
+        self.assertEqual(storage.blobs[NAME]["key"], f"{FOLDER}a.txt")
+        self.assertEqual((files.blob_of("f1"), files.blob_of("f2")), (NAME, NAME))
+        # The delete command HEADs the ledger's destination, so it names the
+        # object the folder actually holds, not one under f1's filename.
+        destinations = {entry.legacy_key: entry.destination for entry in env.ledger().entries()}
+        self.assertEqual(destinations["team/f1"], f"private/{FOLDER}a.txt")
+
+    def test_an_incomplete_object_under_another_filename_is_copied_over(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "b.txt"))
+        bucket = FakeBucket().put("team/f1", BYTES).put(f"private/{FOLDER}a.txt", BYTES[:10])
+        storage = FakeStorage()
+
+        self.run_copy(files=files, bucket=bucket, storage=storage)
+
+        self.assertEqual(bucket.copies, [("copy_object", "team/f1", f"private/{FOLDER}a.txt")])
+        self.assertEqual(bucket.sizes_under(f"private/{FOLDER}"), {f"private/{FOLDER}a.txt": len(BYTES)})
+        self.assertEqual(storage.blobs[NAME]["key"], f"{FOLDER}a.txt")
 
 
 class TestMissingBytes(S3CopyCase):
@@ -339,8 +388,8 @@ class TestReuseVerifiesTheObject(S3CopyCase):
 
     def setUp(self):
         super().setUp()
-        self.blob_key = blob_key(SHA, "a.txt")
-        self.destination = object_key(SHA, "a.txt")
+        self.blob_key = THEIRS
+        self.destination = f"private/{THEIRS}"
 
     def storage_holding(self, key):
         return FakeStorage().add_blob("blob-existing", key=key, checksum=SHA)
@@ -357,11 +406,11 @@ class TestReuseVerifiesTheObject(S3CopyCase):
         self.assertEqual(prep.s3_objects_reused, 1)
 
     def test_the_object_is_healed_at_the_blobs_own_key_not_ours(self):
-        # The existing row may carry a different extension, so its key is
-        # not the one this row's file_name would produce.
+        # The existing row has its own name and filename, so its key is not
+        # the one this row would produce.
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
         bucket = FakeBucket().put("team/f1", BYTES)
-        theirs = blob_key(SHA, "a.pdf")
+        theirs = f"{KEY_PREFIX}k3x9q2m7pa/a.pdf"
 
         self.run_copy(files=files, bucket=bucket, storage=self.storage_holding(theirs))
 
@@ -412,7 +461,7 @@ class TestObjectAboveFiveGB(S3CopyCase):
     def test_it_goes_through_the_managed_multipart_copy(self):
         _, bucket, _, _ = self.run_it()
 
-        destination = object_key(self.CHECKSUM, "movie.mov")
+        destination = f"private/{KEY_PREFIX}d0df1d523d/movie.mov"
         self.assertEqual(bucket.copies, [("managed_copy", "team/big", destination)])
 
     def test_the_blob_row_carries_the_whole_size(self):
@@ -421,7 +470,7 @@ class TestObjectAboveFiveGB(S3CopyCase):
         (name,) = storage.blobs
         blob = storage.blobs[name]
         self.assertEqual(blob["file_size"], self.SIZE)
-        self.assertEqual(blob["key"], blob_key(self.CHECKSUM, "movie.mov"))
+        self.assertEqual(blob["key"], f"{KEY_PREFIX}d0df1d523d/movie.mov")
         self.assertEqual(files.blob_of("f1"), name)
 
     def test_it_is_counted_as_a_copy_and_not_as_a_missing_byte(self):
@@ -433,26 +482,24 @@ class TestObjectAboveFiveGB(S3CopyCase):
         self.assertEqual(prep.missing_bytes, [])
 
 
-class TestBlockedByAnotherBlob(S3CopyCase):
-    """The unique index is `(checksum, is_private, driver)`, without `status`."""
+class TestAConcurrentBlobOfTheSameContent(S3CopyCase):
+    """`File Blob` has no unique index on content, so a twin never stops Build."""
 
-    def test_a_pending_row_is_reported_and_the_run_carries_on(self):
+    def test_a_blob_inserted_after_the_claim_does_not_stop_the_link(self):
+        class InsertedMeanwhile(FakeStorage):
+            def insert_blob(self, **blob):
+                self.add_blob("blob-raced", key=THEIRS, checksum=blob["checksum"])
+                return super().insert_blob(**blob)
+
         files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"))
         bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", OTHER)
-        storage = FakeStorage().add_blob(
-            "blob-pending", key=blob_key(SHA, "a.txt"), checksum=SHA, status="Pending"
-        )
 
-        _, prep = self.run_copy(files=files, bucket=bucket, storage=storage)
+        _, prep = self.run_copy(files=files, bucket=bucket, storage=InsertedMeanwhile())
 
-        # f1 cannot be linked, but a migration must not stop on it and stop
-        # again on every rerun.
-        self.assertIsNone(files.blob_of("f1"))
-        (missing,) = prep.missing_bytes
-        self.assertEqual(missing.file, "f1")
-        self.assertIn("Pending", missing.reason)
+        self.assertEqual(files.blob_of("f1"), NAME)
         self.assertIsNotNone(files.blob_of("f2"))
-        self.assertEqual(prep.s3_objects_copied, 1)
+        self.assertEqual(prep.s3_objects_copied, 2)
+        self.assertEqual(prep.missing_bytes, [])
 
 
 class TestTheReadIsBounded(S3CopyCase):
@@ -577,12 +624,12 @@ class TestKeyLayouts(S3CopyCase):
     def test_the_leading_slash_is_the_copy_source_and_the_destination_is_canonical(self):
         kind, source, destination = self.bucket.copies[0]
         self.assertEqual((kind, source), ("copy_object", self.LEADING))
-        self.assertEqual(destination, object_key(SHA, "Quarterly report.pdf"))
+        self.assertEqual(destination, f"private/{FOLDER}Quarterly report.pdf")
         self.assertEqual(self.bucket.objects[destination], BYTES)
 
     def test_a_bare_root_key_is_copied_as_is(self):
         self.assertEqual(self.bucket.copies[1][1], self.BARE)
-        self.assertEqual(self.bucket.objects[object_key(OTHER_SHA, "standalone.pdf")], OTHER)
+        self.assertEqual(self.bucket.objects[f"private/{OTHER_FOLDER}standalone.pdf"], OTHER)
 
     def test_the_legacy_objects_all_stay_in_place(self):
         for key in (self.LEADING, self.BARE, self.FOLDER):
@@ -593,7 +640,7 @@ class TestKeyLayouts(S3CopyCase):
         self.assertEqual(set(entries), {self.LEADING, self.BARE, self.FOLDER})
         leading = entries[self.LEADING]
         self.assertEqual(leading.file, "f1")
-        self.assertEqual(leading.destination, object_key(SHA, "Quarterly report.pdf"))
+        self.assertEqual(leading.destination, f"private/{FOLDER}Quarterly report.pdf")
         self.assertEqual(
             (leading.size, leading.checksum, leading.bucket), (len(BYTES), SHA, self.bucket.bucket)
         )
@@ -607,7 +654,7 @@ class TestCopyLedger(S3CopyCase):
         self.assertEqual(prep.s3_objects_reused, 1)
         self.assertEqual({e.legacy_key for e in env.ledger().entries()}, {"team/f1", "team/f2"})
         destinations = {e.destination for e in env.ledger().entries()}
-        self.assertEqual(destinations, {object_key(SHA, "a.txt")})
+        self.assertEqual(destinations, {f"private/{FOLDER}a.txt"})
 
     def test_the_ledger_is_written_before_the_file_row_is_linked(self):
         class FailingLink(FakeFiles):

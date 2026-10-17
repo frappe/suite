@@ -38,7 +38,7 @@ class TestClientBoundaries(TestCase):
     def test_cross_account_search_does_not_refetch_after_the_bound(self):
         with (
             patch.object(mail, "get_user_jmap_accounts", return_value=[{"name": "a", "_name": "Work"}]),
-            patch.object(mail, "search_messages") as search,
+            patch.object(mail, "search_threads") as search,
         ):
             self.assertEqual(mail._search_all_accounts({"text": "hello"}, 25, 500), ([], 0))
             search.assert_not_called()
@@ -46,8 +46,7 @@ class TestClientBoundaries(TestCase):
     def test_single_account_search_returns_explicit_rows_and_total(self):
         with (
             patch.object(mail, "normalize_filter", return_value={"text": "hello"}),
-            patch.object(mail, "search_messages", return_value=([{"id": "a"}], 42)),
-            patch.object(mail, "add_user_images_to_emails"),
+            patch.object(mail, "search_threads", return_value=([{"id": "a"}], 42)),
             patch.object(mail, "_tag_search_results"),
         ):
             self.assertEqual(

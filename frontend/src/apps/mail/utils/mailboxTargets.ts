@@ -44,4 +44,4 @@ export const canMoveToMailbox = (
 ): boolean =>
   !!mailboxId &&
   !filedIn.includes(mailboxId) &&
-  ![mailboxIds.sent, mailboxIds.drafts, mailboxIds.screener].includes(mailboxId)
+  ![mailboxIds.sent, mailboxIds.drafts].includes(mailboxId)

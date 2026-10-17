@@ -185,12 +185,14 @@ import { Button, Dialog, Dropdown, FormControl } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 
-import { AGG_OPTIONS, computePivot } from '../../engine/pivot.js'
+import { AGG_OPTIONS, computePivot, parseRangeRect, rangeReader } from '../../engine/pivot.js'
 import PivotFieldPicker from './PivotFieldPicker.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
-  sheet: { type: Object, required: true },
+  // (sheet, rect) → Promise of the rect's shown values.
+  readRange: { type: Function, required: true },
+  sheetNames: { type: Array, default: () => [] },
   currentSheet: { type: String, default: '' },
   initialRange: { type: String, default: '' },
   pivotId: { type: String, default: '' },
@@ -231,8 +233,7 @@ const sourceSheetInput = ref('')
 // pivot output" would block valid cases like a user storing source data
 // in a sheet called "Pivot 2024". Trust the user to pick correctly.
 const sheetOptions = computed(() => {
-  const names = props.sheet?.getSheetNames?.() || []
-  return names.map((n) => ({ label: n, value: n }))
+  return props.sheetNames.map((n) => ({ label: n, value: n }))
 })
 
 watch(show, (open) => {
@@ -248,7 +249,7 @@ watch(show, (open) => {
     // available non-output sheet so the user lands on a sensible default
     // instead of a feedback loop.
     sourceSheetInput.value = _pickSourceSheet(c)
-    _parseFields()
+    detectFields()
   } else {
     rangeInput.value = props.initialRange || ''
     sourceSheetInput.value = props.currentSheet || sheetOptions.value[0]?.value || ''
@@ -272,28 +273,37 @@ function _pickSourceSheet(cfg) {
   return all.find((n) => n !== cfg?.outputSheet) || saved || props.currentSheet || ''
 }
 
-function _parseFields() {
+// The source as last read: the preview is computed from it, so it shows once
+// the fields are detected and only while the range and sheet still match.
+const source = ref(null) // { key, read }
+const _sourceKey = () => `${sourceSheetInput.value}\0${rangeInput.value.trim()}`
+
+async function _parseFields() {
   const range = rangeInput.value.trim()
   if (!range) {
     rangeError.value = 'Enter a range first.'
     return false
   }
-  const [start, end] = range.includes(':') ? range.split(':') : [range, range]
-  const data = props.sheet.getRangeValues(start, end, sourceSheetInput.value)
+  const rect = parseRangeRect(range)
+  const key = _sourceKey()
+  const data = rect ? await props.readRange(sourceSheetInput.value, rect) : null
+  if (key !== _sourceKey()) return false // the range or sheet changed meanwhile
   if (!data || !data[0]) {
     rangeError.value = 'Could not read range.'
     return false
   }
   rangeError.value = ''
-  // Filter out blank/null/zero cells — those are empty header columns
-  availableFields.value = data[0]
-    .filter((h) => h !== null && h !== undefined && h !== '' && h !== 0)
-    .map((h) => String(h))
+  source.value = { key, read: rangeReader(rect, data) }
+  // Blank header cells are empty columns, not fields.
+  availableFields.value = data[0].filter((h) => h !== '').map((h) => String(h))
   return true
 }
 
 function detectFields() {
-  _parseFields()
+  _parseFields().catch((e) => {
+    rangeError.value = 'Could not read range.'
+    console.error('[sheets] reading the pivot source failed', e)
+  })
 }
 
 // ── Field assignment ──────────────────────────────────────────────────────────
@@ -342,6 +352,8 @@ function onAggDropdownToggle(open) {
 
 const previewTable = computed(() => {
   if (!rowFields.value.length || !valueFields.value.length || !rangeInput.value) return []
+  const src = source.value
+  if (!src || src.key !== _sourceKey()) return []
   const config = {
     sourceSheet: sourceSheetInput.value,
     sourceRange: rangeInput.value.trim(),
@@ -349,7 +361,7 @@ const previewTable = computed(() => {
     cols: colFields.value,
     values: valueFields.value,
   }
-  const table = computePivot(config, (s, e, sh) => props.sheet.getRangeValues(s, e, sh))
+  const table = computePivot(config, src.read)
   return table.slice(0, 7) // header + 5 data rows + total
 })
 

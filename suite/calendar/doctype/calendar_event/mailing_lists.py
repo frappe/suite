@@ -32,7 +32,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
-from suite.mail.directory import get_domains, get_mailing_list_index
+from suite.mail.directory import get_mailing_list_index
 from suite.mail.utils import get_config, log_mail_error
 from suite.suite_core.utils import is_suite_cloud_configured
 
@@ -56,9 +56,6 @@ def expand_mailing_list_participants(participants: list[dict] | None) -> list[di
     """
 
     if not participants or not _expansion_enabled():
-        return participants
-
-    if not _has_local_participant(participants):
         return participants
 
     index = _mailing_list_index()
@@ -227,28 +224,6 @@ def _member_participant(participant: dict, email: str) -> dict:
     )
 
     return member
-
-
-def _has_local_participant(participants: list[dict]) -> bool:
-    """True when any participant sits on a domain this server hosts.
-
-    Only local addresses can be mailing lists, so this avoids fetching the directory for events that
-    invite external attendees only.
-    """
-
-    domains = {(d.get("domain") or "").lower() for d in _domains()}
-
-    return any(_email_of(p).rpartition("@")[2] in domains for p in participants if _email_of(p))
-
-
-def _domains() -> list[dict]:
-    """Returns the server's domains, or an empty list when the directory is unreachable."""
-
-    try:
-        return get_domains()
-    except Exception:
-        log_mail_error("Mailing List Participant Expansion")
-        return []
 
 
 def _mailing_list_index() -> dict[str, list[str]]:

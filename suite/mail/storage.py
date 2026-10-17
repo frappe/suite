@@ -33,7 +33,7 @@ def measurements(previous: dict, *, refresh: bool = False) -> dict:
         group_emails = [row.get("email") or row["name"] for row in groups]
         if any(email not in entries for email in group_emails):
             result["site_mail"] = None
-        site = client.call("site.ping")
+        site = client.call("tenant.ping")
         cap = site.get("limits", {}).get("max_disk_gb")
         if cap is not None:
             value = Decimal(str(cap))

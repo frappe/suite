@@ -3,6 +3,9 @@
 	     CSS-hidden there. Search is not among them on either: the palette answers ⌘K and has a
 	     row of its own in the sidebar, and a third button for it here said the same thing twice. -->
   <div v-if="!isMobile" class="flex space-x-2">
+    <!-- The view menu lays out the whole page (Split View) and the Inbox's tabs, so it sits with
+         the page's actions rather than on the list's own toolbar. -->
+    <ViewMenu v-if="viewMenu" :inbox="inbox" />
     <Button
       icon-left="lucide-pencil"
       :label="__('Compose')"
@@ -15,7 +18,17 @@
 import { Button } from 'frappe-ui'
 import { onMounted, onUnmounted } from 'vue'
 
+import ViewMenu from '@/apps/mail/components/ViewMenu.vue'
 import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
+
+/**
+ * Whether the page has the view menu: the mail lists do, Outbox doesn't. `inbox` puts the Inbox's
+ * category switches in it.
+ */
+const { viewMenu = false, inbox = false } = defineProps<{
+  viewMenu?: boolean
+  inbox?: boolean
+}>()
 
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()

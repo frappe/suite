@@ -36,10 +36,10 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 // mount left standing would still be listening while the next test runs.
 const mounted: App[] = []
 
-const mount = () => {
+const mount = (content = '<p>A message with a body.</p>') => {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const app = createApp(EmailContent, { content: '<p>A message with a body.</p>' })
+  const app = createApp(EmailContent, { content })
   app.mount(root)
   mounted.push(app)
   return root
@@ -80,5 +80,16 @@ describe('EmailContent', () => {
     expect(frame(root)!.style.display).not.toBe('none')
     expect(frame(root)!.className).not.toContain('invisible')
     expect(placeholder(root)).toBeNull()
+  })
+
+  it("folds away an Apple Mail reply's quoted trail", async () => {
+    const root = mount(
+      '<div>Thanks, will do.</div><blockquote type="cite"><div>On 4 Feb, Ana wrote:</div><div>Can you send it?</div></blockquote>',
+    )
+    await nextTick()
+
+    const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
+    expect(doc.querySelector('.quote-toggle')).not.toBeNull()
+    expect(doc.querySelector('blockquote')!.classList).toContain('quote-hidden')
   })
 })

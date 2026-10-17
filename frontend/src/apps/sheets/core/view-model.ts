@@ -33,6 +33,8 @@ export interface ViewSnapshot {
   totalRows: number
   totalCols: number
   zoom: number
+  /** Rows sized by hand, which never auto-fit. Absent in older saves. */
+  manualRows?: number[]
 }
 
 /** Maps an old row/column index to its new one; null or negative drops it. */
@@ -58,6 +60,11 @@ export interface ViewModel {
   readonly hiddenCols: ReadonlySet<number>
   /** The hidden rows that come from a filter rather than a manual hide. */
   readonly filterHiddenRows: ReadonlySet<number>
+  /**
+   * Rows the user sized by hand. Every other row fits its wrapped text
+   * when a column is resized or the row is edited, as in Google Sheets.
+   */
+  readonly manualRows: ReadonlySet<number>
   readonly sel: SelectionState
   readonly totalRows: number
   readonly totalCols: number
@@ -68,6 +75,8 @@ export interface ViewModel {
   rowHeight(r: number): number
   setColWidth(c: number, w: number): void
   setRowHeight(r: number, h: number): void
+  /** Mark a row sized by hand (true) or back to fitting its contents. */
+  setRowManual(r: number, manual: boolean): void
   /** Insert/delete: move every size at or after `at` by `delta`. */
   shiftCols(at: number, delta: number): void
   shiftRows(at: number, delta: number): void
@@ -115,6 +124,23 @@ function shiftSizes(sizes: Sizes, at: number, delta: number): void {
   }
 }
 
+// Same moves as shiftSizes, for a set of indices.
+function shiftSet(set: Set<number>, at: number, delta: number): void {
+  const marks: Sizes = {}
+  for (const i of set) marks[i] = 1
+  shiftSizes(marks, at, delta)
+  replace(set, Object.keys(marks).map(Number))
+}
+
+function remapSet(set: Set<number>, map: IndexMap): void {
+  const old = [...set]
+  set.clear()
+  for (const i of old) {
+    const n = map(i)
+    if (n != null && n >= 0) set.add(n)
+  }
+}
+
 function remap(sizes: Sizes, hidden: Set<number>, map: IndexMap): void {
   const old = entries(sizes)
   clearSizes(sizes)
@@ -141,6 +167,7 @@ export function createViewModel(): ViewModel {
   const hiddenRows = new Set<number>()
   const hiddenCols = new Set<number>()
   const filterHiddenRows = new Set<number>()
+  const manualRows = new Set<number>()
   const sel: SelectionState = { anchor: { r: 0, c: 0 }, head: { r: 0, c: 0 }, mode: 'cell' }
   let totalRows = DEFAULT_TOTAL_ROWS
   let totalCols = DEFAULT_TOTAL_COLS
@@ -154,6 +181,7 @@ export function createViewModel(): ViewModel {
     hiddenRows,
     hiddenCols,
     filterHiddenRows,
+    manualRows,
     sel,
     get totalRows() {
       return totalRows
@@ -173,10 +201,20 @@ export function createViewModel(): ViewModel {
     setRowHeight(r, h) {
       rowH[r] = Math.max(MIN_ROW_H, h)
     },
+    setRowManual(r, manual) {
+      if (manual) manualRows.add(r)
+      else manualRows.delete(r)
+    },
     shiftCols: (at, delta) => shiftSizes(colW, at, delta),
-    shiftRows: (at, delta) => shiftSizes(rowH, at, delta),
+    shiftRows(at, delta) {
+      shiftSizes(rowH, at, delta)
+      shiftSet(manualRows, at, delta)
+    },
     remapCols: (map) => remap(colW, hiddenCols, map),
-    remapRows: (map) => remap(rowH, hiddenRows, map),
+    remapRows(map) {
+      remap(rowH, hiddenRows, map)
+      remapSet(manualRows, map)
+    },
 
     setFreeze(rows, cols) {
       freeze.rows = rows || 0
@@ -210,6 +248,7 @@ export function createViewModel(): ViewModel {
         totalRows,
         totalCols,
         zoom,
+        manualRows: [...manualRows],
       }
     },
 
@@ -219,6 +258,12 @@ export function createViewModel(): ViewModel {
       clearSizes(rowH)
       Object.assign(colW, snap.colW || {})
       Object.assign(rowH, snap.rowH || {})
+      // A save from before manual rows were tracked: keep every stored
+      // height as it is, so no row someone sized by hand gets refitted.
+      replace(
+        manualRows,
+        Array.isArray(snap.manualRows) ? snap.manualRows : Object.keys(rowH).map(Number),
+      )
       freeze.rows = snap.freezeRows || 0
       freeze.cols = snap.freezeCols || 0
       replace(hiddenRows, snap.hiddenRows || [])

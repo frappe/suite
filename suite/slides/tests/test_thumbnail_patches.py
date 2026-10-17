@@ -21,7 +21,7 @@ class TestThumbnailPatches(IntegrationTestCase):
         """A thumbnail as the patches find it: a pre-webp name under /private/files.
 
         Written straight to the table: a Storage v2 File controller would ingest
-        the bytes into a blob and rewrite the url to `/f/`. Rows that predate v2
+        the bytes into a blob and rewrite the url to `/private/files/<blob>/`. Rows that predate v2
         keep their legacy url (`frappe.storage.backfill` does not rewrite it).
         """
         file_name = f"thumbnail-legacy-{frappe.generate_hash(8)}.png"

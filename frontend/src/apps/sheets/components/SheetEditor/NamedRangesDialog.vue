@@ -93,8 +93,10 @@
 </template>
 
 <script setup>
-import { Button, Dialog, FormControl } from 'frappe-ui'
+import { Button, Dialog, dialog, FormControl } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -157,11 +159,18 @@ function _edit(e) {
   formError.value = ''
 }
 
+// A frappe-ui dialog, not window.confirm: embeds can block native dialogs,
+// which silently cancelled the delete (ISSUES #10).
 function _delete(e) {
-  // eslint-disable-next-line no-alert
-  if (!window.confirm(`Delete named range "${e.name}"?`)) return
-  props.namedRanges.remove(e.name)
-  emit('changed')
+  dialog.danger({
+    title: __('Delete named range "{0}"?', [e.name]),
+    message: __('Formulas that use this name will show #NAME?.'),
+    confirmLabel: __('Delete'),
+    onConfirm: () => {
+      props.namedRanges.remove(e.name)
+      emit('changed')
+    },
+  })
 }
 
 function _submit() {

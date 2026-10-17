@@ -5,9 +5,10 @@ public stream-read (§12.3, §13.5): `send_file(conditional=True)` for a local
 blob, and a 206 built from the driver's ranged read for a remote one. Range,
 `If-None-Match`, 304, and 416 are all handled there, against the same strong
 ETag PROPFIND publishes; `If-Range` is decided one layer down, where the
-blob's checksum is already in hand. `drive_webdav_s3_redirect` survives inside
-it as the opt-in 302 to a signed native URL, off by default because the
-Windows mini-redirector mishandles auth across a cross-host redirect.
+blob's checksum is already in hand. This handler reads
+`drive_webdav_s3_redirect` and passes it down as `allow_native_redirect`: the
+opt-in 302 to a signed native URL, off by default because the Windows
+mini-redirector mishandles auth across a cross-host redirect.
 
 `Last-Modified` is set here rather than taken from the framework: it has to be
 the node's `content_modified`, the same time `getlastmodified` publishes.
@@ -18,6 +19,7 @@ Collections have no bytes, so a browser landing on one is sent to the Drive UI.
 import unicodedata
 from urllib.parse import quote
 
+import frappe
 from werkzeug.utils import redirect
 from werkzeug.wrappers import Response
 
@@ -44,7 +46,11 @@ def handle(ctx: DavContext) -> Response:
     if resolved.is_collection:
         return _collection_response(ctx, "/drive" if resolved.is_mount else node_core.node_url(row.name))
 
-    response = node_core.stream_content(row, environ=ctx.request.environ)
+    response = node_core.stream_content(
+        row,
+        environ=ctx.request.environ,
+        allow_native_redirect=bool(frappe.conf.get("drive_webdav_s3_redirect")),
+    )
     if response.status_code in (200, 206):
         # RFC 7232 §4.1: a 304 carries no representation metadata, and a cache
         # copies whatever it does carry onto the stored response

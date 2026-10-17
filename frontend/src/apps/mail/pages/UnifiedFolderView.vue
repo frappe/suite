@@ -7,15 +7,30 @@
   <!-- hidden on mobile: the title row carries the folder name, and the header's
 	     actions are the compose button and the sidebar sheet. Hidden (not v-if) so HeaderActions'
 	     modals stay mounted for the views' v-model bindings. -->
-  <header class="hidden items-center justify-between border-b px-3 py-2.5 sm:flex sm:px-5">
-    <div class="flex items-center space-x-2">
+  <!-- Stretched, the padding inside, so a split Inbox's tabs can run the header's full height and
+       underline on its border — as the mailbox list's header is. -->
+  <header class="hidden items-stretch border-b px-3 sm:flex sm:px-5">
+    <!-- h-12: one height with or without the Inbox's tabs. The title's crumb stands a little taller
+         than the tabs and the actions, and the bar grew with it. -->
+    <div class="flex h-12 min-w-0 flex-1 items-center space-x-2 py-2.5">
       <!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
       <Breadcrumbs
+        v-if="!inboxTab"
         :items="[{ label: folderLabel, route: unifiedFolderRoute(folder) }]"
         class="-ml-0.5"
       />
+      <!-- A split Inbox's tabs stand in for its title. -->
+      <InboxHeaderTabs
+        v-else
+        class="-my-2.5 min-w-0 self-stretch"
+        :tabs="inboxTabs"
+        :active="inboxTab"
+        :route-for="routeForTab"
+      />
     </div>
-    <HeaderActions />
+    <div class="flex h-12 shrink-0 items-center py-2.5">
+      <HeaderActions view-menu :inbox="folder === INBOX_FOLDER" />
+    </div>
   </header>
 
   <div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
@@ -27,7 +42,7 @@
       </div>
     </div>
 
-    <template v-else-if="threadRows.length">
+    <template v-else-if="threadRows.length || inboxTab || filter || filterChanged">
       <ThreadPane
         :thread-open="!!threadID"
         @touch-start="onThreadTouchStart"
@@ -38,27 +53,110 @@
           <!-- The toolbar itself carries the bottom border here: unlike the mailbox
 					     list, the merged one has no header block above the row for it to sit
 					     under (its mobile title header is a sibling of ThreadPane). -->
+          <InboxTabs
+            v-if="isMobile && inboxTab"
+            :tabs="inboxTabs"
+            :active="inboxTab"
+            :route-for="routeForTab"
+          />
+
+          <div v-if="isMobile && selections.length" class="border-b">
+            <MobileSelectionHeader
+              :count="selections.length"
+              :all-selected="isAllSelected"
+              @toggle-all="toggleSelectAll"
+            />
+          </div>
           <MailListToolbar
+            v-else
             class="border-b"
             :title="title"
             :filter-options="FILTER_OPTIONS"
+            :show-filter="!selections.length"
+            :show-actions="!selections.length"
             :fetching="isFetching"
-            :loading="threads.isFetching"
             @refresh="refreshThreads()"
-          />
+          >
+            <template v-if="!isMobile" #lead>
+              <div class="mr-5">
+                <SelectAllCheckbox
+                  :selected="isAllSelected"
+                  :some="selections.length > 0"
+                  @toggle="toggleSelectAll"
+                />
+              </div>
+            </template>
+            <!-- The filters as chips, where the selector would go. -->
+            <template v-if="!isMobile && !selections.length" #filter>
+              <ListFilterChips
+                :filter-options="FILTER_OPTIONS"
+                :filter="filter"
+                :clear="clearFilter"
+              />
+            </template>
+            <template #actions>
+              <ClearListMenu
+                v-if="clearScope && !selections.length"
+                :scope="clearScope"
+                :target="{ folder }"
+              />
+              <SelectActionButtons
+                v-if="selections.length"
+                :actions="selectActions"
+                :collapsed="showReadingPane"
+              />
+            </template>
+            <template v-if="clearScope" #mobile-actions>
+              <ClearListMenu :scope="clearScope" :target="{ folder }" />
+            </template>
+          </MailListToolbar>
 
           <!-- Mail list -->
-          <div ref="mailList" class="h-full overflow-y-auto overscroll-contain max-sm:pb-20">
+          <div
+            ref="mailList"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            @focusin="onListFocusIn"
+          >
+            <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.
+                 While a new tab or filter loads, the list area spins in its place. -->
+            <div v-if="!threadRows.length && threads.isFetching" class="flex justify-center py-10">
+              <LoaderCircle class="text-ink-gray-5 h-5 w-5 animate-spin" />
+            </div>
+            <p
+              v-else-if="!threadRows.length"
+              class="text-ink-gray-5 px-3 py-10 text-center text-p-sm sm:px-5"
+            >
+              {{
+                filter
+                  ? __('No mails found for the selected filter.')
+                  : __('No mails in {0}.', [inboxTab ? tabName(inboxTab) : folderLabel])
+              }}
+            </p>
             <div v-for="(rows, key) in groupedRows" :key="key">
               <MailGroupHeader
-                v-if="groupMessagesBy !== 'None' && !isMobile"
+                v-if="groupedByDate && !isMobile"
                 :date-key="key"
-                :monthly="groupMessagesBy === 'Month'"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
                 :focused="focusedRowKey === `group:${key}`"
+                :selected="isGroupSelected(key)"
                 @toggle="toggleGroupCollapse(key)"
-              />
+              >
+                <!-- Mobile: group select ("all of Today") appears only in selection mode. -->
+                <template #lead>
+                  <div
+                    v-if="!isMobile || mobileSelectionMode"
+                    class="checkbox-hitbox -mx-3 -my-2.5 flex cursor-pointer items-center py-2.5 pl-3 pr-8"
+                    @click.stop.prevent="toggleSelect(getGroupThreads(key), !isGroupSelected(key))"
+                  >
+                    <Checkbox
+                      :model-value="isGroupSelected(key)"
+                      size="md"
+                      class="pointer-events-none [&_input]:mt-0"
+                    />
+                  </div>
+                </template>
+              </MailGroupHeader>
               <template v-if="isMobile || !collapsedGroups.includes(key)">
                 <!-- A stack row stands in for a run of look-alike threads; when expanded, its
 								     members follow it as ordinary (indented) rows — the same model as the
@@ -66,28 +164,35 @@
                 <template v-for="row in rows" :key="row.key">
                   <StackListItem
                     v-if="row.type === 'stack'"
+                    :drafts="folder === 'drafts'"
                     :threads="row.threads"
                     :expanded="row.expanded"
-                    :is-selected="false"
-                    :selectable="false"
+                    :is-selected="isStackSelected(row.threads.map(threadKey))"
                     :hide-avatar="!isMobile"
                     :account-label="shortAccountLabel(row.threads[0].account_name)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @toggle="toggleStack(row)"
-                    @set-seen="(seen: boolean) => stackSetSeen(row.threads, seen)"
-                    @archive-threads="stackArchive(row.threads)"
-                    @trash-threads="stackTrash(row.threads)"
+                    @set-seen="(seen: boolean) => setThreadsSeen(row.threads, seen)"
+                    :unarchive="true"
+                    @archive-threads="archiveThreads(row.threads)"
+                    @unarchive-threads="unarchiveThreads(row.threads)"
+                    @trash-threads="trashThreads(row.threads)"
                     @delete-threads="confirmDelete(row.threads)"
+                    @set-selected="
+                      (selected: boolean) => toggleSelect(row.threads.map(threadKey), selected)
+                    "
                   />
                   <MailListItem
                     v-else
                     :mailbox="row.thread.view_mailbox || ''"
+                    :drafts="folder === 'drafts'"
                     :account-id="row.thread.account"
                     :account-label="shortAccountLabel(row.thread.account_name)"
                     :mail="row.thread"
-                    :is-selected="false"
-                    :selectable="false"
+                    :is-selected="selections.includes(threadKey(row.thread))"
+                    :selection-mode="mobileSelectionMode"
+                    :screened="screener.isScreened(row.thread)"
                     :outgoing="isOutgoingFolder"
                     :thread-route-name="UNIFIED_THREAD_ROUTE"
                     :hide-avatar="!isMobile"
@@ -95,10 +200,15 @@
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
+                    :unarchive="true"
                     @archive-thread="handleArchive(row.thread)"
+                    @unarchive-thread="handleUnarchive(row.thread)"
                     @trash-thread="handleTrash(row.thread)"
                     @delete-thread="confirmDelete([row.thread])"
                     @set-flagged="(flagged: boolean) => handleSetFlagged(row.thread, flagged)"
+                    @set-selected="
+                      (selected: boolean) => toggleSelect([threadKey(row.thread)], selected)
+                    "
                   />
                 </template>
               </template>
@@ -136,8 +246,11 @@
             (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
           "
           @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-          @delete-thread="isTrashFolder ? confirmDelete([openRow!]) : handleTrash(openRow!)"
+          @delete-thread="
+            isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
+          "
           @archive-thread="handleArchive(openRow!)"
+          @unarchive-thread="handleUnarchive(openRow!)"
           @sync-unseen="handleSyncUnseen"
           @add-thread-to-mailbox="handleAddToMailbox"
           @remove-thread-from-mailbox="handleRemoveFromMailbox"
@@ -170,17 +283,26 @@
   </div>
 
   <Dialog v-model:open="showDelete" v-bind="deleteOptions" />
+  <MobileSelectionBar :open="mobileSelectionMode" :actions="selectActions" />
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, Dialog, usePageMeta } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, Dialog, usePageMeta } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery } from '@/api'
+import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
+import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
+import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
+import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
+import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
+import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
+import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
@@ -188,13 +310,18 @@ import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { listScope } from '@/apps/mail/composables/useClearList'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
+import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
 import { useListRows } from '@/apps/mail/composables/useListRows'
+import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { useScreener } from '@/apps/mail/composables/useScreener'
 import { userStore } from '@/apps/mail/stores/user'
-import type { Mail, Mailbox, MailboxData, Thread, UnifiedFolder } from '@/apps/mail/types'
+import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
+  commitAfterUndo,
   isMac,
   raiseError,
   raiseOptimisticToast,
@@ -202,8 +329,15 @@ import {
   shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
-import { useListReload, useScreenSize, useSwipeNav, useUndo } from '@/apps/mail/utils/composables'
-import { useStoredFilter } from '@/apps/mail/utils/listFilter'
+import {
+  useDiscardingDrafts,
+  useListReload,
+  useReadingPane,
+  useScreenSize,
+  useSwipeNav,
+  useUndo,
+} from '@/apps/mail/utils/composables'
+import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
   isNavigationKey,
@@ -212,9 +346,17 @@ import {
   stepFromKey,
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
-import { mailCopies, mailCopyIds, rowMailIds } from '@/apps/mail/utils/mailCopies'
+import { mailCopies, mailCopyIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
+import {
+  archivable,
+  holdsReceivedMail,
+  isReceived,
+  unarchivable,
+} from '@/apps/mail/utils/receivedMail'
+import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import {
+  INBOX_FOLDER,
   STARRED_FOLDER,
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
@@ -225,6 +367,10 @@ import { appPageMeta } from '@/platform/page-meta'
 
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
+const showReadingPane = useReadingPane()
+
+// Mail from a sender nobody has decided on yet is marked in the list, as in a single account's.
+const screener = useScreener()
 
 // The `mail-unified-mail` route carries the open thread's owning accountId and mailbox. The
 // mailbox falls through as a plain attribute — every row carries its own folder ids, which is what
@@ -289,18 +435,42 @@ const {
   fillProgress: () => visibleThreadCount.value,
 })
 
-// The remembered All/Unread/Starred/Has-attachments choice, its menu, and its title (see
-// useStoredFilter) — all shared with the mailbox list, and remembered per folder as it is there.
+// The list's filters, their menu, and its title (see useListFilter) — all shared with the mailbox
+// list.
 const {
   filter,
+  changed: filterChanged,
   FILTER_OPTIONS,
   filterTitle: title,
   reloadFilter,
-} = useStoredFilter({
-  scope: () => `unified:${folder}`,
+  clear: clearFilter,
+} = useListFilter({
   onChange: () => resetThreads(),
   starrable: () => folder !== STARRED_FOLDER && !isTrashFolder.value,
+  // The merged Inbox, when any of the accounts screens new senders.
+  screenable: () =>
+    folder === INBOX_FOLDER && !!store.userResource.data?.accounts?.some((a) => a.enable_screening),
 })
+
+// The Inbox's category tabs, across every account; `inboxTab` is the open one, and undefined in any
+// other folder or when the Inbox isn't split.
+const {
+  tabs: inboxTabs,
+  active: inboxTab,
+  routeFor: routeForTab,
+  switched: tabSwitched,
+} = useInboxTabs(
+  () => folder === INBOX_FOLDER && 'unified',
+  () => unifiedFolderRoute(folder),
+  () => resetThreads(),
+)
+// What the list's menu clears (see listScope). Not offered where there is no folder to clear
+// (Starred) or nothing unread to clear (Sent, Drafts).
+const clearScope = computed(() =>
+  folder === STARRED_FOLDER || isOutgoingFolder.value
+    ? undefined
+    : listScope(inboxTab.value, folderLabel.value, filter.value),
+)
 
 // The engine owns loaded windows and refreshes their rows together.
 const threads = useInfiniteQuery(api.mail.unified.threads, () => ({
@@ -308,9 +478,27 @@ const threads = useInfiniteQuery(api.mail.unified.threads, () => ({
   limit: PAGE_LENGTH,
   start: 0,
   filter_by: filter.value,
+  category: inboxTab.value,
 }))
-const threadRows = computed(() => threads.rows.map((row) => threadRow(row, store.accountId)))
-const isLoading = computed(() => threads.status === 'pending')
+// Drafts discarded but still inside their Undo window are off the list, not yet off the server.
+// Held by message id, so only a row made of those drafts goes: the conversation a reply draft
+// belongs to keeps its row in every other folder.
+const {
+  isDiscarding: isDiscardingDraft,
+  withoutHeldDrafts,
+  holdDraft,
+  releaseDraft,
+} = useDiscardingDrafts()
+const threadRows = computed(() =>
+  threads.rows
+    .map((row) => threadRow(row, store.accountId))
+    .filter((row) => !isDiscardingDraft(row, { inDrafts: folder === 'drafts' }))
+    .map(withoutHeldDrafts),
+)
+const isLoading = computed(
+  () =>
+    threads.status === 'pending' && !(tabSwitched.value && inboxTab.value) && !filterChanged.value,
+)
 
 // After an action, refresh the sidebar counts: the active account's per-mailbox counts, which via the
 // store's mailboxes watcher also refreshes the unified folders' counts.
@@ -328,6 +516,8 @@ const resetThreads = () => {
   // and hides its threads).
   collapsedGroups.value = []
   expandedStacks.value = new Set()
+  // Ticked threads belong to the list they were ticked in; another folder or filter starts clear.
+  resetSelections()
   void threads.refetch().catch(() => {})
   refreshCounts()
 }
@@ -338,6 +528,10 @@ const refreshThreads = (reloadCounts = true) => {
   void threads.refetch().catch(() => {})
   if (reloadCounts) refreshCounts()
 }
+
+// A verdict on a sender, from the pane or anywhere else, changes which rows are waiting: the
+// "Unknown sender" filter drops the ones decided.
+watch(useScreener().version, () => refreshThreads(false))
 
 // The layout's composer, announcing that it sent something (see useListReload). A refresh rather
 // than a reset, so the reader keeps their place in a list that spans every account.
@@ -356,7 +550,8 @@ const reloadPaneThread = () => refreshThreads()
 // this merged list. And not in the same folders: every row in Sent or Drafts is from the reader, and
 // Starred is curated by hand (see MailboxView's stackingEnabled).
 const {
-  groupMessagesBy,
+  groupedByDate,
+  getGroupThreads,
   isLastGroup,
   collapsedGroups,
   expandedStacks,
@@ -364,6 +559,7 @@ const {
   visibleThreadCount,
   navigableRows,
   focusedRowKey,
+  onListFocusIn,
   focusedRow,
   focusRow,
   focusOnThread,
@@ -382,6 +578,25 @@ const {
   onOpenThreadHidden: () => closeThread(),
   container: mailListRef,
 })
+
+// The ticked threads and the phone's selection mode, as in a single account's list (see
+// useListSelection). Ticked threads are named by key, since thread ids repeat across accounts.
+const {
+  selections,
+  isAllSelected,
+  mobileSelectionMode,
+  toggleSelect,
+  toggleSelectAll,
+  resetSelections,
+  isGroupSelected,
+  isStackSelected,
+} = useListSelection({
+  keys: () => threadIDs.value,
+  groupKeys: (dateKey) => getGroupThreads(dateKey),
+})
+const selectedRows = computed(() =>
+  (threadRows.value ?? []).filter((t: Thread) => selections.value.includes(threadKey(t))),
+)
 
 // ThreadHeader's prev/next arrows compare their list against the route's plain thread id, so they
 // get plain ids. Key space is for stepping and resolution — where landing on the wrong account's
@@ -422,8 +637,7 @@ const stepOpenThread = (offset: number) => {
   loadMoreThenOpenEdge(offset, 'open')
 }
 
-// Up/down/j/k walk the list, or the open thread when one is showing. The merged list is flat —
-// no stacks, no day headers, no selection — so a step is just the neighbouring row.
+// Up/down/j/k walk the list, or the open thread when one is showing.
 const gPrefix = useGPrefix()
 
 // Thread shortcuts, acting on the open thread or — with none open — the row under the cursor.
@@ -435,13 +649,16 @@ const actionTarget = computed(() => {
   return (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key)
 })
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
+  // Ticked threads take the shortcut first, as in a single account's list.
+  if (selections.value.length) return handleSelectionShortcut(e, key)
   const thread = actionTarget.value
   if (!thread) return false
 
   // Backspace on Mac, Delete elsewhere.
   if (key === (isMac ? 'backspace' : 'delete')) {
     e.preventDefault()
-    handleTrash(thread)
+    if (folder === 'drafts') confirmDelete([thread])
+    else handleTrash(thread)
     return true
   }
   if (key === 'u') {
@@ -449,29 +666,58 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
     handleSetSeen(thread, e.shiftKey)
     return true
   }
+  // Archive and Unarchive share a place, so E does whichever it shows, and nothing where neither
+  // has anything to do.
+  const messages = thread.messages?.length ? thread.messages : [thread]
   if (key === 'e') {
     e.preventDefault()
-    handleArchive(thread)
+    if (archivable(messages, thread)) handleArchive(thread)
+    else if (unarchivable(messages, thread)) handleUnarchive(thread)
     return true
   }
 
-  // Junk needs no mailbox id of its own (set_mails_spam_status takes the account and the mails), so
-  // unlike a move it works from a merged row.
+  // Junk takes only mail you received; Not junk, in Junk, whatever is there.
   if (key === '!') {
     e.preventDefault()
-    handleSetSpamStatus(!isJunkFolder.value, thread)
+    if (isJunkFolder.value) handleSetSpamStatus(false, thread)
+    else if (holdsReceivedMail(messages, thread.sent)) handleSetSpamStatus(true, thread)
     return true
   }
   return false
 }
+const handleSelectionShortcut = (e: KeyboardEvent, key: string) => {
+  const action = {
+    [isMac ? 'backspace' : 'delete']:
+      isTrashFolder.value || folder === 'drafts' ? deleteSelected : trashSelected,
+    u: () => setThreadsSeen(takeSelected(), e.shiftKey),
+    // As on one thread: whichever of Archive and Unarchive the toolbar shows.
+    e: () => {
+      const rows = selectedRows.value
+      const messagesOf = (t: Thread) => (t.messages?.length ? t.messages : [t])
+      if (rows.some((t) => archivable(messagesOf(t), t))) archiveSelected()
+      else if (rows.some((t) => unarchivable(messagesOf(t), t))) unarchiveThreads(takeSelected())
+    },
+    '!': () => setThreadsSpam(takeSelected(), !isJunkFolder.value),
+  }[key]
+  if (!action) return false
+  e.preventDefault()
+  action()
+  return true
+}
 const handleKeyDown = (e: KeyboardEvent) => {
   const key = e.key.toLowerCase()
+  if ((e.metaKey || e.ctrlKey) && key === 'a' && !shouldIgnoreKeypress(e, true)) {
+    e.preventDefault()
+    gPrefix.disarm()
+    return toggleSelectAll(true)
+  }
   if (shouldIgnoreKeypress(e)) return
 
-  // Escape backs out of the open thread, then clears the cursor.
+  // Escape backs out of the open thread, then clears the selection, then the cursor.
   if (key === 'escape') {
     e.preventDefault()
     if (threadID) return closeThread()
+    if (selections.value.length) return resetSelections()
     focusedRowKey.value = undefined
     return
   }
@@ -551,17 +797,7 @@ const openThread = (key: string) => {
 // Archive and Trash already have optimistic list removal; anything else is a plain move.
 const moveOpenThread = (mailboxId: string) => {
   const row = openRow.value
-  if (!row) return
-  if (mailboxId === row.archive) return handleArchive(row)
-  if (mailboxId === row.trash) return handleTrash(row)
-  goToNextThreadOrClose(threadKey(row))
-  const restore = refreshThreads
-  const folder = folderName(mailboxId)
-  raiseOptimisticToast(
-    moveThreadOut(row, mailboxId, restore),
-    folder ? __('Thread moved to {0}.', [folder]) : __('Thread moved.'),
-    withUndo(row, restore, __('Thread moved back.')),
-  )
+  if (row) fileThreads([row], 'move', { target: mailboxId })
 }
 
 // Keep infinite scroll alive while the rendered list is too short to scroll (see topUpIfShort). Must
@@ -599,22 +835,7 @@ type PaneCommand =
         mailbox_id: string
       }
     }
-  | {
-      kind: 'spam'
-      input: {
-        ids: string[]
-        spam: boolean
-        screen_action?: string | null
-      }
-    }
-  | {
-      kind: 'move'
-      input: {
-        ids: string[]
-        mailbox: string
-        clear_junk?: boolean
-      }
-    }
+
 function runPaneCommand(command: PaneCommand, account?: string) {
   const acting = account ?? openRow.value?.account
   if (!acting) return Promise.reject(new Error(__('Thread is no longer in the list.')))
@@ -626,16 +847,6 @@ function runPaneCommand(command: PaneCommand, account?: string) {
       })
     case 'remove':
       return client.mutation(api.mail.messages.removeFromFolder, {
-        ...command.input,
-        account: acting,
-      })
-    case 'spam':
-      return client.mutation(api.mail.messages.spam, {
-        ...command.input,
-        account: acting,
-      })
-    case 'move':
-      return client.mutation(api.mail.messages.move, {
         ...command.input,
         account: acting,
       })
@@ -694,6 +905,16 @@ const syncFolderTag = (mailboxId: string, add: boolean) => {
 const handleAddToMailbox = (mailboxId: string) => {
   const thread = openRow.value
   if (!thread) return
+  // Not a draft, ever; and your own mail never into the Inbox or Archive (see filing.py).
+  const ids = (thread.messages ?? [])
+    .flatMap(mailCopies)
+    .filter(
+      (m) =>
+        !m.draft &&
+        (![thread.inbox, thread.archive].includes(mailboxId) || isReceived(m, thread.sent)),
+    )
+    .map((m) => m.id)
+  if (!ids.length) return
   const folder = folderName(mailboxId)
   const snapshot = threadSnapshot(thread)
   syncFolderTag(mailboxId, true)
@@ -713,7 +934,7 @@ const handleAddToMailbox = (mailboxId: string) => {
       {
         kind: 'add',
         input: {
-          ids: messageIdsOf(thread),
+          ids,
           mailbox_id: mailboxId,
         },
       },
@@ -760,32 +981,14 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
 }
 const handleSetSpamStatus = (spam: boolean, target?: Thread) => {
   const thread = target ?? openRow.value
-  if (!thread) return
-  goToNextThreadOrClose(threadKey(thread))
-  const restore = refreshThreads
-  raiseOptimisticToast(
-    runPaneCommand(
-      {
-        kind: 'spam',
-        input: {
-          ids: messageIdsOf(thread),
-          spam,
-        },
-      },
-      thread.account,
-    ).catch((error) => {
-      restore()
-      throw error
-    }),
-    __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')]),
-    // Undo flips the junk status back — name the resulting state, like the forward toast does.
-    withUndo(thread, restore, __('Thread marked as {0}.', [spam ? __('Not Junk') : __('Junk')])),
-  )
+  // Not junk accepts the sender, in the same request, as a single account's list does.
+  if (thread)
+    fileThreads([thread], spam ? 'junk' : 'not_junk', { screenAction: spam ? null : 'Accepted' })
 }
 
 // Per-message actions from a message's own menu, on the shared orchestration (see useMailRemoval).
 // Each row carries the mailbox it was listed from, which is what it is summarised and dated by.
-const { setUndoAction } = useUndo()
+const { setUndoAction, retireUndoAction } = useUndo()
 const { runMailRemoval } = useMailRemoval({
   row: () => openRow.value,
   mailThreadRef: mailThread,
@@ -802,29 +1005,30 @@ const paneScope = useAccountScope(() => openRow.value?.account)
 const folderName = (mailboxId: string) =>
   paneScope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)?._name
 const undoMail = (mail: Mail, account: string | undefined, undoSuccess: string) => {
-  const snapshot = mailSnapshot(mail)
+  // Every copy, as filing moved them all (see fileMail).
+  const snapshots = mailCopies(mail).map(mailSnapshot)
   return {
-    undoReq: () => restoreMails(account!, [snapshot]),
+    undoReq: () => restoreMails(account!, snapshots),
     undoSuccess,
   }
 }
+// One message and its copies, by the same rules as a conversation (see fileThreads).
+const fileMail = (mail: Mail, account: string | undefined, action: Filing, target?: string) =>
+  account
+    ? client.mutation(api.mail.messages.file, {
+        account,
+        ids: mailCopyIds(mail),
+        action,
+        mailbox: target ?? null,
+        screen_action: action === 'not_junk' ? 'Accepted' : null,
+      })
+    : Promise.reject(new Error(__('Thread is no longer in the list.')))
 const handleMailMove = (mail: Mail, target: string) => {
   const account = openRow.value?.account
   const folder = folderName(target)
   runMailRemoval(
     mail,
-    () =>
-      runPaneCommand(
-        {
-          kind: 'move',
-          input: {
-            ids: [mail.id],
-            mailbox: target,
-            clear_junk: mail.junk === 1 && target !== paneScope.mailboxIds.value.junk,
-          },
-        },
-        account,
-      ),
+    () => fileMail(mail, account, 'move', target),
     folder ? __('Mail moved to {0}.', [folder]) : __('Mail moved.'),
     undoMail(mail, account, __('Mail moved back.')),
   )
@@ -833,17 +1037,7 @@ const handleMailSpam = (mail: Mail, spam: boolean) => {
   const account = openRow.value?.account
   runMailRemoval(
     mail,
-    () =>
-      runPaneCommand(
-        {
-          kind: 'spam',
-          input: {
-            ids: [mail.id],
-            spam,
-          },
-        },
-        account,
-      ),
+    () => fileMail(mail, account, spam ? 'junk' : 'not_junk'),
     spam ? __('Mail marked as Junk.') : __('Mail marked as Not Junk.'),
     // Undo flips the junk status back — name the resulting state, like the forward toast does.
     undoMail(mail, account, __('Mail marked as {0}.', [spam ? __('Not Junk') : __('Junk')])),
@@ -893,7 +1087,11 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
 // message, so BOTH have to be told: the pane's star stayed hollow when starring from the list, and
 // the list's star stayed hollow when starring from the pane. Only the ids actually sent to the
 // server are flipped locally, or a refetch would contradict whatever we lit up.
-const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = rowMailIds(thread)) => {
+const handleSetFlagged = (
+  thread: Thread,
+  flagged: boolean,
+  ids: string[] = threadStarIds(thread, flagged),
+) => {
   // The row stands for its representative mail (see serialize_thread), so it takes the star only
   // when that mail is one of the ones being starred.
   const rowChanged = ids.includes(thread.id)
@@ -941,7 +1139,7 @@ const goToNextThreadOrClose = (moved: string | string[]) => {
 
 // Undo restores each mail's exact mailbox set and junk flag rather than guessing an inverse: a
 // thread that sat in two folders has to come back to both, and un-junking is not the same as moving.
-const mailSnapshot = (mail: Mail) => ({
+const mailSnapshot = (mail: MailCopy) => ({
   id: mail.id,
   mailbox_ids: mail.mailboxes.map((m) => m.mailbox_id),
   junk: mail.junk,
@@ -955,57 +1153,156 @@ const restoreMails = (account: string, mails: ReturnType<typeof mailSnapshot>[])
     })
     .then(refreshCounts)
 
-// Offered on the toast and on Cmd/Ctrl+Z, matching the mailbox list. `undoSuccess` is the caller's,
-// because the mailbox list names the state the undo lands in ("Thread moved back.", "Thread marked
-// as Not Junk.") rather than confirming it generically.
-const withUndo = (thread: Thread, restore: () => void, undoSuccess: string) => {
-  const snapshot = threadSnapshot(thread)
-  const undoAction = () => {
-    restore()
-    raiseOptimisticToast(restoreMails(thread.account, snapshot), undoSuccess)
+// Archive, Unarchive, Move, Junk, Not junk and Trash, on one thread or several, by the filing rules
+// (suite/mail/filing.py), as in a single account's list: mail you received goes where it is filed,
+// your sent mail never leaves Sent but by Trash, a draft is never filed. One request per account,
+// carrying every copy of every message; one Undo puts back exactly what each account's request moved.
+type Filing = 'archive' | 'unarchive' | 'move' | 'junk' | 'not_junk' | 'trash'
+// Whether the conversation leaves this folder's list. Sent and Starred keep it whatever is filed:
+// your sent mail stays, and so may the star.
+const leavesFolder = (action: Filing, thread: Thread, target?: string) => {
+  if (action === 'trash') return !isTrashFolder.value
+  if (folder === 'sent' || folder === STARRED_FOLDER) return false
+  if (action === 'archive') return [INBOX_FOLDER, 'junk', 'trash'].includes(folder)
+  if (action === 'unarchive') return folder === 'archive'
+  if (action === 'junk') return !isJunkFolder.value
+  if (action === 'not_junk') return isJunkFolder.value
+  return target !== thread.view_mailbox
+}
+const fileThreads = (
+  threads: Thread[],
+  action: Filing,
+  { target, screenAction }: { target?: string; screenAction?: string | null } = {},
+) => {
+  if (!threads.length) return
+  const leaves = leavesFolder(action, threads[0], target)
+  if (leaves) goToNextThreadOrClose(threads.map(threadKey))
+  if (action === 'trash' || action === 'junk') closeComposeWindowFor(copyIds(threads))
+  const one = threads.length === 1
+  const folderOfTarget = target ? folderName(target) : undefined
+  const done = (answers: unknown[]) => {
+    if (action === 'archive')
+      return !answers.some((a) => (a as { left_inbox?: boolean })?.left_inbox)
+        ? __('Added to Archive.')
+        : one
+          ? __('Thread archived.')
+          : __('Threads archived.')
+    if (action === 'unarchive') return one ? __('Thread unarchived.') : __('Threads unarchived.')
+    if (action === 'trash')
+      return one ? __('Thread moved to Trash.') : __('Threads moved to Trash.')
+    if (action === 'junk' || action === 'not_junk') {
+      const state = action === 'junk' ? __('Junk') : __('Not Junk')
+      return one ? __('Thread marked as {0}.', [state]) : __('Threads marked as {0}.', [state])
+    }
+    return folderOfTarget
+      ? one
+        ? __('Thread moved to {0}.', [folderOfTarget])
+        : __('Threads moved to {0}.', [folderOfTarget])
+      : __('Thread moved.')
   }
+  const undone =
+    action === 'junk'
+      ? one
+        ? __('Thread marked as Not Junk.')
+        : __('Threads marked as Not Junk.')
+      : action === 'not_junk'
+        ? one
+          ? __('Thread marked as Junk.')
+          : __('Threads marked as Junk.')
+        : one
+          ? __('Thread moved back.')
+          : __('Threads moved back.')
+  actPerAccount(
+    threads,
+    (account, rows) =>
+      client
+        .mutation(api.mail.messages.file, {
+          account,
+          ids: copyIds(rows),
+          action,
+          mailbox: target ?? null,
+          screen_action: screenAction ?? null,
+          leaves: leaves ? folder : null,
+        })
+        .then((filed) => {
+          // A list that keeps the rows reads them again for their new folders.
+          if (!leaves) refreshThreads()
+          return filed
+        }),
+    done,
+    undone,
+  )
+}
+const handleArchive = (thread: Thread) => fileThreads([thread], 'archive')
+const handleUnarchive = (thread: Thread) => fileThreads([thread], 'unarchive')
+const handleTrash = (thread: Thread) => fileThreads([thread], 'trash')
+
+// Actions on several threads at once: a stack's run, or the ticked threads. They can span accounts,
+// so each runs once per account, with that account's own folder ids, and one Undo puts every
+// account's mail back as it was.
+const byAccount = (threads: Thread[]) => {
+  const groups = new Map<string, Thread[]>()
+  threads.forEach((t) => groups.set(t.account, [...(groups.get(t.account) ?? []), t]))
+  return [...groups.entries()]
+}
+const perAccount = (
+  threads: Thread[],
+  request: (account: string, rows: Thread[]) => Promise<unknown>,
+) => Promise.all(byAccount(threads).map(([account, rows]) => request(account, rows)))
+
+// The ids an action on several threads carries, and the state its Undo puts back: every copy of every
+// message (see mailCopies), so a twin in Sent goes and comes back with the rest.
+const copyIds = (threads: Thread[]) =>
+  threads.flatMap((t) => t.messages?.flatMap(mailCopyIds) ?? [t.id])
+const copySnapshot = (threads: Thread[]) =>
+  threads.flatMap((t) => (t.messages ?? []).flatMap(mailCopies)).map(mailSnapshot)
+
+// Runs `request` once per account, and arms an Undo that puts back exactly the accounts whose request
+// went through, as they were. The Undo waits for every account to answer (a restore that ran first
+// would be overwritten), so when one account fails the others can still be taken back: the error
+// toast offers the Undo too.
+const actPerAccount = (
+  threads: Thread[],
+  request: (account: string, rows: Thread[]) => Promise<unknown>,
+  done: string | ((answers: unknown[]) => string),
+  undoSuccess: string,
+) => {
+  const groups = byAccount(threads)
+  const snapshots = groups.map(([account, rows]) => [account, copySnapshot(rows)] as const)
+  const settled = Promise.allSettled(groups.map(([account, rows]) => request(account, rows)))
+  const landed = settled.then((results) =>
+    groups.filter((_, i) => results[i].status === 'fulfilled').map(([account]) => account),
+  )
+  const undoAction = () =>
+    void landed.then((accounts) => {
+      const restoring = snapshots.filter(([account]) => accounts.includes(account))
+      if (!restoring.length) return
+      raiseOptimisticToast(
+        Promise.all(restoring.map(([account, mails]) => restoreMails(account, mails))).then(() =>
+          refreshThreads(),
+        ),
+        undoSuccess,
+      )
+    })
   setUndoAction(undoAction)
-  return undoAction
-}
-const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) => {
-  closeComposeWindowFor(messageIds(thread))
-  return client
-    .mutation(api.mail.messages.move, {
-      account: thread.account,
-      ids: messageIds(thread),
-      mailbox,
-      clear_junk: true,
-    })
-    .then(refreshCounts, (error) => {
-      restore()
-      throw error
-    })
-}
-const handleArchive = (thread: Thread) => {
-  if (!thread.archive) return raiseToast(__('No Archive folder for this account.'), 'error')
-  goToNextThreadOrClose(threadKey(thread))
-  const restore = refreshThreads
-  raiseOptimisticToast(
-    moveThreadOut(thread, thread.archive!, restore),
-    __('Thread archived.'),
-    withUndo(thread, restore, __('Thread moved back.')),
-  )
-}
-const handleTrash = (thread: Thread) => {
-  if (!thread.trash) return raiseToast(__('No Trash folder for this account.'), 'error')
-  goToNextThreadOrClose(threadKey(thread))
-  const restore = refreshThreads
-  raiseOptimisticToast(
-    moveThreadOut(thread, thread.trash!, restore),
-    __('Thread moved to Trash.'),
-    withUndo(thread, restore, __('Thread moved back.')),
-  )
+  void settled.then((results) => {
+    refreshCounts()
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    const undo = { label: __('Undo'), onClick: undoAction }
+    const answers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+    if (!failure)
+      return raiseToast(typeof done === 'string' ? done : done(answers), 'success', undo)
+    refreshThreads()
+    const someLanded = results.some((r) => r.status === 'fulfilled')
+    raiseToast(
+      (failure.reason as Error)?.message || __('Action failed.'),
+      'error',
+      someLanded ? undo : undefined,
+    )
+  })
 }
 
-// Stack actions. A stack's members share one account (it is part of the stack key), so a single
-// batched call covers the run — mirroring the mailbox's bulk handlers rather than firing one
-// request per member.
-const stackSetSeen = (threads: Thread[], seen: boolean) => {
+const setThreadsSeen = (threads: Thread[], seen: boolean) => {
   const changed = threads.filter((t) => t.seen !== (seen ? 1 : 0))
   if (!changed.length) return
   const applySeen = (value: 0 | 1) =>
@@ -1015,12 +1312,9 @@ const stackSetSeen = (threads: Thread[], seen: boolean) => {
     })
   applySeen(seen ? 1 : 0)
   raiseOptimisticToast(
-    client
-      .mutation(api.mail.messages.seen, {
-        account: threads[0].account,
-        ids: changed.flatMap(messageIds),
-        seen,
-      })
+    perAccount(changed, (account, rows) =>
+      client.mutation(api.mail.messages.seen, { account, ids: copyIds(rows), seen }),
+    )
       .then(refreshCounts)
       .catch((error) => {
         applySeen(seen ? 0 : 1) // revert the optimistic update
@@ -1030,28 +1324,61 @@ const stackSetSeen = (threads: Thread[], seen: boolean) => {
   )
 }
 
-const stackMoveOut = (threads: Thread[], mailboxId: string | undefined, done: string) => {
-  if (!mailboxId) return raiseToast(__('No such folder for this account.'), 'error')
-  closeComposeWindowFor(threads.flatMap(messageIds))
-  const promise = client
-    .mutation(api.mail.messages.move, {
-      account: threads[0].account,
-      ids: threads.flatMap(messageIds),
-      mailbox: mailboxId,
-      clear_junk: true,
-    })
-    .then(refreshCounts, (error) => {
-      refreshThreads()
-      throw error
-    })
-  raiseOptimisticToast(promise, done)
+const setThreadsFlagged = (threads: Thread[], flagged: boolean) => {
+  const changed = threads.filter((t) => t.flagged !== (flagged ? 1 : 0))
+  if (!changed.length) return
+  const apply = (value: 0 | 1) => changed.forEach((t) => (t.flagged = value))
+  apply(flagged ? 1 : 0)
+  perAccount(changed, (account, rows) =>
+    client.mutation(api.mail.messages.flag, {
+      account,
+      ids: rows.flatMap((row) => threadStarIds(row, flagged)),
+      flagged,
+    }),
+  ).catch((error) => {
+    apply(flagged ? 0 : 1) // revert the optimistic update
+    raiseError(error)
+  })
 }
 
+const setThreadsSpam = (threads: Thread[], spam: boolean) =>
+  fileThreads(threads, spam ? 'junk' : 'not_junk', { screenAction: spam ? null : 'Accepted' })
+
 // Plurals of the single-thread messages, as the mailbox list does — it never prefixes a count.
-const stackArchive = (threads: Thread[]) =>
-  stackMoveOut(threads, threads[0].archive, __('Threads archived.'))
-const stackTrash = (threads: Thread[]) =>
-  stackMoveOut(threads, threads[0].trash, __('Threads moved to Trash.'))
+const archiveThreads = (threads: Thread[]) => fileThreads(threads, 'archive')
+const unarchiveThreads = (threads: Thread[]) => fileThreads(threads, 'unarchive')
+const trashThreads = (threads: Thread[]) => fileThreads(threads, 'trash')
+
+// The ticked threads, taken: an action on them clears the selection, as in a single account's list.
+const takeSelected = () => {
+  const rows = selectedRows.value
+  resetSelections()
+  return rows
+}
+const archiveSelected = () => archiveThreads(takeSelected())
+const trashSelected = () => trashThreads(takeSelected())
+const deleteSelected = () => confirmDelete(takeSelected())
+
+const selectActions = buildSelectActions(
+  () => selectedRows.value,
+  () => ({
+    archive: folder === 'archive',
+    trash: isTrashFolder.value,
+    drafts: folder === 'drafts',
+  }),
+  {
+    star: () => setThreadsFlagged(takeSelected(), true),
+    unstar: () => setThreadsFlagged(takeSelected(), false),
+    archive: archiveSelected,
+    unarchive: () => unarchiveThreads(takeSelected()),
+    junk: () => setThreadsSpam(takeSelected(), true),
+    notJunk: () => setThreadsSpam(takeSelected(), false),
+    trash: trashSelected,
+    delete: deleteSelected,
+    read: () => setThreadsSeen(takeSelected(), true),
+    unread: () => setThreadsSeen(takeSelected(), false),
+  },
+)
 
 // Permanent delete, offered once the threads are already in Trash. Each row names its own account,
 // and a stack never mixes accounts, so one request covers each confirmation. Only the copies in Trash
@@ -1061,6 +1388,7 @@ const toDelete = ref<Thread[]>([])
 
 const confirmDelete = (rows: Thread[]) => {
   if (!rows.length) return
+  if (folder === 'drafts') return discardDrafts(rows)
   toDelete.value = rows
   showDelete.value = true
 }
@@ -1086,13 +1414,41 @@ const deleteOptions = computed(() => {
   }
 })
 
-const handleDelete = (rows: Thread[]) => {
-  const names = rows.flatMap((thread) =>
+// The copies a removal takes from the folder on screen: in Trash the trashed ones, in Drafts the
+// drafts. The rest of the conversation lives on in the folders it was filed in.
+const copiesHere = (rows: Thread[]) =>
+  rows.flatMap((thread) =>
     (thread.messages ?? [])
       .flatMap(mailCopies)
       .filter((copy) => copy.mailboxes.some((m) => m.mailbox_id === thread.view_mailbox))
       .map((copy) => copy.name),
   )
+
+// Drafts are discarded with an Undo rather than a confirmation: hidden here at once, deleted once
+// the toast has passed. Nothing is sent before then, so Undo only has to show them again.
+const discardDrafts = (rows: Thread[]) => {
+  const names = copiesHere(rows)
+  const keys = rows.map(threadKey)
+  goToNextThreadOrClose(keys)
+  closeComposeWindowFor(rows.flatMap(messageIds))
+  // Only the drafts, as in a single account's list (see useThreadActions).
+  const held = rows.flatMap((row) => row.messages.filter((m) => m.draft).map((m) => m.id))
+  held.forEach(holdDraft)
+  const show = () => held.forEach(releaseDraft)
+  commitAfterUndo({
+    message: rows.length === 1 ? __('Draft discarded.') : __('Drafts discarded.'),
+    removal: { kind: 'messages', names },
+    onSent: () => {
+      refreshCounts()
+      refreshThreads()
+    },
+    restore: show,
+    undoSlot: { set: (action) => setUndoAction(action), retire: retireUndoAction },
+  })
+}
+
+const handleDelete = (rows: Thread[]) => {
+  const names = copiesHere(rows)
   goToNextThreadOrClose(rows.map(threadKey))
   closeComposeWindowFor(rows.flatMap(messageIds))
   raiseOptimisticToast(
@@ -1104,7 +1460,7 @@ const handleDelete = (rows: Thread[]) => {
   )
 }
 
-// Another folder reuses this component, so it starts over: its own remembered filter, from the top.
+// Another folder reuses this component, so it starts over: unfiltered, from the top.
 watch(
   () => folder,
   () => {
@@ -1118,9 +1474,14 @@ const unreadCount = computed(
     store.unifiedFolders.data?.find((f: UnifiedFolder) => f.slug === folder)?.unread_threads ?? 0,
 )
 
-usePageMeta(() =>
-  appPageMeta(`${unreadCount.value ? `(${unreadCount.value})` : ''} ${folderLabel.value}`, 'Mail'),
-)
+// An open thread names itself, as in a single account's list; otherwise the folder and its unread.
+usePageMeta(() => {
+  if (threadID) return appPageMeta(openRow.value?.subject || __('[No Subject]'), 'Mail')
+  return appPageMeta(
+    `${unreadCount.value ? `(${unreadCount.value})` : ''} ${folderLabel.value}`,
+    'Mail',
+  )
+})
 
 // Keep the merged list fresh: poll periodically and react to push events — new mail, or mail changed
 // on another device — which can arrive for any account. Either way the newest window is merged into

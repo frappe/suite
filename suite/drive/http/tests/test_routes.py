@@ -492,7 +492,7 @@ class TestArchiveRoutes(BoundaryCase):
             self.assertEqual(routes.node_archive_status(node="f1"), ready)
         status.assert_called_once_with(SOMEONE, "f1")
 
-    def test_download_streams_the_ready_private_blob(self):
+    def test_download_sends_the_ready_private_blob(self):
         blob = frappe._dict(name="blob-1")
         request = MagicMock()
         request.environ = {"REQUEST_METHOD": "GET"}
@@ -506,6 +506,7 @@ class TestArchiveRoutes(BoundaryCase):
             "Folder.zip",
             as_attachment=True,
             environ=request.environ,
+            allow_native_redirect=True,
         )
         self.assertEqual(answer.get_data(), b"zip")
 

@@ -1,9 +1,12 @@
 <template>
+  <!-- No browser focus ring, whose top and bottom showed as stray lines once the list clipped its
+       sides. Tab focus moves the keyboard's cursor instead (see onListFocusIn), whose bar marks it. -->
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
-    :class="{ '!bg-surface-blue-1': isSelected || isTouching, '!py-2': isFullWidth }"
+    class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b outline-none focus-visible:outline-none px-3.5 py-2.5 sm:py-2 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
+    :class="{ '!bg-surface-gray-1': isSelected || isTouching, '!py-1': isFullWidth }"
+    :draggable="draggable || undefined"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
     @touchstart="onTouchStart"
@@ -11,7 +14,6 @@
     @touchcancel="clearTouchTimer"
     @contextmenu="onContextMenu"
     @click.capture="onRowClick"
-    :draggable="draggable || undefined"
     @dragstart="onDragStart"
     @dragend="emit('dragEnd')"
   >
@@ -54,7 +56,7 @@
     <div
       class="grow truncate"
       :class="[
-        isFullWidth ? 'flex items-center space-x-3' : 'space-y-1',
+        isFullWidth ? 'flex items-center space-x-3' : 'space-y-1 sm:space-y-0.5',
         { 'min-h-8': isFullWidth && !showLeading },
       ]"
     >
@@ -80,7 +82,7 @@
             <span>{{ __('in {0}', [accountLabel]) }}</span>
           </div>
         </div>
-        <MailDate v-if="!isFullWidth" :datetime :in-list="true" />
+        <MailDate v-if="!isFullWidth" :datetime format="list" />
       </div>
 
       <h4
@@ -115,7 +117,7 @@
     </div>
 
     <div v-if="isFullWidth" class="flex w-32 shrink-0 items-center justify-end space-x-4">
-      <MailDate v-if="!isHovered" :datetime :in-list="true" />
+      <MailDate v-if="!isHovered" :datetime format="list" />
       <slot name="trailing" :is-hovered="isHovered" />
     </div>
 

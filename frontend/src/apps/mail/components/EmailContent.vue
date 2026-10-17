@@ -1,37 +1,4 @@
 <template>
-  <div
-    v-if="showImagesBanner"
-    class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded-4 border p-2.5 px-4 sm:flex-row sm:items-center"
-  >
-    <div class="flex min-w-0 flex-1 items-start gap-3">
-      <!-- Centered on the FIRST line, not on the block: the label wraps to two lines
-			     at 393px and a block-centered icon would float between them.
-
-			     leading-5 states the line box instead of leaving it to the preset, whose
-			     18.9px is not a number an icon can be centered on. At a stated 20px the
-			     offset is arithmetic: an 18px glyph, 1px of it either side. -->
-      <ImageOff class="mt-px h-4.5 w-4.5 shrink-0 stroke-1.5" />
-      <span class="text-ink-gray-8 min-w-0 flex-1 leading-5"> {{ blockedLabel }} </span>
-    </div>
-    <!-- On mobile the two answers split the width the row was already spending,
-		     40px tall — the same treatment the invite strip's RSVP control gets. -->
-    <div class="flex shrink-0 items-center justify-end gap-3 max-sm:w-full">
-      <!-- Outline, not ghost: at full width a borderless button reads as loose
-			     text rather than the other half of a pair of answers. -->
-      <Button
-        v-if="canTrust"
-        variant="outline"
-        class="max-sm:!h-10 max-sm:flex-1"
-        :label="__('Mark Sender as Trusted')"
-        @click="handleTrust"
-      />
-      <Button
-        class="max-sm:!h-10 max-sm:flex-1 sm:w-28"
-        :label="__('Load Images')"
-        @click="imagesLoaded = true"
-      />
-    </div>
-  </div>
   <!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
 	     for it. iframe-resizer sizes the frame by asking the document inside it how tall it is, so
 	     the frame has to have a box the whole time it is being measured. Under `display: none` the
@@ -69,11 +36,9 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // eslint-disable-next-line import/no-unresolved
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import DOMPurify from 'dompurify'
-import { Button } from 'frappe-ui'
-import { ImageOff } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
-import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
+import { blockRemoteAssets } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
   declaresFixedPalette,
@@ -81,16 +46,19 @@ import {
   normalizeToLightScheme,
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
+import { highlightBody } from '@/apps/mail/utils/highlightBody'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 
+// Whether to withhold remote content is the thread's to say: it offers a Show in each message that
+// holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
+// `highlight`: the words a search found the message by, marked in its body.
 const {
   content,
   blockImages = false,
-  canTrust = true,
-} = defineProps<{ content: string; blockImages?: boolean; canTrust?: boolean }>()
-const emit = defineEmits<{ trust: [] }>()
+  highlight = '',
+} = defineProps<{ content: string; blockImages?: boolean; highlight?: string }>()
 
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
@@ -98,33 +66,6 @@ const { requestCompose } = useComposeMail()
 const frame = useTemplateRef<{ $el: HTMLIFrameElement }>('frame')
 
 const isIframeReady = ref(false)
-
-// Remote images are withheld until the reader opts in (per message), so a sender can't use them to track
-// when their mail was opened.
-const imagesLoaded = ref(false)
-// Trusting dismisses the banner instantly (and reveals images) without waiting for the sender's accept to
-// round-trip — otherwise the bar lingers before it disappears.
-const trusted = ref(false)
-const effectiveBlock = computed(() => blockImages && !imagesLoaded.value && !trusted.value)
-const remoteAssets = computed(() => analyzeRemoteAssets(content))
-// The banner is dismissed once the reader loads the images (or trusts the sender) — there's nothing
-// left to act on after that.
-const showImagesBanner = computed(
-  () => blockImages && !imagesLoaded.value && !trusted.value && remoteAssets.value.hasRemote,
-)
-const blockedLabel = computed(() => {
-  const n = remoteAssets.value.images
-  if (n === 0) return __('Remote content hidden to protect your privacy.')
-  return n === 1
-    ? __('1 remote image hidden to protect your privacy.')
-    : __('{0} remote images hidden to protect your privacy.', [String(n)])
-})
-
-// Trusting reveals images and dismisses the banner now; the parent accepts the sender for future mail.
-const handleTrust = () => {
-  trusted.value = true
-  emit('trust')
-}
 
 // Listen for keyboard/swipe events from iframe
 const handleMessage = (event: MessageEvent) => {
@@ -143,6 +84,15 @@ const handleMessage = (event: MessageEvent) => {
 
     const draft = parseMailto(String(event.data.href ?? ''))
     if (draft) requestCompose(draft)
+    return
+  }
+  // A press inside the message, replayed from the frame element so the page's outside-press
+  // handlers (reka's dismissable layers) see it land outside whatever popover is open. As a mouse
+  // press: reka waits for a touch's click, and that click stays in the frame.
+  if (event.data?.type === 'pointerdown') {
+    const iframe = frame.value?.$el as HTMLIFrameElement | undefined
+    if (!iframe || event.source !== iframe.contentWindow) return
+    iframe.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
     return
   }
   if (event.data?.type !== 'keyboard') return
@@ -194,7 +144,7 @@ const collapseQuotes = (doc: Document) => {
 
 const srcdoc = computed(() => {
   let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
-  if (effectiveBlock.value) sanitized = blockRemoteAssets(sanitized)
+  if (blockImages) sanitized = blockRemoteAssets(sanitized)
   const doc = new DOMParser().parseFromString(sanitized, 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
   // declaring a fixed palette (suite's own templates), and art-directed ones
@@ -210,6 +160,7 @@ const srcdoc = computed(() => {
   normalizeToLightScheme(doc)
   const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
   if (remapped) remapEmailForDarkMode(doc)
+  if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)
   const transformedContent = doc.documentElement.outerHTML
 
@@ -461,6 +412,12 @@ const srcdoc = computed(() => {
 					});
 				});
 
+				// Presses never leave the frame, so a popover open over the page (a message's
+				// details, an invite's event) could not hear the one that should close it.
+				document.addEventListener('pointerdown', () => {
+					window.parent.postMessage({ type: 'pointerdown' }, '*');
+				});
+
 				// Forward link clicks to parent
 				document.addEventListener('click', (e) => {
 					const anchor = e.target.closest('a');
@@ -606,6 +563,10 @@ const DOMPURIFY_CONFIG = {
     // Suite's own templates opt out of the dark-mode remap with this (see
     // declaresFixedPalette); stripping it would silently re-enable remapping.
     'data-fixed-palette',
+    // Apple Mail and Thunderbird mark a quoted trail with <blockquote type="cite">, the one thing
+    // that tells it apart from a quote the writer made (see findQuoteRoots); without it the trail
+    // was never folded away.
+    'type',
     'xmlns',
     'content',
     'name',

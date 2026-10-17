@@ -8,6 +8,7 @@ import { useThreadActions } from './useThreadActions'
 
 const mocks = vi.hoisted(() => ({
   useMutation: vi.fn<typeof import('@/api').useMutation>(),
+  holdDraft: vi.fn(),
 }))
 vi.mock('@/api', async (original) => ({
   ...(await original<typeof import('@/api')>()),
@@ -18,10 +19,11 @@ vi.mock('@/apps/mail/utils', () => ({
   getIcon: vi.fn(),
   raiseOptimisticToast: vi.fn(),
   raisePromiseToast: vi.fn(),
+  commitAfterUndo: vi.fn(),
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useUndo: () => ({ setUndoAction: vi.fn(), undo: vi.fn() }),
-  useBlockSender: () => ({ promptBlockSenders: vi.fn(), willJunkSenders: vi.fn() }),
+  useDiscardingDrafts: () => ({ holdDraft: mocks.holdDraft, releaseDraft: vi.fn() }),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => store }))
 
@@ -100,4 +102,36 @@ it('stars reading-pane messages in the current account and permits retry after r
     flagged: false,
   })
   expect(feedback).toHaveBeenCalledOnce()
+})
+
+it('discarding a reply draft from the list holds only the draft, not the mail it answers', () => {
+  const conversation = {
+    thread_id: 't1',
+    messages: [
+      { id: 'original', name: 'original', draft: 0, mailboxes: [{ mailbox_id: 'inbox' }] },
+      { id: 'reply', name: 'reply', draft: 1, mailboxes: [{ mailbox_id: 'drafts' }] },
+    ],
+  }
+  const actions = scope.run(() =>
+    useThreadActions({
+      rows: computed(() => [conversation] as never),
+      mailbox: computed(() => 'drafts'),
+      threadID: computed(() => undefined),
+      selections: ref([]),
+      mailThreadRef: ref(null),
+      resetThreads: vi.fn(),
+      syncAfterAction: vi.fn(),
+      removeThreadsFromList: () => [conversation] as never,
+      restoreThreadsToList: vi.fn(),
+      refillIfEmpty: vi.fn(),
+      goToMailbox: vi.fn(),
+      goToNextThreadOrMailbox: vi.fn(),
+    }),
+  )!
+
+  vi.stubGlobal('__', (text: string) => text)
+  actions.junkOrDeleteThreads(['t1'], false)
+  vi.unstubAllGlobals()
+
+  expect(mocks.holdDraft.mock.calls.map(([id]) => id)).toEqual(['reply'])
 })

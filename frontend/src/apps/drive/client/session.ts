@@ -528,8 +528,8 @@ function toSessionState(node: DriveNode): SessionState {
 function signatureFreeMediaKey(url: string, nodeId: string): string {
   try {
     const path = new URL(url, 'http://drive.local').pathname
-    const parts = path.split('/')
-    const blobPath = parts[1] === 'f' && parts[2] ? `/f/${parts[2]}` : path
+    // A Frappe blob URL, `[/private]/files/<blob>/<filename>`, keys on the blob alone.
+    const blobPath = path.match(/^(?:\/private)?\/files\/[0-9a-z]{10}\//)?.[0] ?? path
     return `drive-media:${blobPath}`
   } catch {
     return `drive-media:${nodeId}`
