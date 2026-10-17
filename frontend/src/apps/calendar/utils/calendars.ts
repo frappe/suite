@@ -19,6 +19,41 @@ export type CalendarRow = {
 }
 
 /**
+ * Whether a calendar shared read-only is drawn in this browser: as the reader last set it,
+ * and until they have, not at all. A calendar somebody else keeps — a holiday list, the
+ * company's birthdays — is drawn over the reader's own week only once they ask.
+ */
+export const sharedCalendarVisible = (
+	calendar: CalendarRow,
+	chosen: Record<string, 0 | 1>,
+): boolean => !!chosen[calendar.name]
+
+/**
+ * A calendar's name as a row can show it. A JMAP calendar is often named after its account —
+ * "Frappe Calendar (akash@frappe.io)" — which never fits a row; the address comes off, for a
+ * tooltip or nothing, and once there are several accounts the colour dot tells them apart.
+ */
+export const calendarLabel = (
+	name: string | null | undefined,
+): { label: string; email: string } => {
+	const match = /^(.*?)\s*\(([^()]*@[^()]*)\)$/.exec(name || '')
+	return match ? { label: match[1], email: match[2] } : { label: name || '', email: '' }
+}
+
+/**
+ * Whether an event is drawn: it sits on a calendar the reader has switched on. One predicate
+ * for the grid and for the mini month's ticks, which come from their own call and name their
+ * calendars rather than carry them. Nothing is drawn until the calendar list is known — a
+ * hidden calendar's events showing for a moment and vanishing is worse than the moment's
+ * wait — and nothing on a calendar the list does not have.
+ */
+export const onShownCalendar = (calendars: CalendarRow[] | undefined) => {
+	const shown = new Set(calendars?.filter((cal) => cal.visible).map((cal) => cal.name))
+	return (event: { calendars: ({ calendar: string } | string)[] }): boolean =>
+		event.calendars.some((c) => shown.has(typeof c === 'string' ? c : c.calendar))
+}
+
+/**
  * The colours a calendar can be given here, as the hex saved on it.
  *
  * A hex, not the palette's name: the colour lives on the JMAP calendar, and every

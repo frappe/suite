@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { Pencil, Pin, Trash2 } from 'lucide-vue-next'
+import { Eye, EyeOff, Pencil, Pin, Trash2 } from 'lucide-vue-next'
 import { createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/calendar/utils'
@@ -40,9 +40,7 @@ export const useCalendarActions = () => {
 		const visible = calendar.visible ? 0 : 1
 		calendar.visible = visible
 		if (!calendar.may_write_all) {
-			store.hiddenShared = visible
-				? store.hiddenShared.filter((name) => name !== calendar.name)
-				: [...store.hiddenShared, calendar.name]
+			store.sharedVisibility = { ...store.sharedVisibility, [calendar.name]: visible }
 			return
 		}
 		createResource({
@@ -68,6 +66,13 @@ export const useCalendarActions = () => {
 	const canEdit = (calendar: CalendarRow) => !!calendar.may_write_all
 
 	const menuOptions = (calendar: CalendarRow) => [
+		// The sidebar's row and the phone's view sheet do this on a tap; the settings page, which
+		// has neither, offers it here.
+		{
+			label: calendar.visible ? __('Hide') : __('Show'),
+			icon: calendar.visible ? EyeOff : Eye,
+			onClick: () => toggleVisible(calendar),
+		},
 		{
 			label: __('Edit'),
 			icon: Pencil,
