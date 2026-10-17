@@ -13,7 +13,6 @@
     :open-on-click="true"
     aria-label="Font"
     class="min-w-[10rem]"
-    variant="outline"
     @update:model-value="onSelect"
   >
     <template #font="{ option }"

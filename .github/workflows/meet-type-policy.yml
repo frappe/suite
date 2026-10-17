@@ -15,7 +15,7 @@ on:
       - "suite/meet/type-policy/**"
       - "e2e/meet/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
       - ".github/workflows/meet-type-policy.yml"
   pull_request:
     paths:
@@ -27,7 +27,7 @@ on:
       - "suite/meet/type-policy/**"
       - "e2e/meet/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
       - ".github/workflows/meet-type-policy.yml"
   workflow_dispatch:
 
@@ -45,14 +45,17 @@ jobs:
       - name: Clone
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
+          cache: pnpm
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Test policy
         run: |
@@ -63,7 +66,7 @@ jobs:
             suite/meet/type-policy/check.test.mjs
 
       - name: Check Meet types
-        run: yarn check:meet-types
+        run: pnpm check:meet-types
 
       - name: Upload policy results
         if: always()

@@ -1,5 +1,5 @@
+import { TextSelection } from '@tiptap/pm/state'
 import { TableMap } from '@tiptap/pm/tables'
-import { TextSelection } from 'prosemirror-state'
 
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { getCells, seedNewCells, ZWSP } from '@/apps/slides/stores/tiptapSetup'

@@ -43,7 +43,7 @@ const props = defineProps({
   },
   dimensions: {
     type: Object,
-    default: {},
+    default: () => ({}),
   },
 })
 

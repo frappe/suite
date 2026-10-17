@@ -1,6 +1,6 @@
+import { Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { EditorState } from '@tiptap/pm/state'
 import { columnResizing, tableNodes } from '@tiptap/pm/tables'
-import { Schema, type Node as ProseMirrorNode } from 'prosemirror-model'
-import { EditorState } from 'prosemirror-state'
 import { describe, expect, it, vi } from 'vitest'
 
 import { draggedWidth, scaleAwareColumnResizing } from './columnResizing'

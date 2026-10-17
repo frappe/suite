@@ -1,6 +1,6 @@
 <template>
   <div ref="scrollContainer" class="absolute inset-0">
-    <template v-if="showComments" v-for="comment in filteredComments" :key="comment.id">
+    <template v-for="comment in showComments ? filteredComments : []" :key="comment.id">
       <Teleport v-if="!collapsed || activeComment === comment.id" :disabled="!isMobile" to="body">
         <div
           :id="'comment-' + comment.id"
