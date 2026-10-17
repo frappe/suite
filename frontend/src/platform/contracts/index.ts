@@ -7,7 +7,7 @@
 import type { Component, InjectionKey } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 
-export type PlatformCapability = 'jmap' | 'systemManager'
+export type PlatformCapability = 'jmap' | 'systemManager' | 'suiteAdmin'
 
 /**
  * `shell`: the route renders inside the shell, with the rail and one

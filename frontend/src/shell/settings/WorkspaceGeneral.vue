@@ -2,9 +2,6 @@
   <FileUploader
     file-types="image/png,image/jpeg,image/jpg,image/webp"
     :private="false"
-    doctype="Suite Settings"
-    docname="Suite Settings"
-    fieldname="workspace_logo"
     @success="(file) => (logo = file.file_url)"
   >
     <template #default="{ openFileSelector, uploading, error }">

@@ -133,12 +133,23 @@ router.beforeEach(async (to, from) => {
     return false
   }
 
+  if (to.path.startsWith('/admin') && !session.capabilities.value.suiteAdmin) return '/home'
+  if (session.user.value?.must_change_password === true) {
+    return to.path === '/suite/change-password' ? true : '/suite/change-password'
+  }
+  if (session.user.value?.setup_required === true && !session.capabilities.value.suiteAdmin) {
+    return to.path === '/suite/account-unavailable' ? true : '/suite/account-unavailable'
+  }
+  if (to.path === '/suite/change-password' || to.path === '/suite/account-unavailable')
+    return '/home'
+
   // A shared item opens on a site that is not set up yet. Area routes still
   // go to setup (spec §10.10, ask S3).
   if (!to.meta.allowGuest) {
     const onboarding = await ensureOnboardingState()
     const onSetupPage = to.path === '/suite/setup'
     if (onboarding.canOnboard && !onboarding.isOnboarded) {
+      if (session.user.value?.id === 'Administrator' && to.path.startsWith('/admin')) return true
       if (!onSetupPage) return '/suite/setup'
     } else if (onSetupPage) {
       return startPath
@@ -178,7 +189,7 @@ function isMailGuestPath(path: string): boolean {
 // Mail pages that need no mail account: the public MIME view and the Admin
 // Dashboard. They load without the Mail capability; Mail's guard decides.
 function isMailPathWithoutAccount(path: string): boolean {
-  return /^\/mail\/(?:mime-message\/|dashboard(?:\/|$))/.test(path)
+  return /^\/mail\/mime-message\//.test(path)
 }
 
 /** @deprecated Page metadata is installed through @/platform/page-meta. */

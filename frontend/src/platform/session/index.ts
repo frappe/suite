@@ -16,6 +16,7 @@ export interface SessionUser {
 export interface SessionCapabilities {
   jmap: boolean
   systemManager: boolean
+  suiteAdmin?: boolean
 }
 
 export type PlatformCapability = keyof SessionCapabilities
@@ -49,7 +50,7 @@ type AccountResponse = Record<string, unknown> & {
   fullName?: string
   avatar?: string | null
   user_image?: string | null
-  roles?: string[] | { system_manager?: boolean }
+  roles?: string[] | { system_manager?: boolean; suite_admin?: boolean }
   is_jmap_configured?: boolean
   capabilities?: Partial<SessionCapabilities>
 }
@@ -114,6 +115,11 @@ export function createSession(client: Transport = defaultTransport): Session {
             string(account.avatar) ?? string(account.user_image) ?? user.value?.avatar ?? null,
         }
         capabilities.value = {
+          suiteAdmin:
+            id === 'Administrator' ||
+            (Array.isArray(account.roles)
+              ? account.roles.includes('Suite Admin')
+              : !!account.roles?.suite_admin),
           jmap: account.capabilities?.jmap ?? !!account.is_jmap_configured,
           systemManager:
             account.capabilities?.systemManager ??

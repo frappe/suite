@@ -35,6 +35,7 @@ class TestInviteRefusals(UnitTestCase):
                 "backup_email": "backup@example.com",
                 "check_permission": Mock(),
                 "save": Mock(),
+                "set_request_key": Mock(),
                 "send_verification_email": Mock(),
                 **fields,
             }
@@ -48,12 +49,14 @@ class TestInviteRefusals(UnitTestCase):
         self.assertEqual(refused.exception.http_status_code, 400)
         doc.save.assert_not_called()
 
-    def test_an_expired_invite_is_not_sent(self):
+    def test_resending_an_expired_invite_replaces_its_link_before_sending(self):
         doc = self.invite(is_expired=True)
         with patch.object(invites.frappe, "get_doc", return_value=doc):
-            with self.assertRaises(BadRequest):
-                invites.send_invite("invite")
-        doc.send_verification_email.assert_not_called()
+            invites.send_invite("invite")
+        doc.set_request_key.assert_called_once_with()
+        doc.save.assert_called_once_with()
+        doc.send_verification_email.assert_called_once_with()
+        self.assertGreater(frappe.utils.get_datetime(doc.expires_at), frappe.utils.now_datetime())
 
     def test_an_invite_without_a_valid_backup_email_is_not_sent(self):
         for backup_email in (None, "not-an-email"):

@@ -48,7 +48,10 @@
               </div>
 
               <div v-else-if="step === 'workspace'" class="flex flex-col gap-4">
-                <WorkspaceBrandingForm ref="workspaceForm" @saved="step = 'invite'" />
+                <WorkspaceBrandingForm
+                  ref="workspaceForm"
+                  @saved="step = mailSetup.data?.cloud ? 'mail' : 'invite'"
+                />
                 <Combobox
                   v-model="timezone"
                   :options="timezoneOptions"
@@ -58,7 +61,68 @@
                 />
               </div>
 
-              <InviteStep v-else-if="step === 'invite'" ref="inviteStep" @sent="onInvitesSent" />
+              <div v-else-if="step === 'mail'" class="flex flex-col gap-4">
+                <p class="text-base text-ink-gray-6">
+                  {{
+                    __(
+                      'Use the ready business domain supplied by Suite Cloud. Custom domains and DNS setup are optional and can be added later.',
+                    )
+                  }}
+                </p>
+                <ErrorMessage
+                  :message="mailSetup.error?.message || setupMail.error?.message || setupFailure"
+                />
+                <template v-if="session.user.value?.id === 'Administrator'">
+                  <p class="text-base text-ink-gray-6">
+                    {{
+                      __(
+                        'Administrator is a recovery identity. Create a business Admin, then sign in as that person to complete Mail setup.',
+                      )
+                    }}
+                  </p>
+                  <Button :label="__('Open Admin')" route="/admin/users" />
+                </template>
+                <template v-else-if="!mailSetup.data?.ready">
+                  <FormControl v-model="mailUsername" :label="__('Business email name')" />
+                  <FormControl
+                    v-model="mailDomain"
+                    type="select"
+                    :options="mailSetup.data?.domains || []"
+                    :label="__('Business domain')"
+                  />
+                  <FormControl
+                    v-model="mailPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    :label="__('Suite and Mail password')"
+                    :description="__('This becomes your permanent Suite and Mail-client password.')"
+                  />
+                  <Button
+                    :label="__('Set up business Mail')"
+                    :loading="setupMail.isPending"
+                    :disabled="!mailUsername || !mailDomain || !mailPassword"
+                    @click="provisionMail"
+                  />
+                </template>
+                <p v-else class="text-base text-ink-green-6">
+                  {{ __('Business Mail is ready: {0}', [mailSetup.data.account || '']) }}
+                </p>
+                <Button
+                  v-if="!mailSetup.data?.domains.length"
+                  :label="__('Retry provider connection')"
+                  @click="mailSetup.refetch()"
+                />
+              </div>
+              <template v-else-if="step === 'invite'">
+                <p v-if="mailSetup.data?.cloud" class="text-base text-ink-gray-6">
+                  {{
+                    __(
+                      'After setup, invite people using their personal contact email or create accounts with one-time temporary passwords in Admin → Users.',
+                    )
+                  }}
+                </p>
+                <InviteStep v-else ref="inviteStep" @sent="onInvitesSent" />
+              </template>
 
               <div v-else class="flex justify-center">
                 <div class="flex w-full items-center gap-3 rounded-6 bg-surface-gray-2 p-4">
@@ -69,7 +133,7 @@
                   <div class="flex flex-col gap-1">
                     <p class="text-base text-ink-gray-8">{{ inviteSummaryLabel }}</p>
                     <p class="text-sm text-ink-gray-5">
-                      {{ __('Invite anyone later from Settings.') }}
+                      {{ __('Invite anyone later from Admin → Users.') }}
                     </p>
                   </div>
                 </div>
@@ -98,6 +162,13 @@
             @click="workspaceForm?.save()"
           />
 
+          <Button
+            v-else-if="step === 'mail'"
+            variant="solid"
+            :label="__('Continue')"
+            :disabled="!mailSetup.data?.ready"
+            @click="step = 'invite'"
+          />
           <div v-else-if="step === 'invite'" class="flex items-center justify-between">
             <Button
               variant="subtle"
@@ -114,6 +185,7 @@
                 @click="finish"
               />
               <Button
+                v-if="!mailSetup.data?.cloud"
                 variant="solid"
                 class="!gap-1"
                 :label="__('Send invites')"
@@ -157,10 +229,10 @@
 <script setup lang="ts">
 import LucideMail from '~icons/lucide/mail'
 import LucideUser from '~icons/lucide/user'
-import { Button, Combobox, ErrorMessage, Tooltip } from 'frappe-ui'
+import { Button, Combobox, ErrorMessage, FormControl, Tooltip } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance, type Ref } from 'vue'
 
-import { api, useMutation } from '@/api'
+import { api, useMutation, useQuery } from '@/api'
 import {
   calendarLogo,
   driveLogo,
@@ -171,6 +243,7 @@ import {
   suiteLogo,
   writerLogo,
 } from '@/platform/brand'
+import { useSession } from '@/platform/session'
 import InviteStep from '@/shell/InviteStep.vue'
 import SetupProgressTrack from '@/shell/SetupProgressTrack.vue'
 import { detectTimezone, useTimezones } from '@/shell/useTimezones'
@@ -188,12 +261,16 @@ const apps = [
   { id: 'calendar', name: 'Calendar', logo: calendarLogo },
 ]
 
-type Step = 'welcome' | 'workspace' | 'invite' | 'ready'
+type Step = 'welcome' | 'workspace' | 'mail' | 'invite' | 'ready'
 
-const stepOrder: Step[] = ['welcome', 'workspace', 'invite', 'ready']
+const stepOrder = computed<Step[]>(() =>
+  mailSetup.data?.cloud
+    ? ['welcome', 'workspace', 'mail', 'invite', 'ready']
+    : ['welcome', 'workspace', 'invite', 'ready'],
+)
 
 const step = ref<Step>('welcome')
-const stepIndex = computed(() => stepOrder.indexOf(step.value))
+const stepIndex = computed(() => stepOrder.value.indexOf(step.value))
 const trackIndex = computed(() => stepIndex.value - 1)
 const timezone = ref(detectTimezone())
 const { timezoneOptions } = useTimezones()
@@ -208,6 +285,7 @@ const openSuiteButton = ref<ComponentPublicInstance>()
 const stepFocus: Record<Step, Readonly<Ref<{ $el: Node | undefined } | undefined>>> = {
   welcome: getStartedButton,
   workspace: workspaceForm,
+  mail: workspaceForm,
   invite: inviteStep,
   ready: openSuiteButton,
 }
@@ -246,6 +324,10 @@ const copy: Record<Step, { title: string; subtitle: string }> = {
     title: __("Let's invite your team"),
     subtitle: __('Add teammates and explore Suite together.'),
   },
+  mail: {
+    title: __('Set up business Mail'),
+    subtitle: __('Your first Admin needs a ready Mail account before business setup completes.'),
+  },
   ready: {
     title: __("You're all set!"),
     subtitle: __('Your workspace is ready. Time to dive in.'),
@@ -268,7 +350,27 @@ function onInvitesSent(summary: string) {
 }
 
 function goBack() {
-  step.value = stepOrder[stepIndex.value - 1]
+  step.value = stepOrder.value[stepIndex.value - 1]
+}
+
+const session = useSession()
+const mailSetup = useQuery(api.suite.site.mailOnboarding)
+const setupMail = useMutation(api.suite.site.setupMail)
+const mailUsername = ref('')
+const mailDomain = ref('')
+const mailPassword = ref('')
+const setupFailure = ref('')
+async function provisionMail() {
+  const result = await setupMail.run({
+    address: `${mailUsername.value}@${mailDomain.value}`,
+    password: mailPassword.value,
+  })
+  mailPassword.value = ''
+  setupFailure.value = result.error || ''
+  if (result.success) {
+    await session.refresh()
+    await mailSetup.refetch()
+  }
 }
 
 // Setup is done once the last step is reached, not once the button is clicked,

@@ -5,7 +5,18 @@ SUITE_TABLE = "suite.api.framework.HTTP"
 # Suite resources have no extra owner segment. Each name is its own first path
 # segment and points at the Suite table. No product owner may register one of
 # these names (spec §4.2).
-SUITE_RESOURCES = ("account", "site", "users", "invitations", "people", "preferences", "languages")
+SUITE_RESOURCES = (
+    "account",
+    "site",
+    "users",
+    "invitations",
+    "people",
+    "preferences",
+    "languages",
+    "storage",
+    "admin",
+    "onboarding",
+)
 
 
 def check_suite_resources(owners: dict[str, str]) -> None:

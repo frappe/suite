@@ -1,6 +1,544 @@
 // Generated from src/platform/transport/contract.json. Do not edit.
 import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
+export type AdminHealthGetInput = Record<string, never>
+
+export type AdminHealthGetOutput = {
+  cloud: boolean
+  suspended: boolean
+  stale: boolean
+  fetched_at: string | null
+  alerts: Array<string>
+}
+
+export type AdminHealthGetError = 'PermissionError'
+
+const operationAdminHealthGet: QueryRef<
+  AdminHealthGetInput,
+  AdminHealthGetOutput,
+  AdminHealthGetError
+> = {
+  id: 'admin_health_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'admin.health',
+  method: 'GET',
+  path: 'admin/health',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationAdminHealthGet,
+}
+
+export type TemporaryPasswordPostInput = { user: string }
+
+export type TemporaryPasswordPostOutput = {
+  user: string
+  temporary_password: string
+  expires_at: string
+}
+
+export type TemporaryPasswordPostError = 'PermissionError' | 'ValidationError'
+
+const operationTemporaryPasswordPost: MutationRef<
+  TemporaryPasswordPostInput,
+  TemporaryPasswordPostOutput,
+  TemporaryPasswordPostError
+> = {
+  id: 'temporary_password_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'users.replaceTemporaryPassword',
+  method: 'POST',
+  path: 'users/{user}/temporary-password',
+  prefix: '/api/suite/',
+  pathParams: ['user'],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationTemporaryPasswordPost,
+}
+
+export type MailAccountPostInput = { user: string; address: string }
+
+export type MailAccountPostOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
+
+export type MailAccountPostError = 'PermissionError' | 'ValidationError'
+
+const operationMailAccountPost: MutationRef<
+  MailAccountPostInput,
+  MailAccountPostOutput,
+  MailAccountPostError
+> = {
+  id: 'mail_account_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'users.recreateMail',
+  method: 'POST',
+  path: 'users/{user}/mail-account',
+  prefix: '/api/suite/',
+  pathParams: ['user'],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationMailAccountPost,
+}
+
+export type MailAccountDeleteInput = { user: string; confirmation: string }
+
+export type MailAccountDeleteOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
+
+export type MailAccountDeleteError = 'PermissionError' | 'ValidationError'
+
+const operationMailAccountDelete: MutationRef<
+  MailAccountDeleteInput,
+  MailAccountDeleteOutput,
+  MailAccountDeleteError
+> = {
+  id: 'mail_account_delete',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'users.deleteMail',
+  method: 'DELETE',
+  path: 'users/{user}/mail-account',
+  prefix: '/api/suite/',
+  pathParams: ['user'],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationMailAccountDelete,
+}
+
+export type OnboardingGetInput = Record<string, never>
+
+export type OnboardingGetOutput = {
+  cloud: boolean
+  domains: Array<string>
+  account: string | null
+  ready: boolean
+}
+
+export type OnboardingGetError = 'PermissionError' | 'ValidationError'
+
+const operationOnboardingGet: QueryRef<
+  OnboardingGetInput,
+  OnboardingGetOutput,
+  OnboardingGetError
+> = {
+  id: 'onboarding_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'site.mailOnboarding',
+  method: 'GET',
+  path: 'onboarding/mail',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationOnboardingGet,
+}
+
+export type OnboardingPostInput = { address: string; password: string }
+
+export type OnboardingPostOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
+
+export type OnboardingPostError = 'PermissionError' | 'ValidationError'
+
+const operationOnboardingPost: MutationRef<
+  OnboardingPostInput,
+  OnboardingPostOutput,
+  OnboardingPostError
+> = {
+  id: 'onboarding_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'site.setupMail',
+  method: 'POST',
+  path: 'onboarding/mail',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationOnboardingPost,
+}
+
+export type UserTransferPreviewOutputInheritedGrant = { principal: string; role: number }
+
+export type UserTransferPreviewInput = { user: string; destination: string }
+
+export type UserTransferPreviewOutput = {
+  source_root: string
+  destination: string
+  destination_user: string | null
+  bytes: number
+  item_count: number
+  fingerprint: string
+  inherited_grants: Array<UserTransferPreviewOutputInheritedGrant>
+}
+
+export type UserTransferPreviewError =
+  'PermissionError' | 'DriveConflict' | 'DriveForbidden' | 'DriveNotFound' | 'DriveOverQuota'
+
+const operationUserTransferPreview: QueryRef<
+  UserTransferPreviewInput,
+  UserTransferPreviewOutput,
+  UserTransferPreviewError
+> = {
+  id: 'user_transfer_preview',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'users.previewTransfer',
+  method: 'GET',
+  path: 'users/{user}/drive-transfer',
+  prefix: '/api/suite/',
+  pathParams: ['user'],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'DriveConflict', 'DriveForbidden', 'DriveNotFound', 'DriveOverQuota'],
+  loadValidators: async () => (await import('./validators')).operationUserTransferPreview,
+}
+
+export type UserTransferOutputTransferItem = {
+  node: string
+  success: boolean
+  error: string | null
+}
+
+export type UserTransferInput = {
+  user: string
+  destination: string
+  fingerprint: string
+  confirm_access: boolean
+}
+
+export type UserTransferOutput = {
+  results: Array<UserTransferOutputTransferItem>
+  remaining: number
+  complete: boolean
+}
+
+export type UserTransferError =
+  'PermissionError' | 'DriveConflict' | 'DriveForbidden' | 'DriveNotFound' | 'DriveOverQuota'
+
+const operationUserTransfer: MutationRef<UserTransferInput, UserTransferOutput, UserTransferError> =
+  {
+    id: 'user_transfer',
+    owner: 'suite',
+    kind: 'mutation',
+    publicName: 'users.transferDrive',
+    method: 'POST',
+    path: 'users/{user}/drive-transfer',
+    prefix: '/api/suite/',
+    pathParams: ['user'],
+    nodeParams: [],
+    entity: null,
+    errors: [
+      'PermissionError',
+      'DriveConflict',
+      'DriveForbidden',
+      'DriveNotFound',
+      'DriveOverQuota',
+    ],
+    loadValidators: async () => (await import('./validators')).operationUserTransfer,
+  }
+
+export type StorageBuffersOutputLimitResult = {
+  user: string
+  success: boolean
+  error: string | null
+}
+
+export type StorageBuffersInput = { users: Array<string>; grant: boolean }
+
+export type StorageBuffersOutput = Array<StorageBuffersOutputLimitResult>
+
+export type StorageBuffersError = 'PermissionError' | 'ValidationError'
+
+const operationStorageBuffers: MutationRef<
+  StorageBuffersInput,
+  StorageBuffersOutput,
+  StorageBuffersError
+> = {
+  id: 'storage_buffers',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'storage.setBuffers',
+  method: 'PATCH',
+  path: 'storage/buffers',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationStorageBuffers,
+}
+
+export type StorageGetOutputStorageRoot = {
+  name: string
+  user: string | null
+  kind: string
+  state: string
+  stored_bytes: number
+  reserved_bytes: number
+  quota_bytes: number
+  effective_quota_bytes: number
+}
+
+export type StorageGetOutputStorageUser = {
+  name: string
+  email: string
+  full_name: string
+  user_image: string | null
+  enabled: boolean
+  is_admin: boolean
+  drive_bytes: number
+  reserved_bytes: number
+  mail_bytes: number | null
+  combined_bytes: number | null
+  cap_bytes: number | null
+  buffer: boolean
+  effective_cap_bytes: number | null
+  mail_fetched_at: string | null
+}
+
+export type StorageGetInput = Record<string, never>
+
+export type StorageGetOutput = {
+  cloud: boolean
+  drive_bytes: number
+  personal_drive_bytes: number
+  shared_drive_bytes: number
+  group_mail_bytes: number | null
+  pending_invitations: number
+  reserved_bytes: number
+  mail_bytes: number | null
+  combined_bytes: number | null
+  allowance_bytes: number | null
+  effective_allowance_bytes: number | null
+  stale: boolean
+  fetched_at: string | null
+  default_cap_bytes: number | null
+  users: Array<StorageGetOutputStorageUser>
+  roots: Array<StorageGetOutputStorageRoot>
+}
+
+export type StorageGetError = 'PermissionError'
+
+const operationStorageGet: QueryRef<StorageGetInput, StorageGetOutput, StorageGetError> = {
+  id: 'storage_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'storage.get',
+  method: 'GET',
+  path: 'storage',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationStorageGet,
+}
+
+export type StorageRefreshOutputStorageRoot = {
+  name: string
+  user: string | null
+  kind: string
+  state: string
+  stored_bytes: number
+  reserved_bytes: number
+  quota_bytes: number
+  effective_quota_bytes: number
+}
+
+export type StorageRefreshOutputStorageUser = {
+  name: string
+  email: string
+  full_name: string
+  user_image: string | null
+  enabled: boolean
+  is_admin: boolean
+  drive_bytes: number
+  reserved_bytes: number
+  mail_bytes: number | null
+  combined_bytes: number | null
+  cap_bytes: number | null
+  buffer: boolean
+  effective_cap_bytes: number | null
+  mail_fetched_at: string | null
+}
+
+export type StorageRefreshInput = Record<string, never>
+
+export type StorageRefreshOutput = {
+  cloud: boolean
+  drive_bytes: number
+  personal_drive_bytes: number
+  shared_drive_bytes: number
+  group_mail_bytes: number | null
+  pending_invitations: number
+  reserved_bytes: number
+  mail_bytes: number | null
+  combined_bytes: number | null
+  allowance_bytes: number | null
+  effective_allowance_bytes: number | null
+  stale: boolean
+  fetched_at: string | null
+  default_cap_bytes: number | null
+  users: Array<StorageRefreshOutputStorageUser>
+  roots: Array<StorageRefreshOutputStorageRoot>
+}
+
+export type StorageRefreshError = 'PermissionError'
+
+const operationStorageRefresh: MutationRef<
+  StorageRefreshInput,
+  StorageRefreshOutput,
+  StorageRefreshError
+> = {
+  id: 'storage_refresh',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'storage.refresh',
+  method: 'POST',
+  path: 'storage/refresh',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationStorageRefresh,
+}
+
+export type StorageLimitsOutputLimitResult = {
+  user: string
+  success: boolean
+  error: string | null
+}
+
+export type StorageLimitsInput = {
+  users: Array<string>
+  cap_bytes: number | null
+  buffer?: boolean
+}
+
+export type StorageLimitsOutput = Array<StorageLimitsOutputLimitResult>
+
+export type StorageLimitsError = 'PermissionError' | 'ValidationError'
+
+const operationStorageLimits: MutationRef<
+  StorageLimitsInput,
+  StorageLimitsOutput,
+  StorageLimitsError
+> = {
+  id: 'storage_limits',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'storage.setLimits',
+  method: 'PATCH',
+  path: 'storage/limits',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationStorageLimits,
+}
+
+export type StorageDefaultOutputStorageRoot = {
+  name: string
+  user: string | null
+  kind: string
+  state: string
+  stored_bytes: number
+  reserved_bytes: number
+  quota_bytes: number
+  effective_quota_bytes: number
+}
+
+export type StorageDefaultOutputStorageUser = {
+  name: string
+  email: string
+  full_name: string
+  user_image: string | null
+  enabled: boolean
+  is_admin: boolean
+  drive_bytes: number
+  reserved_bytes: number
+  mail_bytes: number | null
+  combined_bytes: number | null
+  cap_bytes: number | null
+  buffer: boolean
+  effective_cap_bytes: number | null
+  mail_fetched_at: string | null
+}
+
+export type StorageDefaultInput = { cap_bytes: number | null }
+
+export type StorageDefaultOutput = {
+  cloud: boolean
+  drive_bytes: number
+  personal_drive_bytes: number
+  shared_drive_bytes: number
+  group_mail_bytes: number | null
+  pending_invitations: number
+  reserved_bytes: number
+  mail_bytes: number | null
+  combined_bytes: number | null
+  allowance_bytes: number | null
+  effective_allowance_bytes: number | null
+  stale: boolean
+  fetched_at: string | null
+  default_cap_bytes: number | null
+  users: Array<StorageDefaultOutputStorageUser>
+  roots: Array<StorageDefaultOutputStorageRoot>
+}
+
+export type StorageDefaultError = 'PermissionError' | 'ValidationError'
+
+const operationStorageDefault: MutationRef<
+  StorageDefaultInput,
+  StorageDefaultOutput,
+  StorageDefaultError
+> = {
+  id: 'storage_default',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'storage.setDefault',
+  method: 'PATCH',
+  path: 'storage/default',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationStorageDefault,
+}
+
 export type GetPreferencesInput = Record<string, never>
 
 export type GetPreferencesOutput = {
@@ -105,9 +643,11 @@ export type AccountGetOutputAccount = {
   avatar: string | null
   roles: AccountGetOutputAccountRoles
   is_jmap_configured: boolean
+  must_change_password: boolean
+  setup_required: boolean
 }
 
-export type AccountGetOutputAccountRoles = { system_manager: boolean }
+export type AccountGetOutputAccountRoles = { system_manager: boolean; suite_admin: boolean }
 
 export type AccountGetInput = Record<string, never>
 
@@ -222,6 +762,10 @@ export type UsersGetOutputUser = {
   full_name: string
   user_image: string | null
   is_admin: boolean
+  enabled: boolean
+  account: string | null
+  setup_status: string
+  must_change_password: boolean
 }
 
 export type UsersGetInput = Record<string, never>
@@ -276,6 +820,45 @@ const operationInvitationsGet: QueryRef<
   entity: null,
   errors: ['PermissionError'],
   loadValidators: async () => (await import('./validators')).operationInvitationsGet,
+}
+
+export type UsersPatchOutputUser = {
+  name: string
+  email: string
+  full_name: string
+  user_image: string | null
+  is_admin: boolean
+  enabled: boolean
+  account: string | null
+  setup_status: string
+  must_change_password: boolean
+}
+
+export type UsersPatchInput = {
+  user: string
+  is_admin?: boolean
+  enabled?: boolean
+  full_name?: string
+}
+
+export type UsersPatchOutput = Array<UsersPatchOutputUser>
+
+export type UsersPatchError =
+  'BadRequest' | 'PermissionError' | 'ValidationError' | 'DoesNotExistError'
+
+const operationUsersPatch: MutationRef<UsersPatchInput, UsersPatchOutput, UsersPatchError> = {
+  id: 'users_patch',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'users.update',
+  method: 'PATCH',
+  path: 'users',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest', 'PermissionError', 'ValidationError', 'DoesNotExistError'],
+  loadValidators: async () => (await import('./validators')).operationUsersPatch,
 }
 
 export type InvitationsPostInput = { emails: string }
@@ -591,6 +1174,32 @@ const operationSuiteGenerateUserKeys: MutationRef<
 }
 
 export const api = {
+  admin: {
+    health: operationAdminHealthGet,
+  },
+  users: {
+    replaceTemporaryPassword: operationTemporaryPasswordPost,
+    recreateMail: operationMailAccountPost,
+    deleteMail: operationMailAccountDelete,
+    previewTransfer: operationUserTransferPreview,
+    transferDrive: operationUserTransfer,
+    list: operationUsersGet,
+    update: operationUsersPatch,
+  },
+  site: {
+    mailOnboarding: operationOnboardingGet,
+    setupMail: operationOnboardingPost,
+    get: operationSiteGet,
+    completeOnboarding: operationSitePatchCompleteOnboarding,
+    updateSettings: operationSitePatchUpdateSiteSettings,
+  },
+  storage: {
+    setBuffers: operationStorageBuffers,
+    get: operationStorageGet,
+    refresh: operationStorageRefresh,
+    setLimits: operationStorageLimits,
+    setDefault: operationStorageDefault,
+  },
   preferences: {
     get: operationGetPreferences,
     update: operationUpdatePreferences,
@@ -605,14 +1214,6 @@ export const api = {
     resetPassword: operationFrappeUserResetPassword,
     changePassword: operationFrappeUserUpdatePassword,
     generateKeys: operationSuiteGenerateUserKeys,
-  },
-  site: {
-    get: operationSiteGet,
-    completeOnboarding: operationSitePatchCompleteOnboarding,
-    updateSettings: operationSitePatchUpdateSiteSettings,
-  },
-  users: {
-    list: operationUsersGet,
   },
   invitations: {
     list: operationInvitationsGet,

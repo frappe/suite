@@ -475,6 +475,7 @@ export type InviteOutput = {
   invited_by: string | null
   expires_at: string | null
   quota_gb: number | null
+  combined_cap_bytes: number | null
   send_invite: 0 | 1
   disable_receiving: 0 | 1
   is_verified: 0 | 1
@@ -499,7 +500,13 @@ const operationInvite: QueryRef<InviteInput, InviteOutput, InviteError> = {
   loadValidators: async () => (await import('./validators')).operationInvite,
 }
 
-export type UpdateInviteInput = { name: string; expires_at: string | null; quota_gb: number | null }
+export type UpdateInviteInput = {
+  name: string
+  expires_at: string | null
+  combined_cap_bytes: number | null
+  account?: string
+  is_admin?: boolean
+}
 
 export type UpdateInviteOutput = null
 
@@ -3106,7 +3113,14 @@ export type AddMemberInput = {
   disable_receiving?: boolean
 }
 
-export type AddMemberOutput = null
+export type AddMemberOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
 
 export type AddMemberError = 'PermissionError' | 'ValidationError'
 
@@ -3115,7 +3129,6 @@ const operationAddMember: MutationRef<AddMemberInput, AddMemberOutput, AddMember
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.create',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.add_member',
@@ -3337,7 +3350,7 @@ const operationDeleteMailingLists: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDeleteMailingLists,
 }
 
-export type DeleteMembersInput = { names: Array<string> }
+export type DeleteMembersInput = { names: Array<string>; confirmation?: string }
 
 export type DeleteMembersOutput = null
 

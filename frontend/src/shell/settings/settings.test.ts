@@ -52,7 +52,7 @@ describe('settings groups', () => {
     const known = () => {
       openSettings('mail.screener')
       openSettings('drive.statistics')
-      openSettings('workspace.users')
+      openSettings('account.profile')
       // @ts-expect-error A misspelled tab id fails the type check.
       openSettings('mail.screner')
     }

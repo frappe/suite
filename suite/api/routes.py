@@ -13,6 +13,25 @@ from frappe.push_notification import subscribe, unsubscribe
 from frappe.translate import get_boot_translations
 
 from suite.api import account, people
+from suite.api.admin_lifecycle import ROUTES as LIFECYCLE_ROUTES
+from suite.api.admin_lifecycle import (
+    admin_health_get,
+    mail_account_delete,
+    mail_account_post,
+    onboarding_get,
+    onboarding_post,
+    temporary_password_post,
+)
+from suite.api.admin_storage import ROUTES as STORAGE_ROUTES
+from suite.api.admin_storage import (
+    storage_buffers,
+    storage_default,
+    storage_get,
+    storage_limits,
+    storage_refresh,
+)
+from suite.api.admin_transfer import ROUTES as TRANSFER_ROUTES
+from suite.api.admin_transfer import user_transfer, user_transfer_preview
 from suite.api.preferences import (
     Language,
     PreferenceChanges,
@@ -30,6 +49,7 @@ Given = str | int | float | bool | list | dict | None
 
 class AccountRoles(TypedDict):
     system_manager: bool
+    suite_admin: bool
 
 
 class Account(TypedDict):
@@ -39,6 +59,8 @@ class Account(TypedDict):
     avatar: str | None
     roles: AccountRoles
     is_jmap_configured: bool
+    must_change_password: bool
+    setup_required: bool
 
 
 class Site(TypedDict):
@@ -64,6 +86,17 @@ class User(TypedDict):
     full_name: str
     user_image: str | None
     is_admin: bool
+    enabled: bool
+    account: str | None
+    setup_status: str
+    must_change_password: bool
+
+
+class UserChanges(TypedDict):
+    user: str
+    is_admin: NotRequired[bool]
+    enabled: NotRequired[bool]
+    full_name: NotRequired[str]
 
 
 class Invitation(TypedDict):
@@ -247,6 +280,9 @@ CONTRACT_ROUTES = (
 
 
 ROUTES = (
+    *LIFECYCLE_ROUTES,
+    *TRANSFER_ROUTES,
+    *STORAGE_ROUTES,
     Route(
         "GET",
         "preferences",
@@ -309,6 +345,16 @@ ROUTES = (
         public_name="invitations.list",
     ),
     Route(
+        "PATCH",
+        "users",
+        "users_patch",
+        body=UserChanges,
+        output=list[User],
+        errors=(BadRequest, frappe.PermissionError, frappe.ValidationError, frappe.DoesNotExistError),
+        kind="mutation",
+        public_name="users.update",
+    ),
+    Route(
         "POST",
         "invitations",
         "invitations_post",
@@ -340,7 +386,26 @@ def account_get() -> Account | None:
         # envelope explicit because null is the signed-out account value.
         frappe.local.response["data"] = None
         return None
-    return {**row, "roles": {"system_manager": "System Manager" in row.get("roles", [])}}
+    from suite.suite_core.account_state import read
+    from suite.suite_core.utils import is_suite_cloud_configured
+
+    lifecycle = read(row["name"])
+    configured = is_suite_cloud_configured() and row["name"] != "Administrator"
+    return {
+        **row,
+        "must_change_password": bool(lifecycle.get("must_change_password")),
+        "setup_required": bool(
+            configured
+            and (
+                lifecycle.get("status") in ("Setup failed", "Deleted", "Deletion failed")
+                or not row.get("is_jmap_configured")
+            )
+        ),
+        "roles": {
+            "system_manager": "System Manager" in row.get("roles", []),
+            "suite_admin": row["name"] == "Administrator" or "Suite Admin" in row.get("roles", []),
+        },
+    }
 
 
 @frappe.whitelist(methods=["GET"])
@@ -374,6 +439,24 @@ def site_patch(
 @frappe.whitelist(methods=["GET"])
 def users_get() -> list[User]:
     return account.get_users()
+
+
+@frappe.whitelist(methods=["PATCH"])
+def users_patch(
+    user: Given = None, is_admin: Given = None, enabled: Given = None, full_name: Given = None
+) -> list[User]:
+    from suite.suite_core.administration import update_user
+
+    if (is_admin is None and enabled is None and full_name is None) or any(
+        value is not None and not isinstance(value, bool) for value in (is_admin, enabled)
+    ):
+        frappe.throw(_("Choose an Admin role or an access status"), BadRequest)
+    return update_user(
+        _required_text(user, "user"),
+        is_admin=is_admin,
+        enabled=enabled,
+        full_name=_optional_text(full_name, "full_name"),
+    )
 
 
 @frappe.whitelist(methods=["GET"])
