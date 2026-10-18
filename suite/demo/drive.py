@@ -62,6 +62,7 @@ def seed(fresh: bool = False) -> None:
             )
             return
         print("Creating Northwind demo users...")
+        frappe.db.set_single_value("Suite Settings", "workspace_name", "Northwind Labs")
         _users_and_groups()
         frappe.db.commit()
         shared = frappe.db.get_value("Drive Root", {"kind": "Shared", "state": "Active"})
