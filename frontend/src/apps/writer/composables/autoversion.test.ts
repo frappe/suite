@@ -1,13 +1,13 @@
 import type { Editor } from '@tiptap/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, ref } from 'vue'
+import { createApp, ref, shallowRef } from 'vue'
 
 import { useAutoversion } from './autoversion'
 
 const TEN_MINUTES = 10 * 60 * 1000
 
 function openEditor(html: string, isEdited: boolean) {
-  const editor = ref({ getHTML: () => html } as unknown as Editor)
+  const editor = shallowRef<Editor | undefined>({ getHTML: () => html } as unknown as Editor)
   const edited = ref(isEdited)
   const run = vi.fn(async () => {})
   const app = createApp({

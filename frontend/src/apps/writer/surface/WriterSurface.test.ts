@@ -553,7 +553,7 @@ async function downloadedChanges(afterClose: (root: Element) => unknown = () => 
   await vi.waitFor(() => expect(warning).toHaveBeenCalled())
   await afterClose(root)
   const [, shown] = warning.mock.lastCall!
-  ;(shown?.action as { onClick: () => void }).onClick()
+  ;(shown!.action as { onClick: () => void }).onClick()
   await vi.waitFor(() => expect(files).toHaveLength(1))
   return files[0] as File
 }

@@ -383,6 +383,9 @@ importers:
       jszip:
         specifier: ^3.10.1
         version: 3.10.2
+      lib0:
+        specifier: ^0.2.117
+        version: 0.2.117
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -407,6 +410,15 @@ importers:
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3))
+      prosemirror-model:
+        specifier: ^1.25.9
+        version: 1.25.9
+      prosemirror-state:
+        specifier: ^1.4.4
+        version: 1.4.4
+      prosemirror-view:
+        specifier: ^1.41.9
+        version: 1.41.9
       reka-ui:
         specifier: ^2.6.0
         version: 2.10.1(vue@3.5.39(typescript@6.0.3))

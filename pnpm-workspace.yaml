@@ -4,7 +4,9 @@ overrides:
   '@tiptap/core': 3.26.0
   '@tiptap/pm': 3.26.0
   '@tiptap/vue-3': 3.26.0
-  # A patched y-tiptap, vendored as a build.
+  # A patched y-tiptap, vendored as a build. A linked package resolves its
+  # imports from the root, so package.json lists its lib0 and prosemirror-*
+  # dependencies too.
   '@tiptap/y-tiptap': link:./frontend/packages/collab-prosemirror
 
 # Dependency install scripts. None is needed:
