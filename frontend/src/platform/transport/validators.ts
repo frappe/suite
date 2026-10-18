@@ -5,6 +5,8 @@ import { assertSchema } from '@/platform/transport/schema'
 import type {
   AccountGetInput,
   AccountGetOutput,
+  AdminHealthGetInput,
+  AdminHealthGetOutput,
   FrappeLoginInput,
   FrappeLoginOutput,
   FrappeLogoutInput,
@@ -27,6 +29,14 @@ import type {
   InvitationsPostOutput,
   LanguagesInput,
   LanguagesOutput,
+  MailAccountDeleteInput,
+  MailAccountDeleteOutput,
+  MailAccountPostInput,
+  MailAccountPostOutput,
+  OnboardingGetInput,
+  OnboardingGetOutput,
+  OnboardingPostInput,
+  OnboardingPostOutput,
   PeopleGetInput,
   PeopleGetOutput,
   SiteGetInput,
@@ -35,17 +45,885 @@ import type {
   SitePatchCompleteOnboardingOutput,
   SitePatchUpdateSiteSettingsInput,
   SitePatchUpdateSiteSettingsOutput,
+  StorageBuffersInput,
+  StorageBuffersOutput,
+  StorageDefaultInput,
+  StorageDefaultOutput,
+  StorageGetInput,
+  StorageGetOutput,
+  StorageLimitsInput,
+  StorageLimitsOutput,
+  StorageRefreshInput,
+  StorageRefreshOutput,
   SubscribeInput,
   SubscribeOutput,
   SuiteGenerateUserKeysInput,
   SuiteGenerateUserKeysOutput,
+  TemporaryPasswordPostInput,
+  TemporaryPasswordPostOutput,
   UnsubscribeInput,
   UnsubscribeOutput,
   UpdatePreferencesInput,
   UpdatePreferencesOutput,
   UsersGetInput,
   UsersGetOutput,
+  UsersPatchInput,
+  UsersPatchOutput,
+  UserTransferInput,
+  UserTransferOutput,
+  UserTransferPreviewInput,
+  UserTransferPreviewOutput,
 } from './generated'
+
+export const operationAdminHealthGet: Validators<AdminHealthGetInput, AdminHealthGetOutput> = {
+  validateInput(value: unknown): asserts value is AdminHealthGetInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'admin_health_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is AdminHealthGetOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          cloud: { title: 'Cloud', type: 'boolean' },
+          suspended: { title: 'Suspended', type: 'boolean' },
+          stale: { title: 'Stale', type: 'boolean' },
+          fetched_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Fetched At' },
+          alerts: { items: { type: 'string' }, title: 'Alerts', type: 'array' },
+        },
+        required: ['cloud', 'suspended', 'stale', 'fetched_at', 'alerts'],
+        title: 'ProviderHealth',
+        type: 'object',
+      },
+      'admin_health_get output',
+    )
+  },
+}
+
+export const operationTemporaryPasswordPost: Validators<
+  TemporaryPasswordPostInput,
+  TemporaryPasswordPostOutput
+> = {
+  validateInput(value: unknown): asserts value is TemporaryPasswordPostInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { user: { title: 'User', type: 'string' } },
+        required: ['user'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'temporary_password_post input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is TemporaryPasswordPostOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          user: { title: 'User', type: 'string' },
+          temporary_password: { title: 'Temporary Password', type: 'string' },
+          expires_at: { title: 'Expires At', type: 'string' },
+        },
+        required: ['user', 'temporary_password', 'expires_at'],
+        title: 'TemporaryCredential',
+        type: 'object',
+      },
+      'temporary_password_post output',
+    )
+  },
+}
+
+export const operationMailAccountPost: Validators<MailAccountPostInput, MailAccountPostOutput> = {
+  validateInput(value: unknown): asserts value is MailAccountPostInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          user: { title: 'User', type: 'string' },
+          address: { title: 'Address', type: 'string' },
+        },
+        required: ['user', 'address'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'mail_account_post input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is MailAccountPostOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'mail_account_post output',
+    )
+  },
+}
+
+export const operationMailAccountDelete: Validators<
+  MailAccountDeleteInput,
+  MailAccountDeleteOutput
+> = {
+  validateInput(value: unknown): asserts value is MailAccountDeleteInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          user: { title: 'User', type: 'string' },
+          confirmation: { title: 'Confirmation', type: 'string' },
+        },
+        required: ['user', 'confirmation'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'mail_account_delete input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is MailAccountDeleteOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'mail_account_delete output',
+    )
+  },
+}
+
+export const operationOnboardingGet: Validators<OnboardingGetInput, OnboardingGetOutput> = {
+  validateInput(value: unknown): asserts value is OnboardingGetInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'onboarding_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is OnboardingGetOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          cloud: { title: 'Cloud', type: 'boolean' },
+          domains: { items: { type: 'string' }, title: 'Domains', type: 'array' },
+          account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
+          ready: { title: 'Ready', type: 'boolean' },
+        },
+        required: ['cloud', 'domains', 'account', 'ready'],
+        title: 'OnboardingOptions',
+        type: 'object',
+      },
+      'onboarding_get output',
+    )
+  },
+}
+
+export const operationOnboardingPost: Validators<OnboardingPostInput, OnboardingPostOutput> = {
+  validateInput(value: unknown): asserts value is OnboardingPostInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          address: { title: 'Address', type: 'string' },
+          password: { title: 'Password', type: 'string' },
+        },
+        required: ['address', 'password'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'onboarding_post input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is OnboardingPostOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'onboarding_post output',
+    )
+  },
+}
+
+export const operationUserTransferPreview: Validators<
+  UserTransferPreviewInput,
+  UserTransferPreviewOutput
+> = {
+  validateInput(value: unknown): asserts value is UserTransferPreviewInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          user: { title: 'User', type: 'string' },
+          destination: { title: 'Destination', type: 'string' },
+        },
+        required: ['user', 'destination'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'user_transfer_preview input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UserTransferPreviewOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          InheritedGrant: {
+            properties: {
+              principal: { title: 'Principal', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+            },
+            required: ['principal', 'role'],
+            title: 'InheritedGrant',
+            type: 'object',
+          },
+        },
+        properties: {
+          source_root: { title: 'Source Root', type: 'string' },
+          destination: { title: 'Destination', type: 'string' },
+          destination_user: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Destination User',
+          },
+          bytes: { title: 'Bytes', type: 'integer' },
+          item_count: { title: 'Item Count', type: 'integer' },
+          fingerprint: { title: 'Fingerprint', type: 'string' },
+          inherited_grants: {
+            items: { $ref: '#/$defs/InheritedGrant' },
+            title: 'Inherited Grants',
+            type: 'array',
+          },
+        },
+        required: [
+          'source_root',
+          'destination',
+          'destination_user',
+          'bytes',
+          'item_count',
+          'fingerprint',
+          'inherited_grants',
+        ],
+        title: 'TransferPreview',
+        type: 'object',
+      },
+      'user_transfer_preview output',
+    )
+  },
+}
+
+export const operationUserTransfer: Validators<UserTransferInput, UserTransferOutput> = {
+  validateInput(value: unknown): asserts value is UserTransferInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          user: { title: 'User', type: 'string' },
+          destination: { title: 'Destination', type: 'string' },
+          fingerprint: { title: 'Fingerprint', type: 'string' },
+          confirm_access: { title: 'Confirm Access', type: 'boolean' },
+        },
+        required: ['user', 'destination', 'fingerprint', 'confirm_access'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'user_transfer input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UserTransferOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          TransferItem: {
+            properties: {
+              node: { title: 'Node', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['node', 'success', 'error'],
+            title: 'TransferItem',
+            type: 'object',
+          },
+        },
+        properties: {
+          results: { items: { $ref: '#/$defs/TransferItem' }, title: 'Results', type: 'array' },
+          remaining: { title: 'Remaining', type: 'integer' },
+          complete: { title: 'Complete', type: 'boolean' },
+        },
+        required: ['results', 'remaining', 'complete'],
+        title: 'TransferResult',
+        type: 'object',
+      },
+      'user_transfer output',
+    )
+  },
+}
+
+export const operationStorageBuffers: Validators<StorageBuffersInput, StorageBuffersOutput> = {
+  validateInput(value: unknown): asserts value is StorageBuffersInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          users: { items: { type: 'string' }, title: 'Users', type: 'array' },
+          grant: { title: 'Grant', type: 'boolean' },
+        },
+        required: ['users', 'grant'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'storage_buffers input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is StorageBuffersOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          LimitResult: {
+            properties: {
+              user: { title: 'User', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['user', 'success', 'error'],
+            title: 'LimitResult',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/LimitResult' },
+        type: 'array',
+      },
+      'storage_buffers output',
+    )
+  },
+}
+
+export const operationStorageGet: Validators<StorageGetInput, StorageGetOutput> = {
+  validateInput(value: unknown): asserts value is StorageGetInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'storage_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is StorageGetOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          StorageRoot: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              user: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User' },
+              kind: { title: 'Kind', type: 'string' },
+              state: { title: 'State', type: 'string' },
+              stored_bytes: { title: 'Stored Bytes', type: 'integer' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              quota_bytes: { title: 'Quota Bytes', type: 'integer' },
+              effective_quota_bytes: { title: 'Effective Quota Bytes', type: 'integer' },
+            },
+            required: [
+              'name',
+              'user',
+              'kind',
+              'state',
+              'stored_bytes',
+              'reserved_bytes',
+              'quota_bytes',
+              'effective_quota_bytes',
+            ],
+            title: 'StorageRoot',
+            type: 'object',
+          },
+          StorageUser: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              email: { title: 'Email', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              enabled: { title: 'Enabled', type: 'boolean' },
+              is_admin: { title: 'Is Admin', type: 'boolean' },
+              drive_bytes: { title: 'Drive Bytes', type: 'integer' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+              combined_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Combined Bytes',
+              },
+              cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
+              buffer: { title: 'Buffer', type: 'boolean' },
+              effective_cap_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Effective Cap Bytes',
+              },
+              mail_fetched_at: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Mail Fetched At',
+              },
+            },
+            required: [
+              'name',
+              'email',
+              'full_name',
+              'user_image',
+              'enabled',
+              'is_admin',
+              'drive_bytes',
+              'reserved_bytes',
+              'mail_bytes',
+              'combined_bytes',
+              'cap_bytes',
+              'buffer',
+              'effective_cap_bytes',
+              'mail_fetched_at',
+            ],
+            title: 'StorageUser',
+            type: 'object',
+          },
+        },
+        properties: {
+          cloud: { title: 'Cloud', type: 'boolean' },
+          drive_bytes: { title: 'Drive Bytes', type: 'integer' },
+          personal_drive_bytes: { title: 'Personal Drive Bytes', type: 'integer' },
+          shared_drive_bytes: { title: 'Shared Drive Bytes', type: 'integer' },
+          group_mail_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Group Mail Bytes',
+          },
+          pending_invitations: { title: 'Pending Invitations', type: 'integer' },
+          reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+          mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+          combined_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Bytes',
+          },
+          allowance_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Allowance Bytes',
+          },
+          effective_allowance_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Effective Allowance Bytes',
+          },
+          stale: { title: 'Stale', type: 'boolean' },
+          fetched_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Fetched At' },
+          default_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Default Cap Bytes',
+          },
+          users: { items: { $ref: '#/$defs/StorageUser' }, title: 'Users', type: 'array' },
+          roots: { items: { $ref: '#/$defs/StorageRoot' }, title: 'Roots', type: 'array' },
+        },
+        required: [
+          'cloud',
+          'drive_bytes',
+          'personal_drive_bytes',
+          'shared_drive_bytes',
+          'group_mail_bytes',
+          'pending_invitations',
+          'reserved_bytes',
+          'mail_bytes',
+          'combined_bytes',
+          'allowance_bytes',
+          'effective_allowance_bytes',
+          'stale',
+          'fetched_at',
+          'default_cap_bytes',
+          'users',
+          'roots',
+        ],
+        title: 'StorageReport',
+        type: 'object',
+      },
+      'storage_get output',
+    )
+  },
+}
+
+export const operationStorageRefresh: Validators<StorageRefreshInput, StorageRefreshOutput> = {
+  validateInput(value: unknown): asserts value is StorageRefreshInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'storage_refresh input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is StorageRefreshOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          StorageRoot: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              user: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User' },
+              kind: { title: 'Kind', type: 'string' },
+              state: { title: 'State', type: 'string' },
+              stored_bytes: { title: 'Stored Bytes', type: 'integer' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              quota_bytes: { title: 'Quota Bytes', type: 'integer' },
+              effective_quota_bytes: { title: 'Effective Quota Bytes', type: 'integer' },
+            },
+            required: [
+              'name',
+              'user',
+              'kind',
+              'state',
+              'stored_bytes',
+              'reserved_bytes',
+              'quota_bytes',
+              'effective_quota_bytes',
+            ],
+            title: 'StorageRoot',
+            type: 'object',
+          },
+          StorageUser: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              email: { title: 'Email', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              enabled: { title: 'Enabled', type: 'boolean' },
+              is_admin: { title: 'Is Admin', type: 'boolean' },
+              drive_bytes: { title: 'Drive Bytes', type: 'integer' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+              combined_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Combined Bytes',
+              },
+              cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
+              buffer: { title: 'Buffer', type: 'boolean' },
+              effective_cap_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Effective Cap Bytes',
+              },
+              mail_fetched_at: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Mail Fetched At',
+              },
+            },
+            required: [
+              'name',
+              'email',
+              'full_name',
+              'user_image',
+              'enabled',
+              'is_admin',
+              'drive_bytes',
+              'reserved_bytes',
+              'mail_bytes',
+              'combined_bytes',
+              'cap_bytes',
+              'buffer',
+              'effective_cap_bytes',
+              'mail_fetched_at',
+            ],
+            title: 'StorageUser',
+            type: 'object',
+          },
+        },
+        properties: {
+          cloud: { title: 'Cloud', type: 'boolean' },
+          drive_bytes: { title: 'Drive Bytes', type: 'integer' },
+          personal_drive_bytes: { title: 'Personal Drive Bytes', type: 'integer' },
+          shared_drive_bytes: { title: 'Shared Drive Bytes', type: 'integer' },
+          group_mail_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Group Mail Bytes',
+          },
+          pending_invitations: { title: 'Pending Invitations', type: 'integer' },
+          reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+          mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+          combined_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Bytes',
+          },
+          allowance_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Allowance Bytes',
+          },
+          effective_allowance_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Effective Allowance Bytes',
+          },
+          stale: { title: 'Stale', type: 'boolean' },
+          fetched_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Fetched At' },
+          default_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Default Cap Bytes',
+          },
+          users: { items: { $ref: '#/$defs/StorageUser' }, title: 'Users', type: 'array' },
+          roots: { items: { $ref: '#/$defs/StorageRoot' }, title: 'Roots', type: 'array' },
+        },
+        required: [
+          'cloud',
+          'drive_bytes',
+          'personal_drive_bytes',
+          'shared_drive_bytes',
+          'group_mail_bytes',
+          'pending_invitations',
+          'reserved_bytes',
+          'mail_bytes',
+          'combined_bytes',
+          'allowance_bytes',
+          'effective_allowance_bytes',
+          'stale',
+          'fetched_at',
+          'default_cap_bytes',
+          'users',
+          'roots',
+        ],
+        title: 'StorageReport',
+        type: 'object',
+      },
+      'storage_refresh output',
+    )
+  },
+}
+
+export const operationStorageLimits: Validators<StorageLimitsInput, StorageLimitsOutput> = {
+  validateInput(value: unknown): asserts value is StorageLimitsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          users: { items: { type: 'string' }, title: 'Users', type: 'array' },
+          cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
+          buffer: { title: 'Buffer', type: 'boolean' },
+        },
+        required: ['users', 'cap_bytes'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'storage_limits input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is StorageLimitsOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          LimitResult: {
+            properties: {
+              user: { title: 'User', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['user', 'success', 'error'],
+            title: 'LimitResult',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/LimitResult' },
+        type: 'array',
+      },
+      'storage_limits output',
+    )
+  },
+}
+
+export const operationStorageDefault: Validators<StorageDefaultInput, StorageDefaultOutput> = {
+  validateInput(value: unknown): asserts value is StorageDefaultInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
+        },
+        required: ['cap_bytes'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'storage_default input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is StorageDefaultOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          StorageRoot: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              user: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User' },
+              kind: { title: 'Kind', type: 'string' },
+              state: { title: 'State', type: 'string' },
+              stored_bytes: { title: 'Stored Bytes', type: 'integer' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              quota_bytes: { title: 'Quota Bytes', type: 'integer' },
+              effective_quota_bytes: { title: 'Effective Quota Bytes', type: 'integer' },
+            },
+            required: [
+              'name',
+              'user',
+              'kind',
+              'state',
+              'stored_bytes',
+              'reserved_bytes',
+              'quota_bytes',
+              'effective_quota_bytes',
+            ],
+            title: 'StorageRoot',
+            type: 'object',
+          },
+          StorageUser: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              email: { title: 'Email', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              enabled: { title: 'Enabled', type: 'boolean' },
+              is_admin: { title: 'Is Admin', type: 'boolean' },
+              drive_bytes: { title: 'Drive Bytes', type: 'integer' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+              combined_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Combined Bytes',
+              },
+              cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
+              buffer: { title: 'Buffer', type: 'boolean' },
+              effective_cap_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Effective Cap Bytes',
+              },
+              mail_fetched_at: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Mail Fetched At',
+              },
+            },
+            required: [
+              'name',
+              'email',
+              'full_name',
+              'user_image',
+              'enabled',
+              'is_admin',
+              'drive_bytes',
+              'reserved_bytes',
+              'mail_bytes',
+              'combined_bytes',
+              'cap_bytes',
+              'buffer',
+              'effective_cap_bytes',
+              'mail_fetched_at',
+            ],
+            title: 'StorageUser',
+            type: 'object',
+          },
+        },
+        properties: {
+          cloud: { title: 'Cloud', type: 'boolean' },
+          drive_bytes: { title: 'Drive Bytes', type: 'integer' },
+          personal_drive_bytes: { title: 'Personal Drive Bytes', type: 'integer' },
+          shared_drive_bytes: { title: 'Shared Drive Bytes', type: 'integer' },
+          group_mail_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Group Mail Bytes',
+          },
+          pending_invitations: { title: 'Pending Invitations', type: 'integer' },
+          reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+          mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+          combined_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Bytes',
+          },
+          allowance_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Allowance Bytes',
+          },
+          effective_allowance_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Effective Allowance Bytes',
+          },
+          stale: { title: 'Stale', type: 'boolean' },
+          fetched_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Fetched At' },
+          default_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Default Cap Bytes',
+          },
+          users: { items: { $ref: '#/$defs/StorageUser' }, title: 'Users', type: 'array' },
+          roots: { items: { $ref: '#/$defs/StorageRoot' }, title: 'Roots', type: 'array' },
+        },
+        required: [
+          'cloud',
+          'drive_bytes',
+          'personal_drive_bytes',
+          'shared_drive_bytes',
+          'group_mail_bytes',
+          'pending_invitations',
+          'reserved_bytes',
+          'mail_bytes',
+          'combined_bytes',
+          'allowance_bytes',
+          'effective_allowance_bytes',
+          'stale',
+          'fetched_at',
+          'default_cap_bytes',
+          'users',
+          'roots',
+        ],
+        title: 'StorageReport',
+        type: 'object',
+      },
+      'storage_default output',
+    )
+  },
+}
 
 export const operationGetPreferences: Validators<GetPreferencesInput, GetPreferencesOutput> = {
   validateInput(value: unknown): asserts value is GetPreferencesInput {
@@ -194,14 +1072,28 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               avatar: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Avatar' },
               roles: { $ref: '#/$defs/AccountRoles' },
               is_jmap_configured: { title: 'Is Jmap Configured', type: 'boolean' },
+              must_change_password: { title: 'Must Change Password', type: 'boolean' },
+              setup_required: { title: 'Setup Required', type: 'boolean' },
             },
-            required: ['name', 'email', 'full_name', 'avatar', 'roles', 'is_jmap_configured'],
+            required: [
+              'name',
+              'email',
+              'full_name',
+              'avatar',
+              'roles',
+              'is_jmap_configured',
+              'must_change_password',
+              'setup_required',
+            ],
             title: 'Account',
             type: 'object',
           },
           AccountRoles: {
-            properties: { system_manager: { title: 'System Manager', type: 'boolean' } },
-            required: ['system_manager'],
+            properties: {
+              system_manager: { title: 'System Manager', type: 'boolean' },
+              suite_admin: { title: 'Suite Admin', type: 'boolean' },
+            },
+            required: ['system_manager', 'suite_admin'],
             title: 'AccountRoles',
             type: 'object',
           },
@@ -338,8 +1230,22 @@ export const operationUsersGet: Validators<UsersGetInput, UsersGetOutput> = {
               full_name: { title: 'Full Name', type: 'string' },
               user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
               is_admin: { title: 'Is Admin', type: 'boolean' },
+              enabled: { title: 'Enabled', type: 'boolean' },
+              account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
+              setup_status: { title: 'Setup Status', type: 'string' },
+              must_change_password: { title: 'Must Change Password', type: 'boolean' },
             },
-            required: ['name', 'email', 'full_name', 'user_image', 'is_admin'],
+            required: [
+              'name',
+              'email',
+              'full_name',
+              'user_image',
+              'is_admin',
+              'enabled',
+              'account',
+              'setup_status',
+              'must_change_password',
+            ],
             title: 'User',
             type: 'object',
           },
@@ -385,6 +1291,65 @@ export const operationInvitationsGet: Validators<InvitationsGetInput, Invitation
         type: 'array',
       },
       'invitations_get output',
+    )
+  },
+}
+
+export const operationUsersPatch: Validators<UsersPatchInput, UsersPatchOutput> = {
+  validateInput(value: unknown): asserts value is UsersPatchInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          user: { title: 'User', type: 'string' },
+          is_admin: { title: 'Is Admin', type: 'boolean' },
+          enabled: { title: 'Enabled', type: 'boolean' },
+          full_name: { title: 'Full Name', type: 'string' },
+        },
+        required: ['user'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'users_patch input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UsersPatchOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          User: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              email: { title: 'Email', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              is_admin: { title: 'Is Admin', type: 'boolean' },
+              enabled: { title: 'Enabled', type: 'boolean' },
+              account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
+              setup_status: { title: 'Setup Status', type: 'string' },
+              must_change_password: { title: 'Must Change Password', type: 'boolean' },
+            },
+            required: [
+              'name',
+              'email',
+              'full_name',
+              'user_image',
+              'is_admin',
+              'enabled',
+              'account',
+              'setup_status',
+              'must_change_password',
+            ],
+            title: 'User',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/User' },
+        type: 'array',
+      },
+      'users_patch output',
     )
   },
 }

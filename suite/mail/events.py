@@ -43,7 +43,21 @@ def update_password(
 ) -> Any:
     """Override the default update_password whitelisted method to update the password on Stalwart server when the user updates their password."""
 
+    previous = frappe.flags.in_update_password
     frappe.flags.in_update_password = True
+    try:
+        return _update_password(new_password, logout_all_sessions, key, old_password)
+    finally:
+        frappe.flags.in_update_password = previous
+
+
+def _update_password(
+    new_password: str, logout_all_sessions: int, key: str | None, old_password: str | None
+) -> Any:
+    from frappe.auth import MAX_PASSWORD_SIZE
+
+    if len(new_password) > MAX_PASSWORD_SIZE:
+        frappe.throw(_("Password size exceeded the maximum allowed size."))
 
     if not is_suite_cloud_configured():
         return update_frappe_password(
@@ -55,18 +69,47 @@ def update_password(
 
     result = _get_user_for_update_password(key, old_password)
     user = result.get("user")
+    if user:
+        from frappe.utils.password import check_password
+
+        from suite.suite_core.account_state import read
+
+        if read(user).get("must_change_password"):
+            try:
+                unchanged = check_password(user, new_password) == user
+            except frappe.AuthenticationError:
+                unchanged = False
+            if unchanged:
+                frappe.throw(_("Choose a password different from your temporary password"))
+            # Frappe's ordinary password flow logs in again (and commits its
+            # session) before returning. Keep first-change policy and local
+            # credentials in the caller's transaction until provider unlock
+            # succeeds; otherwise a failed Mail change leaves a partial login.
+            from frappe.core.doctype.user.user import handle_password_test_fail, test_password_strength
+            from frappe.utils import today
+            from frappe.utils.password import update_password as set_local_password
+
+            from suite.mail.account_lifecycle import complete_password_change
+
+            strength = test_password_strength(new_password)
+            feedback = strength.get("feedback")
+            if feedback and not feedback.get("password_policy_validation_passed", False):
+                handle_password_test_fail(feedback)
+            set_local_password(user, new_password)
+            frappe.db.set_value("User", user, {"reset_password_key": "", "last_password_reset_date": today()})
+            complete_password_change(user, new_password, allow_expired=bool(key))
+            if frappe.session.user == "Guest":
+                frappe.local.login_manager.login_as(user)
+            return "/home"
 
     result = update_frappe_password(
         new_password=new_password, logout_all_sessions=logout_all_sessions, key=key, old_password=old_password
     )
 
     if user and is_jmap_configured(user):
-        execute_with_logging(
-            lambda: update_mail_password(user, new_password=new_password),
-            title="Failed to update the mail account password",
-            with_context=False,
-            module="Mail",
-        )
+        from suite.mail.account_lifecycle import complete_password_change
+
+        complete_password_change(user, new_password, allow_expired=bool(key))
 
     return result
 
@@ -89,12 +132,8 @@ def update_account_password(doc: Document, method: str | None = None) -> None:
     if not new_password:
         return
 
-    execute_with_logging(
-        lambda: update_mail_password(user, new_password=new_password),
-        title="Failed to update the mail account password",
-        with_context=False,
-        module="Mail",
-    )
+    # An Admin password edit cannot clear first-login gating or unlock Mail.
+    update_mail_password(user, new_password=new_password)
 
 
 def delete_push_subscriptions_on_disable(doc: Document, method: str | None = None) -> None:
@@ -155,12 +194,9 @@ def apply_disabled_account_role(doc: Document, method: str | None = None) -> Non
     ):
         return
 
-    execute_with_logging(
-        lambda: set_account_enabled(doc.name, False),
-        title="Failed to lock the mail account",
-        with_context=False,
-        module="Mail",
-    )
+    # A failed provider lock must fail the workflow, never report a completed
+    # suspension while existing Mail clients can still send (§4.2).
+    set_account_enabled(doc.name, False)
 
 
 def remove_disabled_account_role(doc: Document, method: str | None = None) -> None:
@@ -175,12 +211,12 @@ def remove_disabled_account_role(doc: Document, method: str | None = None) -> No
     ):
         return
 
-    execute_with_logging(
-        lambda: set_account_enabled(doc.name, True),
-        title="Failed to unlock the mail account",
-        with_context=False,
-        module="Mail",
-    )
+    # Propagate readiness/unlock failures so User/root changes roll back and
+    # the account remains disabled with a retryable error (§4.2).
+    from suite.suite_core.account_state import read
+
+    if not read(doc.name).get("must_change_password"):
+        set_account_enabled(doc.name, True)
 
 
 def delete_account(doc: Document, method: str | None = None) -> None:

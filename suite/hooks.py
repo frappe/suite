@@ -240,6 +240,7 @@ doc_events = {
         "validate": ["suite.drive.framework.refuse_governed_share"],
     },
     "User": {
+        "before_save": ["suite.composition.users.before_save"],
         # Roles are assigned before insert so they are present when Frappe's
         # User.validate runs — assigning them after insert triggers a spurious
         # "No Roles Specified" warning.
@@ -266,6 +267,7 @@ doc_events = {
 
 user_invitation = {
     "allowed_roles": {
+        "Suite Admin": ["Suite User"],
         "System Manager": ["Suite User"],
     },
 }
@@ -275,7 +277,12 @@ setup_wizard_url = "/suite/setup"
 
 # Heal the user's JMAP push subscription on login (enqueued; a lost subscription silently
 # ends webhooks — realtime events and mailbox-count invalidation both ride on them)
-on_login = ["suite.mail.doctype.push_subscription.push_subscription.on_login"]
+on_login = [
+    "suite.composition.access.on_login",
+    "suite.mail.doctype.push_subscription.push_subscription.on_login",
+]
+auth_hooks = ["suite.composition.access.authenticated_request"]
+before_login = ["suite.composition.access.before_login"]
 
 # ============================================================================
 # Scheduled Tasks (per-frequency lists combined; cron keys de-duplicated)
@@ -300,6 +307,7 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
     "hourly": [
+        "suite.composition.admin_jobs.refresh_storage",
         # drive
         "suite.drive.webdav.locks.purge_expired_locks",
         # mail

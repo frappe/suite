@@ -7,6 +7,14 @@ const state = vi.hoisted(() => ({ user: {} as Record<string, unknown> }))
 
 vi.mock('@/router', () => ({ default: {} }))
 vi.mock('@/boot/session', () => ({ useSessionStore: () => ({ isLoggedIn: true }) }))
+vi.mock('@/platform/session', () => ({
+  registerAccountReader: vi.fn(),
+  useSession: () => ({
+    user: { value: null },
+    onLogout: vi.fn(),
+    capabilities: { value: { suiteAdmin: !!state.user.is_suite_admin } },
+  }),
+}))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     userResource: { data: state.user },
@@ -25,7 +33,6 @@ const to = (
   params: Record<string, string> = {},
 ) => ({ name, meta, params, query: {} }) as unknown as RouteLocationNormalized
 const dashboard = to('mail-domains', { isDashboard: true })
-const inbox = { name: 'mail-mailbox', params: { accountId: 'acc', mailbox: 'inbox' } }
 
 describe('who reaches the Admin Dashboard', () => {
   beforeEach(() => {
@@ -45,7 +52,7 @@ describe('who reaches the Admin Dashboard', () => {
       is_suite_admin: true,
       is_suite_cloud_configured: false,
     }
-    expect(await mailGuard(dashboard)).toEqual(inbox)
+    expect(await mailGuard(dashboard)).toEqual('/admin')
   })
 
   it('not someone with a mailbox who is no admin', async () => {
@@ -54,7 +61,7 @@ describe('who reaches the Admin Dashboard', () => {
       is_suite_admin: false,
       is_suite_cloud_configured: true,
     }
-    expect(await mailGuard(dashboard)).toEqual(inbox)
+    expect(await mailGuard(dashboard)).toEqual('/home')
   })
 
   it('an admin without a mailbox lands on it when the site is connected', async () => {
@@ -63,7 +70,7 @@ describe('who reaches the Admin Dashboard', () => {
       is_suite_admin: true,
       is_suite_cloud_configured: true,
     }
-    expect(await mailGuard(to('mail-root-shortcut'))).toEqual({ name: 'mail-overview' })
+    expect(await mailGuard(to('mail-root-shortcut'))).toEqual('/admin')
     expect(replace).not.toHaveBeenCalled()
   })
 
@@ -73,7 +80,7 @@ describe('who reaches the Admin Dashboard', () => {
       is_suite_admin: true,
       is_suite_cloud_configured: false,
     }
-    expect(await mailGuard(dashboard)).toEqual({ name: 'mail-root-shortcut' })
+    expect(await mailGuard(dashboard)).toEqual('/admin')
     expect(await mailGuard(to('mail-root-shortcut', { shortcut: true }))).toBeUndefined()
     expect(replace).not.toHaveBeenCalled()
   })

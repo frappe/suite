@@ -6,6 +6,7 @@ import { driveUploadProgress, filesArea } from '@/apps/drive'
 import { mailArea, useInboxSummary } from '@/apps/mail'
 import { meetArea } from '@/apps/meet'
 import { peopleArea } from '@/apps/people'
+import { adminArea } from '@/composition/admin'
 import { homeArea } from '@/composition/home'
 import type { AreaDefinition } from '@/platform/contracts'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
@@ -24,6 +25,7 @@ export const areaDefinitions: readonly AreaDefinition[] = [
   calendarArea,
   meetArea,
   peopleArea,
+  adminArea,
 ]
 
 export function findArea(id: string): AreaDefinition | undefined {
@@ -40,7 +42,11 @@ export function useAppRegistry(session: Session = useSession()): AppRegistry {
   const upcoming = useUpcomingSummary(() => session.capabilities.value.jmap)
 
   return {
-    areas: areaDefinitions,
+    get areas() {
+      return areaDefinitions.filter(
+        (area) => area.id !== 'admin' || session.capabilities.value.suiteAdmin,
+      )
+    },
     badges: computed(() => deriveAreaBadges(inbox.data, upcoming.data)),
   }
 }

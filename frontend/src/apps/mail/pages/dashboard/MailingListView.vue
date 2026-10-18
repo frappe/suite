@@ -217,7 +217,7 @@ const recipientCountLabel = computed(() => {
 const breadcrumbs = computed(() => [
   {
     label: __('Mailing Lists'),
-    route: '/mail/dashboard/mailing-lists',
+    route: '/admin/mail/mailing-lists',
   },
   {
     label: data.value?.email || listId,

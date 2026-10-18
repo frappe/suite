@@ -61,6 +61,7 @@ export const isMailRoute = (route: Pick<RouteLocationNormalized, 'name'>): boole
 export const mailGuard = async (to: RouteLocationNormalized) => {
   // Only act on mail routes; let the suite handle everything else.
   if (!isMailRoute(to)) return
+  if (to.meta.area === 'admin' && !to.meta.isDashboard) return
 
   handleSetupWizardEscape()
 
@@ -69,6 +70,15 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   // we don't trigger user-data resolution for a guest.
   const { isLoggedIn } = useSessionStore()
   if (!isLoggedIn) return
+
+  if (to.meta.isDashboard) {
+    const { useSession } = await import('@/platform/session')
+    const session = useSession()
+    if (!session.capabilities.value.suiteAdmin) return '/home'
+    const { userResource, loadUser } = userStore()
+    await loadUser()
+    return userResource.data?.is_suite_cloud_configured ? undefined : '/admin'
+  }
 
   // Wait for user data.
   const { userResource, mailboxes, resolveAccount, loadUser } = userStore()
@@ -84,7 +94,7 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   // root does, and the dashboard, which carries no rail context, sends them there.
   if (!user?.is_jmap_configured) {
     if (to.name === 'mail-mime-message') return
-    if (canAdminister) return to.meta.isDashboard ? undefined : { name: 'mail-overview' }
+    if (canAdminister) return '/admin'
     if (to.meta.isDashboard) return { name: 'mail-root-shortcut' }
     return
   }

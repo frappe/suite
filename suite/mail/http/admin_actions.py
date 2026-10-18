@@ -82,6 +82,15 @@ class AddMemberInput(TypedDict):
     disable_receiving: NotRequired[bool]
 
 
+class CreationResult(TypedDict):
+    success: bool
+    user: str
+    status: str
+    error: str | None
+    temporary_password: str | None
+    expires_at: str | None
+
+
 class AddMemberEmailInput(TypedDict):
     member_id: str
     email: str
@@ -121,6 +130,7 @@ class DeleteMailingListsInput(TypedDict):
 
 class DeleteMembersInput(TypedDict):
     names: list[str]
+    confirmation: NotRequired[str]
 
 
 class DisableMembersInput(TypedDict):
@@ -291,7 +301,7 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         AddMailingListRecipientsInput,
         type(None),
     ),
-    (admin.add_member, "mutation", "admin.members.create", AddMemberInput, type(None)),
+    (admin.add_member, "mutation", "admin.members.create", AddMemberInput, CreationResult),
     (admin.add_member_email, "mutation", "admin.members.addEmail", AddMemberEmailInput, type(None)),
     (
         admin.add_member_to_groups,
