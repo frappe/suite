@@ -8,6 +8,7 @@ import {
   encodeForUpload,
   isDecompressionSupported,
 } from '../../utils/compress.js'
+import { applyLegacyPlan, planLegacySheet, unknownFunctionCells } from '../../utils/legacy-sheet'
 import { isRefusal } from '../../utils/relay.js'
 import { recordVisit } from './driveVisit'
 
@@ -24,7 +25,9 @@ import { recordVisit } from './driveVisit'
 //   - `requestContext` — use the open document's Drive access scope. The `/d/`
 //     surface passes the Drive session's, which adds its link credentials.
 export function usePersistence({
-  // IronCalc: start(bytes | null) builds the workbook, toBytes() reads it back.
+  // IronCalc: start(bytes | null) builds the workbook, toBytes() reads it back,
+  // client() is the running workbook client, syncDefinedNames() sends it the
+  // named ranges.
   engine,
   formats,
   merge,
@@ -60,6 +63,26 @@ export function usePersistence({
   // editor so it can render a proper error screen instead of mounting a
   // blank canvas. Shape: { kind: 'denied' | 'missing' | 'other', message }.
   const loadError = ref(null)
+  // Set when the loaded sheet was last saved by the develop editor and was
+  // converted on open: { ok, save, current, renamed, skipped, unknown }. `save`
+  // says the converted sheet will be saved (the caller may write); `unknown`
+  // lists the formulas IronCalc shows as #NAME?. Null for any other sheet.
+  const legacyUpgrade = ref(null)
+  const sideStores = [
+    merge,
+    comments,
+    validation,
+    protection,
+    condFormat,
+    sortFilter,
+    slicers,
+    pivot,
+    charts,
+    namedRanges,
+  ]
+  // Runs once before the next save is sent: keeps the develop body as a
+  // Drive version. Cleared when it succeeds.
+  let _beforeFirstSave = null
   async function loadSheet(name) {
     loadError.value = null
     try {
@@ -78,12 +101,22 @@ export function usePersistence({
       if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
       const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved = JSON.parse(plain || '{}')
+      const mayWrite = doc.can_write !== false
       if (saved.formats) formats.restore(saved.formats)
-      // A sheet saved before IronCalc (no `engine`) is not carried over: it
-      // opens empty.
       await engine.start(saved.engine ? base64ToBytes(saved.engine) : null)
+      // A sheet last saved by the develop editor: its cells are typed into
+      // IronCalc here (utils/legacy-sheet.ts); the side stores below restore
+      // from its old shapes as they are.
+      const plan = saved.engine ? null : planLegacySheet(saved.sheet)
+      const converted = plan ? await applyLegacyPlan(engine.client(), plan) : null
+      const renamed = converted?.ok ? Object.entries(plan.renamed) : []
+      if (renamed.length && saved.view) saved.view = _renameKeys(saved.view, plan.renamed)
       if (saved.merge && merge?.restore) merge.restore(saved.merge)
-      if (saved.comments && comments?.restore) comments.restore(saved.comments)
+      // Drive owns a develop sheet's comments: the migration made them Drive
+      // threads and stripped them from the body. A develop body that still has
+      // them is an old version restored; restoring them would show each twice.
+      const commentsInDrive = plan && doc.node
+      if (saved.comments && comments?.restore && !commentsInDrive) comments.restore(saved.comments)
       if (saved.validation && validation?.restore) validation.restore(saved.validation)
       if (saved.protection && protection?.restore) protection.restore(saved.protection)
       if (saved.condFormat && condFormat?.restore) condFormat.restore(saved.condFormat)
@@ -93,10 +126,19 @@ export function usePersistence({
       if (saved.pivot && pivot?.restore) pivot.restore(saved.pivot)
       if (saved.charts && charts?.restore) charts.restore(saved.charts)
       if (saved.namedRanges && namedRanges?.restore) namedRanges.restore(saved.namedRanges)
+      for (const [from, to] of renamed) {
+        for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
+      }
+      legacyUpgrade.value = plan ? await _legacyUpgrade(plan, converted, mayWrite) : null
+      // Before the first save of a converted sheet, Drive keeps the develop
+      // body as a version to go back to.
+      _beforeFirstSave =
+        legacyUpgrade.value?.save && doc.node ? () => _keepBeforeUpgrade(doc.node) : null
       currentTitle.value = doc.title
       // Older backends predate `can_write`; treat its absence as writable so we
-      // never lock out an editor on a stale server.
-      canWrite.value = doc.can_write !== false
+      // never lock out an editor on a stale server. A develop sheet IronCalc
+      // could not take opens read-only, so no save replaces its old body.
+      canWrite.value = mayWrite && converted?.ok !== false
       sheetOwner.value = doc.owner || ''
     } catch (err) {
       console.error('Load failed:', err)
@@ -112,6 +154,45 @@ export function usePersistence({
         message: err?.message || 'Could not open this sheet',
       }
     }
+  }
+
+  async function _legacyUpgrade(plan, converted, mayWrite) {
+    const upgrade = {
+      ok: converted.ok,
+      save: converted.ok && mayWrite,
+      current: plan.current,
+      renamed: plan.renamed,
+      skipped: plan.skipped,
+      unknown: [],
+    }
+    if (!converted.ok) {
+      console.error('[sheets] could not convert a develop sheet:', converted.error)
+      return upgrade
+    }
+    // A formula naming a defined name shows #NAME? until IronCalc has the names.
+    engine.syncDefinedNames?.()
+    try {
+      upgrade.unknown = await unknownFunctionCells(engine.client(), plan.formulas)
+    } catch (err) {
+      console.error('[sheets] could not check converted formulas:', err)
+    }
+    return upgrade
+  }
+
+  function _keepBeforeUpgrade(node) {
+    return client.mutation(
+      api.drive.versions.create,
+      { node, kind: 'named', label: 'Before upgrade' },
+      { context: requestContext, silent: true },
+    )
+  }
+
+  // The saved per-sheet view under the converted sheet names. A legacy flat
+  // view (one sheet's, no names) stays as it is.
+  function _renameKeys(view, renamed) {
+    if (typeof view !== 'object' || 'colW' in view || 'rowH' in view || 'freezeRows' in view)
+      return view
+    return Object.fromEntries(Object.entries(view).map(([k, v]) => [renamed[k] ?? k, v]))
   }
 
   // Creates a brand-new doc on the backend with the given title and returns the
@@ -237,6 +318,15 @@ export function usePersistence({
           saveError.value = 'Not saved: you can no longer edit this sheet.'
           throw new DOMException('Editing access changed', 'AbortError')
         }
+        if (_beforeFirstSave) {
+          try {
+            await _beforeFirstSave()
+          } catch (err) {
+            saveError.value = `Not saved: couldn't keep the "Before upgrade" version (${err?.message || 'unknown error'}).`
+            throw err
+          }
+          _beforeFirstSave = null
+        }
         try {
           const result = await client.mutation(api.sheets.documents.save, args, {
             keepalive,
@@ -278,6 +368,7 @@ export function usePersistence({
     canWrite,
     sheetOwner,
     loadError,
+    legacyUpgrade,
     loadSheet,
     autoCreate,
     saveExisting,
