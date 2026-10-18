@@ -115,6 +115,12 @@ class TestAdministrationAccess(IntegrationTestCase):
                 self.assertRaises(frappe.PermissionError, list_users)
                 self.assertRaises(frappe.PermissionError, set_default, GB)
 
+    def test_a_suite_member_without_desk_access_can_be_promoted(self):
+        self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")
+        with self.set_user("Administrator"):
+            update_user(self.normal, is_admin=True)
+        self.assertIn("Suite Admin", frappe.get_roles(self.normal))
+
     def test_an_admin_cannot_disable_their_own_account(self):
         with self.set_user(self.admin):
             self.assertRaises(frappe.ValidationError, guard_user_change, self.admin, enabled=False)

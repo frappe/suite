@@ -43,7 +43,8 @@ def guard_user_change(user: str, *, is_admin: bool | None = None, enabled: bool 
         frappe.throw(_("Recovery accounts cannot be changed here"), frappe.PermissionError)
     # Lock in one order before counting: concurrent admins cannot both remove the last one.
     rows = frappe.db.sql(
-        "SELECT name, enabled FROM `tabUser` WHERE user_type = 'System User' ORDER BY name FOR UPDATE",
+        # Suite roles have no Desk access, so Frappe classifies Suite members as Website Users.
+        "SELECT name, enabled FROM `tabUser` ORDER BY name FOR UPDATE",
         as_dict=True,
     )
     target = next((row for row in rows if row.name == user), None)
