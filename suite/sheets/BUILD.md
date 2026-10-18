@@ -13,10 +13,8 @@ includes frontend changes.
 ## Local release workflow
 
 ```bash
-cd frontend
-npm install            # first time only / after package.json changes
-npm run build          # writes to ../suite/public/frontend/
-cd ..
+pnpm install           # first time only / after package.json changes
+pnpm build             # writes to suite/public/frontend/
 
 # Sanity check — these should all exist:
 ls suite/public/frontend/

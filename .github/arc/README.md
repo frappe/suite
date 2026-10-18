@@ -12,9 +12,11 @@ because the E2E workflows require MariaDB and Redis service containers.
   `pull_request_target` events whose head repository is `frappe/suite`.
   Vouched fork pull requests run on GitHub-hosted runners instead; fork code
   never reaches these scale sets.
-- The Yarn Classic cache is baked into the runner image. Each runner receives a
-  private writable copy-on-write view, so cache misses and dependency changes
-  remain pod-local and are discarded with the runner.
+- The Yarn Classic cache for `e2e/` and the SFU server is baked into the runner
+  image. Each runner receives a private writable copy-on-write view, so cache
+  misses and dependency changes remain pod-local and are discarded with the
+  runner. The root workspace uses pnpm, and jobs install it from
+  `pnpm-lock.yaml` on each run.
 - Python, Node, Yarn, and `frappe-bench` are baked into the runner image. Jobs
   still initialize a fresh framework Bench, install the checked-out Suite
   commit, and create a fresh site in their private container layer.

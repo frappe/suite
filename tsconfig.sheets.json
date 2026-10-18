@@ -1,0 +1,47 @@
+{
+  // Strict type-check for the sheets rewrite (P1 onward).
+  //
+  // Frontend-wide checking is not viable: the pre-existing app is untyped
+  // JavaScript and would report thousands of errors. This config scopes
+  // `tsc --noEmit` to the rewritten sheets core, so new code is checked
+  // from the first commit and the checked surface grows per phase.
+  //
+  // Run: pnpm typecheck:sheets (also part of pnpm typecheck)
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": false,
+    // Beyond `strict`. Each of these catches a class of bug the sheets
+    // core is exposed to: sparse cell lookups, optional style paths,
+    // and message-protocol payloads.
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "types": []
+  },
+  "include": [
+    // The app's globals (window.csrf_token, …).
+    "frontend/src/env.d.ts",
+    "frontend/src/apps/sheets/core/**/*.ts",
+    "frontend/src/apps/sheets/utils/*.ts",
+    // engine/: the modules converted so far; the rest are still .js.
+    "frontend/src/apps/sheets/engine/*.ts",
+    "frontend/src/apps/sheets/engine/patterns/*.ts",
+    // Not services/: it imports @/api, which would pull the platform layer
+    // (not written for these flags) into this check.
+    "frontend/src/apps/sheets/canvas/*.ts",
+    "frontend/src/apps/sheets/canvas/input/*.ts",
+    "frontend/src/apps/sheets/canvas/painters/*.ts"
+  ],
+  // Canvas, utils and engine tests predate the strict config; the policy covers source.
+  "exclude": [
+    "frontend/src/apps/sheets/canvas/**/*.test.ts",
+    "frontend/src/apps/sheets/utils/*.test.ts",
+    "frontend/src/apps/sheets/engine/*.test.ts"
+  ]
+}

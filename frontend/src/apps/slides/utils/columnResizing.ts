@@ -8,6 +8,8 @@
 // the editor is editable, and a selected table is only editable once it is being
 // typed in. The condition they carry instead is the one this app actually means.
 
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Plugin } from '@tiptap/pm/state'
 import {
   cellAround,
   columnResizing,
@@ -15,9 +17,7 @@ import {
   TableMap,
   updateColumnsOnResize,
 } from '@tiptap/pm/tables'
-import type { Node as ProseMirrorNode } from 'prosemirror-model'
-import { Plugin } from 'prosemirror-state'
-import type { EditorView } from 'prosemirror-view'
+import type { EditorView } from '@tiptap/pm/view'
 
 import { frameResizeAttribute, stretchColumnsToFrame } from './tableWidths'
 

@@ -17,7 +17,7 @@ import {
 type VectorSet = { accepted: unknown[]; rejected: unknown[] }
 
 const contract = JSON.parse(
-  readFileSync(resolve(process.cwd(), '../suite/meet/recording/contracts/v1.json'), 'utf8'),
+  readFileSync(resolve(process.cwd(), 'suite/meet/recording/contracts/v1.json'), 'utf8'),
 ) as {
   vocabularies: { recorder_stage_projection_payload_types: string[] }
   vectors: {

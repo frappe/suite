@@ -1,0 +1,87 @@
+import path from 'node:path'
+import vue from '@vitejs/plugin-vue'
+import { defineConfig } from 'vitest/config'
+
+const frontend = path.resolve(__dirname, 'frontend')
+
+export default defineConfig({
+  root: frontend,
+  plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': path.resolve(frontend, 'src'),
+      // More specific first: a bare "frappe-ui" alias also matches "frappe-ui/…" imports.
+      'frappe-ui/list': path.resolve(
+        __dirname,
+        'node_modules/frappe-ui/src/molecules/list/index.ts',
+      ),
+      'frappe-ui/code-editor': path.resolve(
+        __dirname,
+        'node_modules/frappe-ui/src/molecules/code-editor/index.ts',
+      ),
+      'frappe-ui/experimental': path.resolve(frontend, 'src/test/frappe-ui-experimental-stub.ts'),
+      'frappe-ui': path.resolve(frontend, 'recorder/frappeUi.ts'),
+      '~icons/lucide/scan': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/chevron-down': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/clock': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/download': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/external-link': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/square-arrow-out-up-right': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/eye': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/info': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/link-2': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/arrow-left-right': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/rotate-ccw': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/share-2': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/square-pen': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/corner-left-up': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/monitor-cog': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/star': path.resolve(frontend, 'src/test/icon-stub.ts'),
+      '~icons/lucide/trash': path.resolve(frontend, 'src/test/icon-stub.ts'),
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    passWithNoTests: true,
+    setupFiles: ['fake-indexeddb/auto'],
+    retry: process.env.CI ? 2 : 0,
+    silent: true,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unified',
+          include: [
+            'src/{api,shell,platform,composition}/**/*.test.{js,ts}',
+            'src/apps/drive/{files,client}/**/*.test.{js,ts}',
+            'src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}',
+          ],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'legacy',
+          include: ['src/**/*.test.{js,ts}', 'recorder/**/*.test.{js,ts}'],
+          exclude: [
+            'src/{api,shell,platform,composition}/**/*.test.{js,ts}',
+            'src/apps/drive/{files,client}/**/*.test.{js,ts}',
+            'src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}',
+          ],
+        },
+      },
+    ],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{js,ts,vue}', 'recorder/**/*.{ts,vue}'],
+      exclude: [
+        '**/*.test.{js,ts}',
+        '**/test-utils.{js,ts}',
+        'src/apps/sheets/core/ironcalc-gate/**',
+        'src/test/**',
+      ],
+      reporter: ['text', 'json-summary', 'lcov', 'cobertura'],
+      reportsDirectory: 'test-results/coverage',
+    },
+  },
+})
