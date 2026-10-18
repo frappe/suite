@@ -1,16 +1,16 @@
 # Sheets: editing together
 
-Status: proposed
+Status: superseded. Collaboration moves to Yjs on the Drive content layer (frappe/suite#963), and the Hocuspocus server this spec builds on has been removed. A new spec replaces this one when that work starts.
 
 Scope: what happens when several people edit the same sheet at once: how their changes are ordered, what each person sees, how access is checked, and who saves. It builds on the commands in [001](001-calculation-core.md) and the log in [002](002-saving.md).
 
 The design follows [ADR 0001](../../docs/adr/0001-sheets-ironcalc-calculation-core.md): every client applies the same commands in the same order.
 
-Code: `suite/sheets/collab-server/` (the server, with `hooks.js`, `access-recheck.js`, `connection-token.js` on `forge/drive-layer`), `frontend/src/apps/sheets/collab/` (the client side), `frontend/src/apps/sheets/collab/awareness.js` (presence).
+Code: `frontend/src/apps/sheets/collab/` (the client side), `frontend/src/apps/sheets/collab/awareness.js` (presence).
 
 ## Today (on `forge/drive-layer`)
 
-The collab server is Hocuspocus with a Yjs document per sheet (`Sheet Collab State`). It checks Drive access when a user connects and re-checks during the session; READ and COMMENT users are read only. The Yjs binding syncs only single-cell typing. Paste, fill, insert and delete rows do not reach other people.
+There is no collab server. Presence and cursors go through the Frappe realtime relay (`collab/frappe-provider.js`, `collab/awareness.js`). Cell edits do not reach other people: the Yjs cell binding patches an engine `setCell`, which IronCalc does not have, so only presence and cursors run.
 
 ## Behaviour
 

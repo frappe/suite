@@ -76,7 +76,6 @@ Sites that deployed servers through Suite before this split keep their data: upd
 - [**Frappe Framework**](https://github.com/frappe/frappe): Provides the database, authentication, permissions, realtime events, and APIs shared by Drive, Writer, Sheets, Slides, Meet, Mail, and Calendar.
 - [**Frappe UI**](https://github.com/frappe/frappe-ui): Power the interface and reusable components across every Suite product.
 - [**Yjs**](https://github.com/yjs/yjs): Keeps documents in Writer and spreadsheets in Sheets synchronized during realtime collaboration.
-- [**Hocuspocus**](https://github.com/ueberdosis/hocuspocus): Runs the collaboration server used for realtime spreadsheet editing in Sheets.
 - [**mediasoup**](https://github.com/versatica/mediasoup): Powers Meet's WebRTC selective forwarding unit for group video calls.
 
 ## Migrating from the Standalone Apps

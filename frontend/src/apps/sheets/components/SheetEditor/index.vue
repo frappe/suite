@@ -916,8 +916,8 @@ const props = defineProps({
     default: undefined,
   },
 })
-// `access-refused`: the server refused a save, or the collaboration server
-// refused the connection. `notes-opened`: the notes panel took the right edge.
+// `access-refused`: the server refused a save, or the collaboration relay
+// refused a write. `notes-opened`: the notes panel took the right edge.
 const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.

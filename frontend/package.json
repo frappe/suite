@@ -49,7 +49,6 @@
     "@codemirror/state": "^6.0.0",
     "@codemirror/view": "^6.0.0",
     "@floating-ui/dom": "^1.7.4",
-    "@hocuspocus/provider": "^4.1.0",
     "@iframe-resizer/child": "5.5.9",
     "@iframe-resizer/vue": "5.5.9",
     "@ironcalc/wasm": "0.8.4",

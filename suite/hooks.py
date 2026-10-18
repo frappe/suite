@@ -327,7 +327,6 @@ before_install = "suite.composition.lifecycle.before_install"
 after_install = "suite.composition.lifecycle.after_install"
 after_migrate = "suite.composition.lifecycle.after_migrate"
 after_app_install = "suite.composition.lifecycle.after_app_install"
-extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — lets the listed sites frame Drive pages and API answers
 after_request = [

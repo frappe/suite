@@ -10,40 +10,10 @@ import { createAwareness } from '../../collab/awareness.js'
 import { bindCells } from '../../collab/cells-binding.js'
 import { createFrappeProvider } from '../../collab/frappe-provider.js'
 import { ensureFrappeRealtime } from '../../collab/frappe-realtime-init.js'
-import { createHocuspocusClient } from '../../collab/hocuspocus-client.js'
 import { createRealtimeAdapter } from '../../collab/realtime-adapter.js'
 import { createYDoc, hydrateYDoc } from '../../collab/ydoc.js'
 import { isRefusal, relay } from '../../utils/relay.js'
 import { userInitials } from '../../utils/session.js'
-
-// Feature flag for the Hocuspocus-backed collab path. When false (default),
-// the legacy `frappe.realtime` relay path runs unchanged so a deploy of this
-// frontend without the collab server doesn't break editing. Flip to true on
-// benches that have the collab server running + reachable at COLLAB_WS_URL.
-//
-// Resolution order (first non-empty wins):
-//   1. `window.frappe.boot.collab_v2`  — server-side flag from site_config
-//   2. `window.__COLLAB_V2__`           — local dev override
-function _collabV2Enabled() {
-  if (typeof window === 'undefined') return false
-  if (window.frappe?.boot?.collab_v2 === true) return true
-  if (window.__COLLAB_V2__ === true) return true
-  return false
-}
-
-function _collabWsUrl() {
-  if (typeof window === 'undefined') return null
-  const fromBoot = window.frappe?.boot?.collab_ws_url
-  const fromGlobal = window.__COLLAB_WS_URL__
-  return fromBoot || fromGlobal || _defaultCollabUrl()
-}
-
-function _defaultCollabUrl() {
-  if (typeof window === 'undefined') return null
-  // Same-origin upgrade — nginx is expected to proxy /collab/ → upstream.
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/collab/`
-}
 
 // Collaboration cursor palette — 8 distinct colours not covered by Espresso tokens.
 const CURSOR_PALETTE = [
@@ -141,8 +111,8 @@ export function useCollaboration({
   currentSheet,
   getSheet,
   repopulateGrid,
-  // A collaboration verdict: the relay refused this client's write, or the
-  // collaboration server refused the connection. The editor narrows access.
+  // A collaboration verdict: the relay refused this client's write. The
+  // editor narrows access.
   onRefused = () => {},
   // Send relay calls through this fetch. The `/d/` surface passes the Drive
   // session's, which adds its link credentials.
@@ -187,15 +157,7 @@ export function useCollaboration({
   // Raw, un-throttled write to awareness. Wrapped below for the public API.
   function _publishCursor(row, col, subSheet, range) {
     if (!_awareness) return
-    const cursor = { row, col, range, subSheet }
-    // y-protocols Awareness uses setLocalStateField for one-key patches;
-    // our bespoke awareness uses setLocalState (replace). Pick the right
-    // one based on what the live awareness object actually supports.
-    if (typeof _awareness.setLocalStateField === 'function') {
-      _awareness.setLocalStateField('cursor', cursor)
-    } else {
-      _awareness.setLocalState({ cursor })
-    }
+    _awareness.setLocalState({ cursor: { row, col, range, subSheet } })
   }
 
   const _publishCursorThrottled = _throttle(_publishCursor, CURSOR_BROADCAST_MS)
@@ -269,11 +231,9 @@ export function useCollaboration({
     const sheet = getSheet?.() ?? null
     const identity = _readUserIdentity()
 
-    // 1. Fresh Y.Doc. For v2 we leave hydration to the Hocuspocus client
-    //    (server-authoritative state lives in `Sheet Collab State`; only
-    //    the first-ever opener seeds from the engine snapshot). For v1
-    //    every client seeds locally — late peers overwrite us via the
-    //    state-sync handshake.
+    // 1. Fresh Y.Doc. Every client seeds it locally from the engine snapshot
+    //    (below, once the binding is in place); late peers overwrite us via
+    //    the state-sync handshake.
     _doc = createYDoc()
 
     // 2. Patch sheet.setCell so every write also lands in Y.Map; observe
@@ -291,74 +251,31 @@ export function useCollaboration({
         })
       : null
 
-    if (_collabV2Enabled()) {
-      // Hocuspocus path. The client connects to the collab server over
-      // WebSocket, syncs against the authoritative server-side Y.Doc, and
-      // exposes a y-protocols Awareness on the same socket.
-      const session = _createHocuspocus({ sheet, identity })
-      _provider = session
-      _awareness = session.awareness
-      // Y-awareness has no `initial:` arg — set our user slot post-create.
-      _awareness.setLocalStateField('user', identity)
-      _awareness.on('change', _syncFromAwareness)
-      _syncFromAwareness()
-    } else {
-      // Legacy path — seed locally, relay through frappe.realtime.
-      hydrateYDoc(_doc, { sheet: sheet?.snapshot?.() })
-      // The www/sheets page doesn't load Frappe's socketio_client,
-      // so `window.frappe.realtime` is undefined and the legacy path
-      // would have no transport. ensureFrappeRealtime stands up a minimal
-      // shim against the site's socketio namespace on first use; no-op
-      // when a real client already exists (Desk-embedded paths, tests
-      // injecting `_realtime`).
-      if (!_realtime || typeof _realtime.on !== 'function') {
-        _realtime = ensureFrappeRealtime() || _realtime
-      }
-      const adapter = (_adapter = createRealtimeAdapter({
-        sheetId: _sheetId,
-        realtime: _realtime,
-        callFn: _relay,
-      }))
-      _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
-      _awareness = createAwareness({
-        sheetId: _sheetId,
-        realtime: adapter,
-        clientId: _provider.tag,
-        initial: { user: identity, cursor: null },
-      })
-      _awareness.on('change', _syncFromAwareness)
-      _syncFromAwareness()
+    hydrateYDoc(_doc, { sheet: sheet?.snapshot?.() })
+
+    // 3. Relay through frappe.realtime. The www/sheets page doesn't load
+    //    Frappe's socketio_client, so `window.frappe.realtime` is undefined
+    //    and there would be no transport. ensureFrappeRealtime stands up a
+    //    minimal shim against the site's socketio namespace on first use;
+    //    no-op when a real client already exists (Desk-embedded paths, tests
+    //    injecting `_realtime`).
+    if (!_realtime || typeof _realtime.on !== 'function') {
+      _realtime = ensureFrappeRealtime() || _realtime
     }
-  }
-
-  function _createHocuspocus({ sheet, identity }) {
-    void identity // identity is plumbed via setLocalStateField in _start
-    const url = _collabWsUrl()
-    const token = _readSessionId()
-    return createHocuspocusClient({
-      doc: _doc,
+    const adapter = (_adapter = createRealtimeAdapter({
       sheetId: _sheetId,
-      url,
-      token,
-      // Used only on first-ever open of this sheet — see leader election
-      // in hocuspocus-client.js. Subsequent opens see a populated server
-      // state and skip this entirely.
-      getSnapshot: () => sheet?.snapshot?.(),
-      onStatusChange: (status) => {
-        if (status === 'authentication-failed') onRefused()
-      },
+      realtime: _realtime,
+      callFn: _relay,
+    }))
+    _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
+    _awareness = createAwareness({
+      sheetId: _sheetId,
+      realtime: adapter,
+      clientId: _provider.tag,
+      initial: { user: identity, cursor: null },
     })
-  }
-
-  // `sid` is HttpOnly so the browser can't read it directly. The Frappe boot
-  // payload exposes it explicitly for this kind of use-case; fall back to a
-  // plain cookie read for older Frappe versions that don't surface it.
-  function _readSessionId() {
-    if (typeof document === 'undefined') return ''
-    const fromBoot = window.frappe?.boot?.sid
-    if (fromBoot) return fromBoot
-    const m = document.cookie.match(/(?:^|;\s*)sid=([^;]+)/)
-    return m ? decodeURIComponent(m[1]) : ''
+    _awareness.on('change', _syncFromAwareness)
+    _syncFromAwareness()
   }
 
   function _stop() {

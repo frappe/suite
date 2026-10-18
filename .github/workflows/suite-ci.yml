@@ -71,7 +71,7 @@ jobs:
               fi
             fi
             backend_paths="$(printf '%s\n' "$changed_files" \
-              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
               | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
             [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
           fi
@@ -229,13 +229,11 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_realtime=1
-            run_sheets=1
             run_meet=1
             run_recorder=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
             printf '%s\n' "$changed_files" | grep -Eq '^(realtime/|\.github/workflows/suite-ci\.yml)' && run_realtime=1 || run_realtime=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
           else
@@ -245,17 +243,14 @@ jobs:
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
             printf '%s\n' "$changed_files" | grep -Eq '^(realtime/|\.github/workflows/suite-ci\.yml)' && run_realtime=1 || run_realtime=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
           fi
 
           echo "run_realtime=$run_realtime" >> $GITHUB_OUTPUT
-          echo "run_sheets=$run_sheets" >> $GITHUB_OUTPUT
           echo "run_meet=$run_meet" >> $GITHUB_OUTPUT
           echo "run_recorder=$run_recorder" >> $GITHUB_OUTPUT
           echo "Run realtime handler tests: $run_realtime"
-          echo "Run sheets collab server tests: $run_sheets"
           echo "Run meet sfu server tests: $run_meet"
           echo "Run meet recorder server tests: $run_recorder"
 
@@ -273,17 +268,6 @@ jobs:
             --test-reporter=spec --test-reporter-destination=stdout \
             --test-reporter=junit --test-reporter-destination=test-results/realtime/junit.xml \
             'realtime/*.test.js'
-
-      - name: Run Sheets Collab Server Tests
-        if: always() && steps.node-server-changes.outputs.run_sheets == '1'
-        working-directory: suite/sheets/collab-server
-        run: |
-          npm install
-          mkdir -p "$GITHUB_WORKSPACE/test-results/sheets-collab"
-          node --test \
-            --test-reporter=spec --test-reporter-destination=stdout \
-            --test-reporter=junit --test-reporter-destination="$GITHUB_WORKSPACE/test-results/sheets-collab/junit.xml" \
-            'test/**/*.test.js'
 
       - name: Run Meet SFU Server Tests
         if: always() && steps.node-server-changes.outputs.run_meet == '1'
@@ -546,7 +530,7 @@ jobs:
               fi
             fi
             backend_paths="$(printf '%s\n' "$changed_files" \
-              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
               | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
             [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
           fi

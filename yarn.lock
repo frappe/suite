@@ -1677,22 +1677,6 @@
     protobufjs "^7.2.5"
     yargs "^17.7.2"
 
-"@hocuspocus/common@^4.3.0":
-  version "4.3.0"
-  resolved "https://registry.yarnpkg.com/@hocuspocus/common/-/common-4.3.0.tgz#d72660d7244e444e05b9134ae3302317c4dde024"
-  integrity sha512-8USsMvso01aMKOSSyvb8oTAlfES/nBM+Y74XjW5Fy5ovmOaVpoRRBrktIrEVwydrp8Cr6C66ivc0orcW/3P+Kg==
-  dependencies:
-    lib0 "^0.2.87"
-
-"@hocuspocus/provider@^4.1.0":
-  version "4.3.0"
-  resolved "https://registry.yarnpkg.com/@hocuspocus/provider/-/provider-4.3.0.tgz#03b40fc26c0d1b7b321ecc29fb8d733fde4db729"
-  integrity sha512-eS5dECLnJDgELI2AfZNvr5jS0B6IWFoo7eAUgwwOzy1bf7KdPagXAYCtSWqSXmLMwjABlubZJQg8FVrTefU0cA==
-  dependencies:
-    "@hocuspocus/common" "^4.3.0"
-    "@lifeomic/attempt" "^3.0.2"
-    lib0 "^0.2.87"
-
 "@hpke/common@^1.9.0":
   version "1.10.1"
   resolved "https://registry.yarnpkg.com/@hpke/common/-/common-1.10.1.tgz#11f205e5ba24d558c1bd4ac671580d95d488af18"
@@ -1960,11 +1944,6 @@
     "@lezer/common" "^1.2.0"
     "@lezer/highlight" "^1.0.0"
     "@lezer/lr" "^1.4.0"
-
-"@lifeomic/attempt@^3.0.2":
-  version "3.1.0"
-  resolved "https://registry.yarnpkg.com/@lifeomic/attempt/-/attempt-3.1.0.tgz#7fc703559177b81a008b9d263e3d9a001d11d08a"
-  integrity sha512-QZqem4QuAnAyzfz+Gj5/+SLxqwCAw2qmt7732ZXodr6VDWGeYLG6w1i/vYLa55JQM9wRuBKLmXmiZ2P0LtE5rw==
 
 "@lukeed/csprng@^1.1.0":
   version "1.1.0"
@@ -5783,7 +5762,7 @@ levn@^0.4.1:
     prelude-ls "^1.2.1"
     type-check "~0.4.0"
 
-lib0@^0.2.100, lib0@^0.2.42, lib0@^0.2.74, lib0@^0.2.85, lib0@^0.2.87, lib0@^0.2.99:
+lib0@^0.2.100, lib0@^0.2.42, lib0@^0.2.74, lib0@^0.2.85, lib0@^0.2.99:
   version "0.2.117"
   resolved "https://registry.yarnpkg.com/lib0/-/lib0-0.2.117.tgz#6c3f926475d28904af05b590703cbbbc29475716"
   integrity sha512-DeXj9X5xDCjgKLU/7RR+/HQEVzuuEUiwldwOGsHK/sfAfELGWEyTcf0x+uOvCvK3O2zPmZePXWL85vtia6GyZw==
