@@ -44,7 +44,7 @@ test("Space selects, Shift+Space extends the range and Escape clears", async ({ 
 
 	await page.keyboard.press("Escape");
 	await expect(page.getByText("selected")).toHaveCount(0);
-	await expect(page.getByRole("searchbox", { name: "Search files" })).toBeVisible();
+	await expect(page.getByRole("searchbox", { name: "Search all files" })).toBeVisible();
 });
 
 test("Ctrl-click enters selection and the bulk bar carries two actions", async ({ page }) => {
@@ -111,7 +111,7 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 	const dialog = page.getByRole("dialog", { name: "Move to" });
 	await dialog.getByRole("button", { name: home.title }).click();
 	await dialog.getByRole("button", { name: destination.title }).click();
-	await dialog.getByRole("button", { name: "Move", exact: true }).click();
+	await dialog.getByRole("button", { name: "Move here", exact: true }).click();
 
 	await expect(page.getByText("1 moved · 1 failed")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
@@ -120,8 +120,8 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 	await expect(page.getByRole("dialog", { name: "Items that failed" })).toBeVisible();
 	await expect(page.getByText(rows[0]!.name, { exact: true })).toBeVisible();
 
-	expect((await getNode(api, rows[1]!.name)).parent).toBe(destination.name);
-	expect((await getNode(api, rows[0]!.name)).parent).toBe(home.name);
+	expect((await getNode(api, rows[1]!.name)).parent_node).toBe(destination.name);
+	expect((await getNode(api, rows[0]!.name)).parent_node).toBe(home.name);
 	expect(clash.name).toBeTruthy();
 });
 
@@ -142,6 +142,6 @@ test("Select all loaded selects only the loaded rows", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list&sort=title&dir=asc`);
 	await expect(page.locator("[data-node]")).toHaveCount(5);
 	await page.getByRole("button", { name: "More file actions" }).click();
-	await page.getByRole("menuitem", { name: "Select all loaded" }).click();
+	await page.getByRole("menuitem", { name: "Select all", exact: true }).click();
 	await expect(page.getByText("5 selected")).toBeVisible();
 });

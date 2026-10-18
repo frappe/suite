@@ -244,7 +244,7 @@ test.describe("a visitor without a session", () => {
 		await page.goto(`/l/${token}`);
 		await expect(page.getByTestId("guest-frame")).toBeVisible();
 		await expect(page.getByText("Shared plans").first()).toBeVisible();
-		await expect(page.getByRole("searchbox", { name: "Search files" })).toHaveCount(0);
+		await expect(page.getByRole("searchbox", { name: "Search all files" })).toHaveCount(0);
 		await expect(page.getByText("My files")).toHaveCount(0);
 	});
 });

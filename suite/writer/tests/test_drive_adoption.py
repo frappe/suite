@@ -45,7 +45,7 @@ from frappe.utils import get_datetime
 
 from suite import drive
 from suite.drive._core.access import grant
-from suite.drive._core.content import clear_registry_cache, governs, spec_for
+from suite.drive._core.content import clear_registry_cache, export_document, governs, spec_for
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import create_file, purge, update
 from suite.drive._core.nodes import create_folder as create_node_folder
@@ -53,8 +53,10 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
 from suite.drive.framework import refuse_governed_share, validate_content_registry
+from suite.suite_core import content as collab
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
+from suite.writer.content import files
 from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
 USER = "writer-adoption-user@example.com"
@@ -165,8 +167,8 @@ class TestWriterDeclaration(UnitTestCase):
         self.assertEqual(writer.SPEC.satellites, ())
         self.assertFalse(writer.SPEC.pushes_preview, "Drive never renders a Writer document")
 
-    def test_writer_stays_hidden_over_dav_and_keeps_its_explicit_html_export(self):
-        self.assertIsNone(writer.SPEC.default_export, "no default export means invisible over DAV")
+    def test_writer_exports_html_by_default_and_only_html(self):
+        self.assertEqual(writer.SPEC.default_export, "html")
         self.assertEqual(writer.SPEC.export_formats, ("html",))
         self.assertTrue(callable(writer.SPEC.export))
 
@@ -260,8 +262,11 @@ class TestWriterDeclaration(UnitTestCase):
                 writer._version_payload(raw)
 
     def test_version_bytes_captures_collaboration_mode(self):
-        row = frappe._dict(content="body", html="<p>x</p>", collab=0)
-        with patch.object(writer.frappe.db, "get_value", return_value=row):
+        row = frappe._dict(node="node-1", content="body", html="<p>x</p>", collab=0)
+        with (
+            patch.object(writer.frappe.db, "get_value", return_value=row),
+            patch.object(writer.documents, "live_checkpoint", return_value=None),
+        ):
             stream, mime = writer.version_bytes("WR-1")
         self.assertEqual(mime, writer.VERSION_MIME)
         self.assertEqual(json.loads(stream.read())["collab"], 0)
@@ -286,7 +291,7 @@ class TestWriterDeclaration(UnitTestCase):
 
     def test_a_media_id_is_found_in_both_spellings_a_body_uses(self):
         html = '<img src="/api/method/writer.api.embed.get?id=one"><img data-node="two">'
-        self.assertEqual(writer._ids_in(html), {"one", "two"})
+        self.assertEqual(files.ids_in(html), {"one", "two"})
 
     def test_the_yjs_body_answers_live_attributes_only(self):
         # The read is exact: a removed picture stops being named at once, and a
@@ -338,9 +343,9 @@ class TestWriterDeclaration(UnitTestCase):
         self.assertIsInstance(refused.exception, frappe.ValidationError)
 
     def test_a_body_that_applies_and_then_panics_still_refuses_as_a_validation_error(self):
-        # `apply_update` is not the only pycrdt call that panics. A body whose
-        # root was written as a `Text` or an `Array` applies cleanly and panics
-        # on the first child read, which is past the one guarded call.
+        # A body whose root was written as a `Text` or an `Array` applies
+        # cleanly. pycrdt 0.12 panicked on the first child read, and 0.14 reads
+        # it as a fragment with no children; either way it is no Writer body.
         for value in (pycrdt.Text("hello"), pycrdt.Array([1, 2])):
             with self.subTest(root=type(value).__name__):
                 body = rooted_body(value)
@@ -358,7 +363,7 @@ class TestWriterDeclaration(UnitTestCase):
 
     def test_a_rewrite_touches_only_the_ids_it_was_given(self):
         html = html_with("old", "untouched")
-        rewritten = writer._remap_text(html, {"old": "new"})
+        rewritten = files.remap_text(html, {"old": "new"})
         self.assertIn("id=new", rewritten)
         self.assertIn("id=untouched", rewritten)
         self.assertNotIn("id=old", rewritten)
@@ -383,10 +388,15 @@ class TestLegacyEmbedReferences(UnitTestCase):
             '<img src="/api/method/drive.api.embed.get_file_content'
             '?parent_entity_name=WR-1&embed_name=third">'
         )
-        with patch.object(writer, "frappe") as frappe_mock:
-            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+        with (
+            patch.object(writer, "frappe") as frappe_mock,
+            patch.object(writer.documents, "live_state", return_value=None),
+        ):
+            frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             self.assertEqual(writer.used_nodes("WR-1"), {"first", "second", "third"})
-        frappe_mock.db.get_value.assert_called_once_with(DOCTYPE, "WR-1", ("content", "html"), as_dict=True)
+        frappe_mock.db.get_value.assert_called_once_with(
+            DOCTYPE, "WR-1", ("node", "content", "html"), as_dict=True
+        )
 
     def test_remap_changes_only_the_old_embed_media_id(self):
         html = (
@@ -403,7 +413,7 @@ class TestLegacyEmbedReferences(UnitTestCase):
             "embed_name=file", "embed_name=other"
         )
         with patch.object(writer, "frappe") as frappe_mock:
-            frappe_mock.db.get_value.return_value = SimpleNamespace(content=None, html=html)
+            frappe_mock.db.get_value.return_value = SimpleNamespace(node="node-1", content=None, html=html)
             writer.remap_media("WR-1", {"old": "new", "file": "other"})
         frappe_mock.db.set_value.assert_called_once_with(
             DOCTYPE, "WR-1", {"html": expected}, update_modified=False
@@ -452,6 +462,12 @@ class TestWriterInDrive(IntegrationTestCase):
         activation = activated()
         activation.__enter__()
         self.addCleanup(activation.__exit__, None, None, None)
+        # These tests keep the body in the document row, so no document may start a collab log
+        saved_mode = collab.mode("writer")
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(collab.set_mode, "writer", saved_mode)
+        collab.set_mode("writer", "off")
+
         # Registered before the first row exists, so a `setUp` that dies half
         # way still hands its roots back.
         self.addCleanup(self._remove_fixture_rows)
@@ -780,6 +796,12 @@ class TestWriterInDrive(IntegrationTestCase):
         frappe.db.set_value(DOCTYPE, self._docname(node), "html", "<p>bye</p>", update_modified=False)
         stream, mime = writer.SPEC.export(self._docname(node), "html")
         self.assertEqual((stream.read(), mime), (b"<p>bye</p>", "text/html"))
+
+    def test_drive_downloads_the_stored_body_when_no_format_is_asked_for(self):
+        node = self._document(title="Downloaded")
+        frappe.db.set_value(DOCTYPE, self._docname(node), "html", "<p>bye</p>", update_modified=False)
+        stream, mime, filename = export_document(self.person, node)
+        self.assertEqual((stream.read(), mime, filename), (b"<p>bye</p>", "text/html", "Downloaded.html"))
 
     def test_an_export_format_writer_does_not_offer_is_refused(self):
         node = self._document(title="Refused")

@@ -33,6 +33,12 @@ const testApiServer =
 			}
 		: undefined;
 
+const SITE_SWITCH = /collab-site-switch\.spec\.ts/;
+const browser = {
+	...devices["Desktop Chrome"],
+	...(chromeExecutable ? { launchOptions: { executablePath: chromeExecutable } } : { channel: "chrome" }),
+};
+
 export default defineConfig({
 	testDir: "./specs",
 	fullyParallel: true,
@@ -65,12 +71,15 @@ export default defineConfig({
 	projects: [
 		{
 			name: "chromium",
-			use: {
-				...devices["Desktop Chrome"],
-				...(chromeExecutable
-					? { launchOptions: { executablePath: chromeExecutable } }
-					: { channel: "chrome" }),
-			},
+			testIgnore: SITE_SWITCH,
+			use: browser,
+		},
+		{
+			// Switching collaboration off for the site stops every collab test beside it; alone, run with --no-deps
+			name: "site-switch",
+			testMatch: SITE_SWITCH,
+			dependencies: ["chromium"],
+			use: browser,
 		},
 	],
 	...(testApiServer ? { webServer: testApiServer } : {}),

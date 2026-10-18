@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { reactive, ref } from 'vue'
 
 import type { SessionState } from '@/apps/drive'
+import { reportSaveError } from '@/apps/writer/composables/saveError'
+import { reportMutationError } from '@/platform/feedback'
 
 import { createWriteGate, type DocumentWrite } from './writes'
+
+vi.mock('@/platform/feedback', () => ({ reportMutationError: vi.fn() }))
 
 function fakeSession(role: number, state: SessionState = 'Active') {
   const session = {
@@ -34,7 +38,11 @@ function fakeDocument(answer: () => Promise<unknown> = async () => ({ ok: true }
 
 describe('Writer write gate', () => {
   it('sends writes while the editor holds EDIT on an active document', async () => {
-    const gate = createWriteGate(fakeSession(40), () => {})
+    const gate = createWriteGate(
+      fakeSession(40),
+      () => {},
+      () => {},
+    )
     const { document, sent } = fakeDocument()
     const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
 
@@ -46,7 +54,7 @@ describe('Writer write gate', () => {
   it('cancels pending writes and runs the freeze once when access narrows', async () => {
     const session = fakeSession(50)
     const onClose = vi.fn()
-    const gate = createWriteGate(session, onClose)
+    const gate = createWriteGate(session, onClose, () => {})
     const { document, sent } = fakeDocument()
     const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
 
@@ -63,10 +71,38 @@ describe('Writer write gate', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('logs a failing close rather than leaving its rejection unhandled', async () => {
+    const session = fakeSession(40)
+    const failure = new Error('Copy not kept')
+    const onClose = vi.fn(async () => Promise.reject(failure))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    createWriteGate(session, onClose, () => {})
+
+    session.access.value = { role: 30 }
+
+    await vi.waitFor(() => expect(console.error).toHaveBeenCalledWith(failure))
+    vi.restoreAllMocks()
+  })
+
+  it('runs the reopen once each time the gate opens again, not while it stays open', () => {
+    const session = fakeSession(40)
+    const onOpen = vi.fn()
+    createWriteGate(session, () => {}, onOpen)
+
+    session.access.value = { role: 50 }
+    expect(onOpen).not.toHaveBeenCalled()
+
+    session.access.value = { role: 20 }
+    session.access.value = { role: 40 }
+    session.access.value = { role: 50 }
+
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
   it('stops writes to a trashed document even when the role still allows EDIT', async () => {
     const session = fakeSession(50)
     const onClose = vi.fn()
-    const gate = createWriteGate(session, onClose)
+    const gate = createWriteGate(session, onClose, () => {})
     const { document, sent } = fakeDocument()
 
     session.state.value = 'Trashed'
@@ -81,7 +117,7 @@ describe('Writer write gate', () => {
   it('takes a refused write as the verdict, even before the session refresh agrees', async () => {
     const session = fakeSession(40)
     const onClose = vi.fn()
-    const gate = createWriteGate(session, onClose)
+    const gate = createWriteGate(session, onClose, () => {})
     const refusal = Object.assign(new Error('No access'), { type: 'DriveForbidden' })
     let answer: () => Promise<unknown> = async () => {
       throw refusal
@@ -105,7 +141,11 @@ describe('Writer write gate', () => {
 
   it('keeps the gate open after a failure that is not about access', async () => {
     const session = fakeSession(40)
-    const gate = createWriteGate(session, () => {})
+    const gate = createWriteGate(
+      session,
+      () => {},
+      () => {},
+    )
     const failure = Object.assign(new Error('Deadlock'), { type: 'QueryDeadlockError' })
     const { document } = fakeDocument(async () => {
       throw failure
@@ -115,5 +155,50 @@ describe('Writer write gate', () => {
 
     expect(gate.writable.value).toBe(true)
     expect(session.refreshAccess).not.toHaveBeenCalled()
+  })
+
+  it('stops every later write once a save is refused because the document saves as it is edited', async () => {
+    const session = fakeSession(40)
+    const onClose = vi.fn()
+    const gate = createWriteGate(session, onClose, () => {})
+    const refusal = Object.assign(new Error('Saves as you edit'), {
+      type: 'LoggedDocumentConflict',
+    })
+    const { document, sent } = fakeDocument(async () => Promise.reject(refusal))
+    const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
+
+    await expect(guarded.saveDoc.run({ data: 'old body' })).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    await expect(guarded.newVersion.run({})).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect([gate.refusedForGood.value, sent.length, onClose.mock.calls.length]).toEqual([
+      true,
+      1,
+      0,
+    ])
+  })
+
+  it('reports nothing for the refused save, as the stop strip says why', async () => {
+    const gate = createWriteGate(fakeSession(40), vi.fn(), () => {})
+    const refusal = Object.assign(new Error('CONFLICT'), { type: 'LoggedDocumentConflict' })
+    const { document } = fakeDocument(async () => Promise.reject(refusal))
+    const guarded = gate.guard(document, ['saveDoc'])
+
+    await guarded.saveDoc.run({ data: 'old body' }).catch(reportSaveError)
+
+    expect(reportMutationError).not.toHaveBeenCalled()
+  })
+
+  it('keeps writing after any other conflict', async () => {
+    const gate = createWriteGate(fakeSession(40), vi.fn(), () => {})
+    const conflict = Object.assign(new Error('No bytes to version'), { type: 'DriveConflict' })
+    const { document, sent } = fakeDocument(async () => Promise.reject(conflict))
+    const guarded = gate.guard(document, ['saveDoc', 'newVersion'])
+
+    await expect(guarded.newVersion.run({})).rejects.toBe(conflict)
+    await expect(guarded.saveDoc.run({ data: 'body' })).rejects.toBe(conflict)
+
+    expect([gate.refusedForGood.value, sent.length]).toEqual([false, 2])
   })
 })

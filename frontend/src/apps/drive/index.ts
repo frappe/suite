@@ -20,6 +20,8 @@ export type {
   CredentialGroup,
   CredentialGrouper,
   DocumentSession,
+  DocumentThread,
+  DocumentVersion,
   MediaHandle,
   MediaStatus,
   SessionState,
@@ -71,6 +73,10 @@ export { formatModified as formatDriveListingDate } from '@/apps/drive/files/int
 
 /** A server stamp (RFC 3339 in UTC, Drive spec §11.3) as a full date and time in the viewer's zone. */
 export { formatDate as formatDriveDateTime } from '@/apps/drive/files/internal/format'
+export { formatBytes as formatDriveBytes } from '@/apps/drive/files/internal/format'
+
+/** A document type's icon and its ink, as Drive's listings draw it. */
+export { documentIcon as driveDocumentIcon } from '@/apps/drive/files/internal/icons'
 
 export type { DriveNotification } from '@/apps/drive/client/notifications'
 
@@ -93,6 +99,8 @@ export type DriveNodeSummary = Pick<
   | 'opened_at'
   | 'favourite'
 >
+
+export { RECOVERY_COPIES_TITLE } from '@/apps/drive/files/pages/recoveryCopies'
 
 export const filesArea: AreaDefinition = {
   id: 'files',
@@ -208,9 +216,18 @@ const loadDocumentHeader = () => import('@/apps/drive/files/features/document/Do
  * and optionally `save-state`, `view-only`, `recoverable` with
  * `@download-changes`, `panels` with `v-model:panel`, `location`, and `mime`
  * for a file. Slots: `status` (after the badges) and `actions` (before the
- * panel toggles). Exposes `focusTitle()`.
+ * panel toggles). Exposes `focusTitle()` and `focusPanelToggle(name)`.
  */
 export const DriveDocumentHeader = defineAsyncComponent(loadDocumentHeader)
+
+/** True while a listing's load is too new for placeholder rows, as Drive waits before drawing them. */
+export { useSkeletonDelay as useDriveSkeletonDelay } from '@/apps/drive/files/features/listSkeleton'
+export type { SkeletonCell as DriveSkeletonCell } from '@/apps/drive/files/features/listSkeleton'
+
+/** Placeholder rows inside a List, as Drive's listing draws them; `cells` sit between the name and the actions. */
+export const DriveListSkeletonRows = defineAsyncComponent(
+  () => import('@/apps/drive/files/features/ListSkeletonRows.vue'),
+)
 
 /** The document header's shape while a document opens. Shows `title` when one is known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'

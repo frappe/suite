@@ -13,7 +13,7 @@ dependencies = [
     "mimemapper==0.4.1",
     "pymupdf>=1.24.0",
     "boto3~=1.43.29",
-    "pycrdt==0.12.26",
+    "pycrdt==0.14.8",
     "lxml~=6.1",  # drive: WebDAV XML (previously only a transitive dep via frappe)
     # kept for other suite modules (drive dropped these): PyJWT→meet, Markdown→writer, beautifulsoup4→mail/client
     "PyJWT>=2.8.0",
@@ -90,7 +90,7 @@ docstring-code-format = true
 # frappe and the app's dependencies resolve. Tests and patches are excluded as
 # frappe does. Every module not listed under `ignore_errors` must stay clean.
 [tool.mypy]
-files = ["suite/drive", "suite/composition"]
+files = ["suite/drive", "suite/composition", "suite/suite_core/content", "suite/writer/content"]
 python_executable = "../../env/bin/python"
 exclude = ['/tests/', '/patches/', '/test_[^/]+\.py$', 'benchmark_']
 ignore_missing_imports = true

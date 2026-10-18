@@ -98,9 +98,15 @@ test("losing edit access freezes the editor and cancels the pending save", async
 	const seen = watchPage(page);
 	const editor = await openDocument(page);
 
+	await page.route(/\/content\/[^/]+\/updates/, (route) => {
+		if (route.request().method() === "POST") {
+			return route.abort("failed");
+		}
+
+		return route.continue();
+	});
 	await editor.click();
 	await page.keyboard.type("Typed before the document was trashed");
-	// The autosave waits five seconds. Trash the document before it fires.
 	await patchNode(api, doc.name, { state: "Trashed" });
 	const trashedAt = seen.requests.length;
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -113,11 +119,6 @@ test("losing edit access freezes the editor and cancels the pending save", async
 		.slice(trashedAt)
 		.filter((line) => /\/method\/(save_doc|save_html|new_version|update_settings)/.test(line));
 	expect(writes).toEqual([]);
-	const recovery = await page.evaluate(
-		(node) => localStorage.getItem(`suite:writer-recovery:${node}`),
-		doc.name,
-	);
-	expect(recovery).toContain("Typed before the document was trashed");
 
 	// The recovery copy has a way out: an HTML file of the unsaved work.
 	const download = page.waitForEvent("download");
@@ -130,7 +131,7 @@ test("losing edit access freezes the editor and cancels the pending save", async
 	// A trashed document takes no new comments.
 	await page.getByRole("button", { name: "Comments" }).click();
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
-	await expect(page.getByRole("textbox", { name: "New comment" })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Add a comment…" })).toHaveCount(0);
 	expect(seen.errors).toEqual([]);
 });
 
@@ -153,8 +154,9 @@ test("a toolbar-only change asks before leaving the document", async ({ page }) 
 test("adding a comment keeps the panel open and shows the comment", async ({ page }) => {
 	await openDocument(page);
 	await page.getByRole("button", { name: "Comments" }).click();
-	await page.getByRole("textbox", { name: "New comment" }).fill("Looks good to me");
-	await page.getByRole("button", { name: "Add", exact: true }).click();
+	await page.getByRole("button", { name: "Add a comment…" }).click();
+	await page.getByLabel("Add a comment", { exact: true }).fill("Looks good to me");
+	await page.getByRole("button", { name: "Comment", exact: true }).click();
 
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
 	await expect(page.getByText("Looks good to me")).toBeVisible();

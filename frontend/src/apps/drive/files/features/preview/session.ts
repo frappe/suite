@@ -260,6 +260,18 @@ export async function openFilePreviewSession(
             silent: true,
           },
         ),
+      reanchor: (anchors) =>
+        client.mutation(
+          api.drive.threads.reanchor,
+          {
+            node: nodeId,
+            anchors,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
     },
     versions: {
       list: (cursor) =>

@@ -559,15 +559,25 @@ class ThreadOpen(TypedDict):
     text: str
     # A guest's typed display name; a user's identity comes from the session (§6.7).
     author_name: NotRequired[str]
+    # The client's own id for this thread; a resend with it answers the first thread
+    client_id: NotRequired[str]
 
 
 class ThreadResolve(TypedDict):
     resolved: bool
 
 
+class ThreadReanchor(TypedDict):
+    """`PATCH /nodes/<id>/threads`: each thread's new anchor, by thread id."""
+
+    anchors: dict[str, str]
+
+
 class CommentWrite(TypedDict):
     text: str
     author_name: NotRequired[str]
+    # The client's own id for this reply; a resend with it answers the first reply
+    client_id: NotRequired[str]
 
 
 class CommentEdit(TypedDict):
@@ -997,6 +1007,18 @@ def text(value, name: str) -> str | None:
         return None
     if not isinstance(value, str):
         _refuse(name)
+    return value
+
+
+def text_map(value: object, name: str) -> dict[str, str]:
+    """Accept an object whose keys and values are strings."""
+    if not isinstance(value, dict):
+        _refuse(name)
+
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            _refuse(name)
+
     return value
 
 

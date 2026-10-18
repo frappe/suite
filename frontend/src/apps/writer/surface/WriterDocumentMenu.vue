@@ -4,11 +4,12 @@ import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
-import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './exports'
+import { waitForFocusBack } from './focusBack'
 
 /**
  * The Writer document's menu in the Drive header: download as DOCX or
@@ -22,15 +23,22 @@ const props = defineProps<{
   settings: Record<string, unknown>
   /** The person may change the body. Importing needs it. */
   editable: boolean
+  canSaveVersion: boolean
 }>()
+
+const emit = defineEmits<{ saveVersion: [] }>()
 
 const DOCX_TYPES = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 /** Read when the menu opens: the editor's document is not reactive. */
 const hasTabs = ref(false)
+/** Save version goes once the closing menu has handed focus back to its button. */
+const focusBack = waitForFocusBack()
 
 function noteTabs(open: boolean) {
-  if (open && props.editor) hasTabs.value = orderedTabs(props.editor.state.doc).length > 1
+  if (open && props.editor) {
+    hasTabs.value = listTabs(props.editor).length > 1
+  }
 }
 
 type Download = (html: string) => Promise<void>
@@ -57,8 +65,38 @@ function downloadOption(label: string, icon: string, save: Download) {
   }
 }
 
+function pickVersion() {
+  focusBack.wait(() => emit('saveVersion'))
+}
+
+// After the menu's own focus return, so the name box keeps the focus
+function saveVersionOnFocusBack() {
+  focusBack.focused()
+}
+
+function versionGroups() {
+  if (!props.canSaveVersion) {
+    return []
+  }
+
+  return [
+    {
+      group: __('Version'),
+      hideLabel: true,
+      options: [
+        {
+          label: __('Save version'),
+          icon: 'lucide-bookmark',
+          onClick: pickVersion,
+        },
+      ],
+    },
+  ]
+}
+
 const options = computed<DropdownOptions>(() => {
   const title = props.session.title.value
+  const versions = versionGroups()
   const downloads = {
     group: __('Download'),
     hideLabel: true,
@@ -71,8 +109,12 @@ const options = computed<DropdownOptions>(() => {
       ),
     ],
   }
-  if (!props.editable) return [downloads]
+  if (!props.editable) {
+    return [...versions, downloads]
+  }
+
   return [
+    ...versions,
     downloads,
     {
       group: __('Import'),
@@ -114,6 +156,7 @@ async function importFile(file: File) {
       :tooltip="__('More document actions')"
       :aria-label="__('More document actions')"
       :disabled="!editor"
+      @focus="saveVersionOnFocusBack"
     />
   </Dropdown>
 </template>

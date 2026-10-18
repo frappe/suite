@@ -34,10 +34,10 @@ Three callers, one `DocumentPictures` per document:
 
 ## Why this module reads Writer bodies itself
 
-`suite/writer/drive.py` already reads and remaps media ids, but Drive code
+`suite/writer/content/files.py` already reads and remaps media ids, but Drive code
 may not import a content product (`suite/tests/test_architecture.py`), and
 Build is Drive code. The three spellings below are therefore a copy of
-`suite.writer.drive.MEDIA_PATTERNS`, and the two must change together.
+`suite.writer.content.files.MEDIA_PATTERNS`, and the two must change together.
 
 Every pycrdt call runs inside `_readable()`. A body pycrdt cannot read
 raises `pyo3_runtime.PanicException`, which derives from `BaseException`.

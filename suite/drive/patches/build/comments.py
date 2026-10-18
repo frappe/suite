@@ -5,6 +5,7 @@ import json
 
 import pycrdt
 
+from suite.drive._core.comments import MAX_COMMENT_BYTES
 from suite.drive.patches.build.content_mapping import (
     InvalidLegacyContent,
     decode_sheets_data,
@@ -14,8 +15,6 @@ from suite.drive.patches.build.content_mapping import (
     sheet_anchor,
 )
 from suite.drive.patches.build.state import LegacyComment
-
-MAX_COMMENT_BYTES = 65_535
 
 # Every column `_bulk` writes, so a rerun validates the whole row rather than
 # blessing one whose primary key happens to exist (plan §13).
@@ -123,7 +122,8 @@ def _legacy_plan(node: str, row: dict) -> tuple[dict, list[dict]]:
     if not isinstance(text, str) or not text.strip():
         raise InvalidLegacyContent("legacy comment text is blank")
     if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
-        raise InvalidLegacyContent("legacy comment text exceeds the target Text column")
+        raise InvalidLegacyContent("legacy comment text exceeds the comment limit")
+
     author = row.get("owner") or "Guest"
     if len(author) > 140:
         raise InvalidLegacyContent("legacy comment author exceeds the target Link column")
@@ -275,7 +275,8 @@ def _entry(value, *, identity, owner_key, name_key, time_key, fallback, timezone
     if not isinstance(text, str) or not text.strip():
         raise InvalidLegacyContent("comment text is blank")
     if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
-        raise InvalidLegacyContent("comment text exceeds the target Text column")
+        raise InvalidLegacyContent("comment text exceeds the comment limit")
+
     source_author = value.get(owner_key)
     author = source_author if isinstance(source_author, str) and source_author else "Guest"
     if len(author) > 140:

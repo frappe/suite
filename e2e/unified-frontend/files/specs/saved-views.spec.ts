@@ -59,7 +59,7 @@ test("Trash lists the trashed node under My files", async ({ page }) => {
 test("Shared with me renders its own empty or listed state", async ({ page }) => {
 	await page.goto("/drive/shared-with-me");
 	await expect(page).toHaveTitle("Shared with me");
-	await expect(page.getByRole("searchbox", { name: "Search files" })).toBeVisible();
+	await expect(page.getByRole("searchbox", { name: "Search all files" })).toBeVisible();
 });
 
 test("a saved view drops sort and group keys it cannot honor", async ({ page }) => {

@@ -9,7 +9,6 @@ import * as Y from 'yjs'
 
 import { rebuild } from '@/apps/writer/extensions/comments'
 import type { WriterDocument, WriterDocumentRow } from '@/apps/writer/surface/writerDocument'
-import { useSessionStore } from '@/boot/session'
 
 import { reportSaveError } from './saveError'
 import { SERVER_ORIGIN, trackUnsaved } from './unsaved'
@@ -60,10 +59,20 @@ export const useComments = (document: LoadedDocument, editor: Ref<Editor | null>
       anchorText,
       anchor: {
         from: Y.encodeRelativePosition(
-          absolutePositionToRelativePosition(from, ystate.type, ystate.binding.mapping),
+          absolutePositionToRelativePosition(
+            from,
+            ystate.type,
+            ystate.binding.mapping,
+            ystate.binding.hidden,
+          ),
         ),
         to: Y.encodeRelativePosition(
-          absolutePositionToRelativePosition(to, ystate.type, ystate.binding.mapping),
+          absolutePositionToRelativePosition(
+            to,
+            ystate.type,
+            ystate.binding.mapping,
+            ystate.binding.hidden,
+          ),
         ),
       },
     })
@@ -127,12 +136,32 @@ export function useYjs(
   // WebRTC for real-time P2P collaboration
   const provider = new WebrtcProvider(roomName, doc, REALTIME_CONFIG)
   const { peers, cleanup: cleanupPeers } = useCollaborationUsers(provider.awareness)
-  const permanentUserData = new Y.PermanentUserData(doc)
-  // null (guest) as a user key crashes yjs' PermanentUserData map observer
-  permanentUserData.setUserMapping(doc, doc.clientID, useSessionStore().user || 'Guest')
-
   // Comments
   const { cleanup: cleanupComments, ...commentsData } = useComments(document, editor)
+
+  // Once a refused save is kept as a recovery copy, stop the store replaying it into later opens;
+  // only the rows go, so other old tabs keep their connections
+  async function forgetStoredEdits() {
+    if (!loaded.value) {
+      return
+    }
+
+    // Another old tab of this document on this device builds on the stored rows, so they stay
+    // unless this tab knows it is the only one
+    const isOnlyTab = provider.room?.bcconnected === true && provider.room.bcConns.size === 0
+    provider.disconnect()
+    await db.whenSynced
+    if (isOnlyTab) {
+      try {
+        db.db?.transaction('updates', 'readwrite').objectStore('updates').clear()
+      } catch {
+        // A failed clear leaves the store replaying into later opens, as before
+      }
+    }
+
+    await db.destroy()
+  }
+
   return {
     doc,
     cleanup: () => {
@@ -142,9 +171,9 @@ export function useYjs(
       cleanupComments()
     },
     save,
+    forgetStoredEdits,
     provider,
     peers,
-    permanentUserData,
     loaded,
     ...commentsData,
   }

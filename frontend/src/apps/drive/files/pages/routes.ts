@@ -1,5 +1,7 @@
 import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 
+import { RECOVERY_COPIES_TITLE } from './recoveryCopies'
+
 function meta(title: string, allowGuest = false): RouteMeta {
   return { area: 'files', frame: 'shell', scroll: 'shell', allowGuest, title }
 }
@@ -53,5 +55,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('./FilesPage.vue'),
     props: { destination: 'trash' },
     meta: meta('Trash'),
+  },
+  {
+    path: 'recovery',
+    name: 'files-recovery',
+    component: () => import('./RecoveryPage.vue'),
+    meta: meta(RECOVERY_COPIES_TITLE),
   },
 ]

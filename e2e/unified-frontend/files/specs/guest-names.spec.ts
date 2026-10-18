@@ -1,25 +1,40 @@
 import { type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-import { expect, requireSiteFilesFlip, test } from "../../helpers/flips";
+import { expect, test } from "../../helpers/flips";
 import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
 /**
  * Stage 11 follow-up: guests sign their comments (spec §10.5, ticket 011).
  *
- * A guest opens each document through a comment link. The server picks the
- * `/d/` address from `suite_flip_files`, so run these with the key on.
+ * A guest opens each document through a comment link, which lands on its
+ * `/d/` address.
  */
 
 const SIGNED_OUT = { cookies: [], origins: [] };
 const PHONE = { width: 390, height: 844 };
 const RLO = "\u202E";
 
-type Product = { label: string; doctype: string; title: string; post: string };
+// `start` names the line a product shows in place of its comment box until it is clicked
+interface Product {
+	label: string;
+	doctype: string;
+	title: string;
+	post: string;
+	boxLabel: string;
+	start?: string;
+}
 
 const PRODUCTS: Product[] = [
-	{ label: "Writer", doctype: "Writer Document", title: "Guest names doc", post: "Add" },
-	{ label: "Sheets", doctype: "Sheet", title: "Guest names sheet", post: "Comment" },
-	{ label: "Slides", doctype: "Presentation", title: "Guest names deck", post: "Add" },
+	{
+		label: "Writer",
+		doctype: "Writer Document",
+		title: "Guest names doc",
+		post: "Comment",
+		boxLabel: "Add a comment",
+		start: "Add a comment…",
+	},
+	{ label: "Sheets", doctype: "Sheet", title: "Guest names sheet", post: "Comment", boxLabel: "New comment" },
+	{ label: "Slides", doctype: "Presentation", title: "Guest names deck", post: "Add", boxLabel: "New comment" },
 ];
 
 
@@ -57,17 +72,20 @@ async function storedAuthors(node: string): Promise<Array<{ author: string; auth
 	return data.threads.flatMap((thread) => thread.comments.map(({ author, author_name }) => ({ author, author_name })));
 }
 
-async function openComments(page: Page): Promise<Locator> {
+async function openComments(page: Page, product: Product): Promise<Locator> {
 	// The product's own title bar holds the Comments button. The body may still load behind it.
 	await page.getByRole("button", { name: "Comments" }).click({ timeout: 20_000 });
 	const panel = page.getByRole("complementary", { name: "Comments" });
-	await expect(panel.getByRole("textbox", { name: "New comment" })).toBeVisible();
+	if (product.start) {
+		await panel.getByRole("button", { name: product.start }).click();
+	}
+
+	await expect(panel.getByLabel(product.boxLabel, { exact: true })).toBeVisible();
 	return panel;
 }
 
 test.describe("a guest with a comment link", () => {
 	test.use({ storageState: SIGNED_OUT });
-	test.beforeEach(() => requireSiteFilesFlip(true));
 
 	for (const product of PRODUCTS) {
 		test(`${product.label}: the guest signs a comment, and the name is there after a reload`, async ({ page }) => {
@@ -76,9 +94,9 @@ test.describe("a guest with a comment link", () => {
 			await expect(page).toHaveURL(new RegExp(`/d/${doc.name}`));
 			await expect(page.getByTestId("guest-frame")).toBeVisible();
 
-			const panel = await openComments(page);
+			const panel = await openComments(page, product);
 			const name = panel.getByRole("textbox", { name: "Your name" });
-			const comment = panel.getByRole("textbox", { name: "New comment" });
+			const comment = panel.getByLabel(product.boxLabel, { exact: true });
 			await expect(name).toHaveValue("");
 			await expect(name).toHaveAttribute("maxlength", "140");
 
@@ -95,7 +113,7 @@ test.describe("a guest with a comment link", () => {
 			expect(await storedAuthors(doc.name)).toEqual([{ author: "Guest", author_name: "Ravi (Acme)" }]);
 
 			await page.reload();
-			const again = await openComments(page);
+			const again = await openComments(page, product);
 			await expect(again.getByRole("textbox", { name: "Your name" })).toHaveValue("Ravi (Acme)");
 		});
 	}
@@ -106,9 +124,9 @@ test.describe("a guest with a comment link", () => {
 			const doc = await createDocument(api, home.name, `${product.title} on a phone`, product.doctype);
 			await page.goto(`/l/${await commentLink(doc.name)}`);
 
-			const panel = await openComments(page);
+			const panel = await openComments(page, product);
 			await panel.getByRole("textbox", { name: "Your name" }).fill(`${RLO}${"W".repeat(139)}`);
-			await panel.getByRole("textbox", { name: "New comment" }).fill("Long name");
+			await panel.getByLabel(product.boxLabel, { exact: true }).fill("Long name");
 			await panel.getByRole("button", { name: product.post, exact: true }).click();
 
 			const name = panel.locator('[data-part="name"]');
@@ -127,9 +145,9 @@ test.describe("a guest with a comment link", () => {
 		const doc = await createDocument(api, home.name, "Unsigned note", product.doctype);
 		await page.goto(`/l/${await commentLink(doc.name)}`);
 
-		const panel = await openComments(page);
+		const panel = await openComments(page, product);
 		await expect(panel.getByRole("textbox", { name: "Your name" })).toHaveValue("");
-		await panel.getByRole("textbox", { name: "New comment" }).fill("Unsigned note");
+		await panel.getByLabel(product.boxLabel, { exact: true }).fill("Unsigned note");
 		await panel.getByRole("button", { name: product.post, exact: true }).click();
 
 		await expect(panel.getByText("Unsigned note", { exact: true })).toBeVisible();
@@ -142,7 +160,7 @@ test.describe("a signed-in user", () => {
 	for (const product of PRODUCTS) {
 		test(`${product.label}: the comment composer has no name field`, async ({ page }) => {
 			await page.goto(`/d/${docs.get(product.label)!.name}`);
-			const panel = await openComments(page);
+			const panel = await openComments(page, product);
 			await expect(panel.getByRole("textbox", { name: "Your name" })).toHaveCount(0);
 		});
 	}

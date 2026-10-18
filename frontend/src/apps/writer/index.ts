@@ -18,4 +18,6 @@ export const writerDocument: DocumentTypeDefinition = {
   newLabel: () => __('Document'),
   icon: WriterIcon,
   loadSurface: async () => (await import('@/apps/writer/surface/WriterSurface.vue')).default,
+  loadUnsavedWork: async () => (await import('@/apps/writer/recovery/UnsavedWork.vue')).default,
+  listUnsavedCopies: async () => (await import('@/apps/writer/recovery/copies')).copyEntries(),
 }

@@ -152,10 +152,13 @@ test("Upload new version replaces a file's bytes from its preview", async ({ pag
 	expect(replaced.size).toBe(replacement.length);
 	expect(replaced.title).toBe("notes.bin");
 	expect((await children(api, home.name)).rows.map((row) => row.title)).toEqual(["notes.bin"]);
-	await expect(page.getByRole("link", { name: "Download" }).first()).toHaveAttribute(
-		"href",
-		new RegExp(`${DRIVE}/nodes/${file.name}/content\\?v=1`),
-	);
+	await expect
+		.poll(async () => {
+			const href = await page.getByRole("link", { name: "Download" }).first().getAttribute("href");
+			const { pathname, searchParams } = new URL(href ?? "", page.url());
+			return [pathname, searchParams.get("download"), searchParams.get("v")];
+		})
+		.toEqual([`${DRIVE}/nodes/${file.name}/content`, "1", "1"]);
 	expect(legacy).toEqual([]);
 });
 
@@ -165,7 +168,7 @@ test("a batch upload asks about a taken title and keeps both", async ({ page }) 
 	await openFolder(page, home);
 
 	const chooser = page.waitForEvent("filechooser");
-	await useNewMenu(page, "Upload files");
+	await useNewMenu(page, "Files");
 	await (await chooser).setFiles([
 		{ name: "report.pdf", mimeType: "application/pdf", buffer: Buffer.from("second") },
 		{ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("notes") },
@@ -194,7 +197,7 @@ test("a reload mid-upload leaves an interrupted entry that Resume finishes", asy
 	});
 
 	const chooser = page.waitForEvent("filechooser");
-	await useNewMenu(page, "Upload files");
+	await useNewMenu(page, "Files");
 	await (await chooser).setFiles({ name: "big.bin", mimeType: "application/octet-stream", buffer: big });
 	await expect.poll(() => chunks).toBe(2);
 	await page.unroute(CHUNK_ROUTE);
@@ -220,7 +223,8 @@ test("a folder upload from New creates the tree", async ({ page }) => {
 	await openFolder(page, home);
 
 	const chooser = page.waitForEvent("filechooser");
-	await useNewMenu(page, "Upload folder");
+	await page.getByRole("button", { name: "New", exact: true }).click();
+	await page.locator('[data-slot="group"]', { hasText: "Upload" }).getByRole("menuitem", { name: "Folder", exact: true }).click();
 	await (await chooser).setFiles(resolve(__dirname, "fixtures/upload-folder"));
 
 	await expect(doneEntries(page)).toHaveCount(2);
@@ -262,7 +266,7 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 	await openFolder(page, home);
 
 	const chooser = page.waitForEvent("filechooser");
-	await useNewMenu(page, "Upload files");
+	await useNewMenu(page, "Files");
 	await (await chooser).setFiles([
 		{ name: "fits.txt", mimeType: "text/plain", buffer: Buffer.from("small") },
 		{ name: "too-big.txt", mimeType: "text/plain", buffer: Buffer.alloc(100, 1) },
@@ -290,12 +294,12 @@ test("a restore whose folder is gone asks for a destination in the same root", a
 	await expect(dialog).toBeVisible();
 	await expect(dialog.getByText("The folder this item was in is gone.", { exact: false })).toBeVisible();
 	await dialog.getByRole("button", { name: home.title }).click();
-	await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+	await dialog.getByRole("button", { name: "Restore here", exact: true }).click();
 
 	await expect(page.getByText("1 restored · 0 failed")).toBeVisible();
 	await expect(page.getByText("selected")).toHaveCount(0);
 	const restored = await getNode(api, orphan.name);
-	expect(restored.parent).toBe(home.name);
+	expect(restored.parent_node).toBe(home.name);
 	expect(restored.state).toBe("Active");
 });
 
@@ -334,7 +338,7 @@ test("the upload ring shows on the Drive rail item in another area", async ({ pa
 	});
 
 	const chooser = page.waitForEvent("filechooser");
-	await useNewMenu(page, "Upload files");
+	await useNewMenu(page, "Files");
 	await (await chooser).setFiles({ name: "slow.txt", mimeType: "text/plain", buffer: Buffer.from("slow bytes") });
 	await expect(page.locator("[data-slot='upload-entry'][data-state='uploading']")).toBeVisible();
 

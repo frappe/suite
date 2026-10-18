@@ -1,9 +1,13 @@
+import { posToDOMRect } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 
-// Positions the bubble menu to the right of the editor, vertically
-// centered between the start and end of the current selection.
+// In the margin level with the selection, else above it, else below
 export function bubbleMenuOptions({ editor, comments }) {
   return {
+    options: {
+      placement: 'right',
+      flip: { fallbackPlacements: ['top-start', 'bottom-start'], crossAxis: false },
+    },
     shouldShow: ({ state, from, to }) => {
       if (from === to) return false
       // Only show for text selections — not node selections (images) or cell selections (tables)
@@ -13,27 +17,13 @@ export function bubbleMenuOptions({ editor, comments }) {
       return !hide
     },
     getReferencedVirtualElement: () => {
-      const { selection } = editor.value.state
-      const { from, to } = selection
+      const { view } = editor.value
+      const { from, to } = view.state.selection
+      const rect = posToDOMRect(view, from, to)
+      const right = view.dom.getBoundingClientRect().right
+      const box = { ...rect.toJSON(), right, width: right - rect.left }
 
-      const start = editor.value.view.coordsAtPos(from)
-      const end = editor.value.view.coordsAtPos(to)
-
-      const editorRect = editor.value.view.dom.getBoundingClientRect()
-      const y = (start.bottom + end.bottom) / 2 + 15
-
-      return {
-        getBoundingClientRect: () => ({
-          width: 0,
-          height: 0,
-          x: editorRect.right,
-          y,
-          top: y,
-          right: editorRect.right,
-          bottom: y,
-          left: editorRect.right,
-        }),
-      }
+      return { getBoundingClientRect: () => box }
     },
   }
 }

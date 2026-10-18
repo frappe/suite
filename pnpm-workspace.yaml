@@ -4,6 +4,8 @@ overrides:
   '@tiptap/core': 3.26.0
   '@tiptap/pm': 3.26.0
   '@tiptap/vue-3': 3.26.0
+  # A patched y-tiptap, vendored as a build.
+  '@tiptap/y-tiptap': link:./frontend/packages/collab-prosemirror
 
 # Dependency install scripts. None is needed:
 # - @firebase/util: reads FIREBASE_WEBAPP_CONFIG for Firebase App Hosting only.

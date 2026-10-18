@@ -18,6 +18,8 @@ const config = defineConfigWithVueTs(
     ignores: [
       'frontend/dist/**',
       'frontend/dist-recorder/**',
+      // A vendored build, kept as published.
+      'frontend/packages/collab-prosemirror/dist/**',
       'node_modules/**',
       'frontend/auto-imports.d.ts',
       'frontend/components.d.ts',

@@ -12,6 +12,7 @@ import type {
 	NodeDeleteGrantOutput,
 	NodeGetOutput,
 	NodeGrantsOutput,
+	NodeMediaOutput,
 	NodePatchMoveInput,
 	NodePatchRenameInput,
 	NodePatchRestoreInput,
@@ -165,6 +166,12 @@ export async function getNode(
 	expand = "access",
 ): Promise<DriveNode> {
 	return driveRequest<DriveNode>(request, "get", `nodes/${node}?expand=${expand}`);
+}
+
+/** The ids of `node`'s pictures and videos that are not in the bin. */
+export async function mediaNodes(request: APIRequestContext, node: string): Promise<string[]> {
+	const answer = await driveRequest<NodeMediaOutput>(request, "get", `nodes/${node}/media`);
+	return answer.media.map((entry) => entry.node);
 }
 
 /** Whether the caller may read `node`. */

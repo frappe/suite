@@ -442,7 +442,7 @@ class CommentTest(unittest.TestCase):
     def test_blank_and_oversized_comment_text_refuse_the_thread(self):
         cases = {
             "blank": ("   ", "text is blank"),
-            "oversized": ("x" * 65_536, "exceeds the target Text column"),
+            "oversized": ("x" * 65_536, "exceeds the comment limit"),
         }
         for label, (text, message) in cases.items():
             with self.subTest(case=label):

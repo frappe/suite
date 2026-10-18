@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { trackUnsaved } from '@/apps/writer/composables/unsaved'
-import { TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
+import { PasteSizeGuard } from '@/apps/writer/extensions/paste-size-guard'
+import { listTabs, TabsExtension, tabsIn } from '@/apps/writer/extensions/tabs'
 
 const uploadMock = vi.fn()
 // Every Drive request the importer makes, as `METHOD path`.
@@ -270,10 +271,7 @@ describe('importDocx', () => {
         Collaboration.configure({ document: body, field: 'default' }),
       ],
     })
-    expect(tabsIn(peer.state.doc).map((tab) => tab.node.attrs.label)).toEqual([
-      'Untitled',
-      'launch brief',
-    ])
+    expect(listTabs(peer).map((tab) => tab.label)).toEqual(['Untitled', 'launch brief'])
     expect(peer.getText()).toContain('Existing line before any import.')
     expect(peer.getText()).toContain('Imported text')
     expect(unsaved.value).toBe(true)
@@ -290,7 +288,7 @@ describe('importDocx', () => {
       currentFileId: 'file-1',
     })
 
-    expect(tabsIn(editor.state.doc)).toHaveLength(2)
+    expect(listTabs(editor)).toHaveLength(2)
     expect(editor.getText()).toContain('Original text')
     expect(editor.getText()).toContain('Imported text')
   })
@@ -404,5 +402,88 @@ describe('importDocx', () => {
     ])
     expect(toastMock.error).toHaveBeenCalled()
     expect(editor.getText()).toBe('Original text')
+  })
+})
+
+describe('importDocx into a document with a size limit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    driveRequests.length = 0
+  })
+
+  const limits = {
+    fragment: 1,
+    edit_max: 2000,
+    state_max: 1_000_000,
+    state_bytes: 0,
+    tail_bound: 0,
+  }
+
+  function guardedEditor(content) {
+    const tooLarge = vi.fn()
+    const extensions = [
+      Document,
+      Paragraph,
+      Text,
+      TabsExtension,
+      PasteSizeGuard.configure({
+        limits: () => limits,
+        onTooLarge: tooLarge,
+        onNearFull: () => {},
+      }),
+    ]
+    const editor = new Editor({ extensions, content })
+    return { editor, tooLarge }
+  }
+
+  it('refuses a document too large for one save, keeps what was there and takes its images back', async () => {
+    uploadMock.mockResolvedValue({ file_url: '/api/method/suite.writer.api.embed.get?id=embed-1' })
+    const convertWithImage = async (_input, options) => {
+      const image = {
+        readAsArrayBuffer: async () => new ArrayBuffer(1),
+        contentType: 'image/png',
+      }
+      await options.convertImage(image)
+      return {
+        value: `<p>${'x'.repeat(3000)}</p>`,
+        messages: [],
+      }
+    }
+    convertToHtmlMock.mockImplementation(convertWithImage)
+    const { editor, tooLarge } = guardedEditor('<p>Original text</p>')
+
+    await importDocx(fakeFile('huge.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    expect([editor.getText(), tabsIn(editor.state.doc).length, tooLarge.mock.calls.length]).toEqual(
+      ['Original text', 0, 0],
+    )
+    expect(toastMock.error).toHaveBeenCalledWith('This file is too large to import.')
+    expect(driveRequests).toEqual([
+      'POST /api/suite/drive/nodes/batch',
+      'POST /api/suite/drive/nodes/batch/purge',
+    ])
+    expect(toastMock.success).not.toHaveBeenCalled()
+  })
+
+  it('keeps the runs of spaces it measured', async () => {
+    convertToHtmlMock.mockResolvedValue({ value: '<p>a   b</p>', messages: [] })
+    const { editor } = guardedEditor('')
+
+    await importDocx(fakeFile('spaces.docx'), {
+      editor: { value: editor },
+      currentFileId: 'file-1',
+    })
+
+    expect(editor.getText().trim()).toBe('a   b')
+  })
+
+  it('imports a document that fits in one save', async () => {
+    convertToHtmlMock.mockResolvedValue({ value: `<p>${'y'.repeat(1500)}</p>`, messages: [] })
+    const { editor, tooLarge } = guardedEditor('')
+
+    await importDocx(fakeFile('fits.docx'), { editor: { value: editor }, currentFileId: 'file-1' })
+
+    expect([editor.getText().trim(), tooLarge.mock.calls.length]).toEqual(['y'.repeat(1500), 0])
+    expect(toastMock.success).toHaveBeenCalled()
   })
 })

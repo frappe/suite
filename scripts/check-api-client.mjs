@@ -13,6 +13,7 @@ const protocols = new Set([
   'apps/drive/client/uploads.ts',
   'apps/drive/client/session.ts',
   'apps/drive/files/features/preview/textContent.ts',
+  'apps/writer/collab/index.ts',
   'apps/writer/surface/exports.ts',
   'apps/writer/utils/docxexporter.js',
   'apps/slides/service-worker.js',

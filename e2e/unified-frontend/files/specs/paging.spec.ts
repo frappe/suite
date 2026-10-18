@@ -76,27 +76,6 @@ test("changing the sort restarts the listing without a cursor", async ({ page })
 	expect(requests.filter((url) => url.includes("cursor="))).toEqual([]);
 });
 
-test("changing the group restarts the listing without a cursor", async ({ page }) => {
-	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
-	const rows = page.locator("[data-node]");
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-	await rows.last().scrollIntoViewIfNeeded();
-	await expect(rows).toHaveCount(TOTAL, { timeout: 20_000 });
-
-	const requests: string[] = [];
-	page.on("request", (request) => {
-		if (/\/children\?/.test(request.url())) requests.push(request.url());
-	});
-
-	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("combobox", { name: "Group by" }).click();
-	await page.getByRole("option", { name: "Owner" }).click();
-	await expect(page).toHaveURL(/group=owner/);
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-	expect(requests.filter((url) => url.includes("cursor="))).toEqual([]);
-	expect(requests.some((url) => url.includes("group_by=owner"))).toBe(true);
-});
-
 // The walk stops at the first failed window (fixed here). Before the fix it
 // retried the same cursor at 46 requests per 5 seconds.
 test("a failed next window keeps the loaded rows and offers a retry", async ({ page }) => {

@@ -68,11 +68,13 @@ function mount(
   props: { saveState?: DocumentSaveState; viewOnly?: boolean } = {},
 ) {
   const panel = ref<DocumentPanel | null>(null)
+  const header = ref<{ focusPanelToggle(name: DocumentPanel): void } | null>(null)
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
     setup: () => () =>
       h(DocumentHeader, {
+        ref: header,
         session: doc as unknown as DocumentSession,
         titleLabel: 'Spreadsheet title',
         panels: ['comments', 'versions'],
@@ -91,7 +93,7 @@ function mount(
   const title = root.querySelector<HTMLInputElement>('input[aria-label="Spreadsheet title"]')!
   const button = (name: string) =>
     root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)
-  return { root, title, button, panel }
+  return { root, title, button, panel, header }
 }
 
 describe('DocumentHeader', () => {
@@ -140,6 +142,18 @@ describe('DocumentHeader', () => {
     button('Versions')!.click()
     await nextTick()
     expect(panel.value).toBeNull()
+  })
+
+  it('hands focus to the toggle of a panel that closed itself', async () => {
+    const { button, panel, header } = mount(session(40))
+    button('Versions')!.click()
+    await nextTick()
+    panel.value = null
+    await nextTick()
+
+    header.value!.focusPanelToggle('versions')
+
+    expect(document.activeElement).toBe(button('Versions'))
   })
 
   it('offers Share only to people who can share', () => {

@@ -47,6 +47,12 @@ declare global {
 
   /** Injected by Vite from sites/common_site_config.json. */
   const __SOCKETIO_PORT__: string | number
+
+  /** Build time stamped by Vite; the server sends its own as `X-Suite-Build`. */
+  const __SUITE_BUILD__: string
+
+  /** The Yjs version the collab kernel bundles, injected by vite.kernel.config.ts. */
+  const __KERNEL_YJS__: string
 }
 
 export {}

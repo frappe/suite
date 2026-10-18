@@ -46,7 +46,7 @@ function watchLegacyDriveCalls(page: Page): string[] {
 test("From template copies a template and lands on its /d/ route", async ({ page }) => {
 	const templateTitle = runTag("tpl-sheet");
 	const response = await api.post(`${DRIVE}/nodes`, {
-		data: { parent: home.name, title: templateTitle, kind: "document", content_doctype: "Sheet", is_template: true },
+		data: { parent_node: home.name, title: templateTitle, kind: "document", content_doctype: "Sheet", is_template: true },
 	});
 	expect(response.ok(), await response.text()).toBe(true);
 

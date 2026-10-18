@@ -6,13 +6,18 @@
     v-bind="{ ...props, ...commentsDetail }"
     :yjs-doc="doc"
     :extensions
+    collaborative
     @save="
       (manual = false, html, func) => {
         save(manual, html).then(func).catch(reportSaveError)
       }
     "
     @cleanup="cleanup"
-  />
+  >
+    <template v-for="(_, name) in $slots" #[name]>
+      <slot :name="name" />
+    </template>
+  </CoreEditor>
 </template>
 
 <script setup>
@@ -20,6 +25,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
 import { computed, onMounted, provide, ref, watch } from 'vue'
 
+import { useAutoversion } from '@/apps/writer/composables/autoversion'
 import { reportSaveError } from '@/apps/writer/composables/saveError'
 import { useYjs } from '@/apps/writer/composables/useYjs'
 import { rebuild } from '@/apps/writer/extensions/comments'
@@ -42,29 +48,38 @@ const props = defineProps({
   settings: Object,
   editable: Boolean,
 })
+
 const emit = defineEmits(['saveComment'])
 
 const textEditor = ref('textEditor')
+
 const editor = computed(() => {
   const editor = textEditor.value?.editor
   return editor
 })
+
 provide('editor', editor)
 
 // `useYjs` owns the unsaved flag: it sets `edited` on each change to store
 // and clears it when a save lands (`composables/unsaved.ts`).
-const { doc, save, cleanup, provider, permanentUserData, loaded, peers, ...commentsDetail } =
+const { doc, save, forgetStoredEdits, cleanup, provider, loaded, peers, ...commentsDetail } =
   useYjs(props.file.doc.name, props.document, editor, edited)
-defineExpose({ editor, peers })
+
+const isFrozen = ref(false)
+defineExpose({ editor, peers, forgetStoredEdits, isFrozen })
+
+function onFrozen() {
+  isFrozen.value = true
+}
+
+useAutoversion(editor, edited, props.document)
 watch(loaded, () => rebuild(editor.value))
 
 const extensions = [
   Collaboration.configure({
     document: doc,
     field: 'default',
-    ySyncOptions: {
-      permanentUserData,
-    },
+    ySyncOptions: { onUnplaceable: onFrozen },
   }),
   CollaborationCaret.configure({
     provider,

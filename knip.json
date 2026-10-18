@@ -15,6 +15,7 @@
         "frontend/recorder/main.ts",
         "frontend/recorder/frappeUi.ts",
         "frontend/src/apps/mail/sw.ts",
+        "frontend/src/apps/writer/collab/kernel-entry.ts",
         "frontend/src/apps/sheets/engine/difftest/compare-engines.js",
         "frontend/src/apps/sheets/engine/difftest/run.js",
         "scripts/generate-pwa-assets.mjs"

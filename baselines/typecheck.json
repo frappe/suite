@@ -95,7 +95,7 @@
   "frontend/src/apps/people/pages/ContactView.vue": 1,
   "frontend/src/apps/slides/utils/clipboardTable.ts": 1,
   "frontend/src/apps/writer/extensions/clean-styles.ts": 8,
-  "frontend/src/apps/writer/extensions/tabs.ts": 30,
+  "frontend/src/apps/writer/extensions/tabs.ts": 26,
   "frontend/src/components/AdaptiveDropdown.vue": 1,
   "frontend/src/realtime.ts": 1
 }

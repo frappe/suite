@@ -1,13 +1,14 @@
 """Authorized comment threads attached to Drive content-document nodes."""
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from uuid import uuid4
 
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from suite.drive._core import content
 from suite.drive._core.access import effective_role, require
 from suite.drive._core.activity import notify_users, record
 from suite.drive._core.errors import (
@@ -16,12 +17,16 @@ from suite.drive._core.errors import (
     DriveNotFound,
     rollback_savepoint,
 )
+from suite.drive._core.nodes import MAX_PAGE_SIZE
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ
 
 _BRACKET_MENTION = re.compile(r"@\[([^\]\r\n]{1,140})\]")
 _EMAIL_MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 _DATA_MENTION = re.compile(r"data-(?:id|user)=[\"']([^\"'\r\n]{1,140})[\"']")
+_CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+# The most a comment holds, in UTF-8 bytes, as the old Text column did
+MAX_COMMENT_BYTES = 65_535
 
 
 def create_thread(
@@ -31,14 +36,20 @@ def create_thread(
     text: str,
     *,
     author_name: str | None = None,
+    client_id: str | None = None,
 ) -> dict:
     """Create a thread and its first server-authored comment.
 
     Returns the thread as `threads` lists it, its first comment included, so
     `POST /nodes/<id>/threads` answers the resource it created (§11.2).
+
+    `client_id` is the writing client's own id for this thread, unique per
+    node. A resend with the same id, after an answer was lost, writes nothing
+    and answers the thread the first send made.
     """
     _validate_anchor(anchor)
     _validate_text(text)
+    validate_client_id(client_id)
     savepoint = f"drive_comment_thread_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
@@ -46,12 +57,18 @@ def create_thread(
         via_link = require(node_row, COMMENT, principals)
         _require_document(node_row)
         _require_active(node_row)
+        sent = first_send("Drive Comment Thread", node_row.name, client_id, text)
+        if sent:
+            frappe.db.release_savepoint(savepoint)
+            return _thread_view(sent.name)
+
         thread = frappe.get_doc(
             {
                 "doctype": "Drive Comment Thread",
                 "node": node_row.name,
                 "anchor": anchor,
                 "resolved": 0,
+                "client_id": client_id,
             }
         ).insert(ignore_permissions=True)
         comment, mentions = _insert_comment(
@@ -60,6 +77,7 @@ def create_thread(
             node_row.name,
             text,
             author_name=author_name,
+            client_id=None,
         )
         activity = record(
             principals,
@@ -74,6 +92,8 @@ def create_thread(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+
+    announce_threads(node_row)
     return _thread_view(thread.name)
 
 
@@ -83,9 +103,11 @@ def reply(
     text: str,
     *,
     author_name: str | None = None,
+    client_id: str | None = None,
 ) -> frappe._dict:
-    """Append a server-authored reply to an existing thread; answer the comment row."""
+    """Append a server-authored reply to an existing thread; answer the comment row, the first one on a resend."""
     _validate_text(text)
+    validate_client_id(client_id)
     savepoint = f"drive_comment_reply_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
@@ -93,12 +115,21 @@ def reply(
         via_link = require(node, COMMENT, principals)
         _require_document(node)
         _require_active(node)
+        sent = first_send("Drive Comment", node.name, client_id, text)
+        if sent:
+            if sent.thread != thread_row.name:
+                raise DriveConflict(_("This Drive comment id was already used in another thread"))
+
+            frappe.db.release_savepoint(savepoint)
+            return _comment_view(sent.name)
+
         comment, mentions = _insert_comment(
             principals,
             thread_row.name,
             node.name,
             text,
             author_name=author_name,
+            client_id=client_id,
         )
         activity = record(
             principals,
@@ -117,6 +148,8 @@ def reply(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+
+    announce_threads(node)
     return _comment_view(comment)
 
 
@@ -152,7 +185,43 @@ def resolve(principals: Principals, thread: str, resolved: bool = True) -> frapp
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+
+    announce_threads(node)
     return _thread_view(thread_row.name)
+
+
+def reanchor_threads(principals: Principals, node: str, anchors: dict[str, str]) -> list[frappe._dict]:
+    """Move threads of one document to new anchors with Edit access; answer them as listed."""
+    _validate_anchor_map(anchors)
+    if not anchors:
+        return []
+
+    savepoint = f"drive_comment_reanchor_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        node_row = _comment_node(node, for_update=True)
+        require(node_row, EDIT, principals)
+        _require_document(node_row)
+        _require_active(node_row)
+        _write_anchors(node_row.name, anchors)
+    except Exception as exc:
+        rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+
+    announce_threads(node_row)
+    return _thread_views({"name": ["in", list(anchors)]})
+
+
+def _write_anchors(node: str, anchors: dict[str, str]) -> None:
+    filters = {"name": ["in", list(anchors)], "node": node}
+    held = frappe.get_all("Drive Comment Thread", filters=filters, pluck="name")
+    if len(held) != len(anchors):
+        raise DriveNotFound(_("A Drive comment thread to move is not on node {0}").format(node))
+
+    for thread, anchor in anchors.items():
+        frappe.db.set_value("Drive Comment Thread", thread, "anchor", anchor, update_modified=False)
 
 
 def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dict:
@@ -184,12 +253,14 @@ def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dic
             },
             via_link=via_link,
         )
-        notify_users(activity, mentions)
+        notify_users(activity, set(mentions) - set(_json_value(comment_row.mentions, [])))
     except Exception as exc:
         rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+
+    announce_threads(node)
     return _comment_view(comment_row.name)
 
 
@@ -228,6 +299,8 @@ def delete_comment(principals: Principals, comment: str) -> None:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+
+    announce_threads(node)
 
 
 def record_comment(
@@ -358,7 +431,7 @@ def _comment_node(node: str, *, for_update: bool = False) -> frappe._dict:
     row = frappe.db.get_value(
         "Drive Node",
         node,
-        ["name", "parent_node", "root", "path", "kind", "state"],
+        ["name", "parent_node", "root", "path", "kind", "state", "content_doctype"],
         as_dict=True,
         for_update=for_update,
     )
@@ -384,7 +457,7 @@ def _comment(comment: str, *, for_update: bool = False) -> frappe._dict:
     row = frappe.db.get_value(
         "Drive Comment",
         comment,
-        ["name", "thread", "node", "author", "author_name"],
+        ["name", "thread", "node", "author", "author_name", "mentions"],
         as_dict=True,
         for_update=for_update,
     )
@@ -423,9 +496,11 @@ def _insert_comment(
     text: str,
     *,
     author_name: str | None,
+    client_id: str | None,
 ) -> tuple[str, list[str]]:
     guest_name = _guest_name(principals, author_name)
     mentions = _mentions(text)
+    # Frappe counts words made only of tags as missing; _validate_text already refuses blank words
     row = frappe.get_doc(
         {
             "doctype": "Drive Comment",
@@ -435,9 +510,46 @@ def _insert_comment(
             "author": principals.user,
             "author_name": guest_name,
             "mentions": frappe.as_json(mentions),
+            "client_id": client_id,
         }
-    ).insert(ignore_permissions=True)
+    ).insert(ignore_permissions=True, ignore_mandatory=True)
     return row.name, mentions
+
+
+def first_send(doctype: str, node: str, client_id: str | None, text: str) -> frappe._dict | None:
+    """Return the row an earlier send of these words under this id made; the caller holds the lock."""
+    if client_id is None:
+        return None
+
+    sent = frappe.db.get_value(doctype, {"node": node, "client_id": client_id}, "*", as_dict=True)
+    if not sent:
+        return None
+
+    words = sent.get("content")
+    if doctype == "Drive Comment Thread":
+        words = frappe.db.get_value(
+            "Drive Comment", {"thread": sent.name}, "content", order_by="creation asc"
+        )
+
+    if words != text:
+        raise DriveConflict(_("This Drive comment id was already used for other words"))
+
+    return sent
+
+
+def announce_threads(node: frappe._dict) -> None:
+    """Call the node's `threads_changed` callback once this write commits."""
+    spec = content.registry().get(node.content_doctype)
+    if spec and spec.threads_changed:
+        frappe.db.after_commit.add(lambda: send_threads_changed(spec.threads_changed, node.name))
+
+
+def send_threads_changed(callback: Callable[[str], None], node: str) -> None:
+    try:
+        content.call_app(callback, node)
+    except Exception:
+        # A file log: an Error Log row written after the request's commit would never be committed
+        frappe.logger("suite.drive").exception("Drive: could not announce the threads of %s", node)
 
 
 def _require_editor_or_author(
@@ -478,9 +590,36 @@ def _validate_anchor(anchor: str) -> None:
         frappe.throw(_("Drive comment anchor must contain 1 to 255 characters"), frappe.ValidationError)
 
 
+def _validate_anchor_map(anchors: dict[str, str]) -> None:
+    if not isinstance(anchors, dict) or len(anchors) > MAX_PAGE_SIZE:
+        frappe.throw(
+            _("Drive may move at most {0} comment threads at once").format(MAX_PAGE_SIZE),
+            frappe.ValidationError,
+        )
+
+    for thread, anchor in anchors.items():
+        if not isinstance(thread, str) or not thread.strip():
+            frappe.throw(_("Drive comment thread ids must be text"), frappe.ValidationError)
+
+        _validate_anchor(anchor)
+
+
+def validate_client_id(client_id: str | None) -> None:
+    if client_id is None:
+        return
+
+    if not isinstance(client_id, str) or not _CLIENT_ID.fullmatch(client_id):
+        frappe.throw(
+            _("Drive comment client id must be 1 to 64 letters, digits, - or _"), frappe.ValidationError
+        )
+
+
 def _validate_text(text: str) -> None:
     if not isinstance(text, str) or not text.strip():
         frappe.throw(_("Drive comment text is required"), frappe.ValidationError)
+
+    if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
+        frappe.throw(_("Drive comment text must be at most 64 KB"), frappe.ValidationError)
 
 
 def _guest_name(principals: Principals, author_name: str | None) -> str | None:

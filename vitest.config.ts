@@ -15,6 +15,10 @@ export default defineConfig({
         __dirname,
         'node_modules/frappe-ui/src/molecules/list/index.ts',
       ),
+      'frappe-ui/editor': path.resolve(
+        __dirname,
+        'node_modules/frappe-ui/src/molecules/editor/index.ts',
+      ),
       'frappe-ui/code-editor': path.resolve(
         __dirname,
         'node_modules/frappe-ui/src/molecules/code-editor/index.ts',
@@ -44,6 +48,9 @@ export default defineConfig({
     environment: 'jsdom',
     passWithNoTests: true,
     setupFiles: ['fake-indexeddb/auto'],
+    // The binding is linked in from frontend/packages, so Vite loads it; its
+    // importers must load through Vite too or they get a second copy
+    server: { deps: { inline: [/@tiptap\/extension-collaboration/] } },
     retry: process.env.CI ? 2 : 0,
     silent: true,
     projects: [
@@ -55,6 +62,7 @@ export default defineConfig({
             'src/{api,shell,platform,composition}/**/*.test.{js,ts}',
             'src/apps/drive/{files,client}/**/*.test.{js,ts}',
             'src/apps/{writer,sheets,slides}/surface/**/*.test.{js,ts}',
+            'packages/collab-client/src/**/*.test.ts',
           ],
         },
       },
