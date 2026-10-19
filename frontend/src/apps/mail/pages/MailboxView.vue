@@ -194,8 +194,8 @@
           <div
             v-if="threadRows.length"
             ref="mailList"
-            @focusin="onListFocusIn"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
@@ -401,6 +401,7 @@ import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
+import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
@@ -868,12 +869,21 @@ const threads = useInfiniteQuery(api.mail.threads.list, () =>
 )
 const activeThreads = computed(() => (mailbox === 'search' ? searchResults : threads))
 const { isDiscarding, withoutHeldDrafts } = useDiscardingDrafts()
+// Filtered to unread mail, what is read here stays until the list changes (see useKeptRead).
+const keptRead = useKeptRead({
+  filtering: () => !!filter.value?.split(',').includes('unread'),
+  scope: () => [mailbox, accountId, filter.value, inboxTab.value],
+  key: (thread) => thread.thread_id,
+})
 const threadRows = computed(() =>
-  activeThreads.value.rows
-    .map((row) => threadRow(row, store.accountId))
-    .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
-    .map(withoutHeldDrafts),
+  keptRead.withKept(
+    activeThreads.value.rows
+      .map((row) => threadRow(row, store.accountId))
+      .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
+      .map(withoutHeldDrafts),
+  ),
 )
+watch(threadRows, keptRead.keep)
 watch(
   () => threads.status,
   (status) => {
@@ -964,8 +974,10 @@ const syncAfterAction = () => {
 // Drops threads from the loaded list optimistically and returns the removed rows (so an undo can put
 // them back). Their server rows leave the current view too, so the append offset (data.length) stays
 // aligned.
-const removeThreadsFromList = (ids: string[]): Thread[] =>
-  threadRows.value.filter((row) => ids.includes(row.thread_id))
+const removeThreadsFromList = (ids: string[]): Thread[] => {
+  keptRead.release(ids)
+  return threadRows.value.filter((row) => ids.includes(row.thread_id))
+}
 const refillIfEmpty = () => {
   refillPending.value = false
 }
