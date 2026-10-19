@@ -195,7 +195,9 @@
                           :reload-mails="handleReload"
                           :drop-mail
                           :thread="thread"
+                          :body-view="bodyViews[mail.name]"
                           @set-flagged="onSetFlagged"
+                          @toggle-as-sent="toggleAsSent(mail)"
                           @sync-unseen="handleSyncUnseen"
                           @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
                           @mark-mail-spam="
@@ -444,7 +446,9 @@
                                   :drop-mail
                                   :thread="thread"
                                   :hide-star="isCollapsed(mail)"
+                                  :body-view="bodyViews[mail.name]"
                                   @set-flagged="onSetFlagged"
+                                  @toggle-as-sent="toggleAsSent(mail)"
                                   @sync-unseen="handleSyncUnseen"
                                   @move-mail="
                                     (m: Mail, target: string) => emit('moveMail', m, target)
@@ -571,6 +575,8 @@
                             :content="mail.html_body"
                             :block-images="isBlocked(mail)"
                             :highlight="isMatch(mail) ? searchTerm : ''"
+                            :as-sent="bodyViews[mail.name] === 'asSent'"
+                            @adapted="(adapted: boolean) => onBodyAdapted(mail, adapted)"
                           />
 
                           <!-- font-sans is the system stack, not Inter: the preset leaves
@@ -1627,6 +1633,20 @@ const dsnCardRendered = ref<Record<string, boolean>>({})
 const showsDsnCard = (mail: Mail) => !readonly && !isCollapsed(mail) && !!mail.dsn_blob_id
 const dsnReplacesBody = (mail: Mail) =>
   showsDsnCard(mail) && dsnCardRendered.value[mail.name] !== false
+
+// In the dark theme a message's colours are remapped onto the dark canvas, which can spoil a
+// design, so each message the remap applies to offers to show it as sent instead, on a light
+// canvas. The choice is not kept past a reload. `adapted` is EmailContent's word on whether
+// the remap applies: a message that renders as authored anyway offers nothing.
+const bodyViews = ref<Record<string, 'adapted' | 'asSent'>>({})
+const onBodyAdapted = (mail: Mail, adapted: boolean) => {
+  if (!adapted) delete bodyViews.value[mail.name]
+  else bodyViews.value[mail.name] ??= 'adapted'
+}
+const toggleAsSent = (mail: Mail) => {
+  const view = bodyViews.value[mail.name]
+  if (view) bodyViews.value[mail.name] = view === 'asSent' ? 'adapted' : 'asSent'
+}
 
 // The message's calendar invite, if it carries one — as a text/calendar (or application/ics)
 // part or a file merely named *.ics.

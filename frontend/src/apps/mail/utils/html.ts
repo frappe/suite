@@ -51,6 +51,22 @@ const BRACKETED_ADDRESS = /<([^<>\s]+@[^<>\s]+)>/g
 export const escapeBracketedAddresses = (html: string) =>
   html.replace(BRACKETED_ADDRESS, '<b>&lt;$1&gt;</b>')
 
+// Mail still hides its stylesheets from clients that would print them as text, inside an
+// HTML comment (`<style><!-- … --></style>`) or an XHTML CDATA section
+// (`/*<![CDATA[*/ … /*]]>*/`). CSS reads straight past both, but the sanitizer drops any
+// element whose text looks like markup, and with it about a third of real-world mail's
+// stylesheets: the @media rules that stack a newsletter's columns on a phone, so the mail
+// stayed 650px wide in a 360px pane. The wrappers mean nothing to CSS, so they go before
+// sanitizing; any other markup-like text still costs the stylesheet, as before.
+const STYLE_ELEMENT = /(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi
+const STYLE_WRAPPER = /<!--|-->|<!\[CDATA\[|\]\]>/g
+
+export const unwrapStyleSheets = (html: string) =>
+  html.replace(
+    STYLE_ELEMENT,
+    (_, open: string, css: string, close: string) => open + css.replace(STYLE_WRAPPER, '') + close,
+  )
+
 // Plain text as HTML that keeps its shape.
 //
 // The breaks are <br> rather than a white-space style on the wrapper, because a quote the
