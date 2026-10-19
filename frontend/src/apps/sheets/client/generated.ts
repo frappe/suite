@@ -10,6 +10,7 @@ export type GetSheetOutput = {
   sheets_data: string | null
   owner: string
   node: string
+  head_seq: number
 }
 
 export type GetSheetError = never
@@ -33,6 +34,7 @@ const operationGetSheet: QueryRef<GetSheetInput, GetSheetOutput, GetSheetError> 
 export type SaveSheetInput = {
   name: string
   sheets_data: string
+  base_seq: number
   title?: string
   ops?: string
   request_id?: string
