@@ -11,20 +11,44 @@ const toast = vi.hoisted(() => ({
 }))
 vi.mock('frappe-ui', () => ({ toast }))
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  window.__ = (message: string) => message
+})
 
-it('confirms only successful writes and reports a handled refusal once', async () => {
-  let finish: (() => void) | undefined
-  const pending = new Promise<void>((resolve) => {
-    finish = resolve
+// The rows change on the click, so the toast saying so does too; a refusal takes it down again.
+it('says an optimistic write on the click, and takes it back when it is refused', async () => {
+  toast.success.mockReturnValueOnce('archived')
+  let refuse: ((error: Error) => void) | undefined
+  const pending = new Promise<void>((_resolve, reject) => {
+    refuse = reject
   })
-  raiseOptimisticToast(pending, 'Archived')
+  raiseOptimisticToast(pending, 'Archived', () => {})
+  expect(toast.success).toHaveBeenCalledWith('Archived', {
+    action: { label: 'Undo', onClick: expect.any(Function) },
+  })
+
+  refuse?.(new Error('Mail server is down'))
+  await pending.catch(() => {})
+  await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledWith('archived'))
+  expect(toast.error.mock.calls).toEqual([['Mail server is down']])
+})
+
+it('waits for the answer when what it says is read off it', async () => {
+  let finish: (() => void) | undefined
+  const pending = new Promise<{ left_inbox: boolean }>((resolve) => {
+    finish = () => resolve({ left_inbox: true })
+  })
+  raiseOptimisticToast(pending, (filed) => (filed.left_inbox ? 'Moved out of the Inbox' : 'Filed'))
   expect(toast.success).not.toHaveBeenCalled()
   finish?.()
   await pending
-  expect(toast.success).toHaveBeenCalledWith('Archived', undefined)
+  await vi.waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith('Moved out of the Inbox', undefined),
+  )
+})
 
-  vi.clearAllMocks()
+it('reports a handled refusal once', async () => {
   const refusal = new Error('Permission denied')
   reportMutationError(refusal)
   await raisePromiseToast(() => Promise.reject(refusal), 'Archiving', 'Archived')
