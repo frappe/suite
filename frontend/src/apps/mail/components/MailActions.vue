@@ -4,7 +4,7 @@
 	     would keep the sheet from opening. -->
   <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
     <AdaptiveDropdown :options="moreActions(mail)" align="end">
-      <Button variant="ghost" :tooltip="__('More')">
+      <Button variant="ghost" class="touch-target" :tooltip="__('More')" :aria-label="__('More')">
         <template #icon>
           <Ellipsis class="text-ink-gray-5 icon" />
         </template>
@@ -17,6 +17,7 @@
     :key="action.label"
     variant="ghost"
     :tooltip="action.label"
+    :aria-label="action.label"
     @click.stop="action.onClick"
   >
     <template #icon>
@@ -31,6 +32,7 @@
     :key="action.label"
     variant="ghost"
     :tooltip="action.label"
+    :aria-label="action.label"
     @click.stop="action.onClick"
   >
     <template #icon>

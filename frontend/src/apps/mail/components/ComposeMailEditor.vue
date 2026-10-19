@@ -68,6 +68,7 @@
               variant="ghost"
               class="ml-auto shrink-0"
               :tooltip="__('Open in a window')"
+              :aria-label="__('Open in a window')"
               :disabled="isLoading"
               @click="popOut()"
             >
@@ -81,7 +82,12 @@
             :class="{ 'border-transparent': isDragging }"
           >
             <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
-              <Button variant="ghost" class="-ml-1.5" :icon="TYPE_ICON_MAP[mailDetails.type]" />
+              <Button
+                variant="ghost"
+                class="-ml-1.5"
+                :icon="TYPE_ICON_MAP[mailDetails.type]"
+                :aria-label="__('Reply type')"
+              />
             </Dropdown>
             <Tooltip :text="__('Select from contacts')">
               <button
@@ -186,7 +192,13 @@
           <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
 					     it stands, in memory, rather than fetched back from the server. Only a save
 					     actually in flight holds it up — see popOut. -->
-          <Button v-if="isInThread" variant="ghost" :disabled="isLoading" @click="popOut()">
+          <Button
+            v-if="isInThread"
+            variant="ghost"
+            :aria-label="__('Open in a window')"
+            :disabled="isLoading"
+            @click="popOut()"
+          >
             <template #icon>
               <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
             </template>
@@ -194,7 +206,11 @@
         </div>
         <div class="flex items-start gap-2">
           <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
-            <Button variant="ghost" :icon="TYPE_ICON_MAP[mailDetails.type]"> </Button>
+            <Button
+              variant="ghost"
+              :icon="TYPE_ICON_MAP[mailDetails.type]"
+              :aria-label="__('Reply type')"
+            />
           </Dropdown>
           <div class="flex flex-1 flex-col gap-2.5">
             <div class="flex gap-2">
@@ -217,6 +233,8 @@
                 <Button
                   v-if="!(mail.cc?.length || mail.bcc?.length)"
                   variant="ghost"
+                  :aria-label="showCcBcc ? __('Hide Cc and Bcc') : __('Show Cc and Bcc')"
+                  :aria-expanded="showCcBcc"
                   @click="toggleCcBcc"
                 >
                   <template #icon>

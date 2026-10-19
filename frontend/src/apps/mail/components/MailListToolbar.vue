@@ -7,7 +7,7 @@
     <!-- The selector label carries the active filters ("Unread", "Unread +1");
 		     unticking them in the sheet clears them, so no dismissal chip needed. -->
     <AdaptiveDropdown :options="filterOptions" :title="__('Filter')">
-      <button class="flex min-w-0 items-center gap-1.5 text-base !font-medium">
+      <button class="touch-target flex min-w-0 items-center gap-1.5 text-base !font-medium">
         <ListFilter class="text-ink-gray-6 h-4 w-4 shrink-0" />
         <span class="truncate">{{ title }}</span>
         <ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
@@ -65,6 +65,7 @@
         <Button
           variant="ghost"
           :tooltip="__('Refresh')"
+          :aria-label="__('Refresh')"
           :disabled="fetching"
           @click="emit('refresh')"
         >

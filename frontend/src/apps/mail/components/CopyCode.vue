@@ -7,6 +7,7 @@
       variant="ghost"
       class="shrink-0"
       :tooltip="__('Copy Code')"
+      :aria-label="__('Copy Code')"
       @click="copyToClipBoard"
     />
   </div>

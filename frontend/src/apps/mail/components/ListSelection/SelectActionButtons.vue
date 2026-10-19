@@ -2,7 +2,7 @@
   <!-- The toolbar's actions on the ticked threads: spelled out as icons, or folded into one menu
 	     when the reading pane leaves the toolbar too little room. -->
   <Dropdown v-if="collapsed" :options="actions">
-    <Button variant="ghost" :tooltip="__('Actions')">
+    <Button variant="ghost" :tooltip="__('Actions')" :aria-label="__('Actions')">
       <template #icon>
         <Ellipsis class="icon" />
       </template>

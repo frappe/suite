@@ -24,7 +24,7 @@
     <header
       class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
     >
-      <Button variant="ghost" :label="__('Close')" @click="closeCompose">
+      <Button variant="ghost" class="touch-target" :label="__('Close')" @click="closeCompose">
         <template #icon>
           <X class="text-ink-gray-5 size-5" />
         </template>
@@ -38,7 +38,7 @@
         @click="saveDraft()"
       />
       <AdaptiveDropdown :options="ACTIONS">
-        <Button variant="ghost" :label="__('More actions')">
+        <Button variant="ghost" class="touch-target" :label="__('More actions')">
           <template #icon>
             <EllipsisVertical class="text-ink-gray-5 size-5" />
           </template>
@@ -46,7 +46,7 @@
       </AdaptiveDropdown>
       <Button
         variant="ghost"
-        class="ml-2"
+        class="touch-target ml-2"
         :label="__('Send')"
         :disabled="isRecipientsEmpty || isUploading"
         @click="sendMail()"

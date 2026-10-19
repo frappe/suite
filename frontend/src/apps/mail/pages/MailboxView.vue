@@ -173,7 +173,7 @@
               />
 
               <Dropdown v-if="showMoveTo" :options="moveToOptions">
-                <Button variant="ghost" :tooltip="__('Move To')">
+                <Button variant="ghost" :tooltip="__('Move To')" :aria-label="__('Move To')">
                   <template #icon>
                     <component :is="FolderInput" class="icon" />
                   </template>
@@ -182,7 +182,7 @@
               <!-- Where the selection is filed, as ticks — the thread toolbar's Folders menu, for
                    every ticked thread at once. Stays open, to file them in several. -->
               <Dropdown v-if="folderOptions.length" :options="folderOptions">
-                <Button variant="ghost" :tooltip="__('Folders')">
+                <Button variant="ghost" :tooltip="__('Folders')" :aria-label="__('Folders')">
                   <template #icon>
                     <component :is="Folders" class="icon" />
                   </template>
@@ -219,6 +219,7 @@
                       :model-value="isGroupSelected(key)"
                       size="md"
                       class="pointer-events-none [&_input]:mt-0"
+                      :aria-label="__('Select all of {0}', [dateGroupLabel(key)])"
                     />
                   </div>
                 </template>
@@ -430,6 +431,7 @@ import {
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import { dateGroupLabel } from '@/apps/mail/utils/dateGroups'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {

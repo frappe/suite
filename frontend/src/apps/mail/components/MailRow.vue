@@ -4,7 +4,7 @@
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b outline-none focus-visible:outline-none px-3.5 py-2.5 sm:py-2 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
+    class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 overflow-x-clip border-b outline-none focus-visible:outline-none px-3.5 py-2.5 sm:py-2 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
     :class="{ '!bg-surface-gray-1': isSelected || isTouching, '!py-1': isFullWidth }"
     :draggable="draggable || undefined"
     @mouseenter="isHovered = true"
@@ -31,7 +31,12 @@
         class="checkbox-hitbox -m-3 cursor-pointer p-3"
         @click.stop.prevent="emit('setSelected', !isSelected)"
       >
-        <Checkbox :model-value="isSelected" size="md" class="pointer-events-none" />
+        <Checkbox
+          :model-value="isSelected"
+          size="md"
+          class="pointer-events-none"
+          :aria-label="__('Select mail from {0}', [avatarLabel])"
+        />
       </div>
       <div
         v-else-if="isSelected"
@@ -53,8 +58,11 @@
     <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
 		     rows shrank to their text and no longer lined up with the day headers. Hold that
 		     height here so the rhythm survives the column going away. -->
+    <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, and
+         clipping these too would cut the star's hit area down to the glyph. That area runs past the
+         row's right edge, which the row itself clips, so the list can't scroll sideways. -->
     <div
-      class="grow truncate"
+      class="min-w-0 grow"
       :class="[
         isFullWidth ? 'flex items-center space-x-3' : 'space-y-1 sm:space-y-0.5',
         { 'min-h-8': isFullWidth && !showLeading },
@@ -98,8 +106,8 @@
       </h4>
 
       <div
-        class="flex items-center justify-between truncate"
-        :class="{ 'min-w-0 flex-1 !text-base': isFullWidth }"
+        class="flex min-w-0 items-center justify-between"
+        :class="{ 'flex-1 !text-base': isFullWidth }"
       >
         <h5
           class="text-ink-gray-5 truncate text-sm !leading-[1.5]"

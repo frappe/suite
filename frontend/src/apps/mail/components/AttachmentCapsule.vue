@@ -16,6 +16,7 @@
         <button
           class="hidden"
           :class="{ 'sm:group-hover/capsule:block': blobID }"
+          :aria-label="__('Download {0}', [fileName])"
           @click.stop.prevent="downloadAttachment"
         >
           <Download class="hover:text-ink-gray-8 h-4 w-4 shrink-0" />
