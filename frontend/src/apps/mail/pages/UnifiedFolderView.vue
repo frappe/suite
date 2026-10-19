@@ -1163,11 +1163,17 @@ const mailSnapshot = (mail: MailCopy) => ({
   junk: mail.junk,
 })
 const threadSnapshot = (thread: Thread) => (thread.messages ?? []).map(mailSnapshot)
-const restoreMails = (account: string, mails: ReturnType<typeof mailSnapshot>[]) =>
+// `screenAction` takes back the sender verdict the action gave (Not junk's Accepted), with the mail.
+const restoreMails = (
+  account: string,
+  mails: ReturnType<typeof mailSnapshot>[],
+  screenAction: string | null = null,
+) =>
   client
     .mutation(api.mail.messages.setFolders, {
       account,
       mails,
+      screen_action: screenAction,
     })
     .then(refreshCounts)
 
@@ -1194,7 +1200,9 @@ const fileThreads = (
 ) => {
   if (!threads.length) return
   const leaves = leavesFolder(action, threads[0], target)
-  // The next thread is found on the list as it stands, the conversations still on it.
+  // The next thread is found on the list as it stands, the conversations still on it. Rows read in
+  // the Unread filter go back on that list on Undo, or if the action fails (see useKeptRead).
+  const at = keptRead.current()
   if (leaves) {
     goToNextThreadOrClose(threads.map(threadKey))
     keptRead.release(threads.map(threadKey))
@@ -1253,6 +1261,13 @@ const fileThreads = (
         }),
     done,
     undone,
+    {
+      // Not junk accepted the senders; Undo puts them back as junk senders, as it puts the mail
+      // back in Junk.
+      undoScreen:
+        screenAction === 'Accepted' ? 'Spam' : screenAction === 'Spam' ? 'Accepted' : null,
+      putBack: leaves ? () => keptRead.restore(threads, at) : undefined,
+    },
   )
 }
 const handleArchive = (thread: Thread) => fileThreads([thread], 'archive')
@@ -1288,6 +1303,15 @@ const actPerAccount = (
   request: (account: string, rows: Thread[]) => Promise<unknown>,
   done: string | ((answers: unknown[]) => string),
   undoSuccess: string,
+  {
+    undoScreen = null,
+    putBack,
+  }: {
+    /** The sender verdict Undo gives, taking back the action's. */
+    undoScreen?: string | null
+    /** Puts back on the list what the action took off it that the server won't list again. */
+    putBack?: () => void
+  } = {},
 ) => {
   const groups = byAccount(threads)
   const snapshots = groups.map(([account, rows]) => [account, copySnapshot(rows)] as const)
@@ -1299,16 +1323,22 @@ const actPerAccount = (
     void landed.then((accounts) => {
       const restoring = snapshots.filter(([account]) => accounts.includes(account))
       if (!restoring.length) return
+      putBack?.()
       raiseOptimisticToast(
-        Promise.all(restoring.map(([account, mails]) => restoreMails(account, mails))).then(() =>
-          refreshThreads(),
-        ),
+        Promise.all(
+          restoring.map(([account, mails]) => restoreMails(account, mails, undoScreen)),
+        ).then(() => refreshThreads()),
         undoSuccess,
       )
     })
   setUndoAction(undoAction)
   void settled.then((results) => {
     refreshCounts()
+    // An account whose request was refused may have had some of its mail changed first: that is
+    // put back as it was, since its Undo is gone.
+    const refused = snapshots.filter((_, i) => results[i].status === 'rejected')
+    refused.forEach(([account, mails]) => void restoreMails(account, mails).catch(() => {}))
+    if (refused.length) putBack?.()
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
     const undo = { label: __('Undo'), onClick: undoAction }
     const answers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))

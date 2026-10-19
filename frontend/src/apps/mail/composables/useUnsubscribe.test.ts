@@ -99,4 +99,18 @@ describe('useUnsubscribe', () => {
     unsubscribe(mail('a'))
     expect(held).toEqual([])
   })
+
+  it('says unsubscribed only in the account it was done in', async () => {
+    answer.data = { a: ONE_CLICK }
+    const { useUnsubscribe } = await import('./useUnsubscribe')
+    let account = 'acc'
+    const { isUnsubscribed, unsubscribe } = useUnsubscribe(
+      () => account,
+      () => [mail('a')],
+      () => true,
+    )
+    unsubscribe(mail('a'))
+    account = 'other'
+    expect(isUnsubscribed(mail('a'))).toBe(false)
+  })
 })

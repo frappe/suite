@@ -94,4 +94,13 @@ describe('read in a list filtered to unread mail', () => {
     restore(bRead, at)
     expect(ids(withKept(withoutB))).toEqual(['c', 'a'])
   })
+
+  it('is not taken back while the server still lists it on its way off', () => {
+    const { keep, release, withKept } = setUp()
+    keep(bRead)
+    release(['b'])
+    // The list rebuilds before the server stops listing it: it is not held again.
+    keep(bRead)
+    expect(ids(withKept(withoutB))).toEqual(['c', 'a'])
+  })
 })

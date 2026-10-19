@@ -25,9 +25,13 @@ export function useKeptRead({
   key: (thread: Thread) => string
 }) {
   const kept = shallowRef(new Map<string, Thread>())
+  // Let go of by an action: not to be taken again while the server still lists it, read, on its way
+  // off the list — or archiving one would hold it right back.
+  const released = new Set<string>()
   // Which list this is: a row taken off one list and put back later goes back only to that list.
   let generation = 0
   const clear = () => {
+    released.clear()
     if (kept.value.size) kept.value = new Map()
   }
   watch(
@@ -48,6 +52,7 @@ export function useKeptRead({
     let next: Map<string, Thread> | undefined
     for (const row of rows) {
       const k = key(row)
+      if (released.has(k)) continue
       const held = kept.value.get(k)
       // The list builds its rows afresh on every change, this one included: a row is taken again
       // only when it says something new, or holding it would change the list and call this again.
@@ -66,6 +71,7 @@ export function useKeptRead({
 
   /** Lets go of the conversations an action took off the list. */
   const release = (keys: string[]) => {
+    for (const k of keys) released.add(k)
     if (!keys.some((k) => kept.value.has(k))) return
     const next = new Map(kept.value)
     for (const k of keys) next.delete(k)
@@ -92,7 +98,9 @@ export function useKeptRead({
 
   /** Holds `rows` again, as `keep` would, if the list is still the one `at` named. */
   const restore = (rows: Thread[], at: number) => {
-    if (at === generation) keep(rows)
+    if (at !== generation) return
+    for (const row of rows) released.delete(key(row))
+    keep(rows)
   }
 
   return { keep, release, clear, withKept, current, restore }

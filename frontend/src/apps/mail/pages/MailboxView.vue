@@ -974,14 +974,25 @@ const syncAfterAction = () => {
 // Drops threads from the loaded list optimistically and returns the removed rows (so an undo can put
 // them back). Their server rows leave the current view too, so the append offset (data.length) stays
 // aligned.
+// Which list each removed row left (see useKeptRead): Undo, or a failed action, puts a row read in
+// the Unread filter back on that list, which no longer gets it from the server.
+const removedFrom = new WeakMap<Thread, number>()
 const removeThreadsFromList = (ids: string[]): Thread[] => {
+  // Taken before letting go of them, while the rows read here are still on the list.
+  const removed = threadRows.value.filter((row) => ids.includes(row.thread_id))
+  const at = keptRead.current()
+  removed.forEach((row) => removedFrom.set(row, at))
   keptRead.release(ids)
-  return threadRows.value.filter((row) => ids.includes(row.thread_id))
+  return removed
 }
 const refillIfEmpty = () => {
   refillPending.value = false
 }
-const restoreThreadsToList = (_rows: Thread[]) => {
+const restoreThreadsToList = (rows: Thread[]) => {
+  for (const row of rows) {
+    const at = removedFrom.get(row)
+    if (at !== undefined) keptRead.restore([row], at)
+  }
   void activeThreads.value.refetch().catch(() => {})
 }
 watch(

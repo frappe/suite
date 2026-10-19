@@ -28,12 +28,15 @@ export function useUnsubscribe(
   const options = useQuery(api.mail.messages.unsubscribeOptions, () =>
     ids.value.length ? { account: account(), ids: ids.value } : false,
   )
-  // Unsubscribed on screen ahead of the server, while the request waits out its Undo.
+  // Unsubscribed on screen ahead of the server, while the request waits out its Undo. By account and
+  // message: All Inboxes shows several accounts in one pane, and a message id is only an account's.
   const held = ref(new Set<string>())
+  const heldKey = (mail: Mail) => `${account()}:${mail.id}`
 
   const optionOf = (mail: Mail) => (allowed(mail) ? options.data?.[mail.id] : undefined)
   const offers = (mail: Mail) => !!optionOf(mail)
-  const isUnsubscribed = (mail: Mail) => held.value.has(mail.id) || !!optionOf(mail)?.unsubscribed
+  const isUnsubscribed = (mail: Mail) =>
+    held.value.has(heldKey(mail)) || !!optionOf(mail)?.unsubscribed
 
   const hold = (id: string, on: boolean) => {
     const next = new Set(held.value)
@@ -49,12 +52,13 @@ export function useUnsubscribe(
       if (option.link) window.open(option.link, '_blank', 'noopener')
       return
     }
-    hold(mail.id, true)
+    const key = heldKey(mail)
+    hold(key, true)
     commitAfterUndo({
       message: __('Unsubscribed.'),
       removal: { kind: 'unsubscribe', account: account(), id: mail.id },
       // Sent, the look-up is read again (see the client policy) and says so itself.
-      restore: () => hold(mail.id, false),
+      restore: () => hold(key, false),
       // Refused or unanswered: the sender's page is the way left, where there is one.
       onFailed: () =>
         toast.error(

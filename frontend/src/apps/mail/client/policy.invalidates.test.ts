@@ -95,6 +95,15 @@ it('unstarring in Starred takes a conversation with no star left off the list at
   expect(unstar(['s'], 'starred')).toEqual(['q', 's'])
   // Anywhere else the row only loses its star.
   expect(unstar(['q'], 'inbox')).toEqual(['q', 's'])
+  // A list filtered to starred mail lets it go too, as the Starred folder does.
+  const filtered = (
+    update(
+      { account: 'a', ids: ['q'], flagged: false },
+      { account: 'a', mailbox: 'inbox', filter_by: 'unread,starred' },
+      list,
+    ) as typeof list
+  ).rows.map((row) => row.id)
+  expect(filtered).toEqual(['s'])
 })
 
 it('a conversation is starred while any of its messages is, whichever was starred', () => {
