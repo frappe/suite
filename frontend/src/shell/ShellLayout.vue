@@ -83,7 +83,7 @@
   <SuiteCommandPalette v-if="session.status.value === 'authenticated'" :areas="areas" />
   <!-- The suite is one PWA, so the offer to install it is the shell's, not an
        area's; it decides for itself when to show. -->
-  <InstallPrompt v-if="isMobile" />
+  <InstallPrompt v-if="isMobile" :app="activeArea?.installable ? activeArea : undefined" />
 </template>
 
 <script setup lang="ts">

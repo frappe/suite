@@ -158,7 +158,12 @@ router.beforeEach(async (to, from) => {
 
 installPageMeta(router)
 installScrollRestoration(router)
-installPwa(session)
+installPwa(session, {
+  path: () => router.currentRoute.value.path,
+  apps: areaDefinitions
+    .filter((area) => area.installable)
+    .map((area) => ({ id: area.id, scope: area.to })),
+})
 
 function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
   const matched = to.matched.find((record) =>

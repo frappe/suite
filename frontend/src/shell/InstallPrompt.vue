@@ -1,14 +1,15 @@
 <template>
-  <!-- The offer to install the suite. Mounted once by the shell on phones and
-	     never unmounted, since Chrome fires `beforeinstallprompt` once and a
-	     listener that is not there at the time misses it. Shown only while the
-	     route is an area page (`route.meta.area`) inside the shell frame. The
-	     manifest is on every route (see platform/pwa setPwaTags), so Chrome may
-	     fire elsewhere; the offer waits for such an app. The iOS hint follows
-	     the same gate. -->
+  <!-- The offer to install the app whose page this is. Mounted once by the
+	     shell on phones and never unmounted, since Chrome fires
+	     `beforeinstallprompt` once and a listener that is not there at the time
+	     misses it. Shown only on an installable app's pages inside the shell
+	     frame: they link that app's manifest (see platform/pwa), and new
+	     installs are offered per app, not of the Suite. The manifest is on every
+	     route, so Chrome may fire elsewhere; the offer waits for such a page.
+	     The iOS hint follows the same gate. -->
   <Dialog :open="showDialog && installable" @update:open="showDialog = $event">
     <template #title>
-      <h2 class="text-lg-bold">{{ __('Install Frappe Suite') }}</h2>
+      <h2 class="text-lg-bold">{{ __('Install {0}', [app?.label() ?? '']) }}</h2>
     </template>
     <template #default>
       <p>{{ __('Get the app on your device for easy access & a better experience!') }}</p>
@@ -39,7 +40,7 @@
     >
       <div class="mb-1 flex flex-row items-center justify-between px-3 text-center">
         <span class="text-base-bold">
-          {{ __('Install Frappe Suite') }}
+          {{ __('Install {0}', [app?.label() ?? '']) }}
         </span>
         <span class="inline-flex items-baseline">
           <FeatherIcon
@@ -71,11 +72,15 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import type { AreaDefinition } from '@/platform/contracts'
+
+const props = defineProps<{
+  /** The area of the page, when it installs as an app of its own. */
+  app?: AreaDefinition
+}>()
+
 const route = useRoute()
-// The install offer shows on area pages, not on a document or a Meet call.
-const installable = computed(
-  () => typeof route.meta.area === 'string' && route.meta.frame !== 'none',
-)
+const installable = computed(() => !!props.app && route.meta.frame !== 'none')
 
 // Initialize deferredPrompt for use later to show browser install prompt.
 const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)

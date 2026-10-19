@@ -24,6 +24,7 @@ export const calendarArea: AreaDefinition = {
   to: '/calendar',
   requires: ['jmap'],
   badgeNoun: () => __('upcoming'),
+  installable: true,
   // Ticket 010 owns shell adoption. The existing CalendarLayout keeps its full frame for now.
   loadRoutes: () => import('@/apps/calendar/routes'),
 }
