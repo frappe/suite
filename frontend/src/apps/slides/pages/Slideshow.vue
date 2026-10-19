@@ -61,21 +61,16 @@
 </template>
 
 <script setup>
-import { toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
-import { computed, onActivated, onDeactivated, provide, ref, watch } from 'vue'
+import { toast, useKeyboardShortcut } from 'frappe-ui'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 
 import FadeElementTransition from '@/apps/slides/components/FadeElementTransition.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
 import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 import { resetFocus } from '@/apps/slides/stores/element'
-import {
-  applyReverseTransition,
-  initPresentationDoc,
-  inReadonlyMode,
-  pageTitle,
-} from '@/apps/slides/stores/presentation'
-import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import { applyReverseTransition, inReadonlyMode } from '@/apps/slides/stores/presentation'
+import { currentSlide, slideIndex } from '@/apps/slides/stores/slide'
 import {
   cancelAdvance,
   changeSlideInSlideshow,
@@ -96,18 +91,6 @@ import {
   showSlideshowEndScreen,
 } from '@/apps/slides/stores/slideshow'
 import { getTransitionKey } from '@/apps/slides/stores/transition'
-import { appPageMeta, usePageTitle } from '@/platform/page-meta'
-
-const props = defineProps({
-  presentationId: {
-    type: String,
-    required: true,
-  },
-  activeSlideId: {
-    type: Number,
-    required: true,
-  },
-})
 
 const transition = ref('none')
 const transform = ref('')
@@ -308,26 +291,16 @@ const initFullscreenMode = async () => {
   handleFullScreenChange()
 }
 
-const loadPresentation = async () => {
-  if (slides.value.length) return
-  // the slide asked for was picked before there were any to pick from
-  if (await initPresentationDoc(props.presentationId)) setSlideIndex(props.activeSlideId)
-}
-
 const updateWindowSize = () => {
   windowWidth.value = window.innerWidth
   windowHeight.value = window.innerHeight
 }
 
-// the title goes through the platform's page meta, which also restores it when this page is reactivated
-usePageTitle(pageTitle)
-usePageMeta(() => ({ icon: appPageMeta(pageTitle(), 'Slides').icon }))
 useBrowserZoomGuard()
 
-onActivated(() => {
+onMounted(() => {
   active = true
   resetFocus()
-  loadPresentation()
   initFullscreenMode()
   document.addEventListener('fullscreenchange', handleFullScreenChange)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -340,7 +313,7 @@ onActivated(() => {
   }, 500)
 })
 
-onDeactivated(() => {
+onBeforeUnmount(() => {
   active = false
   document.removeEventListener('fullscreenchange', handleFullScreenChange)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -350,22 +323,10 @@ onDeactivated(() => {
   releaseWakeLock()
   releaseVideoWarmers()
 
-  // leaving by any route other than endSlideShow would strand the editor in fullscreen
+  // leaving the deck mid-show would otherwise strand the next page in fullscreen
   resetSlideShowState()
   exitFullscreen()
 })
-
-watch(
-  () => props.activeSlideId,
-  (index) => {
-    setSlideIndex(index)
-    // Prefetch next slide when current slide changes
-    setTimeout(() => {
-      prefetchNextSlide()
-    }, 200)
-  },
-  { immediate: true },
-)
 
 // any change of slide, by hand, by the timer, or by the load, restarts the wait
 // the slide the show opens on, or loads into, waits only its delay
@@ -378,6 +339,7 @@ provide('inReadonlyMode', inReadonlyMode)
 provide('inSlideShowMode', inSlideShowMode)
 
 useKeyboardShortcut([
+  { combo: 'Escape', description: 'End', group: 'Slideshow', handler: endSlideShow },
   { combo: 'ArrowRight', description: 'Next step', group: 'Slideshow', handler: performNextStep },
   { combo: 'ArrowDown', description: 'Next step', group: 'Slideshow', handler: performNextStep },
   { combo: 'Space', description: 'Next step', group: 'Slideshow', handler: performNextStep },

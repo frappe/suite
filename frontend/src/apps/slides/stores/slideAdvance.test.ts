@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-const replace = vi.fn(() => Promise.resolve())
-
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
-vi.mock('@/apps/slides/router', () => ({
-  router: { replace, currentRoute: { value: { params: { presentationId: 'p1' } } } },
-}))
 
 const { slides, slideIndex } = await import('./slide')
 const { scheduleAdvance, cancelAdvance } = await import('./slideshow')
 
-const slideQueryOfLastReplace = () => replace.mock.lastCall?.[0]
+const shownSlide = () => slideIndex.value + 1
 
 const addVideo = ({ paused, loop = false, currentTime = 1, playable = true }) => {
   const video = document.createElement('video')
@@ -41,7 +36,6 @@ const endVideo = (video) => {
 describe('a slide that advances on its own', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    replace.mockClear()
     slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }] as any
     slideIndex.value = 0
   })
@@ -57,14 +51,11 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(1999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({
-      name: 'slides-slideshow',
-      query: { slide: 2 },
-    })
+    expect(shownSlide()).toBe(2)
   })
 
   it('waits for a click when it has no delay', async () => {
@@ -73,7 +64,7 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(60_000)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(2)
   })
 
   it('counts its delay after a video ends', async () => {
@@ -84,11 +75,11 @@ describe('a slide that advances on its own', () => {
     endVideo(video)
     vi.advanceTimersByTime(1999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('watches a video longer than its delay to the end first', async () => {
@@ -97,16 +88,16 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(5000)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     endVideo(video)
     vi.advanceTimersByTime(1999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('does not hold for a looping video', async () => {
@@ -115,7 +106,7 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(2000)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('keeps its delay when a looping video fails', async () => {
@@ -127,7 +118,7 @@ describe('a slide that advances on its own', () => {
     video.dispatchEvent(new Event('error'))
     vi.advanceTimersByTime(500)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('moves past a looping video that has not started', async () => {
@@ -137,7 +128,7 @@ describe('a slide that advances on its own', () => {
     vi.advanceTimersByTime(2000)
     await nextTick()
     expect(video.play).not.toHaveBeenCalled()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('starts an Autoplay-off video first and watches it to the end', async () => {
@@ -147,17 +138,17 @@ describe('a slide that advances on its own', () => {
     vi.advanceTimersByTime(2000)
     await nextTick()
     expect(video.play).toHaveBeenCalled()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(3000)
     endVideo(video)
     vi.advanceTimersByTime(1999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('waits for a video paused partway', async () => {
@@ -166,13 +157,13 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(60_000)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     video.paused = false
     endVideo(video)
     vi.advanceTimersByTime(2000)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('counts its delay from a video that fails as from one that ends', async () => {
@@ -184,11 +175,11 @@ describe('a slide that advances on its own', () => {
     video.dispatchEvent(new Event('error'))
     vi.advanceTimersByTime(1999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('moves past a video the browser will not start', async () => {
@@ -197,7 +188,7 @@ describe('a slide that advances on its own', () => {
 
     await vi.advanceTimersByTimeAsync(2000)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('leaves a later slide alone when a refusal comes late', async () => {
@@ -213,7 +204,7 @@ describe('a slide that advances on its own', () => {
     refuse(new DOMException('', 'AbortError'))
     await vi.advanceTimersByTimeAsync(0)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(2)
   })
 
   it('counts its delay once the slide has come in', async () => {
@@ -222,11 +213,11 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(4999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('lets a short video finish the entrance before counting', async () => {
@@ -238,11 +229,11 @@ describe('a slide that advances on its own', () => {
     endVideo(video)
     vi.advanceTimersByTime(5499)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('waits only its delay on the slide the show opens on', async () => {
@@ -251,7 +242,7 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(2000)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(shownSlide()).toBe(2)
   })
 
   it('counts a Magic Move from the slide before', async () => {
@@ -265,11 +256,11 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(4999)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(2)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 3 } })
+    expect(shownSlide()).toBe(3)
   })
 
   it('waits for unmatched elements to fade in after a Magic Move', async () => {
@@ -288,11 +279,11 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(6099)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(2)
 
     vi.advanceTimersByTime(1)
     await nextTick()
-    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 3 } })
+    expect(shownSlide()).toBe(3)
   })
 
   it('stays put once cancelled', async () => {
@@ -303,6 +294,6 @@ describe('a slide that advances on its own', () => {
     endVideo(video)
     vi.advanceTimersByTime(60_000)
     await nextTick()
-    expect(replace).not.toHaveBeenCalled()
+    expect(shownSlide()).toBe(1)
   })
 })

@@ -17,6 +17,7 @@ from suite import drive
 from suite.slides import drive as slides_drive
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
+DEFAULT_THEME_TITLE = "Light"
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 NODE_FIELD = slides_drive.NODE_FIELD
@@ -31,6 +32,14 @@ class Presentation(drive.DriveContent, Document):
     (§10.2). What is here is the body: slides, theme, and the references of a
     composite.
     """
+
+    def before_insert(self):
+        # The editor resolves layouts through `theme` (`LayoutDialog.vue`,
+        # `slide.js:addEmptySlide`), so a deck with none cannot add a slide.
+        # Drive's blank create (`create_empty`) and a copy of a theme-less deck
+        # both arrive here with none. A template names no theme (`install.py`).
+        if not self.theme and self.node and not slides_drive.node_is_template(self.node):
+            self.theme = default_theme()
 
     def validate(self):
         self.validate_advance_after()
@@ -215,6 +224,21 @@ def remap_element_ids(elements):
 
 def is_system_template(template_title: str) -> bool:
     return template_title in SYSTEM_TEMPLATE_TITLES
+
+
+def default_theme() -> str | None:
+    """The shipped Light template a deck falls back to; None before it is seeded."""
+    return frappe.db.get_value(
+        "Drive Node",
+        {
+            "content_doctype": slides_drive.DOCTYPE,
+            "is_template": 1,
+            "state": "Active",
+            "title": DEFAULT_THEME_TITLE,
+        },
+        "content_docname",
+        order_by="creation asc",
+    )
 
 
 def get_template_thumbnail(template_title: str, index: int) -> str:

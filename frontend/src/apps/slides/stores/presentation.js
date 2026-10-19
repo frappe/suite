@@ -7,7 +7,6 @@ import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { getSessionUser } from '@/boot/session'
-import { appDocumentTitle } from '@/platform/page-meta'
 
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'
@@ -420,11 +419,6 @@ const presentationTheme = computed(() => {
   return presentationDoc.value?.theme
 })
 
-const pageTitle = () => {
-  const title = presentationDoc.value?.title
-  return appDocumentTitle(title, 'Slides')
-}
-
 const resetEditorState = () => {
   // a load in flight would commit over the blank editor
   startLoad()
@@ -453,7 +447,6 @@ export {
   initPresentationDoc,
   startLoad,
   resetEditorState,
-  pageTitle,
   setDocumentContext,
   contextFor,
 }

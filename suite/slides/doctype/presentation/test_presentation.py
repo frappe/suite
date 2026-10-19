@@ -441,3 +441,23 @@ class TestCreateIsAtomic(IntegrationTestCase):
             with self.assertRaises(frappe.ValidationError):
                 create_presentation(template=self.template.name)
         self.assertEqual(self._decks(), before)
+
+
+class TestBlankDeckTheme(IntegrationTestCase):
+    """A deck Drive creates blank (New > Presentation) can add a slide from a layout."""
+
+    def setUp(self):
+        super().setUp()
+        ensure_user(OWNER)
+        frappe.set_user(OWNER)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+    def test_a_blank_deck_names_the_light_template_as_its_theme(self):
+        light = next(template for template in get_templates() if template["title"] == "Light")
+        deck = make_presentation(f"Blank {frappe.generate_hash(6)}")
+        self.assertEqual(deck.theme, light["name"])
+        self.assertTrue(light["layouts"], "the theme offers layouts to add a slide from")
+
+    def test_a_template_names_no_theme(self):
+        template = make_presentation(f"Blank Template {frappe.generate_hash(6)}", is_template=True)
+        self.assertFalse(template.theme)
