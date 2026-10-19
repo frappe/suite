@@ -9,6 +9,10 @@ import RecipientInput from './RecipientInput.vue'
 // Whether the field believes it is on a phone — chips look and behave a little differently there,
 // so each test says which it is before mounting.
 const isMobile = vi.hoisted(() => ({ value: true }))
+// The address book's answer to whatever is typed.
+const suggested = vi.hoisted(() => ({
+  value: [] as { email: string; name?: string; user_image?: string }[],
+}))
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -25,8 +29,16 @@ vi.mock('frappe-ui', async () => {
     // text off its own model rather than the DOM.
     Combobox: defineComponent({
       inheritAttrs: false,
-      setup() {
-        return () => h('input')
+      emits: ['update:query'],
+      setup(_props, { attrs, emit }) {
+        // The field's own key handlers land on the input, as they do on the real one.
+        const keys = () =>
+          Object.fromEntries(Object.entries(attrs).filter(([name]) => name.startsWith('onKeydown')))
+        return () =>
+          h('input', {
+            ...keys(),
+            onInput: (e: Event) => emit('update:query', (e.target as HTMLInputElement).value),
+          })
       },
     }),
     // Renders nothing while closed, and the menu's contents while open — which is all the
@@ -48,7 +60,13 @@ vi.mock('@vueuse/core', async (original) => ({
 }))
 vi.mock('@/api', async (original) => ({
   ...(await original<typeof import('@/api')>()),
-  useQuery: () => ({ data: undefined, isFetching: false, error: null }),
+  useQuery: () => ({
+    get data() {
+      return suggested.value
+    },
+    isFetching: false,
+    error: null,
+  }),
 }))
 vi.mock('@/apps/mail/utils/composables', async () => {
   const { computed } = await import('vue')
@@ -62,7 +80,11 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
 const amy: DraftRecipient = { email: 'amy@example.com', display_name: 'Amy Diaz' }
 const bo: DraftRecipient = { email: 'bo@example.com', display_name: 'Bo Chen' }
 
-function mount(recipients: DraftRecipient[], field: RecipientField = 'to') {
+function mount(
+  recipients: DraftRecipient[],
+  field: RecipientField = 'to',
+  suggestionsTo: HTMLElement | null = null,
+) {
   const model = ref<DraftRecipient[]>([...recipients])
   const moves: [string, RecipientField, RecipientField][] = []
   const revealedCcBcc = vi.fn()
@@ -79,6 +101,7 @@ function mount(recipients: DraftRecipient[], field: RecipientField = 'to') {
           onMove: (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
             moves.push([recipient.email, from, to]),
           onShowCcBcc: revealedCcBcc,
+          suggestionsTo,
         }),
     }),
   )
@@ -112,6 +135,7 @@ beforeEach(() => {
   window.__ = (message: string, args?: string[]) =>
     args ? message.replace(/\{(\d+)\}/g, (_, i) => args[Number(i)]) : message
   isMobile.value = true
+  suggested.value = []
   document.body.innerHTML = ''
 })
 
@@ -193,5 +217,88 @@ describe('RecipientInput chips on desktop', () => {
 
     expect(menu(root)?.textContent).toContain('bo@example.com')
     expect(menuItem(root, 'Move to Cc')).not.toBeNull()
+  })
+})
+
+describe('RecipientInput suggestions in the page', () => {
+  const samAtWork = { email: 'sam@work.example', name: 'Sam Rao' }
+  const samAtHome = { email: 'sam@home.example', name: 'Sam Rao' }
+  const sasha = { email: 'sasha@work.example', name: 'Sasha Iyer' }
+
+  const typeInto = async (root: HTMLElement, text: string) => {
+    root
+      .querySelector('[data-recipient-input]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const input = root.querySelector('input')!
+    input.value = text
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    return input
+  }
+  const press = async (input: HTMLInputElement, key: string) => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    await nextTick()
+  }
+  const options = (list: HTMLElement) => [...list.querySelectorAll('[role="option"]')]
+
+  it('puts the weight on the domain where two suggestions share a name', async () => {
+    isMobile.value = false
+    suggested.value = [samAtWork, samAtHome, sasha]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root } = mount([], 'to', list)
+    await typeInto(root, 'sa')
+
+    const domains = options(list).map((option) =>
+      [...option.querySelectorAll('span')]
+        .filter((span) => span.textContent?.startsWith('@'))
+        .map((span) => span.className.includes('text-ink-gray-8')),
+    )
+    expect(domains).toEqual([[true], [true], []])
+  })
+
+  it('walks the suggestions with the arrow keys, and Enter adds the one it is on', async () => {
+    isMobile.value = false
+    suggested.value = [samAtWork, samAtHome, sasha]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root, model } = mount([], 'to', list)
+    const input = await typeInto(root, 'sa')
+
+    await press(input, 'ArrowDown')
+    await press(input, 'ArrowDown')
+    expect(options(list).map((o) => o.getAttribute('aria-selected'))).toEqual([
+      'false',
+      'true',
+      'false',
+    ])
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => r.email)).toEqual(['sam@home.example'])
+  })
+
+  it('adds the first suggestion on Enter at a desk, as the floating list did', async () => {
+    isMobile.value = false
+    suggested.value = [sasha, samAtWork]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root, model } = mount([], 'to', list)
+    const input = await typeInto(root, 'sa')
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => r.email)).toEqual(['sasha@work.example'])
+  })
+
+  it('adds an address typed out in full on Enter, rather than a suggestion', async () => {
+    isMobile.value = false
+    suggested.value = [{ email: 'sam@work.example.org', name: 'Sam Rao' }]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root, model } = mount([], 'to', list)
+    const input = await typeInto(root, 'sam@work.example')
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => r.email)).toEqual(['sam@work.example'])
   })
 })
