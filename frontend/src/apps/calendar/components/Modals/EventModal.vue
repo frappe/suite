@@ -35,6 +35,7 @@ import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import type { NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import {
   isFirstOccurrence,
   scopeOptions,
@@ -155,8 +156,20 @@ const getDefaultEventData = () => {
   // Shared calendars are never writable, so the default is always the account's own.
   const calendar = defaultCalendar(calendars.data)
   const identity = store.organizerIdentity
+  // Filled in by another area (an event from a mail): its title and words, and the people in it
+  // as participants beside the organizer, each still to reply.
+  const prefill: NewEventDraft | undefined = selectedEvent?.prefill
+  const invited = (prefill?.participants ?? [])
+    .filter((person) => person.email !== identity?.email)
+    .map((person) => ({
+      email: person.email,
+      _name: person.name,
+      participation_status: 'NEEDS-ACTION',
+      expect_reply: true,
+      isNew: true,
+    }))
   return {
-    title: '',
+    title: prefill?.title ?? '',
     organizer: identity?.email,
     account: store.accountId,
     // Empty until the list has loaded, and then the server puts it in the default.
@@ -171,10 +184,10 @@ const getDefaultEventData = () => {
     links: [],
     alerts: [defaultAlert(isAllDay, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
     followsDefaults: false,
-    description: '',
+    description: prefill?.description ?? '',
     free_busy_status: 'Busy',
     privacy: 'Public',
-    participants: identity ? [organizerParticipant(identity)] : [],
+    participants: [...(identity ? [organizerParticipant(identity)] : []), ...invited],
     recurrence_rule: {},
     addMeetLink: false,
   }

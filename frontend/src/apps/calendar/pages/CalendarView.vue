@@ -45,6 +45,7 @@ import {
   viewForRoute,
   type MobileView,
 } from '@/apps/calendar/utils/mobileView'
+import { takeNewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import {
   isFirstOccurrence,
@@ -697,6 +698,8 @@ const openNewEventFromRoute = (flag) => {
   router.replace({ query })
   handleOpenEvent({
     date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
+    // What another area filled in, from a mail say (see useNewCalendarEvent).
+    prefill: takeNewEventDraft(),
   })
 }
 
