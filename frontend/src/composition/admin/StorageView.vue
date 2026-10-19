@@ -318,7 +318,7 @@
           </p>
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button :label="__('Cancel')" :disabled="saveLimits.isPending" @click="editing = false" />
           <Button
@@ -357,7 +357,7 @@
           </ul>
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button
             :label="__('Cancel')"
@@ -392,7 +392,7 @@
           <ErrorMessage :message="saveLocalQuota.error?.message" />
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button
             :label="__('Cancel')"

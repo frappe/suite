@@ -116,7 +116,7 @@
           <ErrorMessage :message="invite.error?.message" />
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button :label="__('Cancel')" :disabled="invite.isPending" @click="inviting = false" />
           <Button
@@ -141,7 +141,7 @@
           <ErrorMessage :message="change.error?.message" />
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button :label="__('Cancel')" :disabled="change.isPending" @click="profileOpen = false" />
           <Button
@@ -168,7 +168,7 @@
           <FormControl v-model="credential" readonly :label="__('Temporary password')" />
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end">
           <Button variant="solid" :label="__('Done')" @click="credentialOpen = false" />
         </div>
@@ -197,7 +197,7 @@
           <ErrorMessage :message="recreationError || recreateMail.error?.message" />
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button
             :label="__('Cancel')"
@@ -297,7 +297,7 @@
           </template>
         </div>
       </template>
-      <template #footer>
+      <template #actions>
         <div class="flex justify-end gap-2">
           <Button
             v-if="transferResults"

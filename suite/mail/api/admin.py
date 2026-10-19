@@ -762,6 +762,7 @@ def get_members(
         .run(as_dict=True)
     )
     for user in users:
+        user["full_name"] = user.get("full_name") or user["name"]
         if not user.get("user_image"):
             user["user_image"] = get_avatar_url(user["name"])
         user["is_admin"] = bool(user.get("is_admin"))
@@ -874,11 +875,12 @@ def get_member(member_id: str) -> dict:
         frappe.throw(_("Account not found"), frappe.DoesNotExistError)
 
     is_admin = bool(frappe.db.exists("Has Role", {"parent": member_id, "role": "Suite Admin"}))
+    full_name = user.full_name or user.name
     result = {
         "name": user.name,
-        "full_name": user.full_name,
+        "full_name": full_name,
         "user_image": user.user_image or get_avatar_url(user.name),
-        "description": user.full_name,
+        "description": full_name,
         # Both are stored in system time; the API speaks UTC.
         "last_active": to_utc_z(user.last_active),
         "joined_on": to_utc_z(user.creation),
@@ -1661,7 +1663,7 @@ def _disabled_accounts() -> list[dict]:
 
     USER = frappe.qb.DocType("User")
     USER_SETTINGS = frappe.qb.DocType("User Settings")
-    return (
+    rows = (
         frappe.qb.from_(USER)
         .join(USER_SETTINGS)
         .on(USER.name == USER_SETTINGS.user)
@@ -1669,6 +1671,9 @@ def _disabled_accounts() -> list[dict]:
         .where((IfNull(USER_SETTINGS.username, "") != "") & (USER.enabled == 0))
         .orderby(USER.name, order=Order.asc)
     ).run(as_dict=True)
+    for row in rows:
+        row["full_name"] = row["full_name"] or row["name"]
+    return rows
 
 
 def _recent_accounts(limit: int) -> list[dict]:
@@ -1686,6 +1691,7 @@ def _recent_accounts(limit: int) -> list[dict]:
         .limit(limit)
     ).run(as_dict=True)
     for row in rows:
+        row["full_name"] = row.get("full_name") or row["name"]
         row["user_image"] = row.get("user_image") or get_avatar_url(row["name"])
         row["enabled"] = bool(row["enabled"])
         row["joined_on"] = to_utc_z(row.pop("creation"))
