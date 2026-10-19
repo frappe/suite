@@ -51,7 +51,7 @@
           "
           :active="item.activeFor?.includes(activeKey)"
           :on-click="item.onClick"
-          class="group"
+          class="group has-[>:is(a,button):focus-visible]:focus-ring [&>:is(a,button):focus-visible]:!outline-none"
           @dragover="onFolderDragOver($event, item)"
           @dragleave="onFolderDragLeave(item)"
           @drop="onFolderDrop($event, item)"
@@ -60,16 +60,22 @@
             <!-- More says which way it opens with its own icon (see moreToggle), so it has no
                  suffix. -->
             <div v-if="!isMoreToggle(item)" class="flex items-center">
+              <!-- The menu shows on hover, on a touch screen (no hover to show it), and when Tab
+                   reaches it: hidden then, its focus ring ringed nothing. -->
               <Dropdown v-if="item.menuOptions" :options="item.menuOptions">
                 <Button variant="ghost" class="!bg-transparent" @click.stop>
                   <template #icon>
-                    <Ellipsis class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible" />
+                    <Ellipsis
+                      class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible group-has-[button:focus-visible]:visible [@media(hover:none)]:visible"
+                    />
                   </template>
                 </Button>
               </Dropdown>
               <span
                 class="text-ink-gray-4 mr-2 text-sm"
-                :class="{ 'group-hover:hidden': item.menuOptions }"
+                :class="{
+                  'group-hover:hidden group-has-[button:focus-visible]:hidden': item.menuOptions,
+                }"
               >
                 {{ item.suffix }}
               </span>

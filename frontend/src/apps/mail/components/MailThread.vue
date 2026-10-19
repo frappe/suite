@@ -686,7 +686,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Badge, Button, Popover, Tooltip } from 'frappe-ui'
+import { Avatar, Badge, Button, Popover, toast, Tooltip } from 'frappe-ui'
 import {
   Ban,
   ChevronDown,
@@ -1448,14 +1448,17 @@ watch(
 watch(() => messages, rederive)
 onMounted(() => loadThread())
 const unblockEmailAddress = useMutation(api.mail.screening.remove)
-async function unblockEmailAddressSubmit(email) {
+// Said on the click; a refusal takes the toast down (the mutation says why).
+function unblockEmailAddressSubmit(email) {
   const input: InputOf<typeof api.mail.screening.remove> = {
     account: scopeAccountId.value,
     emails: [email],
   }
-  await unblockEmailAddress.run(input)
-  raiseToast(__('Sender unblocked.'))
-  screenedAddresses.value.refetch().catch(() => {})
+  const shown = raiseToast(__('Sender unblocked.'))
+  unblockEmailAddress.run(input).then(
+    () => screenedAddresses.value.refetch().catch(() => {}),
+    () => toast.dismiss(shown),
+  )
 }
 
 const handleReload = (isUndo = false) => {
