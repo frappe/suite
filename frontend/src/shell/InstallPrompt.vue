@@ -7,7 +7,7 @@
 	     installs are offered per app, not of the Suite. The manifest is on every
 	     route, so Chrome may fire elsewhere; the offer waits for such a page.
 	     The iOS hint follows the same gate. -->
-  <Dialog :open="showDialog && installable" @update:open="showDialog = $event">
+  <Dialog :open="showDialog && installable && offered" @update:open="showDialog = $event">
     <template #title>
       <h2 class="text-lg-bold">{{ __('Install {0}', [app?.label() ?? '']) }}</h2>
     </template>
@@ -69,10 +69,11 @@
 <script setup lang="ts">
 import { Button, Dialog } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
 import type { AreaDefinition } from '@/platform/contracts'
+import { linkedPwaApp } from '@/platform/pwa'
 
 const props = defineProps<{
   /** The area of the page, when it installs as an app of its own. */
@@ -82,8 +83,10 @@ const props = defineProps<{
 const route = useRoute()
 const installable = computed(() => !!props.app && route.meta.frame !== 'none')
 
-// Initialize deferredPrompt for use later to show browser install prompt.
-const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
+// The browser's install event, with the app whose manifest the page linked when it fired: the
+// event installs that app, so it is offered only on that app's pages, under that app's name.
+const deferred = shallowRef<{ event: BeforeInstallPromptEvent; app: string } | null>(null)
+const offered = computed(() => !!props.app && deferred.value?.app === props.app.id)
 const showDialog = ref(false)
 const iosInstallMessage = ref(false)
 
@@ -103,18 +106,18 @@ window.addEventListener('beforeinstallprompt', (e) => {
   // Prevent the mini-infobar from appearing on mobile
   e.preventDefault()
   // Stash the event so it can be triggered later.
-  deferredPrompt.value = e
+  deferred.value = { event: e, app: linkedPwaApp.value }
   if (isIos() && !isInStandaloneMode()) iosInstallMessage.value = true
   else showDialog.value = true
 })
 
 window.addEventListener('appinstalled', () => {
   showDialog.value = false
-  deferredPrompt.value = null
+  deferred.value = null
 })
 
 const install = () => {
-  void deferredPrompt.value?.prompt()
+  void deferred.value?.event.prompt()
   showDialog.value = false
 }
 </script>

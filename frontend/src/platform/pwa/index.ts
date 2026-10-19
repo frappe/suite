@@ -1,4 +1,4 @@
-import { watch } from 'vue'
+import { readonly, shallowRef, watch } from 'vue'
 
 import type { Session } from '@/platform/session'
 
@@ -36,7 +36,14 @@ export function installPwa(
   session: Pick<Session, 'status' | 'user' | 'onLogout'>,
   routes: PwaRoutes,
 ): void {
-  watch(() => pwaAppAt(routes.path(), routes.apps), setPwaTags, { immediate: true })
+  watch(
+    () => pwaAppAt(routes.path(), routes.apps),
+    (app) => {
+      currentApp.value = app
+      setPwaTags(app)
+    },
+    { immediate: true },
+  )
   let client: Promise<PushClient | null> | null = null
   watch(
     session.status,
@@ -70,6 +77,11 @@ export interface PwaRoutes {
   path: () => string
   apps: readonly InstallableApp[]
 }
+
+const currentApp = shallowRef('suite')
+
+/** The app whose manifest the page links now: an installable app's id, or `suite`. */
+export const linkedPwaApp = readonly(currentApp)
 
 /** The app a page installs as: the installable app it belongs to, or the Suite. */
 export function pwaAppAt(path: string, apps: readonly InstallableApp[]): string {
