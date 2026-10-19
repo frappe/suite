@@ -1003,7 +1003,14 @@ const { runMailRemoval } = useMailRemoval({
   row: () => openRow.value,
   mailThreadRef: mailThread,
   onEmptied: () => closeThread(),
-  removeRow: () => refreshThreads,
+  // Its last message gone, a conversation kept read on the list goes too; a failure keeps it again.
+  removeRow: (_mail, thread) => {
+    if (thread) keptRead.release([threadKey(thread)])
+    return () => {
+      if (thread) keptRead.keep([thread])
+      refreshThreads()
+    }
+  },
   viewMailbox: (thread) => thread.view_mailbox,
   outgoing: () => isOutgoingFolder.value,
 })
@@ -1186,9 +1193,10 @@ const fileThreads = (
 ) => {
   if (!threads.length) return
   const leaves = leavesFolder(action, threads[0], target)
+  // The next thread is found on the list as it stands, the conversations still on it.
   if (leaves) {
-    keptRead.release(threads.map(threadKey))
     goToNextThreadOrClose(threads.map(threadKey))
+    keptRead.release(threads.map(threadKey))
   }
   if (action === 'trash' || action === 'junk') closeComposeWindowFor(copyIds(threads))
   const one = threads.length === 1
@@ -1462,8 +1470,8 @@ const discardDrafts = (rows: Thread[]) => {
 
 const handleDelete = (rows: Thread[]) => {
   const names = copiesHere(rows)
-  keptRead.release(rows.map(threadKey))
   goToNextThreadOrClose(rows.map(threadKey))
+  keptRead.release(rows.map(threadKey))
   closeComposeWindowFor(rows.flatMap(messageIds))
   raiseOptimisticToast(
     client.mutation(api.mail.messages.delete, { names }).then(refreshCounts, (error) => {

@@ -56,4 +56,31 @@ describe('read in a list filtered to unread mail', () => {
     filter.value = 'unread'
     expect(ids(withKept(withoutB))).toEqual(['c', 'a'])
   })
+
+  it('is let go when made unread, and kept as read again when read again', () => {
+    const { keep, withKept } = setUp()
+    keep(bRead)
+    // Marked unread: the server lists it again, unread.
+    keep(before)
+    expect(withKept(before)[1].seen).toBe(0)
+    // Read again, then gone from the server's answer: it comes back read.
+    keep(bRead)
+    expect(withKept(withoutB)[1].seen).toBe(1)
+  })
+
+  it('settles: keeping the rows it shows changes nothing', async () => {
+    const { keep, withKept } = setUp()
+    keep(bRead)
+    const shown = withKept(withoutB).map((r) => ({ ...r }))
+    const changed = { count: 0 }
+    const { watch } = await import('vue')
+    const stop = watch(
+      () => withKept(withoutB),
+      () => changed.count++,
+    )
+    keep(shown)
+    await nextTick()
+    stop()
+    expect(changed.count).toBe(0)
+  })
 })

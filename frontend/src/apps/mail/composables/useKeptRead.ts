@@ -30,14 +30,29 @@ export function useKeptRead({
   }
   watch(scope, clear, { deep: true })
 
-  /** Holds the read rows of `rows`, as they are now. */
+  /**
+   * Holds the read rows of `rows` as they are now, and lets go of any made unread again: the server
+   * lists those itself, and a copy kept from before would put a later read back as unread.
+   */
   const keep = (rows: Thread[]) => {
     if (!filtering()) return
-    const read = rows.filter((row) => row.seen === 1 && !kept.value.has(key(row)))
-    if (!read.length) return
-    const next = new Map(kept.value)
-    for (const row of read) next.set(key(row), row)
-    kept.value = next
+    let next: Map<string, Thread> | undefined
+    for (const row of rows) {
+      const k = key(row)
+      const held = kept.value.get(k)
+      // The list builds its rows afresh on every change, this one included: a row is taken again
+      // only when it says something new, or holding it would change the list and call this again.
+      const same =
+        !!held &&
+        held.seen === row.seen &&
+        held.received_at === row.received_at &&
+        held.messages?.length === row.messages?.length
+      if (row.seen === 1 ? same : !held) continue
+      next ??= new Map(kept.value)
+      if (row.seen === 1) next.set(k, row)
+      else next.delete(k)
+    }
+    if (next) kept.value = next
   }
 
   /** Lets go of the conversations an action took off the list. */
