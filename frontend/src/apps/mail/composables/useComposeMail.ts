@@ -16,11 +16,13 @@ import {
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
+import { uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import {
   moveRecipient as moveRecipientBetweenFields,
   type RecipientField,
 } from '@/apps/mail/utils/recipientFields'
+import { uploadFunction } from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 
 /** The mounted TextEditor instance, as far as this composable cares about it. */
@@ -619,6 +621,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
+    await uploadStrandedImages()
     const input: InputOf<typeof api.mail.messages.create> = {
       account: scopeAccountId.value,
       from_email: mail.from_email,
@@ -641,6 +644,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     await onMailUpdateSuccess(result)
   }
   const updateDraft = useMutation(api.mail.messages.updateDraft)
+  // An image left in the body as a data URL goes as a file, not as base64 in the HTML (see
+  // uploadEmbeddedImages). Not while the editor's own uploads are running: one of those is about to
+  // replace its image, and uploading it here as well would send it twice.
+  async function uploadStrandedImages() {
+    if (options.isUploading?.()) return
+    const body = await uploadEmbeddedImages(mail.html_body, uploadFunction)
+    if (body !== mail.html_body) mail.html_body = body
+  }
   async function updateDraftSubmit({
     submit,
     send_at,
@@ -650,6 +661,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
+    await uploadStrandedImages()
     const input: InputOf<typeof api.mail.messages.updateDraft> = {
       account: scopeAccountId.value,
       id: mail.id,
