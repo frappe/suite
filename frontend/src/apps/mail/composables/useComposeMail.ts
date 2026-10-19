@@ -15,6 +15,7 @@ import {
   useListReload,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import { forgetDraftInList, showDraftInList } from '@/apps/mail/utils/draftsInList'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import {
@@ -285,6 +286,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
   let listOwesReload = false
+  // The conversation an inline reply's draft shows in, on its list row, while the list owes it.
+  let shownInList: { account: string; threadId: string } | undefined
+  const forgetShownDraft = () => {
+    if (shownInList) forgetDraftInList(shownInList.account, shownInList.threadId)
+    shownInList = undefined
+  }
 
   /**
    * Bring the list up to date with the draft, once the editor is done with it.
@@ -424,6 +431,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // and Undo returns it here.
     const thread = isInThread && draft.id ? router.currentRoute.value.fullPath : undefined
     discarded = true
+    forgetShownDraft()
     options.onDiscardUnsaved?.()
     options.onDiscardStarted?.()
     close()
@@ -562,6 +570,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       throw failure
     }
     updateOriginalMail()
+    if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
@@ -572,7 +581,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // It cannot be a reload on each autosave, which is why this is a debt and not a call: that
     // rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
     // when the editor goes — see `payListDebt`.
-    else if (status === 'Drafted') listOwesReload = true
+    // The row shows the draft meanwhile, from the text just saved: the reply's Draft badge and its
+    // words, while the pane is left as it is.
+    else if (status === 'Drafted') {
+      listOwesReload = true
+      if (thread_id && id) {
+        shownInList = { account: scopeAccountId.value, threadId: thread_id }
+        showDraftInList(scopeAccountId.value, thread_id, id, mail.html_body)
+      }
+    }
     if (isOpen() && status !== 'Submitted') return
     if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
     else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')

@@ -11,7 +11,7 @@
     :avatar-image="mail.user_image"
     :datetime="mail.received_at"
     :subject-italic="!mail.subject"
-    :preview-italic="!mail.preview"
+    :preview-italic="!preview"
     :account-label="accountLabel"
     :draggable
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
@@ -37,14 +37,14 @@
           <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
         </span>
       </Tooltip>
-      <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
+      <Badge v-if="mail.draft || liveDraft" size="sm" :label="__('Draft')" theme="red" />
     </template>
 
     <template #subject>
       <HighlightedText :text="mail.subject || __('[No subject]')" :term="searchTerm" />
     </template>
     <template #preview>
-      <HighlightedText :text="mail.preview || __('— No message body —')" :term="searchTerm" />
+      <HighlightedText :text="preview || __('— No message body —')" :term="searchTerm" />
     </template>
 
     <template #trailing="{ isHovered }">
@@ -184,6 +184,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
+import { draftInList } from '@/apps/mail/utils/draftsInList'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import {
   threadAvatarLabel,
@@ -265,6 +266,10 @@ const unknownSendersLabel = computed(() =>
   screener.waitingSenders(mail).length > 1 ? __('Unknown senders') : __('Unknown sender'),
 )
 const ownEmails = useOwnEmails()
+
+// A reply being written inline in this conversation, saved since the list last read it.
+const liveDraft = computed(() => draftInList(String(accountId || route.params.accountId), mail))
+const preview = computed(() => liveDraft.value?.preview ?? mail.preview)
 
 // An account's thread route names its folder by slug (see utils/unifiedFolders); the merged
 // folder's needs none, since its own folder param already says which one.

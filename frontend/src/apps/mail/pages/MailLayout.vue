@@ -19,6 +19,7 @@ import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
+import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
@@ -162,6 +163,7 @@ provide('$dayjs', dayjs)
 const socket = initSocket()
 provide('$socket', socket)
 onScopeDispose(() => socket.disconnect())
+useChangeSync(socket)
 
 const Layout = computed(() => {
   if (route.meta.noLayout) return 'div'

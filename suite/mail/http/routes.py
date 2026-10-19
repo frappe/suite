@@ -131,6 +131,7 @@ from suite.mail.api.mail import (
     set_mails_mailboxes,
     set_mails_seen,
     set_mails_spam_status,
+    sync_changes,
     undo_screening_verdict,
     unscreen_email_addresses,
     unsubscribe_mail,
@@ -161,6 +162,7 @@ from suite.mail.doctype.contact_card.contact_card import (
     contact_card_remove_from_address_book,
     delete_contact_cards,
 )
+from suite.mail.doctype.mail_message.mail_message import ListChanges
 from suite.mail.doctype.vacation_response.vacation_response import (
     get_vacation_response,
     update_vacation_response,
@@ -445,6 +447,19 @@ CONTRACT_ROUTES += (
         errors=(
             frappe.PermissionError,
             frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.mail.api.mail.sync_changes",
+        "sync_changes",
+        kind="mutation",
+        public_name="changes.sync",
+        output=ListChanges,
+        envelope="message",
+        errors=(
+            frappe.PermissionError,
+            frappe.AuthenticationError,
         ),
     ),
     Route(
