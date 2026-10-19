@@ -63,7 +63,7 @@ import {
 import { computed, h, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { api, client, useMutation, type InputOf } from '@/api'
+import { api, client, type InputOf } from '@/api'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
@@ -336,7 +336,6 @@ async function downloadEmail() {
     raiseError(error)
   }
 }
-const setMailsSeen = useMutation(api.mail.messages.seen)
 // Done on the click: the rows read unread at once (see the client policy), the toast says so and
 // the thread is left, while the request goes. A refusal says why and the server keeps the mail read.
 function setMailsSeenSubmit({ ids }: { ids: string[] }) {
@@ -348,7 +347,9 @@ function setMailsSeenSubmit({ ids }: { ids: string[] }) {
   const shown = raiseToast(
     __('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]),
   )
-  setMailsSeen.run(input).catch(() => toast.dismiss(shown))
+  // Through the client, not a mutation of this menu's: the thread is left at once, and a write of
+  // the menu's own would be canceled as it goes.
+  client.mutation(api.mail.messages.seen, input).catch(() => toast.dismiss(shown))
   // Leaving the thread is the point — staying would mark it read again. Return to whichever
   // list we came from: hardcoding the mailbox route threw the unified folder out of the merged view
   // and into the owning account's mailbox, which read as the page reloading.

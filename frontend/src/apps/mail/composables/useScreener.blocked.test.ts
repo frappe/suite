@@ -88,6 +88,18 @@ describe('blocking a sender', () => {
     expect(dismissed).toEqual([1])
   })
 
+  it('asks nothing about the old mail of a block undone before it landed', async () => {
+    const screener = await load()
+    const done = screener.deny(['spam@example.com'])
+    shown[0].action!.onClick()
+    pending[0].resolve({})
+    await settle()
+    pending[1].resolve({ inbox: 3 })
+    await done
+    await settle()
+    expect(screener.oldMailPrompt.value).toBeNull()
+  })
+
   it('asks about the old mail once the block says there is some', async () => {
     const screener = await load()
     const done = screener.deny(['spam@example.com'])

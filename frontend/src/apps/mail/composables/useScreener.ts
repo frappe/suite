@@ -224,7 +224,13 @@ const createShared = () => {
     landed: Promise<number>,
     account = store.accountId,
   ) => {
-    const takeBack = () => void landed.then(revert, () => {})
+    // Undone before it landed, the block is taken back once it does, and what would follow it — the
+    // old mail moved or asked about — doesn't.
+    let undone = false
+    const takeBack = () => {
+      undone = true
+      void landed.then(revert, () => {})
+    }
     setUndoAction(takeBack)
     const shown = raiseToast(
       emails.length === 1
@@ -235,7 +241,7 @@ const createShared = () => {
     )
     void landed.then(
       (oldMail) => {
-        if (!oldMail) return
+        if (!oldMail || undone) return
         const setting = accountOf(account)?.on_block_old_mail
         // Done without asking, it is part of the block: one Undo takes back both.
         if (setting === 'Move to Junk') void junkOldMail(emails, account, revert)
