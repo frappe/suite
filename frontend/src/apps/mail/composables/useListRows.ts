@@ -1,3 +1,4 @@
+import { useEventListener } from '@vueuse/core'
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 
 import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
@@ -5,6 +6,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { dateGroup } from '@/apps/mail/utils/dateGroups'
+import { isNavigationKey } from '@/apps/mail/utils/listNavigation'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
 /**
@@ -203,8 +205,23 @@ export const useListRows = ({
     const target = event.target as HTMLElement | null
     if (!target?.matches(':focus-visible')) return
     const key = target.closest<HTMLElement>('[data-row-key]')?.dataset.rowKey
-    if (key) focusedRowKey.value = key
+    if (!key) return
+    focusedRowKey.value = key
+    cursorShown.value = true
   }
+
+  /**
+   * Whether the cursor's bar is drawn: while the list is walked from the keyboard, not after a
+   * click. A thread opened with the mouse leaves the cursor on its row (see focusOnThread), so the
+   * keys carry on from there; but once its pane was closed, the bar left on that row read as the
+   * thread still being open. The cursor stays where it is, unmarked, until a key moves it.
+   */
+  const cursorShown = ref(false)
+  useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+    if (isNavigationKey(event.key.toLowerCase()) || event.key.toLowerCase() === 'g')
+      cursorShown.value = true
+  })
+  useEventListener(window, 'pointerdown', () => (cursorShown.value = false))
 
   /**
    * The row that stands for a thread on screen: its own row when rendered, the collapsed stack that
@@ -244,7 +261,7 @@ export const useListRows = ({
     // gray-1. "You are here" is a bar down the left side — 1.5px for the keyboard's cursor, 3px for the open row,
     // which is how a ticked row under the cursor and the one being read tell apart.
     [OPEN_BAR_CLASS]: isOpenRow(row),
-    [CURSOR_BAR_CLASS]: row.key === focusedRowKey.value && !isOpenRow(row),
+    [CURSOR_BAR_CLASS]: cursorShown.value && row.key === focusedRowKey.value && !isOpenRow(row),
     '!bg-surface-gray-1': isOpenRow(row),
     '!pl-10 sm:!pl-12': row.type === 'thread' && !!row.inStack,
   })
@@ -324,6 +341,7 @@ export const useListRows = ({
     visibleThreadCount,
     navigableRows,
     focusedRowKey,
+    cursorShown,
     onListFocusIn,
     focusedRow,
     focusRow,

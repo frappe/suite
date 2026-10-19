@@ -10,8 +10,8 @@
     :avatar-label="avatarLabel"
     :avatar-image="mail.user_image"
     :datetime="mail.received_at"
-    :subject-italic="!mail.subject"
-    :preview-italic="!mail.preview"
+    :subject-placeholder="!mail.subject"
+    :preview-placeholder="!mail.preview"
     :account-label="accountLabel"
     :draggable
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
@@ -37,7 +37,9 @@
           <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
         </span>
       </Tooltip>
-      <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
+      <!-- In Drafts every row is one, so it goes without saying. Gray, not red: a draft is not an
+           error. -->
+      <Badge v-if="mail.draft && !drafts" size="sm" :label="__('Draft')" theme="gray" />
     </template>
 
     <template #subject>
@@ -70,7 +72,7 @@
           ['starred', 'search'].includes(mailbox) ||
           (isFullWidth && mailboxesToShow.length)
         "
-        class="flex items-center"
+        class="flex min-w-0 items-center"
         :class="{ 'min-w-fit': isFullWidth }"
       >
         <Tooltip
@@ -83,15 +85,18 @@
             :blob-i-d="attachment.blob_id"
             :type="attachment.type"
             :account="accountId"
-            class="mr-2"
-            :class="isFullWidth ? 'max-w-32' : 'max-w-44 sm:max-w-20'"
+            class="mr-2 min-w-0 shrink"
+            :class="isFullWidth ? 'max-w-32' : 'max-w-44'"
             @click.stop.prevent="openAttachment(idx)"
           />
         </Tooltip>
         <Popover v-if="attachments.length > 2" side="bottom">
           <template #trigger>
             <Tooltip :text="__('View remaining attachments')">
-              <AttachmentCapsule :file-name="`+${String(attachments.length - 2)}`" class="mr-2" />
+              <AttachmentCapsule
+                :file-name="`+${String(attachments.length - 2)}`"
+                class="mr-2 shrink-0"
+              />
             </Tooltip>
           </template>
           <template #default>
