@@ -69,6 +69,12 @@ export function usePersistence({
   // says the converted sheet will be saved (the caller may write); `unknown`
   // lists the formulas IronCalc shows as #NAME?. Null for any other sheet.
   const legacyUpgrade = ref(null)
+  // The head of the op log the workbook here is at. Each save names it as
+  // `base_seq`; the server refuses any other (specs/sheets/002).
+  const headSeq = ref(0)
+  // Another editor saved first, so this workbook is behind the stored one and
+  // can no longer be saved. Cleared by loading the sheet again.
+  const isStale = ref(false)
   const sideStores = [
     merge,
     comments,
@@ -84,7 +90,7 @@ export function usePersistence({
   // Runs once before the next save is sent: keeps the develop body as a
   // Drive version. Cleared when it succeeds.
   let _beforeFirstSave = null
-  async function loadSheet(name) {
+  async function loadSheet(name, { visit = recordVisits } = {}) {
     loadError.value = null
     try {
       const canGz = isDecompressionSupported()
@@ -99,7 +105,7 @@ export function usePersistence({
         },
       )
       // A sheet Drive owns has a node; a legacy sheet has none and no Recents row.
-      if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
+      if (visit && doc.node) recordVisit(doc.node).catch(() => {})
       const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved = JSON.parse(plain || '{}')
       const mayWrite = doc.can_write !== false
@@ -141,6 +147,8 @@ export function usePersistence({
       _beforeFirstSave =
         legacyUpgrade.value?.save && doc.node ? () => _keepBeforeUpgrade(doc.node) : null
       currentTitle.value = doc.title
+      headSeq.value = doc.head_seq
+      isStale.value = false
       // Older backends predate `can_write`; treat its absence as writable so we
       // never lock out an editor on a stale server. A develop sheet IronCalc
       // could not take opens read-only, so no save replaces its old body.
@@ -275,6 +283,7 @@ export function usePersistence({
       args = {
         title,
         sheets_data: payload,
+        base_seq: headSeq.value,
         request_id: randomId(),
         ...(name
           ? {
@@ -365,9 +374,15 @@ export function usePersistence({
           // First success clears any sticky error from a previous failure.
           saveError.value = ''
           _lastSaveArgs = null
+          headSeq.value = result.head_seq
           return result.name
         } catch (err) {
           lastErr = err
+          if (err?.type === 'TimestampMismatchError') {
+            isStale.value = true
+            _lastSaveArgs = null
+            throw err
+          }
           if (isRefusal(err)) onRefused()
           if (!_isTransientSaveError(err)) break
         }
@@ -391,6 +406,8 @@ export function usePersistence({
     sheetOwner,
     loadError,
     legacyUpgrade,
+    headSeq,
+    isStale,
     loadSheet,
     autoCreate,
     saveExisting,

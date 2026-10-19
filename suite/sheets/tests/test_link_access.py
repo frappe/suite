@@ -125,6 +125,9 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         answer = self._drive("PUT", f"nodes/{self.node}/grants/$LINK", {"role": role})
         return answer["data"]["principal"].removeprefix("$LINK:")
 
+    def _head(self) -> int:
+        return frappe.db.get_value("Sheet", self.name, "head_seq")
+
     def _trash(self):
         self._drive("PATCH", f"nodes/{self.node}", {"state": "Trashed"})
 
@@ -147,7 +150,7 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         frappe.set_user("Guest")
         with link_header(code):
             self.assertTrue(api.get_sheet(self.name)["can_write"])
-            api.save_sheet("Ignored", BODY, name=self.name)
+            api.save_sheet("Ignored", BODY, name=self.name, base_seq=self._head())
         frappe.set_user(OWNER)
         self.assertIn("4242", json.dumps(api.get_sheet(self.name)["sheets_data"]))
 
@@ -155,7 +158,7 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         code = self._link(drive.READ)
         frappe.set_user("Guest")
         with link_header(code), self.assertRaises(REFUSED):
-            api.save_sheet("Ignored", BODY, name=self.name)
+            api.save_sheet("Ignored", BODY, name=self.name, base_seq=self._head())
 
     def test_a_guest_with_a_read_link_relays_presence_but_not_edits(self):
         code = self._link(drive.READ)
@@ -189,7 +192,27 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         sheet = api.get_sheet(self.name)
         self.assertFalse(sheet["can_write"])
         with self.assertRaises(REFUSED):
-            api.save_sheet("Ignored", BODY, name=self.name)
+            api.save_sheet("Ignored", BODY, name=self.name, base_seq=self._head())
+
+    def test_a_save_built_on_an_older_head_is_refused_and_the_newer_body_kept(self):
+        loaded = api.get_sheet(self.name)["head_seq"]
+        saved = api.save_sheet("Ignored", BODY, name=self.name, base_seq=loaded)
+        stale = json.dumps({"sheets": [{"name": "Sheet1", "cells": {"A1": {"v": "7"}}}]})
+
+        with self.assertRaises(frappe.TimestampMismatchError):
+            api.save_sheet("Ignored", stale, name=self.name, base_seq=loaded)
+        with self.assertRaises(frappe.TimestampMismatchError):
+            api.save_sheet("Ignored", stale, name=self.name)
+
+        sheet = api.get_sheet(self.name)
+        self.assertEqual(sheet["head_seq"], saved["head_seq"])
+        self.assertIn("4242", json.dumps(sheet["sheets_data"]))
+
+    def test_a_save_tells_the_sheet_room_where_the_head_moved(self):
+        saved = api.save_sheet("Ignored", BODY, name=self.name, base_seq=self._head())
+        call = next(call for call in self.published.call_args_list if call.args[0] == "sheet_saved")
+        self.assertEqual(call.args[1]["head_seq"], saved["head_seq"])
+        self.assertEqual((call.kwargs.get("doctype"), call.kwargs.get("docname")), ("Sheet", self.name))
 
     def test_a_relayed_update_goes_to_the_sheet_room_only(self):
         api.yjs_relay(self.name, "yjs_update", "{}")

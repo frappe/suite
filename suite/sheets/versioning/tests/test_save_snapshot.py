@@ -42,13 +42,14 @@ def _save(newest_age_secs: float | None, take_version_side_effect=None, **kwargs
         mock.patch.object(save_mod, "_append_ops_and_save", return_value=7) as append,
         mock.patch.object(save_mod, "encode_sheets_data", return_value="ENCODED"),
         mock.patch.object(save_mod, "_validate_payload", return_value='{"A1":1}'),
+        mock.patch.object(save_mod, "seq_mod"),
     ):
         patched.conf.get.return_value = None
         patched.db.get_value.return_value = None
         patched.throw.side_effect = RuntimeError("thrown")
         drive.list_versions.return_value = {"rows": rows, "next_cursor": None}
         drive.take_version.side_effect = take_version_side_effect
-        arguments = {"name": "sheet_x", "sheets_data": '{"A1":1}'}
+        arguments = {"name": "sheet_x", "sheets_data": '{"A1":1}', "base_seq": 0}
         arguments.update(kwargs)
         out = save_mod.save_sheet(**arguments)
     patched.require_sheet = require_sheet
@@ -93,7 +94,7 @@ class SaveGuards(unittest.TestCase):
                 mock.patch.object(save_mod, "_append_ops_and_save") as append,
                 mock.patch.object(save_mod, "drive") as drive,
             ):
-                result = save_mod.save_sheet("sheet_x", '{"A1":1}', request_id="request-1")
+                result = save_mod.save_sheet("sheet_x", '{"A1":1}', request_id="request-1", base_seq=0)
 
         self.assertEqual(result, {"name": "sheet_x", "head_seq": 12})
         append.assert_not_called()

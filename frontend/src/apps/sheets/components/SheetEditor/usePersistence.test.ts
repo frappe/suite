@@ -87,8 +87,9 @@ beforeEach(() => {
           sheets_data: '{}',
           owner: 'a@example.com',
           node: 'node-1',
+          head_seq: 4,
         }
-      : { name: 'sheet-1' }
+      : { name: 'sheet-1', head_seq: 5 }
 })
 
 describe('Sheets persistence', () => {
@@ -233,6 +234,23 @@ describe('Sheets persistence', () => {
 
     expect(onRefused).toHaveBeenCalledTimes(1)
     expect(saves()).toHaveLength(1)
+  })
+
+  it('builds each save on the head it last saw, and stops when another editor saved first', async () => {
+    const saved = persistence()
+    await saved.loadSheet('sheet-1')
+    await saved.saveExisting('sheet-1', 'Budget')
+    await saved.saveExisting('sheet-1', 'Budget')
+    expect(saves().map((call) => call.args.base_seq)).toEqual([4, 5])
+
+    server.answer = () =>
+      Object.assign(new Error('Changed elsewhere'), { type: 'TimestampMismatchError', status: 417 })
+    await expect(saved.saveExisting('sheet-1', 'Budget')).rejects.toMatchObject({
+      type: 'TimestampMismatchError',
+    })
+    expect(saves()).toHaveLength(3)
+    expect(saved.isStale.value).toBe(true)
+    expect(await saved.retrySave()).toBeNull()
   })
 
   it('puts a cell edit still in progress into the recovery copy', async () => {

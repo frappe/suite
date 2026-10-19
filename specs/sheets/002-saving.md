@@ -13,7 +13,8 @@ Code: `suite/sheets/versioning/save.py` (`save_sheet`), `suite/sheets/doctype/sh
 - The client sends the whole workbook, plus the ops since the last save, about 2 seconds after the last edit.
 - `save_sheet` appends the ops to `Sheet Op Log` (numbered by `Sheet Seq`), then overwrites `Sheet.sheets_data` with the whole workbook and sets `head_seq`.
 - Every save may also take a Drive version, at most one per 30 seconds (`AUTO_VERSION_SECS`).
-- The client does not say which `head_seq` it built on. Two tabs that both save keep both sets of ops in the log, but the body keeps only the last save. The other tab's edits disappear from the sheet.
+- Each save names the `head_seq` it built on as `base_seq`. The server refuses any other head with `TimestampMismatchError`; the editor turns read only, shows "Changed elsewhere" and offers Reload. Edits that save carried are not merged.
+- A save publishes `sheet_saved { sheet, head_seq }` to the sheet's room. An editor with nothing unsaved loads the new body in place, so others see a save about 2 seconds after the last keystroke.
 
 ## Behaviour
 

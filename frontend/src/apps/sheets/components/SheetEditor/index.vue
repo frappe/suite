@@ -46,7 +46,23 @@
       <!-- Bar 1 · Identity. The status chips and the app actions are defined once
          and placed in either top bar. -->
       <DefineTopbarStatus>
-        <template v-if="saveError">
+        <template v-if="isStale">
+          <span class="sn-save-error">
+            <Badge
+              class="max-w-full"
+              theme="red"
+              variant="subtle"
+              size="sm"
+              :tooltip="
+                __('Someone else saved this sheet first. Your latest edits were not saved.')
+              "
+            >
+              <span class="truncate">{{ __('Changed elsewhere') }}</span>
+            </Badge>
+          </span>
+          <Button size="sm" variant="subtle" @click="reloadFromServer">{{ __('Reload') }}</Button>
+        </template>
+        <template v-else-if="saveError">
           <span class="sn-save-error">
             <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
               <span class="truncate">{{ saveError }}</span>
@@ -2008,6 +2024,8 @@ const {
   canWrite,
   loadError,
   legacyUpgrade,
+  headSeq,
+  isStale,
   loadSheet,
   autoCreate,
   saveExisting,
@@ -2049,10 +2067,18 @@ const {
 // grid edit gate, the toolbar/formula-bar disable, the context menu, and the
 // autosave path all no-op so a viewer is never misled into editing a doc they
 // can't persist (and never triggers the server's PermissionError on save).
-const readOnly = computed(() => !canWrite.value || !props.writable)
-// Where the workbook's edits are: clean, saving, unsaved or failed.
+// A stale workbook is read-only too: another editor saved first.
+const readOnly = computed(() => !canWrite.value || !props.writable || isStale.value)
+// Where the workbook's edits are: clean, saving, unsaved or failed. A stale
+// workbook is failed: the edits its save carried are only on this screen.
 const saveState = computed(() =>
-  isSaving.value ? 'saving' : saveError.value ? 'failed' : isDirty.value ? 'unsaved' : 'clean',
+  isSaving.value
+    ? 'saving'
+    : saveError.value || isStale.value
+      ? 'failed'
+      : isDirty.value
+        ? 'unsaved'
+        : 'clean',
 )
 
 // Losing write access drops every pending edit from the save path: the queued
@@ -2264,6 +2290,9 @@ const {
   currentSheet,
   repopulateGrid: _repopulateGrid,
   onRefused: () => emit('access-refused'),
+  onRemoteSave: (seq) => {
+    remoteHeadSeq.value = Math.max(remoteHeadSeq.value, seq)
+  },
   credentialFetch: props.credentialFetch,
 })
 // Wire the binding's per-segment touch-tracking into the history we declared
@@ -3013,6 +3042,36 @@ function _onEngineCrash(reason) {
 }
 function reloadPage() {
   window.location.reload()
+}
+
+// The newest head another editor's save announced. With nothing unsaved here,
+// their body opens in place. With edits pending, the next save names an older
+// head, the server refuses it, and the editor turns read-only until a reload
+// (specs/sheets/002, "Unsaved edits").
+const remoteHeadSeq = ref(0)
+let _reloading = null
+watch([remoteHeadSeq, isDirty, isSaving, isStale], () => {
+  if (remoteHeadSeq.value <= headSeq.value || _reloading) return
+  if (isDirty.value || isSaving.value || isStale.value) return
+  void reloadFromServer()
+})
+async function reloadFromServer() {
+  if (_reloading) return _reloading
+  const sheet = currentSheet.value
+  const cell = activeCell.value
+  _reloading = loadSheet(props.id, { visit: false })
+  try {
+    await _reloading
+  } finally {
+    _reloading = null
+  }
+  if (loadError.value) return
+  if (sheet !== currentSheet.value && sheetNames.value.includes(sheet)) switchSheet(sheet)
+  _repopulateGrid()
+  _showInputInFormulaBar(cell)
+  refreshActiveFormat()
+  history.reset()
+  syncFlags()
 }
 const confirmUnsavedNavigation = () => {
   // Embedded, the surface's leave guard flushes and keeps a recovery copy.
