@@ -330,7 +330,7 @@
                                       requestCompose({ to: [{ email: mail.from_email }] }))
                                     "
                                     @copy="(close(), copyToClipBoard(mail.from_email))"
-                                    @view-all="(close(), viewAllWith(mail.from_email))"
+                                    @view-all="(close(), viewAllFrom(mail.from_email))"
                                   />
                                 </template>
                               </Popover>
@@ -865,9 +865,9 @@ const emit = defineEmits([
   'slideDone',
 ])
 const { isMobile } = useScreenSize()
-// Every conversation with a sender, from them or to them — the sender card's View all.
-const viewAllWith = (email: string) =>
-  router.push(mailSearchRoute(scopeAccountId.value, { with: email }))
+// Everything a sender has sent — the sender card's View all, as its Recent list is.
+const viewAllFrom = (email: string) =>
+  router.push(mailSearchRoute(scopeAccountId.value, { from: email }))
 const { requestCompose } = useComposeMail()
 // The open message whose sender card is showing, if any.
 // A single click on the subject copies it. Not a double click or a drag, which are the reader

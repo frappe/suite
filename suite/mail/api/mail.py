@@ -1515,9 +1515,10 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
 
 
 @frappe.whitelist()
-def get_recent_threads_with(account: str, email: str, limit: int = 4) -> list[dict]:
-    """The newest conversations with one address, for the card about a person: mail from it or
-    sent to it, one message per conversation, newest first.
+def get_recent_threads_from(account: str, email: str, limit: int = 4) -> list[dict]:
+    """The newest conversations with mail from one address, for the card about its sender, one
+    message per conversation, newest first. Mail from them, not mail to them: the card is about what
+    they have been sending, and your own mail to them read there as theirs.
 
     Summaries only, in one round trip: no bodies, avatars or account tags, which a card listing a
     few subjects has no use for. Mail only in Trash or Junk is left out, as are drafts — a discarded
@@ -1531,7 +1532,7 @@ def get_recent_threads_with(account: str, email: str, limit: int = 4) -> list[di
         return []
     limit = min(max(cint(limit), 1), 10)
 
-    conditions = [with_address(email), {"notKeyword": "$draft"}]
+    conditions = [{"from": email}, {"notKeyword": "$draft"}]
     binned = [m for m in (get_mailbox_id_by_role(account, r) for r in ("trash", "junk")) if m]
     if binned:
         conditions.append({"inMailboxOtherThan": binned})

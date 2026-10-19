@@ -215,8 +215,8 @@ import type {
   GetParticipantIdentitiesOutput,
   GetQuotaInput,
   GetQuotaOutput,
-  GetRecentThreadsWithInput,
-  GetRecentThreadsWithOutput,
+  GetRecentThreadsFromInput,
+  GetRecentThreadsFromOutput,
   GetScheduledMailInput,
   GetScheduledMailOutput,
   GetScreenedAddressesInput,
@@ -2646,11 +2646,11 @@ export const operationGetCalendarClientConfig: Validators<
   },
 }
 
-export const operationGetRecentThreadsWith: Validators<
-  GetRecentThreadsWithInput,
-  GetRecentThreadsWithOutput
+export const operationGetRecentThreadsFrom: Validators<
+  GetRecentThreadsFromInput,
+  GetRecentThreadsFromOutput
 > = {
-  validateInput(value: unknown): asserts value is GetRecentThreadsWithInput {
+  validateInput(value: unknown): asserts value is GetRecentThreadsFromInput {
     assertSchema(
       value,
       {
@@ -2664,10 +2664,10 @@ export const operationGetRecentThreadsWith: Validators<
         additionalProperties: false,
         $defs: {},
       },
-      'get_recent_threads_with input',
+      'get_recent_threads_from input',
     )
   },
-  validateOutput(value: unknown): asserts value is GetRecentThreadsWithOutput {
+  validateOutput(value: unknown): asserts value is GetRecentThreadsFromOutput {
     assertSchema(
       value,
       {
@@ -2697,7 +2697,7 @@ export const operationGetRecentThreadsWith: Validators<
         items: { $ref: '#/$defs/RecentThread' },
         type: 'array',
       },
-      'get_recent_threads_with output',
+      'get_recent_threads_from output',
     )
   },
 }

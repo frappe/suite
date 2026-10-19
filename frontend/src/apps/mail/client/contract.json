@@ -5177,13 +5177,13 @@
       "bytes": false
     },
     {
-      "id": "get_recent_threads_with",
+      "id": "get_recent_threads_from",
       "kind": "query",
-      "publicName": "messages.recentWith",
+      "publicName": "messages.recentFrom",
       "page": null,
       "envelope": "message",
       "method": "POST",
-      "path": "/api/method/suite.mail.api.mail.get_recent_threads_with",
+      "path": "/api/method/suite.mail.api.mail.get_recent_threads_from",
       "pathParams": [],
       "query": null,
       "body": {

@@ -1612,39 +1612,39 @@ const operationGetCalendarClientConfig: QueryRef<
   loadValidators: async () => (await import('./validators')).operationGetCalendarClientConfig,
 }
 
-export type GetRecentThreadsWithOutputRecentThread = {
+export type GetRecentThreadsFromOutputRecentThread = {
   thread_id: string
   subject: string | null
   received_at: string
-  mailboxes: Array<GetRecentThreadsWithOutputRecentThreadMailbox>
+  mailboxes: Array<GetRecentThreadsFromOutputRecentThreadMailbox>
 }
 
-export type GetRecentThreadsWithOutputRecentThreadMailbox = { mailbox_id: string }
+export type GetRecentThreadsFromOutputRecentThreadMailbox = { mailbox_id: string }
 
-export type GetRecentThreadsWithInput = { account: string; email: string; limit?: number }
+export type GetRecentThreadsFromInput = { account: string; email: string; limit?: number }
 
-export type GetRecentThreadsWithOutput = Array<GetRecentThreadsWithOutputRecentThread>
+export type GetRecentThreadsFromOutput = Array<GetRecentThreadsFromOutputRecentThread>
 
-export type GetRecentThreadsWithError = 'PermissionError'
+export type GetRecentThreadsFromError = 'PermissionError'
 
-const operationGetRecentThreadsWith: QueryRef<
-  GetRecentThreadsWithInput,
-  GetRecentThreadsWithOutput,
-  GetRecentThreadsWithError
+const operationGetRecentThreadsFrom: QueryRef<
+  GetRecentThreadsFromInput,
+  GetRecentThreadsFromOutput,
+  GetRecentThreadsFromError
 > = {
-  id: 'get_recent_threads_with',
+  id: 'get_recent_threads_from',
   owner: 'mail',
   kind: 'query',
-  publicName: 'messages.recentWith',
+  publicName: 'messages.recentFrom',
   envelope: 'message',
   method: 'POST',
-  path: '/api/method/suite.mail.api.mail.get_recent_threads_with',
+  path: '/api/method/suite.mail.api.mail.get_recent_threads_from',
   prefix: '/api/suite/mail/',
   pathParams: [],
   nodeParams: [],
   entity: null,
   errors: ['PermissionError'],
-  loadValidators: async () => (await import('./validators')).operationGetRecentThreadsWith,
+  loadValidators: async () => (await import('./validators')).operationGetRecentThreadsFrom,
 }
 
 export type GetEmailSuggestionsOutputEmailSuggestion = {
@@ -7118,7 +7118,7 @@ export const api = {
     ongoingExchange: operationOngoingCalendarExchange,
   },
   messages: {
-    recentWith: operationGetRecentThreadsWith,
+    recentFrom: operationGetRecentThreadsFrom,
     clearList: operationClearList,
     search: operationSearchMails,
     mime: operationGetMimeMessage,
