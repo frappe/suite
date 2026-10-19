@@ -31,6 +31,12 @@ vi.mock('@/apps/mail/stores/user', () => ({
         { id: 'm-receipts', slug: 'receipts', _name: 'Receipts', role: null, icon: 'receipt' },
       ],
     },
+    unifiedFolders: {
+      data: [
+        { slug: 'inbox', name: 'Inbox', role: 'inbox', icon: null },
+        { slug: 'sent', name: 'Sent', role: 'sent', icon: null },
+      ],
+    },
   }),
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
@@ -106,10 +112,19 @@ describe("Mail's bottom bar", () => {
     expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/mailbox/receipts')
   })
 
-  it('names All Inboxes there, and opens the folders from it', async () => {
-    const { item } = await mountAt('/mail/all/inbox')
-    item('All Inboxes').click()
+  it('names a folder merged across the accounts, and opens the folders from it', async () => {
+    const { items, item } = await mountAt('/mail/all/sent')
+    expect(items()[0]).toBe('Sent')
+    item('Sent').click()
     expect(calls.folders).toEqual(['mail'])
+  })
+
+  it('names Starred, and opens the folders from it', async () => {
+    const { items, item, router } = await mountAt('/mail/account/a/mailbox/starred')
+    expect(items()[0]).toBe('Starred')
+    item('Starred').click()
+    expect(calls.folders).toEqual(['mail'])
+    expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/mailbox/starred')
   })
 
   it('goes back to the Inbox from Search', async () => {

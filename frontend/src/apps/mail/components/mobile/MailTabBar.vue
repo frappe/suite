@@ -33,8 +33,11 @@ import { getIcon } from '@/apps/mail/utils'
 import { useMobileSearch } from '@/apps/mail/utils/composables'
 import {
   mailboxIdForParam,
+  STARRED_FOLDER,
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
+  unifiedFolderIcon,
+  unifiedFolderLabel,
 } from '@/apps/mail/utils/unifiedFolders'
 import { openAreaSidebar } from '@/platform/area-sidebar'
 import { useSession } from '@/platform/session'
@@ -58,15 +61,27 @@ const current = computed(() => {
   const id = mailboxIdForParam(param, store.mailboxes.data)
   return store.mailboxes.data?.find((m) => m.id === id)
 })
-const unified = computed(() => [UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE].includes(String(route.name)))
-const folderLabel = computed(() =>
-  unified.value ? __('All Inboxes') : (current.value?._name ?? __('Inbox')),
+const starred = computed(() => route.params.mailbox === STARRED_FOLDER)
+// A folder merged across the accounts, by its slug.
+const unified = computed(() =>
+  [UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE].includes(String(route.name))
+    ? String(route.params.folder)
+    : undefined,
 )
-const folderIcon = computed(() => (current.value ? getIcon(current.value) : 'inbox'))
+const folderLabel = computed(() => {
+  if (unified.value) return unifiedFolderLabel(unified.value, store.unifiedFolders.data)
+  if (starred.value) return __('Starred')
+  return current.value?._name ?? __('Inbox')
+})
+const folderIcon = computed(() => {
+  if (unified.value) return unifiedFolderIcon(unified.value, store.unifiedFolders.data)
+  if (starred.value) return 'star'
+  return current.value ? getIcon(current.value) : 'inbox'
+})
 
 // Tapped from a folder, it opens the folders; from anywhere else (Search), it goes back to the Inbox.
 const openFolders = () => {
-  if (current.value || unified.value) return openAreaSidebar('mail')
+  if (current.value || unified.value || starred.value) return openAreaSidebar('mail')
   void router.push({ name: 'mail-mailbox', params: { ...route.params, mailbox: 'inbox' } })
 }
 </script>
