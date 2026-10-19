@@ -1,7 +1,7 @@
 <template>
   <!-- Mobile title header — no thread count since the merged view has no total.
 	     The toolbar below carries the bottom border, matching the mailbox structure. -->
-  <MobileTitleHeader v-if="isMobile" with-menu with-search :title="folderLabel" />
+  <MobileTitleHeader v-if="isMobile" :title="folderLabel" />
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's

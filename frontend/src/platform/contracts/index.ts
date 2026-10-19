@@ -49,6 +49,12 @@ export interface AreaDefinition {
   requires?: PlatformCapability[]
   /** What the rail's dot counts, in its tooltip ("3 unread"). Translated; "unread" when unset. */
   badgeNoun?: () => string
+  /**
+   * The area's own bottom bar on a phone, in place of the shell's, for an area
+   * that is an app of its own there (ticket 047). It emits `open-account` to
+   * open the shell's account sheet.
+   */
+  phoneNav?: Component
 }
 
 export interface DocumentTypeDefinition {

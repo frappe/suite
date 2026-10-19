@@ -85,8 +85,6 @@
           >
             <MobileTitleHeader
               v-if="mailbox !== 'search'"
-              with-menu
-              with-search
               :title="mailboxName"
               :count="threadCount ? __('{0} threads', [threadCount]) : undefined"
             />

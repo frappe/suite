@@ -59,7 +59,13 @@
       </ContentPane>
       <AccountSheet v-model:open="accountSheetOpen" />
       <template v-if="!pageOwnsPhoneChrome" #nav>
+        <component
+          :is="activeArea.phoneNav"
+          v-if="activeArea?.phoneNav"
+          @open-account="accountSheetOpen = true"
+        />
         <MobileNav
+          v-else
           :areas="areas"
           :active-area="activeArea?.id"
           @open-account="accountSheetOpen = true"
