@@ -1908,7 +1908,7 @@ const getReplyAllRecipients = (mail: Mail) => {
               email: mail.from_email,
             },
           ],
-      cc: [...mail.groupedRecipients?.to, ...mail.groupedRecipients?.cc].filter(
+      cc: [...(mail.groupedRecipients?.to ?? []), ...(mail.groupedRecipients?.cc ?? [])].filter(
         (r) => !isUserEmail(r.email),
       ),
     }

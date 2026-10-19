@@ -1,5 +1,5 @@
+import { Fragment, Slice } from '@tiptap/pm/model'
 import { Editor } from '@tiptap/vue-3'
-import { Fragment, Slice } from 'prosemirror-model'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))

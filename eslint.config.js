@@ -1,0 +1,64 @@
+// ESLint for the unified frontend. Formatting is Prettier's job
+// (`.prettierrc`), so `eslint-config-prettier` turns every layout rule off and
+// this file keeps only correctness and Vue rules.
+//
+// `vue/no-bare-strings-in-template` is not enabled here. `scripts/check-untranslated.mjs`
+// runs that one rule on its own against a baseline, so untranslated text is
+// tracked as a shrinking count rather than failing every legacy file at once.
+
+import path from 'node:path'
+import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
+import prettier from 'eslint-config-prettier'
+import oxlint from 'eslint-plugin-oxlint'
+import pluginVue from 'eslint-plugin-vue'
+import globals from 'globals'
+
+const config = defineConfigWithVueTs(
+  {
+    ignores: [
+      'frontend/dist/**',
+      'frontend/dist-recorder/**',
+      'node_modules/**',
+      'frontend/auto-imports.d.ts',
+      'frontend/components.d.ts',
+      // Generated from contract.json by `pnpm generate:contract`.
+      'frontend/src/**/generated.ts',
+      // Legacy Drive code is being deleted, not brought in line.
+      'frontend/src/apps/drive/legacy/**',
+    ],
+  },
+  {
+    files: ['**/*.{js,mjs,cjs,ts,mts,tsx,vue}'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  pluginVue.configs['flat/recommended'],
+  vueTsConfigs.recommended,
+  {
+    rules: {
+      // Route pages and feature components are named by folder (`pages/FilesPage.vue`
+      // is fine, but so is `shell/Rail.vue`).
+      'vue/multi-word-component-names': 'off',
+      // `_name` marks an argument the signature needs but the body does not.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+  prettier,
+)
+
+// oxlint (`.oxlintrc.json`) runs first in `pnpm lint`. Turn off every rule it
+// already runs; each of those that ESLint enforced is an error there too.
+// This stays outside defineConfigWithVueTs, which would read the type-aware
+// rules it turns off as a request for slow type-aware linting.
+export default [
+  ...config,
+  ...oxlint.buildFromOxlintConfigFile(path.join(import.meta.dirname, '.oxlintrc.json')),
+]

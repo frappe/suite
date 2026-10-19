@@ -186,7 +186,7 @@ watch(
   },
   { immediate: true },
 )
-const root = computed(() => discovered.data?.[rootKind.value] ?? null)
+const selectedRoot = computed(() => discovered.data?.[rootKind.value] ?? null)
 
 // It opens in the folder the items are in, with the path down to it. A
 // restore picks from the top of its root.
@@ -196,7 +196,7 @@ const start = useQuery(api.drive.nodes.get, () => {
 })
 const startTrail = computed(() => {
   const folder = start.data
-  if (!folder || folder.state !== 'Active' || folder.root !== root.value?.node) return null
+  if (!folder || folder.state !== 'Active' || folder.root !== selectedRoot.value?.node) return null
   const path = [
     ...(folder.breadcrumbs ?? []).map((crumb) => ({ node: crumb.name, title: crumb.title })),
     { node: folder.name, title: folder.title, access: folder.access },
@@ -208,9 +208,10 @@ const startTrail = computed(() => {
 // Keyed on the root's node: a refetch of the roots returns a new object, and
 // must not send the user back to the top while they browse.
 watch(
-  [() => root.value?.node, open],
+  [() => selectedRoot.value?.node, open],
   () => {
-    if (open.value && root.value) trail.value = startTrail.value ?? [{ ...root.value }]
+    if (open.value && selectedRoot.value)
+      trail.value = startTrail.value ?? [{ ...selectedRoot.value }]
   },
   { immediate: true },
 )
@@ -220,7 +221,12 @@ watch(
   () => startTrail.value?.map((crumb) => crumb.node).join('/'),
   () => {
     const path = startTrail.value
-    if (open.value && path && trail.value.length === 1 && trail.value[0]?.node === root.value?.node)
+    if (
+      open.value &&
+      path &&
+      trail.value.length === 1 &&
+      trail.value[0]?.node === selectedRoot.value?.node
+    )
       trail.value = path
   },
 )
