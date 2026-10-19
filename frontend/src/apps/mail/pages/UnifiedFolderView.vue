@@ -377,6 +377,7 @@ import {
   unifiedFolderLabel,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
+import { deleteForeverOptions } from '@/apps/mail/utils/useThreadActions'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 
 const { isMobile } = useScreenSize()
@@ -1464,26 +1465,12 @@ const confirmDelete = (rows: Thread[]) => {
   showDelete.value = true
 }
 
-const deleteOptions = computed(() => {
-  const many = toDelete.value.length > 1
-  return {
-    title: many ? __('Delete {0} Threads', [toDelete.value.length]) : __('Delete Thread'),
-    message: __('Are you sure you want to permanently delete the selected {0}?', [
-      many ? __('threads') : __('thread'),
-    ]),
-    actions: [
-      {
-        label: __('Confirm'),
-        variant: 'solid' as const,
-        autofocus: true,
-        onClick: () => {
-          showDelete.value = false
-          handleDelete(toDelete.value)
-        },
-      },
-    ],
-  }
-})
+const deleteOptions = computed(() =>
+  deleteForeverOptions(toDelete.value.length, () => {
+    showDelete.value = false
+    handleDelete(toDelete.value)
+  }),
+)
 
 // The copies a removal takes from the folder on screen: in Trash the trashed ones, in Drafts the
 // drafts. The rest of the conversation lives on in the folders it was filed in.

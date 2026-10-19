@@ -1,6 +1,6 @@
 <!--
   The phone account sheet, opened from the avatar in the bottom nav [T010]:
-  who is signed in, then Settings, Theme and Log out. The sheet shows no title,
+  who is signed in, then Settings and Theme, and Log out set apart. The sheet shows no title,
   so a visually hidden one names the dialog "Account".
 -->
 <template>
@@ -30,8 +30,12 @@
               @update:model-value="setTheme"
             />
           </div>
-          <SidebarItem :label="__('Log out')" icon="lucide-log-out" @click="logOut" />
         </nav>
+        <!-- Set apart from the settings above it, as the desktop menu sets it in a group of its
+             own: a tap that meant Theme must not end the session. -->
+        <div class="mt-3 border-t pt-3">
+          <SidebarItem :label="__('Log out')" icon="lucide-log-out" @click="logOut" />
+        </div>
       </div>
     </div>
   </BottomSheet>

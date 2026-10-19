@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, effectScope, reactive, ref } from 'vue'
 
 import { createApiClient } from '@/platform/server-state'
 import { createTransport } from '@/platform/transport'
 
-import { useThreadActions } from './useThreadActions'
+import { deleteForeverOptions, useThreadActions } from './useThreadActions'
 
 const mocks = vi.hoisted(() => ({
   useMutation: vi.fn<typeof import('@/api').useMutation>(),
@@ -134,4 +134,30 @@ it('discarding a reply draft from the list holds only the draft, not the mail it
   vi.unstubAllGlobals()
 
   expect(mocks.holdDraft.mock.calls.map(([id]) => id)).toEqual(['reply'])
+})
+
+describe('the confirmation for deleting conversations forever', () => {
+  // The translator echoes its message, so the words the reader sees are the ones checked.
+  beforeEach(() => {
+    window.__ = (message: string, args?: (string | number)[]) =>
+      args ? message.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)])) : message
+  })
+
+  it('names how many, says it is for good, and its button says what it does', () => {
+    const confirm = vi.fn()
+    const options = deleteForeverOptions(3, confirm)
+
+    expect(options.title).toBe('Delete 3 conversations forever?')
+    expect(options.message).toContain('can’t be undone')
+    expect(options.actions.map((action) => action.label)).toEqual(['Cancel', 'Delete Forever'])
+    const remove = options.actions[1]
+    expect(remove).toMatchObject({ theme: 'red' })
+
+    remove.onClick?.()
+    expect(confirm).toHaveBeenCalledOnce()
+  })
+
+  it('speaks of one conversation as one', () => {
+    expect(deleteForeverOptions(1, () => {}).title).toBe('Delete this conversation forever?')
+  })
 })
