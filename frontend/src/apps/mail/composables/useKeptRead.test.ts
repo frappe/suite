@@ -83,4 +83,15 @@ describe('read in a list filtered to unread mail', () => {
     stop()
     expect(changed.count).toBe(0)
   })
+
+  it('is put back only on the list it was taken off', async () => {
+    const { keep, release, restore, current, withKept, filter } = setUp()
+    keep(bRead)
+    release(['b'])
+    const at = current()
+    filter.value = 'unread,starred'
+    await nextTick()
+    restore(bRead, at)
+    expect(ids(withKept(withoutB))).toEqual(['c', 'a'])
+  })
 })

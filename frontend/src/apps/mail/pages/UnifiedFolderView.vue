@@ -1006,8 +1006,10 @@ const { runMailRemoval } = useMailRemoval({
   // Its last message gone, a conversation kept read on the list goes too; a failure keeps it again.
   removeRow: (_mail, thread) => {
     if (thread) keptRead.release([threadKey(thread)])
+    // Put back only on the list it left: another filter or folder since has rules of its own.
+    const at = keptRead.current()
     return () => {
-      if (thread) keptRead.keep([thread])
+      if (thread) keptRead.restore([thread], at)
       refreshThreads()
     }
   },

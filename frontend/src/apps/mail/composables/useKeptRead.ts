@@ -25,10 +25,19 @@ export function useKeptRead({
   key: (thread: Thread) => string
 }) {
   const kept = shallowRef(new Map<string, Thread>())
+  // Which list this is: a row taken off one list and put back later goes back only to that list.
+  let generation = 0
   const clear = () => {
     if (kept.value.size) kept.value = new Map()
   }
-  watch(scope, clear, { deep: true })
+  watch(
+    scope,
+    () => {
+      generation++
+      clear()
+    },
+    { deep: true },
+  )
 
   /**
    * Holds the read rows of `rows` as they are now, and lets go of any made unread again: the server
@@ -78,5 +87,13 @@ export function useKeptRead({
     return merged
   }
 
-  return { keep, release, clear, withKept }
+  /** The list as it is now, for `keep` to be asked later only of the same list (see `restore`). */
+  const current = () => generation
+
+  /** Holds `rows` again, as `keep` would, if the list is still the one `at` named. */
+  const restore = (rows: Thread[], at: number) => {
+    if (at === generation) keep(rows)
+  }
+
+  return { keep, release, clear, withKept, current, restore }
 }
