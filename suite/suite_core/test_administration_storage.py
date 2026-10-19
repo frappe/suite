@@ -109,6 +109,12 @@ class TestAdministrationAccess(IntegrationTestCase):
             self.assertEqual(require_admin(), self.admin)
             self.assertIn(self.normal, {row["name"] for row in list_users()})
 
+    def test_a_user_without_a_full_name_is_listed_by_their_id(self):
+        frappe.db.set_value("User", self.normal, "full_name", None, update_modified=False)
+        with self.set_user(self.admin):
+            row = next(row for row in list_users() if row["name"] == self.normal)
+        self.assertEqual(row["full_name"], self.normal)
+
     def test_normal_users_and_technical_managers_cannot_read_or_mutate_policy(self):
         for user in (self.normal, self.technical):
             with self.subTest(user=user), self.set_user(user):

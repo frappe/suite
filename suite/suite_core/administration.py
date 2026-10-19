@@ -31,6 +31,8 @@ def list_users() -> list[dict]:
         frappe.get_all("Has Role", filters={"role": "Suite Admin", "parenttype": "User"}, pluck="parent")
     )
     for row in rows:
+        # Rows written without User.validate have no full name; publish the id, as Drive's Person does.
+        row["full_name"] = row["full_name"] or row["name"]
         row["is_admin"] = row["name"] in admins
         row["enabled"] = bool(row["enabled"])
         from suite.suite_core.account_state import read
