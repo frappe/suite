@@ -52,6 +52,8 @@ export function useKeptRead({
     let next: Map<string, Thread> | undefined
     for (const row of rows) {
       const k = key(row)
+      // Back on the list unread (a new reply to an archived conversation), it is the list's again.
+      if (released.has(k) && row.seen !== 1) released.delete(k)
       if (released.has(k)) continue
       const held = kept.value.get(k)
       // The list builds its rows afresh on every change, this one included: a row is taken again
@@ -59,6 +61,7 @@ export function useKeptRead({
       const same =
         !!held &&
         held.seen === row.seen &&
+        held.flagged === row.flagged &&
         held.received_at === row.received_at &&
         held.messages?.length === row.messages?.length
       if (row.seen === 1 ? same : !held) continue

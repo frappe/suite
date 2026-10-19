@@ -1266,7 +1266,7 @@ const fileThreads = (
       // back in Junk.
       undoScreen:
         screenAction === 'Accepted' ? 'Spam' : screenAction === 'Spam' ? 'Accepted' : null,
-      putBack: leaves ? () => keptRead.restore(threads, at) : undefined,
+      putBack: leaves ? (rows) => keptRead.restore(rows, at) : undefined,
     },
   )
 }
@@ -1309,8 +1309,9 @@ const actPerAccount = (
   }: {
     /** The sender verdict Undo gives, taking back the action's. */
     undoScreen?: string | null
-    /** Puts back on the list what the action took off it that the server won't list again. */
-    putBack?: () => void
+    /** Puts back on the list the given rows the action took off it, which the server won't list
+     * again: an account's whose action was undone, or refused. */
+    putBack?: (rows: Thread[]) => void
   } = {},
 ) => {
   const groups = byAccount(threads)
@@ -1323,7 +1324,9 @@ const actPerAccount = (
     void landed.then((accounts) => {
       const restoring = snapshots.filter(([account]) => accounts.includes(account))
       if (!restoring.length) return
-      putBack?.()
+      putBack?.(
+        groups.filter(([account]) => accounts.includes(account)).flatMap(([, rows]) => rows),
+      )
       raiseOptimisticToast(
         Promise.all(
           restoring.map(([account, mails]) => restoreMails(account, mails, undoScreen)),
@@ -1338,7 +1341,10 @@ const actPerAccount = (
     // put back as it was, since its Undo is gone.
     const refused = snapshots.filter((_, i) => results[i].status === 'rejected')
     refused.forEach(([account, mails]) => void restoreMails(account, mails).catch(() => {}))
-    if (refused.length) putBack?.()
+    if (refused.length)
+      putBack?.(
+        groups.filter((_, i) => results[i].status === 'rejected').flatMap(([, rows]) => rows),
+      )
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
     const undo = { label: __('Undo'), onClick: undoAction }
     const answers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))

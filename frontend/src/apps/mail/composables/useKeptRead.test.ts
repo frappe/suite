@@ -103,4 +103,14 @@ describe('read in a list filtered to unread mail', () => {
     keep(bRead)
     expect(ids(withKept(withoutB))).toEqual(['c', 'a'])
   })
+
+  it('is the list’s again once it comes back unread, and kept when read again', () => {
+    const { keep, release, withKept } = setUp()
+    keep(bRead)
+    release(['b'])
+    // A new reply brings it back, unread; read again, it stays when the server stops listing it.
+    keep(before)
+    keep(bRead)
+    expect(ids(withKept(withoutB))).toEqual(['c', 'b', 'a'])
+  })
 })
