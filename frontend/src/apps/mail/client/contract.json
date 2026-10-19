@@ -5236,6 +5236,98 @@
       "bytes": false
     },
     {
+      "id": "attach_drive_files",
+      "kind": "mutation",
+      "publicName": "attachments.fromDrive",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.attach_drive_files",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "$defs": {
+          "DriveFile": {
+            "description": "A file picked in Drive to attach: its node, and its name as Drive shows it.",
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "title"
+            ],
+            "title": "DriveFile",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/$defs/DriveFile"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "AttachDriveFiles",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AttachedFile": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "file_name": {
+                "title": "File Name",
+                "type": "string"
+              },
+              "file_url": {
+                "title": "File Url",
+                "type": "string"
+              },
+              "file_size": {
+                "title": "File Size",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "file_name",
+              "file_url",
+              "file_size"
+            ],
+            "title": "AttachedFile",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/AttachedFile"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "unscreen_email_addresses",
       "kind": "mutation",
       "publicName": "screening.remove",

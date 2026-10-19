@@ -91,8 +91,11 @@ from suite.mail.api.contacts import (
     get_contacts,
 )
 from suite.mail.api.mail import (
+    AttachedFile,
+    DriveFile,
     add_mails_to_mailbox,
     allow_screening_senders,
+    attach_drive_files,
     block_senders,
     clear_list,
     create_mail,
@@ -253,6 +256,10 @@ from suite.mail.http.shapes import (
     UnscreenAddresses,
     UserInfo,
 )
+
+
+class AttachDriveFiles(TypedDict):
+    files: list[DriveFile]
 
 
 class InboxSummary(TypedDict):
@@ -441,6 +448,20 @@ CONTRACT_ROUTES += (
         public_name="screening.set",
         body=ScreenAddresses,
         output=type(None),
+        envelope="message",
+        errors=(
+            frappe.PermissionError,
+            frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.mail.api.mail.attach_drive_files",
+        "attach_drive_files",
+        kind="mutation",
+        public_name="attachments.fromDrive",
+        body=AttachDriveFiles,
+        output=list[AttachedFile],
         envelope="message",
         errors=(
             frappe.PermissionError,

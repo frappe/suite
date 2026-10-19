@@ -282,6 +282,7 @@ import {
   ChevronDown,
   ChevronUp,
   EllipsisVertical,
+  HardDrive,
   Paperclip,
   SendHorizontal,
   Trash2,
@@ -315,7 +316,7 @@ const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const pendingUploads = ref(0)
-const isUploading = computed(() => pendingUploads.value > 0)
+const isUploading = computed(() => pendingUploads.value > 0 || isAttachingFromDrive.value)
 
 const uploadInlineImage = async (file: File) => {
   pendingUploads.value++
@@ -358,6 +359,8 @@ const {
   scheduleSend,
   openQuotedContent,
   openAttachment,
+  attachFromDrive,
+  isAttachingFromDrive,
   mentionExtensions,
   editorContent,
   onEditorChange,
@@ -549,6 +552,7 @@ const onFilesSelected = async (e: Event) => {
 }
 
 const ACTIONS = [
+  { label: __('Attach from Drive'), onClick: () => void attachFromDrive(), icon: HardDrive },
   { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
   { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
 ]

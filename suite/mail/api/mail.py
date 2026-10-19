@@ -4,6 +4,7 @@ import os
 import re
 import zipfile
 from datetime import datetime
+from typing import TypedDict
 
 import frappe
 import pydenticon
@@ -2512,6 +2513,61 @@ def _refuse_oversized_attachment(filename: str) -> None:
         ),
         MaxFileSizeReachedError,
     )
+
+
+class DriveFile(TypedDict):
+    """A file picked in Drive to attach: its node, and its name as Drive shows it."""
+
+    node: str
+    title: str
+
+
+class AttachedFile(TypedDict):
+    name: str
+    file_name: str
+    file_url: str
+    file_size: int
+
+
+@frappe.whitelist(methods=["POST"])
+def attach_drive_files(files: JSONList[DriveFile]) -> list[AttachedFile]:
+    """Attach files from Drive to a mail being written, as copies.
+
+    Each one is read through Drive, which refuses a file the user can't read, and saved as a private
+    file as an upload from the device would be (see `upload_file`), under the same size limit. A copy
+    rather than a link: the mail goes on carrying what was attached even if the Drive file changes,
+    moves or goes.
+    """
+
+    from frappe.core.doctype.file.utils import get_safe_file_name
+
+    from suite import drive
+
+    attached = []
+    for picked in files:
+        stream, _mime = drive.read_file(picked["node"])
+        filename = get_safe_file_name(picked.get("title") or picked["node"])
+        content = stream.read(MAX_ATTACHMENT_SIZE + 1)
+        if len(content) > MAX_ATTACHMENT_SIZE:
+            _refuse_oversized_attachment(filename)
+        file = frappe.get_doc(
+            {
+                "doctype": "File",
+                "folder": "Home/Frappe Mail",
+                "file_name": filename,
+                "is_private": 1,
+                "content": content,
+            }
+        ).insert()
+        attached.append(
+            AttachedFile(
+                name=file.name,
+                file_name=file.file_name,
+                file_url=file.file_url,
+                file_size=file.file_size,
+            )
+        )
+    return attached
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

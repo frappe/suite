@@ -18,6 +18,7 @@ import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/cli
 import type { DriveBreadcrumb, DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
+import type { PickedFile as PickedDriveFile } from '@/apps/drive/files/features/filePicker'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
@@ -382,7 +383,14 @@ export interface DriveDialogs {
   showDetails(node: string): Promise<void>
   /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
   share(node: string): Promise<boolean>
+  /**
+   * Opens the file picker, titled `title`, its button naming what is done with the files.
+   * Resolves with the files picked, or `undefined` when cancelled. Only files can be picked.
+   */
+  pickFiles(options?: { title?: string; action?: string }): Promise<PickedDriveFile[] | undefined>
 }
+
+export type { PickedDriveFile }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
 export function useDriveDialogs(): DriveDialogs {
@@ -404,6 +412,13 @@ export function useDriveDialogs(): DriveDialogs {
     share: (node) =>
       import('@/apps/drive/files/features/share/present').then((share) =>
         share.presentShareDialog(node, context),
+      ),
+    pickFiles: (options = {}) =>
+      presentDialog<PickedDriveFile[]>(
+        context,
+        () => import('@/apps/drive/files/features/FilePicker.vue'),
+        options,
+        'picked',
       ),
   }
 }
