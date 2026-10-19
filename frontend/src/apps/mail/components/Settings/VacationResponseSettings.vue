@@ -25,18 +25,21 @@
         type="datetime-local"
         :label="__('From Date')"
         variant="outline"
+        :disabled="!draft.enabled"
       />
       <FormControl
         v-model="draft.to_date"
         type="datetime-local"
         :label="__('To Date')"
         variant="outline"
+        :disabled="!draft.enabled"
       />
       <FormControl
         v-model="draft.subject"
         :label="__('Subject')"
-        placeholder="Out of Office"
+        :placeholder="__('Out of office')"
         variant="outline"
+        :disabled="!draft.enabled"
       />
       <div class="space-y-1.5">
         <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
@@ -45,6 +48,7 @@
           :placeholder="__('Type something...')"
           :fixed-menu="buttons"
           :content="draft.html_body"
+          :editable="draft.enabled"
           @change="(val: string) => (draft.html_body = val)"
         />
       </div>
@@ -68,6 +72,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
+import dayjs from '@/apps/mail/utils/dayjs'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
@@ -101,10 +106,13 @@ watch(
   () => vacationResponse.data,
   (data) => {
     if (!data) return
+    // An absence that is off and over is history, not a default: its dates go, so turning the
+    // responder on again starts from nothing rather than last year's trip. Its words stay, to reuse.
+    const over = !data.enabled && !!data.to_date && dayjs.utc(data.to_date).isBefore(dayjs())
     Object.assign(draft, {
       enabled: Boolean(data.enabled),
-      from_date: toLocalInput(data.from_date),
-      to_date: toLocalInput(data.to_date),
+      from_date: over ? '' : toLocalInput(data.from_date),
+      to_date: over ? '' : toLocalInput(data.to_date),
       subject: data.subject ?? '',
       html_body: data.html_body ?? '',
     })

@@ -7039,6 +7039,7 @@ export type FetchPushSubscriptionsOutputSubscription = {
   id: string
   name: string
   device_client_id: string
+  this_site: boolean
   expires: string | null
   types: string
   creation: string

@@ -97,12 +97,19 @@ const formatTypes = (types: string) => {
     return '—'
   }
 }
+// Named, not shown as the mail server's bare ids: this site's own subscription says so, and any
+// other (an app or site that registered one, by hand or through the API) is told apart by the
+// start of its id.
+const clientOf = (sub: PushSubscription) =>
+  sub.this_site
+    ? __('This site ({0})', [window.location.host])
+    : __('Another client · {0}', [sub.id.slice(0, 8)])
 const rows = computed(() =>
   (pushSubscriptions.data ?? []).map((sub: PushSubscription) => ({
     name: sub.name,
     user: sub.user,
     id: sub.id,
-    device_client_id: sub.device_client_id,
+    client: clientOf(sub),
     types: formatTypes(sub.types),
     expires: sub.expires ? dayjs(sub.expires).format('D MMM YYYY, h:mm A') : '—',
   })),
@@ -169,14 +176,9 @@ const deleteModalOptions = computed(() => ({
 // `fr` units (numbers) so the columns share the row width instead of overflowing.
 const COLUMNS = [
   {
-    label: __('Device Client ID'),
-    key: 'device_client_id',
-    width: 2,
-  },
-  {
-    label: __('Subscription ID'),
-    key: 'id',
-    width: 2,
+    label: __('Client'),
+    key: 'client',
+    width: 3,
   },
   {
     label: __('Types'),
