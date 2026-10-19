@@ -14,11 +14,13 @@ import {
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
+import PresentButton from '@/apps/slides/components/PresentButton.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
+import Slideshow from '@/apps/slides/pages/Slideshow.vue'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { resetFocus } from '@/apps/slides/stores/element'
 import {
@@ -446,6 +448,10 @@ onBeforeUnmount(() => {
       @download-changes="downloadChanges"
     >
       <template #actions>
+        <PresentButton
+          class="max-md:hidden"
+          :disabled="loading || !access.readable.value || !slides.length"
+        />
         <Button
           icon="lucide-file-down"
           tooltip="Export"
@@ -627,6 +633,10 @@ onBeforeUnmount(() => {
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
 
     <teleport to="body">
+      <!-- drawn over the editor, so the deck's document session stays open while presenting -->
+      <div v-if="inSlideShowMode" class="fixed inset-0 z-50">
+        <Slideshow />
+      </div>
       <ExportView v-if="exporting" :slides="slides" />
     </teleport>
   </div>

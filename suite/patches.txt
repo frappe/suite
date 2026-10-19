@@ -31,6 +31,7 @@ suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
 suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
 suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails
+suite.slides.doctype.presentation.patches.set_default_theme
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- drive (legacy tree, before Build) ---
