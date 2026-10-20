@@ -5,8 +5,9 @@
  * It is removed once downloaded, or once the spreadsheet saves again with edit
  * access, because it is then stale.
  */
+import { base64ToBytes } from '@/apps/sheets/core/snapshot-codec'
 import { toXlsxCell } from '@/apps/sheets/engine/xlsx-io.js'
-import { colLabel, parseCellId } from '@/apps/sheets/utils/cells.js'
+import { cellId, colLabel, parseCellId } from '@/apps/sheets/utils/cells.js'
 import { unpackSheet } from '@/apps/sheets/utils/sheet-codec.js'
 
 export interface RecoveryCopy {
@@ -50,7 +51,7 @@ export async function recoveryFile(copy: RecoveryCopy, title: string): Promise<F
   const { utils, write } = await import('xlsx')
   const book = utils.book_new()
   const used = new Set<string>()
-  for (const [name, cells] of Object.entries(sheetsOf(copy.workbook))) {
+  for (const [name, cells] of Object.entries(await sheetsOf(copy.workbook))) {
     utils.book_append_sheet(book, worksheet(cells), sheetName(name, used))
   }
   if (!book.SheetNames.length) utils.book_append_sheet(book, {}, 'Sheet1')
@@ -76,15 +77,59 @@ export async function downloadRecovery(node: string, title: string): Promise<boo
   return true
 }
 
-function sheetsOf(workbook: string): Record<string, Cells> {
+interface SavedWorkbook {
+  /** IronCalc's bytes, base64. */
+  engine?: unknown
+  /** A develop sheet's packed rows. */
+  sheet?: unknown
+  /** A cell edit still in progress. */
+  draft?: { sheet?: unknown; cell?: unknown; value?: unknown } | null
+}
+
+async function sheetsOf(workbook: string): Promise<Record<string, Cells>> {
+  let saved: SavedWorkbook
   try {
-    const saved = JSON.parse(workbook) as { sheet?: unknown }
-    const unpacked = unpackSheet(saved.sheet) as
-      { sheets?: Record<string, Cells> } | null | undefined
+    saved = JSON.parse(workbook) as SavedWorkbook
+  } catch {
+    return {}
+  }
+  const sheets =
+    typeof saved.engine === 'string'
+      ? await engineSheets(base64ToBytes(saved.engine))
+      : packedSheets(saved.sheet)
+  const draft = saved.draft
+  if (typeof draft?.sheet === 'string' && typeof draft.cell === 'string') {
+    ;(sheets[draft.sheet] ??= {})[draft.cell] = draft.value
+  }
+  return sheets
+}
+
+function packedSheets(packed: unknown): Record<string, Cells> {
+  try {
+    const unpacked = unpackSheet(packed) as { sheets?: Record<string, Cells> } | null | undefined
     return unpacked?.sheets ?? {}
   } catch {
     return {}
   }
+}
+
+/** Every cell's input, read from IronCalc's bytes on this thread. */
+async function engineSheets(bytes: Uint8Array): Promise<Record<string, Cells>> {
+  const { default: init } = await import('@ironcalc/wasm')
+  await init()
+  const { createWorkbook } = await import('@/apps/sheets/core/workbook')
+  const book = createWorkbook({ loadBytes: bytes })
+  const sheets: Record<string, Cells> = {}
+  for (const name of book.getSheets()) {
+    const cells: Cells = (sheets[name] = {})
+    const used = book.usedCells(name)
+    for (let i = 0; i < used.length; i += 2) {
+      const row = used[i]!
+      const col = used[i + 1]!
+      cells[cellId(row - 1, col - 1)] = book.getInput(name, row, col)
+    }
+  }
+  return sheets
 }
 
 /** One sheet's cells as a SheetJS worksheet. A formula has no cached value: the opening app computes it. */

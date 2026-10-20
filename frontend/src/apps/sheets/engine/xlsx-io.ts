@@ -13,6 +13,20 @@ import { CURRENCIES, parseNumberFmt, type Currency } from '../utils/format-numbe
 import type { MergeInfo } from './merge.js'
 import type { Rect } from './types.js'
 
+/**
+ * SheetJS `read` options for a lossless import. `cellFormula` keeps `=…`,
+ * `cellDates` yields Date objects and `cellNF` keeps the number-format code.
+ * `sheetStubs` keeps a formula cell that has no cached value (`<f>` with an
+ * empty `<v>`, as openpyxl and most generators write); without it SheetJS
+ * drops the cell and the formula with it.
+ */
+export const XLSX_READ_OPTIONS = {
+  cellFormula: true,
+  cellDates: true,
+  cellNF: true,
+  sheetStubs: true,
+} as const
+
 /** A SheetJS cell as this module writes it (see the field list above). */
 export interface XlsxCell {
   t: 'n' | 's' | 'b' | 'd'

@@ -157,7 +157,7 @@
                   class="pv-td"
                   :class="{ 'pv-td--num': typeof cell === 'number' }"
                 >
-                  {{ cell === '' ? '' : cell }}
+                  {{ typeof cell === 'number' ? Number(cell.toPrecision(15)) : cell }}
                 </td>
               </tr>
             </tbody>

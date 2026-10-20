@@ -66,7 +66,6 @@
   "frontend/src/apps/sheets/components/SheetEditor/LinkPreviewCard.vue|vue/block-lang": 1,
   "frontend/src/apps/sheets/components/SheetEditor/NamedRangesDialog.vue|vue/block-lang": 1,
   "frontend/src/apps/sheets/components/SheetEditor/PivotDialog.vue|vue/block-lang": 1,
-  "frontend/src/apps/sheets/components/SheetEditor/PivotFieldPicker.vue|@typescript-eslint/no-unused-expressions": 1,
   "frontend/src/apps/sheets/components/SheetEditor/PivotFieldPicker.vue|vue/block-lang": 1,
   "frontend/src/apps/sheets/components/SheetEditor/SplitTextPopover.vue|vue/block-lang": 1,
   "frontend/src/apps/sheets/components/SheetEditor/index.vue|@typescript-eslint/no-unused-expressions": 2,

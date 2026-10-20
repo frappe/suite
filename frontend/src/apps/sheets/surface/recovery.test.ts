@@ -1,6 +1,11 @@
+import fs from 'node:fs'
+import { createRequire } from 'node:module'
+import { initSync } from '@ironcalc/wasm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { read } from 'xlsx'
 
+import { bytesToBase64 } from '../core/snapshot-codec'
+import { createWorkbook } from '../core/workbook'
 import { downloadRecovery, keepRecovery, readRecovery, recoveryFile } from './recovery'
 
 /** A workbook as `sheets_data` stores it: packed rows, 0-based. */
@@ -49,6 +54,54 @@ describe('Sheets recovery copy', () => {
     expect(budget.B2?.v).toBe(1200)
     expect(budget.B3?.f).toBe('SUM(B2:B2)')
     expect(book.Sheets.Notes!.A1?.v).toBe('typed but not committed')
+  })
+
+  it('reads the cells of a workbook saved as IronCalc bytes, with the edit still in progress', async () => {
+    initSync({
+      module: fs.readFileSync(
+        createRequire(import.meta.url).resolve('@ironcalc/wasm/wasm_bg.wasm'),
+      ),
+    })
+    const book = createWorkbook()
+    const sheet = book.getSheets()[0]!
+    book.apply({
+      id: '1',
+      actor: 'local',
+      ts: 0,
+      type: 'batch',
+      payload: {
+        commands: [
+          {
+            id: '2',
+            actor: 'local',
+            ts: 0,
+            type: 'setInput',
+            payload: { sheet, row: 1, col: 1, input: 'Rent' },
+          },
+          {
+            id: '3',
+            actor: 'local',
+            ts: 0,
+            type: 'setInput',
+            payload: { sheet, row: 1, col: 2, input: '=2*600' },
+          },
+        ],
+      },
+    })
+    const saved = JSON.stringify({
+      engine: bytesToBase64(book.toBytes()),
+      draft: { sheet, cell: 'A2', value: 'typing' },
+    })
+
+    const file = await recoveryFile(
+      { savedAt: '2026-10-20T10:00:00.000Z', workbook: saved },
+      'Budget',
+    )
+
+    const recovered = read(await file.arrayBuffer()).Sheets[sheet]!
+    expect(recovered.A1?.v).toBe('Rent')
+    expect(recovered.B1?.f).toBe('2*600')
+    expect(recovered.A2?.v).toBe('typing')
   })
 
   it('hands the copy over once, then removes it', async () => {

@@ -123,8 +123,13 @@ export function createGridActions(o: GridActionsOptions): GridActions {
       return Math.max(0, Math.min(vm.totalCols - 1, c))
     },
 
-    jumpEdge: (r, c, dr, dc) =>
-      jumpEdge({ r, c }, dr, dc, hasValue, vm.totalRows - 1, vm.totalCols - 1),
+    // Every filled cell, not just the ones read for the screen: a lazy grid
+    // reads only the cells near the viewport.
+    jumpEdge(r, c, dr, dc) {
+      const filled = new Set(o.cellIds())
+      const isFilled = (row: number, col: number) => filled.has(cellId(row, col))
+      return jumpEdge({ r, c }, dr, dc, isFilled, vm.totalRows - 1, vm.totalCols - 1)
+    },
 
     lastUsedCell() {
       let r = 0,

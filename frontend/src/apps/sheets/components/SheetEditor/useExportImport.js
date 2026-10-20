@@ -1,4 +1,10 @@
-import { fromXlsxCell, mergesFromXlsx, mergesToXlsx, toXlsxCell } from '../../engine/xlsx-io.js'
+import {
+  fromXlsxCell,
+  mergesFromXlsx,
+  mergesToXlsx,
+  toXlsxCell,
+  XLSX_READ_OPTIONS,
+} from '../../engine/xlsx-io.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 
 // ── private helpers ────────────────────────────────────────────────────────────
@@ -235,9 +241,7 @@ export function useExportImport({
     try {
       const { read } = await import('xlsx')
       const buf = await file.arrayBuffer()
-      // cellFormula keeps `=…`, cellDates yields Date objects, cellNF keeps the
-      // number-format code — all three are what makes the import lossless.
-      const wb = read(buf, { type: 'array', cellFormula: true, cellDates: true, cellNF: true })
+      const wb = read(buf, { type: 'array', ...XLSX_READ_OPTIONS })
       await _ingestWorkbook(wb)
     } finally {
       e.target.value = '' // always reset so re-picking the same file re-fires
@@ -288,6 +292,8 @@ export function useExportImport({
     for (const [id, cell] of Object.entries(ws)) {
       if (id[0] === '!') continue // !ref, !merges, !cols meta keys
       if (!parseCellId(id)) continue
+      // A stub with no formula is an empty styled cell; skip it as before.
+      if (cell.t === 'z' && !cell.f) continue
       const { value, fmt } = fromXlsxCell(cell)
       if (value !== '' && value != null) out.add(id, value)
       if (fmt) fmts.push([id, fmt])

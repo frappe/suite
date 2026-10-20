@@ -10,7 +10,8 @@
 // What reacts to the workbook stays with the editor and comes in as
 // callbacks: syncNames when its sheet list changes, onVersion after every
 // applied edit, onUsedExtent when the open sheet's data extent is read,
-// onCrash(reason) if the worker dies (the workbook is lost with it).
+// onCrash(reason) if the worker dies (the workbook is lost with it), and
+// onEdit(command | 'restore') for every change sent to the workbook.
 
 import { createCellProvider } from '../../core/cell-provider'
 import { createWorkbookClient } from '../../core/client'
@@ -28,8 +29,9 @@ export function useWorkbook({
   onVersion,
   onUsedExtent,
   onCrash,
+  onEdit = () => {},
 }) {
-  // { client, provider, offSheets, offVersion, offCrash } once started (see startEngine).
+  // { client, provider, offSheets, offVersion, offCrash, offEdit } once started (see startEngine).
   let engine = null
 
   async function startEngine(snapshotBytes = null) {
@@ -48,7 +50,8 @@ export function useWorkbook({
     const offSheets = client.onSheets(() => syncNames())
     const offVersion = client.onVersion(() => onVersion())
     const offCrash = client.onCrash((reason) => onCrash(reason))
-    engine = { client, provider, offSheets, offVersion, offCrash }
+    const offEdit = client.onEdit((edit) => onEdit(edit))
+    engine = { client, provider, offSheets, offVersion, offCrash, offEdit }
     // The saved bytes may predate names being sent to IronCalc: send them all.
     namesInEngine = new Map()
     syncDefinedNames()
@@ -61,6 +64,7 @@ export function useWorkbook({
     engine?.offSheets()
     engine?.offVersion()
     engine?.offCrash()
+    engine?.offEdit()
     engine?.provider.dispose()
     engine?.client.terminate()
     engine = null
@@ -71,9 +75,10 @@ export function useWorkbook({
     return engine?.client ?? null
   }
 
+  // The workbook as of the commands dispatched so far; later ones are not in it.
   function engineBytes() {
     if (!engine) return Promise.reject(new Error('IronCalc is not running'))
-    return engine.client.toBytes()
+    return engine.client.snapshot()
   }
 
   let commandSeq = 0

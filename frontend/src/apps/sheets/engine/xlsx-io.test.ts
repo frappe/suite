@@ -6,6 +6,7 @@ import {
   mergesToXlsx,
   numFmtToZ,
   toXlsxCell,
+  XLSX_READ_OPTIONS,
   zToNumFmt,
 } from './xlsx-io.js'
 
@@ -178,5 +179,26 @@ describe('merge mapping', () => {
     const master = { B2: { r: 1, c: 1, rowSpan: 3, colSpan: 2 } }
     const [rect] = mergesFromXlsx(mergesToXlsx(master))
     expect(rect).toEqual({ r0: 1, c0: 1, r1: 3, c1: 2 })
+  })
+})
+
+describe('reading an xlsx file', () => {
+  it('keeps formulas that have no cached value', async () => {
+    const { read, utils, write } = await import('xlsx')
+    const book = utils.book_new()
+    // `<f>` with no `<v>`, as openpyxl writes it.
+    const sheet = {
+      '!ref': 'A1:B3',
+      A1: { t: 'n', v: 1 },
+      A2: { t: 'n', v: 2 },
+      A3: { t: 'z', f: 'SUM(A1:A2)' },
+      B3: { t: 'z', f: 'A3/A1' },
+    }
+    utils.book_append_sheet(book, sheet, 'Budget')
+    const bytes = write(book, { type: 'array', bookType: 'xlsx' })
+
+    const cells = read(bytes, { type: 'array', ...XLSX_READ_OPTIONS }).Sheets.Budget
+    expect(fromXlsxCell(cells.A3).value).toBe('=SUM(A1:A2)')
+    expect(fromXlsxCell(cells.B3).value).toBe('=A3/A1')
   })
 })

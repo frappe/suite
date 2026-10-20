@@ -183,16 +183,22 @@ export function createCellPainter(
     // pass — don't paint the raw text a second time on top.
     const vtype = cells.getValidation?.(id)?.type
     if (vtype === 'list' || vtype === 'checkbox') return
-    const s = String(val)
+    let s = String(val)
     const baseFmt: CellFormat = condFmt ? { ...fmt, ...condFmt } : fmt
+    const isNumber = cells.isNumber?.(id)
     const efmt: CellFormat = {
       ...baseFmt,
-      align: baseFmt.align || _autoAlign(s, cells.isNumber?.(id)),
+      align: baseFmt.align || _autoAlign(s, isNumber),
     }
     const rightInset = cells.getRightInset?.(id) || 0
     const iconInset = condFmt?.icon ? ICON_INSET : 0
     setCellFont(ctx, efmt)
     const mode = getTextWrap(efmt)
+    // A number never spills into its neighbours or loses digits off an edge:
+    // it is rounded to fit, or shown as ### (as Excel does).
+    if (isNumber && mode !== 'wrap') {
+      s = _fitNumber(s, w - iconInset - rightInset - 8)
+    }
     // A value with hard newlines (Cmd+Enter) always renders multi-line, even
     // in clip/overflow mode — matching Sheets, where only wrap mode also
     // soft-wraps long lines.
@@ -328,6 +334,21 @@ export function createCellPainter(
       ctx.fillStyle = bg
       ctx.fillRect(x + 1, y + 1, w - 1, h - 1)
     }
+  }
+
+  // `s` when it fits in `room`; a plain decimal rounded to fewer places when
+  // that fits; otherwise a row of #.
+  function _fitNumber(s: string, room: number): string {
+    if (ctx.measureText(s).width <= room) return s
+    const decimals = /^-?\d+\.(\d+)$/.exec(s)?.[1]?.length ?? 0
+    for (let places = decimals - 1; places >= 0; places--) {
+      const rounded = Number(s)
+        .toFixed(places)
+        .replace(/\.(\d*?)0+$/, (_, kept) => (kept ? `.${kept}` : ''))
+      if (ctx.measureText(rounded).width <= room) return rounded
+    }
+    const hash = ctx.measureText('#').width || 1
+    return '#'.repeat(Math.max(1, Math.floor(room / hash)))
   }
 
   // Numbers right, text left, as in Google Sheets. The cell's type decides
