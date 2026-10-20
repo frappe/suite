@@ -548,6 +548,7 @@ export type AccountGetOutputAccount = {
   email: string
   full_name: string
   avatar: string | null
+  time_zone: string | null
   roles: AccountGetOutputAccountRoles
   is_jmap_configured: boolean
   must_change_password: boolean

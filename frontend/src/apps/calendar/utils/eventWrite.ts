@@ -5,6 +5,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import type { RecurrenceRule } from '@/apps/calendar/utils/format'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
+import { userTimeZone } from '@/platform/time-zone'
 
 /**
  * The fields every whole-event write takes: create, update, split and the Meet create. Each
@@ -111,7 +112,7 @@ export function formEventFields(
   if (form.title) fields.title = form.title
   // Updates are a full replace: an event saved without its calendars lands in the default one.
   if (form.calendar_ids?.length) fields.calendar_ids = form.calendar_ids
-  if (dayjs?.tz) fields.time_zone = dayjs.tz.guess()
+  fields.time_zone = userTimeZone()
 
   // Saving the whole series from one of its occurrences. The start on screen belongs to that
   // occurrence, so what reaches the master is the shift the reader made to it — nothing at all

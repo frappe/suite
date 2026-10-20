@@ -42,6 +42,7 @@ import {
 } from '@/apps/calendar/utils/recurringScope'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { meetLogo } from '@/platform/brand'
+import { userTimeZone } from '@/platform/time-zone'
 
 const show = defineModel<boolean>()
 const { selectedEvent } = defineProps<{
@@ -464,7 +465,7 @@ const instancePatch = computed(() => {
   return {
     ...rest,
     start: dayjs
-      .tz(rest.start, zone || dayjs.tz.guess())
+      .tz(rest.start, zone || userTimeZone())
       .tz(eventZone)
       .format('YYYY-MM-DD[T]HH:mm:ss'),
   }

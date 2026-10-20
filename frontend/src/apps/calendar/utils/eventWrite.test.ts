@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/apps/calendar/client/api'
-import dayjs from '@/apps/calendar/utils/dayjs'
 import { formEventFields, gridEventFields, type EventForm } from '@/apps/calendar/utils/eventWrite'
 import { api as meet } from '@/apps/meet/client/api'
 
-vi.mock('@/apps/calendar/stores/user', () => ({
-  userStore: () => ({ userResource: { data: { time_zone: 'Europe/Berlin' } } }),
+vi.mock('@/platform/session', () => ({
+  useSession: () => ({ user: { value: { timeZone: 'Europe/Berlin' } } }),
 }))
-vi.spyOn(dayjs.tz, 'guess').mockReturnValue('Europe/Berlin')
 
 /** Sends `input` through the generated contract check every request passes before it leaves. */
 async function send(reference: { loadValidators?: () => Promise<unknown> }, input: unknown) {

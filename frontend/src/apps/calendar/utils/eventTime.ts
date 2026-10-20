@@ -1,4 +1,5 @@
 import dayjs from '@/apps/calendar/utils/dayjs'
+import { userTimeZone } from '@/platform/time-zone'
 
 /**
  * Turning an event's timing into the sentence a reader wants. The one rule behind every
@@ -50,7 +51,7 @@ export const isAllDayEvent = (event: EventTiming): boolean => {
  */
 export const eventStartLocal = (event: EventTiming & { time_zone?: string | null }): Dayjs =>
   event.time_zone && !isAllDayEvent(event)
-    ? dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
+    ? dayjs.tz(event.start, event.time_zone).tz(userTimeZone())
     : dayjs(event.start)
 
 /** The moment an event stops, from its start and ISO-8601 duration. */

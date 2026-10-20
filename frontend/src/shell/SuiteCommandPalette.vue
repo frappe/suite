@@ -361,7 +361,6 @@ import CalendarSearchResult from '@/apps/calendar/components/CommandPalette/Cale
 import type { CalendarSearchResult as CalendarSearchResultItem } from '@/apps/calendar/components/CommandPalette/types'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
 import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
-import dayjs from '@/apps/calendar/utils/dayjs'
 import { eventStartLocal } from '@/apps/calendar/utils/eventTime'
 import MailFilterPanel from '@/apps/mail/components/CommandPalette/MailFilterPanel.vue'
 import MailSearchResult from '@/apps/mail/components/CommandPalette/MailSearchResult.vue'
@@ -382,6 +381,7 @@ import { mailSearchRoute, useMobileSearch, useScreenSize } from '@/apps/mail/uti
 import HighlightedText from '@/components/HighlightedText.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
+import { userTimeZone } from '@/platform/time-zone'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
@@ -908,7 +908,7 @@ watch(
         account: String(route.params.accountId || ''),
         text,
         limit: CALENDAR_RESULT_LIMIT,
-        time_zone: dayjs.tz.guess(),
+        time_zone: userTimeZone(),
         filters: calendarFilterParams.value,
       }
     } else {

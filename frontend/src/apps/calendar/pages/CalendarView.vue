@@ -53,6 +53,7 @@ import {
 } from '@/apps/calendar/utils/recurringScope'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/platform/page-meta'
+import { userTimeZone } from '@/platform/time-zone'
 import { useRootStore } from '@/stores/root'
 
 const dayjs = inject('$dayjs')
@@ -379,7 +380,7 @@ const events = useQuery(api.calendar.events.sharedWindow, () => {
     account: store.accountId,
     from_date: from.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
     to_date: to.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-    time_zone: dayjs.tz.guess(),
+    time_zone: userTimeZone(),
   }
 })
 const eventRows = computed(() => events.data?.map(transformEvent))
@@ -390,7 +391,7 @@ const todayEvents = useQuery(api.calendar.events.sharedWindow, () => {
     account: store.accountId,
     from_date: start.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
     to_date: start.endOf('day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-    time_zone: dayjs.tz.guess(),
+    time_zone: userTimeZone(),
   }
 })
 const todayRows = computed(() => todayEvents.data?.map(transformEvent))
@@ -495,7 +496,7 @@ watch(
         account: store.accountId,
         text: searchWords.value,
         limit: SEARCH_RESULT_LIMIT,
-        time_zone: dayjs.tz.guess(),
+        time_zone: userTimeZone(),
         filters: searchFilters.params.value,
       }
     }, 180)
@@ -1081,7 +1082,7 @@ const submitEvent = (sendEmail: boolean) => {
   if (!eventToBeUpdated.isAllDay) {
     // The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
     // same numbers would be reinterpreted in the event's original zone.
-    eventToBeUpdated.time_zone = dayjs.tz.guess()
+    eventToBeUpdated.time_zone = userTimeZone()
     const start = dayjs(eventToBeUpdated.fromDateTime)
     const end = dayjs(eventToBeUpdated.toDateTime)
     const diff = dayjs.duration(end.diff(start))
@@ -1160,7 +1161,7 @@ const instanceStart = () => {
   const eventZone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
   if (eventToBeUpdated.isAllDay || !eventZone || !dayjs?.tz) return eventToBeUpdated.start
   return dayjs
-    .tz(eventToBeUpdated.fromDateTime, dayjs.tz.guess())
+    .tz(eventToBeUpdated.fromDateTime, userTimeZone())
     .tz(eventZone)
     .format('YYYY-MM-DD[T]HH:mm:ss')
 }

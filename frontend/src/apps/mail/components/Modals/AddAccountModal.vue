@@ -187,6 +187,7 @@ import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { utcFromNow } from '@/apps/mail/utils/datetime'
+import { userTimeZone } from '@/platform/time-zone'
 
 const show = defineModel<boolean>()
 const temporaryPassword = ref('')
@@ -210,7 +211,7 @@ const defaultAccountRequest = {
   first_name: '',
   last_name: '',
   locale: 'en-US',
-  time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  time_zone: userTimeZone(),
 }
 const accountRequest = reactive({
   ...defaultAccountRequest,

@@ -1,5 +1,5 @@
-import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
+import { userTimeZone } from '@/platform/time-zone'
 
 /**
  * Timestamps on the wire are always UTC, spelled the way Stalwart spells them:
@@ -13,15 +13,8 @@ const UTC_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
 
 type Dayjs = ReturnType<typeof dayjs>
 
-/**
- * The zone timestamps are displayed and typed in: the browser's, falling back to `time_zone` on
- * the User doc for the rare environment where the browser cannot say (`get_user_info` resolves
- * that to the site's zone when unset, completing the browser → user → system fallback chain).
- */
-export const userTimeZone = (): string => {
-  const { userResource } = userStore()
-  return dayjs.tz.guess() || userResource.data?.time_zone || 'UTC'
-}
+/** The zone timestamps are displayed and typed in: Settings first, then the browser's. */
+export { userTimeZone }
 
 /** Reads a UTC timestamp from an API into the user's zone. */
 export const inUserTimeZone = (value: string) => dayjs.utc(value).tz(userTimeZone())

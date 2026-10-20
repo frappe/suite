@@ -85,6 +85,7 @@ vi.mock('frappe-ui', () => {
 })
 vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
+vi.mock('@/platform/time-zone', () => ({ userTimeZone: () => 'Asia/Kolkata' }))
 vi.mock('@/apps/mail/utils/datetime', () => ({
   toLocalInput: () => '2026-10-27T18:00',
   fromLocalInput: (value: string) => (value ? '2026-10-27T12:30:00Z' : ''),
@@ -208,7 +209,7 @@ describe('Add user', () => {
       last_name: '',
       quota_gb: 0,
       locale: 'en-US',
-      time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      time_zone: 'Asia/Kolkata',
     })
     expect(feedback).not.toHaveBeenCalled()
   })
