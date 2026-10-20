@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
+  <div class="flex flex-col w-full bg-surface-base">
     <slot name="toolbar">
       <TextEditorFixedMenu
         v-if="editable"
@@ -116,7 +116,6 @@ import {
   editorColumns,
   editorTextStyle,
 } from '@/apps/writer/utils/editor-layout'
-import { useRootStore } from '@/stores/root'
 
 import { bubbleMenuOptions } from './core-editor/bubble-menu'
 import { buildMenuButtons } from './core-editor/menu-buttons'
@@ -151,8 +150,6 @@ const slots = useSlots()
 function hasCover() {
   return !!slots.cover
 }
-
-const root = useRootStore()
 
 const localContent = ref(props.rawContent ?? '')
 
@@ -295,20 +292,6 @@ function addComment() {
 
 function manualSave(func?: () => void) {
   emit('save', true, null, func)
-}
-
-function openCommandPalette(event: KeyboardEvent) {
-  if (
-    !props.editable ||
-    (!event.metaKey && !event.ctrlKey) ||
-    event.shiftKey ||
-    event.altKey ||
-    event.key.toLowerCase() !== 'k'
-  )
-    return
-  event.preventDefault()
-  event.stopPropagation()
-  root.paletteOpen = true
 }
 
 onKeyDown('p', (e) => {

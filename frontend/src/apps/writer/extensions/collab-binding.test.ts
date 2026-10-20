@@ -23,8 +23,9 @@ const SHA256: Record<string, string> = {
   // then the caret sent to others is tied to the letter on its right;
   // then marks on inline atoms are kept as element attributes;
   // then a filled element is replaced, not reused for an empty node, when its neighbour node takes its content;
-  // then yCursorPlugin has no default caret or selection look and throws without both builders
-  'dist/y-tiptap.js': 'a025468a9b3303553551adb6079ae6faf25a901f5b3c3f3e5008eee6564dd4be',
+  // then yCursorPlugin has no default caret or selection look and throws without both builders;
+  // then the filler block of an empty body is never written to Yjs as an edit
+  'dist/y-tiptap.js': '657886c8577f4c477514fe7075d30099ca6328eb088c9e6496b159ae25923d5d',
   // published 788e88fe...; then positions skip hidden leftovers; then the side a position is tied to; then initProseMirrorDoc's meta is BindingMetadata
   'dist/src/lib.d.ts': 'f75de6a35b5c903e315fe627cb8252faf66a393885ca5c6d2fb571b8e8bedff2',
   // published 14df8f3b...; then no default builders, and both builders are required
