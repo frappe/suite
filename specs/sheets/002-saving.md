@@ -13,8 +13,12 @@ Code: `suite/sheets/versioning/save.py` (`save_sheet`), `suite/sheets/doctype/sh
 - The client sends the whole workbook, plus the ops since the last save, about 2 seconds after the last edit.
 - `save_sheet` appends the ops to `Sheet Op Log` (numbered by `Sheet Seq`), then overwrites `Sheet.sheets_data` with the whole workbook and sets `head_seq`.
 - Every save may also take a Drive version, at most one per 30 seconds (`AUTO_VERSION_SECS`).
-- Each save names the `head_seq` it built on as `base_seq`. The server refuses any other head with `TimestampMismatchError`; the editor turns read only, shows "Changed elsewhere" and offers Reload. Edits that save carried are not merged.
+- Each save names the `head_seq` it built on as `base_seq`. The server refuses any other head with `TimestampMismatchError`. The server never merges: this refusal is the safety net.
 - A save publishes `sheet_saved { sheet, head_seq }` to the sheet's room. An editor with nothing unsaved loads the new body in place, so others see a save about 2 seconds after the last keystroke.
+- The editor keeps every command it dispatched that no landed save carries yet (`components/SheetEditor/unsentCommands.ts`). When another editor's `sheet_saved` arrives while it has unsaved edits, or when its save is refused, it **rebases** (`rebase()` in `usePersistence.js`): it loads the stored copy, dispatches its unsent commands again, writes the formats it changed per cell, column and row, replaces a feature store (merges, validation, charts, …) it changed, and saves on the new head. Per cell, and per feature store, the last writer wins. A save refused again right after rebases again, at most 3 times in a row; then the editor stops as below.
+- Commands that move cells or sheets (row or column insert, delete or move; sheet add, delete, rename, duplicate or move) and an undo that restores older bytes cannot be dispatched again safely. If any is unsent, the editor does not rebase. It turns read only, shows "Changed elsewhere", keeps its workbook as the local recovery copy (`surface/recovery.ts`, "Download my changes") and lists the unsent edits. Its Reload button says how many edits it discards.
+- A command for a sheet the stored copy no longer has is not dispatched. It is listed, and the workbook from before the rebase is kept as the recovery copy until it is downloaded.
+- The unsent cell and format edits are also kept in the tab's `sessionStorage` (the local draft), on every edit and when the page goes away. A reload inside the autosave delay puts them back on top of the stored copy and saves them. Edits that move cells or sheets are not kept in the draft; the leave prompt still covers them.
 
 ## Behaviour
 
@@ -66,7 +70,8 @@ About 2 seconds after the last edit, as today. Also on leaving the editor and on
 | Edit made while a save is in flight | Queued. It goes out in the next save |
 | Network drops | Commands stay queued in memory; the save retries when the network returns |
 | Server error | Retries with a delay that doubles, up to 30 seconds. The header shows "Not saved" |
-| Another tab or person saved first (`base_seq` refused) | The sheet becomes read only and asks the user to reload. Their unsent commands are listed so they can be re-entered |
+| Another tab or person saved first (`base_seq` refused, or their `sheet_saved` arrives) | The unsent commands are applied again on top of the stored copy and saved; per cell the last writer wins. If a command moved cells or sheets, the sheet becomes read only and asks the user to reload. Their unsent commands are listed so they can be re-entered, and the workbook is kept on the device |
+| Page reloaded before the save went out | The unsent cell and format edits are read from the tab's local draft and saved |
 | Edit access removed | Saving stops. The sheet becomes read only |
 
 ### Versions

@@ -236,7 +236,7 @@ describe('Sheets persistence', () => {
     expect(saves()).toHaveLength(1)
   })
 
-  it('builds each save on the head it last saw, and stops when another editor saved first', async () => {
+  it('builds each save on the head it last saw, and never resends one another editor got ahead of', async () => {
     const saved = persistence()
     await saved.loadSheet('sheet-1')
     await saved.saveExisting('sheet-1', 'Budget')
@@ -249,7 +249,6 @@ describe('Sheets persistence', () => {
       type: 'TimestampMismatchError',
     })
     expect(saves()).toHaveLength(3)
-    expect(saved.isStale.value).toBe(true)
     expect(await saved.retrySave()).toBeNull()
   })
 
