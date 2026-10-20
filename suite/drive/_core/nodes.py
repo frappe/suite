@@ -22,8 +22,8 @@ from frappe.utils import get_datetime, now, now_datetime
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
     POINT_SQL,
-    _admin_description,
     _describe_rows,
+    _system_description,
     add_creator_grant,
     chain_ids,
     chain_roles,
@@ -754,7 +754,7 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
             as_dict=True,
         )
     }
-    if principals.is_admin:
+    if principals.is_system:
         return counts
 
     decided = frappe.db.sql(
@@ -1730,8 +1730,7 @@ def _restore(principals: Principals, node_id: str, *, parent_node: str | None) -
             raise DriveConflict(_("Only a trash root can be restored"))
         subtree = _subtree(current)
         _validate_subtree(current, subtree)
-        via_link = require(current, EDIT, principals)
-        _require_restore_actor(current, principals, via_link)
+        via_link = _require_restore_actor(current, principals)
 
         original_available = _original_parent_available(current)
         if original_available:
@@ -1850,7 +1849,7 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
         ):
             frappe.db.release_savepoint(savepoint)
             return 0
-        system = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        system = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, system, via_link=None, subtree=subtree)
@@ -2228,7 +2227,12 @@ def _original_parent_available(node: dict) -> bool:
     return True
 
 
-def _require_restore_actor(node: dict, principals: Principals, via_link: str | None) -> None:
+def _require_restore_actor(node: dict, principals: Principals) -> str | None:
+    """Require EDIT of whoever trashed the node and MANAGE of anyone else.
+
+    Returns the link that supplied the right. A guest counts as the one who
+    trashed it only through the same link.
+    """
     activity = frappe.db.get_value(
         "Drive Activity",
         {"node": node.get("name"), "action": "trash", "at": node.get("trashed_at")},
@@ -2236,11 +2240,11 @@ def _require_restore_actor(node: dict, principals: Principals, via_link: str | N
         as_dict=True,
         order_by="creation desc",
     )
-    same_actor = bool(activity and activity.actor == principals.user)
-    if principals.user == "Guest":
-        same_actor = same_actor and bool(via_link) and activity.via_link == via_link
-    if not same_actor:
-        require(node, MANAGE, principals)
+    if activity and activity.actor == principals.user:
+        via_link = require(node, EDIT, principals)
+        if principals.user != "Guest" or (via_link and activity.via_link == via_link):
+            return via_link
+    return require(node, MANAGE, principals)
 
 
 def _deduplicated_title(parent: str, title: str, *, exclude: str | None = None) -> str:
@@ -3299,7 +3303,7 @@ def _readable_rows(
         return []
     chains = {row.name: chain_ids(row) for row in rows}
     union = {node_id for chain in chains.values() for node_id in chain}
-    grant_rows = [] if principals.is_admin else _grant_rows(list(union), principals)
+    grant_rows = [] if principals.is_system else _grant_rows(list(union), principals)
     by_node = collections.defaultdict(list)
     for grant_row in grant_rows:
         by_node[grant_row.node].append(grant_row)
@@ -3311,8 +3315,8 @@ def _readable_rows(
         depth = {node_id: index for index, node_id in enumerate(chain)}
         candidate_rows = [grant_row for node_id in chain for grant_row in by_node[node_id]]
         detail = (
-            _admin_description()
-            if principals.is_admin
+            _system_description()
+            if principals.is_system
             else _describe_rows(candidate_rows, depth, principals, ticket_results)
         )
         if detail["role"] < READ:
@@ -3354,7 +3358,7 @@ def _attach_breadcrumbs_from_union(
             candidate_rows = [grant for ancestor in prefix for grant in grants_by_node[ancestor]]
             role = (
                 MANAGE
-                if principals.is_admin
+                if principals.is_system
                 else _describe_rows(
                     candidate_rows,
                     {ancestor: index for index, ancestor in enumerate(prefix)},
@@ -3387,7 +3391,7 @@ def _readable_archived_roots(rows: list, principals: Principals, values: dict) -
 
 
 def _visible_root_ids(principals: Principals) -> list[str]:
-    if principals.is_admin:
+    if principals.is_system:
         return frappe.get_all("Drive Root", pluck="name")
     return frappe.db.sql(
         VISIBLE_ROOTS_SQL,

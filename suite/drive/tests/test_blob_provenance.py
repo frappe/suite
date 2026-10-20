@@ -39,8 +39,8 @@ USER = "reader@example.com"
 STRANGER_BLOB = "blob-someone-else-stored"
 
 
-def principals(is_admin: bool = False) -> Principals:
-    return Principals(USER, (USER,), ("$PUBLIC",), is_admin=is_admin)
+def principals(is_system: bool = False) -> Principals:
+    return Principals(USER, (USER,), ("$PUBLIC",), is_system=is_system)
 
 
 def source_row(name: str = "their-node", root: str = "their-root", path: str = "") -> frappe._dict:
@@ -295,17 +295,18 @@ class TestReadableBlobProof(StubbedDatabase):
 
         self.assertEqual(self.db.sql.call_count, 4 * max_pages)
 
-    def test_a_suite_admin_still_needs_the_blob_to_be_in_drive(self):
+    def test_the_system_still_needs_the_blob_to_be_in_drive(self):
         """MANAGE everywhere is not a licence to name bytes Drive does not hold.
 
-        An admin passes the READ resolution on any source row, so the only
+        Drive's own account passes the READ resolution on any source row (a
+        Suite Admin no longer does, ADR 0001), so the only
         thing left to refuse is a blob no node and no version references, which
         is not Drive's to attach.
         """
         self.db.sql.return_value = []
 
         with self.assertRaises(DriveForbidden):
-            node_workflows._require_readable_blob(principals(is_admin=True), STRANGER_BLOB)
+            node_workflows._require_readable_blob(principals(is_system=True), STRANGER_BLOB)
 
 
 class TestTheClientDoorProvesItsBlob(StubbedDatabase):

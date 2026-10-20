@@ -143,5 +143,5 @@ def trash(presentation_name):
     a case can tell "Drive hides it" apart from "it is gone".
     """
     frappe.set_user("Administrator")
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     update(admin, node_of(presentation_name), state="Trashed")

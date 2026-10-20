@@ -43,7 +43,7 @@ class TestCommentWorkflows(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.owner = Principals(OWNER, (OWNER,), ())
         self.commenter = Principals(COMMENTER, (COMMENTER,), ())
         self.outsider = Principals(OUTSIDER, (OUTSIDER,), ())

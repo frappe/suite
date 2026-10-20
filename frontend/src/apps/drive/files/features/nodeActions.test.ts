@@ -64,6 +64,26 @@ describe('nodeActions', () => {
     ])
   })
 
+  it('offers a commenting Suite Admin sharing, restore and delete forever, but no edits', () => {
+    const admin = (state: string): ActionNode => ({
+      ...node('file', state, DRIVE_ROLES.comment),
+      access: { role: DRIVE_ROLES.comment, can_manage: true },
+    })
+    expect(offered(nodeActions(admin('Active'), true))).toEqual([
+      'copy',
+      'copyLink',
+      'download',
+      'openInNewTab',
+      'share',
+      'star',
+    ])
+    expect(offered(nodeActions(admin('Trashed'), true))).toEqual([
+      'deleteForever',
+      'download',
+      'restore',
+    ])
+  })
+
   it('needs EDIT to restore and MANAGE to delete forever', () => {
     expect(offered(nodeActions(node('document', 'Trashed', DRIVE_ROLES.edit), true))).toEqual([
       'restore',

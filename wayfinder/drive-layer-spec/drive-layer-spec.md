@@ -788,14 +788,19 @@ def ticket_ok(token: str, password_hash: str, exp: str, mac: str) -> bool:
 
 ### 4.9 Suite Admin bypass and privacy
 
-A Suite Admin's effective role is MANAGE on every node. It resolves
-before grants, so no deny touches it. `explain()` reports the source as
-`site admin` [002].
+Superseded in part by [Drive ADR 0001](../../suite/drive/docs/adr/0001-suite-admin-administers-but-does-not-edit.md).
+A Suite Admin passes every check that needs MANAGE at every node: sharing,
+restoring what someone else trashed, and deleting for good. It resolves before
+grants, so no deny touches it. Below MANAGE the admin's effective role is the
+one their grants give: reading, commenting, uploading, and editing need a real
+grant. `access.holds_without_grant` is the one place this rule lives. The
+`Administrator` account and Drive's own workflows (`Principals.is_system`) keep
+MANAGE everywhere, and `explain()` reports their source as `system`.
 
 Two guardrails bind the admin as well: no `$PUBLIC` grant and no
 `$LINK` grant on a root node (`kind=root`) [007 §5, 008 §9].
 
-**Privacy statement.** A Suite Admin reads every Personal root on the site, including content its owner never shared, and including Archived roots. This is today's behaviour (`suite/drive/api/permissions.py:31`), kept on purpose. Offboarding relies on it: content a departed user never shared is reachable by Suite Admins only [001]. An admin write records the admin as actor; an admin read records nothing.
+**Privacy statement.** A Suite Admin does not read a Personal root's content, an Archived root's content, or anything else without a grant. To read it, they grant themselves a role, and that grant change is recorded. Offboarding does not need a read: the retained-content transfer moves a disabled user's content with Drive's own authority and records the admin as actor (ADR 0001).
 
 Rejected: `$ROLE:Suite Admin` grant rows. A row per root that must always exist and never be denied rebuilds the bypass out of data, with an outage for every missed row [002].
 
@@ -1913,8 +1918,8 @@ Rules that hold for every row above.
 - The activity row carries `via_link` when the grant that decided the right
   named a link, and `client` (the User-Agent) on WebDAV requests
   [008 §6, 009 §10].
-- A Suite Admin holds MANAGE everywhere and is never refused by a grant
-  [002].
+- A Suite Admin passes every MANAGE check and is never refused one by a
+  grant. Below MANAGE they hold only what their grants give (ADR 0001).
 
 ### 8.3 Create, per kind
 
@@ -3786,9 +3791,9 @@ reachable over DAV. No DAV MOVE crosses roots.
 | UNLOCK | the lock owner, or a Suite Admin | |
 | PROPPATCH | EDIT | node |
 
-Unreadable is always 404, never 403. The Suite Admin bypass applies to what
-an admin reaches by path; there is no admin mount of other users' roots
-[009 §2].
+Unreadable is always 404, never 403. The Suite Admin bypass applies only to
+MANAGE checks on what an admin reaches by path; there is no admin mount of
+other users' roots [009 §2].
 
 ### 12.2 Content documents
 

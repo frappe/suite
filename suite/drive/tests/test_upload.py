@@ -775,7 +775,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
         bad_path = self._folder("Bad path")
         frappe.db.set_value("Drive Node", bad_root.name, "root", other_root.name)
         frappe.db.set_value("Drive Node", bad_path.name, "path", "/not-canonical/")
-        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True)
         with frappe.storage.fake():
             blob = self._blob(b"position")
             for parent in (bad_root.name, bad_path.name):

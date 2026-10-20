@@ -56,7 +56,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.root = create_root(kind="Personal", title="Lifecycle A", user=USER)
         self.other_root = create_root(kind="Personal", title="Lifecycle B", user=OTHER)
         self.root_ids = (self.root.name, self.other_root.name)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
     def tearDown(self):
         frappe.set_user("Administrator")
@@ -1191,12 +1191,18 @@ class TestLifecyclePolicy(UnitTestCase):
         activity = frappe._dict(actor="Guest", via_link=LINK_A)
         with (
             patch("suite.drive._core.nodes.frappe.db.get_value", return_value=activity),
-            patch("suite.drive._core.nodes.require") as require,
+            patch(
+                "suite.drive._core.nodes.require", side_effect=lambda _node, _need, p: p.open[0]
+            ) as require,
         ):
-            _require_restore_actor(node, Principals("Guest", (), (LINK_A,)), LINK_A)
-            require.assert_not_called()
-            _require_restore_actor(node, Principals("Guest", (), (LINK_B,)), LINK_B)
-            require.assert_called_once_with(node, 50, Principals("Guest", (), (LINK_B,)))
+            # The trasher restores with EDIT; another link needs MANAGE as well.
+            guest_a = Principals("Guest", (), (LINK_A,))
+            self.assertEqual(_require_restore_actor(node, guest_a), LINK_A)
+            require.assert_called_once_with(node, 40, guest_a)
+            require.reset_mock()
+            guest_b = Principals("Guest", (), (LINK_B,))
+            _require_restore_actor(node, guest_b)
+            self.assertEqual(require.call_args_list, [call(node, 40, guest_b), call(node, 50, guest_b)])
 
     def test_content_callbacks_are_all_validated_before_purge(self):
         called = []
