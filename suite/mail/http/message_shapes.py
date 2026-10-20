@@ -202,6 +202,8 @@ class SubmissionDetail(Submission):
     priority: int
     next_retry: str | None
     dsn_count: int
+    # The thread of the newest delivery report mailed back, for the page to open it.
+    dsn_thread_id: str | None
     mdn_count: int
 
 

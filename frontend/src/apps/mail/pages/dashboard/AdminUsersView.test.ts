@@ -23,8 +23,14 @@ vi.mock('frappe-ui', () => ({
       <slot name="tab-panel" /></div>`,
   }),
 }))
+const reloadMembers = vi.hoisted(() => vi.fn())
 vi.mock('@/apps/mail/pages/dashboard/UsersView.vue', () => ({
-  default: defineComponent({ template: '<div data-test="users">User list</div>' }),
+  default: defineComponent({
+    setup(_, { expose }) {
+      expose({ reloadMembers })
+    },
+    template: '<div data-test="users">User list</div>',
+  }),
 }))
 vi.mock('@/apps/mail/pages/dashboard/InvitesView.vue', () => ({
   default: defineComponent({
@@ -38,7 +44,9 @@ vi.mock('@/apps/mail/components/Modals/AddAccountModal.vue', () => ({
   default: defineComponent({
     props: ['modelValue'],
     emits: ['reload'],
-    template: '<button v-if="modelValue" @click="$emit(\'reload\')">Finish adding</button>',
+    template: `<div v-if="modelValue">
+      <button @click="$emit('reload', true)">Finish inviting</button>
+      <button @click="$emit('reload', false)">Finish creating</button></div>`,
   }),
 }))
 
@@ -79,10 +87,19 @@ describe('Admin Users', () => {
     expect(element.querySelector('[data-test="users"]')).toBeNull()
   })
 
-  it('opens invitations after adding a user', async () => {
+  it('opens invitations after inviting a user', async () => {
     const element = mount()
     await click(element, 'Add user')
-    await click(element, 'Finish adding')
+    await click(element, 'Finish inviting')
     expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
+  })
+
+  it('stays on users after creating one directly, set up or not', async () => {
+    const element = mount()
+    await click(element, 'Invitations')
+    await click(element, 'Add user')
+    await click(element, 'Finish creating')
+    expect(element.querySelector('[data-test="users"]')).not.toBeNull()
+    expect(reloadMembers).toHaveBeenCalled()
   })
 })

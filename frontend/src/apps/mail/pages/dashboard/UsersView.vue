@@ -22,6 +22,7 @@
       />
     </div>
   </div>
+  <FailedCreations ref="failedCreations" @settled="reloadMembers" />
   <ListView
     v-if="list.status === 'success'"
     ref="listView"
@@ -126,6 +127,7 @@ import { api, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import StorageBar from '@/apps/mail/components/StorageBar.vue'
+import FailedCreations from '@/apps/mail/pages/dashboard/FailedCreations.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
@@ -204,9 +206,10 @@ watch(
     }
   },
 )
+const failedCreations = useTemplateRef('failedCreations')
 const reloadMembers = () => list.refetch().catch(() => {})
 defineExpose({
-  reloadMembers,
+  reloadMembers: () => Promise.all([reloadMembers(), failedCreations.value?.reload()]),
 })
 const LIST_COLUMNS = [
   {

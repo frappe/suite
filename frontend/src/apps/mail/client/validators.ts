@@ -267,6 +267,8 @@ import type {
   OngoingExchangeOutput,
   RebuildAutomationScriptForAccountInput,
   RebuildAutomationScriptForAccountOutput,
+  RemoveFailedCreationInput,
+  RemoveFailedCreationOutput,
   RemoveGroupEmailInput,
   RemoveGroupEmailOutput,
   RemoveGroupMemberInput,
@@ -289,6 +291,8 @@ import type {
   RescheduleMailOutput,
   ResendOtpInput,
   ResendOtpOutput,
+  RetryAccountCreationInput,
+  RetryAccountCreationOutput,
   RetryFailedMailInput,
   RetryFailedMailOutput,
   SaveIdentityInput,
@@ -2150,7 +2154,7 @@ export const operationGetAccountRequests: Validators<
           page_length: { title: 'Page Length', type: 'integer' },
           search: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Search' },
           status: {
-            enum: ['All', 'Pending', 'Accepted', 'Expired'],
+            enum: ['All', 'Pending', 'Accepted', 'Expired', 'Setup failed'],
             title: 'Status',
             type: 'string',
           },
@@ -2178,7 +2182,11 @@ export const operationGetAccountRequests: Validators<
               },
               invited_by: { title: 'Invited By', type: 'string' },
               is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
-              status: { enum: ['Pending', 'Accepted', 'Expired'], title: 'Status', type: 'string' },
+              status: {
+                enum: ['Pending', 'Accepted', 'Expired', 'Setup failed'],
+                title: 'Status',
+                type: 'string',
+              },
             },
             required: [
               'name',
@@ -3143,8 +3151,19 @@ export const operationGetAccountRequest: Validators<
               account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
               is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
               is_expired: { enum: [0, 1], title: 'Is Expired', type: 'integer' },
+              workspace_name: { title: 'Workspace Name', type: 'string' },
+              workspace_logo: { title: 'Workspace Logo', type: 'string' },
+              invited_by_name: { title: 'Invited By Name', type: 'string' },
             },
-            required: ['backup_email', 'account', 'is_verified', 'is_expired'],
+            required: [
+              'backup_email',
+              'account',
+              'is_verified',
+              'is_expired',
+              'workspace_name',
+              'workspace_logo',
+              'invited_by_name',
+            ],
             title: 'AccountRequest',
             type: 'object',
           },
@@ -4353,6 +4372,69 @@ export const operationDeleteAccountRequests: Validators<
   },
   validateOutput(value: unknown): asserts value is DeleteAccountRequestsOutput {
     assertSchema(value, { type: 'null' }, 'delete_account_requests output')
+  },
+}
+
+export const operationRemoveFailedCreation: Validators<
+  RemoveFailedCreationInput,
+  RemoveFailedCreationOutput
+> = {
+  validateInput(value: unknown): asserts value is RemoveFailedCreationInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { name: { title: 'Name', type: 'string' } },
+        required: ['name'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'remove_failed_creation input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RemoveFailedCreationOutput {
+    assertSchema(value, { type: 'null' }, 'remove_failed_creation output')
+  },
+}
+
+export const operationRetryAccountCreation: Validators<
+  RetryAccountCreationInput,
+  RetryAccountCreationOutput
+> = {
+  validateInput(value: unknown): asserts value is RetryAccountCreationInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { name: { title: 'Name', type: 'string' } },
+        required: ['name'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'retry_account_creation input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RetryAccountCreationOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'retry_account_creation output',
+    )
   },
 }
 
@@ -8119,9 +8201,9 @@ export const operationGetDeliveryStatus: Validators<
         type: 'object',
         properties: {
           account: { title: 'Account', type: 'string' },
-          blob_id: { title: 'Blob Id', type: 'string' },
+          id: { title: 'Id', type: 'string' },
         },
-        required: ['account', 'blob_id'],
+        required: ['account', 'id'],
         additionalProperties: false,
         $defs: {},
       },
@@ -8139,6 +8221,7 @@ export const operationGetDeliveryStatus: Validators<
               action: { title: 'Action', type: 'string' },
               status: { title: 'Status', type: 'string' },
               diagnostic_code: { title: 'Diagnostic Code', type: 'string' },
+              reason: { title: 'Reason', type: 'string' },
               remote_mta: { title: 'Remote Mta', type: 'string' },
               will_retry_until: { title: 'Will Retry Until', type: 'string' },
             },
@@ -8147,6 +8230,7 @@ export const operationGetDeliveryStatus: Validators<
               'action',
               'status',
               'diagnostic_code',
+              'reason',
               'remote_mta',
               'will_retry_until',
             ],
@@ -8157,13 +8241,26 @@ export const operationGetDeliveryStatus: Validators<
         properties: {
           reporting_mta: { title: 'Reporting Mta', type: 'string' },
           arrival_date: { title: 'Arrival Date', type: 'string' },
+          original_envelope_id: { title: 'Original Envelope Id', type: 'string' },
           recipients: {
             items: { $ref: '#/$defs/DeliveryRecipient' },
             title: 'Recipients',
             type: 'array',
           },
+          sent_thread_id: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Sent Thread Id',
+          },
+          submission_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Submission Id' },
         },
-        required: ['reporting_mta', 'arrival_date', 'recipients'],
+        required: [
+          'reporting_mta',
+          'arrival_date',
+          'original_envelope_id',
+          'recipients',
+          'sent_thread_id',
+          'submission_id',
+        ],
         title: 'DeliveryReport',
         type: 'object',
       },
@@ -8213,7 +8310,7 @@ export const operationCreateMail: Validators<CreateMailInput, CreateMailOutput> 
           DraftAttachment: {
             properties: {
               filename: { title: 'Filename', type: 'string' },
-              file_url: { title: 'File Url', type: 'string' },
+              file_url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'File Url' },
               blob_id: { title: 'Blob Id', type: 'string' },
               type: { title: 'Type', type: 'string' },
               size: { anyOf: [{ type: 'integer' }, { type: 'string' }], title: 'Size' },
@@ -8308,7 +8405,7 @@ export const operationUpdateDraftMail: Validators<UpdateDraftMailInput, UpdateDr
           DraftAttachment: {
             properties: {
               filename: { title: 'Filename', type: 'string' },
-              file_url: { title: 'File Url', type: 'string' },
+              file_url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'File Url' },
               blob_id: { title: 'Blob Id', type: 'string' },
               type: { title: 'Type', type: 'string' },
               size: { anyOf: [{ type: 'integer' }, { type: 'string' }], title: 'Size' },
@@ -9139,6 +9236,10 @@ export const operationGetScheduledMail: Validators<GetScheduledMailInput, GetSch
             priority: { title: 'Priority', type: 'integer' },
             next_retry: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Next Retry' },
             dsn_count: { title: 'Dsn Count', type: 'integer' },
+            dsn_thread_id: {
+              anyOf: [{ type: 'string' }, { type: 'null' }],
+              title: 'Dsn Thread Id',
+            },
             mdn_count: { title: 'Mdn Count', type: 'integer' },
           },
           required: [
@@ -9162,6 +9263,7 @@ export const operationGetScheduledMail: Validators<GetScheduledMailInput, GetSch
             'priority',
             'next_retry',
             'dsn_count',
+            'dsn_thread_id',
             'mdn_count',
           ],
           title: 'SubmissionDetail',

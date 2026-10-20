@@ -30,6 +30,13 @@
         </template>
       </Button>
       <h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
+      <Button
+        v-if="isSaveFailed"
+        variant="ghost"
+        theme="red"
+        :label="__('Not saved · Retry')"
+        @click="saveDraft()"
+      />
       <AdaptiveDropdown :options="ACTIONS">
         <Button variant="ghost" :label="__('More actions')">
           <template #icon>
@@ -343,6 +350,7 @@ const {
   isRecipientsEmpty,
   moveRecipient,
   saveDraft,
+  isSaveFailed,
   sendMail,
   discardMail,
   showScheduleModal,

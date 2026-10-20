@@ -6,7 +6,7 @@
     <Tabs v-model="tab" :tabs="tabs">
       <template #tab-panel>
         <div class="flex min-h-0 flex-1 flex-col gap-5 pt-5">
-          <UsersView v-if="tab === 'users'" />
+          <UsersView v-if="tab === 'users'" ref="users" />
           <InvitesView v-else ref="invitations" />
         </div>
       </template>
@@ -34,9 +34,11 @@ const tabs = [
 const adding = ref(false)
 useAddOnArrival(adding)
 const invitations = useTemplateRef('invitations')
-async function reload() {
-  tab.value = 'invitations'
+const users = useTemplateRef('users')
+// An invitation waits under Invitations; an account created directly, set up or not, is a user.
+async function reload(invited: boolean) {
+  tab.value = invited ? 'invitations' : 'users'
   await nextTick()
-  await invitations.value?.reloadInvites()
+  await (invited ? invitations.value?.reloadInvites() : users.value?.reloadMembers())
 }
 </script>

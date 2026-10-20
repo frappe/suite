@@ -29,7 +29,7 @@ class MemberPageInput(SearchPage):
 
 
 class InvitePageInput(SearchPage):
-    status: NotRequired[Literal["All", "Pending", "Accepted", "Expired"]]
+    status: NotRequired[Literal["All", "Pending", "Accepted", "Expired", "Setup failed"]]
 
 
 class RecipientPageInput(SearchPage):
@@ -75,7 +75,7 @@ class InviteRow(TypedDict):
     backup_email: str | None
     invited_by: str
     is_verified: Flag
-    status: Literal["Pending", "Accepted", "Expired"]
+    status: Literal["Pending", "Accepted", "Expired", "Setup failed"]
 
 
 class GroupRow(TypedDict):

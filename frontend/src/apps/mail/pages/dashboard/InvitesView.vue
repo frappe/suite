@@ -107,8 +107,10 @@ import { raiseToast } from '@/apps/mail/utils'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
 import { DashboardListSkeleton } from '@/platform/dashboard'
 
-type InviteStatus = 'All' | 'Pending' | 'Accepted' | 'Expired'
-type InviteStatusLabel = Exclude<InviteStatus, 'All'>
+// Setup failed is never listed here (those rows are users, see FailedCreations), but the row type
+// shares the status field with that list.
+type InviteStatusLabel = 'Pending' | 'Accepted' | 'Expired' | 'Setup failed'
+type InviteStatus = 'All' | Exclude<InviteStatusLabel, 'Setup failed'>
 type InviteRow = {
   name: string
   account: string
@@ -257,5 +259,11 @@ const STATUS_OPTIONS = [
   },
 ]
 const getTheme = (status: InviteStatusLabel) =>
-  status === 'Accepted' ? 'green' : status === 'Expired' ? 'gray' : 'amber'
+  status === 'Accepted'
+    ? 'green'
+    : status === 'Expired'
+      ? 'gray'
+      : status === 'Setup failed'
+        ? 'red'
+        : 'amber'
 </script>

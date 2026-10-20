@@ -16,7 +16,13 @@ from suite.composition.access import (
     require_access,
 )
 from suite.mail.api.account import create_account as accept_invitation
-from suite.mail.api.admin import add_member
+from suite.mail.api.account import get_account_request
+from suite.mail.api.admin import (
+    add_member,
+    get_account_requests,
+    remove_failed_creation,
+    retry_account_creation,
+)
 from suite.mail.directory import provision_account
 from suite.mail.doctype.user_settings.user_settings import UserSettings
 from suite.mail.events import update_password
@@ -35,8 +41,9 @@ class Provider:
         self.fail = None
 
     def call(self, method, **args):
+        # Refusals come back like the real client's: thrown, so each leaves a message behind.
         if method == self.fail:
-            raise frappe.ValidationError("provider unavailable")
+            frappe.throw("The mail server did not accept the change: Invalid value for enum type Locale.")
         if method == "tenant.ping":
             return {"limits": {"max_disk_gb": 100}}
         if method == "mail.domains.list_domains":
@@ -54,7 +61,7 @@ class Provider:
             }
             return dict(self.accounts[email])
         if email not in self.accounts:
-            raise frappe.DoesNotExistError
+            frappe.throw(f"Account {email} was not found.", frappe.DoesNotExistError)
         account = self.accounts[email]
         if method == "mail.accounts.get_account":
             return dict(account)
@@ -65,6 +72,8 @@ class Provider:
             account["password"] = args["password"]
             return None
         if method == "mail.accounts.rotate_app_password":
+            if not account["enabled"]:  # minting signs in as the account
+                frappe.throw("The mail server did not accept Suite Cloud's credentials.")
             account["app_password"] += "-rotated"
             return {"app_password": account["app_password"]}
         if method == "mail.accounts.delete_account":
@@ -144,6 +153,89 @@ class TestAdminLifecycle(IntegrationTestCase):
         retry = self.create()
         self.assertTrue(retry["success"], retry)
         self.assertEqual(self.provider.created, 1)
+
+    def failed_creation(self):
+        frappe.clear_messages()
+        self.provider.fail = "mail.accounts.create_account"
+        result = self.create()
+        self.provider.fail = None
+        return result, frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+
+    def test_a_failed_direct_creation_reports_its_reason_and_waits_in_users_not_invitations(self):
+        result, name = self.failed_creation()
+        self.assertFalse(result["success"])
+        self.assertIn("did not accept the change", result["error"])
+        printed = " ".join(str(m) for m in frappe.local.message_log)
+        self.assertNotIn("was not found", printed)
+        self.assertNotIn("did not accept", printed)  # it travels in `error`, not as a toast
+        logged = frappe.get_all("Error Log", pluck="method", order_by="creation desc", limit=5)
+        self.assertIn(f"[Mail] Account setup failed for {self.address}", logged)
+        self.assertNotIn(name, [r["name"] for r in get_account_requests(search=self.username)["items"]])
+        failed = get_account_requests(search=self.username, status="Setup failed")["items"]
+        self.assertEqual([(r["name"], r["status"]) for r in failed], [(name, "Setup failed")])
+
+    def test_a_failed_direct_creation_can_be_retried_into_one_account(self):
+        _result, name = self.failed_creation()
+        retried = retry_account_creation(name)
+        self.assertTrue(retried["success"], retried)
+        self.assertTrue(retried["temporary_password"])
+        self.assertEqual(self.provider.created, 1)
+        self.assertEqual(frappe.db.get_value("User", retried["user"], "first_name"), "Employee")
+        self.assertEqual(get_account_requests(search=self.username, status="Setup failed")["items"], [])
+
+    def test_a_creation_that_failed_after_locking_its_account_can_be_retried(self):
+        self.provider.fail = "mail.accounts.set_account_enabled"
+        self.assertFalse(self.create()["success"])
+        self.provider.fail = None
+        self.provider.accounts[self.address]["enabled"] = False  # locked, as a later failure leaves it
+        name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+        retried = retry_account_creation(name)
+        self.assertTrue(retried["success"], retried)
+        self.assertEqual(self.provider.created, 1)
+        self.assertFalse(self.provider.accounts[self.address]["enabled"])  # locked until the password change
+
+    def test_removing_a_failed_creation_deletes_its_user_request_and_own_account_only(self):
+        self.provider.fail = "mail.accounts.set_account_enabled"  # after the account was made
+        self.assertFalse(self.create()["success"])
+        self.provider.fail = None
+        name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+        user = frappe.db.get_value("Mail Account Request", name, "suite_user")
+        self.assertIn(self.address, self.provider.accounts)
+        remove_failed_creation(name)
+        self.assertNotIn(self.address, self.provider.accounts)
+        self.assertFalse(frappe.db.exists("Mail Account Request", name))
+        self.assertFalse(frappe.db.exists("User", user))
+
+        # An account at the address that this creation did not make stays.
+        _result, name = self.failed_creation()
+        self.provider.accounts[self.address] = {"email": self.address, "description": "other owner"}
+        remove_failed_creation(name)
+        self.assertIn(self.address, self.provider.accounts)
+
+    def test_an_invitation_cannot_be_removed_as_a_failed_creation(self):
+        with patch("frappe.sendmail"):
+            add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+        with self.assertRaises(frappe.ValidationError):
+            remove_failed_creation(name)
+        self.assertTrue(frappe.db.exists("Mail Account Request", name))
+
+    def test_direct_creation_needs_a_first_name(self):
+        with self.assertRaises(frappe.ValidationError):
+            add_member(self.username, "company.frappe.cloud", False, False, "", first_name=" ")
+        self.assertFalse(frappe.db.exists("Mail Account Request", {"account": self.address}))
+
+    def test_a_refused_acceptance_shows_the_real_reason_not_the_lookup(self):
+        with patch("frappe.sendmail"):
+            add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        key = frappe.db.get_value("Mail Account Request", {"account": self.address}, "request_key")
+        self.provider.fail = "mail.accounts.create_account"
+        frappe.clear_messages()
+        with self.set_user("Guest"), self.assertRaises(frappe.ValidationError):
+            accept_invitation(key, "Priya", "", "Chosen-invite-passphrase-55!")
+        printed = " ".join(str(m) for m in frappe.local.message_log)
+        self.assertIn("did not accept the change", printed)
+        self.assertNotIn("was not found", printed)
 
     def test_another_operation_cannot_claim_or_delete_an_existing_provider_account(self):
         self.provider.accounts[self.address] = {
@@ -228,13 +320,26 @@ class TestAdminLifecycle(IntegrationTestCase):
         from suite.suite_core.storage import set_default
 
         set_default(4_000_000_000)
-        with patch("frappe.sendmail") as sendmail:
+        frappe.db.set_single_value("Suite Settings", "workspace_name", "Northwind")
+        inviter = f"maya-{frappe.generate_hash(length=8)}@company.frappe.cloud"
+        ensure_user(inviter)
+        frappe.get_doc("User", inviter).add_roles("Suite Admin")
+        with patch("frappe.sendmail") as sendmail, self.set_user(inviter):
             result = add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
             self.assertTrue(result["success"])
             sendmail.assert_called_once()
             self.assertEqual(sendmail.call_args.kwargs["recipients"], "contact@example.test")
+            # The organisation invites, by the inviter's name, on Suite.
+            subject = sendmail.call_args.kwargs["subject"]
+            self.assertIn("Northwind", subject)
+            self.assertIn("Suite", subject)
+            self.assertNotIn("Frappe Mail", subject)
             name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
             request = frappe.get_doc("Mail Account Request", name)
+            with self.set_user("Guest"):
+                shown = get_account_request(request.request_key)
+            self.assertEqual((shown["workspace_name"], shown["account"]), ("Northwind", self.address))
+            self.assertTrue(shown["invited_by_name"].startswith("maya-"))
             old_key = request.request_key
             set_default(6_000_000_000)
             self.assertEqual(request.combined_cap_bytes, 4_000_000_000)

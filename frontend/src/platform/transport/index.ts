@@ -272,7 +272,7 @@ export function createTransport(options: CreateTransportOptions = {}): BytesTran
           const output =
             operation.empty &&
             isRecord(body) &&
-            Object.keys(body).every((key) => key === 'docs' || key === '_server_messages')
+            Object.keys(body).every((key) => ['docs', '_server_messages', 'messages'].includes(key))
               ? null
               : decodeSuccess(body, operation.envelope)
           validators?.validateOutput(output)

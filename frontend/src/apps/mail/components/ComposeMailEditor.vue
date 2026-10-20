@@ -356,6 +356,7 @@
       <ComposeMailToolbar
         :is-recipients-empty
         :is-uploading
+        :save-failed="isSaveFailed"
         class="border-t sm:px-4 sm:pb-2.5"
         :class="{ 'border-transparent': isDragging }"
         @select-files="(files: File[]) => uploadFiles(files)"
@@ -363,6 +364,7 @@
         @discard-mail="discardMail"
         @send-mail="sendMail"
         @schedule-send="openScheduleModal"
+        @retry-save="saveDraft"
       />
     </template>
   </TextEditor>
@@ -501,6 +503,7 @@ const {
   moveRecipient,
   onOpened,
   saveDraft,
+  isSaveFailed,
   payListDebt,
   sendMail,
   discardMail,

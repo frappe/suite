@@ -350,6 +350,28 @@ describe('declared framework response behavior', () => {
     await expect(client.request(save, {})).resolves.toBeNull()
     await expect(client.request(save, {})).rejects.toThrow('Expected a void method')
   })
+  it('treats a v2 answer that only carries messages as a void result', async () => {
+    const send: Operation<{ name: string }, null> = {
+      id: 'send_invite',
+      owner: 'mail',
+      kind: 'mutation',
+      method: 'POST',
+      path: '/api/suite/mail/admin/invites/{name}/send',
+      pathParams: ['name'],
+      empty: true,
+      validateOutput(output): asserts output is null {
+        if (output !== null) throw new TypeError('send_invite output has the wrong type')
+      },
+    }
+    const network = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        messages: [{ message: 'Verification email sent successfully.', indicator: 'green' }],
+      }),
+    )
+    await expect(
+      createTransport({ fetch: network }).request(send, { name: 'invite-1' }),
+    ).resolves.toBeNull()
+  })
   it('does not retry a mutation implemented by a legacy GET endpoint', async () => {
     const write: Operation<{ token: string }, unknown> = {
       id: 'subscribe',

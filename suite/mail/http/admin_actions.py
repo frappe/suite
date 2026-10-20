@@ -116,6 +116,10 @@ class DeleteAccountRequestsInput(TypedDict):
     names: list[str]
 
 
+class AccountCreationInput(TypedDict):
+    name: str
+
+
 class DeleteDomainInput(TypedDict):
     domain_id: str
 
@@ -330,6 +334,20 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         "admin.members.deleteAccountRequests",
         DeleteAccountRequestsInput,
         type(None),
+    ),
+    (
+        admin.remove_failed_creation,
+        "mutation",
+        "admin.members.removeFailedCreation",
+        AccountCreationInput,
+        type(None),
+    ),
+    (
+        admin.retry_account_creation,
+        "mutation",
+        "admin.members.retryCreation",
+        AccountCreationInput,
+        CreationResult,
     ),
     (admin.delete_domain, "mutation", "admin.domains.delete", DeleteDomainInput, type(None)),
     (admin.delete_groups, "mutation", "admin.groups.delete", DeleteGroupsInput, type(None)),

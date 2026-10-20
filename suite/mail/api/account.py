@@ -108,20 +108,17 @@ def verify_otp(account_request: str, otp: str) -> str:
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
 def get_account_request(request_key: str) -> dict | None:
-    """Return the account request details"""
+    """Return the account request details and who is inviting."""
 
-    if account_request := frappe.db.get_value(
-        "Mail Account Request",
-        {"request_key": request_key},
-        ["backup_email", "is_verified", "expires_at", "account"],
-        as_dict=True,
-    ):
-        is_expired = 0
-        if expires_at := account_request["expires_at"]:
-            is_expired = cint(get_datetime(expires_at) < now_datetime())
-        account_request.pop("expires_at")
-        account_request["is_expired"] = is_expired
-        return account_request
+    if name := frappe.db.get_value("Mail Account Request", {"request_key": request_key}):
+        doc = frappe.get_doc("Mail Account Request", name)
+        return {
+            "backup_email": doc.backup_email,
+            "account": doc.account,
+            "is_verified": doc.is_verified,
+            "is_expired": cint(doc.is_expired),
+            **doc.invitation,
+        }
 
 
 @frappe.whitelist(allow_guest=True)

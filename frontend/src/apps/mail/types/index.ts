@@ -93,7 +93,7 @@ export interface Mail {
     email: string
   }[]
   attachments: Attachment[]
-  // Blob id of a bounce message's message/delivery-status part (see DeliveryStatusBanner).
+  // Set on a bounce: the blob id of its message/delivery-status part (see DeliveryStatusBanner).
   dsn_blob_id?: string | null
   // The other copies of this same message the account holds — see MailCopy.
   duplicates?: MailCopy[]
