@@ -5,6 +5,7 @@ The six fixed accounts are reserved for this dataset. Reset purges their persona
 roots and Shared-root nodes, the Northwind logo, then their groups and accounts. Other users
 and the site's Shared root are retained. Each completed batch is committed, so a
 failed run can be removed with reset. Internal Drive helpers fill gaps in its facade.
+When the site has a `mail` server configured, the seed ends with `suite.demo.mail.seed`.
 """
 
 import json
@@ -83,6 +84,11 @@ def seed(fresh: bool = False) -> None:
         for person in PEOPLE:
             print(f"{person.email:30} {person.first + ' ' + person.last:20} {person.job}")
         print(f"\nPublished beta brief: {URL}{drive.node_url(shared_nodes['launch brief'])}")
+        if frappe.conf.mail:
+            # Imported here: mail reads the cast from this module.
+            from suite.demo import mail
+
+            mail.seed(fresh=fresh)
     except Exception:
         frappe.db.rollback()
         print("Seed failed. Completed batches remain; run reset or seed(fresh=True) before retrying.")
