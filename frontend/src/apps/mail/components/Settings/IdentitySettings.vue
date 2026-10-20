@@ -30,7 +30,7 @@
             variant="outline"
             :options="
               (identities.data ?? []).map((identity: Identity) => ({
-                label: `${identity.email} (${identity.id})`,
+                label: identity._name ? `${identity._name} <${identity.email}>` : identity.email,
                 value: identity.name,
               }))
             "
