@@ -3876,8 +3876,15 @@
                 "type": "string"
               },
               "user_image": {
-                "title": "User Image",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
               },
               "last_active": {
                 "anyOf": [
@@ -10245,8 +10252,15 @@
             "type": "string"
           },
           "user_image": {
-            "title": "User Image",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
           },
           "description": {
             "title": "Description",
@@ -13417,8 +13431,15 @@
                 "type": "string"
               },
               "user_image": {
-                "title": "User Image",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
               },
               "enabled": {
                 "title": "Enabled",

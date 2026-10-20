@@ -44,7 +44,7 @@
           <ListRowItem :item="item">
             <template v-if="column.key === 'user'">
               <div class="flex items-center space-x-2">
-                <Avatar :image="row.user_image" :label="row.full_name" size="lg" />
+                <Avatar :image="row.user_image ?? undefined" :label="row.full_name" size="lg" />
                 <!-- A member row is a contact row: the User's docname is the address. -->
                 <ContactOption
                   :contact="{ email: row.name, display_name: row.full_name }"
@@ -134,7 +134,7 @@ import { DashboardListSkeleton } from '@/platform/dashboard'
 type MemberRow = {
   name: string
   full_name: string
-  user_image?: string
+  user_image?: string | null
   last_active?: string | null
   is_admin: boolean
   enabled: boolean
