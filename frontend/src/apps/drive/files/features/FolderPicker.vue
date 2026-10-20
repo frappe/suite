@@ -101,7 +101,7 @@
           theme="gray"
           :label="ACTIONS[mode]"
           :disabled="target.status !== 'allowed'"
-          :loading="busy"
+          :loading="busy || checking"
           @click="choose"
         />
       </div>
@@ -113,8 +113,10 @@
 import { Breadcrumbs, Button, Dialog, ErrorMessage, Skeleton, TabButtons } from 'frappe-ui'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
-import { api, useInfiniteQuery, useQuery } from '@/api'
+import { api, client, useInfiniteQuery, useQuery } from '@/api'
 import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
+import { confirm } from '@/platform/feedback'
+import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { locationTitle } from '../internal/locations'
@@ -122,6 +124,7 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
+  moveAccessMessage,
   startingFolder,
   type PickedItem,
   type PickerMode,
@@ -276,8 +279,33 @@ function openCrumb(index: number) {
 function focusList() {
   void nextTick(() => listElement.value?.focus())
 }
-function choose() {
-  if (!current.value || target.value.status !== 'allowed' || props.busy) return
-  emit('choose', current.value.node, crumbs.value.at(-1)?.label ?? current.value.title)
+/** The move preview is loading, before the confirmation or the move. */
+const checking = ref(false)
+async function choose() {
+  if (!current.value || target.value.status !== 'allowed' || props.busy || checking.value) return
+  const folder = current.value.node
+  const title = crumbs.value.at(-1)?.label ?? current.value.title
+  if (props.mode === 'move' && !(await confirmAccessChange(folder))) return
+  emit('choose', folder, title)
+}
+/** A move that gives someone access, or lowers the mover's own role, asks first (unified frontend §5.7). */
+async function confirmAccessChange(folder: string): Promise<boolean> {
+  checking.value = true
+  try {
+    const previews = await Promise.all(
+      props.items.map((item) =>
+        client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
+      ),
+    )
+    const message = moveAccessMessage(previews)
+    if (!message) return true
+    return await confirm({
+      title: __('Change who has access?'),
+      message,
+      confirmLabel: __('Move'),
+    })
+  } finally {
+    checking.value = false
+  }
 }
 </script>

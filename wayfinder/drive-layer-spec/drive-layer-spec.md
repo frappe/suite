@@ -2143,8 +2143,21 @@ matching `path LIKE CONCAT(:old_prefix, '%')` in the source root.
 
 Active and Trashed nodes both count. Reservations never move [010 §3, §8].
 Own grants on the moved nodes travel with them, because grants name node
-ids and no id changes [009 §7]. The creator grant fires when the mover
-lands below EDIT at the destination.
+ids and no id changes [009 §7]. A signed-in mover keeps the role they had
+on the moved node: when their role at the destination would be lower, the
+move writes one grant for them on the node at their old role. A mover who
+already holds a grant on the node, or who reached the destination through a
+link, gets no row. This replaced an EDIT-only grant, which cost a
+non-admin mover the right to share their own file [R2-T1-24].
+
+`GET /nodes/<id>/move-preview?parent_node=<dest>` is the dry run that the
+move confirmation reads (unified frontend §5.7). It checks the access that
+the move checks (EDIT on the node, UPLOAD on `dest`), and writes and locks
+nothing. It answers `{gains, role_now, role_after}`. `gains` holds each
+principal whose nearest live grant would give it a higher role under `dest`
+than it has now, as `{principal, role, person?}`. Every link is `$LINK`,
+without its token. `role_now` and `role_after` are the mover's own role on
+the node before and after the move.
 
 Benchmark: the subtree rewrite is 9.1 ms for 1000 nodes and is not affected
 by the frozen `(parent_node, state, title)` index [004].
@@ -3243,7 +3256,10 @@ and get the same error [012].
   and the row key; `person` is the §11.3 person object, present when the
   principal is a user, so the dialog shows a name and an avatar without a
   second request. `owner` on the list is the person whose Personal root
-  holds the node, `null` in the Shared root. `grants` holds the node's
+  holds the node, `null` in the Shared root. The dialog also shows
+  "Added by <name>" from the node's own `owner` (§11.3) when that is a
+  different person, and always in the Shared root, so the person who added
+  the node stays visible. That line is not the Owner row [R2-T1-24]. `grants` holds the node's
   local rows, expired ones included. `inherited` holds every live grant on
   an ancestor, nearest
   ancestor first, read in one query over the chain (`EXPLAIN_SQL` without

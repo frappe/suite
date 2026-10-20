@@ -170,6 +170,10 @@
             />
           </li>
         </ul>
+        <p v-if="addedBy" class="mt-2 flex items-center gap-2 text-p-sm text-ink-gray-5">
+          <Avatar size="xs" :image="addedBy.user_image ?? undefined" :label="addedBy.full_name" />
+          {{ __('Added by {0}', [addedBy.full_name]) }}
+        </p>
       </section>
       <ShareLinkDialog
         v-if="creatingLink"
@@ -219,6 +223,12 @@ const picking = defineModel<boolean>('picking', { default: false })
 const node = computed(() => props.state.node.value)
 const sections = computed(() => props.state.sections.value)
 const creatingLink = ref(false)
+// Who put the node here (`node.owner`), when the Owner row does not already
+// name them: always in the Shared root, where no one is Owner.
+const addedBy = computed(() => {
+  const owner = node.value?.owner
+  return owner && owner.id !== sections.value?.owner?.id ? owner : null
+})
 const workspaceRoles = computed(() => [
   { label: __('No access'), value: 0 },
   ...rolesFor('general', node.value?.kind ?? 'document').map((role) => ({

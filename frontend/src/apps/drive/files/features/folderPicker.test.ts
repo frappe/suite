@@ -7,10 +7,14 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
+  moveAccessMessage,
   type PickedItem,
   type PickerMode,
 } from './folderPicker'
 import FolderPicker from './FolderPicker.vue'
+
+const feedback = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }))
+vi.mock('@/platform/feedback', () => feedback)
 
 vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
@@ -70,12 +74,27 @@ const net = vi.hoisted(() => {
       ]),
     ],
   ])
+  // What moving into each folder gives: Archive is shared with the Design group.
+  const previews = new Map([
+    [
+      'archive',
+      {
+        gains: [{ principal: '$GROUP:Design', role: 50 }],
+        role_now: 50,
+        role_after: 50,
+      },
+    ],
+    ['projects', { gains: [], role_now: 50, role_after: 50 }],
+  ])
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(status === 200 ? { data } : data), { status })
   globalThis.fetch = async (url: RequestInfo | URL) => {
     const path = new URL(String(url), 'http://drive.test').pathname.replace('/api/suite/drive/', '')
     if (path === 'roots')
       return json({ personal: { node: 'mine', title: 'Aanya' }, organization: null })
+    const into = new URL(String(url), 'http://drive.test').searchParams.get('parent_node')
+    const preview = /\/move-preview$/.test(path) && into ? previews.get(into) : undefined
+    if (preview) return json(preview)
     const [, name, children] = path.match(/^nodes\/([^/]+)(\/children)?$/) ?? []
     const node = name ? nodes.get(name) : undefined
     if (node && !children) return json(node)
@@ -86,7 +105,7 @@ const net = vi.hoisted(() => {
       })
     return json({ errors: [{ type: 'NotFound', message: path }] }, 404)
   }
-  return { nodes }
+  return { nodes, previews }
 })
 
 const report = { name: 'report', parent_node: 'root', root: 'root' }
@@ -164,7 +183,12 @@ describe('Folder picker', () => {
   let cleanup: (() => void) | undefined
   afterEach(() => cleanup?.())
 
-  function openPicker(props: { mode: PickerMode; items: PickedItem[]; folder?: string }) {
+  function openPicker(props: {
+    mode: PickerMode
+    items: PickedItem[]
+    folder?: string
+    onChoose?: (node: string, title: string) => void
+  }) {
     const root = document.createElement('div')
     document.body.appendChild(root)
     const app = createApp({ setup: () => () => h(FolderPicker, { open: true, ...props }) })
@@ -206,5 +230,111 @@ describe('Folder picker', () => {
   it('does not open inside a folder that is being moved', async () => {
     openPicker({ mode: 'move', items: [projects, notes], folder: 'launch' })
     await vi.waitFor(() => expect(shownFolder()).toBe('My files'))
+  })
+})
+
+describe('Moving into a folder that widens access', () => {
+  let cleanup: (() => void) | undefined
+  afterEach(() => {
+    cleanup?.()
+    feedback.confirm.mockReset()
+  })
+
+  function moveInto(onChoose: (node: string) => void) {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const report: PickedItem = { name: 'report', parent_node: 'mine', root: 'mine' }
+    const app = createApp({
+      setup: () => () => h(FolderPicker, { open: true, mode: 'move', items: [report], onChoose }),
+    })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+  }
+
+  async function pressMoveHere(folder: string) {
+    const row = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll('li button')].find(
+        (candidate) => candidate.textContent?.trim() === folder,
+      )
+      if (!(found instanceof HTMLButtonElement)) throw new Error(`${folder} is not listed`)
+      return found
+    })
+    row.click()
+    const button = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent?.trim() === 'Move here' && !candidate.disabled,
+      )
+      if (!found) throw new Error('Move here is not ready')
+      return found
+    })
+    button.click()
+  }
+
+  it('asks first, naming who gets access, and does not move when the user cancels', async () => {
+    feedback.confirm.mockResolvedValue(false)
+    const chosen = vi.fn()
+    moveInto(chosen)
+    await pressMoveHere('Archive')
+
+    await vi.waitFor(() => expect(feedback.confirm).toHaveBeenCalledOnce())
+    expect(feedback.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Change who has access?',
+        message: 'People in Design will get Manage access.',
+      }),
+    )
+    await Promise.resolve()
+    expect(chosen).not.toHaveBeenCalled()
+  })
+
+  it('moves once the user confirms', async () => {
+    feedback.confirm.mockResolvedValue(true)
+    const chosen = vi.fn()
+    moveInto(chosen)
+    await pressMoveHere('Archive')
+
+    await vi.waitFor(() => expect(chosen).toHaveBeenCalledWith('archive', 'Archive'))
+  })
+
+  it('moves without asking when nobody gains access', async () => {
+    const chosen = vi.fn()
+    moveInto(chosen)
+    await pressMoveHere('Projects')
+
+    await vi.waitFor(() => expect(chosen).toHaveBeenCalledWith('projects', 'Projects'))
+    expect(feedback.confirm).not.toHaveBeenCalled()
+  })
+})
+
+describe('move access message', () => {
+  const person = { id: 'theo@example.com', full_name: 'Theo Park', user_image: null }
+
+  it('names each principal once, with the most it gains across the items', () => {
+    expect(
+      moveAccessMessage([
+        { gains: [{ principal: '$LINK', role: 10 }], role_now: 50, role_after: 50 },
+        {
+          gains: [
+            { principal: '$LINK', role: 40 },
+            { principal: person.id, role: 20, person },
+          ],
+          role_now: 50,
+          role_after: 50,
+        },
+      ]),
+    ).toBe('Anyone with a share link will get Edit access. Theo Park will get Comment access.')
+  })
+
+  it("says when the mover's own role drops, even when nobody gains", () => {
+    expect(moveAccessMessage([{ gains: [], role_now: 50, role_after: 40 }])).toBe(
+      "You'll have Edit access.",
+    )
+  })
+
+  it("says nothing when the move changes nobody's access", () => {
+    expect(moveAccessMessage([{ gains: [], role_now: 40, role_after: 40 }])).toBeNull()
   })
 })

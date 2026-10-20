@@ -265,6 +265,23 @@ def node_patch(
     )
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@_route
+def node_move_preview(node: Given = None, parent_node: Given = None) -> shapes.MovePreviewShape:
+    """Answer who moving one node into `parent_node` would give access to (UF §5.7).
+
+    A guest may ask, as a guest may move: the workflow checks the access the
+    move checks, so the answer reaches no one the move would not.
+    """
+    return shapes.move_preview_shape(
+        node_core.preview_move(
+            _principals(),
+            shapes.required_text(node, "node"),
+            shapes.required_text(parent_node, "parent_node"),
+        )
+    )
+
+
 @frappe.whitelist(methods=["DELETE"])
 @_route
 def node_purge(node: Given = None) -> shapes.Count:
