@@ -143,11 +143,14 @@ def reset() -> None:
         for person in PEOPLE:
             if frappe.db.exists("User", person.email):
                 frappe.delete_doc("User", person.email, ignore_permissions=True)
-        storage, policy, _measurements = storage_state(lock=True)
+        storage, policy, measurements = storage_state(lock=True)
         limits = policy.get("users", {})
+        personal = measurements.get("personal", {})
         for email in emails:
             limits.pop(email, None)
+            personal.pop(email, None)
         storage.policy = json.dumps(policy)
+        storage.measurements = json.dumps(measurements)
         storage.save(ignore_permissions=True)
         frappe.db.commit()
         print("Removed Northwind demo users, groups, personal roots, and organization content.")
