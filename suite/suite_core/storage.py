@@ -139,7 +139,10 @@ def check_addition(
         frappe.throw(_("Combined Mail and Drive usage exceeds the site allowance"))
     if user is None:
         return
-    mail = measurements.get("personal", {}).get(user)
+    # The refresh lists every user with a mailbox, None while its usage is unknown. A user it
+    # doesn't list has no mailbox, so no Mail usage.
+    personal = measurements.get("personal", {})
+    mail = personal.get(user, 0)
     if mail is None:
         frappe.throw(_("This user's Mail usage is unavailable; refresh storage before adding Drive files"))
     limit = policy.get("users", {}).get(user, {})

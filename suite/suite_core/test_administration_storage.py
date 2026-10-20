@@ -57,6 +57,16 @@ class TestCombinedStorage(TestCase):
         self.assertRaises(frappe.ValidationError, self.check, mail=None)
         self.assertRaises(frappe.ValidationError, self.check, site=None)
 
+    def test_a_user_without_a_mailbox_has_no_mail_usage(self):
+        check_addition(
+            {"users": {"alice": {"cap": 10 * GB}}},
+            {"allowance": 100 * GB, "site_mail": 0, "personal": {"bob": 4 * GB}},
+            user="alice",
+            site_drive=0,
+            personal_drive=9 * GB,
+            delta=GB,
+        )
+
     def test_cleanup_does_not_require_a_measurement(self):
         check_addition({}, {}, user="alice", site_drive=0, personal_drive=0, delta=0)
 
