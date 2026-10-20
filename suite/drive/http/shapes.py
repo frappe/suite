@@ -503,6 +503,8 @@ class VersionShape(TypedDict):
     label: str | None
     pinned: int
     actor: str
+    # The actor as a person, so a history shows their name
+    person: Person
     size: int
     creation: str | None
 
@@ -730,14 +732,25 @@ def node_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> NodeS
     }
 
 
-def version_shape(row: Mapping) -> VersionShape:
+def version_shapes(rows: Iterable[Mapping]) -> list[VersionShape]:
+    """Shape a page of versions with one lookup of the people who took them."""
+    rows = list(rows)
+    known = people({row.get("actor") for row in rows})
+    return [version_shape(row, known) for row in rows]
+
+
+def version_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> VersionShape:
     """Return one stored version row as the shape `GET .../versions` publishes.
 
     `blob` is dropped for the reason `node_shape` drops it: a storage id is not
     a client's to name, and the only way to the bytes is
     `GET /nodes/<id>/versions/<seq>/content`, which mints a signature after a
-    READ check (§8.4, §6.8).
+    READ check (§8.4, §6.8). `known` is a page's people, looked up once by
+    `version_shapes`; a single row looks its actor up itself.
     """
+    actor = row.get("actor")
+    if known is None:
+        known = people((actor,))
     return {
         "name": row.get("name"),
         "node": row.get("node"),
@@ -745,7 +758,8 @@ def version_shape(row: Mapping) -> VersionShape:
         "kind": row.get("kind"),
         "label": row.get("label"),
         "pinned": int(row.get("pinned") or 0),
-        "actor": row.get("actor"),
+        "actor": actor,
+        "person": known[actor],
         "size": int(row.get("size") or 0),
         "creation": stamp(row.get("creation")),
     }
