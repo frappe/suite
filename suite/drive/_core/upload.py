@@ -8,6 +8,8 @@ from frappe import _
 from frappe.storage.upload import (
     create_blob_upload,
     finish_upload_to_blob,
+    get_session_paths,
+    read_session_meta,
     upload_blob_chunk,
 )
 
@@ -214,7 +216,14 @@ def finish_upload(
     if int(binding.get("declared_size") or 0) == 0:
         blob = _store_empty_file(upload_id, filename=title or binding["filename"], checksum=checksum)
     else:
-        blob = finish_upload_to_blob(upload_id, checksum=checksum)
+        try:
+            blob = finish_upload_to_blob(upload_id, checksum=checksum)
+        except Exception:
+            # Storage drops a session it claimed even when the finish fails, so
+            # the binding goes too and a retry opens a new session.
+            if read_session_meta(get_session_paths(upload_id)[0]) is None:
+                frappe.cache().delete_value(_binding_key(upload_id))
+            raise
     frappe.cache().delete_value(_binding_key(upload_id))
 
     if replaces:
