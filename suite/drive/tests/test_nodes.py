@@ -34,7 +34,7 @@ from suite.drive._core.nodes import (
     update,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.jobs import purge_trashed_nodes
 from suite.drive.tests.fixtures import ensure_rootless_user, skip_if_shared_root_exists
@@ -293,19 +293,61 @@ class TestNodeLifecycle(IntegrationTestCase):
             frappe.db.get_value("Drive Grant", {"node": source, "principal": USER}, "role"), EDIT
         )
 
-    def test_move_adds_edit_when_source_ancestor_authority_is_lost(self):
+    def test_a_mover_keeps_manage_on_their_own_file_where_they_can_only_upload(self):
         source = create_folder(self.admin, self.root.name, "Source")
         destination = create_folder(self.admin, self.other_root.name, "Destination")
         frappe.get_doc(
-            {"doctype": "Drive Grant", "node": self.other_root.name, "principal": USER, "role": 30}
+            {"doctype": "Drive Grant", "node": self.other_root.name, "principal": USER, "role": UPLOAD}
         ).insert(ignore_permissions=True)
         user = Principals(USER, (USER,), ("$PUBLIC",))
 
         update(user, source, parent_node=destination)
 
         self.assertEqual(
-            frappe.db.get_value("Drive Grant", {"node": source, "principal": USER}, "role"), EDIT
+            effective_role(frappe.db.get_value("Drive Node", source, "*", as_dict=True), user), MANAGE
         )
+
+    def test_a_move_preview_names_who_gains_access_and_the_movers_role_after(self):
+        # UF §5.7: the client confirms a move that widens access, from this answer.
+        from suite.drive.http import routes
+
+        document = create_folder(self.admin, self.root.name, "Roadmap")
+        team = create_folder(self.admin, self.other_root.name, "Team")
+        for node, principal, role in (
+            (self.other_root.name, USER, UPLOAD),
+            (self.other_root.name, "$GENERAL", COMMENT),
+            (team, LINK_A, READ),
+        ):
+            frappe.get_doc(
+                {"doctype": "Drive Grant", "node": node, "principal": principal, "role": role}
+            ).insert(ignore_permissions=True)
+
+        frappe.set_user(USER)
+        preview = routes.node_move_preview(node=document, parent_node=team)
+        nowhere_new = routes.node_move_preview(node=document, parent_node=self.root.name)
+
+        self.assertEqual(
+            [(gain["principal"], gain["role"]) for gain in preview["gains"]],
+            [("$GENERAL", COMMENT), ("$LINK", READ), (OTHER, MANAGE)],
+        )
+        self.assertEqual(preview["gains"][2]["person"]["id"], OTHER)
+        self.assertEqual((preview["role_now"], preview["role_after"]), (MANAGE, MANAGE))
+        self.assertEqual(nowhere_new["gains"], [])
+
+        frappe.set_user("Administrator")
+        user = Principals(USER, (USER,), ("$PUBLIC",))
+        update(user, document, parent_node=team)
+        moved = frappe.db.get_value("Drive Node", document, "*", as_dict=True)
+        self.assertEqual(effective_role(moved, user), preview["role_after"])
+        self.assertEqual(effective_role(moved, Principals(OTHER, (OTHER,), ("$PUBLIC",))), MANAGE)
+
+    def test_a_move_preview_is_refused_to_a_caller_who_cannot_upload_there(self):
+        from suite.drive.http import routes
+
+        document = create_folder(self.admin, self.root.name, "Roadmap")
+        frappe.set_user(USER)
+        with self.assertRaises(DriveNotFound):
+            routes.node_move_preview(node=document, parent_node=self.other_root.name)
 
     def test_move_and_descendant_create_serialize_without_tree_drift(self):
         source = create_folder(self.admin, self.root.name, "Source")

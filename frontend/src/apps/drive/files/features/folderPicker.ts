@@ -1,4 +1,9 @@
+import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
+import { groupName, principalKind, roleLabel } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
+import { translate as __ } from '@/platform/translation'
+
+import { organizationLabel } from './share/shareModel'
 
 export type PickerMode = 'move' | 'copy' | 'restore'
 
@@ -71,4 +76,50 @@ export function destination(
     return { status: 'refused', reason }
   }
   return { status: 'allowed' }
+}
+
+/** The most access changes the move confirmation lists before it counts the rest. */
+const LISTED_GAINS = 5
+
+/**
+ * What the move confirmation says, from each item's move preview: who gets
+ * access, and the mover's own role when it drops (unified frontend §5.7).
+ * `null` when the move widens nothing, so it goes ahead without asking.
+ */
+export function moveAccessMessage(previews: readonly NodeMovePreviewOutput[]): string | null {
+  const gains = new Map<string, { who: string; role: number }>()
+  for (const gain of previews.flatMap((preview) => preview.gains)) {
+    const known = gains.get(gain.principal)
+    const who = gain.person?.full_name ?? gainLabel(gain.principal)
+    if (!known || gain.role > known.role) gains.set(gain.principal, { who, role: gain.role })
+  }
+  const lines = [...gains.values()]
+    .slice(0, LISTED_GAINS)
+    .map(({ who, role }) => __('{0} will get {1} access.', [who, __(roleLabel(role))]))
+  if (gains.size > LISTED_GAINS) lines.push(__('And {0} more.', [gains.size - LISTED_GAINS]))
+  const dropped = previews.filter((preview) => preview.role_after < preview.role_now)
+  if (dropped.length) {
+    const lowest = Math.min(...dropped.map((preview) => preview.role_after))
+    lines.push(
+      lowest > 0
+        ? __("You'll have {0} access.", [__(roleLabel(lowest))])
+        : __("You'll no longer have access."),
+    )
+  }
+  return lines.length ? lines.join(' ') : null
+}
+
+function gainLabel(principal: string): string {
+  switch (principalKind(principal)) {
+    case 'group':
+      return __('People in {0}', [groupName(principal)])
+    case 'general':
+      return __(organizationLabel())
+    case 'public':
+      return __('Everyone on the web')
+    case 'link':
+      return __('Anyone with a share link')
+    case 'user':
+      return principal
+  }
 }

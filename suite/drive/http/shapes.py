@@ -485,6 +485,28 @@ class GrantsQuery(TypedDict, total=False):
     principal: str
 
 
+class MovePreviewQuery(TypedDict):
+    # The folder or root the node would move into, as `Move.parent_node`.
+    parent_node: str
+
+
+class AccessGainShape(TypedDict):
+    # A user, group, `$GENERAL` or `$PUBLIC`; `$LINK` for every share link.
+    principal: str
+    role: int
+    # Only when the principal is a user.
+    person: NotRequired[Person]
+
+
+class MovePreviewShape(TypedDict):
+    """`GET /nodes/<id>/move-preview`: who a move would give access to (UF §5.7)."""
+
+    gains: list[AccessGainShape]
+    # The mover's own role on the node now, and after the move.
+    role_now: int
+    role_after: int
+
+
 class RevokeQuery(TypedDict, total=False):
     # `?below=1` also removes the principal's grants under the node (§5.10).
     below: bool
@@ -854,6 +876,19 @@ def grant_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> Gran
     if row.get("url"):
         answer["url"] = row["url"]
     return answer
+
+
+def move_preview_shape(preview: Mapping) -> MovePreviewShape:
+    """Return a move preview with every user it names published as a person."""
+    gains = preview["gains"]
+    known = people(gain["principal"] for gain in gains if _is_user_principal(gain["principal"]))
+    shaped: list[AccessGainShape] = []
+    for gain in gains:
+        row: AccessGainShape = {"principal": gain["principal"], "role": gain["role"]}
+        if gain["principal"] in known:
+            row["person"] = known[gain["principal"]]
+        shaped.append(row)
+    return {"gains": shaped, "role_now": preview["role_now"], "role_after": preview["role_after"]}
 
 
 def _is_user_principal(principal: str) -> bool:

@@ -21,6 +21,7 @@ from frappe.utils import get_datetime, now, now_datetime
 
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
+    EXPLAIN_SQL,
     POINT_SQL,
     _describe_rows,
     _system_description,
@@ -1615,13 +1616,14 @@ def _move(
         from suite.drive._core.changes import emit_for_node
 
         emit_for_node(current.name)
+        role_before = effective_role(current, principals)
         _rewrite_subtree(current, destination, destination_root, actor=principals.user)
         if source_root != destination_root:
             release(source_root, delta)
 
         moved = _node(current.name)
         activity_link = source_link or destination_link
-        _add_mover_grant(moved, principals, destination_link=destination_link)
+        _add_mover_grant(moved, principals, role_before=role_before, destination_link=destination_link)
         _record_activity(
             moved.name,
             "move",
@@ -1659,19 +1661,91 @@ def _lock_move_rows(
     return current, destination, subtree
 
 
-def _add_mover_grant(node: dict, principals: Principals, *, destination_link: str | None) -> bool:
-    """Keep a mover at EDIT only when their authority no longer travels."""
-    if principals.user == "Guest" or destination_link or effective_role(node, principals) >= EDIT:
+def _add_mover_grant(
+    node: Mapping, principals: Principals, *, role_before: int, destination_link: str | None
+) -> bool:
+    """Give a mover back the role they had, when it does not travel with the node (§8.7)."""
+    role = _kept_mover_role(node, principals, role_before=role_before, destination_link=destination_link)
+    if role is None:
         return False
     frappe.get_doc(
         {
             "doctype": "Drive Grant",
             "node": node.get("name"),
             "principal": principals.user,
-            "role": EDIT,
+            "role": role,
         }
     ).insert(ignore_permissions=True)
     return True
+
+
+def _kept_mover_role(
+    node: Mapping, principals: Principals, *, role_before: int, destination_link: str | None
+) -> int | None:
+    """Answer the role a mover's own grant must keep on `node` at its new place, or None.
+
+    A move must not cost the mover the right to share their own file: someone
+    with Manage in My files who moves a file into a folder where they can only
+    upload keeps Manage on it. A Guest, and a caller who reached the
+    destination through a link, get no row, as with the creator grant (§4.5).
+    A grant the mover already has on the node travels with it and stays as
+    whoever wrote it left it.
+    """
+    if principals.user == "Guest" or destination_link or effective_role(node, principals) >= role_before:
+        return None
+    if frappe.db.exists("Drive Grant", {"node": node.get("name"), "principal": principals.user}):
+        return None
+    return role_before
+
+
+def preview_move(principals: Principals, node_id: str, destination_id: str) -> dict:
+    """Answer what moving a node into `destination_id` would change in who can reach it.
+
+    Unified frontend §5.7: a move that widens access is confirmed first, and
+    the client cannot work this out itself, because reading the destination's
+    grants needs Manage there. `gains` lists each principal whose nearest
+    grant would give it a higher role under the destination than it has now,
+    as `{principal, role}`; every share link is `$LINK`, because a token is a
+    secret this caller may not hold. `role_now` and `role_after` are the
+    mover's own role on the node before and after the move.
+
+    Nothing is written or locked. It checks the access the move checks (EDIT
+    on the node, UPLOAD on the destination) and leaves cycles, title
+    conflicts and quota to the move.
+    """
+    current = _node(node_id)
+    reject_illegal_root_operation(current, "move")
+    require(current, EDIT, principals)
+    destination = _node(destination_id)
+    destination_link = require(destination, UPLOAD, principals)
+    before_chain = chain_ids(current)
+    after_chain = [*chain_ids(destination), current.name]
+    moved = {**current, "root": after_chain[0], "path": "/".join(after_chain[1:-1])}
+    rows = frappe.db.sql(EXPLAIN_SQL, {"chain": [*before_chain, *after_chain], "now": now()}, as_dict=True)
+    before = _nearest_roles(rows, before_chain)
+    gains: dict[str, int] = {}
+    for principal, role in _nearest_roles(rows, after_chain).items():
+        if principal != principals.user and role > before.get(principal, 0):
+            shown = "$LINK" if principal.startswith("$LINK:") else principal
+            gains[shown] = max(gains.get(shown, 0), role)
+    role_now = effective_role(current, principals)
+    kept = _kept_mover_role(moved, principals, role_before=role_now, destination_link=destination_link)
+    return {
+        "gains": [{"principal": principal, "role": role} for principal, role in sorted(gains.items())],
+        "role_now": role_now,
+        "role_after": kept if kept is not None else effective_role(moved, principals),
+    }
+
+
+def _nearest_roles(rows: Sequence[Mapping], chain: Sequence[str]) -> dict[str, int]:
+    """Map each principal to the role of its grant nearest the end of `chain`."""
+    depth = {node: index for index, node in enumerate(chain)}
+    nearest: dict[str, tuple[int, int]] = {}
+    for row in rows:
+        at = depth.get(row["node"])
+        if at is not None and at >= nearest.get(row["principal"], (-1, 0))[0]:
+            nearest[row["principal"]] = (at, row["role"])
+    return {principal: role for principal, (_, role) in nearest.items()}
 
 
 def _trash(principals: Principals, node_id: str) -> dict:
