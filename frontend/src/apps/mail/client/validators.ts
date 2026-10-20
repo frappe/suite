@@ -2174,7 +2174,7 @@ export const operationGetMembers: Validators<GetMembersInput, GetMembersOutput> 
             properties: {
               name: { title: 'Name', type: 'string' },
               full_name: { title: 'Full Name', type: 'string' },
-              user_image: { title: 'User Image', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
               last_active: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Last Active' },
               enabled: { title: 'Enabled', type: 'boolean' },
               account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
@@ -5176,7 +5176,7 @@ export const operationGetMember: Validators<GetMemberInput, GetMemberOutput> = {
         properties: {
           name: { title: 'Name', type: 'string' },
           full_name: { title: 'Full Name', type: 'string' },
-          user_image: { title: 'User Image', type: 'string' },
+          user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
           description: { title: 'Description', type: 'string' },
           last_active: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Last Active' },
           joined_on: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Joined On' },
@@ -6547,7 +6547,7 @@ export const operationGetOverview: Validators<GetOverviewInput, GetOverviewOutpu
             properties: {
               name: { title: 'Name', type: 'string' },
               full_name: { title: 'Full Name', type: 'string' },
-              user_image: { title: 'User Image', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
               enabled: { title: 'Enabled', type: 'boolean' },
               joined_on: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Joined On' },
             },

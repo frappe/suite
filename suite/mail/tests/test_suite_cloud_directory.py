@@ -9,9 +9,11 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from pydantic import TypeAdapter
 
 from suite.mail import directory
 from suite.mail.api import admin
+from suite.mail.http.admin import MemberPage
 from suite.mail.suite_cloud import SuiteCloudClient, SuiteCloudUnavailableError, is_suite_cloud_configured
 from suite.mail.tests.fake_suite_cloud import FakeSuiteCloud, fake_suite_cloud
 
@@ -704,6 +706,8 @@ class TestMembers(SuiteCloudTestCase):
         self.fake.accounts[self.email]["used_disk_bytes"] = 4096
         page = admin.get_members(search="carol")
         self.assertEqual(page["total"], 1)
+        # A member without a picture, with Gravatar off, still satisfies the published contract.
+        TypeAdapter(MemberPage).validate_python(page, strict=True)
         listed = next(u for u in page["items"] if u["name"] == self.email)
         # Allotment and usage, fetched for the page in one call.
         self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (0, 4096))

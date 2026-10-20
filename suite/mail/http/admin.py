@@ -59,7 +59,7 @@ class DomainRow(TypedDict):
 class MemberRow(TypedDict):
     name: str
     full_name: str
-    user_image: str
+    user_image: str | None
     last_active: str | None
     enabled: bool
     account: str | None

@@ -1261,7 +1261,7 @@ const operationGetDomains: PageRef<
 export type GetMembersOutputMemberRow = {
   name: string
   full_name: string
-  user_image: string
+  user_image: string | null
   last_active: string | null
   enabled: boolean
   account: string | null
@@ -3884,7 +3884,7 @@ export type GetMemberInput = { member_id: string }
 export type GetMemberOutput = {
   name: string
   full_name: string
-  user_image: string
+  user_image: string | null
   description: string
   last_active: string | null
   joined_on: string | null
@@ -4841,7 +4841,7 @@ export type GetOverviewOutputMemberCount = { total: number; disabled: number }
 export type GetOverviewOutputRecentAccount = {
   name: string
   full_name: string
-  user_image: string
+  user_image: string | null
   enabled: boolean
   joined_on: string | null
 }
