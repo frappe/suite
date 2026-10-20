@@ -33,6 +33,7 @@ import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetim
 import { eventRowId, sameEvent, serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { gridEventFields, type GridEvent } from '@/apps/calendar/utils/eventWrite'
 import { weekSpanLabel } from '@/apps/calendar/utils/format'
 import { rememberCalendarView } from '@/apps/calendar/utils/lastView'
 import {
@@ -1000,7 +1001,23 @@ watch(
   { immediate: true },
 )
 
-const eventToBeUpdated = reactive({})
+// The event being dragged: the grid's copy of it, then the move it was given.
+type DraggedEvent = GridEvent & {
+  account?: string
+  uid?: string
+  event_id?: string
+  master_id?: string
+  master_start?: string
+  recurrence_id?: string
+  participants?: { email: string }[]
+  isAllDay?: boolean
+  isDraft?: boolean
+  fromDateTime?: string
+  toDateTime?: string
+  masterTimeZone?: string
+  startBeforeDrag?: string
+}
+const eventToBeUpdated = reactive<DraggedEvent>({})
 const showRecurringEventModal = ref(false)
 const updateScope = ref<RecurringScope>('series')
 const showNotifyModal = ref(false)
@@ -1189,7 +1206,8 @@ async function editEventInstanceSubmit(input: { sendEmail: boolean }) {
 
 const splitSeries = useMutation(api.calendar.events.splitSeries, { silent: true })
 const splitSeriesInput = ({ sendEmail }: { sendEmail: boolean }) => ({
-  ...eventToBeUpdated,
+  ...gridEventFields(eventToBeUpdated),
+  account: eventToBeUpdated.account,
   master_id: eventToBeUpdated.master_id,
   recurrence_id: eventToBeUpdated.recurrence_id,
   send_scheduling_messages: sendEmail,
@@ -1207,8 +1225,10 @@ async function splitSeriesSubmit(input: { sendEmail: boolean }) {
 
 const editEvent = useMutation(api.calendar.events.update, { silent: true })
 const editEventInput = ({ sendEmail }: { sendEmail: boolean }) => ({
-  ...eventToBeUpdated,
+  ...gridEventFields(eventToBeUpdated),
+  account: eventToBeUpdated.account,
   id: serverEventId(eventToBeUpdated),
+  uid: eventToBeUpdated.uid,
   send_scheduling_messages: sendEmail,
 })
 async function editEventSubmit(input: { sendEmail: boolean }) {

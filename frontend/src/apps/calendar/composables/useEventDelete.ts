@@ -128,7 +128,10 @@ export function useEventDelete(getEvent: () => DeletableEvent | undefined, onDel
       toast.promise(submit(sendEmail), {
         loading: recurring ? __('Deleting events...') : __('Deleting event...'),
         success: recurring ? __('Events deleted.') : __('Event deleted.'),
-        error: __('Action failed. Please try again in some time.'),
+        // The refusal's own message, as the request layer shows it for a non-silent call.
+        error: (error: unknown) =>
+          (error instanceof Error && error.message) ||
+          __('Action failed. Please try again in some time.'),
       })
     }
 

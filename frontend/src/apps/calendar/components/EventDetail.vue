@@ -123,7 +123,10 @@ const submitResponse = (response: string, scope: RecurringScope) => {
   toast.promise(respond(response, scope), {
     loading: __('Sending response...'),
     success: __('Response sent.'),
-    error: __('Action failed. Please try again in some time.'),
+    // The refusal's own message, as the request layer shows it for a non-silent call.
+    error: (error: unknown) =>
+      (error instanceof Error && error.message) ||
+      __('Action failed. Please try again in some time.'),
   })
 }
 

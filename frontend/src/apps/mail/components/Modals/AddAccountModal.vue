@@ -220,7 +220,6 @@ const defaultAccountRequest = {
   send_invite: true,
   expires_at: '',
   backup_email: '',
-  quota_gb: '',
   disable_receiving: false,
   first_name: '',
   last_name: '',
@@ -307,18 +306,22 @@ async function addMemberSubmit() {
   const [primary, ...rest] = emails.value
   const aliases = rest.filter((e) => e.username && e.domain).map((e) => `${e.username}@${e.domain}`)
   const input: InputOf<typeof api.mail.admin.members.create> = {
-    ...accountRequest,
     username: primary?.username || '',
     domain: primary?.domain || '',
     aliases,
     groups: groupIds.value,
     mailing_lists: mailingListIds.value,
+    is_admin: accountRequest.role === 'admin',
+    send_invite: accountRequest.send_invite,
+    backup_email: accountRequest.backup_email,
     expires_at: fromLocalInput(accountRequest.expires_at),
+    disable_receiving: accountRequest.disable_receiving,
+    first_name: accountRequest.first_name,
+    last_name: accountRequest.last_name,
     quota_gb: 0,
     // Blank means "server default" for both, which the API spells as null.
     locale: accountRequest.locale || null,
     time_zone: accountRequest.time_zone || null,
-    is_admin: accountRequest.role === 'admin',
   }
   const result = await addMember.run(input)
   if (!result.success) {

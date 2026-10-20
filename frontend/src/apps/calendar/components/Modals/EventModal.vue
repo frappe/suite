@@ -29,17 +29,12 @@ import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { defaultCalendar, destinationOptions } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
-import {
-  fromEventZone,
-  fromWallClock,
-  inUserTimeZone,
-  shiftedMasterStart,
-} from '@/apps/calendar/utils/datetime'
+import { inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
+import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
-import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import {
   isFirstOccurrence,
   scopeOptions,
@@ -78,10 +73,6 @@ const isTitleFocused = ref(false)
 
 // --- Event initialization ---
 
-// The occurrence's own start, as the form reads it. Timed events edit in the viewer's zone
-// (saving re-zones them to it, see eventParams); all-day events keep their calendar date.
-const occurrenceStart = (ev: any) =>
-  ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
 const getEventData = () => {
   if (isNew.value) return getDefaultEventData()
   const { calendarEvent: ev } = selectedEvent
@@ -197,7 +188,7 @@ const organizerParticipant = (identity: ParticipantIdentity) => ({
   participation_status: 'ACCEPTED',
 })
 const event = reactive({})
-let originalParams = {}
+let originalParams: Record<string, unknown> = {}
 
 // A new event cannot be saved, or kept as a draft, without an organizer, and only an
 // identity the account can both send from and attend as provides one (see the store).
@@ -206,30 +197,7 @@ const missingOrganizer = computed(() => isNew.value && !event.organizer)
 
 // --- Computed params ---
 
-const duration = computed(() => {
-  if (event.isAllDay) {
-    const days = dayjs(event.endDate).diff(dayjs(event.startDate), 'day') + 1
-    return dayjs
-      .duration({
-        days,
-      })
-      .toISOString()
-  }
-  const start = dayjs(`${event.startDate}T${event.startTime}`)
-  const end = dayjs(`${event.endDate}T${event.endTime}`)
-  const diff = dayjs.duration(end.diff(start))
-  const hours = Math.floor(diff.asHours())
-  const minutes = diff.minutes()
-  return dayjs
-    .duration({
-      hours,
-      minutes,
-    })
-    .toISOString()
-})
-const startsAt = computed(() =>
-  dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
-)
+const startsAt = computed(() => formStart(event))
 const endsAt = computed(() => dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`))
 const isDateTimeValid = computed(() => {
   if (!event.startDate || !event.endDate) return false
@@ -245,104 +213,15 @@ const participants = computed(() =>
     selectedEvent?.calendarEvent?.participants,
   ),
 )
-const eventParams = computed(() => {
-  const params: Record<string, any> = {
-    user: user.data.name,
-    organizer: event.organizer,
-    start: startsAt.value.format('YYYY-MM-DD[T]HH:mm:ss'),
-    duration: duration.value,
-    // Without this the server sees a timed midnight event and applies the
-    // wrong default alert (10 mins before instead of 9am day-of).
-    show_without_time: event.isAllDay,
-  }
-  if (event.title) params.title = event.title
-  // Updates are a full replace: an event saved without its calendars lands in the default one.
-  if (event.calendar_ids?.length) params.calendar_ids = event.calendar_ids
-  if (dayjs?.tz) params.time_zone = dayjs.tz.guess()
-
-  // Saving the whole series from one of its occurrences. The start on screen belongs to that
-  // occurrence, so what reaches the master is the shift the reader made to it — nothing at all
-  // when they made none, which is how the anchor used to pass through untouched. It keeps the
-  // master's zone either way: pairing the master's wall clock with the browser's zone would
-  // move the series on its own.
-  const ev = selectedEvent?.calendarEvent
-  if (ev?.recurrence_id && editScope.value === 'series') {
-    // An unresolved master (no master_start) is already past saving — the update is addressed by
-    // master_id too, and falls back to an id the server won't take — so it is left exactly as it
-    // was rather than given a start of this occurrence's, or of now.
-    params.start = ev.master_start
-      ? shiftedMasterStart(ev.master_start, occurrenceStart(ev), startsAt.value)
-      : ev.master_start
-    params.time_zone = ev.time_zone || params.time_zone
-  }
-  if (event.recurrence_rule && Object.keys(event.recurrence_rule).length) {
-    // A rule names its days by reading them off the start, and does not re-read them when the
-    // anchor moves. Left alone, a Monday series edited onto a Wednesday starts on Wednesday
-    // and repeats on Mondays — so the occurrence just edited matches nothing the rule
-    // generates and is not drawn at all. Which start was the anchor depends on what is being
-    // written: the series is anchored at the master's start, the half a split begins at the
-    // occurrence the reader opened.
-    // Both ends read the same way. A split is anchored where the form opened this occurrence
-    // and starts where the form now says — both the viewer's clock. The series is anchored
-    // at the master's start and moves to the one computed from it — both the event's.
-    const anchorWas =
-      editScope.value === 'following' ? occurrenceStart(ev) : dayjs(ev?.master_start)
-    params.recurrence_rule =
-      ev?.recurrence_id && anchorWas?.isValid() && !anchorWas.isSame(dayjs(params.start), 'day')
-        ? reanchoredRule(event.recurrence_rule, anchorWas, dayjs(params.start))
-        : event.recurrence_rule
-  }
-  if (event.privacy) params.privacy = event.privacy
-  if (event.free_busy_status) params.free_busy_status = event.free_busy_status
-  if (event.description) params.description = event.description
-  if (event.locations?.some((l) => l?.trim()))
-    params.locations = event.locations
-      .filter((l) => l?.trim())
-      .map((name) => ({
-        name,
-      }))
-  // Always carry existing links on updates — the JMAP update is a full replace,
-  // so omitting them would strip Meet links from the event.
-  if (event.links?.length) params.links = event.links
-  if (event.participants?.length) params.participants = event.participants
-  if (event.alerts?.length) {
-    params.alerts = event.alerts.map((a) => {
-      const base = {
-        action: a.action,
-        type: a.type,
-      }
-      if (a.type === 'AbsoluteTrigger')
-        return {
-          ...base,
-          // The date/time inputs are a wall clock in the user's zone; the API takes UTC.
-          when: fromWallClock(`${a.date}T${a.time}`),
-        }
-      return {
-        ...base,
-        offset: dayjs
-          .duration({
-            [a.unit]: a.number * a.direction,
-          })
-          .toISOString(),
-        relative_to: a.relative_to,
-      }
-    })
-  } else if (event.followsDefaults) {
-    // updates send these params whole, so an unrelated edit must say the
-    // event still follows the calendar's defaults.
-    params.use_default_alerts = true
-  } else {
-    // An empty list is a choice: removing the pre-filled default row means
-    // no reminder at all, so the clear must reach the server.
-    params.alerts = []
-  }
-  return params
-})
+const eventParams = computed(() =>
+  formEventFields(event, { occurrence: selectedEvent?.calendarEvent, scope: editScope.value }),
+)
 const patch = computed(() => {
+  const current: Record<string, unknown> = eventParams.value
   const changed = Object.fromEntries(
-    [...new Set([...Object.keys(eventParams.value), ...Object.keys(originalParams)])]
-      .filter((k) => JSON.stringify(eventParams.value[k]) !== JSON.stringify(originalParams[k]))
-      .map((k) => [k, eventParams.value[k]]),
+    [...new Set([...Object.keys(current), ...Object.keys(originalParams)])]
+      .filter((k) => JSON.stringify(current[k]) !== JSON.stringify(originalParams[k]))
+      .map((k) => [k, current[k]]),
   )
   // A changed start is a wall clock in the viewer's zone; without the zone alongside it the
   // server would reinterpret those numbers in the event's stored zone.
@@ -711,7 +590,10 @@ const submitEvent = (sendEmail: boolean) => {
   }
   toast.promise(submit(), {
     ...messages,
-    error: __('Action failed. Please try again in some time.'),
+    // The refusal's own message, as the request layer shows it for a non-silent call.
+    error: (error: unknown) =>
+      (error instanceof Error && error.message) ||
+      __('Action failed. Please try again in some time.'),
   })
   showNotifyParticipantsModal.value = false
 }
