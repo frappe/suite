@@ -28,7 +28,7 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
 import { resetImageCrop, startCrop } from '@/apps/slides/stores/imageCrop'
 import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
-import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
+import { handleUploadedMedia, mediaFileName } from '@/apps/slides/utils/mediaUploads'
 
 const cropOptions = computed(() => [
   { value: 'crop', label: 'Crop image', icon: LucideCrop },
@@ -40,7 +40,7 @@ const cropOptions = computed(() => [
   },
 ])
 
-const fileName = computed(() => decodeURIComponent(activeElement.value?.src.split('/').pop() ?? ''))
+const fileName = computed(() => mediaFileName(activeElement.value?.src))
 
 const handleCropAction = (action) => {
   const el = activeElement.value

@@ -10,9 +10,10 @@ import { MEDIA_PROXY_PATH, SLIDES_MEDIA_PARAM } from './slidesRequests'
 
 export const fileUploadHandler = new FileUploadHandler()
 
-// Core's upload_file takes only a short list of file types from users without Desk
-// access, and WebP, SVG and WebM are not on it. Suite's own endpoint has no such list.
-export const MEDIA_UPLOAD_ENDPOINT = '/api/method/suite.mail.api.mail.upload_file'
+// Stores the file as a Drive media node below the deck and answers its node id as
+// `file_url` (§10.7). Drive signs that node's url for every reader of the deck,
+// a public-link guest included; a `/private/files/` url only opens for signed-in readers.
+export const MEDIA_UPLOAD_ENDPOINT = '/api/method/suite.slides.api.media.add'
 
 // these users read a file straight from /private/files; everyone else goes through the proxy
 const isMediaOwner = (owner, user) => !!user && (owner === user || user === 'Administrator')
@@ -134,4 +135,12 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
   }
 
   return fileUrl
+}
+
+// The file name a media reference shows in the panel. A media node's signed url ends
+// in its name (`/private/files/<blob>/<name>?…`); a legacy url ends in its own.
+export const mediaFileName = (src) => {
+  if (!src) return ''
+  const url = isMediaNodeId(src) ? mediaNodeUrl(src) : src
+  return decodeURIComponent(url.split('?')[0].split('/').pop() ?? '')
 }

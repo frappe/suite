@@ -116,3 +116,5 @@ suite.drive.patches.unescape_node_titles
 # restoring that backup is the only rollback (§14.11).
 suite.drive.patches.build
 suite.drive.patches.cleanup
+# Needs decks linked to nodes, so after Build. T3-21: media uploaded as Files after Build.
+suite.slides.patches.move_file_media_to_drive
