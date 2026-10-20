@@ -387,7 +387,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - An **Activity** is written once and never edited. It goes when its node
   is purged.
 - A **Notification** points at one **Activity** for one person. It carries
-  no message of its own.
+  no message of its own. The list joins the node's current title and the
+  actor's name when it is read; a comment's Activity keeps a short excerpt.
 - A **Favourite** and a **Recent** are one person's own. Nobody else sees
   them, and clearing one never touches the other.
 - Opening a node writes a **Recent**, never an **Activity**.
