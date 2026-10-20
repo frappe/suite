@@ -63,6 +63,7 @@ import {
   ParticipantSelector,
   useCalendarUserStore,
 } from '@/apps/calendar'
+import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 
 interface CalendarParticipant {
@@ -157,7 +158,7 @@ function submit() {
         title: title.value,
         start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
         duration: duration.value,
-        time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
+        time_zone: userTimeZone(),
         participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
         send_scheduling_messages: scheduledParticipants.value.length > 1,
       })

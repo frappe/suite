@@ -58,11 +58,12 @@
 </template>
 
 <script setup lang="ts">
-import { Combobox, Select, SettingsRow, toast } from 'frappe-ui'
+import { Combobox, Select, SettingsRow } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { useCursor, type CursorMode } from '@/platform/cursor'
+import { toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
@@ -129,6 +130,13 @@ const languageOptions = computed(() =>
 )
 const { timezoneOptions } = useTimezones()
 
+const SAVED_MESSAGES = {
+  language: __('Language saved, reloading…'),
+  time_zone: __('Time zone saved, reloading…'),
+}
+// Long enough to read the message before the page goes.
+const RELOAD_DELAY_MS = 1200
+
 // Language and time zone shape the whole session (translations, rendered
 // dates), so a full reload after save is the only way to apply them.
 async function saveUserField(fieldname: 'language' | 'time_zone', value?: string | number | null) {
@@ -138,7 +146,8 @@ async function saveUserField(fieldname: 'language' | 'time_zone', value?: string
     await updateUser.run({
       [fieldname]: value,
     })
-    window.location.reload()
+    toast.success(SAVED_MESSAGES[fieldname])
+    setTimeout(() => window.location.reload(), RELOAD_DELAY_MS)
   } catch {
     toast.error(__('Could not save preferences'))
   }

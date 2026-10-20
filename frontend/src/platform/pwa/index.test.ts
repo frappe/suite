@@ -91,7 +91,9 @@ function fakeSession(status: SessionStatus, user: string | null) {
   const signedIn: Array<() => unknown> = []
   return {
     status: ref<SessionStatus>(status),
-    user: ref(user ? { id: user, email: user, fullName: user, avatar: null } : null),
+    user: ref(
+      user ? { id: user, email: user, fullName: user, avatar: null, timeZone: null } : null,
+    ),
     onLogout(cleanup: () => unknown, options?: { whileSignedIn?: boolean }) {
       if (options?.whileSignedIn) signedIn.push(cleanup)
       return () => {}

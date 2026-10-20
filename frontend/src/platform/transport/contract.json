@@ -2231,6 +2231,17 @@
                 ],
                 "title": "Avatar"
               },
+              "time_zone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Time Zone"
+              },
               "roles": {
                 "$ref": "#/$defs/AccountRoles"
               },
@@ -2252,6 +2263,7 @@
               "email",
               "full_name",
               "avatar",
+              "time_zone",
               "roles",
               "is_jmap_configured",
               "must_change_password",

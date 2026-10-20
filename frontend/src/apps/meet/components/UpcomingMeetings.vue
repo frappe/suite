@@ -10,6 +10,7 @@ import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
 import { useSession } from '@/platform/session'
+import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 
 const accountError = ref(false)
@@ -77,13 +78,12 @@ const router = useRouter()
 const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
 
-const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 const session = useSession()
 // Follow the clock so a tab left open across midnight fetches the new day.
 const today = computed(() => dayjs(now.value).startOf('day'))
 const fromDate = computed(() => today.value.format('YYYY-MM-DD[T]HH:mm:ss'))
 const toDate = computed(() => today.value.endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'))
-const timeZone = timezone()
+const timeZone = userTimeZone()
 
 const upcomingEvents = useQuery(api.calendar.events.window, () =>
   calendarStore.accountId

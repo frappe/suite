@@ -4,6 +4,7 @@ import { userStore as calendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userStore } from '@/apps/mail/stores/user'
+import { userTimeZone } from '@/platform/time-zone'
 
 // Module singletons: the invite strip opens an event while DefaultLayout hosts
 // the detail card, so both need the same selection.
@@ -18,8 +19,6 @@ let started = false
  */
 export type CardAnchor = { element: Element; side: 'right' | 'bottom' }
 const cardAnchor = ref<CardAnchor | null>(null)
-
-const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 
 // The detail card's "delete following instances" path reads `date` (the
 // clicked instance's day, attached by the calendar grid in the calendar app);
@@ -73,7 +72,7 @@ export const eventDayRoute = (event: any, accountId: string) => {
   // this runs inside mail.
   const start =
     event.time_zone && !isAllDayEvent(event)
-      ? dayjs.tz(event.start, event.time_zone).tz(timezone())
+      ? dayjs.tz(event.start, event.time_zone).tz(userTimeZone())
       : dayjs(event.start)
   const day = `${start.year()}/${start.month() + 1}/${start.date()}`
   return {

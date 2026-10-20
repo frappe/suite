@@ -11,11 +11,13 @@ import { initializeCursor } from '@/platform/cursor'
 import { installApiErrorHandler } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { initializeTheme } from '@/platform/theme'
+import { installUserTimeZone } from '@/platform/time-zone'
 import { translationPlugin, ready as translationsReady } from '@/platform/translation'
 import router from '@/router'
 
 initializeCursor()
 watchBuild()
+installUserTimeZone()
 
 const app = createApp(App)
 

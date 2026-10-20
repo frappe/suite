@@ -1,26 +1,24 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import dayjs from '@/apps/mail/utils/dayjs'
-
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     userResource: {
-      data: { time_zone: 'Asia/Karachi', system_time_zone: 'America/New_York' },
+      data: { system_time_zone: 'America/New_York' },
     },
   }),
 }))
 
-// The browser zone wins over the User doc's zone; the tests below assert against it.
-vi.spyOn(dayjs.tz, 'guess').mockReturnValue('Asia/Kolkata')
+// The tests below assert against the Settings zone.
+vi.mock('@/platform/session', () => ({
+  useSession: () => ({ user: { value: { timeZone: 'Asia/Kolkata' } } }),
+}))
 
 const load = async () => await import('@/apps/mail/utils/datetime')
 
 describe('mail datetime helpers', () => {
-  it('prefers the browser zone, falling back to the user zone', async () => {
+  it('reads the zone from Settings', async () => {
     const { userTimeZone } = await load()
     expect(userTimeZone()).toBe('Asia/Kolkata')
-    vi.mocked(dayjs.tz.guess).mockReturnValueOnce(undefined as unknown as string)
-    expect(userTimeZone()).toBe('Asia/Karachi')
   })
 
   it('renders a UTC timestamp in the user zone', async () => {

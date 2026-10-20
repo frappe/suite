@@ -8,7 +8,7 @@
   "frontend/src/apps/calendar/components/mobile/MobileCalendar.vue": 2,
   "frontend/src/apps/calendar/components/mobile/MobileEventForm.vue": 2,
   "frontend/src/apps/calendar/composables/useCalendarSearchFilters.ts": 1,
-  "frontend/src/apps/calendar/pages/CalendarView.vue": 94,
+  "frontend/src/apps/calendar/pages/CalendarView.vue": 89,
   "frontend/src/apps/calendar/utils/eventMeta.ts": 1,
   "frontend/src/apps/calendar/utils/index.ts": 5,
   "frontend/src/apps/mail/components/AppSidebar.vue": 17,
