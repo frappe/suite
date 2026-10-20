@@ -4,6 +4,7 @@ export interface SlidesVersion {
   kind: string
   label: string | null
   pinned: boolean
+  /** Who took it, by full name; their user id when Drive sent no name. */
   actor: string | null
   creation: string | null
 }
@@ -31,7 +32,7 @@ function readVersion(row: unknown): SlidesVersion[] {
       kind: text(field(row, 'kind')) ?? 'auto',
       label: text(field(row, 'label')) || null,
       pinned: Boolean(field(row, 'pinned')),
-      actor: text(field(row, 'actor')),
+      actor: text(field(field(row, 'person'), 'full_name')) || text(field(row, 'actor')),
       creation: text(field(row, 'creation')),
     },
   ]

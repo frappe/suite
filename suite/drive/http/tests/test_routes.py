@@ -44,7 +44,17 @@ def fake_people(ids):
 
 
 def version_row(seq, **fields):
-    return frappe._dict({"name": f"v{seq}", "node": "n1", "seq": seq, "kind": "auto", "size": 10, **fields})
+    return frappe._dict(
+        {
+            "name": f"v{seq}",
+            "node": "n1",
+            "seq": seq,
+            "kind": "auto",
+            "actor": "a@example.com",
+            "size": 10,
+            **fields,
+        }
+    )
 
 
 def setUpModule():
@@ -969,7 +979,7 @@ class TestVersionRoutes(BoundaryCase):
     """§9.1 at the boundary: a sequence names a version, and zero names none."""
 
     def test_a_version_page_is_two_keys_and_carries_the_cursor(self):
-        row = frappe._dict({"name": "v1", "node": "n1", "seq": 3, "kind": "auto", "size": 10})
+        row = version_row(3, name="v1")
         result = {"rows": [row], "next_cursor": "b2Zmc2V0OjIw"}
         with patch.object(routes.versions, "list_versions", return_value=result) as workflow:
             answer = routes.node_versions(node="n1", limit="10", cursor="b2Zmc2V0OjEw")

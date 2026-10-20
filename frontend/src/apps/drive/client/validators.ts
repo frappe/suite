@@ -3173,6 +3173,16 @@ export const operationNodeVersions: Validators<NodeVersionsInput, NodeVersionsOu
       value,
       {
         $defs: {
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
           VersionShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -3182,6 +3192,7 @@ export const operationNodeVersions: Validators<NodeVersionsInput, NodeVersionsOu
               label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
               pinned: { title: 'Pinned', type: 'integer' },
               actor: { title: 'Actor', type: 'string' },
+              person: { $ref: '#/$defs/Person' },
               size: { title: 'Size', type: 'integer' },
               creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
             },
@@ -3193,6 +3204,7 @@ export const operationNodeVersions: Validators<NodeVersionsInput, NodeVersionsOu
               'label',
               'pinned',
               'actor',
+              'person',
               'size',
               'creation',
             ],
@@ -3238,6 +3250,18 @@ export const operationNodeVersionCreate: Validators<
     assertSchema(
       value,
       {
+        $defs: {
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+        },
         properties: {
           name: { title: 'Name', type: 'string' },
           node: { title: 'Node', type: 'string' },
@@ -3246,10 +3270,22 @@ export const operationNodeVersionCreate: Validators<
           label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
           pinned: { title: 'Pinned', type: 'integer' },
           actor: { title: 'Actor', type: 'string' },
+          person: { $ref: '#/$defs/Person' },
           size: { title: 'Size', type: 'integer' },
           creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
         },
-        required: ['name', 'node', 'seq', 'kind', 'label', 'pinned', 'actor', 'size', 'creation'],
+        required: [
+          'name',
+          'node',
+          'seq',
+          'kind',
+          'label',
+          'pinned',
+          'actor',
+          'person',
+          'size',
+          'creation',
+        ],
         title: 'VersionShape',
         type: 'object',
       },
@@ -3282,6 +3318,18 @@ export const operationNodeVersionPatch: Validators<NodeVersionPatchInput, NodeVe
       assertSchema(
         value,
         {
+          $defs: {
+            Person: {
+              properties: {
+                id: { title: 'Id', type: 'string' },
+                full_name: { title: 'Full Name', type: 'string' },
+                user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              },
+              required: ['id', 'full_name', 'user_image'],
+              title: 'Person',
+              type: 'object',
+            },
+          },
           properties: {
             name: { title: 'Name', type: 'string' },
             node: { title: 'Node', type: 'string' },
@@ -3290,10 +3338,22 @@ export const operationNodeVersionPatch: Validators<NodeVersionPatchInput, NodeVe
             label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
             pinned: { title: 'Pinned', type: 'integer' },
             actor: { title: 'Actor', type: 'string' },
+            person: { $ref: '#/$defs/Person' },
             size: { title: 'Size', type: 'integer' },
             creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
           },
-          required: ['name', 'node', 'seq', 'kind', 'label', 'pinned', 'actor', 'size', 'creation'],
+          required: [
+            'name',
+            'node',
+            'seq',
+            'kind',
+            'label',
+            'pinned',
+            'actor',
+            'person',
+            'size',
+            'creation',
+          ],
           title: 'VersionShape',
           type: 'object',
         },
@@ -3379,6 +3439,16 @@ export const operationNodeVersionRestore: Validators<
       value,
       {
         $defs: {
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
           VersionShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -3388,6 +3458,7 @@ export const operationNodeVersionRestore: Validators<
               label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
               pinned: { title: 'Pinned', type: 'integer' },
               actor: { title: 'Actor', type: 'string' },
+              person: { $ref: '#/$defs/Person' },
               size: { title: 'Size', type: 'integer' },
               creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
             },
@@ -3399,6 +3470,7 @@ export const operationNodeVersionRestore: Validators<
               'label',
               'pinned',
               'actor',
+              'person',
               'size',
               'creation',
             ],

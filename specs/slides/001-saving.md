@@ -35,6 +35,7 @@ Other triggers:
 
 - The editor sends the whole slide list to `save_slides`, with `base_modified`, the version it built on.
 - The server refuses the save if `base_modified` is not the current version (`TimestampMismatchError`). It never merges. Slide rows are matched by `client_id`.
+- A save takes an automatic Drive version when the newest version is more than 30 seconds old, as Sheets does. Saves closer together share one version. A failed version never fails the save.
 - A request that takes longer than 30 seconds is cancelled.
 - An edit made while a save is in progress is queued. The deck stays dirty and the next tick saves it.
 - The header shows one of: saved, saving, unsaved, not saved (failed).

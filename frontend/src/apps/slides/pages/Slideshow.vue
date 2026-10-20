@@ -1,6 +1,8 @@
 <template>
   <div
-    class="absolute left-0 top-0 h-full w-full overflow-clip bg-black"
+    ref="root"
+    tabindex="-1"
+    class="absolute left-0 top-0 h-full w-full overflow-clip bg-black outline-none"
     :class="{ 'slideshow-hide-cursor': cursorHidden }"
   >
     <div class="flex h-screen w-full items-center justify-center" :style="slideContainerStyles">
@@ -70,7 +72,7 @@ import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
 import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 import { resetFocus } from '@/apps/slides/stores/element'
 import { applyReverseTransition, inReadonlyMode } from '@/apps/slides/stores/presentation'
-import { currentSlide, slideIndex } from '@/apps/slides/stores/slide'
+import { currentSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
 import {
   cancelAdvance,
   changeSlideInSlideshow,
@@ -92,6 +94,7 @@ import {
 } from '@/apps/slides/stores/slideshow'
 import { getTransitionKey } from '@/apps/slides/stores/transition'
 
+const root = ref(null)
 const transition = ref('none')
 const transform = ref('')
 const opacity = ref(1)
@@ -291,6 +294,15 @@ const initFullscreenMode = async () => {
   handleFullScreenChange()
 }
 
+const takeFocus = () => root.value?.focus({ preventScroll: true })
+
+// a menu that started the show keeps focus until it closes, then hands it to its
+// trigger, which is inert under the show, so focus falls to the page
+const takeFocusBack = (event) => {
+  if (!event.relatedTarget)
+    setTimeout(() => document.activeElement === document.body && takeFocus())
+}
+
 const updateWindowSize = () => {
   windowWidth.value = window.innerWidth
   windowHeight.value = window.innerHeight
@@ -301,6 +313,9 @@ useBrowserZoomGuard()
 onMounted(() => {
   active = true
   resetFocus()
+  // keys go to the show, not to whatever started it underneath
+  takeFocus()
+  document.addEventListener('focusout', takeFocusBack)
   initFullscreenMode()
   document.addEventListener('fullscreenchange', handleFullScreenChange)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -315,6 +330,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   active = false
+  document.removeEventListener('focusout', takeFocusBack)
   document.removeEventListener('fullscreenchange', handleFullScreenChange)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.removeEventListener('resize', updateWindowSize)
@@ -361,6 +377,18 @@ useKeyboardShortcut([
     description: 'Previous step',
     group: 'Slideshow',
     handler: performPreviousStep,
+  },
+  {
+    combo: 'Home',
+    description: 'First slide',
+    group: 'Slideshow',
+    handler: () => changeSlideInSlideshow(0),
+  },
+  {
+    combo: 'End',
+    description: 'Last slide',
+    group: 'Slideshow',
+    handler: () => changeSlideInSlideshow(slides.value.length - 1),
   },
   {
     combo: 'F5',
