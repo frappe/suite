@@ -21,6 +21,7 @@
 
 <script setup lang="ts">
 import type { CollabRoom } from '@suite/collab-client'
+import { TextSelection } from '@tiptap/pm/state'
 import { toast } from 'frappe-ui'
 import { computed, onBeforeUnmount, provide, ref, shallowRef, watch } from 'vue'
 import * as Y from 'yjs'
@@ -125,11 +126,18 @@ watch(openThread, (name) => {
   }
 })
 
+// Collapses the commented range so the bubble hides and the next click lands where it is
+// aimed: a blurred editor holding a range puts that range back on focus and drops the click
 function commentOnSelection() {
-  const anchor = editor.value && anchorSelection(editor.value.state)
-  if (anchor) {
-    emit('comment', anchor)
+  const view = editor.value?.view
+  const anchor = view && anchorSelection(view.state)
+  if (!anchor) {
+    return
   }
+
+  const { tr } = view.state
+  view.dispatch(tr.setSelection(TextSelection.create(tr.doc, tr.selection.to)))
+  emit('comment', anchor)
 }
 
 async function save(done?: () => void) {

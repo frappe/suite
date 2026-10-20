@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import { anchorQuote, DOCUMENT_ANCHOR } from '@/apps/writer/collab/anchors'
 
+import { isComposing } from './commentMentions'
 import MentionTextarea from './MentionTextarea.vue'
 import type { ShownDraft } from './useCommentDrafts'
 
@@ -17,6 +18,18 @@ const isOnDocument = computed(() => props.draft.anchor === DOCUMENT_ANCHOR)
 const boxLabel = computed(() =>
   isOnDocument.value ? 'Add a comment' : 'Add a comment on the text',
 )
+
+// Enter posts, as it sends a reply; Shift+Enter and a word still being composed stay in the box
+function postOnEnter(event: KeyboardEvent) {
+  if (event.shiftKey || isComposing(event)) {
+    return
+  }
+
+  event.preventDefault()
+  if (!isPostDisabled.value) {
+    emit('post')
+  }
+}
 
 function focus() {
   field.value?.focus()
@@ -37,6 +50,7 @@ defineExpose({ focus })
       :aria-label="boxLabel"
       @update:model-value="emit('write', $event)"
       @keydown.esc.stop.prevent="emit('discard')"
+      @keydown.enter="postOnEnter"
     />
     <div class="flex justify-end gap-1">
       <Button size="sm" variant="ghost" label="Cancel" @click="emit('discard')" />
