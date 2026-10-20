@@ -23,7 +23,7 @@
             variant="outline"
             :options="
               participantIdentities.data.map((identity) => ({
-                label: `${identity.email} (${identity.id})`,
+                label: identity._name ? `${identity._name} <${identity.email}>` : identity.email,
                 value: identity.name,
               }))
             "

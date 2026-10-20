@@ -237,3 +237,58 @@ def delete_account(doc: Document, method: str | None = None) -> None:
     from suite.mail.jmap import clear_jmap_session
 
     clear_jmap_session(user)
+
+
+def sync_identity_names(doc: Document, method: str | None = None) -> None:
+    """Queues renaming the user's own mail and calendar identities after their full name changes."""
+
+    if doc.flags.in_insert or not doc.has_value_changed("full_name") or not is_jmap_configured(doc.name):
+        return
+
+    before = doc.get_doc_before_save()
+    frappe.enqueue(
+        "suite.mail.events.rename_own_identities",
+        user=doc.name,
+        old_name=before.full_name if before else None,
+        new_name=doc.full_name,
+        enqueue_after_commit=True,
+    )
+
+
+def rename_own_identities(user: str, old_name: str | None, new_name: str) -> None:
+    """Renames the identities on the user's own address that still carry their old name.
+
+    A display name the user chose themselves, or another address's identity, is left alone.
+    """
+
+    from suite.mail.doctype.identity.identity import update_identity
+    from suite.mail.doctype.participant_identity.participant_identity import update_participant_identity
+    from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
+    from suite.mail.jmap import (
+        get_cached_identities,
+        get_cached_participant_identities,
+        invalidate_jmap_identities_cache,
+    )
+
+    frappe.set_user(user)
+    email = (frappe.db.get_value("User", user, "email") or user).lower()
+    old_name = old_name or ""
+
+    for account in get_user_jmap_accounts(user):
+        invalidate_jmap_identities_cache(account)
+        for identity in get_cached_identities(account):
+            if identity["email"].lower() == email and (identity.get("name") or "") == old_name:
+                update_identity(
+                    account,
+                    identity["id"],
+                    new_name,
+                    identity.get("replyTo"),
+                    identity.get("bcc"),
+                    identity.get("textSignature"),
+                    identity.get("htmlSignature"),
+                )
+        for identity in get_cached_participant_identities(account):
+            address = identity["calendarAddress"].removeprefix("mailto:")
+            if address.lower() == email and (identity.get("name") or "") == old_name:
+                update_participant_identity(account, identity["id"], new_name, address)
+        invalidate_jmap_identities_cache(account)

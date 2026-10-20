@@ -268,6 +268,7 @@ doc_events = {
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
+            "suite.mail.events.sync_identity_names",
         ],
         "on_trash": [
             "suite.composition.users.on_trash",
