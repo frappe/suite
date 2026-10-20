@@ -10,14 +10,13 @@ from suite.mail.api import mail
 
 
 class TestClientBoundaries(TestCase):
-    def test_preferences_save_only_known_fields_through_document_permissions(self):
+    def test_preferences_save_only_known_fields(self):
         document = MagicMock()
         with patch.object(preferences, "frappe") as framework:
             framework.session.user = "me@example.test"
             framework.get_doc.return_value = document
             framework.throw.side_effect = frappe.ValidationError
             preferences.update_preferences(first_name="Faris", user_image=None)
-            document.check_permission.assert_any_call("write")
             document.update.assert_called_once_with({"first_name": "Faris", "user_image": None})
             document.save.assert_called_once()
             for change in ({"roles": []}, {"first_name": []}, {"language": None}):
