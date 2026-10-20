@@ -2,7 +2,7 @@
 
 Run with `pilot -b suite frappe --site suite.localhost execute suite.demo.drive.seed`.
 The six fixed accounts are reserved for this dataset. Reset purges their personal
-roots and Shared-root nodes, then deletes their groups and accounts. Other users
+roots and Shared-root nodes, the Northwind logo, then their groups and accounts. Other users
 and the site's Shared root are retained. Each completed batch is committed, so a
 failed run can be removed with reset. Internal Drive helpers fill gaps in its facade.
 """
@@ -14,6 +14,7 @@ from io import BytesIO
 import frappe
 
 from suite import drive
+from suite.api.account import delete_logo_file
 from suite.demo import assets, content
 from suite.drive._core import activity, comments, nodes
 from suite.drive._core.access import grant
@@ -24,6 +25,7 @@ from suite.suite_core.storage import state as storage_state
 PASSWORD = "NorthwindDemo!2026"
 URL = "https://suite.netchamp.dev"
 PREFIX = "Northwind Labs - "
+LOGO = "northwind-labs-logo.png"
 TEAMS = ("Product", "Design", "Engineering", "Marketing", "Finance")
 
 
@@ -62,8 +64,8 @@ def seed(fresh: bool = False) -> None:
             )
             return
         print("Creating Northwind demo users...")
-        frappe.db.set_single_value("Suite Settings", "workspace_name", "Northwind Labs")
         _users_and_groups()
+        _branding()
         frappe.db.commit()
         shared = frappe.db.get_value("Drive Root", {"kind": "Shared", "state": "Active"})
         if not shared:
@@ -126,6 +128,7 @@ def reset() -> None:
                     archive_personal_root(person.email)
                 purge_root(root.name, admin)
             frappe.db.commit()
+        _remove_logo()
         for team in TEAMS:
             group = PREFIX + team
             if frappe.db.exists("User Group", group):
@@ -186,6 +189,25 @@ def _users_and_groups() -> None:
                 "user_group_members": [{"user": email} for email in members],
             }
         ).insert(ignore_permissions=True)
+
+
+def _branding() -> None:
+    logo = assets.brand_file("northwind-icon.png", LOGO, "Suite Settings", "Suite Settings", "workspace_logo")
+    frappe.db.set_single_value("Suite Settings", {"workspace_name": "Northwind Labs", "workspace_logo": logo})
+    for person in PEOPLE:
+        name = person.first.lower()
+        image = assets.brand_file(
+            f"avatars/{name}.png", f"{name}-avatar.png", "User", person.email, "user_image"
+        )
+        frappe.db.set_value("User", person.email, "user_image", image)
+
+
+def _remove_logo() -> None:
+    """Clear the workspace logo only while it is still the Northwind one."""
+    logo = frappe.db.get_single_value("Suite Settings", "workspace_logo")
+    if logo and frappe.db.exists("File", {"file_url": logo, "file_name": LOGO}):
+        frappe.db.set_single_value("Suite Settings", "workspace_logo", "")
+        delete_logo_file(logo)
 
 
 def _grant(node: str, principal: str, role: int) -> None:
