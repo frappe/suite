@@ -1,12 +1,13 @@
 """Authorized comment threads attached to Drive content-document nodes."""
 
+import html
 import re
 from collections.abc import Iterable
 from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import now_datetime, strip_html_tags
 
 from suite.drive._core.access import effective_role, require
 from suite.drive._core.activity import notify_users, record
@@ -16,12 +17,15 @@ from suite.drive._core.errors import (
     DriveNotFound,
     rollback_savepoint,
 )
+from suite.drive._core.people import people
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ
 
 _BRACKET_MENTION = re.compile(r"@\[([^\]\r\n]{1,140})\]")
 _EMAIL_MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 _DATA_MENTION = re.compile(r"data-(?:id|user)=[\"']([^\"'\r\n]{1,140})[\"']")
+# The characters of a comment its activity keeps, for the notification to quote
+EXCERPT_LENGTH = 140
 
 
 def create_thread(
@@ -65,7 +69,7 @@ def create_thread(
             principals,
             node_row.name,
             "comment",
-            detail={"thread": thread.name, "comment": comment, "resolved": False},
+            detail={"thread": thread.name, "comment": comment, "resolved": False, "excerpt": excerpt(text)},
             via_link=via_link,
         )
         notify_users(activity, mentions)
@@ -108,6 +112,7 @@ def reply(
                 "thread": thread_row.name,
                 "comment": comment,
                 "resolved": bool(thread_row.resolved),
+                "excerpt": excerpt(text),
             },
             via_link=via_link,
         )
@@ -181,6 +186,7 @@ def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dic
                 "thread": comment_row.thread,
                 "comment": comment_row.name,
                 "resolved": bool(thread.resolved),
+                "excerpt": excerpt(text),
             },
             via_link=via_link,
         )
@@ -464,6 +470,18 @@ def _guest_comment_link(comment: frappe._dict, via_link: str) -> bool:
         order_by="creation asc",
     )
     return any(_json_value(row.detail, {}).get("comment") == comment.name for row in rows)
+
+
+def excerpt(text: str) -> str:
+    """Answer a comment as one short line of plain text, each mention by name."""
+    plain = html.unescape(strip_html_tags(text))
+    named = people(_BRACKET_MENTION.findall(plain) + _EMAIL_MENTION.findall(plain))
+    for pattern in (_BRACKET_MENTION, _EMAIL_MENTION):
+        plain = pattern.sub(lambda match: f"@{named[match.group(1)]['full_name']}", plain)
+    words = " ".join(plain.split())
+    if len(words) <= EXCERPT_LENGTH:
+        return words
+    return words[: EXCERPT_LENGTH - 1].rstrip() + "…"
 
 
 def _mentions(text: str) -> list[str]:

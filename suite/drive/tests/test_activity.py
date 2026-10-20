@@ -144,6 +144,17 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual(notifications(self.outsider)["rows"], [])
         self.assertEqual(unread_count(self.outsider), 0)
 
+    def test_a_notification_names_the_node_and_the_person_who_shared_it(self):
+        from suite.drive.http import routes
+
+        grant(self.node, OUTSIDER, READ, self.owner)
+        frappe.set_user(OUTSIDER)
+        row = routes.notifications_list()["rows"][0]
+        self.assertEqual(row["activity"]["action"], "share_add")
+        self.assertEqual((row["node_title"], row["node_kind"]), ("Records", "folder"))
+        self.assertEqual(row["actor"]["id"], OWNER)
+        self.assertEqual(row["actor"]["full_name"], frappe.utils.get_fullname(OWNER))
+
     def test_grant_write_creates_one_activity_pointer_for_target_user(self):
         before = frappe.db.count("Drive Notification", {"to_user": OUTSIDER})
         grant(self.node, OUTSIDER, READ, self.admin)

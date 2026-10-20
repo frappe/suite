@@ -1293,7 +1293,7 @@ def notifications_list(
         cursor=shapes.text(cursor, "cursor") or None,
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
     )
-    return shapes.page(result, [shapes.notification_shape(row) for row in result["rows"]])
+    return shapes.page(result, shapes.notification_shapes(result["rows"]))
 
 
 @frappe.whitelist(methods=["GET"])

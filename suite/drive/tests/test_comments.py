@@ -205,6 +205,16 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(activity.node, self.document.name)
         self.assertEqual(frappe.parse_json(activity.detail)["comment"], comment.name)
 
+    def test_a_comment_activity_quotes_the_comment_as_plain_text(self):
+        text = f"<p>Can you check &amp; sign, @[{MENTIONED}]?</p>" + " more" * 60
+        create_thread(self.commenter, self.document.name, "anchor", text)
+        detail = frappe.parse_json(
+            frappe.db.get_value("Drive Activity", {"node": self.document.name, "action": "comment"}, "detail")
+        )
+        self.assertTrue(detail["excerpt"].startswith("Can you check & sign, @drive-mentioned? more more"))
+        self.assertEqual(len(detail["excerpt"]), comments.EXCERPT_LENGTH)
+        self.assertTrue(detail["excerpt"].endswith("…"))
+
     def test_unreadable_threads_are_hidden_and_trash_refuses_writes(self):
         thread = create_thread(self.owner, self.document.name, "anchor", "Before trash").name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")

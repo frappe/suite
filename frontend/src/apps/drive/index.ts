@@ -73,6 +73,7 @@ export { formatModified as formatDriveListingDate } from '@/apps/drive/files/int
 export { formatDate as formatDriveDateTime } from '@/apps/drive/files/internal/format'
 
 export type { DriveNotification } from '@/apps/drive/client/notifications'
+export { DRIVE_ROLES } from '@/apps/drive/client/types'
 
 /** One readable node's summary, for a route a notification opens. */
 export function loadDriveNodeSummary(node: string): Promise<DriveNodeSummary> {
