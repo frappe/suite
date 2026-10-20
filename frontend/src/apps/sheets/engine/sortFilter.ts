@@ -112,16 +112,34 @@ export function createSortFilter(cells: CellPort) {
     return cell - _asNumber(spec, isNaN(serial) ? '' : code)
   }
 
-  // Sort data rows of the active filter range (range.r0 stays as the header)
-  // by their displayed values. Formulas move with their row and shift their
-  // references by the distance moved. Returns the {cellId: input} maps of
-  // the rows before and after, for undo, and the order and rect it used;
-  // null when nothing to sort.
+  // Sort data rows of the active filter range (range.r0 stays as the header).
   async function sort(colIndex: number, dir: 'asc' | 'desc' = 'asc', sheetName: string) {
     const range = getRange(sheetName)
-    if (!range || !_inCols(colIndex, range) || range.r1 <= range.r0) return null
+    if (!range || range.r1 <= range.r0) return null
     const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
-    const { inputs, displays, numFmts } = await cells.read(sheetName, rect, { numFmts: true })
+    return sortRows(rect, colIndex, dir, sheetName)
+  }
+
+  // Sort the rows of `rect` by their displayed values in column `colIndex`.
+  // With `detectHeader`, a first row that looks like a header stays on top.
+  // Formulas move with their row and shift their references by the distance
+  // moved. Returns the {cellId: input} maps of the rows before and after, for
+  // undo, and the order and rect it used; null when nothing to sort.
+  async function sortRows(
+    rect: Rect,
+    colIndex: number,
+    dir: 'asc' | 'desc',
+    sheetName: string,
+    { detectHeader = false } = {},
+  ) {
+    if (!_inCols(colIndex, rect) || rect.r1 < rect.r0) return null
+    const read = await cells.read(sheetName, rect, { numFmts: true })
+    const skip = detectHeader && _looksLikeHeader(read.inputs[0], read.displays.slice(1)) ? 1 : 0
+    const inputs = read.inputs.slice(skip)
+    const displays = read.displays.slice(skip)
+    const numFmts = read.numFmts?.slice(skip)
+    const r0 = rect.r0 + skip
+    if (inputs.length < 2) return null
     const key = colIndex - rect.c0
     // A date shows as text (12/9/2025); its format turns it back into a date.
     const shown = (i: number) => {
@@ -135,15 +153,24 @@ export function createSortFilter(cells: CellPort) {
     const after: Record<string, string> = {}
     order.forEach((from, to) => {
       for (let c = rect.c0; c <= rect.c1; c++) {
-        before[cellId(rect.r0 + to, c)] = inputs[to]?.[c - rect.c0] ?? ''
+        before[cellId(r0 + to, c)] = inputs[to]?.[c - rect.c0] ?? ''
         const v = inputs[from]?.[c - rect.c0] ?? ''
-        after[cellId(rect.r0 + to, c)] = v.startsWith('=') ? adjustFormula(v, to - from, 0) : v
+        after[cellId(r0 + to, c)] = v.startsWith('=') ? adjustFormula(v, to - from, 0) : v
       }
     })
     cells.write(sheetName, after)
     // `order[to] = from`: the data row each sorted row came from, so the
     // caller can move the rows' formats the same way (formatsAfterSort).
-    return { before, after, order, rect }
+    return { before, after, order, rect: { ...rect, r0 } }
+  }
+
+  // A header row is all labels: every cell filled with text, none a number or
+  // formula, over a column that shows a number below it.
+  function _looksLikeHeader(first: string[] | undefined, below: string[][]) {
+    const isNumber = (v: string) => v.trim() !== '' && Number.isFinite(Number(v))
+    if (!first || !below.length) return false
+    if (!first.every((v) => v !== '' && !v.startsWith('=') && !isNumber(v))) return false
+    return first.some((_, c) => below.some((row) => isNumber(row[c] ?? '')))
   }
 
   function _cmp(av: string | number, bv: string | number, dir: 'asc' | 'desc') {
@@ -363,6 +390,7 @@ export function createSortFilter(cells: CellPort) {
   return {
     refresh,
     sort,
+    sortRows,
     setFilter,
     clearFilter,
     clearAll,

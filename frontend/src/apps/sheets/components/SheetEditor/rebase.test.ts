@@ -17,12 +17,18 @@ const nodeRequire = createRequire(import.meta.url)
 const server = vi.hoisted(() => ({
   sheetsData: '{}',
   headSeq: 0,
+  // Opening the stored copy fails this many more times.
+  failOpens: 0,
 }))
 
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/sheets/client/generated')
   const send = async (reference: { path: string }, args: Record<string, unknown>) => {
     if (reference.path.endsWith('get_sheet')) {
+      if (server.failOpens > 0) {
+        server.failOpens -= 1
+        throw Object.assign(new Error('Failed to fetch'), { type: 'NetworkError' })
+      }
       return {
         name: 'sheet-1',
         title: 'Budget',
@@ -79,12 +85,16 @@ async function openEditor() {
   const formats = createFormatsEngine()
   let client: WorkbookClient | null = null
   const engine = {
+    // As useWorkbook does: no workbook while the next one starts.
     async start(bytes: Uint8Array | null) {
       client?.terminate()
-      client = await createWorkbookClient({ port: fakePort(), snapshotBytes: bytes })
-      client.onEdit((edit) => unsent.record(edit))
+      client = null
+      const next = await createWorkbookClient({ port: fakePort(), snapshotBytes: bytes })
+      client = next
+      next.onEdit((edit) => unsent.record(edit))
     },
-    toBytes: () => client!.snapshot(),
+    toBytes: () =>
+      client ? client.snapshot() : Promise.reject(new Error('IronCalc is not running')),
     client: () => client,
     syncDefinedNames: () => {},
   }
@@ -135,6 +145,7 @@ async function stored(cell: string) {
 beforeEach(() => {
   server.sheetsData = '{}'
   server.headSeq = 0
+  server.failOpens = 0
   sessionStorage.clear()
 })
 
@@ -221,5 +232,43 @@ describe('Sheets: two editors saving the same sheet', () => {
 
     const reopened = await openEditor()
     expect(reopened.persistence.restoreDraft('sheet-1')).toBe(false)
+  })
+
+  it('waits for a load already replacing the workbook before it rebases', async () => {
+    const first = await openEditor()
+    const second = await openEditor()
+    first.type('B22', 'tab1-22')
+    second.type('C22', 'tab2-22')
+    await second.save()
+
+    // The rebase is asked for while another load is still replacing the workbook.
+    const reopening = first.persistence.loadSheet('sheet-1', { visit: false })
+    const outcome = first.persistence.rebase('sheet-1')
+    await reopening
+    expect((await outcome).rebased).toBe(true)
+    await first.persistence.saveExisting('sheet-1', 'Budget')
+
+    expect(first.persistence.loadError.value).toBeNull()
+    expect(await stored('C22')).toBe('tab2-22')
+    expect(await first.read('C22')).toBe('tab2-22')
+  })
+
+  it('keeps the workbook and its unsent edits when the newer copy fails to open', async () => {
+    const first = await openEditor()
+    const second = await openEditor()
+    first.type('B20', 'tab1-20')
+    second.type('C20', 'tab2-20')
+    await second.save()
+
+    server.failOpens = 1
+    await expect(first.save()).rejects.toThrow('Failed to fetch')
+    expect(first.persistence.loadError.value).toBeNull()
+    expect(await first.read('B20')).toBe('tab1-20')
+
+    // The editor tries the rebase again.
+    expect((await first.persistence.rebase('sheet-1')).rebased).toBe(true)
+    await first.persistence.saveExisting('sheet-1', 'Budget')
+    expect(await stored('B20')).toBe('tab1-20')
+    expect(await stored('C20')).toBe('tab2-20')
   })
 })

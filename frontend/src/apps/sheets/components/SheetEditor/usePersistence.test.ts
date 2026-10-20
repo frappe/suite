@@ -370,6 +370,18 @@ describe('Sheets persistence: opening a develop sheet', () => {
     })
   })
 
+  it('saves a sheet Drive imported from a file without a "Before upgrade" version', async () => {
+    answerWith(developSheet({ sheets_data: JSON.stringify({ ...DEVELOP_BODY, imported: true }) }))
+    const saved = persistence({ engine: realEngine() })
+    await saved.loadSheet('old-1')
+    expect(saved.legacyUpgrade.value).toMatchObject({ ok: true, save: true, imported: true })
+
+    await saved.saveExisting('old-1', 'From develop')
+
+    expect(versionCalls()).toEqual([])
+    expect(saves()).toHaveLength(1)
+  })
+
   it('sends no save while that version could not be kept, and keeps trying it', async () => {
     let versionFails = true
     answerWith(developSheet(), () =>

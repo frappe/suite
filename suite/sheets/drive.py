@@ -60,6 +60,7 @@ none of them commits. `content.call_app` and `content.call_app_stream` enforce
 that last part.
 """
 
+import csv
 import datetime
 import io
 import json
@@ -178,7 +179,7 @@ def duplicate(source_docname: str, node: str) -> str:
 
 
 def import_from_file(file_node: str, node: str) -> str:
-    """Turn one xlsx file node into a sheet bound to `node` (§10.1).
+    """Turn one xlsx or CSV file node into a sheet bound to `node` (§10.1).
 
     Drive has already checked READ on the file and UPLOAD on the destination.
     The bytes come back through `drive.read_file`, because only Sheets can parse
@@ -190,14 +191,18 @@ def import_from_file(file_node: str, node: str) -> str:
     number format, and the worksheet's merges come across. What the browser gets
     from SheetJS and this does not is a workbook-level style sheet, so borders,
     fills, and fonts are dropped. Losing decoration is recoverable; losing a
-    formula or a merge is not, and neither is dropped here.
+    formula or a merge is not, and neither is dropped here. A CSV becomes one
+    sub-sheet of its values, as the browser's CSV import types them in.
     """
     stream, _mime = drive.read_file(file_node)
     try:
         raw = _read_bounded(stream, MAX_IMPORT_BYTES, _("spreadsheet"))
     finally:
         stream.close()
-    workbook = _workbook_from_xlsx(raw)
+    # An xlsx is a zip. The stored mime cannot tell a CSV apart: the upload
+    # sniffs the bytes, and a CSV has no signature to sniff.
+    is_xlsx = zipfile.is_zipfile(io.BytesIO(raw))
+    workbook = _workbook_from_xlsx(raw) if is_xlsx else _workbook_from_csv(raw)
     return _insert_sheet(node, workbook, op_type="import", summary="Imported from a spreadsheet file")
 
 
@@ -537,14 +542,55 @@ def _workbook_from_xlsx(raw: bytes) -> str:
     finally:
         book.close()
 
+    return _workbook_json(packed, formats, merged)
+
+
+def _workbook_from_csv(raw: bytes) -> str:
+    """Parse one CSV into the workbook JSON the client reads: one sub-sheet, every value as typed.
+
+    Text with no row of two or more values is not a table, and binary is not
+    text: both are refused.
+    """
+    unreadable = UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read"))
+    if b"\0" in raw:
+        raise unreadable
+    try:
+        records = csv.reader(io.StringIO(raw.decode("utf-8-sig"), newline=""))
+        rows: dict[str, list] = {}
+        seen = 0
+        is_table = False
+        for index, record in enumerate(records):
+            is_table = is_table or len(record) > 1
+            seen += len(record)
+            if seen > MAX_IMPORT_CELLS:
+                frappe.throw(
+                    _("That spreadsheet has more than {0} cells and cannot be imported").format(
+                        MAX_IMPORT_CELLS
+                    ),
+                    frappe.ValidationError,
+                )
+            if any(record):
+                rows[str(index)] = [value if value != "" else None for value in record]
+    except (UnicodeDecodeError, csv.Error) as error:
+        raise unreadable from error
+    if not is_table:
+        raise unreadable
+    return _workbook_json({DEFAULT_SUB_SHEET: {"rows": rows}}, {}, {})
+
+
+def _workbook_json(packed: dict[str, dict], formats: dict[str, dict], merged: dict[str, dict]) -> str:
+    """The `sheets_data` JSON for imported sub-sheets, refused over the workbook limit."""
     workbook = {
         "sheet": {
             "v": PACK_VERSION,
-            "current": names[0] if names else DEFAULT_SUB_SHEET,
+            "current": next(iter(packed), DEFAULT_SUB_SHEET),
             "sheets": packed,
         },
         "formats": formats,
         "merge": merged or None,
+        # The editor converts this body on first open like a develop sheet,
+        # but there is no earlier body to offer back.
+        "imported": True,
     }
     plain = json.dumps(workbook)
     if len(plain.encode("utf-8")) > MAX_SHEETS_DATA_BYTES:

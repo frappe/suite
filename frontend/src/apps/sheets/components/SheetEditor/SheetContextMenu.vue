@@ -67,6 +67,21 @@
       <Button
         variant="ghost"
         size="sm"
+        icon-left="lucide-arrow-down-a-z"
+        :label="__('Sort A → Z')"
+        @click="emit('sort', 'asc')"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-z-a"
+        :label="__('Sort Z → A')"
+        @click="emit('sort', 'desc')"
+      />
+      <hr class="sn-ctx-sep" />
+      <Button
+        variant="ghost"
+        size="sm"
         icon-left="lucide-maximize-2"
         label="Auto-fit width"
         @click="emit('auto-fit-col')"
@@ -280,6 +295,21 @@
       <Button
         variant="ghost"
         size="sm"
+        icon-left="lucide-arrow-down-a-z"
+        :label="__('Sort A → Z')"
+        @click="emit('sort', 'asc')"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-z-a"
+        :label="__('Sort Z → A')"
+        @click="emit('sort', 'desc')"
+      />
+      <hr class="sn-ctx-sep" />
+      <Button
+        variant="ghost"
+        size="sm"
         icon-left="lucide-square-check"
         label="Data validation…"
         @click="emit('validation')"
@@ -356,6 +386,8 @@
 // reports back to the editor, whose handlers close the menu and do the work.
 import { Button } from 'frappe-ui'
 
+import { translate as __ } from '@/platform/translation'
+
 type ContextMenu = {
   x: number
   y: number
@@ -396,6 +428,7 @@ const emit = defineEmits<{
   'unfreeze-rows': []
   'unfreeze-cols': []
   'paste-special': [kind: 'values' | 'formats' | 'formulas']
+  sort: [dir: 'asc' | 'desc']
   validation: []
   'cond-format': []
   protect: []

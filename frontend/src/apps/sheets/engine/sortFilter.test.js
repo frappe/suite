@@ -71,6 +71,75 @@ describe('sort', () => {
   })
 })
 
+describe('sorting a range without a filter', () => {
+  const block = { r0: 0, c0: 0, r1: 3, c1: 1 }
+
+  it('keeps a header row on top of a detected block', async () => {
+    const cells = makeCells({
+      A1: 'Item',
+      B1: 'Cost',
+      A2: 'Rent',
+      B2: '900',
+      A3: 'Food',
+      B3: '120',
+      A4: 'Fuel',
+      B4: '60',
+    })
+    const sf = createSortFilter(cells)
+    await sf.sortRows(block, 1, 'asc', 'Sheet1', { detectHeader: true })
+    expect(cells.writes[0][1]).toEqual({
+      A2: 'Fuel',
+      B2: '60',
+      A3: 'Food',
+      B3: '120',
+      A4: 'Rent',
+      B4: '900',
+    })
+  })
+
+  it('sorts every row of a block whose first row is data', async () => {
+    const cells = makeCells({
+      A1: 'c',
+      B1: '3',
+      A2: 'a',
+      B2: '1',
+      A3: 'b',
+      B3: '2',
+      A4: 'd',
+      B4: '4',
+    })
+    const sf = createSortFilter(cells)
+    await sf.sortRows(block, 0, 'desc', 'Sheet1', { detectHeader: true })
+    expect(cells.writes[0][1]).toEqual({
+      A1: 'd',
+      B1: '4',
+      A2: 'c',
+      B2: '3',
+      A3: 'b',
+      B3: '2',
+      A4: 'a',
+      B4: '1',
+    })
+  })
+
+  it('sorts a selection as it is, header-like row included', async () => {
+    const cells = makeCells({
+      A1: 'Item',
+      B1: 'Cost',
+      A2: 'Rent',
+      B2: '900',
+      A3: 'Food',
+      B3: '120',
+      A4: 'Fuel',
+      B4: '60',
+    })
+    const sf = createSortFilter(cells)
+    const res = await sf.sortRows(block, 0, 'asc', 'Sheet1')
+    expect(cells.writes[0][1]).toMatchObject({ A1: 'Food', A2: 'Fuel', A3: 'Item', A4: 'Rent' })
+    expect(res.before).toMatchObject({ A1: 'Item', A4: 'Fuel' })
+  })
+})
+
 describe('filtering from refreshed values', () => {
   const inputs = { A1: 'Name', B1: 'Total', A2: 'x', B2: '=5*2', A3: 'y', B3: '3', A4: 'z' }
   const displays = { B2: '10' }

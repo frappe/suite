@@ -21,15 +21,9 @@ import {
 } from '../../engine/xlsx-style.js'
 import { cellId, parseCellId } from '../../utils/cells.js'
 import { dateSerialFromShown, parseNumberFmt } from '../../utils/format-number.js'
+import { printHtml } from './printView'
 
 // ── private helpers ────────────────────────────────────────────────────────────
-
-function _esc(v) {
-  return String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
 
 function _parseCSV(text) {
   const rows = []
@@ -150,7 +144,7 @@ function _cellIn(cell) {
 /**
  * @param {object} opts
  * @param {object} opts.cells – the workbook, through IronCalc:
- *   readSheet(sn, { numFmts }) → Promise<{ inputs, displays, numFmts? }>, rows
+ *   readSheet(sn, { numFmts, numbers }) → Promise<{ inputs, displays, numFmts?, numbers? }>, rows
  *     from A1 to the last used cell ([] when the sheet is empty);
  *   write(sn, map) writes a {cellId: input} map; clear(sn) → Promise, empties
  *   the sheet's cells; addSheet(name) adds a sheet; extent(sn) → Promise of
@@ -159,6 +153,7 @@ function _cellIn(cell) {
  * @param {() => string}  opts.getCurrentTitle – current document title
  * @param {() => void}    opts.repopulateGrid  – full canvas repaint
  * @param {() => void}    opts.syncFlags       – sync undo/redo button state
+ * @param {() => void}    opts.recordUndoStep  – record the workbook as one undo step
  * @param {import('vue').Ref<boolean>} opts.isDirty – dirty flag ref
  */
 export function useExportImport({
@@ -178,6 +173,7 @@ export function useExportImport({
   syncNames,
   switchSheet,
   syncFlags,
+  recordUndoStep,
   isDirty,
 }) {
   // ── exports ──────────────────────────────────────────────────────────────────
@@ -361,39 +357,42 @@ export function useExportImport({
     return out
   }
 
-  async function exportPDF() {
-    const sn = currentSheet.value
+  // The print view of the open sheet (`scope` 'sheet') or of every sheet
+  // ('all'), in a new window, with the browser's print dialog open.
+  async function print(scope) {
     // Open the window before the read: a popup opened after an await is no
     // longer tied to the click, and browsers block it.
-    const win = window.open('', '_blank', 'width=800,height=600')
+    const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) return
-    const { displays: rows } = await cells.readSheet(sn)
-    if (!rows.length) {
-      win.close()
-      return
-    }
-    const thead = `<tr>${rows[0].map((c) => `<th>${_esc(c)}</th>`).join('')}</tr>`
-    const tbody = rows
-      .slice(1)
-      .map((r) => `<tr>${r.map((c) => `<td>${_esc(c)}</td>`).join('')}</tr>`)
-      .join('')
-    const title = getCurrentTitle()
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>${_esc(title)}</title>
-    <style>
-      body{font:11px/1.4 Arial,sans-serif;margin:20px}
-      h2{font-size:14px;margin:0 0 12px}
-      table{border-collapse:collapse;width:100%}
-      th,td{border:1px solid #ccc;padding:3px 6px;text-align:left}
-      th{background:#f2f2f2;font-weight:600}
-      @page{margin:1.5cm}
-    </style></head>
-    <body><h2>${_esc(title)} — ${_esc(sn)}</h2>
-    <table><thead>${thead}</thead><tbody>${tbody}</tbody></table></body></html>`
-    win.document.write(html)
+    const names = scope === 'all' ? sheetNames() : [currentSheet.value]
+    const sheets = []
+    for (const name of names)
+      sheets.push(_printable(name, await cells.readSheet(name, { numbers: true })))
+    win.document.write(printHtml(getCurrentTitle() || 'Untitled Sheet', sheets))
     win.document.close()
     win.focus()
     win.print()
+  }
+
+  function _printable(name, { displays, numbers }) {
+    const formats = getFormats?.()
+    const merge = getMerge?.()
+    const condFormat = getCondFormat?.()
+    const valueOf = (id) => {
+      const p = parseCellId(id)
+      return p ? (displays[p.row]?.[p.col] ?? '') : ''
+    }
+    return {
+      name,
+      displays,
+      numbers,
+      format: (id, value) => ({
+        ...formats?.get(id, name),
+        ...condFormat?.getFormatOverride(id, value, name, valueOf),
+      }),
+      mergeAt: (id) => merge?.getMasterInfo(id, name) ?? null,
+      isCovered: (id) => !!merge?.isSlave(id, name),
+    }
   }
 
   // ── imports ──────────────────────────────────────────────────────────────────
@@ -402,7 +401,7 @@ export function useExportImport({
   //   1) Cells go to the worker as batch commands of WRITE_CHUNK cells, each
   //      one recalculation, so no single message or apply is huge.
   //   2) Building the cell map yields to the event loop every CHUNK_ROWS rows.
-  //   3) Imports are not undoable (matches Sheets / Excel behaviour).
+  //   3) An import is one undo step, as in Google Sheets.
   const CHUNK_ROWS = 2000
   const WRITE_CHUNK = 50_000
 
@@ -504,6 +503,7 @@ export function useExportImport({
       if (setViews && Object.keys(views).length) setViews({ ...getViews?.(), ...views })
       if (firstAdded) {
         switchSheet?.(firstAdded)
+        recordUndoStep?.()
         syncFlags()
         isDirty.value = true
       } else {
@@ -682,7 +682,7 @@ export function useExportImport({
     e.target.value = ''
   }
 
-  // A CSV replaces the open sheet's cells. No undo entry (Sheets parity).
+  // A CSV replaces the open sheet's cells.
   async function _ingestRows(rows) {
     const sn = currentSheet.value
     await cells.clear(sn) // dispatches before the writes below, so it can't erase them
@@ -697,9 +697,10 @@ export function useExportImport({
       if ((r + 1) % CHUNK_ROWS === 0) await _yield()
     }
     out.flush()
+    recordUndoStep?.()
     syncFlags()
     isDirty.value = true
   }
 
-  return { exportCSV, exportXLSX, buildXLSX, exportPDF, importCSV, importXLSX }
+  return { exportCSV, exportXLSX, buildXLSX, print, importCSV, importXLSX }
 }

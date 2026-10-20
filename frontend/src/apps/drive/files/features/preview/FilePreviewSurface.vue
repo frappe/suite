@@ -6,9 +6,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { nodeContentUrl } from '@/apps/drive/client/nodes'
+import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 import { trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
@@ -60,6 +61,26 @@ const can = computed(() =>
 )
 const parent = computed(() => file.value.parent.value)
 const canReplace = computed(() => !!parent.value && can.value.rename)
+/** An uploaded .xlsx or .csv opens as a new spreadsheet beside it (§10.1). */
+const opensAsSheet = computed(
+  () =>
+    !!parent.value &&
+    can.value.copy &&
+    opensAsSpreadsheet({ kind: 'file', title: props.session.title.value }),
+)
+const openingAsSheet = ref(false)
+async function openAsSheet() {
+  if (!parent.value) return
+  openingAsSheet.value = true
+  // A refusal is reported where the spreadsheet is created.
+  const sheet = await openAsSpreadsheet({
+    name: props.session.nodeId,
+    title: props.session.title.value,
+    parent_node: parent.value,
+  }).catch(() => null)
+  openingAsSheet.value = false
+  if (sheet) await router.push(driveNodeRoute(sheet))
+}
 /** The file is in a trashed folder, so it steps through what was trashed with it. */
 const inTrashedFolder = computed(
   () => trashed.value && file.value.trashRoot.value !== props.session.nodeId,
@@ -135,6 +156,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 })
 
 const menu = computed(() => [
+  ...(opensAsSheet.value
+    ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
+    : []),
   ...(can.value.rename
     ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
     : []),
@@ -350,6 +374,20 @@ const source = computed(() =>
       :title="session.title.value"
       class="min-h-0 flex-1 border-0 bg-surface-base"
     />
+    <PreviewFallback
+      v-else-if="opensAsSheet"
+      :title="__('No preview')"
+      :message="__('Open this file as a spreadsheet to view and edit it. The file stays as it is.')"
+      :download="downloadUrl"
+    >
+      <Button
+        variant="solid"
+        :label="__('Open as spreadsheet')"
+        icon-left="lucide-sheet"
+        :loading="openingAsSheet"
+        @click="openAsSheet"
+      />
+    </PreviewFallback>
     <PreviewFallback
       v-else
       title="No preview"

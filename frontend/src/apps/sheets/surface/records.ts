@@ -15,7 +15,14 @@ export interface SheetComment {
   author: string | null
   /** The name a guest typed. `null` for a user. */
   author_name: string | null
+  /** The signed-in author as Drive names them. `null` for a guest. */
+  person: CommentPerson | null
   creation: string | null
+}
+
+export interface CommentPerson {
+  full_name: string
+  user_image: string | null
 }
 
 export interface SheetThread {
@@ -122,9 +129,15 @@ function readComment(row: unknown): SheetComment[] {
       content,
       author: text(field(row, 'author')),
       author_name: text(field(row, 'author_name')),
+      person: readPerson(field(row, 'person')),
       creation: text(field(row, 'creation')),
     },
   ]
+}
+
+function readPerson(row: unknown): CommentPerson | null {
+  const fullName = text(field(row, 'full_name'))
+  return fullName ? { full_name: fullName, user_image: text(field(row, 'user_image')) } : null
 }
 
 function readVersion(row: unknown): SheetVersion[] {
