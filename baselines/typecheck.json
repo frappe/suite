@@ -47,7 +47,6 @@
   "frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue": 2,
   "frontend/src/apps/mail/components/StackListItem.vue": 1,
   "frontend/src/apps/mail/components/TlsBreakdownRows.vue": 1,
-  "frontend/src/apps/mail/composables/useComposeMail.ts": 2,
   "frontend/src/apps/mail/composables/useMailCommandPaletteSearch.ts": 1,
   "frontend/src/apps/mail/pages/CalendarExchangeView.vue": 2,
   "frontend/src/apps/mail/pages/CalendarExchangesView.vue": 1,
