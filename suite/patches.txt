@@ -115,3 +115,5 @@ suite.drive.patches.migrate_preview_size_unit #2026-10-06
 suite.drive.patches.build
 suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup
+# Needs decks linked to nodes, so after Build. T3-21: media uploaded as Files after Build.
+suite.slides.patches.move_file_media_to_drive

@@ -155,7 +155,7 @@
   "src/apps/slides/composables/useNavigationPanel.js|@typescript-eslint/no-unused-vars": 1,
   "src/apps/slides/composables/usePanAndZoom.ts|@typescript-eslint/no-explicit-any": 2,
   "src/apps/slides/composables/usePanAndZoom.ts|@typescript-eslint/no-unused-expressions": 1,
-  "src/apps/slides/composables/usePanAndZoom.ts|prefer-const": 13,
+  "src/apps/slides/composables/usePanAndZoom.ts|prefer-const": 12,
   "src/apps/slides/composables/useTextEditor.js|@typescript-eslint/no-unused-vars": 1,
   "src/apps/slides/icons/Backward.vue|vue/block-lang": 1,
   "src/apps/slides/icons/BringToFront.vue|vue/block-lang": 1,

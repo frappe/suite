@@ -672,7 +672,9 @@ const getNaturalSize = async (dataURL) => {
     const img = new Image()
     img.onload = () =>
       resolve({
-        width: (img.naturalWidth / 2) * slideBounds.scale,
+        // the slide's usual display scale, not the current zoom, so the size
+        // a picture lands at does not depend on the window
+        width: (img.naturalWidth / 2) * (900 / 960),
         aspectRatio: img.naturalWidth / img.naturalHeight,
       })
     img.onerror = reject
@@ -705,12 +707,16 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
   let imagePoster = null
 
   if (type == 'image') {
-    const { width, aspectRatio } = await getNaturalSize(getAttachmentUrl(src))
-    elementWidth = Math.max(Math.min(width, 800), 30)
-    elementHeight = elementWidth / aspectRatio
-    position = getLeftTopForCenteredElement(elementWidth, elementHeight)
-    if (isGifFile(file)) {
-      imagePoster = await generateImagePoster(getAttachmentUrl(src))
+    // measured from the local file: a media node's signed url is not there yet
+    const imageUrl = getProbeUrl(src, localFile)
+    try {
+      const { width, aspectRatio } = await getNaturalSize(imageUrl)
+      elementWidth = Math.max(Math.min(width, 800), 30)
+      elementHeight = elementWidth / aspectRatio
+      position = getLeftTopForCenteredElement(elementWidth, elementHeight)
+      if (isGifFile(file)) imagePoster = await generateImagePoster(imageUrl)
+    } finally {
+      revokeProbeUrl(imageUrl)
     }
   } else {
     elementWidth = 400
@@ -788,8 +794,6 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
 }
 
 const probeReplacementMedia = async (element, fileDoc, localFile) => {
-  const newUrl = getAttachmentUrl(fileDoc.file_url)
-
   if (element.type === 'video') {
     const videoUrl = getProbeUrl(fileDoc.file_url, localFile)
     try {
@@ -803,9 +807,14 @@ const probeReplacementMedia = async (element, fileDoc, localFile) => {
     }
   }
 
-  return {
-    newAspect: await getNaturalAspectRatio(newUrl),
-    poster: isGifFile(fileDoc) ? await generateImagePoster(newUrl) : null,
+  const imageUrl = getProbeUrl(fileDoc.file_url, localFile)
+  try {
+    return {
+      newAspect: await getNaturalAspectRatio(imageUrl),
+      poster: isGifFile(fileDoc) ? await generateImagePoster(imageUrl) : null,
+    }
+  } finally {
+    revokeProbeUrl(imageUrl)
   }
 }
 

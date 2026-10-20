@@ -49,7 +49,6 @@ import {
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
-  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
@@ -58,6 +57,7 @@ import {
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 
 import { createSlidesAccess } from './access'
+import { useAutosave } from './autosave'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -109,7 +109,6 @@ const {
 const exporting = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 const isSlideInteractionActive = ref(false)
-let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
@@ -405,6 +404,11 @@ useDocumentLeaveGuard({
   flush,
   retainRecovery,
 })
+useAutosave({
+  editable,
+  interacting: isSlideInteractionActive,
+  state: () => saveState.value,
+})
 function setOnline() {
   online.value = true
 }
@@ -413,14 +417,10 @@ function setOffline() {
 }
 onMounted(() => {
   void load()
-  autosaveTimer = window.setInterval(() => {
-    if (editable.value && !isSlideInteractionActive.value && !focusedSlide.value) void saveChanges()
-  }, 1_000)
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
 })
 onBeforeUnmount(() => {
-  if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   resetFocus()
