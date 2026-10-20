@@ -3,6 +3,7 @@
 import json
 from html import escape
 from io import BytesIO
+from pathlib import Path
 
 import frappe
 from openpyxl import Workbook
@@ -12,6 +13,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from suite import drive
 
+# PNGs are 256 px renders of the SVG sources beside them; re-render after editing one.
+BRAND = Path(__file__).parent / "brand"
 BUDGET = [
     ["Q4 2026 operating budget", None, None, None, None],
     ["Category", "October", "November", "December", "Quarter"],
@@ -207,6 +210,22 @@ def uploaded_files() -> list[tuple[str, bytes]]:
             b"Northwind Labs demo workspace\nAll people, customers, and financial figures are fictional.\nStart with Company / Handbook / Welcome to Northwind.\n",
         ),
     ]
+
+
+def brand_file(source: str, file_name: str, doctype: str, name: str, field: str) -> str:
+    """Attach a stored brand image as a public file and answer its URL."""
+    file = frappe.get_doc(
+        {
+            "doctype": "File",
+            "file_name": file_name,
+            "content": (BRAND / source).read_bytes(),
+            "is_private": 0,
+            "attached_to_doctype": doctype,
+            "attached_to_name": name,
+            "attached_to_field": field,
+        }
+    ).insert(ignore_permissions=True)
+    return file.file_url
 
 
 def _image_bytes(image: Image.Image, kind: str) -> bytes:
