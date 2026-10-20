@@ -7,7 +7,14 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.suite_core.administration import guard_user_change, list_users, require_admin, update_user
-from suite.suite_core.storage import check_addition, effective_limit, set_default, state, validate_cap
+from suite.suite_core.storage import (
+    check_addition,
+    effective_limit,
+    set_default,
+    state,
+    update_limits,
+    validate_cap,
+)
 from suite.tests.utils import ensure_user
 
 GB = 1_000_000_000
@@ -130,6 +137,21 @@ class TestAdministrationAccess(IntegrationTestCase):
             with self.subTest(user=user), self.set_user(user):
                 self.assertRaises(frappe.PermissionError, list_users)
                 self.assertRaises(frappe.PermissionError, set_default, GB)
+
+    def test_a_suite_member_without_desk_access_can_be_capped(self):
+        self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")
+        with self.set_user(self.admin):
+            capped = update_limits([self.normal], 5 * GB)
+            _doc, policy, _measurements = state()
+        self.assertEqual(capped, [{"user": self.normal, "success": True, "error": None}])
+        self.assertEqual(policy["users"][self.normal], {"cap": 5 * GB})
+
+    def test_storage_limits_refuse_recovery_identities_and_missing_users(self):
+        with self.set_user(self.admin):
+            for user in ("missing-policy-test@example.test", "Administrator", "Guest"):
+                with self.subTest(user=user):
+                    [result] = update_limits([user], 5 * GB)
+                    self.assertFalse(result["success"])
 
     def test_an_admin_cannot_disable_their_own_account(self):
         with self.set_user(self.admin):
