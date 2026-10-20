@@ -102,6 +102,33 @@ describe('commenting on the whole document', () => {
     ])
   })
 
+  it('posts on Enter as a reply does, and keeps a new line on Shift+Enter or with an empty box', async () => {
+    const { list, posted } = fakeDrafts()
+    const { host } = showList({ drafts: list })
+    await click(buttonNamed(host, 'Add a comment'))
+    await nextTick()
+    function press(options: KeyboardEventInit) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, ...options })
+      documentBox()!.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+
+    const onEmpty = press({})
+    await type('Ship it')
+    const onShift = press({ shiftKey: true })
+    const postedBeforeEnter = [...posted]
+    const onEnter = press({})
+    await settled()
+
+    expect([onEmpty, onShift, postedBeforeEnter, onEnter, posted]).toEqual([
+      true,
+      false,
+      [],
+      true,
+      ['draft-0'],
+    ])
+  })
+
   it('posts no comment over the limit, keeping its box and words and saying why, but posts one at it', async () => {
     const { list, posted } = fakeDrafts()
     const { host } = showList({ drafts: list })
