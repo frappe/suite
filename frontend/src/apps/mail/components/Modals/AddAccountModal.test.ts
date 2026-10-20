@@ -114,6 +114,7 @@ beforeEach(() => {
   window.__ = (text: string) => text
   fetcher.mockReset()
   feedback.mockReset()
+  reloads.mockReset()
   engine.current = createApiClient(
     { mail: () => import('@/apps/mail/client/policy').then((module) => module.registration) },
     { transport: createTransport({ fetch: fetcher }), persistence: false, feedback },
@@ -124,6 +125,7 @@ afterEach(() => {
   engine.current?.dispose()
 })
 
+const reloads = vi.fn()
 async function openDialog() {
   const root = document.createElement('div')
   document.body.append(root)
@@ -133,6 +135,7 @@ async function openDialog() {
       h(AddAccountModal, {
         modelValue: show.value,
         'onUpdate:modelValue': (value: boolean) => (show.value = value),
+        onReload: reloads,
       }),
   })
   app.config.globalProperties.__ = (text: string) => text
@@ -182,7 +185,7 @@ describe('Add user', () => {
       ),
     )
     const root = await openDialog()
-    fill(root, 'johndoe', 'lena')
+    fill(root, 'Primary email username', 'lena')
     fill(root, 'yourdomain.com', 'northwind.test')
     fill(root, 'Role', 'admin')
     fill(root, 'Existing contact email', 'lena@example.com')
@@ -227,7 +230,7 @@ describe('Add user', () => {
       ),
     )
     const root = await openDialog()
-    fill(root, 'johndoe', 'theo')
+    fill(root, 'Primary email username', 'theo')
     fill(root, 'yourdomain.com', 'northwind.test')
     root.querySelector<HTMLInputElement>('[aria-label="Send Invite"]')!.click()
     await nextTick()
@@ -238,5 +241,49 @@ describe('Add user', () => {
     expect(sentBody()).toMatchObject({ username: 'theo', is_admin: false, send_invite: false })
     expect(sentBody()).not.toHaveProperty('role')
     expect(feedback).not.toHaveBeenCalled()
+  })
+
+  it('asks for a first name before creating an account right away', async () => {
+    const root = await openDialog()
+    fill(root, 'Primary email username', 'theo')
+    fill(root, 'yourdomain.com', 'northwind.test')
+    root.querySelector<HTMLInputElement>('[aria-label="Send Invite"]')!.click()
+    await nextTick()
+    click(root, 'Add user')
+    await nextTick()
+
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('first name')
+  })
+
+  it('shows why a creation failed and sends the Users list to pick it up', async () => {
+    fetcher.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message: {
+            success: false,
+            user: 'theo@northwind.test',
+            status: 'Setup failed',
+            error: 'Account setup failed: Invalid value for enum type Locale.',
+            temporary_password: null,
+            expires_at: null,
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const root = await openDialog()
+    fill(root, 'Primary email username', 'theo')
+    fill(root, 'yourdomain.com', 'northwind.test')
+    root.querySelector<HTMLInputElement>('[aria-label="Send Invite"]')!.click()
+    await nextTick()
+    fill(root, 'First Name', 'Theo')
+    click(root, 'Add user')
+
+    await vi.waitFor(() => expect(reloads).toHaveBeenCalledWith(false))
+    await nextTick()
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe(
+      'Account setup failed: Invalid value for enum type Locale.',
+    )
   })
 })

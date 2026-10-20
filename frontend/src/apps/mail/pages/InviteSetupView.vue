@@ -1,4 +1,23 @@
 <template>
+  <!-- The invitation's own heading, in the organisation's colours: who is inviting, and to what. -->
+  <header v-if="pendingRequest" class="mb-6 flex flex-col items-center gap-2 text-center">
+    <img
+      v-if="pendingRequest.workspace_logo"
+      :src="pendingRequest.workspace_logo"
+      alt=""
+      class="h-10 max-w-40 object-contain"
+    />
+    <h1 class="text-lg-medium text-ink-gray-9">
+      {{
+        pendingRequest.workspace_name
+          ? __('Join {0} on Suite', [pendingRequest.workspace_name])
+          : __('Join Suite')
+      }}
+    </h1>
+    <p v-if="pendingRequest.invited_by_name" class="text-p-sm text-ink-gray-6">
+      {{ __('{0} invited you to set up {1}.', [pendingRequest.invited_by_name, email]) }}
+    </p>
+  </header>
   <form class="flex flex-col space-y-4" @submit.prevent="submit().catch(() => {})">
     <FormControl
       v-model="email"

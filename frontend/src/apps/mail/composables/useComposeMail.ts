@@ -272,6 +272,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   const isSavingDraft = ref(false)
   const isDiscarding = ref(false)
+  // The last save was refused: what is on screen is ahead of the server until a save lands.
+  const isSaveFailed = ref(false)
 
   // Discarding is the end of this composition, and nothing may save after it. `isDiscarding` cannot
   // say that on its own: the host clears it through `onClosed` as soon as the composer is off
@@ -313,8 +315,11 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         : Promise.resolve()
     try {
       await pendingSave
+      isSaveFailed.value = false
     } catch {
-      /* Keep the draft and its dirty state after refusal. */
+      // The draft stays dirty, so the next edit or Retry saves it again.
+      isSaveFailed.value = true
+      if (!isOpen()) keepUnsavedDraft()
     } finally {
       isSavingDraft.value = false
       pendingSave = undefined
@@ -386,6 +391,20 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
     }
+  }
+  // The composer is gone and its last save was refused: the draft lives only in this copy, which a
+  // toast holds until it is reopened, where it saves again (see onOpened).
+  const keepUnsavedDraft = () => {
+    const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
+    const account = scopeAccountId.value
+    toast.error(__('Draft not saved.'), {
+      description: __('Your changes are kept here until you reopen the draft.'),
+      duration: Infinity,
+      action: {
+        label: __('Reopen'),
+        onClick: () => requestCompose({ ...draft, account, restored: true }),
+      },
+    })
   }
   // Discarding closes the composer at once and offers Undo; the draft is deleted only once the
   // toast has passed (see commitAfterUndo). Undo reopens it, as it was, in the compose window — the
@@ -536,12 +555,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   }: OutputOf<typeof api.mail.messages.create>) => {
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
-    updateOriginalMail()
     if (error) {
       const failure = new Error(error)
       raiseError(failure)
       throw failure
     }
+    updateOriginalMail()
     if (isDiscarding.value) return
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
@@ -741,6 +760,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     isUntouched,
     isLoading,
     isSavingDraft,
+    isSaveFailed,
     isDiscarding,
     saveDraft,
     payListDebt,

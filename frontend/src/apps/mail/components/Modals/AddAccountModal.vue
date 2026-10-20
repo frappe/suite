@@ -49,7 +49,12 @@
                 {{ index === 0 ? __('Primary Email') : __('Alias') }}
               </label>
               <div class="flex items-center justify-between">
-                <FormControl v-model="email.username" placeholder="johndoe" class="w-full" />
+                <FormControl
+                  v-model="email.username"
+                  placeholder="johndoe"
+                  class="w-full"
+                  :aria-label="index === 0 ? __('Primary email username') : __('Alias username')"
+                />
                 <FeatherIcon class="text-ink-gray-3 mx-2.5 h-4 w-4" name="at-sign" />
                 <FormControl
                   v-model="email.domain"
@@ -115,6 +120,7 @@
                 v-model="accountRequest.first_name"
                 :label="__('First Name')"
                 placeholder="John"
+                required
               />
               <FormControl
                 v-model="accountRequest.last_name"
@@ -222,7 +228,7 @@ const emails = ref<
 ])
 const groupIds = ref<string[]>([])
 const mailingListIds = ref<string[]>([])
-const emit = defineEmits(['reload'])
+const emit = defineEmits<{ reload: [invited: boolean] }>()
 type Directory = {
   id: string
   name: string
@@ -279,6 +285,11 @@ watch(show, () => {
 })
 const addMember = useMutation(api.mail.admin.members.create)
 async function addMemberSubmit() {
+  setupError.value = ''
+  if (!accountRequest.send_invite && !accountRequest.first_name.trim()) {
+    setupError.value = __('Enter a first name to create the account right away.')
+    return
+  }
   const [primary, ...rest] = emails.value
   const aliases = rest.filter((e) => e.username && e.domain).map((e) => `${e.username}@${e.domain}`)
   const input: InputOf<typeof api.mail.admin.members.create> = {
@@ -300,13 +311,15 @@ async function addMemberSubmit() {
     time_zone: accountRequest.time_zone || null,
   }
   const result = await addMember.run(input)
+  // A failed creation is listed under Users with Retry and Remove, so the list is told either way.
+  emit('reload', accountRequest.send_invite)
   if (!result.success) {
-    setupError.value = result.error || __('Account setup failed. Retry to resume this creation.')
+    setupError.value =
+      result.error || __('Account setup failed. Retry or remove it from the Users list.')
     return
   }
   temporaryPassword.value = result.temporary_password || ''
   raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
-  emit('reload')
   if (!temporaryPassword.value) show.value = false
 }
 </script>

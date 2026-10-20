@@ -33,6 +33,8 @@ from suite.utils.user import is_suite_admin, is_system_manager
 # How long a signup OTP stays valid. Only its hash is kept (in cache); the code itself
 # travels by email and is never stored.
 OTP_TTL_SECONDS = 10 * 60
+# Suite's mark in the invitation email when the organisation has no logo of its own.
+SUITE_MARK = "assets/suite/frontend/pwa/suite/apple-icon-180.png"
 
 
 def _lines(value: str | None) -> list[str]:
@@ -306,6 +308,18 @@ class MailAccountRequest(Document):
         )
         self._signup_otp = otp
 
+    @property
+    def invitation(self) -> dict[str, str]:
+        """Who is inviting: the organisation's name and logo (Suite Settings) and the inviter's name."""
+
+        from suite.api.account import get_workspace
+
+        inviter = self.invited_by or ""
+        return {
+            **get_workspace(),
+            "invited_by_name": frappe.utils.get_fullname(inviter) if inviter else "",
+        }
+
     @frappe.whitelist()
     def send_verification_email(self) -> None:
         """Send verification email to the user."""
@@ -342,21 +356,35 @@ class MailAccountRequest(Document):
         self._signup_otp = None
 
     def _send_invite_email(self) -> None:
-        """Emails the invite link to the backup email."""
+        """Emails the invite link to the backup email, in the organisation's name."""
 
+        invitation = self.invitation
+        workspace, inviter = invitation["workspace_name"], invitation["invited_by_name"]
+        heading = (
+            _("{0} invited you to join {1} on Suite").format(inviter, workspace)
+            if workspace
+            else _("{0} invited you to join Suite").format(inviter)
+        )
         link = get_url("/mail/signup/" + self.request_key)
         suite_email.send(
             "account-invite",
             self.backup_email,
             {"inviter": self.invited_by, "link": link},
             local={
-                "subject": _("You have been invited by {0} to join Frappe Mail").format(self.invited_by),
-                "template": "generic",
+                "subject": heading,
+                "template": "account_invitation",
                 "args": {
-                    "title": _("You have been invited by {0} to join Frappe Mail.").format(self.invited_by),
-                    "description": _("Please confirm your email address by clicking the button below."),
-                    "button": _("Verify Account"),
+                    "workspace_name": workspace,
+                    # A public file or Suite's own mark; both are read from disk and embedded.
+                    "logo_embed": invitation["workspace_logo"] or SUITE_MARK,
+                    "heading": heading,
+                    "description": _(
+                        "Accept the invitation to set up your {0} account with your own name and password."
+                    ).format(self.account),
+                    "button": _("Accept invitation"),
                     "link": link,
+                    "note": _("If you did not expect this invitation, you can ignore this email."),
+                    "footer": _("Sent by Suite on behalf of {0}.").format(workspace or inviter),
                 },
             },
         )

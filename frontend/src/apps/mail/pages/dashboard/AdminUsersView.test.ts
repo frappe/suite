@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import AdminUsersView from './AdminUsersView.vue'
 
 vi.mock('@/apps/mail/utils/addOnArrival', () => ({ useAddOnArrival: vi.fn() }))
+vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
 vi.mock('@/platform/dashboard', () => ({
   DashboardLayout: defineComponent({
     template: '<main><slot name="actions" /><slot /></main>',
@@ -15,6 +16,8 @@ vi.mock('frappe-ui', () => ({
     props: ['title', 'description'],
     template: '<div role="alert">{{ title }} {{ description }}<slot name="actions" /></div>',
   }),
+  Dialog: defineComponent({ template: '<template />' }),
+  FormControl: defineComponent({ template: '<input />' }),
   ErrorMessage: defineComponent({
     props: ['message'],
     template: '<p>{{ message }}</p>',
@@ -32,9 +35,31 @@ vi.mock('frappe-ui', () => ({
   }),
 }))
 
+const requests = vi.hoisted(() => [] as string[])
 vi.hoisted(() => {
-  globalThis.fetch = async () =>
-    new Response(
+  globalThis.fetch = async (input) => {
+    const url = String(input instanceof Request ? input.url : input)
+    requests.push(url)
+    if (url.includes('get_account_requests') || url.includes('admin/invites'))
+      return new Response(
+        JSON.stringify({
+          message: {
+            items: [
+              {
+                name: 'request-aisha',
+                account: 'aisha@frappe.io',
+                is_admin: 0,
+                backup_email: null,
+                invited_by: 'admin@frappe.io',
+                is_verified: 0,
+                status: 'Setup failed',
+              },
+            ],
+            total: 1,
+          },
+        }),
+      )
+    return new Response(
       JSON.stringify({
         data: [
           {
@@ -62,6 +87,7 @@ vi.hoisted(() => {
         ],
       }),
     )
+  }
 })
 vi.mock('@/apps/mail/pages/dashboard/InvitesView.vue', () => ({
   default: defineComponent({
@@ -75,7 +101,9 @@ vi.mock('@/apps/mail/components/Modals/AddAccountModal.vue', () => ({
   default: defineComponent({
     props: ['modelValue'],
     emits: ['reload'],
-    template: '<button v-if="modelValue" @click="$emit(\'reload\')">Finish adding</button>',
+    template: `<div v-if="modelValue">
+      <button @click="$emit('reload', true)">Finish inviting</button>
+      <button @click="$emit('reload', false)">Finish creating</button></div>`,
   }),
 }))
 
@@ -154,11 +182,30 @@ describe('Admin Users', () => {
     expect(element.querySelector('[data-test="users"]')).toBeNull()
   })
 
-  it('opens invitations after adding a user', async () => {
+  it('opens invitations after inviting a user', async () => {
     const element = await mount()
     await click(element, 'Add user')
-    await click(element, 'Finish adding')
+    await click(element, 'Finish inviting')
     expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
+  })
+
+  it('stays on users after creating one directly, set up or not', async () => {
+    const element = await mount()
+    await click(element, 'Invitations')
+    await click(element, 'Add user')
+    requests.length = 0
+    await click(element, 'Finish creating')
+    expect(element.querySelector('[data-test="users"]')).not.toBeNull()
+    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0))
+  })
+
+  it('offers Retry and Remove for a direct creation that failed', async () => {
+    const element = await mount()
+    await vi.waitFor(() =>
+      expect(element.querySelector('[role="alert"]')?.textContent).toContain('Retry'),
+    )
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain('Remove')
+    expect(element.querySelector('[role="alert"]')?.textContent).not.toContain('Review account')
   })
 
   it('puts Mail setup failure alerts in the Users tab, not Invitations', async () => {

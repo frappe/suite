@@ -54,6 +54,15 @@
         </div>
 
         <LedgerSection :title="__('Activity')">
+          <template v-if="canOpenReport" #action>
+            <button
+              class="text-ink-gray-6 hover:text-ink-gray-8 flex items-center gap-1 text-sm"
+              @click="openReport"
+            >
+              {{ __('Open delivery report') }}
+              <ArrowUpRight class="h-3.5 w-3.5" />
+            </button>
+          </template>
           <SubmissionActivity :entries="activity" />
         </LedgerSection>
 
@@ -233,6 +242,8 @@ const actions = computed(() => {
 const canOpenEmail = computed(
   () => !!data.value?.thread_id && !data.value.email_deleted && !!store.mailboxIds.sent,
 )
+// The newest bounce mailed back about this send; it lands in the Inbox.
+const canOpenReport = computed(() => !!data.value?.dsn_thread_id && !!store.mailboxIds.inbox)
 const fromLabel = computed(() => {
   if (!data.value) return undefined
   const { from_name, from_email, identity_email, envelope_from } = data.value
@@ -275,6 +286,13 @@ const openEmail = () => {
       mailbox: store.mailboxIds.sent,
       threadID: data.value.thread_id,
     },
+  })
+}
+const openReport = () => {
+  if (!data.value?.dsn_thread_id || !store.mailboxIds.inbox) return
+  router.push({
+    name: 'mail-mail',
+    params: { accountId, mailbox: store.mailboxIds.inbox, threadID: data.value.dsn_thread_id },
   })
 }
 const backToList = () =>

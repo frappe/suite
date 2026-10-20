@@ -1,0 +1,35 @@
+{#- A Suite invitation from an organisation. Follows drive_invitation.html: explicit colours on
+    every surface, images embedded as CID parts through frappe.sendmail's inline_images. The
+    organisation's logo leads when it has one; Suite's mark stands in otherwise. -#}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f3f3; margin: 0; padding: 0;">
+	<tr>
+		<td align="center" style="padding: 32px 16px;">
+			<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width: 600px; max-width: 600px;">
+				<tr>
+					<td align="center" style="padding: 8px 0 26px;">
+						<table role="presentation" cellpadding="0" cellspacing="0">
+							<tr>
+								<td style="vertical-align: middle; padding-right: 9px;">
+									<img embed="{{ logo_embed }}" height="28" alt="" style="display: block; border: 0; height: 28px; max-width: 160px;" />
+								</td>
+								<td style="vertical-align: middle; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 19px; font-weight: 600; color: #171717; letter-spacing: -0.01em;">{{ workspace_name or "Suite" }}</td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+				<tr>
+					<td align="center" style="background-color: #ffffff; border: 1px solid #ededed; border-radius: 16px; padding: 36px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+						<h2 style="margin: 0 0 10px; font-size: 19px; color: #171717;">{{ heading }}</h2>
+						<p style="font-size: 14px; line-height: 1.5; color: #444444; max-width: 400px; margin: 0 auto 24px;">{{ description }}</p>
+						{#- .btn exempts the anchor from frappe's `.email-body a:not(.btn)` restyle. -#}
+						<a class="btn" href="{{ link }}" style="display: inline-block; padding: 12px 24px; font-size: 14px; color: #ffffff; background-color: #171717; text-decoration: none; border-radius: 8px; border: 0; margin: 0;">{{ button }}</a>
+						<p style="font-size: 12px; color: #888888; margin: 24px 0 0;">{{ note }}</p>
+					</td>
+				</tr>
+				<tr>
+					<td align="center" style="padding: 18px 8px 4px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; color: #7c7c7c;">{{ footer }}</td>
+				</tr>
+			</table>
+		</td>
+	</tr>
+</table>

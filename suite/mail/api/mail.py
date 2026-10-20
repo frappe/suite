@@ -21,6 +21,7 @@ from suite.mail.api.contacts import (
     enrich_contacts_with_user_images,
 )
 from suite.mail.api.utils import get_avatar_url
+from suite.mail.bounces import dsn_blob_id, get_delivery_report
 from suite.mail.classification import Category, tab_filter
 from suite.mail.doctype.mail_message.mail_message import (
     add_messages_to_mailbox,
@@ -77,7 +78,6 @@ from suite.mail.jmap import (
     get_mailbox_id_by_role,
 )
 from suite.mail.utils import get_config, log_mail_error
-from suite.mail.utils.delivery_status import parse_delivery_status
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
 from suite.mail.utils.user import can_use_mail, get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
@@ -992,21 +992,10 @@ def serialize_mail(mail: dict) -> dict:
         "text_body": "" if html else mail.get("text_body", ""),
         "unscreened": cint(is_unscreened_message(mail)),
         "attachments": serialize_attachments(mail.get("attachments", [])),
-        "dsn_blob_id": _get_dsn_blob_id(mail),
+        # The part has no filename, so it never survives `serialize_attachments`: the UI asks for
+        # the parsed report by the message's id instead (see DeliveryStatusBanner).
+        "dsn_blob_id": dsn_blob_id(mail),
     }
-
-
-def _get_dsn_blob_id(mail: dict) -> str | None:
-    """Returns the blob id of a bounce message's `message/delivery-status` part, if it carries one.
-
-    The part has no filename, so it never survives `serialize_attachments` — the blob id is
-    surfaced separately for the UI to fetch the parsed report via `get_delivery_status` and
-    render it as a card instead of the raw MAILER-DAEMON text (see DeliveryStatusBanner)."""
-
-    for attachment in mail.get("attachments", []):
-        if (attachment.get("type") or "").lower() == "message/delivery-status" and attachment.get("blob_id"):
-            return attachment["blob_id"]
-    return None
 
 
 def serialize_attachments(attachments: list[dict]) -> list[dict]:
@@ -1022,13 +1011,10 @@ def serialize_attachments(attachments: list[dict]) -> list[dict]:
 
 
 @frappe.whitelist()
-def get_delivery_status(account: str, blob_id: str) -> dict:
-    """Returns the parsed report from a bounce message's `message/delivery-status` part."""
+def get_delivery_status(account: str, id: str) -> dict:
+    """Returns the delivery report bounce `id` carries, linked to the sent message it is about."""
 
-    if not blob_id:
-        frappe.throw(_("Blob ID is required."))
-
-    return parse_delivery_status(fetch_blob(account, blob_id))
+    return get_delivery_report(account, id)
 
 
 @frappe.whitelist()
@@ -1088,6 +1074,36 @@ def fetch_mail_as_eml(name: str) -> Response:
     return Response(content, mimetype="message/rfc822")
 
 
+def attachment_rows(attachments: list[dict] | None, held: dict | None = None) -> list[dict]:
+    """The attachment rows of a new or updated draft, from what the composer sends.
+
+    On an update, a row whose ``cid`` is in ``held``, the draft's current attachments, keeps the
+    draft's own bytes: each save replaces the draft, so a blob id the composer read from an earlier
+    version may no longer exist. Any other row names its bytes once: a blob already on the mail
+    server (``blob_id``: a forwarded attachment) or a site file just uploaded (``file_url``). A
+    blob wins over a file URL, so a download link riding along is never read as an upload.
+    """
+
+    rows = []
+    for d in attachments or []:
+        if existing := (held or {}).get(d.get("cid")):
+            d = {**existing.as_dict(), "cid": d["cid"]}
+        elif not (d.get("blob_id") or d.get("file_url")):
+            frappe.throw(_("Attachment with cid {0} not found in the current draft.").format(d.get("cid")))
+        rows.append(
+            {
+                "file_url": "" if d.get("blob_id") else d.get("file_url", ""),
+                "blob_id": d.get("blob_id") or "",
+                "filename": d.get("file_name") or d.get("filename") or "",
+                "type": d.get("type") or "",
+                "size": d.get("size") or "",
+                "disposition": d.get("disposition"),
+                "cid": d.get("cid") or random_string(10),
+            }
+        )
+    return rows
+
+
 @frappe.whitelist()
 def create_mail(
     account: str,
@@ -1109,20 +1125,7 @@ def create_mail(
     """Creates new mail queue. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE;
     `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast."""
 
-    doc_attachments = []
-    for d in attachments or []:
-        cid = d.get("cid") or random_string(10)
-        doc_attachments.append(
-            {
-                "file_url": d.get("file_url", ""),
-                "blob_id": d.get("blob_id", ""),
-                "filename": d.get("file_name") or d.get("filename", ""),
-                "type": d.get("type", ""),
-                "size": d.get("size", ""),
-                "disposition": d.get("disposition"),
-                "cid": cid,
-            }
-        )
+    doc_attachments = attachment_rows(attachments)
 
     recipients = []
     for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:
@@ -1195,36 +1198,10 @@ def update_draft_mail(
     message.from_name = from_name
     message.subject = subject
 
-    _attachments = {a.cid: a for a in message.attachments if a.cid}
+    held = {a.cid: a for a in message.attachments if a.cid}
     message.attachments = []
-
-    for d in attachments or []:
-        if file_url := d.get("file_url"):
-            message.append(
-                "attachments",
-                {
-                    "file_url": file_url,
-                    "filename": d.get("filename", ""),
-                    "disposition": d.get("disposition"),
-                    "cid": d.get("cid") or random_string(10),
-                },
-            )
-        else:
-            existing_attachment = _attachments.get(d["cid"])
-            if not existing_attachment:
-                frappe.throw(_("Attachment with cid {0} not found in the current draft.").format(d["cid"]))
-
-            message.append(
-                "attachments",
-                {
-                    "blob_id": existing_attachment.blob_id,
-                    "type": existing_attachment.type,
-                    "size": existing_attachment.size,
-                    "filename": existing_attachment.filename,
-                    "disposition": existing_attachment.disposition,
-                    "cid": d["cid"],
-                },
-            )
+    for row in attachment_rows(attachments, held):
+        message.append("attachments", row)
 
     message.html_body = html_body
 
