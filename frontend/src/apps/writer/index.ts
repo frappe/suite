@@ -1,4 +1,4 @@
-import { defineComponent, h } from 'vue'
+import { defineAsyncComponent, defineComponent, h } from 'vue'
 
 import type { DocumentTypeDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
@@ -21,3 +21,13 @@ export const writerDocument: DocumentTypeDefinition = {
   loadUnsavedWork: async () => (await import('@/apps/writer/recovery/UnsavedWork.vue')).default,
   listUnsavedCopies: async () => (await import('@/apps/writer/recovery/copies')).copyEntries(),
 }
+
+/** A comment box where `@` picks a person; it writes the `@[user]` mentions Drive notifies. */
+export const WriterMentionTextarea = defineAsyncComponent(
+  () => import('@/apps/writer/surface/MentionTextarea.vue'),
+)
+
+/** A comment's text, with the people it mentions shown by name. */
+export const WriterCommentText = defineAsyncComponent(
+  () => import('@/apps/writer/surface/CommentText.vue'),
+)

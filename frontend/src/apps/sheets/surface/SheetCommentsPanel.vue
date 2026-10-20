@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton, Textarea, TextInput, toast } from 'frappe-ui'
+import { Avatar, Button, Skeleton, TextInput, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 
 import {
@@ -8,8 +8,16 @@ import {
   useDriveGuestName,
   type DocumentSession,
 } from '@/apps/drive'
+import { WriterCommentText, WriterMentionTextarea } from '@/apps/writer'
 
-import { cellAnchor, readThreads, stampLabel, type CellAnchor, type SheetThread } from './records'
+import {
+  cellAnchor,
+  readThreads,
+  stampLabel,
+  type CellAnchor,
+  type SheetComment,
+  type SheetThread,
+} from './records'
 
 const props = defineProps<{
   session: DocumentSession
@@ -101,6 +109,11 @@ function resolve(thread: SheetThread) {
   )
 }
 
+// As Writer names a comment's author (writer/surface/CommentList.vue).
+function authorLabel(comment: SheetComment) {
+  return comment.person?.full_name || comment.author || 'Someone'
+}
+
 function message(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
@@ -140,7 +153,7 @@ onMounted(load)
             : 'Optional. Shown with your comments.'
         "
       />
-      <Textarea
+      <WriterMentionTextarea
         v-model="draft"
         :rows="2"
         :placeholder="cursor ? `Comment on ${cursor.cell}` : 'Select a cell to comment on it'"
@@ -209,10 +222,17 @@ onMounted(load)
               />
             </div>
             <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="min-w-0 text-sm-medium text-ink-gray-8">
+              <div class="flex items-center gap-2">
+                <Avatar
+                  v-if="comment.person"
+                  :image="comment.person.user_image ?? undefined"
+                  :label="comment.person.full_name"
+                  size="sm"
+                  shape="circle"
+                />
+                <span class="min-w-0 flex-1 text-sm-medium text-ink-gray-8">
                   <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                    comment.author_name || comment.author || 'Someone'
+                    authorLabel(comment)
                   }}</DriveCommentAuthor>
                 </span>
                 <span class="shrink-0 text-xs text-ink-gray-5">{{
@@ -220,7 +240,7 @@ onMounted(load)
                 }}</span>
               </div>
               <p class="whitespace-pre-wrap break-words text-p-sm text-ink-gray-7">
-                {{ comment.content }}
+                <WriterCommentText :content="comment.content" :mentions="comment.mentions" />
               </p>
             </div>
             <form
@@ -228,12 +248,13 @@ onMounted(load)
               class="flex items-end gap-2"
               @submit.prevent="reply(thread.name)"
             >
-              <Textarea
-                v-model="replies[thread.name]"
+              <WriterMentionTextarea
+                :model-value="replies[thread.name] ?? ''"
                 class="flex-1"
                 :rows="1"
                 placeholder="Reply"
                 :aria-label="`Reply to the thread on ${thread.anchor?.cell ?? 'the spreadsheet'}`"
+                @update:model-value="replies[thread.name] = $event"
               />
               <Button
                 type="submit"

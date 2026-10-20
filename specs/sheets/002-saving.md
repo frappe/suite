@@ -14,7 +14,8 @@ Code: `suite/sheets/versioning/save.py` (`save_sheet`), `suite/sheets/doctype/sh
 - `save_sheet` appends the ops to `Sheet Op Log` (numbered by `Sheet Seq`), then overwrites `Sheet.sheets_data` with the whole workbook and sets `head_seq`.
 - Every save may also take a Drive version, at most one per 30 seconds (`AUTO_VERSION_SECS`).
 - Each save names the `head_seq` it built on as `base_seq`. The server refuses any other head with `TimestampMismatchError`. The server never merges: this refusal is the safety net.
-- A save publishes `sheet_saved { sheet, head_seq }` to the sheet's room. An editor with nothing unsaved loads the new body in place, so others see a save about 2 seconds after the last keystroke.
+- A save publishes `sheet_saved { sheet, head_seq }` to the sheet's room. An editor with nothing unsaved loads the new body in place, so others see a save about 2 seconds after the last keystroke. "Nothing unsaved" means no unsent commands and no save still settling: a save in flight decides first, and the editor follows the new head once it has landed or been refused.
+- One load at a time replaces the workbook (`loadSheet` queues a second load behind the first). A rebase that cannot load the stored copy keeps the workbook and its unsent edits, shows "Not saved", and tries again, at most 3 times; it never shows the page-level "Couldn't open this sheet".
 - The editor keeps every command it dispatched that no landed save carries yet (`components/SheetEditor/unsentCommands.ts`). When another editor's `sheet_saved` arrives while it has unsaved edits, or when its save is refused, it **rebases** (`rebase()` in `usePersistence.js`): it loads the stored copy, dispatches its unsent commands again, writes the formats it changed per cell, column and row, replaces a feature store (merges, validation, charts, …) it changed, and saves on the new head. Per cell, and per feature store, the last writer wins. A save refused again right after rebases again, at most 3 times in a row; then the editor stops as below.
 - Commands that move cells or sheets (row or column insert, delete or move; sheet add, delete, rename, duplicate or move) and an undo that restores older bytes cannot be dispatched again safely. If any is unsent, the editor does not rebase. It turns read only, shows "Changed elsewhere", keeps its workbook as the local recovery copy (`surface/recovery.ts`, "Download my changes") and lists the unsent edits. Its Reload button says how many edits it discards.
 - A command for a sheet the stored copy no longer has is not dispatched. It is listed, and the workbook from before the rebase is kept as the recovery copy until it is downloaded.
@@ -83,7 +84,7 @@ Drive owns versions. Sheets answers Drive through the callbacks in `suite/sheets
 | `version_bytes` | Returns the current snapshot envelope. A snapshot is written first if the log has moved past `snapshot_seq` |
 | `restore_version` | Writes the version's envelope back to `sheets_data`, sets `snapshot_seq` to the new head, and writes a `restore` op |
 | `used_nodes` | Reports media named in the body (A) or in `features` only (B: engine bytes are not scanned). Sheets has no media today |
-| `import_from_file` | Out of scope here. xlsx import is a separate spec |
+| `import_from_file` | Makes a sheet from an uploaded .xlsx (every worksheet) or .csv (one sheet of its values). Drive's file menu and the "No preview" page offer it as "Open as spreadsheet". The editor converts the body on first open and saves it, with no upgrade notice and no "Before upgrade" version: the file stays in Drive |
 
 ## Constraints
 

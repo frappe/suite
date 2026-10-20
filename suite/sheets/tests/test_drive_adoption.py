@@ -932,6 +932,19 @@ class TestSheetsInDrive(IntegrationTestCase):
         with self.assertRaises((DriveNotFound, DriveForbidden)):
             drive.import_document(self.other_root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
 
+    def test_a_csv_becomes_one_sheet_of_its_values(self):
+        source = self._xlsx_node(b'Item,Cost\r\nRent,900\r\n"Food, drink",120\r\n', title="q4.csv")
+        node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
+        body = json.loads(self._body(node))
+        sheet = body["sheet"]
+        # Marked so the editor offers no "Before upgrade" version of it.
+        self.assertIs(body["imported"], True)
+        self.assertEqual(sheet["current"], "Sheet1")
+        self.assertEqual(
+            sheet["sheets"]["Sheet1"]["rows"],
+            {"0": ["Item", "Cost"], "1": ["Rent", "900"], "2": ["Food, drink", "120"]},
+        )
+
     def test_a_file_that_is_not_a_workbook_is_refused_and_leaves_no_node(self):
         source = self._xlsx_node(b"not a spreadsheet", title="notes.txt")
         before = frappe.db.count("Drive Node")

@@ -231,7 +231,7 @@
       </div>
 
       <SheetUpgradeBanner
-        v-if="legacyUpgrade && !upgradeBannerClosed"
+        v-if="legacyUpgrade && !legacyUpgrade.imported && !upgradeBannerClosed"
         :upgrade="legacyUpgrade"
         :read-only="readOnly"
         @close="upgradeBannerClosed = true"
@@ -508,6 +508,12 @@
         @unfreeze-rows="doUnfreezeRows()"
         @unfreeze-cols="doUnfreezeCols()"
         @paste-special="doPasteSpecial"
+        @sort="
+          (dir) =>
+            fromContextMenu(() =>
+              sortRange(dir, contextMenu.mode === 'colHeader' ? contextMenu.targetCol : null),
+            )
+        "
         @validation="fromContextMenu(openValidationDialog)"
         @cond-format="fromContextMenu(() => openCfDialog(null))"
         @protect="protectSelection()"
@@ -1467,13 +1473,17 @@ const fileDropdownOptions = computed(() => [
       },
       {
         label: 'Export as XLSX',
+        description: __("Charts and conditional formatting aren't exported yet."),
         icon: 'lucide-download',
         onClick: () => exportXLSX(),
       },
       {
-        label: 'Export as PDF',
+        label: __('Print…'),
         icon: 'lucide-printer',
-        onClick: () => exportPDF(),
+        submenu: [
+          { label: __('This sheet'), onClick: () => print('sheet') },
+          { label: __('All sheets'), onClick: () => print('all') },
+        ],
       },
     ],
   },
@@ -1614,7 +1624,7 @@ const hAlignIcon = computed(() => {
 const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
 const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
 
-const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
+const { exportCSV, exportXLSX, print, importCSV, importXLSX } = useExportImport({
   cells: {
     readSheet: _readWholeSheet,
     write: _writeInputs,
@@ -1628,11 +1638,13 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
   getCurrentTitle: () => currentTitle.value,
   getFormats: () => formats,
   getMerge: () => merge,
+  getCondFormat: () => condFormat,
   repopulateGrid: _repopulateGrid,
   // Defined later by useSheetTabs — lazy-wrapped so they resolve at call time.
   syncNames: () => syncNames(),
   switchSheet: (n) => switchSheet(n),
   syncFlags,
+  recordUndoStep: () => history.push(),
   isDirty,
 })
 
@@ -2412,6 +2424,7 @@ const {
   applyFilter,
   clearFilterCol,
   doSort,
+  sortRange,
 } = useSortFilter({
   sortFilter,
   currentSheet,
@@ -3003,15 +3016,19 @@ function reloadPage() {
 
 // The newest head another editor's save announced. With nothing unsaved here,
 // their copy opens in place. With edits pending, those are put on top of it
-// and saved on the new head (specs/sheets/002, "Unsaved edits").
+// and saved on the new head (specs/sheets/002, "Unsaved edits"). A save still
+// settling decides first: `_doAutoSave` follows the head again once it has.
+// Unsent edits, not `isDirty`, say whether a reload would throw work away:
+// `isDirty` is false while a save is out.
 const remoteHeadSeq = ref(0)
 let _reloading = null
-watch([remoteHeadSeq, isDirty, isSaving, isStale], () => {
+function _followRemoteHead() {
   if (remoteHeadSeq.value <= headSeq.value || _reloading || _catchingUp) return
-  if (isSaving.value || isStale.value) return
-  if (isDirty.value) void catchUp()
+  if (_savePromise || isSaving.value || isStale.value) return
+  if (isDirty.value || unsent.edits().length) void catchUp()
   else void reloadFromServer()
-})
+}
+watch([remoteHeadSeq, isDirty, isSaving, isStale], _followRemoteHead)
 // Edits the stale workbook holds that Reload discards.
 const discardedOnReload = ref(0)
 async function reloadFromServer() {
@@ -3071,8 +3088,11 @@ async function _rebaseUnsent() {
   try {
     outcome = await rebase(props.id)
   } catch (err) {
+    // The workbook and its unsent edits stay; the rebase is tried again.
     console.error('[sheets] could not put unsaved edits on the newer copy:', err)
     saveError.value = __('Not saved: the newer version of this sheet could not be loaded.')
+    isDirty.value = true
+    setTimeout(() => void catchUp(), 1000 * _rebaseAttempts)
     return false
   }
   if (!outcome.rebased) {
@@ -3380,7 +3400,8 @@ function _truncatedSummary(op) {
 }
 function _triggerAutoSave() {
   clearTimeout(_autoSaveTimer)
-  _autoSaveTimer = setTimeout(_doAutoSave, 2000)
+  // A failed save already shows saveError or queues a rebase.
+  _autoSaveTimer = setTimeout(() => void _doAutoSave().catch(() => {}), 2000)
 }
 async function _doAutoSave() {
   if (_savePromise) await _savePromise.catch(() => {})
@@ -3422,6 +3443,7 @@ async function _doAutoSave() {
     throw error
   } finally {
     _savePromise = null
+    queueMicrotask(_followRemoteHead)
   }
   // Access narrowed while this save was out. Its edits left the save path.
   if (epoch !== _accessEpoch) {
@@ -3711,6 +3733,8 @@ const { onGlobalKey } = useShortcuts({
   openQuickFilterForActive,
   zoomBy,
   resetZoom,
+  contextMenu,
+  tabMenu,
   commentPanel,
   dropdownPanel,
   splitText,

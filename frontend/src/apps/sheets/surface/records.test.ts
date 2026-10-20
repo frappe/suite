@@ -37,7 +37,7 @@ describe('Sheets comment anchors', () => {
 })
 
 describe('Drive records for Sheets', () => {
-  it("reads threads as Drive publishes them, preferring a guest's typed name", () => {
+  it('reads threads as Drive publishes them, with each author and the people mentioned', () => {
     const threads = readThreads({
       threads: [
         {
@@ -48,9 +48,11 @@ describe('Drive records for Sheets', () => {
           comments: [
             {
               name: 'c1',
-              content: 'Check this total',
+              content: 'Check this total @[sofia@example.com]',
               author: 'ann@example.com',
               author_name: null,
+              person: { id: 'ann@example.com', full_name: 'Ann Lee', user_image: null },
+              mentions: ['sofia@example.com'],
               creation: '2026-09-29 10:00:00',
             },
             {
@@ -75,9 +77,11 @@ describe('Drive records for Sheets', () => {
         comments: [
           {
             name: 'c1',
-            content: 'Check this total',
+            content: 'Check this total @[sofia@example.com]',
             author: 'ann@example.com',
             author_name: null,
+            person: { full_name: 'Ann Lee', user_image: null },
+            mentions: ['sofia@example.com'],
             creation: '2026-09-29 10:00:00',
           },
           {
@@ -85,6 +89,8 @@ describe('Drive records for Sheets', () => {
             content: 'Fixed',
             author: 'Guest',
             author_name: 'Visitor',
+            person: null,
+            mentions: [],
             creation: '2026-09-29 10:05:00',
           },
         ],

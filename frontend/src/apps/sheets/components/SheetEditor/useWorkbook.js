@@ -149,11 +149,13 @@ export function useWorkbook({
   }
 
   // A rect's inputs and display strings (0-based rect), read from the worker in
-  // chunks of rows that fit one readViewport.
+  // chunks of rows that fit one readViewport. `numbers` holds the ids of the
+  // cells that hold a number.
   async function readRect(sn, rect) {
     const inputs = []
     const displays = []
-    if (!engine) return { inputs, displays }
+    const numbers = new Set()
+    if (!engine) return { inputs, displays, numbers }
     const cols = rect.c1 - rect.c0 + 1
     const step = Math.max(1, Math.floor(MAX_VIEWPORT_CELLS / cols))
     for (let r = rect.r0; r <= rect.r1; r += step) {
@@ -164,9 +166,13 @@ export function useWorkbook({
         r2: Math.min(r + step - 1, rect.r1) + 1,
         c2: rect.c1 + 1,
         includeInputs: true,
+        includeNumbers: true,
       })
       inputs.push(...(res.inputs ?? []))
       displays.push(...res.values)
+      const found = res.numbers ?? []
+      for (let i = 0; i < found.length; i += 2)
+        numbers.add(cellId(r + found[i], rect.c0 + found[i + 1]))
     }
     // A sparkline shows a chart, not IronCalc's #NAME?, to every reader
     // (charts, copied text, filter lists), as it does in the grid.
@@ -175,7 +181,7 @@ export function useWorkbook({
         if (parseSparkline(input)) displays[i][j] = ''
       }),
     )
-    return { inputs, displays }
+    return { inputs, displays, numbers }
   }
 
   // {cellId: input} for a rect: an edit op's before or after.
@@ -259,7 +265,9 @@ export function useWorkbook({
         if (usedMax) onUsedExtent(usedMax)
       })
       .catch((e) => {
-        if (engine) console.error('[sheets] reading used cells failed', e) // see readCells
+        // An undo can remove the sheet while its read is out.
+        if (engine && currentSheet.value === sn)
+          console.error('[sheets] reading used cells failed', e) // see readCells
       })
       .finally(() => {
         usedReading = false
@@ -296,7 +304,7 @@ export function useWorkbook({
   // A whole sheet's inputs and displays, A1 to its last used cell.
   async function readWholeSheet(sn) {
     const ext = await sheetExtent(sn)
-    if (!ext) return { inputs: [], displays: [] }
+    if (!ext) return { inputs: [], displays: [], numbers: new Set() }
     return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol })
   }
 

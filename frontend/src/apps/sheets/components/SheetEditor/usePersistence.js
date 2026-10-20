@@ -118,10 +118,19 @@ export function usePersistence({
   // Runs once before the next save is sent: keeps the develop body as a
   // Drive version. Cleared when it succeeds.
   let _beforeFirstSave = null
+  // One load at a time replaces the workbook: a load asked for while another
+  // runs starts after it.
+  let _loading = Promise.resolve()
+  function loadSheet(name, options) {
+    const load = _loading.then(() => _load(name, options))
+    _loading = load.catch(() => {})
+    return load
+  }
   // `beforeOpen` runs once the stored copy has arrived, just before it
-  // replaces the workbook here.
-  async function loadSheet(name, { visit = recordVisits, beforeOpen = null } = {}) {
-    loadError.value = null
+  // replaces the workbook here. With `rethrow`, a failure is the caller's to
+  // report and the page-level `loadError` is left alone.
+  async function _load(name, { visit = recordVisits, beforeOpen = null, rethrow = false } = {}) {
+    if (!rethrow) loadError.value = null
     try {
       const canGz = isDecompressionSupported()
       const doc = await client.query(
@@ -167,11 +176,14 @@ export function usePersistence({
       for (const [from, to] of renamed) {
         for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
       }
-      legacyUpgrade.value = plan ? await _legacyUpgrade(plan, converted, mayWrite) : null
+      legacyUpgrade.value = plan
+        ? await _legacyUpgrade(plan, converted, mayWrite, saved.imported === true)
+        : null
       // Before the first save of a converted sheet, Drive keeps the develop
-      // body as a version to go back to.
-      _beforeFirstSave =
-        legacyUpgrade.value?.save && doc.node ? () => _keepBeforeUpgrade(doc.node) : null
+      // body as a version to go back to. A file Drive just imported has no
+      // earlier body: the file it came from stays in Drive.
+      const keepsBefore = legacyUpgrade.value?.save && !legacyUpgrade.value.imported && doc.node
+      _beforeFirstSave = keepsBefore ? () => _keepBeforeUpgrade(doc.node) : null
       currentTitle.value = doc.title
       headSeq.value = doc.head_seq
       isStale.value = false
@@ -185,6 +197,7 @@ export function usePersistence({
       canWrite.value = mayWrite && converted?.ok !== false
       sheetOwner.value = doc.owner || ''
     } catch (err) {
+      if (rethrow) throw err
       console.error('Load failed:', err)
       const t = err?.type || ''
       const kind =
@@ -200,10 +213,12 @@ export function usePersistence({
     }
   }
 
-  async function _legacyUpgrade(plan, converted, mayWrite) {
+  async function _legacyUpgrade(plan, converted, mayWrite, imported) {
     const upgrade = {
       ok: converted.ok,
       save: converted.ok && mayWrite,
+      // Drive made this body from an uploaded file (sheets/drive.py).
+      imported,
       current: plan.current,
       renamed: plan.renamed,
       skipped: plan.skipped,
@@ -439,17 +454,22 @@ export function usePersistence({
     const base = _synced
     const title = currentTitle.value
     let mine = null
-    await loadSheet(name, {
-      visit: false,
-      async beforeOpen() {
-        const bytes = await engine.toBytes()
-        // Nothing awaits between here and the stored copy replacing this one.
-        mine = { edits: unsent?.take() ?? [], side: _sideState(), bytes }
-      },
-    })
-    currentTitle.value = title
-    if (loadError.value) throw new Error(loadError.value.message)
-    if (!mine) throw new Error('The stored copy of this sheet could not be opened')
+    try {
+      await loadSheet(name, {
+        visit: false,
+        rethrow: true,
+        async beforeOpen() {
+          const bytes = await engine.toBytes()
+          // Nothing awaits between here and the stored copy replacing this one.
+          mine = { edits: unsent?.take() ?? [], side: _sideState(), bytes }
+        },
+      })
+    } catch (err) {
+      if (mine) await _reopen(mine)
+      throw err
+    } finally {
+      currentTitle.value = title
+    }
     const skipped = _putOnTop(mine.edits, formatChanges(base?.formats ?? {}, mine.side.formats))
     _restoreChangedFeatures(base, mine.side)
     return {
@@ -457,6 +477,17 @@ export function usePersistence({
       notApplied: describeEdits(skipped),
       workbook: skipped.length ? _workbookJson(mine.bytes, null, mine.side) : null,
     }
+  }
+
+  // The stored copy failed to open after this workbook was taken: open this
+  // one again, with its edits still unsent.
+  async function _reopen(mine) {
+    formats.restore(mine.side.formats)
+    await engine.start(mine.bytes)
+    for (const [key, store] of Object.entries(featureStores)) store?.restore?.(mine.side[key])
+    engine.syncDefinedNames?.()
+    if (applyViewState && mine.side.view) applyViewState(mine.side.view)
+    for (const edit of mine.edits) unsent?.record(edit)
   }
 
   // Dispatch the commands and write the format changes on the workbook now

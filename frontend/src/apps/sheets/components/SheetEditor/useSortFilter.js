@@ -337,6 +337,24 @@ export function useSortFilter({
     applyHiddenRows()
   }
 
+  // Sort A→Z / Z→A from the right-click menus, as Google Sheets' "Sort range".
+  // A selection of several rows sorts as it is, by the active cell's column.
+  // A single cell or row, or a whole column (`col`), sorts the data block
+  // around it, and a header row on top of that block stays there.
+  async function sortRange(dir, col = null) {
+    const grid = getGrid()
+    if (!grid) return
+    const sn = currentSheet.value
+    const sel = grid.getSelection()
+    const active = parseCellId(activeCell.value) ?? { row: sel.r0, col: sel.c0 }
+    const key = col ?? Math.min(Math.max(active.col, sel.c0), sel.c1)
+    const asSelected = col == null && sel.r1 > sel.r0
+    const rect = asSelected ? sel : await detectContiguousBlock(col == null ? active.row : 0, key)
+    if (!rect || rectBlocked(rect, sn)) return
+    const sorted = await sortFilter.sortRows(rect, key, dir, sn, { detectHeader: !asSelected })
+    if (sorted) pushEditOp(sn, sorted.before, sorted.after, 'Sort')
+  }
+
   return {
     filterPanel,
     showSortFilter,
@@ -350,5 +368,6 @@ export function useSortFilter({
     applyFilter,
     clearFilterCol,
     doSort,
+    sortRange,
   }
 }
