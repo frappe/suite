@@ -32,6 +32,13 @@ def validate_cap(value) -> int | None:
     return value
 
 
+def is_member(user: str) -> bool:
+    """A workspace member holds the Suite User role; recovery identities never do."""
+    return user not in ("Guest", "Administrator") and bool(
+        frappe.db.exists("Has Role", {"parenttype": "User", "parent": user, "role": "Suite User"})
+    )
+
+
 def update_limits(users: list[str], cap: int | None, buffer: bool | None = None) -> list[dict]:
     require_admin()
     cap = validate_cap(cap)
@@ -41,10 +48,8 @@ def update_limits(users: list[str], cap: int | None, buffer: bool | None = None)
     limits = policy.setdefault("users", {})
     results = []
     for user in dict.fromkeys(users):
-        if user in ("Guest", "Administrator") or not frappe.db.exists(
-            "User", {"name": user, "user_type": "System User"}
-        ):
-            results.append({"user": user, "success": False, "error": _("User does not exist")})
+        if not is_member(user):
+            results.append({"user": user, "success": False, "error": _("Not a Suite user")})
             continue
         previous = limits.get(user, {})
         limits[user] = {
@@ -81,8 +86,8 @@ def update_buffers(users: list[str], *, grant: bool) -> list[dict]:
     results = []
     for user in dict.fromkeys(users):
         limit = limits.get(user)
-        if user in ("Guest", "Administrator") or not frappe.db.exists("User", user):
-            error = _("User does not exist")
+        if not is_member(user):
+            error = _("Not a Suite user")
         elif not limit or limit.get("cap") is None:
             error = _("Set a personal cap before granting or revoking headroom")
         else:

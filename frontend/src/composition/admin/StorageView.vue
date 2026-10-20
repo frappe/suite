@@ -134,7 +134,7 @@
                 variant="subtle"
                 :label="__('Set caps')"
                 :disabled="!selected.length"
-                @click="editing = true"
+                @click="openLimits('')"
               />
               <Button
                 variant="ghost"
@@ -205,7 +205,7 @@
                     variant="ghost"
                     icon="lucide-pencil"
                     :label="__('Edit cap for {0}', [user.full_name])"
-                    @click="editCap(user)"
+                    @click.stop="editCap(user)"
                   />
                 </div>
               </ListCell>
@@ -307,7 +307,7 @@
               { label: __('Revoke'), value: 'revoke' },
             ]"
           />
-          <ErrorMessage :message="saveLimits.error?.message" />
+          <ErrorMessage :message="limitError || saveLimits.error?.message" />
           <p
             v-for="result in results"
             :key="result.user"
@@ -324,6 +324,7 @@
           <Button
             variant="solid"
             :label="__('Apply')"
+            :disabled="!selected.length"
             :loading="saveLimits.isPending"
             @click="applyLimits"
           />
@@ -470,6 +471,7 @@ const selectedUsers = computed(
 const editing = ref(false)
 const limitGB = ref('')
 const bufferChoice = ref('keep')
+const limitError = ref('')
 const results = ref<OutputOf<typeof api.suite.storage.setLimits>>([])
 const bufferResults = ref<OutputOf<typeof api.suite.storage.setBuffers>>([])
 const reviewingBuffers = ref(false)
@@ -482,17 +484,31 @@ function reviewBuffers(grant: boolean) {
 
 function editCap(user: StorageUser) {
   selected.value = [user.name]
-  limitGB.value = user.cap_bytes == null ? '' : String(user.cap_bytes / 1_000_000_000)
+  openLimits(user.cap_bytes == null ? '' : String(user.cap_bytes / 1_000_000_000))
+}
+
+function openLimits(gigabytes: string) {
+  limitGB.value = gigabytes
   bufferChoice.value = 'keep'
   results.value = []
+  limitError.value = ''
   saveLimits.reset()
   editing.value = true
 }
 
 async function applyLimits() {
+  let capBytes: number | null
+  try {
+    capBytes = cap(limitGB.value)
+  } catch (error) {
+    if (!(error instanceof Error)) throw error
+    limitError.value = error.message
+    return
+  }
+  limitError.value = ''
   results.value = await saveLimits.run({
     users: selected.value,
-    cap_bytes: cap(limitGB.value),
+    cap_bytes: capBytes,
     ...(bufferChoice.value === 'keep' ? {} : { buffer: bufferChoice.value === 'grant' }),
   })
 }

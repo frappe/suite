@@ -7,7 +7,15 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.suite_core.administration import guard_user_change, list_users, require_admin, update_user
-from suite.suite_core.storage import check_addition, effective_limit, set_default, state, validate_cap
+from suite.suite_core.storage import (
+    check_addition,
+    effective_limit,
+    set_default,
+    state,
+    update_buffers,
+    update_limits,
+    validate_cap,
+)
 from suite.tests.utils import ensure_user
 
 GB = 1_000_000_000
@@ -136,6 +144,31 @@ class TestAdministrationAccess(IntegrationTestCase):
         with self.set_user("Administrator"):
             update_user(self.normal, is_admin=True)
         self.assertIn("Suite Admin", frappe.get_roles(self.normal))
+
+    def test_a_suite_member_without_desk_access_can_be_capped_and_granted_headroom(self):
+        self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")
+        with self.set_user(self.admin):
+            capped = update_limits([self.normal], 5 * GB)
+            granted = update_buffers([self.normal], grant=True)
+            _doc, policy, _measurements = state()
+        self.assertEqual(capped, [{"user": self.normal, "success": True, "error": None}])
+        self.assertEqual(granted, [{"user": self.normal, "success": True, "error": None}])
+        self.assertEqual(policy["users"][self.normal], {"cap": 5 * GB, "buffer": True})
+
+    def test_storage_limits_refuse_people_outside_the_workspace(self):
+        outsider = "outsider-policy-test@example.test"
+        with self.set_user("Administrator"):
+            ensure_user(outsider)
+            frappe.get_doc("User", outsider).remove_roles("Suite User")
+        with self.set_user(self.admin):
+            for user in (outsider, "missing-policy-test@example.test", "Administrator", "Guest"):
+                with self.subTest(user=user):
+                    [result] = update_limits([user], 5 * GB)
+                    self.assertFalse(result["success"])
+                    [result] = update_buffers([user], grant=True)
+                    self.assertFalse(result["success"])
+            _doc, policy, _measurements = state()
+        self.assertNotEqual(policy["users"].get(outsider, {}).get("cap"), 5 * GB)
 
     def test_an_admin_cannot_disable_their_own_account(self):
         with self.set_user(self.admin):
