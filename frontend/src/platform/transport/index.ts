@@ -164,8 +164,17 @@ export function createTransport(options: CreateTransportOptions = {}): Transport
       validateOperation(operation)
       const validators: Validators<typeof input, unknown> | undefined =
         await operation.loadValidators?.()
-      validators?.validateInput(input)
-      operation.validateInput?.(input)
+      try {
+        validators?.validateInput(input)
+        operation.validateInput?.(input)
+      } catch (error) {
+        // A caller bug, never a refusal: logged even when the caller shows its own message.
+        console.error(
+          `${operation.owner}.${operation.publicName ?? operation.id} was not sent: its input does not match the contract.`,
+          error,
+        )
+        throw error
+      }
       requestOptions.signal?.throwIfAborted()
 
       const pathInput = asRecord(input)
