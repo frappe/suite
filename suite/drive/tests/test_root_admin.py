@@ -91,7 +91,7 @@ class TestRootPurgeLockOrder(UnitTestCase):
         db = MagicMock()
         db.get_value.side_effect = get_value
         db.sql.side_effect = sql
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         with stub_db(db):
             with patch(
                 "suite.drive._core.roots._validate_root_descendants",
@@ -113,7 +113,7 @@ class TestRootAdministration(IntegrationTestCase):
         frappe.set_user("Administrator")
         ensure_rootless_user(self.user)
         self.before_roots = set(frappe.get_all("Drive Root", pluck="name"))
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
     def tearDown(self):
         frappe.set_user("Administrator")

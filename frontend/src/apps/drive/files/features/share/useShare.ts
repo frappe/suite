@@ -12,7 +12,7 @@ import {
   type GrantPatch,
   type GrantWrite,
 } from '@/apps/drive/client/grants'
-import { DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
+import { canManage, DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
 import type { ImperativeClient } from '@/platform/server-state/types'
 
 import {
@@ -310,7 +310,7 @@ function peopleIn(list: GrantList | null): DrivePerson[] {
 }
 
 function managesNode(node: DriveNode | null): boolean {
-  return (node?.access?.role ?? 0) >= DRIVE_ROLES.manage
+  return canManage(node)
 }
 
 function messageOf(error: unknown, fallback: string): string {

@@ -359,6 +359,7 @@ def _reauthorize_original_destination(principals: Principals, binding: dict) -> 
         own=principals.own,
         open=("$PUBLIC",),
         is_admin=principals.is_admin,
+        is_system=principals.is_system,
     )
     require(parent, UPLOAD, own)
 

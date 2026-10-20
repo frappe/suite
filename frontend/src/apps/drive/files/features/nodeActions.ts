@@ -1,4 +1,4 @@
-import { DRIVE_ROLES, hasRole, type DriveNode } from '@/apps/drive/client/types'
+import { canManage, DRIVE_ROLES, hasRole, type DriveNode } from '@/apps/drive/client/types'
 
 import { linkAccess } from './linkAccess'
 
@@ -40,7 +40,7 @@ export function canRename(node: Pick<DriveNode, 'access'> & { state: string }): 
 
 export function nodeActions(node: ActionNode, signedIn: boolean): NodeActions {
   const edit = hasRole(node, DRIVE_ROLES.edit)
-  const manage = hasRole(node, DRIVE_ROLES.manage)
+  const manage = canManage(node)
   if (node.state !== 'Active') {
     const trashRoot = node.trash_root === node.name
     return {
@@ -54,7 +54,7 @@ export function nodeActions(node: ActionNode, signedIn: boolean): NodeActions {
       copy: false,
       star: false,
       trash: false,
-      restore: trashRoot && edit,
+      restore: trashRoot && (edit || manage),
       deleteForever: trashRoot && manage,
     }
   }

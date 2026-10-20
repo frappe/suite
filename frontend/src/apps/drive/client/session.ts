@@ -13,7 +13,7 @@ import type {
   NodeVersionsOutputVersionShape,
 } from './generated'
 import { driveLinks } from './links'
-import { DRIVE_ROLES, type DriveAccess, type DriveNode } from './types'
+import { canManage, type DriveAccess, type DriveNode } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
@@ -561,7 +561,7 @@ interface InternalMediaHandle {
 
 /** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
 export function canShare(state: SessionState, access: DriveAccess): boolean {
-  return state === 'Active' && (access.role ?? 0) >= DRIVE_ROLES.manage
+  return state === 'Active' && canManage({ access })
 }
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'

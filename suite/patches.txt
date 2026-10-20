@@ -118,3 +118,5 @@ suite.drive.patches.build
 suite.drive.patches.cleanup
 # Needs decks linked to nodes, so after Build. T3-21: media uploaded as Files after Build.
 suite.slides.patches.move_file_media_to_drive
+# ADR 0001: a Suite Admin edits only with a grant; gives them the creator grants the override skipped.
+suite.drive.patches.grant_admin_creators_edit

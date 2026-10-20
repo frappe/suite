@@ -372,7 +372,7 @@ class TestCompositeGroups(IntegrationTestCase):
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Composite Root", user=OWNER)
         self.other_root = create_root(kind="Personal", title="Composite Other", user=OUTSIDER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
     def _remove_fixture_rows(self):
         frappe.set_user("Administrator")
@@ -1145,7 +1145,7 @@ def _purge_fixture_roots() -> None:
     The four users belong to this module alone, so the filter can never reach a
     live account or another test module's fixtures.
     """
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     roots = frappe.get_all(
         "Drive Root", filters={"user": ["in", (OWNER, VIEWER, STRANGER, OUTSIDER)]}, pluck="name"
     )

@@ -690,7 +690,7 @@ class TestRootBreakdown(IntegrationTestCase):
 
     def test_the_breakdown_keeps_the_totals_role_rule(self):
         self.node("a.pdf", 900, mime="application/pdf")
-        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True)
         self.assertEqual(usage_for(self.root, admin, breakdown=True).by_type, [{"type": "PDF", "bytes": 900}])
         with self.assertRaises(DriveNotFound):
             usage_for(self.root, self.other, breakdown=True)

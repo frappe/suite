@@ -46,7 +46,7 @@ class TestSheetTitlesOnSite(IntegrationTestCase):
         frappe.set_user("Administrator")
         if not frappe.db.exists("Drive Node", node):
             return
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         update(admin, node, state="Trashed")
         purge(admin, node)
         frappe.db.commit()

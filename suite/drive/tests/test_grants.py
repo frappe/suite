@@ -1,3 +1,4 @@
+import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Event
@@ -425,10 +426,12 @@ class TestGrantWorkflows(_GrantFixture):
         outsider = Principals(UNHELD, (UNHELD,), ("$PUBLIC",))
         with self.assertRaises(DriveForbidden):
             explain(self.folder, outsider)
-        self.assertEqual(
-            explain(self.folder, self.admin),
-            {"role": MANAGE, "source": "site admin", "rows": []},
-        )
+        # ADR 0001: a Suite Admin may ask, and is explained by their own grants
+        # like anyone else. Only Drive's own account is answered without rows.
+        explained_admin = explain(self.folder, self.admin)
+        self.assertEqual((explained_admin["role"], explained_admin["source"]), (NONE, "none"))
+        system = dataclasses.replace(self.admin, is_system=True)
+        self.assertEqual(explain(self.folder, system), {"role": MANAGE, "source": "system", "rows": []})
 
     def test_expired_positive_deny_and_link_rows_are_retained_but_inert(self):
         principals = (MANAGER, "$GENERAL", "$PUBLIC", "$LINK:AbCdEfGhIjKlMnOpQrSt12")

@@ -25,7 +25,7 @@ READER = "writer-docs-reader@example.com"
 
 
 def _admin() -> Principals:
-    return Principals("Administrator", ("Administrator",), (), is_admin=True)
+    return Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
 
 def _new_document(title: str) -> frappe._dict:

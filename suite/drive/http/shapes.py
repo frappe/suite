@@ -48,6 +48,8 @@ class AccessShape(TypedDict, total=False):
     via_link: str | None
     source_node: str | None
     source_principal: str | None
+    # Manage checks pass: `role` is MANAGE, or a Suite Admin's override (ADR 0001).
+    can_manage: bool
 
 
 class BreadcrumbShape(TypedDict):
