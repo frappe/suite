@@ -252,6 +252,13 @@ const ySyncPlugin = (yXmlFragment, {
           if (
             pluginState.snapshot == null && pluginState.prevSnapshot == null
           ) {
+            // An empty Yjs body shows as the schema's filler block; that block is not an edit,
+            // and writing it would clear the redo steps of an undo that emptied the body
+            const isEmptyFiller = pluginState.type.length === 0 &&
+              view.state.doc.content.findDiffStart(
+                view.state.doc.type.createAndFill().content
+              ) === null;
+            if (isEmptyFiller) return
             if (
               // If the content doesn't change initially, we don't render anything to Yjs
               // If the content was cleared by a user action, we want to catch the change and

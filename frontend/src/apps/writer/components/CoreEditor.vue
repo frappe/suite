@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
+  <div class="flex flex-col w-full bg-surface-base">
     <slot name="toolbar">
       <TextEditorFixedMenu
         v-if="editable"
@@ -132,7 +132,6 @@ import {
   editorTextStyle,
 } from '@/apps/writer/utils/editor-layout'
 import { useSessionStore } from '@/boot/session'
-import { useRootStore } from '@/stores/root'
 
 import { bubbleMenuOptions } from './core-editor/bubble-menu'
 import { buildMenuButtons } from './core-editor/menu-buttons'
@@ -160,7 +159,6 @@ const emit = defineEmits(['save', 'editor-change', 'cleanup'])
 
 const showSettings = defineModel('showSettings')
 const edited = defineModel('edited')
-const root = useRootStore()
 
 const localContent = ref(props.rawContent ?? '')
 
@@ -361,20 +359,6 @@ const addComment = () => {
 }
 
 const manualSave = (func) => emit('save', true, null, func)
-
-const openCommandPalette = (event) => {
-  if (
-    !props.editable ||
-    (!event.metaKey && !event.ctrlKey) ||
-    event.shiftKey ||
-    event.altKey ||
-    event.key.toLowerCase() !== 'k'
-  )
-    return
-  event.preventDefault()
-  event.stopPropagation()
-  root.paletteOpen = true
-}
 
 onKeyDown('p', (e) => {
   if (!isModKey(e)) return

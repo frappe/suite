@@ -128,6 +128,30 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(renamed.title, "One")
         self.assertEqual(frappe.db.count("Drive Activity", {"node": second, "action": "rename"}), 1)
 
+    def test_titles_are_stored_as_typed_and_collide_as_typed(self):
+        title = "X & y <draft>"
+        folder = create_folder(self.admin, self.root.name, title)
+        self.assertEqual(frappe.db.get_value("Drive Node", folder, "title"), title)
+        with self.assertRaises(DriveConflict):
+            create_folder(self.admin, self.root.name, title)
+
+        other = create_folder(self.admin, self.root.name, "Other")
+        self.assertEqual(update(self.admin, other, title="<b>A</b> &amp; B").title, "<b>A</b> &amp; B")
+
+    def test_title_patch_restores_escaped_titles_and_keeps_siblings_unique(self):
+        from suite.drive.patches.unescape_node_titles import execute
+
+        create_folder(self.admin, self.root.name, "Q&A")
+        escaped = create_folder(self.admin, self.root.name, "Q&amp;A")
+        nested = create_folder(self.admin, escaped, "x")
+        frappe.db.set_value("Drive Node", nested, "title", "1 &lt; 2 &amp;&amp; 3 &gt; 2&nbsp;")
+        execute()
+        self.assertEqual(
+            frappe.db.get_value("Drive Node", escaped, "title"),
+            "Q&A (2)",
+        )
+        self.assertEqual(frappe.db.get_value("Drive Node", nested, "title"), "1 < 2 && 3 > 2\u00a0")
+
     def test_file_rename_keeps_the_extension(self):
         # (current title, new title, refusal message or None when allowed)
         cases = (

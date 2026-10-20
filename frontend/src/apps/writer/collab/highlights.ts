@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 
 import type { DocumentThread } from '@/apps/drive'
@@ -75,14 +75,18 @@ export const ThreadHighlights = Extension.create<HighlightOptions>({
         },
         props: {
           decorations: (state) => highlightsKey.getState(state)?.decorations,
-          // The cursor still goes where the text was clicked
-          handleClick: (_view, _position, event) => {
+          // The caret is placed before the thread opens, as opening it redraws the text
+          handleClick: (view, position, event) => {
             const name = threadAt(event.target)
-            if (name) {
-              opened(name)
+            if (!name || event.shiftKey) {
+              return false
             }
 
-            return false
+            view.dispatch(
+              view.state.tr.setSelection(TextSelection.create(view.state.doc, position)),
+            )
+            opened(name)
+            return true
           },
         },
         view: (view) => {

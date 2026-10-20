@@ -103,6 +103,8 @@ suite.drive.patches.webdav_property_index
 # report reads the corrected value. The date suffix reruns it on sites where
 # the first version only translated the value 100.
 suite.drive.patches.migrate_preview_size_unit #2026-10-06
+# Titles were HTML-sanitized on insert, so `X & y` was stored as `X &amp; y`; restores them.
+suite.drive.patches.unescape_node_titles
 # --- drive (the Drive migration, spec §14) ---
 # Last in the file, in this order. Build reads the legacy Drive tables after
 # every patch above has finished reshaping them and writes only new rows.

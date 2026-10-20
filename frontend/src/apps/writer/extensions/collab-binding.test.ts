@@ -20,8 +20,9 @@ const SHA256: Record<string, string> = {
   // then formatting the editor can't show where it sits is kept on a keptFormatting mark;
   // then the kept mark's shownFirst marks win, and builtMarks gives the marks a build would;
   // then renders set an element the editor can't build aside again without rebuilding it until it changes;
-  // then the caret sent to others is tied to the letter on its right
-  'dist/y-tiptap.js': 'c9229cf83508c24578384dbe86bbd2789a84ba597f0a1dee9dfad82b932d86b5',
+  // then the caret sent to others is tied to the letter on its right;
+  // then the filler block of an empty body is never written to Yjs as an edit
+  'dist/y-tiptap.js': '93b219cb8aaa3939e17f3a2afd65dfeb732ff3bb7f3fa3f870376985c26a6e53',
   // published 788e88fe...; then positions skip hidden leftovers; then the side a position is tied to
   'dist/src/lib.d.ts': '44ad9f354ad7a2f929feb90acc6cb321c6447b7236af1f518c87ce2ea5a6fcef',
   'dist/src/plugins/cursor-plugin.d.ts':
