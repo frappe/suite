@@ -10,8 +10,7 @@ because the E2E workflows require MariaDB and Redis service containers.
   three 6-CPU jobs; Drive permits two 2-CPU jobs.
 - Self-hosted E2E jobs run only for pushes, schedules, manual dispatches, and
   `pull_request_target` events whose head repository is `frappe/suite`.
-  Fork pull requests run on GitHub-hosted runners instead; fork code
-  never reaches these scale sets.
+  Fork pull requests are skipped; fork code never reaches these scale sets.
 - The Yarn Classic cache is baked into the runner image. Each runner receives a
   private writable copy-on-write view, so cache misses and dependency changes
   remain pod-local and are discarded with the runner.

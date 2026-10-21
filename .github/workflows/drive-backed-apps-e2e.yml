@@ -110,7 +110,8 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'suite-e2e-drive' }}
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: suite-e2e-drive
     timeout-minutes: 45
     permissions:
       contents: read
@@ -138,7 +139,6 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Clone Frappe
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -159,13 +159,6 @@ jobs:
 
       - name: Setup Yarn
         run: corepack enable && corepack prepare yarn@1.22.22 --activate
-
-      - name: Install GitHub-hosted dependencies
-        if: runner.environment == 'github-hosted'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mariadb-client
-          python -m pip install uv
 
       - name: Add to hosts
         run: echo "127.0.0.1 drive-writer.test" | sudo tee -a /etc/hosts
@@ -217,11 +210,6 @@ jobs:
         run: |
           yarn install --frozen-lockfile --non-interactive
           google-chrome --version
-
-      - name: Install Playwright system dependencies
-        if: runner.environment == 'github-hosted'
-        working-directory: ${{ github.workspace }}/e2e
-        run: yarn playwright install-deps chromium
 
       - name: Start Frappe server
         id: start-frappe
