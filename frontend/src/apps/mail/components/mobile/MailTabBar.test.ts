@@ -25,6 +25,7 @@ vi.mock('frappe-ui', async (original) => {
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'a',
+    userResource: { data: { accounts: [{ id: 'a' }, { id: 'b' }] } },
     mailboxes: {
       data: [
         { id: 'm-inbox', slug: 'inbox', _name: 'Inbox', role: 'inbox' },
@@ -153,5 +154,15 @@ describe("Mail's bottom bar", () => {
       expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/mailbox/inbox'),
     )
     expect(calls.folders).toEqual([])
+  })
+  it("goes back to every account's Inbox from Profile, when All accounts was chosen", async () => {
+    localStorage.setItem('mail-unified', '1')
+    try {
+      const { item, router } = await mountAt('/mail/account/a/profile')
+      item('Inbox').click()
+      await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/mail/all/inbox'))
+    } finally {
+      localStorage.removeItem('mail-unified')
+    }
   })
 })

@@ -32,12 +32,15 @@ import { userStore } from '@/apps/mail/stores/user'
 import { getIcon } from '@/apps/mail/utils'
 import { useMobileSearch } from '@/apps/mail/utils/composables'
 import {
+  INBOX_FOLDER,
   mailboxIdForParam,
+  prefersUnified,
   STARRED_FOLDER,
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
   unifiedFolderIcon,
   unifiedFolderLabel,
+  unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
 import { openAreaSidebar } from '@/platform/area-sidebar'
 import { useSession } from '@/platform/session'
@@ -81,9 +84,15 @@ const folderIcon = computed(() => {
   return current.value ? getIcon(current.value) : 'inbox'
 })
 
-// Tapped from a folder, it opens the folders; from anywhere else (Search), it goes back to the Inbox.
+// Tapped from a folder, it opens the folders; from anywhere else (Search, Profile), it goes back to
+// the Inbox: every account's, for a reader who chose All accounts and still has more than one.
 const openFolders = () => {
   if (current.value || unified.value || starred.value) return openAreaSidebar('mail')
-  void router.push({ name: 'mail-mailbox', params: { ...route.params, mailbox: 'inbox' } })
+  const accounts = store.userResource?.data?.accounts?.length ?? 0
+  void router.push(
+    prefersUnified() && accounts > 1
+      ? unifiedFolderRoute(INBOX_FOLDER)
+      : { name: 'mail-mailbox', params: { accountId: store.accountId, mailbox: INBOX_FOLDER } },
+  )
 }
 </script>

@@ -491,20 +491,21 @@
                         {{ mail.preview }}
                       </div>
 
+                      <!-- The decision the conversation waits on, under the sender it asks
+										     about and above what they wrote, in their newest message. Outside the
+										     folded body, so a message folded as read still shows it. It answers
+										     for every unknown sender in the thread. -->
+                      <ScreenerThreadBanner
+                        v-if="mail.name === screenerMail"
+                        :class="isCollapsed(mail) ? 'mt-3' : 'mb-4'"
+                        :senders="screenedSenders"
+                        :domains="trustableDomains(screenedSenders.map((sender) => sender.email))"
+                        @allow="allowSenders()"
+                        @allow-one="(email: string) => allowSenders([email])"
+                        @allow-domain="(domain: string) => allowDomain(domain)"
+                        @deny="denySenders()"
+                      />
                       <div v-show="!isCollapsed(mail)">
-                        <!-- The decision the conversation waits on, under the sender it asks
-										     about and above what they wrote: in their newest message, which is
-										     the one open. It answers for every unknown sender in the thread. -->
-                        <ScreenerThreadBanner
-                          v-if="mail.name === screenerMail"
-                          class="mb-4"
-                          :senders="screenedSenders"
-                          :domains="trustableDomains(screenedSenders.map((sender) => sender.email))"
-                          @allow="allowSenders()"
-                          @allow-one="(email: string) => allowSenders([email])"
-                          @allow-domain="(domain: string) => allowDomain(domain)"
-                          @deny="denySenders()"
-                        />
                         <!-- Styled as the new-sender bar is: a blocked sender's mail is the
 										     other side of the same decision. -->
                         <div
@@ -1306,11 +1307,16 @@ const screenedSenders = computed(() => {
         senders.set(email.toLowerCase(), { email, name: mail.from_name })
   return [...senders.values()]
 })
-// The message the screener's question sits in: the newest one from a sender the thread waits on.
+// The message the screener's question sits in: the newest one from a sender the thread waits on
+// that is drawn, or, when a long thread has folded all theirs away, its newest message, so the
+// question is never out of sight.
 const screenerMail = computed(() => {
   if (!screenedSenders.value.length) return undefined
-  return thread.value.findLast((mail) => screener.waitingSenders(mail, scopeAccountId.value).length)
-    ?.name
+  const drawn = (mail: Mail) => !collapsedMailNames.value.has(mail.name)
+  const theirs = thread.value.findLast(
+    (mail) => drawn(mail) && screener.waitingSenders(mail, scopeAccountId.value).length,
+  )
+  return (theirs ?? thread.value.findLast(drawn))?.name
 })
 
 // Remote content is withheld from senders not yet trusted, and offered back in each message that
