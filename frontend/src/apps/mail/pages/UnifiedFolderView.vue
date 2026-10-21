@@ -1,7 +1,14 @@
 <template>
-  <!-- Mobile title header — no thread count since the merged view has no total.
-	     The toolbar below carries the bottom border, matching the mailbox structure. -->
-  <MobileTitleHeader v-if="isMobile" :title="folderLabel" />
+  <!-- Mobile title header. The toolbar below carries the bottom border, matching the
+	     mailbox structure. -->
+  <!-- In a category other than Primary the title names it and leads back to Primary. -->
+  <MobileTitleHeader
+    v-if="isMobile && inboxTab && inboxTab !== 'primary'"
+    with-back
+    :title="tabName(inboxTab)"
+    @back="router.push(routeForTab('primary'))"
+  />
+  <MobileTitleHeader v-else-if="isMobile" with-menu :title="folderLabel" />
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's

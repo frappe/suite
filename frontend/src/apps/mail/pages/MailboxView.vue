@@ -83,11 +83,14 @@
             class="relative shrink-0"
             :class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
           >
+            <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
-              v-if="mailbox !== 'search'"
-              :title="mailboxName"
-              :count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+              v-if="inboxTab && inboxTab !== 'primary'"
+              with-back
+              :title="tabName(inboxTab)"
+              @back="router.push(routeForTab('primary'))"
             />
+            <MobileTitleHeader v-else-if="mailbox !== 'search'" with-menu :title="mailboxName" />
 
             <!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
 						     the whole header read as chrome on top of the page). Borderless: it
@@ -398,7 +401,7 @@ import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
-import { useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
+import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
 import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
@@ -1346,10 +1349,6 @@ const title = computed(() => {
     return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
   }
   return filterTitle.value
-})
-const threadCount = computed(() => {
-  const count = mailboxObj.value?.total_threads
-  return count ? count.toLocaleString() : ''
 })
 </script>
 
