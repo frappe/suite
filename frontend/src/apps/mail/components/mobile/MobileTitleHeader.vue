@@ -26,14 +26,14 @@
       </button>
       <div class="flex-1" />
     </template>
-    <template v-else>
+    <!-- The back arrow stands where the ☰ does, at its size, and the title starts where the
+         folder's name does: a category and its Inbox read as the same row. -->
+    <div v-else class="flex min-w-0 flex-1 items-center" :class="{ 'pl-4': !withBack }">
       <button v-if="withBack" :aria-label="__('Back')" :class="ICON_SLOT" @click="emit('back')">
-        <ChevronLeft :size="18" />
+        <ChevronLeft class="size-5" />
       </button>
-      <div class="flex min-w-0 flex-1" :class="{ 'pl-4': !withBack }">
-        <span :class="TITLE">{{ title }}</span>
-      </div>
-    </template>
+      <span :class="TITLE">{{ title }}</span>
+    </div>
     <slot name="actions" />
   </div>
 </template>
