@@ -103,27 +103,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  author_check:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      trusted: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository || steps.vouch.outputs.vouched == 'true' }}
-    steps:
-      - if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
-        id: vouch
-        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
-        with:
-          user: ${{ github.event.pull_request.user.login }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   e2e:
-    needs: author_check
-    if: needs.author_check.outputs.trusted == 'true'
     runs-on: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'suite-e2e-meet' }}
     # Historical durations keep each self-contained group near the same runtime.
     strategy:
