@@ -2,8 +2,8 @@
   <!-- Mail's own sidebar, in the shell's sidebar slot on a desktop and in the
 	     bottom nav's sheet on a phone. The page header's folder button and a tap
 	     on the active Mail tab open the sheet. -->
-  <!-- On a phone it is the folders sheet: Folders, every folder in sight, each with its count and
-       nothing else, as develop's sheet was. Editing a folder is Settings' there. -->
+  <!-- On a phone it is the folders sheet: Folders, each folder with its count and nothing else, as
+       develop's sheet was. Editing a folder is Settings' there. -->
   <AreaSidebar area="mail" :title="isMobile ? __('Folders') : __('Mail')">
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
          one account, or on the dashboard, there is nothing to pick: it is just named. A phone
@@ -178,17 +178,14 @@ const moreToggle = (holds: string[]) => ({
   holds,
 })
 const isMoreToggle = (item: object) => 'moreToggle' in item
-// A phone's sheet has the room to show them all, and no hover to find a fold by.
 const withMore = <T, M extends { activeFor?: string[] }>(items: T[], more: M[]) =>
-  isMobile.value
-    ? [...items, ...more]
-    : more.length
-      ? [
-          ...items,
-          moreToggle(more.flatMap((item) => item.activeFor ?? [])),
-          ...(moreOpen.value ? more : []),
-        ]
-      : items
+  more.length
+    ? [
+        ...items,
+        moreToggle(more.flatMap((item) => item.activeFor ?? [])),
+        ...(moreOpen.value ? more : []),
+      ]
+    : items
 const store = userStore()
 const { mailboxes, unifiedFolders } = store
 
