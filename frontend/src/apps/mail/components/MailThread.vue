@@ -1309,10 +1309,15 @@ const screenedSenders = computed(() => {
 })
 // The message the screener's question sits in: the newest one from a sender the thread waits on
 // that is drawn, or, when a long thread has folded all theirs away, its newest message, so the
-// question is never out of sight.
+// question is never out of sight. Never a draft, which draws a composer, nor a card in a window.
 const screenerMail = computed(() => {
   if (!screenedSenders.value.length) return undefined
-  const drawn = (mail: Mail) => !collapsedMailNames.value.has(mail.name)
+  // A card that draws a message, not a draft (a composer on a desktop) or one popped out to a window.
+  const drawn = (mail: Mail) =>
+    !collapsedMailNames.value.has(mail.name) &&
+    !isPoppedOut(mail) &&
+    !mail.draft &&
+    !mail.name.startsWith('draft')
   const theirs = thread.value.findLast(
     (mail) => drawn(mail) && screener.waitingSenders(mail, scopeAccountId.value).length,
   )
