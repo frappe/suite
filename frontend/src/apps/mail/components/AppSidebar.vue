@@ -4,8 +4,9 @@
 	     on the active Mail tab open the sheet. -->
   <AreaSidebar area="mail" :title="__('Mail')">
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
-         one account, or on the dashboard, there is nothing to pick: it is just named. -->
-    <SidebarSection class="!mt-0">
+         one account, or on the dashboard, there is nothing to pick: it is just named. A phone
+         switches accounts on the Profile page instead, so its folders sheet is folders only. -->
+    <SidebarSection v-if="!isMobile" class="!mt-0">
       <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
         <SidebarItem :label="subtitle || __('Account')" icon="lucide-circle-user-round">
           <template #suffix>

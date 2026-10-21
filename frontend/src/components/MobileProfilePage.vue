@@ -31,10 +31,12 @@
         <ChevronRight class="text-ink-gray-4 size-4 shrink-0" />
       </button>
 
-      <!-- Accounts: tap to switch, as the sidebar's account submenu does on desktop. -->
+      <!-- Accounts: tap to switch, as the sidebar's account submenu does on desktop, in its
+			     order: the reader's own account first, the rest as they come, then every account at
+			     once where the app offers it. -->
       <MobileSettingsCard v-if="accounts.length > 1 || alwaysShowAccounts" :label="__('Accounts')">
         <MobileSettingsRow
-          v-for="account in accounts"
+          v-for="account in orderedAccounts"
           :key="account.id"
           :label="account._name"
           :chevron="false"
@@ -44,7 +46,27 @@
             <Avatar :label="account._name" size="md" />
           </template>
           <template #trailing>
-            <Check v-if="account.id === accountId" class="text-ink-gray-6 size-4 shrink-0" />
+            <Check
+              v-if="!allAccounts?.active && account.id === accountId"
+              class="text-ink-gray-6 size-4 shrink-0"
+            />
+          </template>
+        </MobileSettingsRow>
+        <MobileSettingsRow
+          v-if="allAccounts && accounts.length > 1"
+          :label="__('All accounts')"
+          :chevron="false"
+          @click="emit('switchToAll')"
+        >
+          <template #leading>
+            <span
+              class="bg-surface-gray-2 text-ink-gray-6 flex size-6 shrink-0 items-center justify-center rounded-full"
+            >
+              <span class="lucide-users size-3.5" aria-hidden="true" />
+            </span>
+          </template>
+          <template #trailing>
+            <Check v-if="allAccounts.active" class="text-ink-gray-6 size-4 shrink-0" />
           </template>
         </MobileSettingsRow>
       </MobileSettingsCard>
@@ -98,15 +120,21 @@ import type { SettingsTabId } from '@/shell/settings/settings'
 import SettingsList from '@/shell/settings/SettingsList.vue'
 import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDialog'
 
-defineProps<{
+const props = defineProps<{
   accounts: any[]
   accountId?: string
   /** Mail lists the one account too; the calendar only lists a choice. */
   alwaysShowAccounts?: boolean
+  /** Offers every account at once above the accounts, and whether that is what is showing. */
+  allAccounts?: { active: boolean }
   logout: { submit: () => void }
 }>()
 
-const emit = defineEmits<{ switchAccount: [accountId: string] }>()
+const emit = defineEmits<{ switchAccount: [accountId: string]; switchToAll: [] }>()
+
+const orderedAccounts = computed(() =>
+  [...props.accounts].sort((a, b) => Number(!!b.is_personal) - Number(!!a.is_personal)),
+)
 
 const user = inject('$user') as { data?: Record<string, any> } | undefined
 

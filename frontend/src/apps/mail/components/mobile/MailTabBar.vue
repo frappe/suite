@@ -1,11 +1,11 @@
 <template>
   <!-- Mail's own bottom bar on a phone, where Mail is an app of its own (ticket 047): the
        folder you are in, Search, and your profile. No other apps here: each is its own.
-       Search and the folders are here, under the thumb, so the title row has neither. -->
+       Profile is Mail's own page: the accounts to switch between, the settings, and Log Out. -->
   <MobileNav>
-    <MobileNavItem :label="folderLabel" :active="!searching" @click="openFolders">
+    <MobileNavItem :label="folderLabel" :active="inFolder" @click="openFolders">
       <span
-        :class="[`lucide-${folderIcon}`, searching ? 'text-ink-gray-5' : 'text-ink-gray-8']"
+        :class="[`lucide-${folderIcon}`, inFolder ? 'text-ink-gray-8' : 'text-ink-gray-5']"
         class="size-6"
         aria-hidden="true"
       />
@@ -17,7 +17,7 @@
         aria-hidden="true"
       />
     </MobileNavItem>
-    <MobileNavItem :label="__('Profile')" @click="$emit('open-account')">
+    <MobileNavItem :label="__('Profile')" :active="onProfile" @click="openProfile">
       <Avatar :image="session.user.value?.avatar ?? undefined" :label="accountLabel" size="md" />
     </MobileNavItem>
   </MobileNav>
@@ -42,8 +42,6 @@ import {
 import { openAreaSidebar } from '@/platform/area-sidebar'
 import { useSession } from '@/platform/session'
 
-defineEmits<{ 'open-account': [] }>()
-
 const route = useRoute()
 const router = useRouter()
 const session = useSession()
@@ -54,6 +52,10 @@ const accountLabel = computed(
   () => session.user.value?.fullName || session.user.value?.id || __('Profile'),
 )
 const searching = computed(() => route.params.mailbox === 'search')
+const onProfile = computed(() => route.name === 'mail-profile')
+const inFolder = computed(() => !searching.value && !onProfile.value)
+const openProfile = () =>
+  void router.push({ name: 'mail-profile', params: { accountId: store.accountId } })
 // The folder the list shows: the tab takes its icon and name, as develop's did.
 const current = computed(() => {
   const param = route.params.mailbox

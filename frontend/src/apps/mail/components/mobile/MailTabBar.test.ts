@@ -72,14 +72,14 @@ async function mountAt(path: string) {
     routes: [
       { path: '/mail/account/:accountId/mailbox/:mailbox', name: 'mail-mailbox', component: page },
       { path: '/mail/all/:folder', name: 'mail-unified', component: page },
+      { path: '/mail/account/:accountId/profile', name: 'mail-profile', component: page },
     ],
   })
   await router.push(path)
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const opened: string[] = []
   const app = createApp({
-    setup: () => () => h(MailTabBar, { onOpenAccount: () => opened.push('account') }),
+    setup: () => () => h(MailTabBar),
   })
   app.config.globalProperties.__ = translate
   app.use(router)
@@ -96,7 +96,7 @@ async function mountAt(path: string) {
     )
   const item = (label: string) =>
     root.querySelector<HTMLElement>(`[data-slot="mobile-nav-item"][aria-label="${label}"]`)!
-  return { router, items, item, opened }
+  return { router, items, item }
 }
 
 describe("Mail's bottom bar", () => {
@@ -136,11 +136,22 @@ describe("Mail's bottom bar", () => {
     expect(calls.folders).toEqual([])
   })
 
-  it('opens Search, and the account sheet from Profile', async () => {
-    const { item, opened } = await mountAt('/mail/account/a/mailbox/inbox')
+  it('opens Search', async () => {
+    const { item } = await mountAt('/mail/account/a/mailbox/inbox')
     item('Search').click()
     expect(calls.search).toBe(1)
+  })
+
+  it("opens Mail's profile page from Profile, and goes back to the Inbox from there", async () => {
+    const { item, router } = await mountAt('/mail/account/a/mailbox/inbox')
     item('Profile').click()
-    expect(opened).toEqual(['account'])
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/profile'),
+    )
+    item('Inbox').click()
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/mailbox/inbox'),
+    )
+    expect(calls.folders).toEqual([])
   })
 })

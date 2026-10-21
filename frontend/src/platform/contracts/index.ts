@@ -51,8 +51,8 @@ export interface AreaDefinition {
   badgeNoun?: () => string
   /**
    * The area's own bottom bar on a phone, in place of the shell's, for an area
-   * that is an app of its own there (ticket 047). It emits `open-account` to
-   * open the shell's account sheet.
+   * that is an app of its own there (ticket 047). It leads to the area's own
+   * pages, its profile included, not to the shell's account sheet.
    */
   phoneNav?: Component
 }
