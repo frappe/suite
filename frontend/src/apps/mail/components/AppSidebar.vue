@@ -2,9 +2,9 @@
   <!-- Mail's own sidebar, in the shell's sidebar slot on a desktop and in the
 	     bottom nav's sheet on a phone. The page header's folder button and a tap
 	     on the active Mail tab open the sheet. -->
-  <!-- On a phone it is the folders sheet: Folders, each folder with its count and nothing else, as
-       develop's sheet was. Editing a folder is Settings' there. -->
-  <AreaSidebar area="mail" :title="isMobile ? __('Folders') : __('Mail')">
+  <!-- On a phone it is the folders sheet, as develop's was: each folder with its count and nothing
+       else (editing a folder is Settings' there), no title, and one height, so More opens in it. -->
+  <AreaSidebar area="mail" :title="__('Mail')" :sheet-title="false" steady-sheet>
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
          one account, or on the dashboard, there is nothing to pick: it is just named. A phone
          switches accounts on the Profile page instead, so its folders sheet is folders only. -->

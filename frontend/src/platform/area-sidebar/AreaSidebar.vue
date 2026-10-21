@@ -45,8 +45,15 @@
     </Sidebar>
   </Teleport>
 
-  <BottomSheet v-else v-model:open="sheetOpen" :title="title">
-    <div :data-area-sidebar="area" class="px-2 pb-8">
+  <!-- The sheet is white, so the active row is the gray of a pressed one, not the sidebar's
+       raised white card, which read as nothing selected. A steady sheet keeps one height,
+       so a section opening or folding scrolls inside it instead of moving its top edge. -->
+  <BottomSheet v-else v-model:open="sheetOpen" :title="sheetTitle ? title : undefined">
+    <div
+      :data-area-sidebar="area"
+      class="px-2 pb-8 [&_[data-slot=sidebar-item][data-state=active]]:!bg-surface-gray-2 [&_[data-slot=sidebar-item][data-state=active]]:!shadow-none"
+      :class="{ 'h-[70dvh]': steadySheet, 'pt-3': !sheetTitle }"
+    >
       <div v-if="loading" v-bind="skeletonAttrs">
         <Skeleton v-for="row in SKELETON_ROWS" :key="row" class="h-7 rounded-4" />
       </div>
@@ -89,8 +96,12 @@ const props = withDefaults(
     title: string
     /** Shows the fixed-size skeleton in place of the body. */
     loading?: boolean
+    /** Whether the phone's sheet shows the title above the body. */
+    sheetTitle?: boolean
+    /** The phone's sheet keeps one height, whatever its sections show. */
+    steadySheet?: boolean
   }>(),
-  { loading: false },
+  { loading: false, sheetTitle: true, steadySheet: false },
 )
 
 defineSlots<{ default?: () => unknown; actions?: () => unknown }>()
