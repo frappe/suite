@@ -22,6 +22,8 @@
 				     rule, which overrides the size prop. -->
         <span :class="ICON_SLOT"><Menu class="size-5" /></span>
         <span :class="TITLE">{{ title }}</span>
+        <!-- Whose the folder is, when it is not the one account's: "All accounts". -->
+        <span v-if="scope" class="text-ink-gray-5 ml-1.5 shrink-0 text-xl">· {{ scope }}</span>
         <ChevronDown class="text-ink-gray-5 ml-1 size-4 shrink-0" />
       </button>
       <div class="flex-1" />
@@ -45,6 +47,8 @@ import { openAreaSidebar } from '@/platform/area-sidebar'
 
 defineProps<{
   title: string
+  /** Whose the folder is, beside its name ("All accounts"). */
+  scope?: string
   withMenu?: boolean
   withBack?: boolean
 }>()

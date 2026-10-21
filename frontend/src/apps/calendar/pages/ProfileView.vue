@@ -4,6 +4,7 @@
   <MobileProfilePage
     :accounts
     :account-id="store.accountId"
+    app="calendar"
     :logout
     @switch-account="switchAccount"
   />

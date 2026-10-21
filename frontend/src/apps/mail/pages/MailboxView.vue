@@ -359,10 +359,14 @@
       </ThreadPane>
     </template>
 
-    <!-- No mails (the search view keeps its header and shows an inline message instead) -->
-    <div v-else class="text-ink-gray-5 flex w-full flex-col items-center justify-center">
-      <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
-      <p>{{ __('You have no mails in this folder.') }}</p>
+    <!-- No mails (the search view keeps its header and shows an inline message instead). A phone
+         keeps the title row above it: where you are, and the way to the folders. -->
+    <div v-else class="flex w-full flex-col">
+      <MobileTitleHeader v-if="isMobile" class="border-b" with-menu :title="mailboxName" />
+      <div class="text-ink-gray-5 flex flex-1 flex-col items-center justify-center">
+        <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
+        <p>{{ __('You have no mails in this folder.') }}</p>
+      </div>
     </div>
   </div>
 

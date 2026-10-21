@@ -74,7 +74,7 @@
       <!-- The Suite settings list, as the Settings drill-in shows it. A row opens
 			     its tab in Settings. -->
       <SettingsList
-        :groups="settings.groups.value"
+        :groups="ownGroups"
         :failed="settings.failed.value"
         :retry="settings.load"
         :exclude="['account.profile']"
@@ -128,6 +128,11 @@ const props = defineProps<{
   /** Offers every account at once above the accounts, and whether that is what is showing. */
   allAccounts?: { active: boolean }
   logout: { submit: () => void }
+  /**
+   * The app this page is the Profile of. Its settings are listed with the account's and the
+   * workspace's, not every app's: on a phone each app is one of its own (ticket 047).
+   */
+  app?: string
 }>()
 
 const emit = defineEmits<{ switchAccount: [accountId: string]; switchToAll: [] }>()
@@ -135,6 +140,14 @@ const emit = defineEmits<{ switchAccount: [accountId: string]; switchToAll: [] }
 const orderedAccounts = computed(() =>
   [...props.accounts].sort((a, b) => Number(!!b.is_personal) - Number(!!a.is_personal)),
 )
+
+// A group's tabs share its app's prefix (`mail.screener`, `account.profile`).
+const ownGroups = computed(() => {
+  const groups = settings.groups.value
+  if (!groups || !props.app) return groups
+  const kept = ['account', 'workspace', props.app]
+  return groups.filter((group) => kept.includes(group.tabs[0]?.id.split('.')[0] ?? ''))
+})
 
 const user = inject('$user') as { data?: Record<string, any> } | undefined
 

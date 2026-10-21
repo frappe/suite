@@ -8,7 +8,12 @@
     :title="tabName(inboxTab)"
     @back="router.push(routeForTab('primary'))"
   />
-  <MobileTitleHeader v-else-if="isMobile" with-menu :title="folderLabel" />
+  <MobileTitleHeader
+    v-else-if="isMobile"
+    with-menu
+    :title="folderLabel"
+    :scope="__('All accounts')"
+  />
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's

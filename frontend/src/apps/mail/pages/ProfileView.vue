@@ -11,6 +11,7 @@
   <MobileProfilePage
     :accounts
     :account-id="store.accountId"
+    app="mail"
     always-show-accounts
     :all-accounts="{ active: showingAll }"
     :logout
