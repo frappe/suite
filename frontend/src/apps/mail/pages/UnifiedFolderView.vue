@@ -8,7 +8,6 @@
     :title="tabName(inboxTab)"
     @back="router.push(routeForTab('primary'))"
   />
-<<<<<<< HEAD
   <!-- Every account's Inbox is named so, since nothing else on a phone's list says the accounts
        are merged; another merged folder keeps its own name. -->
   <MobileTitleHeader
@@ -16,9 +15,6 @@
     with-menu
     :title="folder === INBOX_FOLDER ? __('All Inboxes') : folderLabel"
   />
-=======
-  <MobileTitleHeader v-else-if="isMobile" with-menu :title="folderLabel" />
->>>>>>> upstream/forge/drive-layer
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's
