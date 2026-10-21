@@ -50,8 +50,11 @@
   <BottomSheet v-else v-model:open="sheetOpen" :title="sheetTitle ? title : undefined">
     <div
       :data-area-sidebar="area"
-      class="area-sidebar-sheet px-3 pb-8"
-      :class="{ 'h-[70dvh]': steadySheet, 'pt-3': !sheetTitle }"
+      class="area-sidebar-sheet px-3"
+      :class="[
+        sheetFlush ? 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]' : 'pb-8',
+        { 'h-[70dvh]': steadySheet, 'pt-3': !sheetTitle && !sheetFlush },
+      ]"
     >
       <div v-if="loading" v-bind="skeletonAttrs">
         <Skeleton v-for="row in SKELETON_ROWS" :key="row" class="h-7 rounded-4" />
@@ -99,8 +102,10 @@ const props = withDefaults(
     sheetTitle?: boolean
     /** The phone's sheet keeps one height, whatever its sections show. */
     steadySheet?: boolean
+    /** The phone's sheet leaves the body's top to the body, as a row of tiles spaces its own. */
+    sheetFlush?: boolean
   }>(),
-  { loading: false, sheetTitle: true, steadySheet: false },
+  { loading: false, sheetTitle: true, steadySheet: false, sheetFlush: false },
 )
 
 defineSlots<{ default?: () => unknown; actions?: () => unknown }>()
