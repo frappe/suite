@@ -171,9 +171,10 @@ installPwa(session, {
     .map((area) => ({ id: area.id, scope: area.to })),
 })
 // Moving into another app on an iPhone loads the page afresh, so the browser installs that app.
-// It loads once the page left has unmounted and its last saves (a draft, say) have landed.
-router.afterEach(async (to, from) => {
-  if (from === START_LOCATION || !pageLoadNeededFor(to.path)) return
+// It loads once the page left has unmounted and its last saves (a draft, say) have landed, and
+// not for a move that was cancelled (Stay, on leaving a call).
+router.afterEach(async (to, from, failure) => {
+  if (failure || from === START_LOCATION || !pageLoadNeededFor(to.path)) return
   await nextTick()
   await writesSettled()
   window.location.reload()
