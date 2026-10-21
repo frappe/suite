@@ -2,6 +2,8 @@ import frappe
 from frappe.model.document import Document
 from pypika import Order
 
+from suite.suite_core import suite_email
+
 
 def get_link(entity):
     if entity.file_type == "Document":
@@ -101,7 +103,7 @@ def notify_share(entity_name, docperm_name):
         )
     else:
         create_notification(docshare.owner, docshare.user, "Share", entity, message)
-    send_share_email(docshare.user, message, link, entity_type)
+    send_share_email(docshare.user, author_full_name, entity_type, entity.file_name, link)
 
 
 def create_notification(from_user: str, to_user: str, type: str, entity: str, message: str | None = None):
@@ -143,18 +145,23 @@ def drive_logo_inline_images():
         return []
 
 
-def send_share_email(to, message, link, type_):
+def send_share_email(to, sharer, item_type, item_name, link):
+    link = frappe.utils.get_url(link)
     try:
-        frappe.sendmail(
-            recipients=to,
-            subject=f"Frappe Drive - {type_.capitalize()} Shared",
-            template="drive_share",
-            args={
-                "message": message,
-                "type": type_,
-                "link": link,
+        suite_email.enqueue(
+            "drive-share",
+            to,
+            {"sharer": sharer, "item_type": item_type, "item_name": item_name, "link": link},
+            local={
+                "subject": f"Frappe Drive - {item_type.capitalize()} Shared",
+                "template": "drive_share",
+                "args": {
+                    "message": f'{sharer} shared a {item_type} with you: "{item_name}"',
+                    "type": item_type,
+                    "link": link,
+                },
+                "inline_images": drive_logo_inline_images(),
             },
-            inline_images=drive_logo_inline_images(),
         )
     except Exception:
         pass

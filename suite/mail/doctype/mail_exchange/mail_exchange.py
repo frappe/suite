@@ -70,6 +70,7 @@ from suite.mail.utils.validation import (
     validate_maildir_or_maildirpp,
     validate_nested_maildir_tree,
 )
+from suite.suite_core import suite_email
 from suite.utils import log_error, reconnect_on_failure
 from suite.utils.dt import parse_iso_datetime
 from suite.utils.file import compress_directory, extract_compressed_file
@@ -1309,17 +1310,21 @@ class MailExchange(OwnerFromUser, Document):
             {"action": action, "success": success, "message": subject},
             user=self.user,
         )
-        frappe.sendmail(
-            recipients=email,
-            subject=subject,
-            template="generic",
-            args={
-                "title": subject,
-                "description": _("View details for this exchange."),
-                "button": _("View {0}").format(action),
-                "link": get_url(f"/mail/mail-exchanges/{self.name}"),
+        link = get_url(f"/mail/mail-exchanges/{self.name}")
+        suite_email.enqueue(
+            "data-exchange",
+            email,
+            {"app": "Mail", "action": action, "succeeded": success, "link": link},
+            local={
+                "subject": subject,
+                "template": "generic",
+                "args": {
+                    "title": subject,
+                    "description": _("View details for this exchange."),
+                    "button": _("View {0}").format(action),
+                    "link": link,
+                },
             },
-            now=True,
         )
 
     def _log_output(self, message: str) -> None:

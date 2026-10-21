@@ -1,4 +1,4 @@
-import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { createResource, toast } from 'frappe-ui'
@@ -7,6 +7,7 @@ import { Mention } from 'frappe-ui/editor'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { processInlineImages, raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
+import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
 import { moveRecipient as moveRecipientBetweenFields } from '@/apps/mail/utils/recipientFields'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
@@ -20,8 +21,15 @@ import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 interface EditorHost {
 	$el?: HTMLElement
 	editor?: {
-		commands: { insertContent: (content: string) => void; focus: () => void }
-		state: { doc: { descendants: (fn: (node: any) => void) => void } }
+		commands: {
+			insertContent: (content: string) => void
+			focus: () => void
+			setTextSelection: (range: { from: number; to: number }) => void
+		}
+		state: {
+			doc: { descendants: (fn: (node: any) => void) => void }
+			selection: { from: number; to: number }
+		}
 	}
 }
 
@@ -168,9 +176,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 			isBodyEmpty.value,
 	)
 
+	// The editor takes the unfolded body as new content, and leaves the quote selected: the next
+	// keystroke would type it away. The caret goes back to where the writer left it.
 	const openQuotedContent = () => {
+		const editor = host()?.editor
+		const caret = editor?.state.selection
 		mail.html_body += `<br>${mail.quoted_content}`
 		mail.quoted_content = ''
+		if (editor && caret)
+			nextTick(() => editor.commands.setTextSelection({ from: caret.from, to: caret.to }))
 	}
 
 	// ── Signature ───────────────────────────────────────────────────────────────────────────────
@@ -586,10 +600,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		editor?.commands.focus()
 	}
 
-	/** The body as the editor should receive it, and the inverse on the way back out. */
-	const editorContent = computed(() => mail.html_body.replaceAll('<div><br></div>', '<div></div>'))
+	const editorBody = createEditorBody()
+	const editorContent = computed(() => editorBody.toEditor(mail.html_body))
 	const onEditorChange = (value: string) => {
-		mail.html_body = value.replaceAll('<div></div>', '<div><br></div>')
+		mail.html_body = editorBody.fromEditor(value)
 		dropUnmentionedRecipients()
 	}
 

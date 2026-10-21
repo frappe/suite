@@ -125,7 +125,7 @@
    "set_only_once": 1
   },
   {
-   "description": "Disk quota in GB applied to the account on creation, where 0 means unlimited. Left blank, the configured default disk quota is used.",
+   "description": "Disk quota in GB applied to the account on creation. Blank or 0 means unlimited.",
    "fieldname": "quota_gb",
    "fieldtype": "Float",
    "label": "Disk Quota (GB)",

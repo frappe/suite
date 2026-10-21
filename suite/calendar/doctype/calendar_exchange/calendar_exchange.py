@@ -51,6 +51,7 @@ from suite.mail.utils.user import (
     get_user_email_address,
     is_jmap_configured,
 )
+from suite.suite_core import suite_email
 from suite.utils import log_error, reconnect_on_failure
 from suite.utils.file import compress_directory, extract_compressed_file
 from suite.utils.permissions import OwnerFromUser
@@ -801,17 +802,21 @@ class CalendarExchange(OwnerFromUser, Document):
             {"action": action, "success": success, "message": subject},
             user=self.user,
         )
-        frappe.sendmail(
-            recipients=email,
-            subject=subject,
-            template="generic",
-            args={
-                "title": subject,
-                "description": _("View details for this exchange."),
-                "button": _("View {0}").format(action),
-                "link": get_url(f"/mail/calendar-exchanges/{self.name}"),
+        link = get_url(f"/mail/calendar-exchanges/{self.name}")
+        suite_email.enqueue(
+            "data-exchange",
+            email,
+            {"app": "Calendar", "action": action, "succeeded": success, "link": link},
+            local={
+                "subject": subject,
+                "template": "generic",
+                "args": {
+                    "title": subject,
+                    "description": _("View details for this exchange."),
+                    "button": _("View {0}").format(action),
+                    "link": link,
+                },
             },
-            now=True,
         )
 
     def _log_output(self, message: str) -> None:

@@ -2,9 +2,8 @@
 
 The site never talks to Stalwart's management API itself: every directory change (domains,
 accounts, groups, mailing lists) is proxied through Suite Cloud, which checks ownership and
-pushes to the cluster. Authentication is the site's API key and secret, handed out by Frappe
-Cloud when the site was registered, sent as a Frappe token with the ``Suite Site``
-authorization source.
+pushes to the cluster. Authentication is the site's tenant id and secret, issued by a Suite
+Cloud operator, sent as ``Authorization: Tenant <id>:<secret>``.
 """
 
 import json
@@ -23,8 +22,20 @@ from suite.suite_core.utils import (
     is_suite_cloud_configured,
 )
 
-API_PREFIX = "/api/method/suite_cloud.api."
+API_PREFIX = "/api/v2/method/suite_cloud.api."
 DEFAULT_TIMEOUT = (30, 60)
+
+# Suite Cloud's contract: the verb follows the method name, and everything else is a POST.
+VERB_BY_PREFIX = {
+    "list_": "GET",
+    "get_": "GET",
+    "check_": "GET",
+    "ping": "GET",
+    "update_": "PATCH",
+    "set_": "PUT",
+    "delete_": "DELETE",
+    "remove_": "DELETE",
+}
 
 
 class SuiteCloudUnavailableError(frappe.ValidationError):
@@ -32,15 +43,15 @@ class SuiteCloudUnavailableError(frappe.ValidationError):
 
 
 class SuiteCloudCredentialsError(frappe.PermissionError):
-    """Suite Cloud did not accept the site's key and secret (a 403, not a 401: the admin's own
-    session with this site is fine)."""
+    """Suite Cloud did not accept the site's tenant id and secret (a 403, not a 401: the admin's
+    own session with this site is fine)."""
 
 
 class SuiteCloudAddressError(frappe.PermissionError):
-    """The key is fine but this server's address is not on the site's allowed list at Suite Cloud."""
+    """The secret is fine but this server's address is not on the tenant's allowed list at Suite Cloud."""
 
 
-# Suite Cloud names the exception it raised (Frappe's ``exc_type``); the site re-raises the
+# Suite Cloud names the exception it raised (the error's ``type``); the site re-raises the
 # matching class so callers can tell a duplicate from a limit from a refusal. Suite Cloud's own
 # classes map onto the Frappe ones they subclass.
 _EXCEPTIONS_BY_TYPE = {
@@ -48,14 +59,17 @@ _EXCEPTIONS_BY_TYPE = {
     "DoesNotExistError": frappe.DoesNotExistError,
     "TooManyRequestsError": frappe.TooManyRequestsError,
     "ValidationError": frappe.ValidationError,
-    "StalwartRejected": frappe.ValidationError,
-    "SiteAuthError": SuiteCloudCredentialsError,
+    "InvalidInputError": frappe.ValidationError,
+    "ClusterRejectedError": frappe.ValidationError,
+    "TenantAuthError": SuiteCloudCredentialsError,
     "AuthenticationError": SuiteCloudCredentialsError,
-    "SiteSuspendedError": frappe.PermissionError,
-    "SiteAddressError": SuiteCloudAddressError,
+    "TenantSuspendedError": frappe.PermissionError,
+    "TenantAddressError": SuiteCloudAddressError,
     "PermissionError": frappe.PermissionError,
     "ClusterMisconfiguredError": SuiteCloudUnavailableError,
-    "StalwartUnavailableError": SuiteCloudUnavailableError,
+    "ClusterFailedError": SuiteCloudUnavailableError,
+    "ClusterUnavailableError": SuiteCloudUnavailableError,
+    "StalwartUnavailableError": SuiteCloudUnavailableError,  # Suite Cloud before October 2026
 }
 
 # Without a type, the status code decides.
@@ -70,7 +84,7 @@ _EXCEPTIONS_BY_STATUS = {
 
 class SuiteCloudClient:
     def __init__(
-        self, base_url: str, api_key: str, api_secret: str, verify_ssl: bool = True, timeout=DEFAULT_TIMEOUT
+        self, base_url: str, tenant: str, secret: str, verify_ssl: bool = True, timeout=DEFAULT_TIMEOUT
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -78,8 +92,7 @@ class SuiteCloudClient:
         self.session.verify = verify_ssl
         self.session.headers.update(
             {
-                "Authorization": f"token {api_key}:{api_secret}",
-                "Frappe-Authorization-Source": "Suite Site",
+                "Authorization": f"Tenant {tenant}:{secret}",
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             }
@@ -88,7 +101,7 @@ class SuiteCloudClient:
     def call(self, method: str, **params: Any) -> Any:
         """Calls ``suite_cloud.api.<method>`` and returns its result.
 
-        ``method`` names the API and the call: ``site.ping`` for what any hosted product has, and
+        ``method`` names the API and the call: ``tenant.ping`` for what any hosted product has, and
         ``mail.domains.list_domains`` and friends for the mail directory.
 
         Refusals come back as the Frappe exception Suite Cloud raised: not found (another site's
@@ -98,19 +111,17 @@ class SuiteCloudClient:
         """
 
         url = f"{self.base_url}{API_PREFIX}{method}"
-        body = {k: v for k, v in params.items() if v is not None}
+        verb, payload = encoded(verb_for(method), {k: v for k, v in params.items() if v is not None})
         try:
             # No redirects: the token must not follow a Location header to another host.
-            response = self.session.post(
-                url, data=json.dumps(body, default=str), timeout=self.timeout, allow_redirects=False
-            )
+            response = self.session.request(verb, url, timeout=self.timeout, allow_redirects=False, **payload)
         except requests.RequestException as e:
             log_mail_error(f"Suite Cloud unreachable ({method})", str(e))
             frappe.throw(_("Suite Cloud is unreachable; try again shortly."), SuiteCloudUnavailableError)
 
         if response.ok:
-            payload = response.json() if response.content else {}
-            return payload.get("message") if isinstance(payload, dict) else payload
+            payload = response.json() if response.content else {}  # a delete answers 204, no body
+            return payload.get("data") if isinstance(payload, dict) else payload
 
         self._raise_for(method, response)
 
@@ -148,38 +159,46 @@ class SuiteCloudClient:
         )
 
 
-def _error_payload(response: requests.Response) -> tuple[str | None, str | None]:
-    """The exception name and the message of a Frappe error response.
+def verb_for(method: str) -> str:
+    name = method.rsplit(".", 1)[-1]
+    return next((verb for prefix, verb in VERB_BY_PREFIX.items() if name.startswith(prefix)), "POST")
 
-    Thrown messages travel in ``_server_messages``; other errors carry only ``exception``.
+
+def encoded(verb: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The verb to send and the request's payload.
+
+    A read carries its parameters in the query string. One with a list or object among them goes
+    as a QUERY with a JSON body instead: 500 addresses for ``get_quotas`` do not fit the request
+    line gunicorn or nginx accept. A write sends a JSON body.
     """
+
+    if verb == "GET" and not any(isinstance(v, list | dict) for v in params.values()):
+        query = {k: v if isinstance(v, str) else json.dumps(v, default=str) for k, v in params.items()}
+        return "GET", {"params": query}
+    return ("QUERY" if verb == "GET" else verb), {"data": json.dumps(params, default=str)}
+
+
+def _error_payload(response: requests.Response) -> tuple[str | None, str | None]:
+    """The type and message of the first error in Frappe's v2 error response."""
 
     try:
         payload = response.json()
     except ValueError:
         return None, None
-    if not isinstance(payload, dict):
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    if not errors or not isinstance(errors[0], dict):
         return None, None
-    exc_type = payload.get("exc_type")
-    exc_type = exc_type if isinstance(exc_type, str) else None
 
-    messages = payload.get("_server_messages")
-    if messages:
-        try:
-            first = json.loads(messages)[0]
-            first = json.loads(first) if isinstance(first, str) else first
-            return exc_type, frappe.utils.strip_html(str(first.get("message") or ""))
-        except (ValueError, IndexError, AttributeError, TypeError):
-            pass
-    exception = payload.get("exception")
-    if exception:
-        return exc_type, str(exception).split(":", 1)[-1].strip()
-    return exc_type, None
+    exc_type, message = errors[0].get("type"), errors[0].get("message")
+    return (
+        exc_type if isinstance(exc_type, str) else None,
+        frappe.utils.strip_html(str(message)).strip() if message else None,
+    )
 
 
 @request_cache
 def get_client() -> SuiteCloudClient:
     is_suite_cloud_configured(raise_exception=True)
-    url, key, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)
+    url, tenant, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)
     # The same Verify SSL as the JMAP URL: Suite Cloud and the cluster share a deployment.
-    return SuiteCloudClient(url, key, secret, verify_ssl=bool(cint(get_config("verify_ssl"))))
+    return SuiteCloudClient(url, tenant, secret, verify_ssl=bool(cint(get_config("verify_ssl"))))

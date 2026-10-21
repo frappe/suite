@@ -22,6 +22,9 @@ class CustomShareNotification(unittest.TestCase):
         patcher = mock.patch("suite.sheets.api.frappe")
         self.frappe = patcher.start()
         self.addCleanup(patcher.stop)
+        email_patcher = mock.patch("suite.sheets.api.suite_email")
+        self.suite_email = email_patcher.start()
+        self.addCleanup(email_patcher.stop)
         self.frappe.session.user = "alice@example.com"
         self.frappe.has_permission.return_value = True
         # Recipient lookup (`enabled` check) — return 1 so share proceeds.
@@ -84,22 +87,22 @@ class CustomShareNotification(unittest.TestCase):
         from suite.sheets import api
 
         api.share_sheet("SH-1", "bob@example.com", write=0)
-        kwargs = self.frappe.sendmail.call_args.kwargs
-        message = kwargs.get("message", "")
+        email_type, recipient, params = self.suite_email.enqueue.call_args.args
+        message = self.suite_email.enqueue.call_args.kwargs["local"]["message"]
         # The link must go to the SPA route, not /app/sheet/<hash>.
-        self.assertIn("/sheets?id=SH-1", message)
-        self.assertNotIn("/app/sheet/", message)
-        # Recipient and queue posture
-        self.assertEqual(kwargs.get("recipients"), ["bob@example.com"])
-        self.assertEqual(kwargs.get("now"), False)
+        for link in (params["link"], message):
+            self.assertIn("/sheets?id=SH-1", link)
+            self.assertNotIn("/app/sheet/", link)
+        # Recipient, and queued rather than sent within the request
+        self.assertEqual((email_type, recipient), ("sheet-share", "bob@example.com"))
 
     def test_notification_failure_does_not_rollback_the_share(self):
-        # If frappe.sendmail or the Notification Log insert throws, the
+        # If the email or the Notification Log insert throws, the
         # share must still succeed — the DocShare row has already
         # committed and the recipient already has access.
         from suite.sheets import api
 
-        self.frappe.sendmail.side_effect = RuntimeError("smtp dead")
+        self.suite_email.enqueue.side_effect = RuntimeError("smtp dead")
         # Should NOT raise. share.add must have already been called.
         api.share_sheet("SH-1", "bob@example.com", write=0)
         self.frappe.share.add.assert_called_once()
@@ -115,4 +118,4 @@ class CustomShareNotification(unittest.TestCase):
         from suite.sheets import api
 
         api.share_sheet("SH-1", everyone=1, write=1)
-        self.frappe.sendmail.assert_not_called()
+        self.suite_email.enqueue.assert_not_called()

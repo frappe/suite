@@ -54,7 +54,7 @@
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
 		<TextEditor
 			ref="textEditor"
-			editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
+			editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
 			:extensions="[imageExtension, CustomParagraphExtension, QuotedContentExtension, ...mentionExtensions]"
 			:content="editorContent"
 			:upload-function="uploadInlineImage"
@@ -381,6 +381,15 @@ onUnmounted(() => {
 	document.documentElement.style.overflow = ''
 })
 
+// Where a tap at (x, y) puts the caret: caretPositionFromPoint where there is one, Safari's older
+// caretRangeFromPoint otherwise.
+const caretFromPoint = (x: number, y: number) => {
+	const position = document.caretPositionFromPoint?.(x, y)
+	if (position) return { node: position.offsetNode, offset: position.offset }
+	const range = document.caretRangeFromPoint?.(x, y)
+	return range ? { node: range.startContainer, offset: range.startOffset } : null
+}
+
 /**
  * Do the focusing ourselves, so it can be done without a reveal.
  *
@@ -398,6 +407,19 @@ const focusWithoutReveal = (event: PointerEvent) => {
 	const target = event.target as HTMLElement | null
 	const editor = textEditor.value?.editor
 	const body = editor?.view?.dom as HTMLElement | undefined
+
+	// A quote unfolded into the body is an editing host of its own (see QuotedContentExtension), which
+	// ProseMirror keeps out of. Its caret is the browser's, so it goes where the tap landed; placed by
+	// ProseMirror instead, it sat beside the quote and the reply was typed in below it.
+	const quote = target?.closest?.('[contenteditable="true"]')
+	if (body && quote instanceof HTMLElement && quote !== body && body.contains(quote)) {
+		event.preventDefault()
+		quote.focus({ preventScroll: true })
+		const caret = caretFromPoint(event.clientX, event.clientY)
+		if (caret && quote.contains(caret.node))
+			document.getSelection()?.collapse(caret.node, caret.offset)
+		return
+	}
 
 	// The body: place the caret from the tap's own coordinates, since preventing the default is what
 	// would otherwise have done it.

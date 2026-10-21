@@ -249,6 +249,7 @@ doc_events = {
         "before_insert": [
             "suite.utils.user.assign_suite_role",
         ],
+        "before_validate": ["suite.mail.events.keep_new_password"],
         "after_insert": [
             "suite.drive.utils.users.create_drive_settings",
             "suite.mail.events.create_user_settings",

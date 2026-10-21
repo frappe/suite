@@ -91,7 +91,7 @@
 					type="number"
 					:min="0"
 					:label="__('Quota (GB)')"
-					:description="__('Leave blank to use the configured default disk quota.')"
+					:description="__('Leave blank or 0 for no limit.')"
 				/>
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
@@ -194,7 +194,6 @@ const defaultAccountRequest = {
 	send_invite: true,
 	expires_at: '',
 	backup_email: '',
-	// Blank hands the choice to the server, which falls back to the configured default.
 	quota_gb: '',
 	disable_receiving: false,
 	first_name: '',

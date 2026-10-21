@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils.caching import request_cache
 
-SUITE_CLOUD_CONFIG_KEYS = ("suite_cloud_url", "site_api_key", "site_api_secret")
+SUITE_CLOUD_CONFIG_KEYS = ("suite_cloud_url", "suite_cloud_tenant", "suite_cloud_secret")
 
 
 @request_cache
@@ -20,7 +20,7 @@ def get_suite_cloud_config(key: str | tuple[str, ...] | None = None) -> dict[str
     config = {}
     for field in SUITE_CLOUD_CONFIG_KEYS:
         value = settings.get(field)
-        if value and field == "site_api_secret":
+        if value and field == "suite_cloud_secret":
             value = settings.get_password(field)
         config[field] = value or frappe.conf.get(field)
 

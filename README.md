@@ -56,7 +56,7 @@ when it registers the site (the settings override them on a self-managed site):
 - Mail Settings, or the `mail` key of the site config: `server_url` (the JMAP URL users connect to)
   and `verify_ssl`.
 - Suite Settings, or top-level keys of the same name in the site config: `suite_cloud_url`,
-  `site_api_key` and `site_api_secret`. They are read through `get_suite_cloud_config` in
+  `suite_cloud_tenant` and `suite_cloud_secret`. They are read through `get_suite_cloud_config` in
   `suite/suite_core/utils.py`, and **Validate Suite Cloud Credentials** on Suite Settings confirms
   them.
 
@@ -64,6 +64,8 @@ The two halves stand apart. Mail and Calendar need only the JMAP server: a site 
 and no Suite Cloud is fully usable by anyone who has an account. The Admin Dashboard, account
 creation and signup need Suite Cloud: without it the dashboard is hidden from admins, its routes
 lead back to the mailbox, and every endpoint in `suite/mail/api/admin.py` refuses.
+
+Suite's own emails, such as invites, password resets and share notices, go through `suite/suite_core/suite_email.py`. On a site connected to Suite Cloud, Suite names the email and its parameters, and Suite Cloud sends it from its own template. A site without Suite Cloud renders it from the templates in `suite/templates/emails/` and sends it through its own Email Account. Any other mail of the site, such as Frappe's own notifications, always goes through an Email Account the site owner sets up.
 
 The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
 `suite/mail/directory.py`, and the Admin Dashboard's endpoints in `suite/mail/api/admin.py`.

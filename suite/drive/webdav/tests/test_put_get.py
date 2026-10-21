@@ -11,6 +11,7 @@ from suite.drive.webdav.properties import compute_etag
 from suite.drive.webdav.tests.utils import (
     dispatch,
     ensure_user_with_password,
+    error_logs,
     make_ctx,
     write_file_fixture,
 )
@@ -294,7 +295,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.commit()  # must not raise — the save already succeeded
 
         self.assertEqual(FileManager().get_local_path(row.file_url).read_bytes(), png)
-        self.assertTrue(frappe.db.exists("Error Log", {"method": "Drive: could not create WebDAV thumbnail"}))
+        self.assertTrue(error_logs({"method": "Drive: could not create WebDAV thumbnail"}))
 
     def test_put_succeeds_when_thumbnail_logging_fails_too(self):
         # by promotion time the write is complete — even the failure LOGGING
@@ -496,9 +497,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.commit()
         frappe.db.rollback()  # a later rollback must not erase the durable repair record
 
-        record = frappe.db.get_value(
-            "Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name}, "error"
-        )
+        (record,) = error_logs({"method": self.DRIFT_LOG, "reference_name": target.name}, field="error")
         spec = json.loads(record.splitlines()[-1])
         put_module.repair_promotion_drift(**spec)
 
@@ -545,9 +544,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.commit()
         frappe.db.rollback()  # a later rollback must not erase the durable repair record
 
-        self.assertTrue(
-            frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
-        )
+        self.assertTrue(error_logs({"method": self.DRIFT_LOG, "reference_name": target.name}))
         self.assertEqual(enqueue_mock.call_args.args, (put_module.repair_promotion_drift,))
 
     def test_put_compensation_spares_an_identical_winner(self):
@@ -1362,9 +1359,8 @@ class TestWebDAVPut(IntegrationTestCase):
             put_module.settle_swap_destination(target.name, stamp, str(old_path))
 
         self.assertTrue(
-            frappe.db.exists(
-                "Error Log",
-                {"method": "Drive: swap settlement exhausted mid-churn", "reference_name": target.name},
+            error_logs(
+                {"method": "Drive: swap settlement exhausted mid-churn", "reference_name": target.name}
             )
         )
 
@@ -1406,9 +1402,8 @@ class TestWebDAVPut(IntegrationTestCase):
 
         self.assertEqual(chained.call_count, 2)  # one per pre-cap hop
         self.assertFalse(
-            frappe.db.exists(
-                "Error Log",
-                {"method": "Drive: swap settlement exhausted mid-churn", "reference_name": target.name},
+            error_logs(
+                {"method": "Drive: swap settlement exhausted mid-churn", "reference_name": target.name}
             )
         )
         final = FileManager().get_local_path(frappe.db.get_value("File", target.name, "file_url"))
@@ -1648,9 +1643,7 @@ class TestWebDAVPut(IntegrationTestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(frappe.db.get_value("File", target.name, "file_size"), len(b"version-one"))
         self.assertEqual(frappe.db.get_value("File", self.base.name, "file_size"), base_size)
-        self.assertFalse(
-            frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
-        )
+        self.assertFalse(error_logs({"method": self.DRIFT_LOG, "reference_name": target.name}))
 
     def test_put_compensation_double_failure_leaves_durable_trace(self):
         # when the compensation fails twice, the drift record must survive a
@@ -1678,9 +1671,7 @@ class TestWebDAVPut(IntegrationTestCase):
             frappe.db.commit()
         frappe.db.rollback()  # a later rollback must not erase the durable repair record
 
-        self.assertTrue(
-            frappe.db.exists("Error Log", {"method": self.DRIFT_LOG, "reference_name": target.name})
-        )
+        self.assertTrue(error_logs({"method": self.DRIFT_LOG, "reference_name": target.name}))
 
         # the compensation was handed to a worker; run it as the worker would
         self.assertEqual(enqueue_mock.call_args.args, (put_module.repair_promotion_drift,))

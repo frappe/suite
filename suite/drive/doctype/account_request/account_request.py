@@ -10,6 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import random_string
 
 from suite.drive.utils.users import get_country_info
+from suite.suite_core import suite_email
 from suite.utils import generate_otp
 
 
@@ -31,12 +32,11 @@ class AccountRequest(Document):
         self.save(ignore_permissions=True)
 
     def send_otp(self):
-        frappe.sendmail(
-            recipients=self.email,
-            subject="Frappe Drive - OTP",
-            template="otp",
-            args={"otp": self.otp},
-            now=True,
+        suite_email.send(
+            "drive-signup-code",
+            self.email,
+            {"code": self.otp},
+            local={"subject": "Frappe Drive - OTP", "template": "otp", "args": {"otp": self.otp}},
         )
 
     @property

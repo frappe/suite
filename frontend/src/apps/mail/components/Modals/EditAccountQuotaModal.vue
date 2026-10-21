@@ -20,7 +20,7 @@
 					type="number"
 					:min="0"
 					:label="__('Quota (GB)')"
-					:description="__('Every account has a quota; it must be above zero.')"
+					:description="__('0 means no limit.')"
 				/>
 				<ErrorMessage
 					:message="updateQuota.error && (updateQuota.error?.messages?.[0] || updateQuota.error?.message || __('Request failed.'))"

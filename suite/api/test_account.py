@@ -38,7 +38,7 @@ class MarkOnboarded(AccountTestBase):
     def setUp(self):
         super().setUp()
         self.engine = self.enterContext(
-            mock.patch("frappe.desk.page.setup_wizard.setup_wizard.complete_app_setup")
+            mock.patch("frappe.desk.page.setup_wizard.setup_wizard.complete_app_setup", create=True)
         )
         self.suite_wizard = self.enterContext(
             mock.patch("suite.api.account.uses_suite_setup_wizard", return_value=True)
