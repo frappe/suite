@@ -183,8 +183,10 @@ export function useHistory({
     if (!map) return
     const sn = sheetName || currentSheet.value
     for (const [id, fmt] of Object.entries(map)) {
+      // Replace, not merge: formats.set merges, which kept a bold the step
+      // had added after its undo.
+      formats.clear(id, sn)
       if (fmt && Object.keys(fmt).length) formats.set(id, fmt, sn)
-      else formats.clear(id, sn)
     }
     getGrid()?.render?.() // the grid applies number formats as it paints
   }

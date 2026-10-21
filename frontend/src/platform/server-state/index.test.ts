@@ -391,6 +391,25 @@ describe('Suite API references and shared client', () => {
     expect(feedback).not.toHaveBeenCalled()
   })
 
+  it('settles once every write has landed, a write called while waiting included', async () => {
+    const pending = deferred<Response>()
+    fetcher.mockImplementation(async (_url, init) => {
+      const { title } = JSON.parse(String(init?.body)) as { title: string }
+      return title === 'First' ? pending.promise : answer(node(title))
+    })
+    const landed: string[] = []
+    void engine.client
+      .mutation(api.drive.nodes.rename, { node: 'budget', title: 'First' })
+      .then(() => landed.push('First'))
+    const settled = engine.writesSettled().then(() => landed.push('settled'))
+    void engine.client
+      .mutation(api.drive.nodes.rename, { node: 'budget', title: 'Second' })
+      .then(() => landed.push('Second'))
+    pending.resolve(answer(node('First')))
+    await settled
+    expect(landed).toEqual(['First', 'Second', 'settled'])
+  })
+
   it('isolates identity and Drive links and scopes named and covered-node calls', async () => {
     const pending = deferred<Response>()
     const code = 'L000000000000000000001'

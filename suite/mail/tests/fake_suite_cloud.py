@@ -19,18 +19,26 @@ class FakeSuiteCloud:
         self.dmarc_reports: dict[str, dict] = {}
         self.tls_reports: dict[str, dict] = {}
         self.passwords: dict[str, str] = {}
+        self.emails: list[dict] = []  # what Suite Cloud was asked to send
         self.calls: list[tuple[str, dict]] = []
 
     # --- dispatch ---------------------------------------------------------------------------
 
     def call(self, method: str, **params):
-        """``tenant.<call>`` or ``mail.<resource>.<call>``, as the real client addresses them."""
+        """``tenant.<call>``, ``email.<call>`` or ``mail.<resource>.<call>``, as the real client
+        addresses them."""
 
         self.calls.append((method, params))
         api, _, name = method.partition(".")
-        assert api in ("tenant", "mail"), method
+        assert api in ("tenant", "email", "mail"), method
         handler = getattr(self, name.replace(".", "__"))
         return handler(**params)
+
+    def send_email(self, email_type: str, recipient: str, params: dict, request_key: str) -> dict:
+        self.emails.append(
+            {"email_type": email_type, "recipient": recipient, "params": params, "request_key": request_key}
+        )
+        return {"name": request_key, "status": "Sent", "error": None}
 
     site_title = "Acme"
     site_contact = "ops@acme.test"

@@ -825,6 +825,7 @@ import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
 import { createValidationEngine } from '../../engine/validation.js'
+import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
@@ -916,8 +917,8 @@ const props = defineProps({
     default: undefined,
   },
 })
-// `access-refused`: the server refused a save, or the collaboration server
-// refused the connection. `notes-opened`: the notes panel took the right edge.
+// `access-refused`: the server refused a save, or the collaboration relay
+// refused a write. `notes-opened`: the notes panel took the right edge.
 const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.
@@ -1015,7 +1016,10 @@ const validation = createValidationEngine()
 const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard = createClipboard({
-  cells: { read: (sn, rect) => _readRect(sn, rect), write: (sn, map) => _writeInputs(sn, map) },
+  cells: {
+    read: (sn, rect, opts) => _readRect(sn, rect, opts),
+    write: (sn, map) => _writeInputs(sn, map),
+  },
   getCurrentSheet: () => currentSheet.value,
   formats,
   condFormat,
@@ -1564,6 +1568,29 @@ function _refitRowsFor(sn, writes) {
   if (sn !== currentSheet.value) return null
   return grid?.refitRowsFor?.(writes) ?? null
 }
+
+// {cellId: IronCalc num_fmt} for a rect's formatted cells: the format a
+// typed `$1.50` or `15%` got from IronCalc, which fill carries along.
+async function _readEngineFormats(rect, sn) {
+  const { numFmts } = await _readRect(sn, rect, { numFmts: true })
+  const out = {}
+  numFmts.forEach((row, i) =>
+    row.forEach((fmt, j) => {
+      if (fmt && !/^general$/i.test(fmt)) out[cellId(rect.r0 + i, rect.c0 + j)] = fmt
+    }),
+  )
+  return out
+}
+
+// Sets cells back to IronCalc's general number format (Clear formatting).
+function _resetEngineFormats(ids, sn) {
+  const commands = ids.map((id) => {
+    const p = parseCellId(id)
+    const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
+    return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
+  })
+  if (commands.length) _client()?.dispatch(_command('batch', { commands }))
+}
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
   if (activeFormat.value?.align === 'right') return 'lucide-align-right'
@@ -1667,13 +1694,17 @@ async function _computeSelectionStatsAsync(token) {
 
 // Bump decimal precision for the selection. Treats 'General' as 'number:1' on
 // first +, no-op on -. Numeric types pick a sensible default if no decimals
-// were previously set.
-function adjustDecimals(delta) {
+// were previously set. A cell with no format of ours starts from the one
+// IronCalc gave a typed `$1.50` or `50%`, so the $ or % stays.
+async function adjustDecimals(delta) {
   const ids = selectionIds()
   const sh = currentSheet.value
+  const sel = grid?.getSelection()
+  const small = sel && (sel.r1 - sel.r0 + 1) * (sel.c1 - sel.c0 + 1) <= 10000
+  const engineFmts = small ? await _readEngineFormats(sel, sh) : {}
   _recordFormatOp(ids, sh, () => {
     for (const id of ids) {
-      const cur = formats.get(id, sh).numberFormat || ''
+      const cur = formats.get(id, sh).numberFormat || numFmtFromEngine(engineFmts[id])
       let { type, variant, decimals } = parseNumberFmt(cur)
       if (!type) {
         if (delta < 0) continue
@@ -1723,6 +1754,8 @@ const {
   markDirty: () => {
     isDirty.value = true
   },
+  readEngineFormats: _readEngineFormats,
+  resetEngineFormats: _resetEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections
@@ -2215,7 +2248,7 @@ const {
   getGridWrap: () => gridWrapRef.value,
   contextMenu,
   currentSheet,
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   blockProtected: (rect, sn) => _rectBlocked(rect, sn),
 })
 
@@ -2365,12 +2398,16 @@ const {
   getGrid: () => grid,
   readRect: _readRect,
   rectBlocked: (rect, sn) => _rectBlocked(rect, sn),
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   repopulateGrid: () => _repopulateGrid(),
   applyHiddenRows: () => _applyHiddenRows(),
   markDirty: () => {
     isDirty.value = true
   },
+  formats,
+  captureFormatsRange: _captureFormatsRange,
+  readEngineFormats: _readEngineFormats,
+  resetEngineFormats: _resetEngineFormats,
 })
 
 // Per-sub-sheet peer dots — small colored circles next to each tab label
@@ -3407,6 +3444,12 @@ function _commitFormulaBar() {
       after: { [targetId]: value },
       summary: 'Edit cell',
     }
+    // The row refits to the edit, as a commit in the cell does.
+    const rowH = _refitRowsFor(targetSheet, { [targetId]: value })
+    if (rowH) {
+      op.beforeRowH = rowH.before
+      op.afterRowH = rowH.after
+    }
     _queueOp(op)
     history.pushOp(op)
     broadcastCellChange(targetSheet, targetId, value)
@@ -3469,6 +3512,7 @@ const {
   queueOp: _queueOp,
   rectBlocked: _rectBlocked,
   refitRowsFor: _refitRowsFor,
+  readEngineFormats: _readEngineFormats,
 })
 
 // Mirrors `clipboard.hasData()` reactively so the context menu can show /
@@ -4366,7 +4410,7 @@ const {
   cellBlocked: (id, sn) => _cellBlocked(id, sn),
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),
   recordFormatOp: (ids, sn, mutate) => _recordFormatOp(ids, sn, mutate),
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   refreshActiveFormat: () => refreshActiveFormat(),
   syncFlags: () => syncFlags(),
   markDirty: () => {
@@ -4723,6 +4767,7 @@ const { pushEditOp: _pushEditOp } = useEditOps({
   broadcastBatchChange: (sn, cells) => broadcastBatchChange(sn, cells),
   syncFlags,
   isDirty,
+  refitRowsFor: _refitRowsFor,
 })
 
 // ── Repopulate ────────────────────────────────────────────────────────────────

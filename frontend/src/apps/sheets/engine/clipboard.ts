@@ -1,7 +1,7 @@
 // Clipboard engine — internal copy/cut/paste + system clipboard TSV interchange.
 //
 // Cells are read and written through `cells`:
-//   read(sheetName, rect)  → Promise<{ inputs: string[][], displays: string[][] }>
+//   read(sheetName, rect, { numFmts }) → Promise<{ inputs, displays, numFmts? }>
 //   write(sheetName, map)  → writes a {cellId: input} map as one edit ('' clears)
 // A copy reads the source once; the paste then works from that capture.
 
@@ -13,6 +13,7 @@ import { detectHyperlink } from './links.js'
 import type { ProtectionEngine } from './protection.js'
 import type { CellPort, CellPos, Rect } from './types.js'
 import type { ValidationEngine, ValidationRule } from './validation.js'
+import { numFmtFromEngine } from './xlsx-io.js'
 
 /** 'all' = values + formulas + formats; see paste(). */
 export type PasteKind = 'all' | 'values' | 'formulas' | 'formats'
@@ -87,8 +88,8 @@ export function createClipboard({
         vals[key] = validation ? validation.get(id, sn) : null
       }
     }
-    const ready: Promise<void> = cells.read(sn, sel).then(
-      ({ inputs, displays }) => {
+    const ready: Promise<void> = cells.read(sn, sel, { numFmts: true }).then(
+      ({ inputs, displays, numFmts }) => {
         // A newer copy or a clear() replaced this one while it was reading.
         if (_ready !== ready) return
         const data: Record<string, string> = {}
@@ -100,6 +101,11 @@ export function createClipboard({
             const key = `${r - r0},${c - c0}`
             data[key] = inputs[r - r0]?.[c - c0] ?? ''
             shown[key] = displays[r - r0]?.[c - c0] ?? ''
+            // A typed `$1.50` is formatted by IronCalc and its input is 1.5:
+            // carry IronCalc's format unless the side store has one.
+            const engineFmt = numFmtFromEngine(numFmts?.[r - r0]?.[c - c0])
+            const fmt = fmts[key]
+            if (engineFmt && fmt && !fmt.numberFormat) fmt.numberFormat = engineFmt
           }
         }
       },

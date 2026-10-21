@@ -61,3 +61,24 @@ describe('rangeReader', () => {
     ])
   })
 })
+
+// Pivots read display strings too: a typed $1.50 or 1,000 counted as text.
+describe('pivot over formatted numbers', () => {
+  it('sums values shown as $1.50 and 1,000', () => {
+    const data = [
+      ['Region', 'Sales'],
+      ['North', '$1.50'],
+      ['North', '1,000'],
+    ]
+    const table = computePivot(
+      {
+        sourceSheet: 'S',
+        sourceRange: 'A1:B3',
+        rows: ['Region'],
+        values: [{ field: 'Sales', agg: 'sum' }],
+      },
+      rangeReader({ r0: 0, c0: 0, r1: 2, c1: 1 }, data),
+    )
+    expect(table[1].slice(0, 2)).toEqual(['North', 1001.5])
+  })
+})

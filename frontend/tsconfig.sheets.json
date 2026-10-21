@@ -39,7 +39,9 @@
     // (not written for these flags) into this check.
     "src/apps/sheets/canvas/*.ts",
     "src/apps/sheets/canvas/input/*.ts",
-    "src/apps/sheets/canvas/painters/*.ts"
+    "src/apps/sheets/canvas/painters/*.ts",
+    // collab/: the new Yjs schema (the older .js files there predate it).
+    "src/apps/sheets/collab/schema*.ts"
   ],
   // Canvas, utils and engine tests predate the strict config; the policy covers source.
   "exclude": [

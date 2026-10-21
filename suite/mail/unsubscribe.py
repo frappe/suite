@@ -192,17 +192,25 @@ def _write_to(account: str, mailto: str, from_email: str) -> None:
 
 
 def _mark_unsubscribed(account: str, id: str) -> None:
+    """Marks the message, all of it best-effort: the request has gone by now, and nothing here may
+    turn a done unsubscribe into a failed one, inviting another."""
+
     # Imported here: mail_message imports a great deal.
     from suite.mail.doctype.mail_message.mail_message import _remove_cached_messages
 
-    client = get_account_client(account)
-    _remove_cached_messages(account, [id])
+    def uncache() -> None:
+        try:
+            _remove_cached_messages(account, [id])
+        except Exception:
+            log_mail_error(_("Failed to mark mail unsubscribed"), frappe.get_traceback(with_context=True))
+
+    uncache()
     try:
-        with client.batch() as b:
+        with get_account_client(account).batch() as b:
             marked = b.mail.email.set(update={id: {f"keywords/{UNSUBSCRIBED}": True}})
         if id not in marked.result.updated:
             log_mail_error(_("Failed to mark mail unsubscribed"), str(marked.result.not_updated))
     except Exception:
         log_mail_error(_("Failed to mark mail unsubscribed"), frappe.get_traceback(with_context=True))
     finally:
-        _remove_cached_messages(account, [id])
+        uncache()

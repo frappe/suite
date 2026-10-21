@@ -25,6 +25,7 @@ from suite.mail.utils.user import (
     can_use_mail,
     has_user_settings,
 )
+from suite.suite_core import suite_email
 from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import user_context
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -435,12 +436,12 @@ def send_reset_password_link(user: str) -> str:
     email = get_backup_email(user)
     key = set_reset_password_key(user)
 
-    frappe.sendmail(
-        recipients=email,
-        subject=_("Reset Password"),
-        template="reset_password",
-        args={"link": get_url("/mail/reset-password/" + key)},
-        now=True,
+    link = get_url("/mail/reset-password/" + key)
+    suite_email.send(
+        "password-reset",
+        email,
+        {"link": link},
+        local={"subject": _("Reset Password"), "template": "reset_password", "args": {"link": link}},
     )
 
     if email == user:

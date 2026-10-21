@@ -95,6 +95,45 @@ it('unstarring in Starred takes a conversation with no star left off the list at
   expect(unstar(['s'], 'starred')).toEqual(['q', 's'])
   // Anywhere else the row only loses its star.
   expect(unstar(['q'], 'inbox')).toEqual(['q', 's'])
+  // A list filtered to starred mail lets it go too, as the Starred folder does.
+  const filtered = (
+    update(
+      { account: 'a', ids: ['q'], flagged: false },
+      { account: 'a', mailbox: 'inbox', filter_by: 'starred' },
+      list,
+    ) as typeof list
+  ).rows.map((row) => row.id)
+  expect(filtered).toEqual(['s'])
+  // Also filtered to unread, it stays until the list changes, as a read one does.
+  const both = (
+    update(
+      { account: 'a', ids: ['q'], flagged: false },
+      { account: 'a', mailbox: 'inbox', filter_by: 'unread,starred' },
+      list,
+    ) as typeof list
+  ).rows.map((row) => row.id)
+  expect(both).toEqual(['q', 's'])
+  // A hidden copy still starred keeps it, wherever stars are the rule.
+  const withCopy = {
+    rows: [
+      {
+        id: 'q',
+        flagged: 1,
+        messages: [
+          { id: 'q', flagged: 1 },
+          { id: 'r', flagged: 0, duplicates: [{ id: 'c', flagged: 1 }] },
+        ],
+      },
+    ],
+  }
+  const kept = (
+    update(
+      { account: 'a', ids: ['q'], flagged: false },
+      { account: 'a', mailbox: 'inbox', filter_by: 'starred' },
+      withCopy,
+    ) as typeof withCopy
+  ).rows.map((row) => row.id)
+  expect(kept).toEqual(['q'])
 })
 
 it('a conversation is starred while any of its messages is, whichever was starred', () => {

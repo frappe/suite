@@ -2,7 +2,7 @@
 // (workbook.toBytes()) as base64, next to the IronCalc version that wrote
 // them. Spec 002 leaves JSON vs bytes open; the choice lives here.
 
-export const ENGINE_VERSION = '0.8.4'
+export const ENGINE_VERSION = '0.9.0'
 
 // String.fromCharCode takes its bytes as arguments; chunk so a large
 // workbook does not overflow the argument limit.

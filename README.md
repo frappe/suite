@@ -65,6 +65,8 @@ and no Suite Cloud is fully usable by anyone who has an account. The Admin Dashb
 creation and signup need Suite Cloud: without it the dashboard is hidden from admins, its routes
 lead back to the mailbox, and every endpoint in `suite/mail/api/admin.py` refuses.
 
+Suite's own emails, such as invites, password resets and share notices, go through `suite/suite_core/suite_email.py`. On a site connected to Suite Cloud, Suite names the email and its parameters, and Suite Cloud sends it from its own template. A site without Suite Cloud renders it from the templates in `suite/templates/emails/` and sends it through its own Email Account. Any other mail of the site, such as Frappe's own notifications, always goes through an Email Account the site owner sets up.
+
 The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
 `suite/mail/directory.py`, and the Admin Dashboard's endpoints in `suite/mail/api/admin.py`.
 
@@ -76,7 +78,6 @@ Sites that deployed servers through Suite before this split keep their data: upd
 - [**Frappe Framework**](https://github.com/frappe/frappe): Provides the database, authentication, permissions, realtime events, and APIs shared by Drive, Writer, Sheets, Slides, Meet, Mail, and Calendar.
 - [**Frappe UI**](https://github.com/frappe/frappe-ui): Power the interface and reusable components across every Suite product.
 - [**Yjs**](https://github.com/yjs/yjs): Keeps documents in Writer and spreadsheets in Sheets synchronized during realtime collaboration.
-- [**Hocuspocus**](https://github.com/ueberdosis/hocuspocus): Runs the collaboration server used for realtime spreadsheet editing in Sheets.
 - [**mediasoup**](https://github.com/versatica/mediasoup): Powers Meet's WebRTC selective forwarding unit for group video calls.
 
 ## Migrating from the Standalone Apps

@@ -67,6 +67,18 @@ def ensure_system_settings_saveable() -> None:
         frappe.clear_document_cache("System Settings", "System Settings")
 
 
+def error_logs(filters: dict, field: str = "name") -> list:
+    """Error Log rows matching ``filters``. They live in Frappe's log database, not ``frappe.db``,
+    and outlast a rollback."""
+
+    return frappe.get_all("Error Log", filters=filters, pluck=field)
+
+
+def delete_error_logs(filters: dict) -> None:
+    for name in error_logs(filters):
+        frappe.get_doc("Error Log", name).delete(ignore_permissions=True)
+
+
 def ensure_user_with_password(email: str, password: str) -> None:
     ensure_user(email)
     update_password(email, password)

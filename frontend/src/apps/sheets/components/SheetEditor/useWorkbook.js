@@ -144,11 +144,14 @@ export function useWorkbook({
   }
 
   // A rect's inputs and display strings (0-based rect), read from the worker in
-  // chunks of rows that fit one readViewport.
-  async function readRect(sn, rect) {
+  // chunks of rows that fit one readViewport. `numFmts: true` also returns
+  // IronCalc's own number format per cell (what typing `$1.50` sets), for
+  // copy and fill to carry.
+  async function readRect(sn, rect, { numFmts: wantFmts = false } = {}) {
     const inputs = []
     const displays = []
-    if (!engine) return { inputs, displays }
+    const numFmts = []
+    if (!engine) return wantFmts ? { inputs, displays, numFmts } : { inputs, displays }
     const cols = rect.c1 - rect.c0 + 1
     const step = Math.max(1, Math.floor(MAX_VIEWPORT_CELLS / cols))
     for (let r = rect.r0; r <= rect.r1; r += step) {
@@ -159,9 +162,12 @@ export function useWorkbook({
         r2: Math.min(r + step - 1, rect.r1) + 1,
         c2: rect.c1 + 1,
         includeInputs: true,
+        includeStyles: wantFmts,
       })
       inputs.push(...(res.inputs ?? []))
       displays.push(...res.values)
+      if (wantFmts)
+        numFmts.push(...(res.styles ?? []).map((row) => row.map((s) => s.style.num_fmt)))
     }
     // A sparkline shows a chart, not IronCalc's #NAME?, to every reader
     // (charts, copied text, filter lists), as it does in the grid.
@@ -170,7 +176,7 @@ export function useWorkbook({
         if (parseSparkline(input)) displays[i][j] = ''
       }),
     )
-    return { inputs, displays }
+    return wantFmts ? { inputs, displays, numFmts } : { inputs, displays }
   }
 
   // {cellId: input} for a rect: an edit op's before or after.
@@ -289,10 +295,10 @@ export function useWorkbook({
   }
 
   // A whole sheet's inputs and displays, A1 to its last used cell.
-  async function readWholeSheet(sn) {
+  async function readWholeSheet(sn, opts = {}) {
     const ext = await sheetExtent(sn)
-    if (!ext) return { inputs: [], displays: [] }
-    return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol })
+    if (!ext) return { inputs: [], displays: [], numFmts: [] }
+    return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol }, opts)
   }
 
   // A rect's shown values (charts read these).

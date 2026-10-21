@@ -5,7 +5,9 @@
 //   - curated known-Excel cases: 15/16 (the single miss is the Google-Sheets
 //     AVERAGE convention, not a defect),
 //   - a seeded random corpus of 2000 formulas, whose answers are recorded
-//     from IronCalc 0.8.4 in the snapshot beside this file. An upgrade that
+//     from IronCalc 0.9.0 in the snapshot beside this file (0.8.4 gave
+//     3 different: 0^negative is #DIV/0! like Excel, and a ^ overflow is
+//     #DIV/0!, not Excel's #NUM!). An upgrade that
 //     changes any answer fails here; review the diff, then update the
 //     snapshot (vitest -u) if the new answer is right.
 //

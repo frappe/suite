@@ -6,6 +6,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.drive.webdav import log
 from suite.drive.webdav.tests.utils import (
+    delete_error_logs,
     dispatch,
     drop_dav_root,
     enable_user_webdav,
@@ -115,7 +116,7 @@ class TestWebDAVLogging(IntegrationTestCase):
         from suite.drive.webdav import dispatch as dispatch_module
 
         log_filter = {"method": "WebDAV PROPFIND /dav/"}
-        frappe.db.delete("Error Log", log_filter)
+        delete_error_logs(log_filter)
         try:
             with (
                 self._with_level("error"),
@@ -124,8 +125,7 @@ class TestWebDAVLogging(IntegrationTestCase):
             ):
                 dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
         finally:
-            frappe.db.delete("Error Log", log_filter)
-            frappe.db.commit()
+            delete_error_logs(log_filter)
 
         self.assertEqual(len(logs.records), 1)
         self.assertIn("-> 500", logs.output[0])

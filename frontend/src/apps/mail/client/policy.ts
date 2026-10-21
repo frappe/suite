@@ -424,17 +424,34 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               const rows = data.rows.map(patch)
               // Unstarred in Starred, a conversation with no star left leaves the list on the click:
               // the star is the list's one rule, and nothing reads the list again after a star.
+              // The Starred folder, or any list filtered to starred mail.
+              // A list filtered to starred mail lets it go too, unless it is also filtered to unread:
+              // there what is changed in place stays until the list changes, read or unstarred
+              // (see useKeptRead).
+              const filters =
+                isRecord(queryInput) && typeof queryInput.filter_by === 'string'
+                  ? queryInput.filter_by.split(',')
+                  : []
               const starredList =
                 isRecord(queryInput) &&
-                (queryInput.mailbox === 'starred' || queryInput.folder === 'starred')
+                (queryInput.mailbox === 'starred' ||
+                  queryInput.folder === 'starred' ||
+                  (filters.includes('starred') && !filters.includes('unread')))
               if (field !== 'flagged' || input.flagged || !starredList) return { ...data, rows }
               const touched = (row: Record<string, unknown>) =>
                 ids.has(row.id) ||
                 (Array.isArray(row.messages) &&
                   row.messages.some((m) => isRecord(m) && ids.has(m.id)))
+              // Any copy of any message, hidden ones included, as the server counts it.
               const starred = (row: Record<string, unknown>) =>
                 Array.isArray(row.messages) && row.messages.length
-                  ? row.messages.some((m) => isRecord(m) && m.flagged)
+                  ? row.messages.some(
+                      (m) =>
+                        isRecord(m) &&
+                        (!!m.flagged ||
+                          (Array.isArray(m.duplicates) &&
+                            m.duplicates.some((d) => isRecord(d) && d.flagged))),
+                    )
                   : !!row.flagged
               return {
                 ...data,

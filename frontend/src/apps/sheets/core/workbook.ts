@@ -11,7 +11,10 @@
 import { Model, type ExtendedCellStyle } from '@ironcalc/wasm'
 
 import { CommandTypes, validateCommand, type Command, type CommandType } from './commands.js'
+import { isDateDifference, isDateFormat } from './date-diff.js'
 import { MAX_ROWS } from './limits.js'
+import { percentFormatFor } from './percent-format.js'
+import { typedCurrency, withSymbol } from './typed-currency.js'
 
 const LANGUAGE = 'en'
 
@@ -133,7 +136,7 @@ export function createWorkbook({
   let model: Model
   try {
     model = loadBytes
-      ? Model.from_bytes(loadBytes, LANGUAGE)
+      ? Model.fromBytes(loadBytes, LANGUAGE)
       : new Model(name, locale, timezone, LANGUAGE)
   } catch (e) {
     throw asWorkbookError(e, null)
@@ -164,7 +167,7 @@ export function createWorkbook({
   // protocol error, so this is acceptable.
   function restore(bytes: Uint8Array): void {
     try {
-      const fresh = Model.from_bytes(bytes, LANGUAGE)
+      const fresh = Model.fromBytes(bytes, LANGUAGE)
       model.free()
       model = fresh
     } catch {
@@ -190,11 +193,39 @@ export function createWorkbook({
     return { version }
   }
 
+  // A typed input, as IronCalc's setUserInput, plus the formats IronCalc
+  // gets wrong (Google Sheets is the reference):
+  //   - a ₹ or £ amount is a number with that currency (typed-currency.ts);
+  //   - a formula scaling one percent cell by plain numbers shows a percent
+  //     (percent-format.ts);
+  //   - one date minus another shows the days between (date-diff.ts).
+  function setInput(si: number, row: number, col: number, input: string): void {
+    const area = { sheet: si, row, column: col, width: 1, height: 1 }
+    const numFmt = (sheet: string | null, r: number, c: number) =>
+      model.getCellStyle(sheet == null ? si : sheetIndex(sheet), r, c).style.num_fmt
+    const currency = typedCurrency(input)
+    model.setUserInput(si, row, col, currency ? currency.input : input)
+    const fmt = numFmt(null, row, col)
+    if (currency) {
+      if (fmt.includes('$'))
+        model.updateRangeStyle(area, 'num_fmt', withSymbol(fmt, currency.symbol))
+      return
+    }
+    if (!input.startsWith('=')) return
+    if (/^general$/i.test(fmt)) {
+      // Only a cell IronCalc left unformatted: a format it inferred stays.
+      const percent = percentFormatFor(input, numFmt)
+      if (percent) model.updateRangeStyle(area, 'num_fmt', percent)
+    } else if (isDateFormat(fmt) && isDateDifference(input, numFmt)) {
+      model.updateRangeStyle(area, 'num_fmt', 'general')
+    }
+  }
+
   function applyOne(cmd: Command): void {
     switch (cmd.type) {
       case CommandTypes.setInput: {
         const p = cmd.payload
-        model.setUserInput(sheetIndex(p.sheet), p.row, p.col, p.input)
+        setInput(sheetIndex(p.sheet), p.row, p.col, p.input)
         return
       }
       // setUserArrayFormula pins the result to a fixed width × height

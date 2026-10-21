@@ -10,7 +10,6 @@ class TestSuiteComposition(unittest.TestCase):
         self.assertEqual(hooks.after_install, "suite.composition.lifecycle.after_install")
         self.assertEqual(hooks.after_migrate, "suite.composition.lifecycle.after_migrate")
         self.assertEqual(hooks.after_app_install, "suite.composition.lifecycle.after_app_install")
-        self.assertEqual(hooks.extend_bootinfo, "suite.composition.lifecycle.extend_bootinfo")
 
     def test_user_hooks_are_single_composition_dispatchers(self):
         self.assertEqual(hooks.doc_events["User"]["after_insert"], ["suite.composition.users.after_insert"])

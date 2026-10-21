@@ -79,9 +79,3 @@ def after_app_install(app_name=None):
     from suite.meet.utils import after_app_install as meet_after_app_install
 
     _run("meet.after_app_install", meet_after_app_install, app_name)
-
-
-def extend_bootinfo(bootinfo):
-    from suite.sheets.boot import extend_bootinfo as sheets_extend_bootinfo
-
-    _run("sheets.extend_bootinfo", sheets_extend_bootinfo, bootinfo)

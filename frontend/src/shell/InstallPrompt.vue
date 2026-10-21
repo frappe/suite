@@ -1,14 +1,15 @@
 <template>
-  <!-- The offer to install the suite. Mounted once by the shell on phones and
-	     never unmounted, since Chrome fires `beforeinstallprompt` once and a
-	     listener that is not there at the time misses it. Shown only while the
-	     route is an area page (`route.meta.area`) inside the shell frame. The
-	     manifest is on every route (see platform/pwa setPwaTags), so Chrome may
-	     fire elsewhere; the offer waits for such an app. The iOS hint follows
-	     the same gate. -->
-  <Dialog :open="showDialog && installable" @update:open="showDialog = $event">
+  <!-- The offer to install the app whose page this is. Mounted once by the
+	     shell on phones and never unmounted, since Chrome fires
+	     `beforeinstallprompt` once and a listener that is not there at the time
+	     misses it. Shown only on an installable app's pages inside the shell
+	     frame: they link that app's manifest (see platform/pwa), and new
+	     installs are offered per app, not of the Suite. The manifest is on every
+	     route, so Chrome may fire elsewhere; the offer waits for such a page.
+	     The iOS hint follows the same gate. -->
+  <Dialog :open="showDialog && installable && offered" @update:open="showDialog = $event">
     <template #title>
-      <h2 class="text-lg-bold">{{ __('Install Frappe Suite') }}</h2>
+      <h2 class="text-lg-bold">{{ __('Install {0}', [app?.label() ?? '']) }}</h2>
     </template>
     <template #default>
       <p>{{ __('Get the app on your device for easy access & a better experience!') }}</p>
@@ -39,7 +40,7 @@
     >
       <div class="mb-1 flex flex-row items-center justify-between px-3 text-center">
         <span class="text-base-bold">
-          {{ __('Install Frappe Suite') }}
+          {{ __('Install {0}', [app?.label() ?? '']) }}
         </span>
         <span class="inline-flex items-baseline">
           <FeatherIcon
@@ -68,17 +69,24 @@
 <script setup lang="ts">
 import { Button, Dialog } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useRoute } from 'vue-router'
 
-const route = useRoute()
-// The install offer shows on area pages, not on a document or a Meet call.
-const installable = computed(
-  () => typeof route.meta.area === 'string' && route.meta.frame !== 'none',
-)
+import type { AreaDefinition } from '@/platform/contracts'
+import { linkedPwaApp } from '@/platform/pwa'
 
-// Initialize deferredPrompt for use later to show browser install prompt.
-const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
+const props = defineProps<{
+  /** The area of the page, when it installs as an app of its own. */
+  app?: AreaDefinition
+}>()
+
+const route = useRoute()
+const installable = computed(() => !!props.app && route.meta.frame !== 'none')
+
+// The browser's install event, with the app whose manifest the page linked when it fired: the
+// event installs that app, so it is offered only on that app's pages, under that app's name.
+const deferred = shallowRef<{ event: BeforeInstallPromptEvent; app: string } | null>(null)
+const offered = computed(() => !!props.app && deferred.value?.app === props.app.id)
 const showDialog = ref(false)
 const iosInstallMessage = ref(false)
 
@@ -98,18 +106,18 @@ window.addEventListener('beforeinstallprompt', (e) => {
   // Prevent the mini-infobar from appearing on mobile
   e.preventDefault()
   // Stash the event so it can be triggered later.
-  deferredPrompt.value = e
+  deferred.value = { event: e, app: linkedPwaApp.value }
   if (isIos() && !isInStandaloneMode()) iosInstallMessage.value = true
   else showDialog.value = true
 })
 
 window.addEventListener('appinstalled', () => {
   showDialog.value = false
-  deferredPrompt.value = null
+  deferred.value = null
 })
 
 const install = () => {
-  void deferredPrompt.value?.prompt()
+  void deferred.value?.event.prompt()
   showDialog.value = false
 }
 </script>

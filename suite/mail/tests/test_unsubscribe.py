@@ -176,3 +176,12 @@ class TestUnsubscribing(UnitTestCase):
         with Stubs([message()], mark_saved=False) as stubs:
             self.assertEqual(unsubscribe.unsubscribe("account", "m"), "one_click")
         self.assertEqual(len(stubs.posts), 1)
+
+    def test_a_cache_that_fails_after_sending_still_counts_as_unsubscribed(self):
+        with Stubs([message()]) as stubs:
+            with patch(
+                "suite.mail.doctype.mail_message.mail_message._remove_cached_messages",
+                side_effect=ConnectionError("redis"),
+            ):
+                self.assertEqual(unsubscribe.unsubscribe("account", "m"), "one_click")
+        self.assertEqual(len(stubs.posts), 1)

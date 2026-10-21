@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import {
   createRouter,
   createWebHistory,
@@ -6,13 +7,13 @@ import {
   type RouteRecordNormalized,
 } from 'vue-router'
 
-import { api, client } from '@/api'
+import { api, client, writesSettled } from '@/api'
 import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
 import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
-import { installPwa } from '@/platform/pwa'
+import { installPwa, pageLoadNeededFor } from '@/platform/pwa'
 import { installScrollRestoration } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 
@@ -158,7 +159,26 @@ router.beforeEach(async (to, from) => {
 
 installPageMeta(router)
 installScrollRestoration(router)
-installPwa(session)
+installPwa(session, {
+  // Until the first navigation the router stands at `/`, so the page's own URL names the app:
+  // Safari keeps the manifest a page links first, and would install the Suite from `/mail`.
+  path: () =>
+    router.currentRoute.value === START_LOCATION
+      ? window.location.pathname
+      : router.currentRoute.value.path,
+  apps: areaDefinitions
+    .filter((area) => area.installable)
+    .map((area) => ({ id: area.id, scope: area.to })),
+})
+// Moving into another app on an iPhone loads the page afresh, so the browser installs that app.
+// It loads once the page left has unmounted and its last saves (a draft, say) have landed, and
+// not for a move that was cancelled (Stay, on leaving a call).
+router.afterEach(async (to, from, failure) => {
+  if (failure || from === START_LOCATION || !pageLoadNeededFor(to.path)) return
+  await nextTick()
+  await writesSettled()
+  window.location.reload()
+})
 
 function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
   const matched = to.matched.find((record) =>

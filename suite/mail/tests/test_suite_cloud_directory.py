@@ -817,18 +817,19 @@ class TestMembers(SuiteCloudTestCase):
         frappe.set_user(self._suite_admin())
         self.addCleanup(frappe.set_user, "Administrator")
 
-        with patch("frappe.sendmail") as sendmail:
-            admin.add_member(
-                "frank",
-                DOMAIN,
-                is_admin=False,
-                send_invite=True,
-                backup_email="frank@backup.test",
-            )
+        admin.add_member(
+            "frank",
+            DOMAIN,
+            is_admin=False,
+            send_invite=True,
+            backup_email="frank@backup.test",
+        )
 
         request_key = frappe.db.get_value("Mail Account Request", {"account": account}, "request_key")
         self.assertTrue(request_key)
-        self.assertIn(f"/mail/signup/{request_key}", sendmail.call_args.kwargs["args"]["link"])
+        invite = self.fake.emails[-1]  # Suite Cloud sends it from its template
+        self.assertEqual((invite["email_type"], invite["recipient"]), ("account-invite", "frank@backup.test"))
+        self.assertIn(f"/mail/signup/{request_key}", invite["params"]["link"])
 
     def _suite_admin(self) -> str:
         """An enabled Suite Admin of this site who is not the Administrator."""

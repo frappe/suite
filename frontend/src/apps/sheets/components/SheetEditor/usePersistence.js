@@ -103,7 +103,7 @@ export function usePersistence({
       const saved = JSON.parse(plain || '{}')
       const mayWrite = doc.can_write !== false
       if (saved.formats) formats.restore(saved.formats)
-      await engine.start(saved.engine ? base64ToBytes(saved.engine) : null)
+      await _startEngine(saved)
       // A sheet last saved by the develop editor: its cells are typed into
       // IronCalc here (utils/legacy-sheet.ts); the side stores below restore
       // from its old shapes as they are.
@@ -153,6 +153,22 @@ export function usePersistence({
         kind,
         message: err?.message || 'Could not open this sheet',
       }
+    }
+  }
+
+  // IronCalc's bytes carry no version of their own, and one IronCalc may not
+  // read another's (0.9.0 cannot read 0.8.4's). When a body saved by another
+  // version fails to open, say so instead of IronCalc's "bitcode error".
+  async function _startEngine(saved) {
+    try {
+      await engine.start(saved.engine ? base64ToBytes(saved.engine) : null)
+    } catch (err) {
+      const version = saved.engine_version
+      if (!saved.engine || !version || version === ENGINE_VERSION) throw err
+      throw new Error(
+        `This sheet was saved by IronCalc ${version}, which this Sheets (IronCalc ${ENGINE_VERSION}) cannot read. Reload the page; if it still does not open, report it.`,
+        { cause: err },
+      )
     }
   }
 

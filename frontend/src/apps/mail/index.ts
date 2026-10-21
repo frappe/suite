@@ -11,6 +11,7 @@ export const mailArea: AreaDefinition = {
   icon: MailIcon,
   to: '/mail',
   requires: ['jmap'],
+  installable: true,
   phoneNav: defineAsyncComponent(() => import('@/apps/mail/components/mobile/MailTabBar.vue')),
   // Ticket 010 owns shell adoption. The existing MailLayout keeps its full frame for now.
   loadRoutes: () => import('@/apps/mail/routes'),

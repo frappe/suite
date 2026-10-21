@@ -2,8 +2,16 @@
 import { api, engine } from '@/composition/api'
 
 export { api }
-export const { client, useQuery, useMutation, useInfiniteQuery, useUpload, onTouch, onChallenge } =
-  engine
+export const {
+  client,
+  useQuery,
+  useMutation,
+  useInfiniteQuery,
+  useUpload,
+  onTouch,
+  onChallenge,
+  writesSettled,
+} = engine
 export type {
   QueryState,
   InfiniteQueryState,

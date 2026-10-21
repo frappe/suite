@@ -128,6 +128,15 @@ export class Writes {
     }
   }
 
+  /** Resolves once every write called so far has settled, and any called while it waits. */
+  async settled(): Promise<void> {
+    let tail: Promise<unknown>
+    do {
+      tail = this.tail
+      await tail
+    } while (tail !== this.tail)
+  }
+
   onChallenge(type: string, handler: ChallengeHandler): () => void {
     this.challenges.set(type, handler)
     return () => {

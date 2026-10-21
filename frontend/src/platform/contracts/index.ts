@@ -50,6 +50,11 @@ export interface AreaDefinition {
   /** What the rail's dot counts, in its tooltip ("3 unread"). Translated; "unread" when unset. */
   badgeNoun?: () => string
   /**
+   * Installs on a phone as an app of its own, from its own pages: they link
+   * the manifest in `public/pwa/<id>/`, scoped to `to` (ticket 047).
+   */
+  installable?: boolean
+  /**
    * The area's own bottom bar on a phone, in place of the shell's, for an area
    * that is an app of its own there (ticket 047). It leads to the area's own
    * pages, its profile included, not to the shell's account sheet.

@@ -100,6 +100,116 @@ describe('workbook — formulas through commands', () => {
   })
 })
 
+// ISSUES #34: IronCalc gives a formula's result the format of its inputs,
+// but on purpose not for a percent times a plain number (=A1*2 over 50%
+// showed 1). Google Sheets shows 100%; so does the workbook now.
+describe('workbook — a percent times plain numbers stays a percent', () => {
+  const shown = (formula, a1 = '50%') => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, a1)
+    setInput(wb, 'Sheet1', 2, 1, '200')
+    setInput(wb, 'Sheet1', 3, 1, formula)
+    return wb.getDisplayValue('Sheet1', 3, 1)
+  }
+
+  it('multiplies and divides by numbers', () => {
+    expect(shown('=A1*2')).toBe('100%')
+    expect(shown('=2*A1')).toBe('100%')
+    expect(shown('=A1/2')).toBe('25%')
+    expect(shown('=($A$1*3)/4')).toBe('38%')
+    expect(shown('=A1*-2')).toBe('-100%')
+  })
+
+  it('keeps the decimals of the percent cell', () => {
+    expect(shown('=A1*2', '12.5%')).toBe('25.00%')
+  })
+
+  it('leaves everything else to IronCalc', () => {
+    expect(shown('=A1*A2')).toBe('100') // 50% of 200: a number
+    expect(shown('=2/A1')).toBe('4') // a percent below the line
+    expect(shown('=SUM(A1)*2')).toBe('1')
+    expect(shown('=A1+10%')).toBe('60%') // IronCalc's own rule
+    expect(shown('=A1*2', '0.5')).toBe('1') // not a percent
+  })
+
+  it('keeps a format the cell already has', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '50%')
+    setInput(wb, 'Sheet1', 2, 1, '$5')
+    setInput(wb, 'Sheet1', 2, 1, '=A1*2')
+    expect(wb.getDisplayValue('Sheet1', 2, 1)).toBe('$1')
+  })
+
+  it('reads a percent cell on another sheet', () => {
+    const wb = createWorkbook()
+    wb.apply(cmd(CommandTypes.addSheet, { name: 'Rates' }))
+    setInput(wb, 'Rates', 1, 1, '50%')
+    setInput(wb, 'Sheet1', 1, 1, '=Rates!A1*2')
+    expect(wb.getDisplayValue('Sheet1', 1, 1)).toBe('100%')
+  })
+})
+
+// IronCalc gives a date minus a date the date format, so the days between
+// two dates showed as 1899-12-31. Google Sheets shows the number of days.
+describe('workbook — days between two dates are a number', () => {
+  const shown = (formula) => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '2025-12-09')
+    setInput(wb, 'Sheet1', 2, 1, '2025-12-19')
+    setInput(wb, 'Sheet1', 3, 1, '5')
+    setInput(wb, 'Sheet1', 4, 1, formula)
+    return wb.getDisplayValue('Sheet1', 4, 1)
+  }
+
+  it('shows the days between two date cells', () => {
+    expect(shown('=A2-A1')).toBe('10')
+    expect(shown('=$A$1-A2')).toBe('-10')
+  })
+
+  it('works with date functions', () => {
+    expect(shown('=DATE(2025,12,19)-A1')).toBe('10')
+    expect(shown('=A2-DATE(2025,12,9)')).toBe('10')
+    expect(Number(shown('=TODAY()-A1'))).toBeGreaterThan(300)
+  })
+
+  it('keeps a date plus or minus a number a date', () => {
+    expect(shown('=A1-7')).toBe('2025-12-02')
+    expect(shown('=A1+30')).toBe('2026-01-08')
+    expect(shown('=A2-A3')).toBe('2025-12-14')
+  })
+})
+
+// IronCalc reads `$` and `€` amounts as numbers but not `₹` or `£`, which
+// stayed text (and =A1*2 gave #VALUE!).
+describe('workbook — ₹ and £ amounts are numbers', () => {
+  const typed = (input) => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, input)
+    setInput(wb, 'Sheet1', 1, 2, '=A1*2')
+    return [wb.getDisplayValue('Sheet1', 1, 1), wb.getDisplayValue('Sheet1', 1, 2)]
+  }
+
+  it('reads a rupee amount', () => {
+    expect(typed('₹2')).toEqual(['₹2', '₹4'])
+    expect(typed('₹1,234.5')).toEqual(['₹1,234.50', '₹2,469.00'])
+    expect(typed('-₹3')).toEqual(['-₹3', '-₹6'])
+    expect(typed('₹ 50')).toEqual(['₹50', '₹100'])
+  })
+
+  it('reads Indian digit grouping after a rupee sign', () => {
+    expect(typed('₹1,50,000')[1]).toBe('₹300,000')
+  })
+
+  it('reads a pound amount', () => {
+    expect(typed('£9.99')).toEqual(['£9.99', '£19.98'])
+  })
+
+  it('leaves text with a rupee sign alone', () => {
+    expect(typed('₹ per kg')[0]).toBe('₹ per kg')
+    expect(typed('₹2 each')[0]).toBe('₹2 each')
+  })
+})
+
 describe('workbook — structure ops', () => {
   it('insertRows adjusts references', () => {
     const wb = createWorkbook()

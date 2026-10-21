@@ -1,5 +1,6 @@
 import { planFill } from '../../engine/fill-series.js'
 import { detectSeries } from '../../engine/patterns/index.js'
+import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellId } from '../../utils/cells.js'
 
 // Fill, extracted from SheetEditor/index.vue: the drag fill handle (series or
@@ -28,6 +29,7 @@ export function useFill({
   queueOp: _queueOp,
   rectBlocked: _rectBlocked,
   refitRowsFor,
+  readEngineFormats,
 }) {
   function _fillValidation(src, total, sn) {
     const srcRows = src.r1 - src.r0 + 1,
@@ -53,13 +55,16 @@ export function useFill({
     const sheetName = currentSheet.value
     // `total` includes `src`, so this one read is also the fill's source.
     const fillBefore = await _readInputs(total, sheetName)
+    // IronCalc's own formats of the source (a typed `$1.50` is 1.5 with
+    // IronCalc's $ format), read before the write changes anything.
+    const engineFmts = (await readEngineFormats?.(src, sheetName)) ?? {}
     const beforeFmt = _captureFormatsRange(total, sheetName)
     const beforeVal = _captureValidationRange(total, sheetName)
     const beforeMergeSnap = merge.snapshot?.()
     const cfBefore = condFormat?.getRules?.(sheetName)?.length ?? 0
     const writes = planFill(src, total, (r, c) => fillBefore[cellId(r, c)] ?? '', mode)
     _writeInputs(sheetName, writes)
-    _fillFormats(src, total, sheetName)
+    _fillFormats(src, total, sheetName, engineFmts)
     _fillValidation(src, total, sheetName)
     condFormat.extendRulesToRange(src, total, sheetName)
     // Merges are a structural format: a merged source tiles its merge into
@@ -213,8 +218,9 @@ export function useFill({
     }
   }
   // Each filled cell takes the format of its source cell (the source repeats
-  // as a pattern); a cell whose source is unformatted is cleared.
-  function _fillFormats(src, total, sn) {
+  // as a pattern); a cell whose source is unformatted is cleared. A source
+  // with no side-store number format lends IronCalc's (`engineFmts`).
+  function _fillFormats(src, total, sn, engineFmts = {}) {
     const srcRows = src.r1 - src.r0 + 1,
       srcCols = src.c1 - src.c0 + 1
     for (let r = total.r0; r <= total.r1; r++) {
@@ -223,7 +229,9 @@ export function useFill({
         // True modulo, as in _fillValidation.
         const srcR = src.r0 + ((((r - src.r0) % srcRows) + srcRows) % srcRows)
         const srcC = src.c0 + ((((c - src.c0) % srcCols) + srcCols) % srcCols)
-        const fmt = formats.get(cellId(srcR, srcC), sn)
+        let fmt = formats.get(cellId(srcR, srcC), sn)
+        const engineFmt = numFmtFromEngine(engineFmts[cellId(srcR, srcC)])
+        if (engineFmt && !fmt?.numberFormat) fmt = { ...fmt, numberFormat: engineFmt }
         if (fmt && Object.keys(fmt).length) formats.set(cellId(r, c), fmt, sn)
         else formats.clear(cellId(r, c), sn)
       }

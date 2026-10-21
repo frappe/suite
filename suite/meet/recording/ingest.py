@@ -18,6 +18,7 @@ from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_s
 
 from suite import drive
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
+from suite.suite_core import suite_email
 
 CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_DIRECTORY = ".recording-uploads"
@@ -508,16 +509,21 @@ def deliver_recording_notification(recording_name: str):
         subject, args = _recording_email_content(recording)
         message_id = f"meet-recording-finalization-{recording.name}@{frappe.local.site}"
         if not frappe.db.exists("Email Queue", {"message_id": message_id}):
-            frappe.sendmail(
-                recipients=[recording.room_owner],
-                subject=subject,
-                template="meet_recording",
-                args=args,
-                inline_images=_meet_logo_inline_images(),
-                reference_doctype="Meet Recording",
-                reference_name=recording.name,
-                message_id=message_id,
-                now=False,
+            suite_email.send(
+                "meet-recording",
+                recording.room_owner,
+                _recording_email_params(recording, args["link"]),
+                local={
+                    "subject": subject,
+                    "template": "meet_recording",
+                    "args": args,
+                    "inline_images": _meet_logo_inline_images(),
+                    "reference_doctype": "Meet Recording",
+                    "reference_name": recording.name,
+                    "message_id": message_id,
+                    "now": False,
+                },
+                request_key=message_id,  # each try sends it once
             )
         recording = _locked_recording(recording_name)
         recording.notification_pending = 0
@@ -565,6 +571,12 @@ def _recording_email_content(recording) -> tuple[str, dict]:
     if recording.artifact:
         args["link"] = frappe.utils.get_url(drive.node_url(recording.artifact))
     return subject, args
+
+
+def _recording_email_params(recording, link: str | None) -> dict:
+    room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or recording.meet_room
+    recorded_at = format_datetime(recording.started_at or recording.creation, "medium")
+    return {"room": room_title, "recorded_at": recorded_at, "status": recording.status, "link": link}
 
 
 def _meet_logo_inline_images():

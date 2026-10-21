@@ -15,7 +15,12 @@ export interface Rect {
  * one edit ('' clears a cell).
  */
 export interface CellPort {
-  read(sheet: string, rect: Rect): Promise<{ inputs: string[][]; displays: string[][] }>
+  /** `numFmts: true` also returns IronCalc's num_fmt per cell, when the port can. */
+  read(
+    sheet: string,
+    rect: Rect,
+    opts?: { numFmts?: boolean },
+  ): Promise<{ inputs: string[][]; displays: string[][]; numFmts?: string[][] }>
   write(sheet: string, map: Record<string, string>): unknown
 }
 

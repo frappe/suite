@@ -12,6 +12,7 @@ function setup(
   inputs: Record<string, string>,
   fmts: Record<string, object> = {},
   refitRowsFor = vi.fn(() => null as RowHeightChange | null),
+  engineFmts: Record<string, string> = {},
 ) {
   const cells = { ...inputs }
   const formatStore: Record<string, object> = { ...fmts }
@@ -53,6 +54,11 @@ function setup(
     queueOp,
     rectBlocked: () => false,
     refitRowsFor,
+    readEngineFormats: async (rect: Rect) => {
+      const out: Record<string, string> = {}
+      for (const id of Object.keys(readRect(rect))) if (engineFmts[id]) out[id] = engineFmts[id]
+      return out
+    },
   })
   return {
     fill,
@@ -106,6 +112,30 @@ describe('Ctrl+D / Ctrl+R', () => {
     expect(op.beforeFormats.A2).toBeNull()
     expect(op.afterFormats.A2).toEqual(bold)
     expect(t.queueOp.mock.calls[0]?.[0].summary).toBe('Fill down')
+  })
+})
+
+// A typed `$1.50` / `15%` is formatted by IronCalc (its input is 1.5 /
+// 0.15); the fill carries that format like a side-store one.
+describe('IronCalc formats', () => {
+  it('fill down carries the format IronCalc gave a typed value', async () => {
+    const t = setup(
+      { A1: '1.5', B1: '0.15', C1: '7' },
+      { C1: { numberFormat: 'number:2' } },
+      undefined,
+      {
+        A1: '$#,##0.00',
+        B1: '#,##0%',
+        C1: '#,##0',
+      },
+    )
+    t.select({ r0: 0, c0: 0, r1: 2, c1: 2 })
+    t.fill.fillDown()
+    await vi.waitFor(() => expect(t.cells.A3).toBe('1.5'))
+    expect(t.formatStore.A3).toEqual({ numberFormat: 'currency:USD:2' })
+    expect(t.formatStore.B2).toEqual({ numberFormat: 'percentage:0' })
+    // A side-store format wins over IronCalc's.
+    expect(t.formatStore.C2).toEqual({ numberFormat: 'number:2' })
   })
 })
 
