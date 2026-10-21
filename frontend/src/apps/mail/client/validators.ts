@@ -1568,7 +1568,7 @@ export const operationGetUnifiedFolders: Validators<
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
                 anyOf: [
-                  { enum: ['Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
+                  { enum: ['Gray', 'Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
                   { type: 'null' },
                 ],
                 title: 'Color',
@@ -1641,7 +1641,7 @@ export const operationGetMailboxes: Validators<GetMailboxesInput, GetMailboxesOu
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
                 anyOf: [
-                  { enum: ['Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
+                  { enum: ['Gray', 'Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
                   { type: 'null' },
                 ],
                 title: 'Color',
