@@ -2810,6 +2810,7 @@
                 "anyOf": [
                   {
                     "enum": [
+                      "Gray",
                       "Blue",
                       "Green",
                       "Amber",
@@ -2990,6 +2991,7 @@
                 "anyOf": [
                   {
                     "enum": [
+                      "Gray",
                       "Blue",
                       "Green",
                       "Amber",

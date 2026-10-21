@@ -72,7 +72,7 @@ class Mailbox(TypedDict):
     slug: str | None
     subscribed: bool
     icon: NotRequired[str | None]
-    color: NotRequired[Literal["Blue", "Green", "Amber", "Red", "Purple"] | None]
+    color: NotRequired[Literal["Gray", "Blue", "Green", "Amber", "Red", "Purple"] | None]
     disable_push_notification: NotRequired[Flag]
     automation_rules: NotRequired[AutomationRules | None]
 
@@ -84,7 +84,7 @@ class UnifiedFolder(TypedDict):
     unread_threads: int
     accounts: list[str]
     icon: str | None
-    color: Literal["Blue", "Green", "Amber", "Red", "Purple"] | None
+    color: Literal["Gray", "Blue", "Green", "Amber", "Red", "Purple"] | None
 
 
 class AddressBook(TypedDict):

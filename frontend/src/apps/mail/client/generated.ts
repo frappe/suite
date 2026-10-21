@@ -847,7 +847,7 @@ export type GetUnifiedFoldersOutputUnifiedFolder = {
   unread_threads: number
   accounts: Array<string>
   icon: string | null
-  color: ('Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
+  color: ('Gray' | 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
 }
 
 export type GetUnifiedFoldersInput = Record<string, never>
@@ -895,7 +895,7 @@ export type GetMailboxesOutputMailbox = {
   slug: string | null
   subscribed: boolean
   icon?: string | null
-  color?: ('Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
+  color?: ('Gray' | 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
   disable_push_notification?: 0 | 1
   automation_rules?: GetMailboxesOutputAutomationRules | null
 }
