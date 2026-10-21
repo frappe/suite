@@ -2,7 +2,9 @@
   <!-- Mail's own sidebar, in the shell's sidebar slot on a desktop and in the
 	     bottom nav's sheet on a phone. The page header's folder button and a tap
 	     on the active Mail tab open the sheet. -->
-  <AreaSidebar area="mail" :title="__('Mail')">
+  <!-- On a phone it is the folders sheet: Folders, every folder in sight, each with its count and
+       nothing else, as develop's sheet was. Editing a folder is Settings' there. -->
+  <AreaSidebar area="mail" :title="isMobile ? __('Folders') : __('Mail')">
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
          one account, or on the dashboard, there is nothing to pick: it is just named. A phone
          switches accounts on the Profile page instead, so its folders sheet is folders only. -->
@@ -63,7 +65,7 @@
             <div v-if="!isMoreToggle(item)" class="flex items-center">
               <!-- The menu shows on hover, on a touch screen (no hover to show it), and when Tab
                    reaches it: hidden then, its focus ring ringed nothing. -->
-              <Dropdown v-if="item.menuOptions" :options="item.menuOptions">
+              <Dropdown v-if="item.menuOptions && !isMobile" :options="item.menuOptions">
                 <Button variant="ghost" class="!bg-transparent" @click.stop>
                   <template #icon>
                     <Ellipsis
@@ -75,7 +77,8 @@
               <span
                 class="text-ink-gray-4 mr-2 text-sm"
                 :class="{
-                  'group-hover:hidden group-has-[button:focus-visible]:hidden': item.menuOptions,
+                  'group-hover:hidden group-has-[button:focus-visible]:hidden':
+                    item.menuOptions && !isMobile,
                 }"
               >
                 {{ item.suffix }}
@@ -103,7 +106,6 @@ import ArrowLeft from '~icons/lucide/arrow-left'
 import CalendarClock from '~icons/lucide/calendar-clock'
 import ChevronDown from '~icons/lucide/chevron-down'
 import ChevronUp from '~icons/lucide/chevron-up'
-import CircleUserRound from '~icons/lucide/circle-user-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
@@ -176,14 +178,17 @@ const moreToggle = (holds: string[]) => ({
   holds,
 })
 const isMoreToggle = (item: object) => 'moreToggle' in item
+// A phone's sheet has the room to show them all, and no hover to find a fold by.
 const withMore = <T, M extends { activeFor?: string[] }>(items: T[], more: M[]) =>
-  more.length
-    ? [
-        ...items,
-        moreToggle(more.flatMap((item) => item.activeFor ?? [])),
-        ...(moreOpen.value ? more : []),
-      ]
-    : items
+  isMobile.value
+    ? [...items, ...more]
+    : more.length
+      ? [
+          ...items,
+          moreToggle(more.flatMap((item) => item.activeFor ?? [])),
+          ...(moreOpen.value ? more : []),
+        ]
+      : items
 const store = userStore()
 const { mailboxes, unifiedFolders } = store
 
@@ -569,20 +574,6 @@ const sidebarItems = computed(() => {
     groups.push({
       label: __('Admin'),
       items: [{ label: __('Admin Dashboard'), icon: Crown, to: { path: '/mail/dashboard' } }],
-    })
-
-  // The phone's settings page. A desktop opens Settings from the account menu instead.
-  if (isMobile.value)
-    groups.push({
-      label: '',
-      items: [
-        {
-          label: __('Profile'),
-          icon: CircleUserRound,
-          to: { name: 'mail-profile', params: { accountId: store.accountId } },
-          activeFor: ['mail-profile'],
-        },
-      ],
     })
 
   return groups
