@@ -5,7 +5,6 @@
       :threads
       :thread
       :can-go-next="canGoNext"
-      @set-flagged="onSetFlagged"
       @set-seen="setThreadSeen"
       @archive-thread="emit('archiveThread')"
       @unarchive-thread="emit('unarchiveThread')"
@@ -24,16 +23,6 @@
     <div class="relative min-h-0 flex-1 overflow-hidden">
       <Transition :name="slide || ''" @after-enter="emit('slideDone')">
         <div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
-          <!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
-		     and its border is the separator content passes under. -->
-          <div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
-            <!-- !leading-7: subjects wrap and want a looser line, and both text-lg-semibold
-			     (its own line-height baked in) and MailLayout's `.mail-app h2` rule outrank a
-			     plain leading-* utility. -->
-            <h2 class="text-lg-semibold !leading-7">
-              {{ thread[0].subject || __('[No subject]') }}
-            </h2>
-          </div>
           <div ref="threadContainer" class="flex-1 overflow-y-auto">
             <!-- The composer window floats over the app, so while one is up the thread keeps a
 			     little room under its last message — enough to scroll clear of a minimised bar
@@ -53,13 +42,14 @@
                 'sm:flex sm:h-full sm:flex-col': isDraftAlone,
               }"
             >
-              <!-- Desktop: the subject heads the thread and scrolls with it, wrapping rather than
-				     cut short in the toolbar. A phone pins it under the toolbar instead (above). -->
+              <!-- The subject heads the thread and scrolls with it, wrapping rather than cut short in
+				     the toolbar, on a phone as on a desktop. A phone's padding puts it on the axis of
+				     the messages' own px-3.5. -->
               <!-- Not over a draft that is the whole thread: its own Subject field says it, a line
 				     below, and a heading there repeated it or read "[No subject]" mid-sentence. -->
               <h1
-                v-if="!isMobile && thread?.length && !isDraftAlone"
-                class="text-ink-gray-8 text-xl-semibold flex items-start gap-1 !leading-7 sm:pb-2"
+                v-if="thread?.length && !isDraftAlone"
+                class="text-ink-gray-8 text-xl-semibold flex items-start gap-1 !leading-7 max-sm:px-3.5 max-sm:py-3 sm:pb-2"
               >
                 <!-- Copied on a click: a subject is what gets pasted into a ticket or a chat. -->
                 <Tooltip v-if="thread[0].subject" :text="__('Copy subject')">
@@ -91,17 +81,6 @@
                   </template>
                 </Button>
               </h1>
-              <!-- pb, not mb: the thread's space-y is a margin, and the two would collapse. -->
-              <ScreenerThreadBanner
-                v-if="screenedSenders.length"
-                class="sm:pb-3"
-                :senders="screenedSenders"
-                :domains="trustableDomains(screenedSenders.map((sender) => sender.email))"
-                @allow="allowSenders()"
-                @allow-one="(email: string) => allowSenders([email])"
-                @allow-domain="(domain: string) => allowDomain(domain)"
-                @deny="denySenders()"
-              />
               <!-- Rows carry their own date until a long thread's fold is opened; from then
 				     a quiet header names each day and the rows keep only the clock. On desktop
 				     the new and more-messages dividers drop the pill outline, as quiet as the
@@ -513,6 +492,19 @@
                       </div>
 
                       <div v-show="!isCollapsed(mail)">
+                        <!-- The decision the conversation waits on, under the sender it asks
+										     about and above what they wrote: in their newest message, which is
+										     the one open. It answers for every unknown sender in the thread. -->
+                        <ScreenerThreadBanner
+                          v-if="mail.name === screenerMail"
+                          class="mb-4"
+                          :senders="screenedSenders"
+                          :domains="trustableDomains(screenedSenders.map((sender) => sender.email))"
+                          @allow="allowSenders()"
+                          @allow-one="(email: string) => allowSenders([email])"
+                          @allow-domain="(domain: string) => allowDomain(domain)"
+                          @deny="denySenders()"
+                        />
                         <!-- Styled as the new-sender bar is: a blocked sender's mail is the
 										     other side of the same decision. -->
                         <div
@@ -1313,6 +1305,12 @@ const screenedSenders = computed(() => {
       if (!senders.has(email.toLowerCase()))
         senders.set(email.toLowerCase(), { email, name: mail.from_name })
   return [...senders.values()]
+})
+// The message the screener's question sits in: the newest one from a sender the thread waits on.
+const screenerMail = computed(() => {
+  if (!screenedSenders.value.length) return undefined
+  return thread.value.findLast((mail) => screener.waitingSenders(mail, scopeAccountId.value).length)
+    ?.name
 })
 
 // Remote content is withheld from senders not yet trusted, and offered back in each message that

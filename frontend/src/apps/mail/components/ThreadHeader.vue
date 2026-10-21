@@ -2,7 +2,7 @@
   <!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
 	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
   <div
-    class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:border-b-0 max-sm:py-0"
+    class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0"
   >
     <Button
       variant="ghost"
@@ -13,41 +13,24 @@
         <ChevronLeft class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
       </template>
     </Button>
-    <!-- Desktop keeps only actions up here: the subject heads the thread below, where it can
-	     wrap. -->
+    <!-- Only actions up here, on a phone as on a desktop: the subject heads the thread below,
+	     where it can wrap. -->
     <template v-if="thread?.length">
-      <div
-        class="flex items-center space-x-2"
-        :class="isMobile ? 'ml-auto shrink-0 -mr-2' : 'min-w-0 flex-1'"
-      >
-        <!-- What a phone keeps in More, desktop leads with: the everyday ones. -->
+      <div class="flex min-w-0 flex-1 items-center space-x-2">
+        <!-- The everyday actions lead, on a phone as on a desktop; the star sits beside the
+             subject, in the thread (MailThread). -->
         <Button
-          v-for="action in isMobile ? [] : visibleActions"
+          v-for="action in visibleActions"
           :key="action.label"
           variant="ghost"
+          class="max-sm:!h-8 max-sm:!w-8"
           :tooltip="action.label"
           @click="action.onClick"
         >
           <template #icon>
-            <component :is="action.icon" class="icon" />
+            <component :is="action.icon" class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
           </template>
         </Button>
-        <!-- On desktop the star sits beside the subject, in the thread (MailThread). -->
-        <Button
-          v-if="isMobile && !inDrafts && thread.some((mail) => !mail.draft)"
-          variant="ghost"
-          class="max-sm:!h-8 max-sm:!w-8"
-          :tooltip="isFlagged ? __('Unstar') : __('Star')"
-          @click="emit('setFlagged', starIds(), !isFlagged)"
-        >
-          <template #icon>
-            <Star
-              :style="isFlagged ? FLAGGED_STAR_STYLE : undefined"
-              class="icon max-sm:!h-[18px] max-sm:!w-[18px]"
-            />
-          </template>
-        </Button>
-
         <AdaptiveDropdown v-if="!inDrafts" :options="moveToOptions" :title="__('Move To')">
           <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
             <template #icon>
@@ -68,14 +51,6 @@
             </template>
           </Button>
         </AdaptiveDropdown>
-        <AdaptiveDropdown v-if="isMobile" :options="moreActions">
-          <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('More')">
-            <template #icon>
-              <Ellipsis class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
-            </template>
-          </Button>
-        </AdaptiveDropdown>
-
         <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). -->
         <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
           <Button
@@ -116,17 +91,15 @@ import {
   ChevronLeft,
   CircleAlert,
   CircleCheck,
-  Ellipsis,
   FolderInput,
   Folders,
   Mail as MailIcon,
-  Star,
   Trash2,
 } from 'lucide-vue-next'
 import { computed, h, type Component } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { FLAGGED_STAR_STYLE, FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
+import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import type { Mail, MailboxData } from '@/apps/mail/types'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
@@ -134,7 +107,6 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { folderTicks } from '@/apps/mail/utils/folderTicks'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
-import { lastMessageOf } from '@/apps/mail/utils/threadFolding'
 import {
   mailboxForUnifiedFolder,
   mailboxIdForParam,
@@ -149,7 +121,6 @@ const { thread, threads, canGoNext } = defineProps<{
   canGoNext?: boolean
 }>()
 const emit = defineEmits([
-  'setFlagged',
   'setSeen',
   'archiveThread',
   'unarchiveThread',
@@ -191,14 +162,6 @@ const backRoute = computed(() =>
 const threadMailboxes = computed(() =>
   commonMailboxIds((thread ?? []).filter((mail: Mail) => mail.id)),
 )
-
-// Starred while any message is, as the Starred folder reads it. Starring marks the newest message;
-// unstarring clears them all, so the thread leaves Starred (see threadStarIds).
-const isFlagged = computed(() => thread.some((m) => m.flagged))
-const starIds = () =>
-  isFlagged.value
-    ? thread.filter((m) => m.flagged && m.id).map((m) => m.id)
-    : [lastMessageOf(thread)?.id].filter((id): id is string => !!id)
 
 // Drafts offers only Discard: a draft isn't archived, junked, filed, starred or read. And Archive and
 // Junk act only on mail you received, so a conversation of nothing but your own has neither.
