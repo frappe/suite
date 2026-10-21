@@ -546,19 +546,28 @@ const sidebarItems = computed(() => {
     selectedMailbox.value = undefined
     showFolderModal.value = true
   }
+  const newFolderRow = { label: __('New Folder'), icon: Plus, to: undefined, onClick: newFolder }
   const groups = [
-    { label: '', key: 'lead', items: withMore(leadItems, secondaryItems) },
+    // A phone's sheet names its sections as develop's did: Default and Custom.
+    {
+      label: isMobile.value ? __('Default') : '',
+      key: 'lead',
+      items: withMore(leadItems, secondaryItems),
+    },
     // With folders of your own, the heading carries the "+". With none, a heading over nothing read
     // as a list that had failed to load: a New Folder row sits under it instead, and the heading's
-    // "+" would only repeat it.
-    {
-      label: __('Your folders'),
-      key: 'folders',
-      items: yourFolders.length
-        ? yourFolders
-        : [{ label: __('New Folder'), icon: Plus, to: undefined, onClick: newFolder }],
-      ...(yourFolders.length ? { action: { label: __('New Folder'), onClick: newFolder } } : {}),
-    },
+    // "+" would only repeat it. A phone always has the row, last, as develop's sheet did: a "+" in a
+    // heading is too small a target for a thumb.
+    isMobile.value
+      ? { label: __('Custom'), key: 'folders', items: [...yourFolders, newFolderRow] }
+      : {
+          label: __('Your folders'),
+          key: 'folders',
+          items: yourFolders.length ? yourFolders : [newFolderRow],
+          ...(yourFolders.length
+            ? { action: { label: __('New Folder'), onClick: newFolder } }
+            : {}),
+        },
   ]
 
   // Admins reach the dashboard from its own row, last in the sidebar.
