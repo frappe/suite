@@ -12,7 +12,7 @@
   "src/apps/calendar/pages/CalendarView.vue": 129,
   "src/apps/calendar/utils/eventMeta.ts": 1,
   "src/apps/calendar/utils/index.ts": 5,
-  "src/apps/mail/components/AppSidebar.vue": 17,
+  "src/apps/mail/components/AppSidebar.vue": 16,
   "src/apps/mail/components/ComposeMailEditor.vue": 8,
   "src/apps/mail/components/Controls/ContactCombobox.vue": 1,
   "src/apps/mail/components/Controls/RecipientInput.vue": 2,
