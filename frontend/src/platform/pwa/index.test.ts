@@ -296,6 +296,43 @@ describe('Suite PWA', () => {
   })
 })
 
+describe('moving between apps on an iPhone', () => {
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+  const PIXEL =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36'
+
+  const loadAt = async (at: string, userAgent: string, standalone = false) => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent)
+    Object.defineProperty(navigator, 'standalone', { configurable: true, value: standalone })
+    path.value = at
+    await install('guest')
+    return (await import('@/platform/pwa')).pageLoadNeededFor
+  }
+  afterEach(() => Reflect.deleteProperty(navigator, 'standalone'))
+
+  it('loads the page afresh when the browser would install another app', async () => {
+    const needed = await loadAt('/home', IPHONE)
+    expect(needed('/mail/account/a/mailbox/inbox')).toBe(true)
+    expect(needed('/calendar')).toBe(true)
+    // Still the Suite's pages: the manifest the page loaded with is the right one.
+    expect(needed('/drive')).toBe(false)
+  })
+
+  it('stays in place inside the app the page loaded in', async () => {
+    const needed = await loadAt('/mail', IPHONE)
+    expect(needed('/mail/account/a/mailbox/sent')).toBe(false)
+    expect(needed('/home')).toBe(true)
+  })
+
+  it('stays in place where the browser follows the link, or in an installed app', async () => {
+    expect((await loadAt('/home', PIXEL))('/mail')).toBe(false)
+    vi.resetModules()
+    document.head.innerHTML = ''
+    expect((await loadAt('/home', IPHONE, true))('/mail')).toBe(false)
+  })
+})
+
 describe('push notification click', () => {
   const origin = 'https://suite.test'
   const clientsWith = (urls: string[]) => {

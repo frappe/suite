@@ -36,9 +36,11 @@ export function installPwa(
   session: Pick<Session, 'status' | 'user' | 'onLogout'>,
   routes: PwaRoutes,
 ): void {
+  installableApps = routes.apps
   watch(
     () => pwaAppAt(routes.path(), routes.apps),
     (app) => {
+      loadedApp ??= app
       currentApp.value = app
       setPwaTags(app)
     },
@@ -79,6 +81,9 @@ export interface PwaRoutes {
 }
 
 const currentApp = shallowRef('suite')
+let installableApps: readonly InstallableApp[] = []
+// The app whose manifest the page linked when it loaded.
+let loadedApp: string | null = null
 
 /** The app whose manifest the page links now: an installable app's id, or `suite`. */
 export const linkedPwaApp = readonly(currentApp)
@@ -87,6 +92,26 @@ export const linkedPwaApp = readonly(currentApp)
 export function pwaAppAt(path: string, apps: readonly InstallableApp[]): string {
   const app = apps.find(({ scope }) => path === scope || path.startsWith(`${scope}/`))
   return app?.id ?? 'suite'
+}
+
+/**
+ * Whether opening `path` takes a fresh page load for the browser to install the right app. On an
+ * iPhone or iPad the browser reads a page's manifest once, when the page loads, and keeps it
+ * however the page changes its link: moved from Home to Mail in place, it would install the Suite
+ * under Mail's icon. Every other browser follows the link, and an installed app installs nothing.
+ */
+export function pageLoadNeededFor(path: string): boolean {
+  if (!loadedApp || !onIosBrowser()) return false
+  return pwaAppAt(path, installableApps) !== loadedApp
+}
+
+/** Safari, or any browser on iOS (all are WebKit), outside an app on the home screen. */
+function onIosBrowser(): boolean {
+  const { userAgent, maxTouchPoints } = navigator
+  // iPadOS asks for desktop pages as a Mac; only its touch screen tells it apart.
+  const ios =
+    /iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)
+  return ios && !(navigator as Navigator & { standalone?: boolean }).standalone
 }
 
 /**

@@ -12,7 +12,7 @@ import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
 import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
-import { installPwa } from '@/platform/pwa'
+import { installPwa, pageLoadNeededFor } from '@/platform/pwa'
 import { installScrollRestoration } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 
@@ -159,10 +159,21 @@ router.beforeEach(async (to, from) => {
 installPageMeta(router)
 installScrollRestoration(router)
 installPwa(session, {
-  path: () => router.currentRoute.value.path,
+  // Until the first navigation the router stands at `/`, so the page's own URL names the app:
+  // Safari keeps the manifest a page links first, and would install the Suite from `/mail`.
+  path: () =>
+    router.currentRoute.value === START_LOCATION
+      ? window.location.pathname
+      : router.currentRoute.value.path,
   apps: areaDefinitions
     .filter((area) => area.installable)
     .map((area) => ({ id: area.id, scope: area.to })),
+})
+// Moving into another app on an iPhone loads the page afresh, so the browser installs that app.
+router.beforeEach((to, from) => {
+  if (from === START_LOCATION || !pageLoadNeededFor(to.path)) return true
+  window.location.assign(to.fullPath)
+  return false
 })
 
 function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
