@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import {
   createRouter,
   createWebHistory,
@@ -6,7 +7,7 @@ import {
   type RouteRecordNormalized,
 } from 'vue-router'
 
-import { api, client } from '@/api'
+import { api, client, writesSettled } from '@/api'
 import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
@@ -170,10 +171,12 @@ installPwa(session, {
     .map((area) => ({ id: area.id, scope: area.to })),
 })
 // Moving into another app on an iPhone loads the page afresh, so the browser installs that app.
-router.beforeEach((to, from) => {
-  if (from === START_LOCATION || !pageLoadNeededFor(to.path)) return true
-  window.location.assign(to.fullPath)
-  return false
+// It loads once the page left has unmounted and its last saves (a draft, say) have landed.
+router.afterEach(async (to, from) => {
+  if (from === START_LOCATION || !pageLoadNeededFor(to.path)) return
+  await nextTick()
+  await writesSettled()
+  window.location.reload()
 })
 
 function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
