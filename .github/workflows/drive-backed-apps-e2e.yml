@@ -223,6 +223,7 @@ jobs:
         working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           bench --site drive-writer.test set-config allow_tests true
+          bench --site drive-writer.test set-config storage_v2 1
           bench --site drive-writer.test set-config ignore_csrf 1
           bench --site drive-writer.test set-config host_name "http://drive-writer.test:8000"
           if [ "${{ github.event_name }}" = "schedule" ]; then
