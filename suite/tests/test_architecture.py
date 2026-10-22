@@ -542,6 +542,7 @@ class TestArchitecture(unittest.TestCase):
                 "DriveNotFound",
                 "DriveOverQuota",
                 "Satellite",
+                "administration_usage",
                 "adopt_media",
                 "bind_legacy_storage_reservation",
                 "check",
@@ -559,6 +560,7 @@ class TestArchitecture(unittest.TestCase):
                 "list_versions",
                 "node_url",
                 "personal_root_for",
+                "preview_user_transfer",
                 "push_preview",
                 "read_file",
                 "record_comment",
@@ -569,9 +571,11 @@ class TestArchitecture(unittest.TestCase):
                 "release_storage_reservation",
                 "resolve_share_link",
                 "rollback_savepoint",
+                "set_user_active",
                 "store_file",
                 "take_version",
                 "touch",
+                "transfer_user_drive",
             ),
         )
         for name in drive.__all__:

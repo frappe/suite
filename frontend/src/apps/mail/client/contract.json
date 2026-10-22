@@ -8991,7 +8991,63 @@
         "type": "object"
       },
       "output": {
-        "type": "null"
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "success",
+          "user",
+          "status",
+          "error",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "CreationResult",
+        "type": "object"
       },
       "errors": [
         "PermissionError",
@@ -9029,7 +9085,42 @@
         "type": "object"
       },
       "output": {
-        "type": "null"
+        "$defs": {
+          "MemberOutcome": {
+            "properties": {
+              "user": {
+                "title": "User",
+                "type": "string"
+              },
+              "success": {
+                "title": "Success",
+                "type": "boolean"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Error"
+              }
+            },
+            "required": [
+              "user",
+              "success",
+              "error"
+            ],
+            "title": "MemberOutcome",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/MemberOutcome"
+        },
+        "type": "array"
       },
       "errors": [
         "PermissionError",
@@ -9067,7 +9158,42 @@
         "type": "object"
       },
       "output": {
-        "type": "null"
+        "$defs": {
+          "MemberOutcome": {
+            "properties": {
+              "user": {
+                "title": "User",
+                "type": "string"
+              },
+              "success": {
+                "title": "Success",
+                "type": "boolean"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Error"
+              }
+            },
+            "required": [
+              "user",
+              "success",
+              "error"
+            ],
+            "title": "MemberOutcome",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/MemberOutcome"
+        },
+        "type": "array"
       },
       "errors": [
         "PermissionError",

@@ -160,7 +160,13 @@ def delete(user: str, confirmation: str) -> dict:
     from suite.mail.directory import delete_account_by_email
     from suite.mail.events import delete_user_accounts
 
-    require_admin()
+    caller = require_admin()
+    if user in frappe.STANDARD_USERS or (
+        "System Manager" in frappe.get_roles(user)
+        and caller != "Administrator"
+        and "System Manager" not in frappe.get_roles(caller)
+    ):
+        frappe.throw(_("You do not have permission to delete this Mail account"), frappe.PermissionError)
     frappe.db.get_value("User", user, "name", for_update=True)
     address = frappe.db.get_value("User Settings", {"user": user}, "username") or read(user).get("account")
     if (

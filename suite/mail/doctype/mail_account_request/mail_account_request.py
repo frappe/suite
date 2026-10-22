@@ -449,6 +449,12 @@ class MailAccountRequest(Document):
             user = identity
         self.suite_user = user
         self.db_set("suite_user", user)
+        if not existing:
+            from suite.suite_core.storage import initialize_user_limit
+
+            # User insertion snapshots today's default. Replace it with this
+            # request's snapshot before any provider effect can fail (§6.2).
+            initialize_user_limit(user, cap=self.combined_cap_bytes or None, use_default=False)
         write(user, account=self.account, operation=self.name, status="Setup failed")
         provision(
             user,
@@ -472,11 +478,6 @@ class MailAccountRequest(Document):
             set_account_enabled(user, True)
         write(user, status="Active", must_change_password=0, temporary_expires_at=None)
         invalidate_measurements(user, self.account)
-        if not existing:
-            from suite.suite_core.storage import initialize_user_limit
-
-            initialize_user_limit(user, cap=self.combined_cap_bytes or None, use_default=False)
-
         # Step - 5: Create Push Subscription
         if frappe.utils.get_url().startswith("https"):
             execute_with_logging(

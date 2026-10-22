@@ -4434,7 +4434,26 @@ export const operationDeleteMembers: Validators<DeleteMembersInput, DeleteMember
     )
   },
   validateOutput(value: unknown): asserts value is DeleteMembersOutput {
-    assertSchema(value, { type: 'null' }, 'delete_members output')
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'delete_members output',
+    )
   },
 }
 
@@ -4453,7 +4472,26 @@ export const operationDisableMembers: Validators<DisableMembersInput, DisableMem
     )
   },
   validateOutput(value: unknown): asserts value is DisableMembersOutput {
-    assertSchema(value, { type: 'null' }, 'disable_members output')
+    assertSchema(
+      value,
+      {
+        $defs: {
+          MemberOutcome: {
+            properties: {
+              user: { title: 'User', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['user', 'success', 'error'],
+            title: 'MemberOutcome',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/MemberOutcome' },
+        type: 'array',
+      },
+      'disable_members output',
+    )
   },
 }
 
@@ -4472,7 +4510,26 @@ export const operationEnableMembers: Validators<EnableMembersInput, EnableMember
     )
   },
   validateOutput(value: unknown): asserts value is EnableMembersOutput {
-    assertSchema(value, { type: 'null' }, 'enable_members output')
+    assertSchema(
+      value,
+      {
+        $defs: {
+          MemberOutcome: {
+            properties: {
+              user: { title: 'User', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['user', 'success', 'error'],
+            title: 'MemberOutcome',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/MemberOutcome' },
+        type: 'array',
+      },
+      'enable_members output',
+    )
   },
 }
 

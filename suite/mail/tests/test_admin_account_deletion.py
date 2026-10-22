@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.mail.api.admin import delete_members
+from suite.suite_core.account_state import read
 from suite.suite_core.administration import update_user
 from suite.suite_core.storage import state
 from suite.tests.utils import ensure_user
@@ -48,8 +49,9 @@ class TestMailAccountDeletion(IntegrationTestCase):
         provider = Mock()
         provider.call.side_effect = frappe.ValidationError("provider offline")
         with patch("suite.mail.directory.get_client", return_value=provider):
-            with self.assertRaises(frappe.ValidationError):
-                delete_members([self.user], confirmation=self.user)
+            result = delete_members([self.user], confirmation=self.user)
+        self.assertFalse(result["success"])
+        self.assertEqual(read(self.user)["status"], "Deletion failed")
         self.assertEqual(frappe.db.get_value("User Settings", {"user": self.user}, "username"), self.user)
         self.assertEqual(frappe.db.get_value("User", self.user, "enabled"), 0)
 
@@ -58,3 +60,29 @@ class TestMailAccountDeletion(IntegrationTestCase):
             with self.assertRaises(frappe.ValidationError):
                 delete_members([self.user], confirmation="wrong@example.test")
         provider.assert_not_called()
+
+    def test_provider_success_and_local_cleanup_failure_returns_a_recoverable_deletion_outcome(self):
+        get_all = frappe.db.get_all
+
+        def unavailable_accounts(doctype, *args, **kwargs):
+            if doctype == "User Account":
+                raise RuntimeError("local account storage unavailable")
+            return get_all(doctype, *args, **kwargs)
+
+        with (
+            patch("suite.mail.directory.get_client", return_value=Mock()),
+            patch.object(frappe.db, "get_all", side_effect=unavailable_accounts),
+        ):
+            result = delete_members([self.user], confirmation=self.user)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "Deletion failed")
+        self.assertEqual(read(self.user)["status"], "Deletion failed")
+        self.assertEqual(read(self.user)["account"], self.user)
+        self.assertEqual(frappe.db.get_value("User", self.user, "enabled"), 0)
+        self.assertTrue(frappe.db.exists("Drive Root", self.root))
+        provider = Mock()
+        provider.call.side_effect = frappe.DoesNotExistError
+        with patch("suite.mail.directory.get_client", return_value=provider):
+            retried = delete_members([self.user], confirmation=self.user)
+        self.assertTrue(retried["success"], retried)
+        self.assertEqual(read(self.user)["status"], "Deleted")

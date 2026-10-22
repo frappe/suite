@@ -3352,7 +3352,14 @@ const operationDeleteMailingLists: MutationRef<
 
 export type DeleteMembersInput = { names: Array<string>; confirmation?: string }
 
-export type DeleteMembersOutput = null
+export type DeleteMembersOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
 
 export type DeleteMembersError = 'PermissionError' | 'ValidationError'
 
@@ -3365,7 +3372,6 @@ const operationDeleteMembers: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.delete',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.delete_members',
@@ -3377,9 +3383,15 @@ const operationDeleteMembers: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDeleteMembers,
 }
 
+export type DisableMembersOutputMemberOutcome = {
+  user: string
+  success: boolean
+  error: string | null
+}
+
 export type DisableMembersInput = { names: Array<string> }
 
-export type DisableMembersOutput = null
+export type DisableMembersOutput = Array<DisableMembersOutputMemberOutcome>
 
 export type DisableMembersError = 'PermissionError' | 'ValidationError'
 
@@ -3392,7 +3404,6 @@ const operationDisableMembers: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.disable',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.disable_members',
@@ -3404,9 +3415,15 @@ const operationDisableMembers: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDisableMembers,
 }
 
+export type EnableMembersOutputMemberOutcome = {
+  user: string
+  success: boolean
+  error: string | null
+}
+
 export type EnableMembersInput = { names: Array<string> }
 
-export type EnableMembersOutput = null
+export type EnableMembersOutput = Array<EnableMembersOutputMemberOutcome>
 
 export type EnableMembersError = 'PermissionError' | 'ValidationError'
 
@@ -3419,7 +3436,6 @@ const operationEnableMembers: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.enable',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.enable_members',

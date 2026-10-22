@@ -25,6 +25,12 @@ class AddDomainInput(TypedDict):
     description: NotRequired[str | None]
 
 
+class MemberOutcome(TypedDict):
+    user: str
+    success: bool
+    error: str | None
+
+
 class AddGroupInput(TypedDict):
     name: str
     domain: str
@@ -340,9 +346,9 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         DeleteMailingListsInput,
         type(None),
     ),
-    (admin.delete_members, "mutation", "admin.members.delete", DeleteMembersInput, type(None)),
-    (admin.disable_members, "mutation", "admin.members.disable", DisableMembersInput, type(None)),
-    (admin.enable_members, "mutation", "admin.members.enable", EnableMembersInput, type(None)),
+    (admin.delete_members, "mutation", "admin.members.delete", DeleteMembersInput, CreationResult),
+    (admin.disable_members, "mutation", "admin.members.disable", DisableMembersInput, list[MemberOutcome]),
+    (admin.enable_members, "mutation", "admin.members.enable", EnableMembersInput, list[MemberOutcome]),
     (admin.get_account_options, "query", "admin.members.options", None, AccountOptions),
     (admin.get_accounts, "query", "admin.members.accounts", GetAccountsInput, list[AddressRef]),
     (admin.get_domain, "query", "admin.domains.get", GetDomainInput, Domain),

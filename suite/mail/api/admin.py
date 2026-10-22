@@ -967,83 +967,60 @@ def delete_account_requests(names: list) -> None:
 
 
 @frappe.whitelist(methods=["POST"])
-def delete_members(names: list, confirmation: str = "") -> None:
+def delete_members(names: list, confirmation: str = "") -> dict:
     """Delete one disabled member's mailbox, never its Suite User (§4.3)."""
     check_admin_permission("delete Mail account", names)
     if not isinstance(names, list) or len(names) != 1:
         frappe.throw(_("Delete one Mail account at a time with its address confirmation"))
-    name = check_member_target(names[0])
-    frappe.db.get_value("User", name, "name", for_update=True)
-    if frappe.db.get_value("User", name, "enabled"):
-        frappe.throw(_("Disable the user before deleting their Mail account"))
-    email = get_account_email(name)
-    if not email or confirmation.strip().lower() != email.lower():
-        frappe.throw(_("Type the account address to confirm permanent deletion"))
-    from suite.mail.directory import delete_account_by_email
-    from suite.mail.events import delete_user_accounts
-    from suite.mail.jmap import clear_jmap_session
+    from suite.mail import administer_account
 
-    # Provider errors propagate: never claim success or release identity on a failed deletion.
-    delete_account_by_email(email)
-    settings = frappe.get_doc("User Settings", {"user": name})
-    settings.username = None
-    settings.app_password = ""
-    settings.save(ignore_permissions=True)
-    delete_user_accounts(frappe.get_doc("User", name))
-    clear_jmap_session(name)
-    from suite.suite_core.storage import state
-
-    cache_doc, _policy, cached = state(lock=True)
-    cached.get("entries", {}).pop(email, None)
-    cached.get("personal", {}).pop(name, None)
-    # Until a complete inventory succeeds, never attribute the deleted account's
-    # successful value to a new holder of the same address (§7).
-    cached["site_mail"] = None
-    cached["stale"] = True
-    cache_doc.measurements = frappe.as_json(cached)
-    cache_doc.save(ignore_permissions=True)
-    from suite.suite_core.account_state import write
-
-    write(
-        name,
-        account=None,
-        operation=None,
-        status="Deleted",
-        must_change_password=0,
-        temporary_expires_at=None,
-    )
-    from suite.api.account import forget_logged_in_users
-
-    forget_logged_in_users()
+    return administer_account("delete", user=names[0], confirmation=confirmation)
 
 
 @frappe.whitelist(methods=["POST"])
-def disable_members(names: list) -> None:
-    user = check_admin_permission("disable members", names)
-    if user in names:
-        frappe.throw(_("You cannot disable your own account."))
-    for name in names:
-        check_member_target(name)
-        from suite.suite_core.administration import guard_user_change
-
-        guard_user_change(name, enabled=False)
-        member = frappe.get_doc("User", name)
-        if not member.enabled:
-            continue
-        member.enabled = 0
-        member.save(ignore_permissions=True)
+def disable_members(names: list[str]) -> list[dict]:
+    check_admin_permission("disable members", names)
+    return _set_members_enabled(names, enabled=False)
 
 
 @frappe.whitelist(methods=["POST"])
-def enable_members(names: list) -> None:
+def enable_members(names: list[str]) -> list[dict]:
     check_admin_permission("enable members", names)
-    for name in names:
-        check_member_target(name)
-        member = frappe.get_doc("User", name)
-        if member.enabled:
-            continue
-        member.enabled = 1
-        member.save(ignore_permissions=True)
+    return _set_members_enabled(names, enabled=True)
+
+
+def _set_members_enabled(names: list[str], *, enabled: bool) -> list[dict]:
+    """Keep successful lifecycle changes when another target fails (§6.2)."""
+    from uuid import uuid4
+
+    from suite.suite_core.administration import update_user
+    from suite.suite_core.audit import record
+
+    results = []
+    for name in dict.fromkeys(names):
+        savepoint = f"member_status_{uuid4().hex}"
+        frappe.db.savepoint(savepoint)
+        messages = len(frappe.local.message_log or [])
+        try:
+            check_member_target(name)
+            update_user(name, enabled=enabled)
+        except frappe.QueryDeadlockError:
+            # InnoDB has rolled back the entire request, including preceding
+            # successes. Never return per-target success for discarded changes.
+            raise
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            del frappe.local.message_log[messages:]
+            error = (
+                _("User could not be reactivated. Check Mail setup and provider access, then retry.")
+                if enabled
+                else _("User could not be disabled. Check Admin safeguards and provider access, then retry.")
+            )
+            record("users.update", name, "failed")
+            results.append({"user": name, "success": False, "error": error})
+        else:
+            results.append({"user": name, "success": True, "error": None})
+    return results
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1097,7 +1074,7 @@ def update_member(
         from suite.suite_core.administration import guard_user_change
 
         if role not in ("admin", "user"):
-            frappe.throw(_("Choose Admin or Normal User"))
+            frappe.throw(_("Choose Admin or Member"))
         guard_user_change(member_id, is_admin=role == "admin")
         if role == "admin":
             member.append_roles("Suite Admin")

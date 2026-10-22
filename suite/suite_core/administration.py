@@ -5,6 +5,12 @@ from frappe import _
 
 from suite.utils.user import is_suite_admin, is_user_enabled
 
+ADMIN_ROLES_SQL = """
+SELECT parent FROM `tabHas Role`
+WHERE role = 'Suite Admin' AND parenttype = 'User'
+FOR UPDATE
+"""
+
 
 def require_admin() -> str:
     user = frappe.session.user
@@ -51,9 +57,9 @@ def guard_user_change(user: str, *, is_admin: bool | None = None, enabled: bool 
         frappe.throw(_("User does not exist"), frappe.DoesNotExistError)
     if enabled is False and user == caller:
         frappe.throw(_("You cannot disable your own account"), frappe.ValidationError)
-    admins = set(
-        frappe.get_all("Has Role", filters={"role": "Suite Admin", "parenttype": "User"}, pluck="parent")
-    )
+    # A previous read in this request may have established an older InnoDB
+    # snapshot. Count current roles, not that snapshot, after acquiring User locks.
+    admins = {row[0] for row in frappe.db.sql(ADMIN_ROLES_SQL)}
     removing = is_admin is False or enabled is False
     active = {row.name for row in rows if row.enabled and row.name in admins and row.name != "Administrator"}
     if removing and user in active and len(active) == 1:
@@ -87,4 +93,8 @@ def update_user(
     from suite.suite_core.audit import record
 
     record("users.update", user, "completed")
+    if user == frappe.session.user and is_admin is False:
+        # A permitted self-demotion ends dashboard access. Do not perform a
+        # newly unauthorized read that would roll back the completed change.
+        return []
     return list_users()

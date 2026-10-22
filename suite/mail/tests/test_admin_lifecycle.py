@@ -16,7 +16,7 @@ from suite.composition.access import (
     require_access,
 )
 from suite.mail.api.account import create_account as accept_invitation
-from suite.mail.api.admin import add_member
+from suite.mail.api.admin import add_member, disable_members, enable_members
 from suite.mail.directory import provision_account
 from suite.mail.doctype.user_settings.user_settings import UserSettings
 from suite.mail.events import update_password
@@ -41,6 +41,8 @@ class Provider:
             return {"limits": {"max_disk_gb": 100}}
         if method == "mail.domains.list_domains":
             return [{"domain": "company.frappe.cloud", "enabled": True, "is_verified": True}]
+        if method == "mail.domains.get_domain":
+            return {"domain": "company.frappe.cloud", "enabled": True, "is_verified": True}
         email = args.get("email")
         if method == "mail.accounts.create_account":
             if email in self.accounts:
@@ -82,7 +84,11 @@ class TestAdminLifecycle(IntegrationTestCase):
         super().setUp()
         frappe.set_user("Administrator")
         self.provider = Provider()
-        for target in ("suite.mail.directory.get_client", "suite.mail.account_lifecycle.get_client"):
+        for target in (
+            "suite.mail.directory.get_client",
+            "suite.mail.account_lifecycle.get_client",
+            "suite.mail.suite_cloud.get_client",
+        ):
             self.enterContext(patch(target, return_value=self.provider))
         for target in (
             "suite.mail.api.admin.is_suite_cloud_configured",
@@ -120,7 +126,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertGreater(read(user)["temporary_expires_at"], now_datetime())
         with self.set_user(user):
             with self.assertRaises(PasswordChangeRequired):
-                require_access(user, method="suite.drive.http.api.node_children")
+                require_access(user, method="suite.mail.api.mail.get_threads")
             require_access(user, method="frappe.core.doctype.user.user.update_password")
 
     def test_replacement_invalidates_predecessor_and_expiry_blocks_login(self):
@@ -143,6 +149,49 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.provider.fail = None
         retry = self.create()
         self.assertTrue(retry["success"], retry)
+        self.assertEqual(self.provider.created, 1)
+
+    def test_failed_provisioning_retry_keeps_the_creation_time_cap_snapshot(self):
+        from suite.suite_core.storage import set_default, state
+
+        set_default(4_000_000_000)
+        self.provider.fail = "mail.accounts.set_account_enabled"
+        first = self.create()
+        self.assertFalse(first["success"])
+        set_default(6_000_000_000)
+        self.provider.fail = None
+        retry = self.create()
+        self.assertTrue(retry["success"], retry)
+        _doc, policy, _measurements = state()
+        self.assertEqual(policy["users"][retry["user"]]["cap"], 4_000_000_000)
+
+    def test_an_edited_pending_invitation_cap_is_persisted_before_failed_setup(self):
+        from suite.mail.utils.dt import to_utc_z
+        from suite.suite_core.storage import set_default, state
+
+        set_default(4_000_000_000)
+        with patch("frappe.sendmail"):
+            add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+        request = frappe.get_doc("Mail Account Request", name)
+        update_invite(name, to_utc_z(request.expires_at), 5_000_000_000)
+        request.reload()
+        set_default(6_000_000_000)
+        self.provider.fail = "mail.accounts.set_account_enabled"
+        frappe.db.savepoint("failed_invitation_acceptance")
+        with self.set_user("Guest"), self.assertRaises(frappe.ValidationError):
+            accept_invitation(request.request_key, "Employee", "", "Chosen-invite-passphrase-55!")
+        # Failed HTTP acceptance rolls back locally; a workflow caller which
+        # retains setup progress must already have the invitation's policy.
+        _doc, policy, _measurements = state()
+        self.assertEqual(policy["users"][self.address]["cap"], 5_000_000_000)
+        frappe.db.rollback(save_point="failed_invitation_acceptance")
+        self.assertFalse(frappe.db.exists("User", self.address))
+        self.provider.fail = None
+        with self.set_user("Guest"):
+            accept_invitation(request.request_key, "Employee", "", "Chosen-invite-passphrase-55!")
+        _doc, policy, _measurements = state()
+        self.assertEqual(policy["users"][self.address]["cap"], 5_000_000_000)
         self.assertEqual(self.provider.created, 1)
 
     def test_another_operation_cannot_claim_or_delete_an_existing_provider_account(self):
@@ -204,6 +253,58 @@ class TestAdminLifecycle(IntegrationTestCase):
             ):
                 with self.subTest(action=action), self.assertRaises(frappe.PermissionError):
                     mail.administer_account(action, **arguments)
+
+    def test_bulk_disabling_keeps_successes_and_returns_safe_failed_target_outcomes(self):
+        first = self.create()
+        self.username += "-second"
+        second = self.create()
+        call = self.provider.call
+
+        def provider_failure(method, **args):
+            if method == "mail.accounts.set_account_enabled" and args.get("email") == first["user"]:
+                raise RuntimeError("provider credential secret-do-not-disclose")
+            return call(method, **args)
+
+        with patch.object(self.provider, "call", side_effect=provider_failure):
+            results = disable_members([second["user"], first["user"]])
+        self.assertEqual([row["success"] for row in results], [True, False])
+        self.assertNotIn("secret-do-not-disclose", results[1]["error"])
+        self.assertIsNone(results[0]["error"])
+        self.assertEqual(frappe.db.get_value("User", first["user"], "enabled"), 1)
+        self.assertEqual(frappe.db.get_value("User", second["user"], "enabled"), 0)
+        self.assertTrue(disable_members([first["user"]])[0]["success"])
+
+    def test_bulk_reactivation_preserves_disabled_failed_setup_and_enables_ready_users(self):
+        first = self.create()
+        self.username += "-second"
+        second = self.create()
+        disable_members([first["user"], second["user"]])
+        write(first["user"], status="Setup failed")
+        results = enable_members([first["user"], second["user"]])
+        self.assertEqual([row["success"] for row in results], [False, True])
+        self.assertEqual(frappe.db.get_value("User", first["user"], "enabled"), 0)
+        self.assertEqual(frappe.db.get_value("User", second["user"], "enabled"), 1)
+
+    def test_bulk_disabling_reports_self_disable_without_discarding_another_users_success(self):
+        admin = add_member(self.username, "company.frappe.cloud", True, False, "", first_name="Admin")
+        self.username += "-second"
+        normal = self.create()
+        with self.set_user(admin["user"]):
+            results = disable_members([normal["user"], admin["user"]])
+        self.assertEqual([row["success"] for row in results], [True, False])
+        self.assertEqual(frappe.db.get_value("User", admin["user"], "enabled"), 1)
+        self.assertEqual(frappe.db.get_value("User", normal["user"], "enabled"), 0)
+
+    def test_bulk_disabling_cannot_remove_the_last_active_admin(self):
+        first = add_member(self.username, "company.frappe.cloud", True, False, "", first_name="Admin")
+        self.username += "-second"
+        second = add_member(self.username, "company.frappe.cloud", True, False, "", first_name="Admin")
+        frappe.db.delete(
+            "Has Role", {"role": "Suite Admin", "parent": ["not in", [first["user"], second["user"]]]}
+        )
+        results = disable_members([first["user"], second["user"]])
+        self.assertEqual([row["success"] for row in results], [True, False])
+        self.assertEqual(frappe.db.get_value("User", second["user"], "enabled"), 1)
 
     def test_first_password_change_enables_mail_but_cannot_reuse_the_temporary_password(self):
         created = self.create()
