@@ -16,13 +16,22 @@ const fcm = vi.hoisted(() => ({
   handlers: [] as Array<(payload: object) => void>,
   calls: [] as string[],
   relayRequests: [] as string[],
+  // The apps each client was made for, and the subscriptions it made for them.
+  apps: [] as string[][],
 }))
 vi.mock('@/platform/pwa/frappe-push-notification', () => ({
   default: class {
     constructor(
       readonly projectName: string,
       readonly relayURL: string,
-    ) {}
+      readonly apps: string[],
+    ) {
+      fcm.apps.push(apps)
+    }
+    // The relay hears of the apps the token is not subscribed for yet.
+    async syncApps() {
+      fcm.calls.push(`subscribe ${localStorage.getItem('firebase_token_mail')} for ${this.apps}`)
+    }
     async fetchWebConfig() {
       fcm.relayRequests.push(`${this.relayURL}/api/method/notification_relay.api.get_config`)
       if (fcm.config instanceof Error) throw fcm.config
@@ -43,6 +52,12 @@ vi.mock('@/platform/pwa/frappe-push-notification', () => ({
       fcm.calls.push(`unsubscribe ${localStorage.getItem('firebase_token_mail')}`)
       localStorage.removeItem('firebase_token_mail')
     }
+    // Notifications turned on here: a new token, subscribed.
+    async enableNotification() {
+      localStorage.setItem('firebase_token_mail', 'token-new')
+      fcm.calls.push('subscribe token-new')
+      return { permission_granted: true }
+    }
     // Firebase drops the token; the server is not told.
     async forgetToken() {
       fcm.calls.push(`forget ${localStorage.getItem('firebase_token_mail')}`)
@@ -62,11 +77,13 @@ beforeEach(() => {
   vi.resetModules()
   document.head.innerHTML = ''
   localStorage.clear()
+  sessionStorage.clear()
   fcm.config = { projectId: 'suite-push', appId: '1:2:web:3' }
   fcm.initialized = []
   fcm.handlers = []
   fcm.calls = []
   fcm.relayRequests = []
+  fcm.apps = []
   window.push_relay_server_url = 'https://relay.test'
   showNotification = vi.fn(async () => {})
   register = vi.fn(async () => ({
@@ -83,6 +100,7 @@ beforeEach(() => {
 afterEach(() => {
   Reflect.deleteProperty(navigator, 'serviceWorker')
   Reflect.deleteProperty(window, 'push_relay_server_url')
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -119,6 +137,13 @@ async function install(status: SessionStatus, user: string | null = 'a@suite.tes
 
 const linked = (rel: string) =>
   [...document.head.querySelectorAll(`link[rel="${rel}"]`)].map((link) => link.getAttribute('href'))
+
+/** The browser's notification permission, answering `answer` when asked. */
+function stubNotification(answer: NotificationPermission) {
+  const requestPermission = vi.fn(async () => answer)
+  vi.stubGlobal('Notification', { permission: 'default', requestPermission })
+  return requestPermission
+}
 
 async function settle() {
   await nextTick()
@@ -244,20 +269,108 @@ describe('Suite PWA', () => {
 
     await session.logout()
 
-    expect(fcm.calls).toEqual(['unsubscribe token-a'])
+    expect(fcm.calls).toEqual(['subscribe token-a for mail,calendar', 'unsubscribe token-a'])
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+  })
+
+  it('subscribes a browser tab for every app, and an installed app for itself', async () => {
+    localStorage.setItem(TOKEN_KEY, 'token-a')
+    path.value = '/home'
+    await install('authenticated', 'a@suite.test')
+    expect(fcm.apps).toEqual([['mail', 'calendar']])
+
+    // Calendar's own installed app: a session of its own.
+    vi.resetModules()
+    sessionStorage.clear()
+    fcm.apps = []
+    fcm.calls = []
+    Object.defineProperty(navigator, 'standalone', { configurable: true, value: true })
+    path.value = '/calendar'
+    await install('authenticated', 'a@suite.test')
+    Reflect.deleteProperty(navigator, 'standalone')
+    expect(fcm.apps).toEqual([['calendar']])
+    expect(fcm.calls).toEqual(['subscribe token-a for calendar'])
+  })
+
+  it("keeps the one Suite app subscribed for every app, reloaded on another app's page", async () => {
+    localStorage.setItem(TOKEN_KEY, 'token-a')
+    Object.defineProperty(navigator, 'standalone', { configurable: true, value: true })
+    try {
+      // The Suite app opens at its start URL.
+      path.value = '/suite/start'
+      await install('authenticated', 'a@suite.test')
+      // Later in the same session it reloads on Calendar's page.
+      vi.resetModules()
+      fcm.apps = []
+      path.value = '/calendar'
+      await install('authenticated', 'a@suite.test')
+      expect(fcm.apps).toEqual([['mail', 'calendar']])
+    } finally {
+      Reflect.deleteProperty(navigator, 'standalone')
+    }
   })
 
   it("drops another user's token at sign-in when the logout did not go through the platform", async () => {
     localStorage.setItem(TOKEN_KEY, 'token-a')
     await install('authenticated', 'a@suite.test')
-    expect(fcm.calls).toEqual([])
+    // A's token is A's: it is kept, and subscribed for every app.
+    expect(fcm.calls).toEqual(['subscribe token-a for mail,calendar'])
 
     // User A leaves through a logout that runs no platform cleanup; user B signs in.
     vi.resetModules()
+    fcm.calls = []
     await install('authenticated', 'b@suite.test')
 
     expect(fcm.calls).toEqual(['forget token-a'])
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
+  })
+
+  it('asks for permission from the tap, before the push worker is ready', async () => {
+    const requestPermission = stubNotification('granted')
+    let ready!: () => void
+    register.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          ready = () => resolve({ scope: 'http://suite.test/', showNotification })
+        }),
+    )
+    await install('authenticated', 'a@suite.test')
+    const { useDevicePush } = await import('@/platform/pwa')
+
+    const turningOn = useDevicePush().enable()
+    expect(requestPermission).toHaveBeenCalled()
+    ready()
+    expect(await turningOn).toBe(true)
+  })
+
+  it('says the browser refused only when it did, and a failed setup as that', async () => {
+    stubNotification('denied')
+    await install('authenticated', 'a@suite.test')
+    const { useDevicePush } = await import('@/platform/pwa')
+    expect(await useDevicePush().enable()).toBe(false)
+
+    vi.resetModules()
+    stubNotification('granted')
+    register.mockRejectedValue(new Error('no worker'))
+    await install('authenticated', 'a@suite.test')
+    const fresh = await import('@/platform/pwa')
+    await expect(fresh.useDevicePush().enable()).rejects.toThrow(
+      'Notifications could not be set up on this device.',
+    )
+  })
+
+  it('drops a token turned on in this browser when the next user signs in', async () => {
+    stubNotification('granted')
+    await install('authenticated', 'a@suite.test')
+    const { useDevicePush } = await import('@/platform/pwa')
+    expect(await useDevicePush().enable()).toBe(true)
+
+    // User A leaves through a logout that runs no platform cleanup; user B signs in.
+    vi.resetModules()
+    fcm.calls = []
+    await install('authenticated', 'b@suite.test')
+
+    expect(fcm.calls).toEqual(['forget token-new'])
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
   })
 

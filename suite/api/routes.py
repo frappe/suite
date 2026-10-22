@@ -9,7 +9,6 @@ from frappe import _
 from frappe.auth import LoginManager
 from frappe.core.doctype.user.user import get_timezones, switch_theme, update_password
 from frappe.handler import logout
-from frappe.push_notification import subscribe, unsubscribe
 from frappe.translate import get_boot_translations
 
 from suite.api import account, people
@@ -23,6 +22,7 @@ from suite.api.preferences import (
     update_preferences,
 )
 from suite.composition.http import BadRequest, Route
+from suite.suite_core.push import PushResult, subscribe, unsubscribe
 from suite.utils.user import generate_user_keys
 
 Given = str | int | float | bool | list | dict | None
@@ -123,12 +123,8 @@ login = LoginManager.login
 
 class PushToken(TypedDict):
     fcm_token: str
-    project_name: str
-
-
-class PushResult(TypedDict):
-    success: bool
-    message: str
+    # The apps the device is notified for (see suite.suite_core.push).
+    apps: list[Literal["mail", "calendar"]]
 
 
 CONTRACT_ROUTES = (
@@ -163,24 +159,24 @@ CONTRACT_ROUTES = (
         allow_guest=True,
     ),
     Route(
-        "GET",
-        "/api/method/frappe.push_notification.subscribe",
+        "POST",
+        "/api/v2/method/suite.suite_core.push.subscribe",
         "subscribe",
-        query=PushToken,
+        id="suite.push.subscribe",
+        body=PushToken,
         output=PushResult,
         kind="mutation",
         public_name="push.subscribe",
-        envelope="message",
     ),
     Route(
-        "GET",
-        "/api/method/frappe.push_notification.unsubscribe",
+        "POST",
+        "/api/v2/method/suite.suite_core.push.unsubscribe",
         "unsubscribe",
-        query=PushToken,
+        id="suite.push.unsubscribe",
+        body=PushToken,
         output=PushResult,
         kind="mutation",
         public_name="push.unsubscribe",
-        envelope="message",
     ),
     Route(
         "POST",

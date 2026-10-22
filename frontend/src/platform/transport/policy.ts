@@ -5,8 +5,8 @@ import type { Operation } from './index'
 export const mutationEffects = {
   'frappe.login': 'none',
   'frappe.logout': 'none',
-  subscribe: 'none',
-  unsubscribe: 'none',
+  'suite.push.subscribe': 'none',
+  'suite.push.unsubscribe': 'none',
   update_preferences: {
     invalidates: ['get_preferences', 'account_get', 'people_get', 'users_get'],
   },

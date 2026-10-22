@@ -981,33 +981,40 @@
       "bytes": false
     },
     {
-      "id": "subscribe",
+      "id": "suite.push.subscribe",
       "kind": "mutation",
       "publicName": "push.subscribe",
       "page": null,
-      "envelope": "message",
-      "method": "GET",
-      "path": "/api/method/frappe.push_notification.subscribe",
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.suite_core.push.subscribe",
       "pathParams": [],
-      "query": {
+      "query": null,
+      "body": {
         "properties": {
           "fcm_token": {
             "title": "Fcm Token",
             "type": "string"
           },
-          "project_name": {
-            "title": "Project Name",
-            "type": "string"
+          "apps": {
+            "items": {
+              "enum": [
+                "mail",
+                "calendar"
+              ],
+              "type": "string"
+            },
+            "title": "Apps",
+            "type": "array"
           }
         },
         "required": [
           "fcm_token",
-          "project_name"
+          "apps"
         ],
         "title": "PushToken",
         "type": "object"
       },
-      "body": null,
       "output": {
         "properties": {
           "success": {
@@ -1033,33 +1040,40 @@
       "bytes": false
     },
     {
-      "id": "unsubscribe",
+      "id": "suite.push.unsubscribe",
       "kind": "mutation",
       "publicName": "push.unsubscribe",
       "page": null,
-      "envelope": "message",
-      "method": "GET",
-      "path": "/api/method/frappe.push_notification.unsubscribe",
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.suite_core.push.unsubscribe",
       "pathParams": [],
-      "query": {
+      "query": null,
+      "body": {
         "properties": {
           "fcm_token": {
             "title": "Fcm Token",
             "type": "string"
           },
-          "project_name": {
-            "title": "Project Name",
-            "type": "string"
+          "apps": {
+            "items": {
+              "enum": [
+                "mail",
+                "calendar"
+              ],
+              "type": "string"
+            },
+            "title": "Apps",
+            "type": "array"
           }
         },
         "required": [
           "fcm_token",
-          "project_name"
+          "apps"
         ],
         "title": "PushToken",
         "type": "object"
       },
-      "body": null,
       "output": {
         "properties": {
           "success": {

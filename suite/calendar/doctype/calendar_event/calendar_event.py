@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.push_notification import PushNotification
 from frappe.utils import cint, get_system_timezone
 from jmap import MethodError
 
@@ -40,6 +39,7 @@ from suite.mail.jmap import (
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.logger import get_push_logger
+from suite.suite_core.push import notify
 from suite.utils import enqueue_job, parse_filters, user_context
 from suite.utils.dt import utcnow
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -925,18 +925,9 @@ def send_event_alert_notification(user: str, alert: dict, ctx: dict | None = Non
             user=user,
         )
 
-        pn = PushNotification("mail")
-        if not pn.is_enabled():
+        # To the devices subscribed for Calendar: an installed Calendar app, or a browser tab.
+        if not notify(user, "calendar", title, body, link, f"{url}/assets/suite/calendar/images/logo.png"):
             logger.debug("push-notifications-disabled")
-            return
-
-        pn.send_notification_to_user(
-            user,
-            title,
-            body,
-            link,
-            f"{url}/assets/suite/calendar/images/logo.png",
-        )
 
         logger.info("calendar-alert-notification-sent")
 
