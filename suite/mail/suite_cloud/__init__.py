@@ -202,6 +202,10 @@ def _error_payload(response: requests.Response) -> tuple[str | None, str | None]
 
 @request_cache
 def get_client() -> SuiteCloudClient:
+    from suite.mail import dev_suite_cloud
+
+    if dev_suite_cloud.is_enabled():
+        return dev_suite_cloud.DevSuiteCloud()  # type: ignore[return-value]
     is_suite_cloud_configured(raise_exception=True)
     url, tenant, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)
     # The same Verify SSL as the JMAP URL: Suite Cloud and the cluster share a deployment.
