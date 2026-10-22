@@ -16,7 +16,7 @@
     </template>
 
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <FormControl v-model="search" :placeholder="__('Search users')" class="w-full sm:w-80">
+      <FormControl v-model="search" :placeholder="__('Search')" class="w-full sm:w-80">
         <template #prefix>
           <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
