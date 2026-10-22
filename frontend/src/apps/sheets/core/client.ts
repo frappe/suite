@@ -68,12 +68,20 @@ export interface ViewportArgs {
   includeStyles?: boolean
   /** Also return each cell's input (the formula, not its result). */
   includeInputs?: boolean
+  /** Also return which cells hold a number (see ViewportResult.numbers). */
+  includeNumbers?: boolean
 }
 
 export interface ViewportResult {
   values: string[][]
   styles?: ExtendedCellStyle[][]
   inputs?: string[][]
+  /**
+   * The cells holding a number (a formula result included), as flat
+   * [rowOffset, colOffset, …] from the top-left cell: the grid right-aligns
+   * them whatever they show (`1,000`, `$5`, `50%`).
+   */
+  numbers?: number[]
 }
 
 export interface ReadCellsArgs {

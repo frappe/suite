@@ -76,7 +76,7 @@ const openCreate = () => router.replace({ query: { ...route.query, new: '1' } })
     <Button
       v-if="showNewEventButton"
       variant="solid"
-      class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
+      class="fixed bottom-[calc(var(--suite-phone-nav-height,4rem+env(safe-area-inset-bottom))+1rem)] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
       :aria-label="__('New event')"
       @click="openCreate"
     >

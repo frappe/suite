@@ -26,12 +26,11 @@
     <div class="px-3 pb-3">
       <Button variant="subtle" :label="__('Email')" class="w-full" @click="emit('email')" />
     </div>
-    <!-- The last few other conversations with them, from them or to them: what came before is
-	     usually the context for what they are saying now. It comes in under the card a moment after
+    <!-- The last few other conversations they have written in: what they sent before is usually
+	     the context for what they are saying now. It comes in under the card a moment after
 	     it opens — too quickly to read as loading — and an address with none gets no section. -->
     <div v-if="recent.length" class="border-outline-gray-1 border-t p-1.5">
-      <!-- View all ends the list it heads: every conversation with them, from or to, on the
-	       search page. -->
+      <!-- View all ends the list it heads: everything they have sent, on the search page. -->
       <div class="flex items-center justify-between px-1.5 pb-1 pt-0.5">
         <p class="text-ink-gray-5 text-xs">{{ __('Recent') }}</p>
         <button
@@ -69,7 +68,7 @@ import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { homeMailbox } from '@/apps/mail/utils/recentWith'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 
-type RecentRow = OutputOf<typeof api.mail.messages.recentWith>[number]
+type RecentRow = OutputOf<typeof api.mail.messages.recentFrom>[number]
 
 const { email, threadId } = defineProps<{
   name: string
@@ -84,12 +83,13 @@ const emit = defineEmits<{ email: []; copy: []; viewAll: []; open: [] }>()
 const router = useRouter()
 const { accountId, mailboxes, mailboxIds } = injectAccountScope()
 
-// One more than shown, so the conversation the card was opened from can drop out and leave three.
-const recentWith = useQuery(api.mail.messages.recentWith, () =>
+// Their recent mail, one more than shown, so the conversation the card was opened from can drop out
+// and leave three.
+const recentFrom = useQuery(api.mail.messages.recentFrom, () =>
   accountId.value && email ? { account: accountId.value, email, limit: 4 } : false,
 )
 const recent = computed(() =>
-  (recentWith.data ?? []).filter((row) => row.thread_id !== threadId).slice(0, 3),
+  (recentFrom.data ?? []).filter((row) => row.thread_id !== threadId).slice(0, 3),
 )
 
 const openThread = (row: RecentRow) => {

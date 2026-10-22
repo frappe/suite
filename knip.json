@@ -56,9 +56,6 @@
     "suite/meet/recorder-server": {
       "entry": ["src/integration/*.integration.ts"],
       "project": ["src/**/*.ts"]
-    },
-    "suite/sheets/collab-server": {
-      "project": ["*.js", "test/**/*.js"]
     }
   }
 }

@@ -1,7 +1,8 @@
-import { watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 
 import type { Session } from '@/platform/session'
 
+import { onIos, standalone, startInstallOffer } from './install'
 import { pushNotification } from './notification'
 import SPLASH_DEVICES from './splash-devices.json'
 
@@ -16,9 +17,12 @@ declare global {
 }
 
 /**
- * The one Suite PWA [T010, T018].
+ * The Suite PWA, and the apps installed from their own pages [T010, T018, ticket 047].
  *
- * - The manifest and the iOS install tags sit on every route, in every area.
+ * - The manifest and the iOS install tags sit on every route, and follow it:
+ *   a page of an installable app (Mail's, under `/mail`) links that app's, so
+ *   installing from there installs the app; every other page links the
+ *   Suite's, which stays at its address so installs of the Suite keep it.
  * - The push service worker registers once a user signs in, in every area and
  *   whether or not Mail, Calendar and Meet are in the shell. It is Mail's FCM
  *   worker (`src/apps/mail/sw.ts`, built to `sw.js`); its push handlers stay
@@ -29,8 +33,21 @@ declare global {
  *   logout that did not go through the platform session) drops it in the
  *   browser, so the next user never receives the last user's mail.
  */
-export function installPwa(session: Pick<Session, 'status' | 'user' | 'onLogout'>): void {
-  setPwaTags()
+export function installPwa(
+  session: Pick<Session, 'status' | 'user' | 'onLogout'>,
+  routes: PwaRoutes,
+): void {
+  installableApps = routes.apps
+  startInstallOffer(currentApp)
+  watch(
+    () => pwaAppAt(routes.path(), routes.apps),
+    (app) => {
+      loadedApp ??= app
+      currentApp.value = app
+      setPwaTags(app)
+    },
+    { immediate: true },
+  )
   let client: Promise<PushClient | null> | null = null
   watch(
     session.status,
@@ -48,6 +65,45 @@ export function installPwa(session: Pick<Session, 'status' | 'user' | 'onLogout'
     },
     { whileSignedIn: true },
   )
+}
+
+/**
+ * An app installed from its own pages: they are the pages under `scope`, and
+ * its manifest and artwork sit in `public/pwa/<id>/`.
+ */
+export interface InstallableApp {
+  id: string
+  scope: string
+}
+
+export interface PwaRoutes {
+  /** The current route's path. Reactive. */
+  path: () => string
+  apps: readonly InstallableApp[]
+}
+
+const currentApp = shallowRef('suite')
+let installableApps: readonly InstallableApp[] = []
+// The app whose manifest the page linked when it loaded.
+let loadedApp: string | null = null
+
+export { useInstallOffer, type InstallOffer } from './install'
+
+/** The app a page installs as: the installable app it belongs to, or the Suite. */
+export function pwaAppAt(path: string, apps: readonly InstallableApp[]): string {
+  const app = apps.find(({ scope }) => path === scope || path.startsWith(`${scope}/`))
+  return app?.id ?? 'suite'
+}
+
+/**
+ * Whether opening `path` takes a fresh page load for the browser to install the right app. On an
+ * iPhone or iPad the browser reads a page's manifest once, when the page loads, and keeps it
+ * however the page changes its link: moved from Home to Mail in place, it would install the Suite
+ * under Mail's icon. Every other browser follows the link, and an installed app installs nothing.
+ */
+export function pageLoadNeededFor(path: string): boolean {
+  if (!loadedApp || !onIos() || standalone()) return false
+  return pwaAppAt(path, installableApps) !== loadedApp
 }
 
 /**
@@ -133,29 +189,29 @@ const PWA_METAS: Array<[name: string, content: string]> = [
 ]
 
 /**
- * Attaches the Suite manifest, the Apple touch icon, the standalone metas and
- * the iOS splash images to the document head, once. They do not depend on
- * the route.
+ * Attaches `app`'s manifest, Apple touch icon and iOS splash images to the
+ * document head, with the standalone metas, in place of another app's.
  */
-export function setPwaTags(): void {
-  if (document.head.querySelector('[data-pwa-scope="suite"]')) return
+export function setPwaTags(app = 'suite'): void {
+  if (document.head.querySelector(`[data-pwa-app="${app}"]`)) return
+  for (const tag of document.head.querySelectorAll('[data-pwa-app]')) tag.remove()
 
-  const assets = `${import.meta.env.BASE_URL}pwa/suite/`
-  appendPwaTag('link', { rel: 'manifest', href: `${assets}manifest.webmanifest` })
-  appendPwaTag('link', { rel: 'apple-touch-icon', href: `${assets}apple-icon-180.png` })
-  for (const [name, content] of PWA_METAS) appendPwaTag('meta', { name, content })
+  const assets = `${import.meta.env.BASE_URL}pwa/${app}/`
+  appendPwaTag(app, 'link', { rel: 'manifest', href: `${assets}manifest.webmanifest` })
+  appendPwaTag(app, 'link', { rel: 'apple-touch-icon', href: `${assets}apple-icon-180.png` })
+  for (const [name, content] of PWA_METAS) appendPwaTag(app, 'meta', { name, content })
 
   for (const { width: cssWidth, height: cssHeight, dpr } of SPLASH_DEVICES) {
     const device =
       `(device-width: ${cssWidth}px) and (device-height: ${cssHeight}px) and ` +
       `(-webkit-device-pixel-ratio: ${dpr})`
     const [width, height] = [cssWidth * dpr, cssHeight * dpr]
-    appendPwaTag('link', {
+    appendPwaTag(app, 'link', {
       rel: 'apple-touch-startup-image',
       href: `${assets}splash/apple-splash-${width}-${height}.png`,
       media: `${device} and (orientation: portrait)`,
     })
-    appendPwaTag('link', {
+    appendPwaTag(app, 'link', {
       rel: 'apple-touch-startup-image',
       href: `${assets}splash/apple-splash-${height}-${width}.png`,
       media: `${device} and (orientation: landscape)`,
@@ -163,9 +219,9 @@ export function setPwaTags(): void {
   }
 }
 
-function appendPwaTag(tag: 'link' | 'meta', attrs: Record<string, string>): void {
+function appendPwaTag(app: string, tag: 'link' | 'meta', attrs: Record<string, string>): void {
   const element = document.createElement(tag)
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value)
-  element.dataset.pwaScope = 'suite'
+  element.dataset.pwaApp = app
   document.head.appendChild(element)
 }

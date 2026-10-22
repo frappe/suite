@@ -32,6 +32,7 @@ export function useClipboard({
   captureFormatsRange: _captureFormatsRange,
   captureValidationRange: _captureValidationRange,
   diffRefs: _diffRefs,
+  refitRowsFor,
 }) {
   function _canvasActive() {
     return isCanvasClipboardTarget({
@@ -185,6 +186,9 @@ export function useClipboard({
       const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
       const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
       const refs = _diffRefs(before, after)
+      // Rows with wrapped text refit to the pasted values and formats (a cut's
+      // vacated rows shrink back); the height change undoes with the paste.
+      const rowH = refitRowsFor?.(sn, after)
       if (refs.length || cfBefore !== cfAfter) {
         _queueOp({
           opType: 'paste',
@@ -207,6 +211,7 @@ export function useClipboard({
           afterValidation: afterVal,
           cfChanged: cfBefore !== cfAfter,
           ...(source && { source }),
+          ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
         })
         syncFlags()
       }
@@ -246,6 +251,7 @@ export function useClipboard({
     const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
     const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
     const refs = _diffRefs(before, after)
+    const rowH = refitRowsFor?.(sn, after) // as in onDocPaste
     if (refs.length || cfBefore !== cfAfter) {
       _queueOp({
         opType: 'paste',
@@ -268,6 +274,7 @@ export function useClipboard({
         afterValidation: afterVal,
         cfChanged: cfBefore !== cfAfter,
         ...(source && { source }),
+        ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
       })
       syncFlags()
     }

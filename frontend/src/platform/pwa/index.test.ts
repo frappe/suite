@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
@@ -102,13 +102,23 @@ function fakeSession(status: SessionStatus, user: string | null) {
   }
 }
 
+// Mail and Calendar install from their own pages; the rest of Suite is the Suite.
+const APPS = [
+  { id: 'mail', scope: '/mail' },
+  { id: 'calendar', scope: '/calendar' },
+]
+const path = ref('/home')
+
 async function install(status: SessionStatus, user: string | null = 'a@suite.test') {
   const { installPwa } = await import('@/platform/pwa')
   const session = fakeSession(status, user)
-  installPwa(session)
+  installPwa(session, { path: () => path.value, apps: APPS })
   await settle()
   return session
 }
+
+const linked = (rel: string) =>
+  [...document.head.querySelectorAll(`link[rel="${rel}"]`)].map((link) => link.getAttribute('href'))
 
 async function settle() {
   await nextTick()
@@ -117,17 +127,47 @@ async function settle() {
 }
 
 describe('Suite PWA', () => {
-  it('links the Suite manifest once, whatever the route', async () => {
+  it('links the Suite manifest outside the apps installed on their own', async () => {
+    path.value = '/home'
     await install('guest')
-    const { setPwaTags } = await import('@/platform/pwa')
-    setPwaTags()
 
-    const manifests = document.head.querySelectorAll('link[rel="manifest"]')
-    expect([...manifests].map((link) => link.getAttribute('href'))).toEqual([
-      '/pwa/suite/manifest.webmanifest',
-    ])
+    expect(linked('manifest')).toEqual(['/pwa/suite/manifest.webmanifest'])
+    expect(linked('apple-touch-icon')).toEqual(['/pwa/suite/apple-icon-180.png'])
     expect(document.head.querySelector('meta[name="apple-mobile-web-app-capable"]')).not.toBeNull()
-    expect(document.head.querySelector('link[rel="apple-touch-icon"]')).not.toBeNull()
+  })
+
+  it("links an app's own manifest, icon and launch screens on its pages, and only its", async () => {
+    path.value = '/mail/account/a/mailbox/inbox'
+    await install('guest')
+    expect(linked('manifest')).toEqual(['/pwa/mail/manifest.webmanifest'])
+    expect(linked('apple-touch-icon')).toEqual(['/pwa/mail/apple-icon-180.png'])
+    const launch = linked('apple-touch-startup-image')
+    expect(launch.length).toBeGreaterThan(0)
+    expect(launch.every((href) => href?.startsWith('/pwa/mail/splash/'))).toBe(true)
+
+    path.value = '/calendar'
+    await settle()
+    expect(linked('manifest')).toEqual(['/pwa/calendar/manifest.webmanifest'])
+    expect(linked('apple-touch-icon')).toEqual(['/pwa/calendar/apple-icon-180.png'])
+    expect(document.head.querySelectorAll('meta[name="apple-mobile-web-app-capable"]').length).toBe(
+      1,
+    )
+
+    path.value = '/files'
+    await settle()
+    expect(linked('manifest')).toEqual(['/pwa/suite/manifest.webmanifest'])
+  })
+
+  it('links only artwork that exists, for the Suite and each app', async () => {
+    for (const app of ['suite', ...APPS.map(({ id }) => id)]) {
+      path.value = app === 'suite' ? '/home' : `/${app}`
+      document.head.innerHTML = ''
+      vi.resetModules()
+      await install('guest')
+      for (const href of [...linked('apple-touch-icon'), ...linked('apple-touch-startup-image')]) {
+        expect(existsSync(resolve(__dirname, `../../../public${href}`)), href!).toBe(true)
+      }
+    }
   })
 
   it('registers the push worker after sign-in, as Mail did, and starts FCM on that registration', async () => {
@@ -221,6 +261,27 @@ describe('Suite PWA', () => {
     expect(localStorage.getItem(TOKEN_KEY)).toBeNull()
   })
 
+  it.each([
+    ['mail', 'Frappe Mail'],
+    ['calendar', 'Frappe Calendar'],
+  ])('ships %s a manifest of its own, kept to its own pages', (app, name) => {
+    const dir = resolve(__dirname, `../../../public/pwa/${app}`)
+    const manifest = JSON.parse(readFileSync(`${dir}/manifest.webmanifest`, 'utf8')) as {
+      icons: Array<{ src: string }>
+    } & Record<string, unknown>
+
+    expect(manifest).toMatchObject({
+      id: `/${app}`,
+      name,
+      start_url: `/${app}`,
+      scope: `/${app}`,
+      display: 'standalone',
+      handle_links: 'preferred',
+    })
+    expect(manifest.icons.length).toBeGreaterThan(0)
+    for (const icon of manifest.icons) expect(existsSync(`${dir}/${icon.src}`), icon.src).toBe(true)
+  })
+
   it('ships a manifest with the id /suite and the same start URL and scope', () => {
     const manifest = JSON.parse(
       readFileSync(resolve(__dirname, '../../../public/pwa/suite/manifest.webmanifest'), 'utf8'),
@@ -232,6 +293,43 @@ describe('Suite PWA', () => {
       scope: '/',
       name: 'Frappe Suite',
     })
+  })
+})
+
+describe('moving between apps on an iPhone', () => {
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+  const PIXEL =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36'
+
+  const loadAt = async (at: string, userAgent: string, standalone = false) => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent)
+    Object.defineProperty(navigator, 'standalone', { configurable: true, value: standalone })
+    path.value = at
+    await install('guest')
+    return (await import('@/platform/pwa')).pageLoadNeededFor
+  }
+  afterEach(() => Reflect.deleteProperty(navigator, 'standalone'))
+
+  it('loads the page afresh when the browser would install another app', async () => {
+    const needed = await loadAt('/home', IPHONE)
+    expect(needed('/mail/account/a/mailbox/inbox')).toBe(true)
+    expect(needed('/calendar')).toBe(true)
+    // Still the Suite's pages: the manifest the page loaded with is the right one.
+    expect(needed('/drive')).toBe(false)
+  })
+
+  it('stays in place inside the app the page loaded in', async () => {
+    const needed = await loadAt('/mail', IPHONE)
+    expect(needed('/mail/account/a/mailbox/sent')).toBe(false)
+    expect(needed('/home')).toBe(true)
+  })
+
+  it('stays in place where the browser follows the link, or in an installed app', async () => {
+    expect((await loadAt('/home', PIXEL))('/mail')).toBe(false)
+    vi.resetModules()
+    document.head.innerHTML = ''
+    expect((await loadAt('/home', IPHONE, true))('/mail')).toBe(false)
   })
 })
 

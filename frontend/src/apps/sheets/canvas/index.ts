@@ -15,8 +15,8 @@
 //                    in-cell editor, formula range picking and autocomplete
 
 import { createViewModel, DEFAULT_ROW_H } from '../core/view-model.js'
-import { cellId, colLabel } from '../utils/cells.js'
-import { createAutofit, type PendingEdit } from './autofit.js'
+import { cellId, colLabel, parseCellId } from '../utils/cells.js'
+import { createAutofit, type PendingWrites } from './autofit.js'
 import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createGeometry } from './geometry.js'
 import { createGridActions } from './grid-actions.js'
@@ -30,9 +30,10 @@ import { createMarchingAnts } from './marching-ants.js'
 import { createOverlay } from './overlay.js'
 import { createRenderLoop } from './render-loop.js'
 import { createRenderer } from './renderer.js'
+import { planRowRefit } from './row-refit.js'
 import { createScrollbars } from './scrollbars.js'
 import { createSelection } from './selection.js'
-import type { CellValue, Grid, GridOptions } from './types.js'
+import type { CellValue, Grid, GridOptions, RowHeightChange } from './types.js'
 import { createViewport, watchPixelRatio } from './viewport.js'
 
 export type * from './types.js'
@@ -350,33 +351,21 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
   }
 
   // Rows fit their wrapped or multi-line text unless sized by hand, as in
-  // Google Sheets. A row with no tall text is left alone unless an earlier
-  // fit stored a height for it, which it now shrinks back from.
-  function refitRow(r: number, edit?: PendingEdit): { before: number; after: number } | null {
-    if (vm.manualRows.has(r)) return null
-    if (!(r in vm.rowH) && !fit.hasTallText(r, edit)) return null
-    const before = vm.rowHeight(r)
-    const after = fit.fitRowHeight(r, edit)
-    if (after === before) return null
-    vm.setRowHeight(r, after)
-    return { before, after }
-  }
-  // The same rule for every row `match` accepts, in one pass over the cells.
-  function refitWhere(match: (r: number) => boolean): void {
-    const measured = fit.measureRows(match)
+  // Google Sheets (rule in row-refit.ts). Refits every row `match` accepts,
+  // in one pass over the cells, with `writes` measured in place of what their
+  // cells show; returns the height change.
+  function refitWhere(
+    match: (r: number) => boolean,
+    writes?: PendingWrites,
+  ): RowHeightChange | null {
+    const measured = fit.measureRows(match, writes)
     const rows = new Set(measured.keys())
     for (const k of Object.keys(vm.rowH)) if (match(Number(k))) rows.add(Number(k))
-    let changed = false
-    for (const r of rows) {
-      if (vm.manualRows.has(r)) continue
-      const m = measured.get(r)
-      if (!(r in vm.rowH) && !m?.tall) continue
-      const after = m?.height ?? DEFAULT_ROW_H
-      if (after === vm.rowHeight(r)) continue
-      vm.setRowHeight(r, after)
-      changed = true
-    }
-    if (changed) relayout()
+    const change = planRowRefit(rows, measured, vm, DEFAULT_ROW_H)
+    if (!change) return null
+    for (const [r, h] of Object.entries(change.after)) vm.setRowHeight(Number(r), h)
+    relayout()
+    return change
   }
   // Rows whose wrapped text reflows when these columns change width.
   function refitForCols(cols: ReadonlySet<number>): void {
@@ -515,12 +504,18 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
 
     autoFitCol,
     autoFitRow,
-    refitRows: (r0, r1) => refitWhere((r) => r >= r0 && r <= r1),
-    // Called by the host on commit. The height change rides the undo op.
-    refitRowFor(r, c, value) {
-      const change = refitRow(r, { c, value })
-      if (change) applyCanvasSize()
-      return change
+    refitRows(r0, r1) {
+      refitWhere((r) => r >= r0 && r <= r1)
+    },
+    // Called by the host on every write (typed commit, paste, fill, clear, AI).
+    // The height change rides the write's undo op.
+    refitRowsFor(writes) {
+      const rows = new Set<number>()
+      for (const id of Object.keys(writes)) {
+        const p = parseCellId(id)
+        if (p) rows.add(p.row)
+      }
+      return rows.size ? refitWhere((r) => rows.has(r), writes) : null
     },
 
     expandRows(by = 1000) {

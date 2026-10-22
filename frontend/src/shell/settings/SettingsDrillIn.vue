@@ -6,7 +6,7 @@
   hidden from assistive technology.
 
   Each level owns one browser history entry, so the back gesture goes tab,
-  then list, then closed. The on-screen back arrows and Escape call
+  then list, then closed; opened at a tab, it goes tab, then closed. The on-screen back arrows and Escape call
   history.back() and take the same path. Every entry carries the id of the
   open it belongs to, so an entry from an earlier open closes Settings.
 -->
@@ -119,6 +119,9 @@ let depth = 0
 let openId = ''
 // A tab asked for before the groups resolved.
 let pendingTab: string | undefined
+// Opened at a tab (from a page that lists the settings itself, such as an app's Profile): back from
+// the tab closes Settings rather than showing a list the page already showed.
+let openedAtTab = false
 
 function findTab(id: string | undefined): SettingsTab | undefined {
   return props.groups?.flatMap((group) => group.tabs).find((tab) => tab.id === id)
@@ -160,6 +163,8 @@ function onPopState(event: PopStateEvent) {
   } else if (state.suiteSettingsOpen === openId && state.suiteSettings === 'list') {
     depth = 1
     page.value = null
+    // Closing drops the list's own entry, as a close from outside does.
+    if (openedAtTab) open.value = false
   } else {
     // Below the list, or an entry an earlier open left behind.
     depth = 0
@@ -176,10 +181,12 @@ watch(
       openId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
       push({ suiteSettings: 'list' })
       pendingTab = props.tab
+      openedAtTab = !!props.tab
       openPending()
     } else {
       page.value = null
       pendingTab = undefined
+      openedAtTab = false
       // Closed from outside the drill-in: drop the entries it pushed. The
       // pops arrive while closed, so onPopState ignores them.
       if (depth > 0) history.go(-depth)

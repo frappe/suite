@@ -178,6 +178,7 @@ export function createApiClient(
     useUpload,
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
+    writesSettled: writes.settled.bind(writes),
     resetIdentity: (identity?: string | null) =>
       reads.switchPartition(identityPartition(identity, true)),
     invalidate: reads.invalidate.bind(reads),

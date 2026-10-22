@@ -47,3 +47,19 @@ describe('buildOption — aggregation', () => {
     expect(agg({ options: { aggregate: 'count' } }).series[0].data).toEqual([2, 2])
   })
 })
+
+// Charts read the cells' display strings. IronCalc shows a typed $1.50 or
+// 1,000 formatted, and Number() made those NaN, so the bars vanished.
+describe('buildOption — formatted numbers', () => {
+  it('plots and sums numbers shown as $1.50, 1,000 or 50%', () => {
+    const rows = [
+      ['Fruit', 'Price'],
+      ['Apple', '$1.50'],
+      ['Apple', '1,000'],
+      ['Banana', '50%'],
+    ]
+    const opt = buildOption(cfg({ options: { aggregate: 'sum' } }), rows)
+    expect(opt.series[0].data).toEqual([1001.5, 0.5])
+    expect(buildOption(cfg(), rows).series[0].data).toEqual([1.5, 1000, 0.5])
+  })
+})

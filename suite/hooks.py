@@ -247,6 +247,7 @@ doc_events = {
         "before_insert": [
             "suite.utils.user.assign_suite_role",
         ],
+        "before_validate": ["suite.mail.events.keep_new_password"],
         "after_insert": [
             "suite.composition.users.after_insert",
         ],
@@ -335,7 +336,6 @@ before_install = "suite.composition.lifecycle.before_install"
 after_install = "suite.composition.lifecycle.after_install"
 after_migrate = "suite.composition.lifecycle.after_migrate"
 after_app_install = "suite.composition.lifecycle.after_app_install"
-extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — lets the listed sites frame Drive pages and API answers
 after_request = [

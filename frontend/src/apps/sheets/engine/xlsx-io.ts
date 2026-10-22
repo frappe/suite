@@ -9,7 +9,7 @@
 //   f  a formula WITHOUT the leading '=' (Excel convention)
 //   z  a number-format code (Excel's grammar, e.g. '#,##0.00', '0.00%')
 
-import { CURRENCIES, parseNumberFmt, type Currency } from '../utils/format-number.js'
+import { CURRENCIES, displayNumber, parseNumberFmt, type Currency } from '../utils/format-number.js'
 import type { MergeInfo } from './merge.js'
 import type { Rect } from './types.js'
 
@@ -139,6 +139,34 @@ export function zToNumFmt(z: string | null | undefined): string {
   return 'custom:' + z // preserve verbatim
 }
 
+/**
+ * IronCalc's own number format for a cell (what typing `$1.50`, `15%` or
+ * `1,000` sets; Excel-style codes) as one of ours, or '' when there is
+ * nothing to carry. Copy and fill use it, since a cell's input is its bare
+ * number (`1.5`) and would otherwise lose the format. Dates are left out
+ * unless asked for (`dates: true`): their input is the typed text, which
+ * re-parses to the same date.
+ */
+export function numFmtFromEngine(
+  code: string | null | undefined,
+  { dates = false }: { dates?: boolean } = {},
+): string {
+  if (!code || /^general$/i.test(code) || code === '@') return ''
+  // IronCalc writes `$#,##0.00` unquoted; as our USD currency (not a custom
+  // pattern) the decimal buttons can change it.
+  const fmt = zToNumFmt(/^\$#,##0(\.0+)?$/.test(code) ? `"$"${code.slice(1)}` : code)
+  if (DATE_TYPES.has(parseNumberFmt(fmt).type)) return dates ? fmt : ''
+  if (dates && /[dy]/i.test(code.replace(/"[^"]*"/g, ''))) {
+    // A date code ours has no exact variant for (IronCalc's m/d/yyyy).
+    if (/h/i.test(code)) return 'datetime'
+    return /^\s*y/i.test(code) ? 'date:ymd' : /^\s*d/i.test(code) ? 'date:dmy' : 'date:mdy'
+  }
+  // A code zToNumFmt doesn't know stays custom; only a numeric pattern
+  // renders (a date code like m/d/yyyy would paint as literal text).
+  if (fmt.startsWith('custom:') && !/[0#]/.test(code.replace(/"[^"]*"/g, ''))) return ''
+  return fmt
+}
+
 // Reattach a decimals suffix only when non-zero, so `number`/`percentage`
 // (whose defaults differ) stay minimal and round-trip.
 function _withDec(type: 'number' | 'percentage', dec: number) {
@@ -199,8 +227,11 @@ function _iso(d: Date) {
  */
 export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxCell | null {
   const isFormula = typeof raw === 'string' && raw.startsWith('=')
-  const src = isFormula ? computed : raw
+  let src = isFormula ? computed : raw
   if (!isFormula && (src === '' || src == null)) return null
+  // A formula's computed value is IronCalc's display, which it may have
+  // formatted ($4.50, 1,000, 50%): the number in it, not the text.
+  if (isFormula && !_isNumeric(src) && !isNaN(displayNumber(src))) src = displayNumber(src)
 
   const z = numFmtToZ(fmt)
   // Filled field by field to keep SheetJS's key order (f, t, v, z); every
@@ -209,7 +240,9 @@ export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxC
   if (isFormula) cell.f = (raw as string).slice(1)
 
   const { type } = parseNumberFmt(fmt || '')
-  const asDate = DATE_TYPES.has(type) ? _toDate(src) : null
+  // A number under a date format is a day serial, the same number Excel
+  // stores, so it falls through to the number branch with its date code.
+  const asDate = DATE_TYPES.has(type) && !_isNumeric(src) ? _toDate(src) : null
   if (asDate) {
     cell.t = 'd'
     cell.v = asDate

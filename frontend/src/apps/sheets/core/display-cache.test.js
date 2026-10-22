@@ -48,6 +48,14 @@ describe('display cache — fill and read', () => {
     expect(cache.get('Sheet2', 1, 1)).toBeUndefined()
   })
 
+  it('flags the cells a read marked as numbers', () => {
+    const cache = createDisplayCache()
+    cache.fill('Sheet1', 3, 2, { values: [['1,000', 'x', '$5']], numbers: [0, 0, 0, 2] }, 0)
+    expect(cache.get('Sheet1', 3, 2)).toEqual({ display: '1,000', number: true })
+    expect(cache.get('Sheet1', 3, 3)).toEqual({ display: 'x' })
+    expect(cache.get('Sheet1', 3, 4)).toEqual({ display: '$5', number: true })
+  })
+
   it('stores styles when given and keeps them on a values-only fill', () => {
     const cache = createDisplayCache()
     cache.fill('Sheet1', 1, 1, { values: [['a']], styles: [[bold]] }, 0)

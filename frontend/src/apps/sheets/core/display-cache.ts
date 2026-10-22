@@ -30,6 +30,8 @@ export interface CachedCell {
   display: string
   input?: string
   style?: ExtendedCellStyle
+  /** The cell holds a number (the grid right-aligns it). */
+  number?: true
   provisional?: true
 }
 
@@ -82,6 +84,9 @@ export function createDisplayCache(
     readVersion: number,
   ): boolean {
     if (readVersion !== version) return false
+    const numbers = new Set<string>()
+    const n = result.numbers ?? []
+    for (let i = 0; i + 1 < n.length; i += 2) numbers.add(`${n[i]}:${n[i + 1]}`)
     result.values.forEach((rowValues, i) => {
       rowValues.forEach((display, j) => {
         const k = key(sheet, r1 + i, c1 + j)
@@ -91,6 +96,7 @@ export function createDisplayCache(
         const cell: CachedCell = { display }
         if (input !== undefined) cell.input = input
         if (style) cell.style = style
+        if (numbers.has(`${i}:${j}`)) cell.number = true
         cells.set(k, cell)
         filledIn.set(k, generation)
       })
@@ -131,6 +137,7 @@ export function createDisplayCache(
     const settled: CachedCell = { display: cell.display }
     if (cell.input !== undefined) settled.input = cell.input
     if (cell.style) settled.style = cell.style
+    if (cell.number) settled.number = true
     cells.set(k, settled)
     // The version bump that follows an applied edit makes it stale, and it
     // keeps painting through that clear until the refill.

@@ -1,7 +1,20 @@
 <template>
-  <!-- Mobile title header — no thread count since the merged view has no total.
-	     The toolbar below carries the bottom border, matching the mailbox structure. -->
-  <MobileTitleHeader v-if="isMobile" with-menu with-search :title="folderLabel" />
+  <!-- Mobile title header. The toolbar below carries the bottom border, matching the
+	     mailbox structure. -->
+  <!-- In a category other than Primary the title names it and leads back to Primary. -->
+  <MobileTitleHeader
+    v-if="isMobile && inboxTab && inboxTab !== 'primary'"
+    with-back
+    :title="tabName(inboxTab)"
+    @back="router.push(routeForTab('primary'))"
+  />
+  <!-- Every account's Inbox is named so, since nothing else on a phone's list says the accounts
+       are merged; another merged folder keeps its own name. -->
+  <MobileTitleHeader
+    v-else-if="isMobile"
+    with-menu
+    :title="folder === INBOX_FOLDER ? __('All Inboxes') : folderLabel"
+  />
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's
@@ -172,9 +185,9 @@
                     :account-label="shortAccountLabel(row.threads[0].account_name)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
+                    :unarchive="true"
                     @toggle="toggleStack(row)"
                     @set-seen="(seen: boolean) => setThreadsSeen(row.threads, seen)"
-                    :unarchive="true"
                     @archive-threads="archiveThreads(row.threads)"
                     @unarchive-threads="unarchiveThreads(row.threads)"
                     @trash-threads="trashThreads(row.threads)"
@@ -199,8 +212,8 @@
                     :hide-sender="row.inStack"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
-                    @set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
                     :unarchive="true"
+                    @set-seen="(seen: boolean) => handleSetSeen(row.thread, seen)"
                     @archive-thread="handleArchive(row.thread)"
                     @unarchive-thread="handleUnarchive(row.thread)"
                     @trash-thread="handleTrash(row.thread)"
@@ -313,6 +326,7 @@ import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
+import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
@@ -489,20 +503,28 @@ const {
   holdDraft,
   releaseDraft,
 } = useDiscardingDrafts()
+// Filtered to unread mail, what is read here stays until the list changes (see useKeptRead).
+const keptRead = useKeptRead({
+  filtering: () => !!filter.value?.split(',').includes('unread'),
+  scope: () => [folder, filter.value, inboxTab.value],
+  key: threadKey,
+})
 const threadRows = computed(() =>
-  threads.rows
-    .map((row) => threadRow(row, store.accountId))
-    .filter((row) => !isDiscardingDraft(row, { inDrafts: folder === 'drafts' }))
-    .map(withoutHeldDrafts),
+  keptRead.withKept(
+    threads.rows
+      .map((row) => threadRow(row, store.accountId))
+      .filter((row) => !isDiscardingDraft(row, { inDrafts: folder === 'drafts' }))
+      .map(withoutHeldDrafts),
+  ),
 )
+watch(threadRows, keptRead.keep)
 const isLoading = computed(
   () =>
     threads.status === 'pending' && !(tabSwitched.value && inboxTab.value) && !filterChanged.value,
 )
 
-// After an action, refresh the sidebar counts: the active account's per-mailbox counts, which via the
-// store's mailboxes watcher also refreshes the unified folders' counts.
-const refreshCounts = () => store.mailboxes.refetch().catch(() => {})
+// After an action, and on the poll: every count the sidebar shows, the merged folders' included.
+const refreshCounts = () => void store.refreshCounts()
 
 // The row's account, by its short name: blank for the currently open account (only
 // the odd ones out get labelled), the local part otherwise, unless two accounts share one.
@@ -993,7 +1015,16 @@ const { runMailRemoval } = useMailRemoval({
   row: () => openRow.value,
   mailThreadRef: mailThread,
   onEmptied: () => closeThread(),
-  removeRow: () => refreshThreads,
+  // Its last message gone, a conversation kept read on the list goes too; a failure keeps it again.
+  removeRow: (_mail, thread) => {
+    if (thread) keptRead.release([threadKey(thread)])
+    // Put back only on the list it left: another filter or folder since has rules of its own.
+    const at = keptRead.current()
+    return () => {
+      if (thread) keptRead.restore([thread], at)
+      refreshThreads()
+    }
+  },
   viewMailbox: (thread) => thread.view_mailbox,
   outgoing: () => isOutgoingFolder.value,
 })
@@ -1145,11 +1176,17 @@ const mailSnapshot = (mail: MailCopy) => ({
   junk: mail.junk,
 })
 const threadSnapshot = (thread: Thread) => (thread.messages ?? []).map(mailSnapshot)
-const restoreMails = (account: string, mails: ReturnType<typeof mailSnapshot>[]) =>
+// `screenAction` takes back the sender verdict the action gave (Not junk's Accepted), with the mail.
+const restoreMails = (
+  account: string,
+  mails: ReturnType<typeof mailSnapshot>[],
+  screenAction: string | null = null,
+) =>
   client
     .mutation(api.mail.messages.setFolders, {
       account,
       mails,
+      screen_action: screenAction,
     })
     .then(refreshCounts)
 
@@ -1176,7 +1213,13 @@ const fileThreads = (
 ) => {
   if (!threads.length) return
   const leaves = leavesFolder(action, threads[0], target)
-  if (leaves) goToNextThreadOrClose(threads.map(threadKey))
+  // The next thread is found on the list as it stands, the conversations still on it. Rows read in
+  // the Unread filter go back on that list on Undo, or if the action fails (see useKeptRead).
+  const at = keptRead.current()
+  if (leaves) {
+    goToNextThreadOrClose(threads.map(threadKey))
+    keptRead.release(threads.map(threadKey))
+  }
   if (action === 'trash' || action === 'junk') closeComposeWindowFor(copyIds(threads))
   const one = threads.length === 1
   const folderOfTarget = target ? folderName(target) : undefined
@@ -1231,6 +1274,13 @@ const fileThreads = (
         }),
     done,
     undone,
+    {
+      // Not junk accepted the senders; Undo puts them back as junk senders, as it puts the mail
+      // back in Junk.
+      undoScreen:
+        screenAction === 'Accepted' ? 'Spam' : screenAction === 'Spam' ? 'Accepted' : null,
+      putBack: leaves ? (rows) => keptRead.restore(rows, at) : undefined,
+    },
   )
 }
 const handleArchive = (thread: Thread) => fileThreads([thread], 'archive')
@@ -1266,6 +1316,16 @@ const actPerAccount = (
   request: (account: string, rows: Thread[]) => Promise<unknown>,
   done: string | ((answers: unknown[]) => string),
   undoSuccess: string,
+  {
+    undoScreen = null,
+    putBack,
+  }: {
+    /** The sender verdict Undo gives, taking back the action's. */
+    undoScreen?: string | null
+    /** Puts back on the list the given rows the action took off it, which the server won't list
+     * again: an account's whose action was undone, or refused. */
+    putBack?: (rows: Thread[]) => void
+  } = {},
 ) => {
   const groups = byAccount(threads)
   const snapshots = groups.map(([account, rows]) => [account, copySnapshot(rows)] as const)
@@ -1277,16 +1337,27 @@ const actPerAccount = (
     void landed.then((accounts) => {
       const restoring = snapshots.filter(([account]) => accounts.includes(account))
       if (!restoring.length) return
+      putBack?.(
+        groups.filter(([account]) => accounts.includes(account)).flatMap(([, rows]) => rows),
+      )
       raiseOptimisticToast(
-        Promise.all(restoring.map(([account, mails]) => restoreMails(account, mails))).then(() =>
-          refreshThreads(),
-        ),
+        Promise.all(
+          restoring.map(([account, mails]) => restoreMails(account, mails, undoScreen)),
+        ).then(() => refreshThreads()),
         undoSuccess,
       )
     })
   setUndoAction(undoAction)
   void settled.then((results) => {
     refreshCounts()
+    // An account whose request was refused may have had some of its mail changed first: that is
+    // put back as it was, since its Undo is gone.
+    const refused = snapshots.filter((_, i) => results[i].status === 'rejected')
+    refused.forEach(([account, mails]) => void restoreMails(account, mails).catch(() => {}))
+    if (refused.length)
+      putBack?.(
+        groups.filter((_, i) => results[i].status === 'rejected').flatMap(([, rows]) => rows),
+      )
     const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
     const undo = { label: __('Undo'), onClick: undoAction }
     const answers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
@@ -1450,6 +1521,7 @@ const discardDrafts = (rows: Thread[]) => {
 const handleDelete = (rows: Thread[]) => {
   const names = copiesHere(rows)
   goToNextThreadOrClose(rows.map(threadKey))
+  keptRead.release(rows.map(threadKey))
   closeComposeWindowFor(rows.flatMap(messageIds))
   raiseOptimisticToast(
     client.mutation(api.mail.messages.delete, { names }).then(refreshCounts, (error) => {

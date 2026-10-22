@@ -29,6 +29,7 @@
 
 import { cellId, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { displayNumber } from '../utils/format-number.js'
 import { remapRect } from './ref-remap.js'
 import type { IndexMap, Rect } from './types.js'
 
@@ -145,8 +146,8 @@ export function createCondFormatEngine() {
 
   // ── Condition evaluation (legacy rules) ────────────────────────────────────
 
-  // parseFloat stringifies whatever it's given, so the `as string` casts below
-  // only quiet TS.
+  // Values are the strings cells show (`1,000`, `$5`, `50%`): displayNumber
+  // reads the number in them.
   function _testCondition(
     cond: CfCondition,
     rawVal: unknown,
@@ -165,8 +166,8 @@ export function createCondFormatEngine() {
     if (cond.type === 'contains') return s.toLowerCase().includes(String(cond.value).toLowerCase())
     if (cond.type === 'notcontains')
       return !s.toLowerCase().includes(String(cond.value).toLowerCase())
-    const n = parseFloat(rawVal as string)
-    const v = parseFloat(cond.value as string)
+    const n = displayNumber(rawVal)
+    const v = displayNumber(cond.value)
     if (isNaN(n) || isNaN(v)) return false
     if (cond.type === 'gt') return n > v
     if (cond.type === 'lt') return n < v
@@ -174,7 +175,7 @@ export function createCondFormatEngine() {
     if (cond.type === 'lte') return n <= v
     if (cond.type === 'eq') return n === v
     if (cond.type === 'neq') return n !== v
-    if (cond.type === 'between') return n >= v && n <= parseFloat(cond.value2 as string)
+    if (cond.type === 'between') return n >= v && n <= displayNumber(cond.value2)
     return false
   }
 
@@ -205,7 +206,7 @@ export function createCondFormatEngine() {
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         const v = getCellValue?.(cellId(r, c))
-        const n = parseFloat(v as string)
+        const n = displayNumber(v)
         if (isNaN(n)) continue
         if (n < min) min = n
         if (n > max) max = n
@@ -224,7 +225,7 @@ export function createCondFormatEngine() {
     rawVal: unknown,
     stats: RangeStats,
   ): CfOverride | null {
-    const n = parseFloat(rawVal as string)
+    const n = displayNumber(rawVal)
     if (isNaN(n) || stats.count === 0 || stats.max === stats.min) {
       // No gradient possible — leave the cell unstyled.
       return null
@@ -249,7 +250,7 @@ export function createCondFormatEngine() {
   }
 
   function _formatForDataBar(rule: CfRule, rawVal: unknown, stats: RangeStats): CfOverride | null {
-    const n = parseFloat(rawVal as string)
+    const n = displayNumber(rawVal)
     if (isNaN(n) || stats.count === 0) return null
     // Normalised bar width in [0..1]. Negative values render from the centre
     // in `axis: 'cell'` mode; the simpler `axis: 'auto'` fills from the left.
@@ -269,7 +270,7 @@ export function createCondFormatEngine() {
   // Icon sets — three icons mapped to value buckets at `thresholds[0]` and
   // `thresholds[1]` (each in [0..1] relative to the range's [min, max]).
   function _formatForIconSet(rule: CfRule, rawVal: unknown, stats: RangeStats): CfOverride | null {
-    const n = parseFloat(rawVal as string)
+    const n = displayNumber(rawVal)
     if (isNaN(n) || stats.count === 0) return null
     const t = stats.max === stats.min ? 0.5 : (n - stats.min) / (stats.max - stats.min)
     const [lo, hi] = rule.icons?.thresholds || [0.33, 0.66]

@@ -185,7 +185,10 @@ export function createCellPainter(
     if (vtype === 'list' || vtype === 'checkbox') return
     const s = String(val)
     const baseFmt: CellFormat = condFmt ? { ...fmt, ...condFmt } : fmt
-    const efmt: CellFormat = { ...baseFmt, align: baseFmt.align || _autoAlign(s) }
+    const efmt: CellFormat = {
+      ...baseFmt,
+      align: baseFmt.align || _autoAlign(s, cells.isNumber?.(id)),
+    }
     const rightInset = cells.getRightInset?.(id) || 0
     const iconInset = condFmt?.icon ? ICON_INSET : 0
     setCellFont(ctx, efmt)
@@ -327,7 +330,10 @@ export function createCellPainter(
     }
   }
 
-  function _autoAlign(s: string): string {
+  // Numbers right, text left, as in Google Sheets. The cell's type decides
+  // (`1,000` and `50%` are numbers); until it is known, guess from the text.
+  function _autoAlign(s: string, isNumber: boolean | undefined): string {
+    if (isNumber !== undefined) return isNumber ? 'right' : 'left'
     return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
   }
 

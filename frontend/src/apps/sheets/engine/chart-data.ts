@@ -8,6 +8,7 @@
 // and returns a fully-populated ECharts option suitable for `<v-chart :option="…" />`.
 // No Vue, no DOM, no sheet engine — easy to unit-test.
 
+import { displayNumber } from '../utils/format-number.js'
 import { ESPRESSO_PALETTE, type ChartEncoding, type ChartSpec } from './charts.js'
 
 const ESPRESSO_FONT = 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
@@ -88,7 +89,7 @@ function _applyAgg(fn: string, rows: Row[], col: number) {
     const v = r[col]
     if (v === '' || v == null) continue
     nonEmpty++
-    const n = Number(v)
+    const n = displayNumber(v)
     if (!isNaN(n)) nums.push(n)
   }
   switch (fn) {
@@ -337,7 +338,7 @@ function _normaliseEncoding(enc: ChartEncoding | undefined, ncols: number): Char
 
 function _toNum(v: unknown) {
   if (v === '' || v == null) return 0
-  const n = Number(v)
+  const n = displayNumber(v)
   return isNaN(n) ? 0 : n
 }
 

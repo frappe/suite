@@ -24,6 +24,7 @@ export function useAiAssist({
   popLastOp: _popLastOp,
   cellSilentlyProtected: _cellSilentlyProtected,
   flashProtected: _flashProtected,
+  refitRowsFor,
 }) {
   //
   // One primitive: select → ask in plain words → see it applied → Keep or Undo.
@@ -131,6 +132,8 @@ export function useAiAssist({
     for (const a of setCells) after[a.cell] = String(a.formula ?? '')
     _writeInputs(sn, after)
     const refs = setCells.map((a) => a.cell)
+    // Rows with wrapped text refit to what the AI wrote, like a typed edit.
+    const rowH = refitRowsFor?.(sn, after)
 
     // Undo (op-based, like fill) + server sync (op-log on next save).
     history.pushOp({
@@ -139,6 +142,7 @@ export function useAiAssist({
       cellRefs: refs,
       before,
       after,
+      ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
     })
     _queueOp({
       opType: 'ai_assist',

@@ -40,7 +40,7 @@
 </template>
 
 <script lang="ts" setup>
-import { Button } from 'frappe-ui'
+import { Button, toast } from 'frappe-ui'
 import {
   Ban,
   CircleAlert,
@@ -63,7 +63,7 @@ import {
 import { computed, h, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { api, client, useMutation, type InputOf } from '@/api'
+import { api, client, type InputOf } from '@/api'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
@@ -336,16 +336,20 @@ async function downloadEmail() {
     raiseError(error)
   }
 }
-const setMailsSeen = useMutation(api.mail.messages.seen)
-async function setMailsSeenSubmit({ ids: requestedIds }: { ids: string[] }) {
+// Done on the click: the rows read unread at once (see the client policy), the toast says so and
+// the thread is left, while the request goes. A refusal says why and the server keeps the mail read.
+function setMailsSeenSubmit({ ids }: { ids: string[] }) {
   const input: InputOf<typeof api.mail.messages.seen> = {
     account: scopeAccountId.value,
-    ids: requestedIds,
+    ids,
     seen: false,
   }
-  const result = await setMailsSeen.run(input)
-  const ids = result
-  raiseToast(__('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]))
+  const shown = raiseToast(
+    __('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]),
+  )
+  // Through the client, not a mutation of this menu's: the thread is left at once, and a write of
+  // the menu's own would be canceled as it goes.
+  client.mutation(api.mail.messages.seen, input).catch(() => toast.dismiss(shown))
   // Leaving the thread is the point — staying would mark it read again. Return to whichever
   // list we came from: hardcoding the mailbox route threw the unified folder out of the merged view
   // and into the owning account's mailbox, which read as the page reloading.
@@ -384,13 +388,19 @@ const isDomainTrusted = (email: string) =>
     (a: ScreenedAddress) =>
       a.action === 'Accepted' && a.email.trim().toLowerCase() === senderDomain(email),
   )
-const trustDomain = async () => {
-  await client.mutation(api.mail.screening.set, {
-    account: scopeAccountId.value,
-    emails: [senderDomain(mail.from_email)],
-    action: 'Accepted',
-  })
-  raiseToast(__('Domain marked as trusted.'))
+// Said on the click; a refusal takes the toast down and says why.
+const trustDomain = () => {
+  const shown = raiseToast(__('Domain marked as trusted.'))
+  client
+    .mutation(api.mail.screening.set, {
+      account: scopeAccountId.value,
+      emails: [senderDomain(mail.from_email)],
+      action: 'Accepted',
+    })
+    .catch((error) => {
+      toast.dismiss(shown)
+      raiseError(error)
+    })
 }
 const handleBlockAddress = (block: boolean) => (block ? blockSender() : unblockSender())
 
@@ -414,21 +424,21 @@ const unblockSender = (isUndo = false) => {
 
 // Blocking sends the sender's future mail to Junk, and this message with it — they were blocked while
 // it was being read. The rest of their mail stays put; the toast offers to move what is in the Inbox.
-const blockSender = async () => {
+const blockSender = () => {
   const account = scopeAccountId.value
   const from_emails = [mail.from_email]
   const ids = mailCopyIds(mail)
   // The message leaves at once, as a junked one does: waiting for the server let the refreshed block
   // list mark it blocked while it was still on screen.
   const putBack = dropMail(mail.id)
-  let blocked: { inbox: number }
-  try {
-    blocked = await client.mutation(api.mail.screening.block, { account, from_emails, ids })
-  } catch (error) {
+  // Said on the click, as the message leaves on it (see raiseBlocked).
+  const landed = client
+    .mutation(api.mail.screening.block, { account, from_emails, ids })
+    .then((blocked) => blocked.inbox)
+  void landed.catch((error) => {
     putBack()
     raiseError(error)
-    return
-  }
+  })
   screener.raiseBlocked(
     from_emails,
     () => {
@@ -443,7 +453,7 @@ const blockSender = async () => {
       ]).then(() => reloadMails(true))
       raiseOptimisticToast(back, __('Sender unblocked.'))
     },
-    blocked.inbox,
+    landed,
     account,
   )
 }

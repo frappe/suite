@@ -260,3 +260,25 @@ describe('worker host — usedCells', () => {
     expect(ok('usedCells', { sheet: 'Sheet1' }).cells).toEqual([1, 1, 1, 4, 3, 2])
   })
 })
+
+// Last in the file: IronCalc lists a row's columns in hash order, which
+// shifts with the wasm module's history (see usedCells above).
+describe('worker host — number cells', () => {
+  // The grid right-aligns numbers whatever their format (`1,000`, `$5`, `50%`).
+  it('marks the cells holding a number, only when asked', () => {
+    ok('init', { snapshotBytes: null })
+    ok('apply', {
+      commands: [
+        setInput('Sheet1', 5, 1, '1,000'),
+        setInput('Sheet1', 5, 2, 'text'),
+        setInput('Sheet1', 5, 3, '=A5*2'),
+        setInput('Sheet1', 6, 2, '50%'),
+        setInput('Sheet1', 6, 3, '="12"'),
+      ],
+    })
+    const box = { sheet: 'Sheet1', r1: 5, c1: 1, r2: 6, c2: 3 }
+    // Flat [rowOffset, colOffset, …] within the box
+    expect(ok('readViewport', { ...box, includeNumbers: true }).numbers).toEqual([0, 0, 0, 2, 1, 1])
+    expect(ok('readViewport', box).numbers).toBeUndefined()
+  })
+})

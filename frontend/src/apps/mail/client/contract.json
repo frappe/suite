@@ -2830,6 +2830,7 @@
                 "anyOf": [
                   {
                     "enum": [
+                      "Gray",
                       "Blue",
                       "Green",
                       "Amber",
@@ -3010,6 +3011,7 @@
                 "anyOf": [
                   {
                     "enum": [
+                      "Gray",
                       "Blue",
                       "Green",
                       "Amber",
@@ -5197,13 +5199,13 @@
       "bytes": false
     },
     {
-      "id": "get_recent_threads_with",
+      "id": "get_recent_threads_from",
       "kind": "query",
-      "publicName": "messages.recentWith",
+      "publicName": "messages.recentFrom",
       "page": null,
       "envelope": "message",
       "method": "POST",
-      "path": "/api/method/suite.mail.api.mail.get_recent_threads_with",
+      "path": "/api/method/suite.mail.api.mail.get_recent_threads_from",
       "pathParams": [],
       "query": null,
       "body": {
@@ -18302,6 +18304,148 @@
         ],
         "title": "MimeMessage",
         "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_unsubscribe_options",
+      "kind": "query",
+      "publicName": "messages.unsubscribeOptions",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.get_unsubscribe_options",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "ids"
+        ],
+        "title": "IdsInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "UnsubscribeOption": {
+            "properties": {
+              "one_click": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "One Click"
+              },
+              "mailto": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mailto"
+              },
+              "link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Link"
+              },
+              "unsubscribed": {
+                "title": "Unsubscribed",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "one_click",
+              "mailto",
+              "link",
+              "unsubscribed"
+            ],
+            "title": "UnsubscribeOption",
+            "type": "object"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/UnsubscribeOption"
+        },
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "unsubscribe_mail",
+      "kind": "mutation",
+      "publicName": "messages.unsubscribe",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.unsubscribe_mail",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "id"
+        ],
+        "title": "UnsubscribeInput",
+        "type": "object"
+      },
+      "output": {
+        "enum": [
+          "one_click",
+          "mailto",
+          "already"
+        ],
+        "type": "string"
       },
       "errors": [
         "PermissionError",

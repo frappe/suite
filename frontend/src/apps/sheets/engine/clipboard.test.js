@@ -350,3 +350,48 @@ describe('clipboard — reading the source', () => {
     expect(written).toEqual({ B1: '2' })
   })
 })
+
+// A typed `$1.50` or `15%` is formatted by IronCalc, not the side store,
+// and its input is the bare number. The copy reads IronCalc's format with
+// the cells and carries it like a side-store format, so the pasted cell
+// still shows `$1.50`, not `1.5`.
+describe('clipboard — carries the format IronCalc gave a typed value', () => {
+  function setup(numFmts) {
+    const sheet = makeSheet({ A1: '1.5', B1: '0.15', C1: '7' })
+    const fmtStore = { C1: { numberFormat: 'number:2' } }
+    let asked = null
+    const cells = {
+      ...sheet,
+      read: async (sn, rect, opts) => {
+        asked = opts
+        return { ...(await sheet.read(sn, rect)), numFmts }
+      },
+    }
+    const formats = {
+      get: (id) => fmtStore[id] ?? {},
+      set: (id, f) => (fmtStore[id] = f),
+      clear: (id) => delete fmtStore[id],
+    }
+    const cb = createClipboard({ cells, getCurrentSheet: () => 'Sheet1', formats })
+    return { cb, fmtStore, sheet, asked: () => asked }
+  }
+
+  it('pastes the value with its IronCalc format', async () => {
+    const t = setup([['$#,##0.00', '#,##0%', '#,##0']])
+    await t.cb.copy({ r0: 0, c0: 0, r1: 0, c1: 2 })
+    expect(t.asked()).toEqual({ numFmts: true })
+    await t.cb.paste('A3', null, 'all')
+    expect(t.sheet.getCell('A3')).toBe('1.5')
+    expect(t.fmtStore.A3).toEqual({ numberFormat: 'currency:USD:2' })
+    expect(t.fmtStore.B3).toEqual({ numberFormat: 'percentage:0' })
+    // A side-store format wins over IronCalc's.
+    expect(t.fmtStore.C3).toEqual({ numberFormat: 'number:2' })
+  })
+
+  it('adds nothing for general cells', async () => {
+    const t = setup([['general', 'general', 'general']])
+    await t.cb.copy({ r0: 0, c0: 0, r1: 0, c1: 1 })
+    await t.cb.paste('A3', null, 'all')
+    expect(t.fmtStore.A3?.numberFormat).toBeUndefined()
+  })
+})

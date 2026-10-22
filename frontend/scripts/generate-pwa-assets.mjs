@@ -1,6 +1,8 @@
 /**
- * Regenerates the suite PWA's artwork in public/pwa/suite: the home-screen
- * icons and the iOS launch screens, all from the suite logo.
+ * Regenerates an installable app's artwork in public/pwa/<app>: the
+ * home-screen icons and the iOS launch screens, all from its logo in
+ * src/platform/brand. The app is `suite` (the one Suite PWA), `mail` or
+ * `calendar`.
  *
  * The icons are the logo at full bleed over its own brand colour — the
  * maskable pair Chrome and Android cut to their shapes, and the 180 iOS reads
@@ -15,7 +17,8 @@
  * puppeteer — done here directly so regenerating does not pull a ~200MB
  * Chromium download into devDependencies.
  *
- *   node scripts/generate-pwa-assets.mjs              # defaults below
+ *   node scripts/generate-pwa-assets.mjs              # the Suite, defaults below
+ *   node scripts/generate-pwa-assets.mjs --app mail   # Mail's
  *   node scripts/generate-pwa-assets.mjs --scale 0.25 # smaller launch logo
  */
 import { spawn } from 'node:child_process'
@@ -34,8 +37,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SCALE = Number(argValue('--scale') ?? 0.3)
 const BACKGROUND = argValue('--background') ?? '#ffffff'
 
-const LOGO = path.join(root, 'src/platform/brand/suite.svg')
-const OUT_DIR = path.join(root, 'public/pwa/suite')
+const APP = argValue('--app') ?? 'suite'
+const LOGO = path.join(root, `src/platform/brand/${APP}.svg`)
+const OUT_DIR = path.join(root, `public/pwa/${APP}`)
 const SPLASH_DIR = path.join(OUT_DIR, 'splash')
 
 /** The icons: the logo drawn edge to edge over the colour of its own rounded

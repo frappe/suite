@@ -1,4 +1,5 @@
 import { useNow } from '@vueuse/core'
+import { defineAsyncComponent } from 'vue'
 
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
@@ -24,6 +25,10 @@ export const calendarArea: AreaDefinition = {
   to: '/calendar',
   requires: ['jmap'],
   badgeNoun: () => __('upcoming'),
+  installable: true,
+  phoneNav: defineAsyncComponent(
+    () => import('@/apps/calendar/components/mobile/CalendarTabBar.vue'),
+  ),
   // Ticket 010 owns shell adoption. The existing CalendarLayout keeps its full frame for now.
   loadRoutes: () => import('@/apps/calendar/routes'),
 }

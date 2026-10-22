@@ -20,21 +20,28 @@ function stubClient() {
       for (const cb of listeners) cb(version)
     },
     // Inputs are "=r{row}c{col}", so a test can tell them from values.
-    readViewport: vi.fn(async ({ includeInputs, ...box }) => {
+    // Even columns hold numbers.
+    readViewport: vi.fn(async ({ includeInputs, includeNumbers, ...box }) => {
       client.reads.push(box)
       const values = []
       const inputs = []
+      const numbers = []
       for (let r = box.r1; r <= box.r2; r++) {
         const row = []
         const inputRow = []
         for (let c = box.c1; c <= box.c2; c++) {
           row.push(`r${r}c${c}`)
           inputRow.push(`=r${r}c${c}`)
+          if (c % 2 === 0) numbers.push(r - box.r1, c - box.c1)
         }
         values.push(row)
         inputs.push(inputRow)
       }
-      return includeInputs ? { values, inputs } : { values }
+      return {
+        values,
+        ...(includeInputs && { inputs }),
+        ...(includeNumbers && { numbers }),
+      }
     }),
   }
   return client
@@ -75,6 +82,20 @@ describe('cell provider', () => {
     )
     expect(provider.getInput('Sheet1', 2, 3)).toBe('=r2c3')
     expect(provider.getDisplay('Sheet1', 2, 3)).toBe('r2c3')
+  })
+
+  it('reads which cells hold a number, so the grid can align them', async () => {
+    const { provider, client } = setup()
+    expect(provider.isNumber('Sheet1', 2, 3)).toBeUndefined()
+    await settle()
+    expect(client.readViewport).toHaveBeenCalledWith(
+      expect.objectContaining({ includeNumbers: true }),
+    )
+    // The stub marks even columns as numbers
+    expect(provider.isNumber('Sheet1', 2, 3)).toBe(false)
+    expect(provider.isNumber('Sheet1', 2, 4)).toBeUndefined()
+    await settle()
+    expect(provider.isNumber('Sheet1', 2, 4)).toBe(true)
   })
 
   it('turns one paint worth of misses into one read of their bounding box', async () => {

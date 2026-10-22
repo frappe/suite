@@ -83,13 +83,14 @@
             class="relative shrink-0"
             :class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
           >
+            <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
-              v-if="mailbox !== 'search'"
-              with-menu
-              with-search
-              :title="mailboxName"
-              :count="threadCount ? __('{0} threads', [threadCount]) : undefined"
+              v-if="inboxTab && inboxTab !== 'primary'"
+              with-back
+              :title="tabName(inboxTab)"
+              @back="router.push(routeForTab('primary'))"
             />
+            <MobileTitleHeader v-else-if="mailbox !== 'search'" with-menu :title="mailboxName" />
 
             <!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
 						     the whole header read as chrome on top of the page). Borderless: it
@@ -194,8 +195,8 @@
           <div
             v-if="threadRows.length"
             ref="mailList"
-            @focusin="onListFocusIn"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
@@ -358,10 +359,14 @@
       </ThreadPane>
     </template>
 
-    <!-- No mails (the search view keeps its header and shows an inline message instead) -->
-    <div v-else class="text-ink-gray-5 flex w-full flex-col items-center justify-center">
-      <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
-      <p>{{ __('You have no mails in this folder.') }}</p>
+    <!-- No mails (the search view keeps its header and shows an inline message instead). A phone
+         keeps the title row above it: where you are, and the way to the folders. -->
+    <div v-else class="flex w-full flex-col">
+      <MobileTitleHeader v-if="isMobile" with-menu :title="mailboxName" />
+      <div class="text-ink-gray-5 flex flex-1 flex-col items-center justify-center">
+        <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
+        <p>{{ __('You have no mails in this folder.') }}</p>
+      </div>
     </div>
   </div>
 
@@ -400,7 +405,8 @@ import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
-import { useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
+import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
+import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
@@ -868,12 +874,21 @@ const threads = useInfiniteQuery(api.mail.threads.list, () =>
 )
 const activeThreads = computed(() => (mailbox === 'search' ? searchResults : threads))
 const { isDiscarding, withoutHeldDrafts } = useDiscardingDrafts()
+// Filtered to unread mail, what is read here stays until the list changes (see useKeptRead).
+const keptRead = useKeptRead({
+  filtering: () => !!filter.value?.split(',').includes('unread'),
+  scope: () => [mailbox, accountId, filter.value, inboxTab.value],
+  key: (thread) => thread.thread_id,
+})
 const threadRows = computed(() =>
-  activeThreads.value.rows
-    .map((row) => threadRow(row, store.accountId))
-    .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
-    .map(withoutHeldDrafts),
+  keptRead.withKept(
+    activeThreads.value.rows
+      .map((row) => threadRow(row, store.accountId))
+      .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
+      .map(withoutHeldDrafts),
+  ),
 )
+watch(threadRows, keptRead.keep)
 watch(
   () => threads.status,
   (status) => {
@@ -935,7 +950,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
     }
   }
   void activeThreads.value.refetch().catch(() => {})
-  if (reloadMailboxes) mailboxes.refetch().catch(() => {})
+  if (reloadMailboxes) void store.refreshCounts()
 }
 
 // The composer lives in the layout now, above every route, so it has no view to hand an event to —
@@ -951,7 +966,7 @@ watch(screener.version, () => refreshThreads(false))
 const refreshThreads = (reloadMailboxes = true) => {
   if (isFetching.value) return
   void activeThreads.value.refetch().catch(() => {})
-  if (reloadMailboxes) mailboxes.refetch().catch(() => {})
+  if (reloadMailboxes) void store.refreshCounts()
 }
 
 // After an optimistic action whose threads stay in the list (add-to-mailbox, or a move that leaves
@@ -964,12 +979,25 @@ const syncAfterAction = () => {
 // Drops threads from the loaded list optimistically and returns the removed rows (so an undo can put
 // them back). Their server rows leave the current view too, so the append offset (data.length) stays
 // aligned.
-const removeThreadsFromList = (ids: string[]): Thread[] =>
-  threadRows.value.filter((row) => ids.includes(row.thread_id))
+// Which list each removed row left (see useKeptRead): Undo, or a failed action, puts a row read in
+// the Unread filter back on that list, which no longer gets it from the server.
+const removedFrom = new WeakMap<Thread, number>()
+const removeThreadsFromList = (ids: string[]): Thread[] => {
+  // Taken before letting go of them, while the rows read here are still on the list.
+  const removed = threadRows.value.filter((row) => ids.includes(row.thread_id))
+  const at = keptRead.current()
+  removed.forEach((row) => removedFrom.set(row, at))
+  keptRead.release(ids)
+  return removed
+}
 const refillIfEmpty = () => {
   refillPending.value = false
 }
-const restoreThreadsToList = (_rows: Thread[]) => {
+const restoreThreadsToList = (rows: Thread[]) => {
+  for (const row of rows) {
+    const at = removedFrom.get(row)
+    if (at !== undefined) keptRead.restore([row], at)
+  }
   void activeThreads.value.refetch().catch(() => {})
 }
 watch(
@@ -1005,7 +1033,7 @@ watch(
 // gating on that count made this backstop blind to exactly the arrivals the socket exists to deliver.
 const pollForChanges = async () => {
   const prevTotal = mailboxObj.value?.total_emails
-  await mailboxes.refetch().catch(() => {})
+  await store.refreshCounts()
   if (mailboxObj.value?.total_emails !== prevTotal) refreshThreads(false)
 }
 
@@ -1336,10 +1364,6 @@ const title = computed(() => {
     return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
   }
   return filterTitle.value
-})
-const threadCount = computed(() => {
-  const count = mailboxObj.value?.total_threads
-  return count ? count.toLocaleString() : ''
 })
 </script>
 

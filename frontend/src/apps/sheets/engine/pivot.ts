@@ -1,5 +1,6 @@
 import { cellId, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { displayNumber } from '../utils/format-number.js'
 import { remapRangeString } from './ref-remap.js'
 import type { IndexMap, Rect } from './types.js'
 
@@ -291,7 +292,7 @@ function _accumulate(acc: Accumulator, row: unknown[], plan: PivotPlan) {
     }
     const raw = row[(valCols[vi] as ValCol).idx]
     if (raw !== null && raw !== undefined && raw !== '') {
-      const n = Number(raw)
+      const n = displayNumber(raw)
       arr.push(isNaN(n) ? raw : n)
     }
   }

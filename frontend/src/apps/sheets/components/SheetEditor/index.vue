@@ -206,6 +206,13 @@
         </div>
       </div>
 
+      <SheetUpgradeBanner
+        v-if="legacyUpgrade && !upgradeBannerClosed"
+        :upgrade="legacyUpgrade"
+        :read-only="readOnly"
+        @close="upgradeBannerClosed = true"
+      />
+
       <!-- Canvas grid + filter overlay -->
       <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
          which any scroll invalidates — hide it rather than let it float. -->
@@ -818,6 +825,7 @@ import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
 import { createValidationEngine } from '../../engine/validation.js'
+import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
@@ -844,6 +852,7 @@ import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
 import SheetTopbar from './SheetTopbar.vue'
 import SheetTopbarActions from './SheetTopbarActions.vue'
+import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
 import { buildAlignOptions, buildBorderOptions, buildMoreToolbarOptions } from './toolbar.config.js'
@@ -908,8 +917,8 @@ const props = defineProps({
     default: undefined,
   },
 })
-// `access-refused`: the server refused a save, or the collaboration server
-// refused the connection. `notes-opened`: the notes panel took the right edge.
+// `access-refused`: the server refused a save, or the collaboration relay
+// refused a write. `notes-opened`: the notes panel took the right edge.
 const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.
@@ -974,6 +983,7 @@ const {
   readIds: _readIds,
   readInput: _readInput,
   displayValue: _displayValue,
+  isNumberAt: _isNumberAt,
   refreshUsedCells: _refreshUsedCells,
   usedCellIds: _usedCellIds,
   usedExtent: _usedExtent,
@@ -1006,7 +1016,10 @@ const validation = createValidationEngine()
 const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard = createClipboard({
-  cells: { read: (sn, rect) => _readRect(sn, rect), write: (sn, map) => _writeInputs(sn, map) },
+  cells: {
+    read: (sn, rect, opts) => _readRect(sn, rect, opts),
+    write: (sn, map) => _writeInputs(sn, map),
+  },
   getCurrentSheet: () => currentSheet.value,
   formats,
   condFormat,
@@ -1530,6 +1543,7 @@ const {
   popLastOp: _popLastOp,
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),
   flashProtected: (sn) => _flashProtected(sn),
+  refitRowsFor: _refitRowsFor,
 })
 
 // Remove the most recently queued op of a given type (used when an AI change
@@ -1541,6 +1555,41 @@ function _popLastOp(opType) {
       return
     }
   }
+}
+
+// After a write ({cellId: value}), the rows it touched fit their wrapped or
+// multi-line text unless sized by hand, like Google Sheets: they grow or
+// shrink with the new values. Returns the height change, which the write puts
+// on its history op (beforeRowH / afterRowH) so undo/redo restores it;
+// _queueOp destructures only the known keys, so server sync is unaffected.
+// Row heights live in the open sheet's canvas view, so a write to another
+// sheet doesn't refit.
+function _refitRowsFor(sn, writes) {
+  if (sn !== currentSheet.value) return null
+  return grid?.refitRowsFor?.(writes) ?? null
+}
+
+// {cellId: IronCalc num_fmt} for a rect's formatted cells: the format a
+// typed `$1.50` or `15%` got from IronCalc, which fill carries along.
+async function _readEngineFormats(rect, sn) {
+  const { numFmts } = await _readRect(sn, rect, { numFmts: true })
+  const out = {}
+  numFmts.forEach((row, i) =>
+    row.forEach((fmt, j) => {
+      if (fmt && !/^general$/i.test(fmt)) out[cellId(rect.r0 + i, rect.c0 + j)] = fmt
+    }),
+  )
+  return out
+}
+
+// Sets cells back to IronCalc's general number format (Clear formatting).
+function _resetEngineFormats(ids, sn) {
+  const commands = ids.map((id) => {
+    const p = parseCellId(id)
+    const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
+    return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
+  })
+  if (commands.length) _client()?.dispatch(_command('batch', { commands }))
 }
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
@@ -1645,13 +1694,17 @@ async function _computeSelectionStatsAsync(token) {
 
 // Bump decimal precision for the selection. Treats 'General' as 'number:1' on
 // first +, no-op on -. Numeric types pick a sensible default if no decimals
-// were previously set.
-function adjustDecimals(delta) {
+// were previously set. A cell with no format of ours starts from the one
+// IronCalc gave a typed `$1.50` or `50%`, so the $ or % stays.
+async function adjustDecimals(delta) {
   const ids = selectionIds()
   const sh = currentSheet.value
+  const sel = grid?.getSelection()
+  const small = sel && (sel.r1 - sel.r0 + 1) * (sel.c1 - sel.c0 + 1) <= 10000
+  const engineFmts = small ? await _readEngineFormats(sel, sh) : {}
   _recordFormatOp(ids, sh, () => {
     for (const id of ids) {
-      const cur = formats.get(id, sh).numberFormat || ''
+      const cur = formats.get(id, sh).numberFormat || numFmtFromEngine(engineFmts[id])
       let { type, variant, decimals } = parseNumberFmt(cur)
       if (!type) {
         if (delta < 0) continue
@@ -1701,6 +1754,8 @@ const {
   markDirty: () => {
     isDirty.value = true
   },
+  readEngineFormats: _readEngineFormats,
+  resetEngineFormats: _resetEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections
@@ -1913,13 +1968,19 @@ const {
   saveError,
   canWrite,
   loadError,
+  legacyUpgrade,
   loadSheet,
   autoCreate,
   saveExisting,
   retrySave,
   workbookJson,
 } = usePersistence({
-  engine: { start: _startEngine, toBytes: _engineBytes },
+  engine: {
+    start: _startEngine,
+    toBytes: _engineBytes,
+    client: _client,
+    syncDefinedNames: _syncDefinedNames,
+  },
   formats,
   merge,
   comments,
@@ -2187,7 +2248,7 @@ const {
   getGridWrap: () => gridWrapRef.value,
   contextMenu,
   currentSheet,
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   blockProtected: (rect, sn) => _rectBlocked(rect, sn),
 })
 
@@ -2337,12 +2398,16 @@ const {
   getGrid: () => grid,
   readRect: _readRect,
   rectBlocked: (rect, sn) => _rectBlocked(rect, sn),
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   repopulateGrid: () => _repopulateGrid(),
   applyHiddenRows: () => _applyHiddenRows(),
   markDirty: () => {
     isDirty.value = true
   },
+  formats,
+  captureFormatsRange: _captureFormatsRange,
+  readEngineFormats: _readEngineFormats,
+  resetEngineFormats: _resetEngineFormats,
 })
 
 // Per-sub-sheet peer dots — small colored circles next to each tab label
@@ -2441,6 +2506,8 @@ function _setupGridInstance() {
       // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
       // own `data` keys.
       getCellIds: () => _usedCellIds(),
+      // Formulas shown as text: let the painter guess from what it shows.
+      isNumber: (id) => (showFormulas.value ? undefined : _isNumberAt(id)),
       getMergeInfo: (id) => merge.getMasterInfo(id, currentSheet.value),
       isSlave: (id) => merge.isSlave(id, currentSheet.value),
       getMasterId: (id) => merge.getMasterId(id, currentSheet.value),
@@ -2566,23 +2633,11 @@ function _setupGridInstance() {
               [id]: value,
             },
           }
-          // A row fits its wrapped or multi-line text (Cmd+Enter) unless it
-          // was sized by hand, like Google Sheets: it grows or shrinks with
-          // the edit. The height diff rides the history op so undo/redo
-          // restores it; _queueOp destructures only the known keys, so server
-          // sync is unaffected. Row heights live in the current sheet's
-          // canvas view, hence the writeSheet guard.
-          if (writeSheet === currentSheet.value) {
-            const p = parseCellId(id)
-            const grow = p && grid?.refitRowFor?.(p.row, p.col, value)
-            if (grow) {
-              op.beforeRowH = {
-                [p.row]: grow.before,
-              }
-              op.afterRowH = {
-                [p.row]: grow.after,
-              }
-            }
+          // The row refits to the edit (wrapped text, Cmd+Enter lines).
+          const rowH = _refitRowsFor(writeSheet, { [id]: value })
+          if (rowH) {
+            op.beforeRowH = rowH.before
+            op.afterRowH = rowH.after
           }
           _queueOp(op)
           history.pushOp(op)
@@ -2674,6 +2729,12 @@ function _setupGridInstance() {
             before,
             after,
             summary: refs.length > 1 ? `Edited ${refs.length} cells` : '',
+          }
+          // Delete clears wrapped text: its rows shrink back.
+          const rowH = _refitRowsFor(currentSheet.value, after)
+          if (rowH) {
+            op.beforeRowH = rowH.before
+            op.afterRowH = rowH.after
           }
           _queueOp(op)
           history.pushOp(op)
@@ -2810,8 +2871,9 @@ async function _loadInitialData() {
     // so a saved filter still shows its hidden rows on first load.
     _applyHiddenRows()
     syncNames()
-    // Reopen the tab this browser had open last.
-    const last = _lastTab()
+    // Reopen the tab this browser had open last (a converted develop sheet:
+    // the one that editor had open).
+    const last = _lastTab() ?? legacyUpgrade.value?.current
     if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
     _rememberTab = true
     activeCell.value = 'A1'
@@ -2824,6 +2886,8 @@ async function _loadInitialData() {
     // blank the sheet on the first snapshot-based undo (e.g. insert column).
     history.reset()
     syncFlags()
+    // A develop sheet converted on open is saved in the IronCalc format.
+    if (legacyUpgrade.value?.save && !readOnly.value) isDirty.value = true
   } else {
     // A new sheet starts as an empty workbook.
     await _startEngine()
@@ -2844,6 +2908,8 @@ async function _loadInitialData() {
 // surfaced a load error — flipped in a finally so a thrown exception
 // never strands the editor with a permanent spinner.
 const isInitialLoad = ref(true)
+// The develop-sheet upgrade banner, closed by its ×.
+const upgradeBannerClosed = ref(false)
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
@@ -3378,6 +3444,12 @@ function _commitFormulaBar() {
       after: { [targetId]: value },
       summary: 'Edit cell',
     }
+    // The row refits to the edit, as a commit in the cell does.
+    const rowH = _refitRowsFor(targetSheet, { [targetId]: value })
+    if (rowH) {
+      op.beforeRowH = rowH.before
+      op.afterRowH = rowH.after
+    }
     _queueOp(op)
     history.pushOp(op)
     broadcastCellChange(targetSheet, targetId, value)
@@ -3439,6 +3511,8 @@ const {
   diffRefs: _diffRefs,
   queueOp: _queueOp,
   rectBlocked: _rectBlocked,
+  refitRowsFor: _refitRowsFor,
+  readEngineFormats: _readEngineFormats,
 })
 
 // Mirrors `clipboard.hasData()` reactively so the context menu can show /
@@ -3541,6 +3615,7 @@ const {
   captureFormatsRange: _captureFormatsRange,
   captureValidationRange: _captureValidationRange,
   diffRefs: _diffRefs,
+  refitRowsFor: _refitRowsFor,
 })
 
 // ── History ───────────────────────────────────────────────────────────────────
@@ -4335,7 +4410,7 @@ const {
   cellBlocked: (id, sn) => _cellBlocked(id, sn),
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),
   recordFormatOp: (ids, sn, mutate) => _recordFormatOp(ids, sn, mutate),
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   refreshActiveFormat: () => refreshActiveFormat(),
   syncFlags: () => syncFlags(),
   markDirty: () => {
@@ -4692,6 +4767,7 @@ const { pushEditOp: _pushEditOp } = useEditOps({
   broadcastBatchChange: (sn, cells) => broadcastBatchChange(sn, cells),
   syncFlags,
   isDirty,
+  refitRowsFor: _refitRowsFor,
 })
 
 // ── Repopulate ────────────────────────────────────────────────────────────────

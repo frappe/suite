@@ -95,6 +95,11 @@ export interface CellProvider {
   /** Every non-empty cell id on the sheet (Ctrl+A, Ctrl+End, autofit). */
   getCellIds?(): string[]
   getStyle?(id: string): CellFormat | null | undefined
+  /**
+   * Whether the cell holds a number, which aligns right by default; undefined
+   * when not known yet (the painter then guesses from the text).
+   */
+  isNumber?(id: string): boolean | undefined
   getMergeInfo?(id: string): MergeInfo | null | undefined
   isSlave?(id: string): boolean
   getMasterId?(id: string): string | null | undefined
@@ -147,6 +152,12 @@ export interface PxRect {
   y: number
   width: number
   height: number
+}
+
+/** Row heights before and after a refit, by row: an undo op carries both. */
+export interface RowHeightChange {
+  before: { [row: number]: number }
+  after: { [row: number]: number }
 }
 
 export interface Grid {
@@ -203,8 +214,11 @@ export interface Grid {
   autoFitRow(r: number): void
   /** Refit rows r0..r1 to their wrapped text, skipping rows sized by hand. */
   refitRows(r0: number, r1: number): void
-  /** Refit a row for a committed value; the height change, or null. */
-  refitRowFor(r: number, c: number, value: CellValue): { before: number; after: number } | null
+  /**
+   * Refit the rows of written cells ({cellId: value}, measured before the
+   * grid shows them); the height change, or null.
+   */
+  refitRowsFor(writes: { [id: string]: CellValue }): RowHeightChange | null
 
   expandRows(by?: number): void
   expandCols(by?: number): void

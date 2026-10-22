@@ -335,7 +335,6 @@ const unstableFrappeUIDebtGroups = [
     entries: [
       'components/AdaptiveDropdown.vue|frappe-ui/experimental',
       'main.ts|frappe-ui/experimental',
-      'shell/InstallPrompt.vue|frappe-ui/experimental',
       'shell/SuiteCommandPalette.vue|frappe-ui/experimental',
     ],
   },

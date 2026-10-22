@@ -67,32 +67,41 @@ describe('fitRowHeight', () => {
   })
 })
 
-describe('fitting a row with a pending edit', () => {
-  it('measures the edited value in place of what the cell shows', () => {
+describe('measuring rows with pending writes', () => {
+  const rowsOf = (fit: ReturnType<typeof setup>, edits: { [id: string]: CellValue }) =>
+    Object.fromEntries(fit.measureRows(() => true, edits))
+
+  it('measures the written value in place of what the cell shows', () => {
     const fit = setup({ A1: 'one' })
-    expect(fit.fitRowHeight(0, { c: 0, value: 'a\nb\nc' })).toBe(3 * 16 + 6)
-    // A value typed into an empty cell counts too
-    expect(fit.fitRowHeight(0, { c: 1, value: 'a\nb' })).toBe(2 * 16 + 6)
+    expect(rowsOf(fit, { A1: 'a\nb\nc' })[0]).toEqual({ height: 3 * 16 + 6, tall: true })
+    // A value written into an empty cell, or an empty row, counts too
+    expect(rowsOf(fit, { B1: 'a\nb' })[0]).toEqual({ height: 2 * 16 + 6, tall: true })
+    expect(rowsOf(fit, { A3: 'x\ny' })[2]).toEqual({ height: 2 * 16 + 6, tall: true })
   })
 
-  it('shrinks back when the edit removes the tall text', () => {
-    const fit = setup({ A1: 'a\nb\nc' })
-    expect(fit.fitRowHeight(0, { c: 0, value: 'short' })).toBe(24)
-    expect(fit.fitRowHeight(0, { c: 0, value: '' })).toBe(24)
+  it('measures every row a batch writes, as a paste or fill does', () => {
+    const fit = setup({ A1: 'a\nb', A2: 'x' })
+    expect(rowsOf(fit, { A1: 'short', A2: '1\n2\n3', B4: '' })).toEqual({
+      0: { height: 24, tall: false },
+      1: { height: 3 * 16 + 6, tall: true },
+    })
+  })
+
+  it('drops a cleared cell, so its row shrinks back', () => {
+    const fit = setup({ A1: 'a\nb\nc', B1: 'one' })
+    expect(rowsOf(fit, { A1: '' })[0]).toEqual({ height: 24, tall: false })
+    // A row with nothing left is not measured; the grid treats it as empty
+    expect(rowsOf(setup({ A1: 'a\nb' }), { A1: '' })).toEqual({})
   })
 
   it('keeps the shown value for a formula, whose result is not known yet', () => {
     const fit = setup({ A1: 'x\ny' })
-    expect(fit.fitRowHeight(0, { c: 0, value: '="a"&CHAR(10)&"b"&CHAR(10)&"c"' })).toBe(2 * 16 + 6)
+    expect(rowsOf(fit, { A1: '="a"&CHAR(10)&"b"&CHAR(10)&"c"' })[0].height).toBe(2 * 16 + 6)
   })
-})
 
-describe('hasTallText', () => {
-  it('is true for a wrapped cell or a multi-line value only', () => {
-    expect(setup({ A1: 'one line' }).hasTallText(0)).toBe(false)
-    expect(setup({ A1: 'a\nb' }).hasTallText(0)).toBe(true)
-    expect(setup({ A1: 'short' }, { A1: { textWrap: 'wrap' } }).hasTallText(0)).toBe(true)
-    expect(setup({}).hasTallText(0, { c: 0, value: 'a\nb' })).toBe(true)
+  it('counts a wrapped cell as tall even when its text fits one line', () => {
+    const fit = setup({}, { A1: { textWrap: 'wrap' } })
+    expect(rowsOf(fit, { A1: 'short' })[0]).toEqual({ height: 24, tall: true })
   })
 })
 

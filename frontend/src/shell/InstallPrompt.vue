@@ -1,115 +1,80 @@
 <template>
-  <!-- The offer to install the suite. Mounted once by the shell on phones and
-	     never unmounted, since Chrome fires `beforeinstallprompt` once and a
-	     listener that is not there at the time misses it. Shown only while the
-	     route is an area page (`route.meta.area`) inside the shell frame. The
-	     manifest is on every route (see platform/pwa setPwaTags), so Chrome may
-	     fire elsewhere; the offer waits for such an app. The iOS hint follows
-	     the same gate. -->
-  <Dialog :open="showDialog && installable" @update:open="showDialog = $event">
-    <template #title>
-      <h2 class="text-lg-bold">{{ __('Install Frappe Suite') }}</h2>
-    </template>
-    <template #default>
-      <p>{{ __('Get the app on your device for easy access & a better experience!') }}</p>
-    </template>
-    <template #actions>
-      <Button variant="solid" class="w-full py-5" @click="install">
-        <template #prefix><FeatherIcon name="download" class="w-4" /></template>
-        {{ __('Install') }}
-      </Button>
-    </template>
-  </Dialog>
-
-  <!-- iOS installation info message — a plain fixed banner, not a Popover: no overlay to
-	     block the app behind it, and the viewport (not the content) bounds its width.
-	     Teleported to body and lifted past z-50: it lives in the app tree, so the
-	     body-portaled surfaces (bottom sheets, dialogs — z-50) would otherwise paint
-	     their backdrops over it. Those surfaces are modal: reka makes everything
-	     outside them inert, and treats a pointer or focus that lands outside as a
-	     dismissal. So the banner opts back in to pointer events, and keeps both
-	     events to itself so the sheet under it neither ignores the tap nor closes on
-	     it — the X closes the banner and only the banner. -->
-  <Teleport to="body">
-    <div
-      v-if="iosInstallMessage && installable"
-      class="bg-surface-blue-2 pointer-events-auto fixed inset-x-2 bottom-4 z-[60] flex flex-col gap-3 rounded-4 py-5 drop-shadow-xl"
-      @pointerdown.stop
-      @focusin.stop
+  <!-- The offer to install the app whose page this is, as a slim strip just above the bottom bar:
+       in the page's flow, so it covers nothing, and only where the bottom bar is. Shown once per
+       app and device until dismissed (see platform/pwa/install). Inside the one Suite app
+       installed before the split, a note in the same place says once that Mail and Calendar are
+       apps of their own. -->
+  <div
+    v-if="note || offer"
+    class="bg-surface-gray-1 text-p-sm text-ink-gray-8 flex items-center gap-3 border-t px-4 py-2"
+    role="region"
+    :aria-label="note ? __('Apps of their own') : __('Install {0}', [label])"
+  >
+    <span
+      :class="note ? 'lucide-layout-grid' : 'lucide-download'"
+      class="text-ink-gray-5 size-4 shrink-0 self-start mt-0.5"
+      aria-hidden="true"
+    />
+    <p v-if="note" class="min-w-0 flex-1">
+      {{
+        __('Mail and Calendar are apps of their own now: open one in your browser to install it.')
+      }}
+    </p>
+    <p v-else-if="how === 'steps'" class="min-w-0 flex-1">
+      {{ __('Install {0}: tap', [label]) }}
+      <span class="lucide-share size-4 inline-block align-[-3px]" :aria-label="__('Share')" />
+      {{ __('then Add to Home Screen.') }}
+    </p>
+    <p v-else class="min-w-0 flex-1">{{ __('Install {0} as an app.', [label]) }}</p>
+    <Button
+      v-if="!note && how === 'prompt'"
+      variant="solid"
+      :label="__('Install')"
+      @click="install"
+    />
+    <Button
+      variant="ghost"
+      class="shrink-0"
+      :aria-label="__('Dismiss')"
+      @click="note ? dismissSuiteAppNote() : dismiss()"
     >
-      <div class="mb-1 flex flex-row items-center justify-between px-3 text-center">
-        <span class="text-base-bold">
-          {{ __('Install Frappe Suite') }}
-        </span>
-        <span class="inline-flex items-baseline">
-          <FeatherIcon
-            name="x"
-            class="text-ink-gray-6 ml-auto h-4 w-4"
-            @click="iosInstallMessage = false"
-          />
-        </span>
-      </div>
-      <div class="text-ink-gray-7 px-3 text-xs">
-        <span class="flex flex-col gap-2">
-          <span>
-            {{ __('Get the app on your iPhone for easy access & a better experience') }}
-          </span>
-          <span>
-            {{ __('Tap') }}
-            <FeatherIcon name="share" class="inline h-4 w-4 align-[-3px] text-blue-600" />
-            {{ __('and then "Add to Home Screen"') }}
-          </span>
-        </span>
-      </div>
-    </div>
-  </Teleport>
+      <template #icon><span class="lucide-x text-ink-gray-6 size-4" aria-hidden="true" /></template>
+    </Button>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog } from 'frappe-ui'
-import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import { computed, ref } from 'vue'
+import { Button } from 'frappe-ui'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
+import type { AreaDefinition } from '@/platform/contracts'
+import { useInstallOffer } from '@/platform/pwa'
+
+const props = defineProps<{
+  /** The area of the page, when it installs as an app of its own. */
+  app?: AreaDefinition
+}>()
+
 const route = useRoute()
-// The install offer shows on area pages, not on a document or a Meet call.
-const installable = computed(
-  () => typeof route.meta.area === 'string' && route.meta.frame !== 'none',
+const {
+  app: linkedApp,
+  how,
+  bannerOpen,
+  install,
+  dismiss,
+  suiteAppNote,
+  dismissSuiteAppNote,
+} = useInstallOffer()
+
+const label = computed(() => props.app?.label() ?? '')
+// The offer is for the app this page installs as, on that app's own pages.
+const offer = computed(
+  () =>
+    !!props.app &&
+    props.app.id === linkedApp.value &&
+    route.meta.frame !== 'none' &&
+    bannerOpen.value,
 )
-
-// Initialize deferredPrompt for use later to show browser install prompt.
-const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
-const showDialog = ref(false)
-const iosInstallMessage = ref(false)
-
-const isIos = () => {
-  // Detects if device is on iOS
-  const userAgent = window.navigator.userAgent.toLowerCase()
-  return /iphone|ipad|ipod/.test(userAgent)
-}
-
-// Detects if device is in standalone mode
-const isInStandaloneMode = () => 'standalone' in window.navigator && window.navigator.standalone
-
-// Checks if should display install popup notification:
-if (isIos() && !isInStandaloneMode()) iosInstallMessage.value = true
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  // Prevent the mini-infobar from appearing on mobile
-  e.preventDefault()
-  // Stash the event so it can be triggered later.
-  deferredPrompt.value = e
-  if (isIos() && !isInStandaloneMode()) iosInstallMessage.value = true
-  else showDialog.value = true
-})
-
-window.addEventListener('appinstalled', () => {
-  showDialog.value = false
-  deferredPrompt.value = null
-})
-
-const install = () => {
-  void deferredPrompt.value?.prompt()
-  showDialog.value = false
-}
+const note = computed(() => suiteAppNote.value)
 </script>

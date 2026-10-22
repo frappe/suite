@@ -87,19 +87,6 @@ repos:
               yarn\.lock
           )$
 
-      - id: knip-sheets-collab
-        name: Knip (Sheets Collab Server)
-        entry: yarn knip:sheets-collab
-        language: system
-        pass_filenames: false
-        files: |
-          (?x)^(
-              suite/sheets/collab-server/.*|
-              knip\.json|
-              package\.json|
-              yarn\.lock
-          )$
-
       - id: biome-sfu-server
         name: Biome Check (SFU Server)
         entry: bash -c 'cd suite/meet/sfu-server && node_modules/.bin/biome check --write --config-path biome.json "${@/#suite\/meet\/sfu-server\//}"' --

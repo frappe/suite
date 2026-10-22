@@ -152,6 +152,7 @@ const onCalendar = computed(
   () => route.name !== 'calendar-search' && route.name !== 'calendar-profile',
 )
 const currentView = computed<MobileView>(() => viewForRoute(route.name))
+const isCurrentView = (view: MobileView) => onCalendar.value && view === currentView.value
 
 const selectView = (view: MobileView) => {
   if (onCalendar.value && view === currentView.value) return
@@ -170,12 +171,12 @@ const selectView = (view: MobileView) => {
 </script>
 
 <template>
-  <!-- Calendar's own sidebar, in the shell's sidebar slot on a desktop and in the
-	     bottom nav's sheet on a phone. The phone header's menu button opens the
-	     sheet too. -->
-  <AreaSidebar area="calendar" :title="__('Calendar')">
-    <!-- The active account leads. Its menu lists the accounts; with one account it is just named. -->
-    <SidebarSection class="!mt-0">
+  <!-- Calendar's own sidebar, in the shell's sidebar slot on a desktop and in a sheet on a
+	     phone, which the Calendar tab and the header's menu button open. -->
+  <AreaSidebar area="calendar" :title="__('Calendar')" :sheet-title="false" sheet-flush>
+    <!-- The active account leads. Its menu lists the accounts; with one account it is just
+         named. On a phone the accounts are in Profile. -->
+    <SidebarSection v-if="!isMobile" class="!mt-0">
       <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
         <SidebarItem :label="subtitle" icon="lucide-circle-user-round">
           <template #suffix>
@@ -189,24 +190,71 @@ const selectView = (view: MobileView) => {
       <SidebarItem v-else :label="subtitle" icon="lucide-circle-user-round" />
     </SidebarSection>
 
-    <!-- The phone's views, and its search page. On a desktop the header's
-		     switcher and the palette do this. -->
-    <SidebarSection v-if="isMobile" :label="__('View')" class="!mt-4">
-      <SidebarItem
-        v-for="view in MOBILE_VIEWS"
-        :key="view"
-        :label="viewLabel(view)"
-        :icon="viewIcon(view)"
-        :active="onCalendar && view === currentView"
-        :on-click="() => selectView(view)"
-      />
-      <SidebarItem
-        :label="__('Search')"
-        icon="lucide-search"
-        :route="{ name: 'calendar-search', params: { accountId: store.accountId } }"
-        :active="route.name === 'calendar-search'"
-      />
-    </SidebarSection>
+    <!-- On a phone, the sheet the Calendar tab and the header's menu button open, as develop's
+         was: the views as a row of tiles, a glyph in a square and the name beneath, the square
+         solid for the one you are on; a rule; then the calendars, grouped as the sidebar groups
+         them. A tap switches a calendar on or off and leaves the sheet up, since one tap is
+         rarely the last. -->
+    <template v-if="isMobile">
+      <div class="grid grid-cols-4 gap-2 pt-1">
+        <button
+          v-for="view in MOBILE_VIEWS"
+          :key="view"
+          type="button"
+          class="flex flex-col items-center gap-2 rounded-6 py-2 text-center"
+          :class="isCurrentView(view) ? 'text-ink-gray-9' : 'text-ink-gray-7'"
+          :aria-current="isCurrentView(view) ? 'true' : undefined"
+          @click="selectView(view)"
+        >
+          <span
+            class="grid size-12 place-items-center rounded-4"
+            :class="
+              isCurrentView(view)
+                ? 'bg-surface-gray-10 text-ink-base'
+                : 'bg-surface-gray-2 active:bg-surface-gray-3'
+            "
+          >
+            <component
+              :is="viewIcon(view)"
+              class="size-6 shrink-0"
+              :class="isCurrentView(view) ? '[stroke-width:1.75]' : '[stroke-width:1.5]'"
+            />
+          </span>
+          <span
+            class="text-sm leading-none"
+            :class="isCurrentView(view) ? '!font-semibold' : '!font-medium'"
+          >
+            {{ viewLabel(view) }}
+          </span>
+        </button>
+      </div>
+      <div class="-mx-3 mt-3 border-t" />
+      <template v-for="group in calendarGroups" :key="group.key">
+        <div class="text-ink-gray-5 px-3 pb-1 pt-3 text-sm">{{ group.label }}</div>
+        <!-- Rows as Mail's folder sheet spaces them, 2px apart. -->
+        <div class="flex flex-col gap-0.5">
+          <button
+            v-for="calendar in group.calendars"
+            :key="calendar.name"
+            type="button"
+            class="flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base text-ink-gray-8 active:bg-surface-gray-1"
+            :aria-pressed="!!calendar.visible"
+            @click="calendarActions.toggleVisible(calendar)"
+          >
+            <span class="grid size-[18px] shrink-0 place-items-center">
+              <span
+                class="size-2.5 rounded-full transition-opacity"
+                :class="!calendar.visible && 'opacity-30'"
+                :style="dotStyle(calendarColor(calendar.name))"
+              />
+            </span>
+            <span class="flex-1 truncate text-left" :class="!calendar.visible && 'text-ink-gray-4'">
+              {{ calendarLabel(calendar).label }}
+            </span>
+          </button>
+        </div>
+      </template>
+    </template>
 
     <!-- The month card: where a date gets chosen on a desktop. The phone's
 		     header has its own picker. -->
@@ -219,75 +267,67 @@ const selectView = (view: MobileView) => {
         @select="(date) => emit('selectDate', date)"
       />
     </div>
-    <SidebarSection
-      v-for="group in calendarGroups"
-      :key="group.key"
-      :label="group.label"
-      :collapsible="calendarGroups.length > 1"
-      :collapsed="collapsedSections.includes(group.key)"
-      class="!mt-4"
-      @update:collapsed="(collapsed) => setSectionCollapsed(group.key, collapsed)"
-    >
-      <!-- A calendar that is switched off keeps its place but loses its colour. -->
-      <SidebarItem
-        v-for="calendar in group.calendars"
-        :key="calendar.name"
-        :label="calendar._name"
-        :on-click="() => calendarActions.toggleVisible(calendar)"
+    <template v-if="!isMobile">
+      <SidebarSection
+        v-for="group in calendarGroups"
+        :key="group.key"
+        :label="group.label"
+        :collapsible="calendarGroups.length > 1"
+        :collapsed="collapsedSections.includes(group.key)"
+        class="!mt-4"
+        @update:collapsed="(collapsed) => setSectionCollapsed(group.key, collapsed)"
       >
-        <template #prefix>
-          <!-- One size collapsed and expanded, centred in the 16px icon box. 10px, about
-					     cap height: at 12 a filled dot outweighed the label and the outline + below. -->
-          <span class="grid size-4 place-items-center">
-            <span
-              class="size-2.5 rounded-full transition-opacity"
-              :class="!calendar.visible && 'opacity-30'"
-              :style="dotStyle(calendarColor(calendar.name))"
-            />
-          </span>
-        </template>
-        <Tooltip :text="calendarLabel(calendar).email || ownerName(calendar)" side="right">
-          <span class="truncate text-sm" :class="!calendar.visible && 'text-ink-gray-4'">
-            {{ calendarLabel(calendar).label }}
-          </span>
-        </Tooltip>
-        <template #suffix>
-          <Dropdown
-            v-if="calendarActions.hasMenuOptions(calendar)"
-            :options="calendarActions.menuOptions(calendar)"
-          >
-            <Button
-              variant="ghost"
-              class="!bg-transparent"
-              :aria-label="__('Calendar options')"
-              @click.stop
+        <!-- A calendar that is switched off keeps its place but loses its colour. -->
+        <SidebarItem
+          v-for="calendar in group.calendars"
+          :key="calendar.name"
+          :label="calendar._name"
+          :on-click="() => calendarActions.toggleVisible(calendar)"
+        >
+          <template #prefix>
+            <!-- One size collapsed and expanded, centred in the 16px icon box. 10px, about
+  					     cap height: at 12 a filled dot outweighed the label and the outline + below. -->
+            <span class="grid size-4 place-items-center">
+              <span
+                class="size-2.5 rounded-full transition-opacity"
+                :class="!calendar.visible && 'opacity-30'"
+                :style="dotStyle(calendarColor(calendar.name))"
+              />
+            </span>
+          </template>
+          <Tooltip :text="calendarLabel(calendar).email || ownerName(calendar)" side="right">
+            <span class="truncate text-sm" :class="!calendar.visible && 'text-ink-gray-4'">
+              {{ calendarLabel(calendar).label }}
+            </span>
+          </Tooltip>
+          <template #suffix>
+            <Dropdown
+              v-if="calendarActions.hasMenuOptions(calendar)"
+              :options="calendarActions.menuOptions(calendar)"
             >
-              <template #icon>
-                <Ellipsis
-                  class="size-4 text-ink-gray-6 opacity-0 group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:opacity-100 [@media(hover:none)]:opacity-100"
-                />
-              </template>
-            </Button>
-          </Dropdown>
-        </template>
-      </SidebarItem>
-      <SidebarItem
-        v-if="group.key === 'mine'"
-        :label="__('New Calendar')"
-        :icon="Plus"
-        :on-click="calendarActions.create"
-      />
-    </SidebarSection>
-
-    <!-- The phone's settings page. A desktop opens Settings from the account menu instead. -->
-    <SidebarSection v-if="isMobile" class="!mt-4">
-      <SidebarItem
-        :label="__('Profile')"
-        icon="lucide-circle-user-round"
-        :route="{ name: 'calendar-profile', params: { accountId: store.accountId } }"
-        :active="route.name === 'calendar-profile'"
-      />
-    </SidebarSection>
+              <Button
+                variant="ghost"
+                class="!bg-transparent"
+                :aria-label="__('Calendar options')"
+                @click.stop
+              >
+                <template #icon>
+                  <Ellipsis
+                    class="size-4 text-ink-gray-6 opacity-0 group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:opacity-100 [@media(hover:none)]:opacity-100"
+                  />
+                </template>
+              </Button>
+            </Dropdown>
+          </template>
+        </SidebarItem>
+        <SidebarItem
+          v-if="group.key === 'mine'"
+          :label="__('New Calendar')"
+          :icon="Plus"
+          :on-click="calendarActions.create"
+        />
+      </SidebarSection>
+    </template>
 
     <!-- Pinned under the scrolling body, as mail's sidebar keeps it. -->
     <AreaSidebarFooter v-if="!isMobile">

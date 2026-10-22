@@ -183,10 +183,12 @@ export function createWorkerHost(): WorkerHost {
     }
     const includeStyles = field(p, 'includeStyles') === true
     const includeInputs = field(p, 'includeInputs') === true
+    const includeNumbers = field(p, 'includeNumbers') === true
 
     const values: string[][] = []
     const styles: ExtendedCellStyle[][] = []
     const inputs: string[][] = []
+    const numbers: number[] = []
     for (let r = r1; r <= r2; r++) {
       const valueRow: string[] = []
       const styleRow: ExtendedCellStyle[] = []
@@ -195,6 +197,7 @@ export function createWorkerHost(): WorkerHost {
         valueRow.push(w.getDisplayValue(sheet, r, c))
         if (includeStyles) styleRow.push(w.getStyle(sheet, r, c))
         if (includeInputs) inputRow.push(w.getInput(sheet, r, c))
+        if (includeNumbers && w.isNumber(sheet, r, c)) numbers.push(r - r1, c - c1)
       }
       values.push(valueRow)
       if (includeStyles) styles.push(styleRow)
@@ -203,6 +206,7 @@ export function createWorkerHost(): WorkerHost {
     const result: ViewportResult = { values }
     if (includeStyles) result.styles = styles
     if (includeInputs) result.inputs = inputs
+    if (includeNumbers) result.numbers = numbers
     return result
   }
 

@@ -1115,6 +1115,30 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
             2,
         )
 
+    def test_suite_cloud_sends_the_share_mail_by_type(self):
+        from suite.drive._core import activity
+
+        _, jobs = self._committed(lambda: grant(self.folder.name, SHARED_WITH, READ, self.admin, notify=True))
+        with (
+            patch("suite.suite_core.suite_email.is_suite_cloud_configured", return_value=True),
+            patch("frappe.enqueue") as enqueue,
+        ):
+            activity.send_share_email(**jobs[0])
+
+        kwargs = enqueue.call_args.kwargs
+        self.assertEqual(enqueue.call_args.args[0], "suite.suite_core.suite_email.send_in_background")
+        self.assertEqual((kwargs["email_type"], kwargs["recipient"]), ("drive-share", SHARED_WITH))
+        self.assertEqual(
+            kwargs["params"],
+            {
+                "sharer": frappe.utils.get_fullname(self.admin.user),
+                "item_type": "folder",
+                "item_name": frappe.db.get_value("Drive Node", self.folder.name, "title"),
+                "link": frappe.utils.get_url(node_url(self.folder.name)),
+            },
+        )
+        self.assertEqual(self._mail_to(SHARED_WITH), [])
+
     def test_notify_on_a_principal_that_is_not_a_user_is_refused(self):
         self._assert_no_mutation(
             lambda: grant(self.folder.name, "$PUBLIC", READ, self.admin, notify=True),

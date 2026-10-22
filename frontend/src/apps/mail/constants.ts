@@ -21,6 +21,8 @@ export const FOLDER_ICON_MAP = {
 }
 
 export const FOLDER_ICON_COLOR_MAP = {
+  // A gray folder's icon keeps the sidebar's own gray.
+  Gray: '',
   Blue: '!text-blue-500',
   Green: '!text-green-500',
   Amber: '!text-amber-500',

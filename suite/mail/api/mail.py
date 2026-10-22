@@ -10,11 +10,12 @@ import pydenticon
 import requests
 from frappe import _
 from frappe.model.document import bulk_insert
+from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, cint, now, random_string
 from jmap import MethodError
 from werkzeug.wrappers import Response
 
-from suite.mail import classification
+from suite.mail import classification, unsubscribe
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
     enrich_contacts_with_user_images,
@@ -1424,6 +1425,22 @@ def empty_user_mailbox(account: str, mailbox: str) -> None:
 
 
 @frappe.whitelist()
+def get_unsubscribe_options(account: str, ids: list[str]) -> dict:
+    """How each of the given messages can be unsubscribed from (see suite.mail.unsubscribe)."""
+
+    return unsubscribe.options(account, ids)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60)
+def unsubscribe_mail(account: str, id: str) -> str:
+    """Unsubscribes from the list the message came from; returns which way went (see
+    suite.mail.unsubscribe)."""
+
+    return unsubscribe.unsubscribe(account, id)
+
+
+@frappe.whitelist()
 def search_mails(
     account: str,
     filter: dict | None = None,
@@ -1498,9 +1515,10 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
 
 
 @frappe.whitelist()
-def get_recent_threads_with(account: str, email: str, limit: int = 4) -> list[dict]:
-    """The newest conversations with one address, for the card about a person: mail from it or
-    sent to it, one message per conversation, newest first.
+def get_recent_threads_from(account: str, email: str, limit: int = 4) -> list[dict]:
+    """The newest conversations with mail from one address, for the card about its sender, one
+    message per conversation, newest first. Mail from them, not mail to them: the card is about what
+    they have been sending, and your own mail to them read there as theirs.
 
     Summaries only, in one round trip: no bodies, avatars or account tags, which a card listing a
     few subjects has no use for. Mail only in Trash or Junk is left out, as are drafts — a discarded
@@ -1514,7 +1532,7 @@ def get_recent_threads_with(account: str, email: str, limit: int = 4) -> list[di
         return []
     limit = min(max(cint(limit), 1), 10)
 
-    conditions = [with_address(email), {"notKeyword": "$draft"}]
+    conditions = [{"from": email}, {"notKeyword": "$draft"}]
     binned = [m for m in (get_mailbox_id_by_role(account, r) for r in ("trash", "junk")) if m]
     if binned:
         conditions.append({"inMailboxOtherThan": binned})

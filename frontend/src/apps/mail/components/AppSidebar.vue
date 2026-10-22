@@ -2,10 +2,13 @@
   <!-- Mail's own sidebar, in the shell's sidebar slot on a desktop and in the
 	     bottom nav's sheet on a phone. The page header's folder button and a tap
 	     on the active Mail tab open the sheet. -->
-  <AreaSidebar area="mail" :title="__('Mail')">
+  <!-- On a phone it is the folders sheet, as develop's was: each folder with its count and nothing
+       else (editing a folder is Settings' there), no title, and one height, so More opens in it. -->
+  <AreaSidebar area="mail" :title="__('Mail')" :sheet-title="false" steady-sheet>
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
-         one account, or on the dashboard, there is nothing to pick: it is just named. -->
-    <SidebarSection class="!mt-0">
+         one account, or on the dashboard, there is nothing to pick: it is just named. A phone
+         switches accounts on the Profile page instead, so its folders sheet is folders only. -->
+    <SidebarSection v-if="!isMobile" class="!mt-0">
       <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
         <SidebarItem :label="subtitle || __('Account')" icon="lucide-circle-user-round">
           <template #suffix>
@@ -51,7 +54,7 @@
           "
           :active="item.activeFor?.includes(activeKey)"
           :on-click="item.onClick"
-          class="group"
+          class="group has-[>:is(a,button):focus-visible]:focus-ring [&>:is(a,button):focus-visible]:!outline-none"
           @dragover="onFolderDragOver($event, item)"
           @dragleave="onFolderDragLeave(item)"
           @drop="onFolderDrop($event, item)"
@@ -60,16 +63,23 @@
             <!-- More says which way it opens with its own icon (see moreToggle), so it has no
                  suffix. -->
             <div v-if="!isMoreToggle(item)" class="flex items-center">
-              <Dropdown v-if="item.menuOptions" :options="item.menuOptions">
+              <!-- The menu shows on hover, on a touch screen (no hover to show it), and when Tab
+                   reaches it: hidden then, its focus ring ringed nothing. -->
+              <Dropdown v-if="item.menuOptions && !isMobile" :options="item.menuOptions">
                 <Button variant="ghost" class="!bg-transparent" @click.stop>
                   <template #icon>
-                    <Ellipsis class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible" />
+                    <Ellipsis
+                      class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible group-has-[button:focus-visible]:visible [@media(hover:none)]:visible"
+                    />
                   </template>
                 </Button>
               </Dropdown>
               <span
                 class="text-ink-gray-4 mr-2 text-sm"
-                :class="{ 'group-hover:hidden': item.menuOptions }"
+                :class="{
+                  'group-hover:hidden group-has-[button:focus-visible]:hidden':
+                    item.menuOptions && !isMobile,
+                }"
               >
                 {{ item.suffix }}
               </span>
@@ -96,7 +106,6 @@ import ArrowLeft from '~icons/lucide/arrow-left'
 import CalendarClock from '~icons/lucide/calendar-clock'
 import ChevronDown from '~icons/lucide/chevron-down'
 import ChevronUp from '~icons/lucide/chevron-up'
-import CircleUserRound from '~icons/lucide/circle-user-round'
 import Crown from '~icons/lucide/crown'
 import Ellipsis from '~icons/lucide/ellipsis'
 import Globe from '~icons/lucide/globe'
@@ -562,20 +571,6 @@ const sidebarItems = computed(() => {
     groups.push({
       label: __('Admin'),
       items: [{ label: __('Admin Dashboard'), icon: Crown, to: { path: '/admin' } }],
-    })
-
-  // The phone's settings page. A desktop opens Settings from the account menu instead.
-  if (isMobile.value)
-    groups.push({
-      label: '',
-      items: [
-        {
-          label: __('Profile'),
-          icon: CircleUserRound,
-          to: { name: 'mail-profile', params: { accountId: store.accountId } },
-          activeFor: ['mail-profile'],
-        },
-      ],
     })
 
   return groups
