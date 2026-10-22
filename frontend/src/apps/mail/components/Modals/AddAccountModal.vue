@@ -207,7 +207,7 @@ const setupError = ref('')
 const { domains, domainsError } = useEnabledDomains(show)
 const ROLE_OPTIONS = [
   {
-    label: __('Normal User'),
+    label: __('Member'),
     value: 'user',
   },
   {

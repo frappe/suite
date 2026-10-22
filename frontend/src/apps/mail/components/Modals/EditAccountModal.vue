@@ -69,7 +69,7 @@ const { member } = defineProps<{
 const emit = defineEmits(['reload'])
 const ROLE_OPTIONS = [
   {
-    label: __('User'),
+    label: __('Member'),
     value: 'user',
   },
   {

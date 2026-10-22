@@ -139,7 +139,7 @@ watch(
 const save = useMutation(api.mail.admin.invites.update)
 const send = useMutation(api.mail.admin.invites.send)
 const isDirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(invitation.data))
-const roleLabel = computed(() => (draft.value?.is_admin ? __('Admin') : __('User')))
+const roleLabel = computed(() => (draft.value?.is_admin ? __('Admin') : __('Member')))
 const isEditableInvite = computed(() => draft.value && !draft.value.is_verified)
 const inviteQuota = computed<number | string>({
   get: () =>

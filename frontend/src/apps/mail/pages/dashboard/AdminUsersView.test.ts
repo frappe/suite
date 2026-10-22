@@ -1,16 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick } from 'vue'
 
 import AdminUsersView from './AdminUsersView.vue'
 
 vi.mock('@/apps/mail/utils/addOnArrival', () => ({ useAddOnArrival: vi.fn() }))
-vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
 vi.mock('@/platform/dashboard', () => ({
   DashboardLayout: defineComponent({
     template: '<main><slot name="actions" /><slot /></main>',
   }),
 }))
 vi.mock('frappe-ui', () => ({
+  Alert: defineComponent({
+    props: ['title', 'description'],
+    template: '<div role="alert">{{ title }} {{ description }}<slot name="actions" /></div>',
+  }),
+  ErrorMessage: defineComponent({
+    props: ['message'],
+    template: '<p>{{ message }}</p>',
+  }),
   Button: defineComponent({
     props: ['label'],
     template: '<button>{{ label }}</button>',
@@ -23,6 +30,38 @@ vi.mock('frappe-ui', () => ({
       <slot name="tab-panel" /></div>`,
   }),
 }))
+
+vi.hoisted(() => {
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        data: [
+          {
+            name: 'aisha@frappe.io',
+            email: 'aisha@frappe.io',
+            full_name: 'Aisha Khan',
+            user_image: null,
+            is_admin: false,
+            enabled: false,
+            account: 'aisha@frappe.io',
+            setup_status: 'Setup failed',
+            must_change_password: false,
+          },
+          {
+            name: 'maya@frappe.io',
+            email: 'maya@frappe.io',
+            full_name: 'Maya',
+            user_image: null,
+            is_admin: false,
+            enabled: true,
+            account: 'maya@frappe.io',
+            setup_status: 'Active',
+            must_change_password: false,
+          },
+        ],
+      }),
+    )
+})
 vi.mock('@/apps/mail/pages/dashboard/UsersView.vue', () => ({
   default: defineComponent({ template: '<div data-test="users">User list</div>' }),
 }))
@@ -66,6 +105,22 @@ async function click(element: HTMLElement, label: string) {
 }
 
 describe('Admin Users', () => {
+  it('lets Suite composition supply the user directory while retaining invitations', async () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const app = createApp({
+      render: () =>
+        h(AdminUsersView, {}, { users: () => h('section', 'Preserved Suite identities') }),
+    })
+    apps.push(app)
+    app.mount(element)
+    expect(element.textContent).toContain('Preserved Suite identities')
+    expect(element.querySelector('[data-test="users"]')).toBeNull()
+    await click(element, 'Invitations')
+    expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
+    expect(element.textContent).not.toContain('Preserved Suite identities')
+  })
+
   it('opens the existing user list by default', () => {
     const element = mount()
     expect(element.querySelector('[data-test="users"]')).not.toBeNull()
@@ -84,5 +139,19 @@ describe('Admin Users', () => {
     await click(element, 'Add user')
     await click(element, 'Finish adding')
     expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
+  })
+
+  it('puts Mail setup failure alerts in the Users tab, not Invitations', async () => {
+    const element = mount()
+    await vi.waitFor(() =>
+      expect(element.querySelector('[role="alert"]')?.textContent).toContain(
+        'Mail account setup failed',
+      ),
+    )
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain('aisha@frappe.io')
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain('Aisha Khan')
+    expect(element.querySelector('[role="alert"]')?.textContent).not.toContain('Maya')
+    await click(element, 'Invitations')
+    expect(element.querySelector('[role="alert"]')).toBeNull()
   })
 })
