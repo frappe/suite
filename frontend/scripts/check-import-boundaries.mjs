@@ -309,7 +309,6 @@ const unstableFrappeUIDebtGroups = [
       'mail/pages/dashboard/GroupView.vue|frappe-ui/experimental',
       'mail/pages/dashboard/MailingListView.vue|frappe-ui/experimental',
       'mail/pages/dashboard/OverviewView.vue|frappe-ui/experimental',
-      'mail/pages/dashboard/UsersView.vue|frappe-ui/experimental',
       'mail/utils/mentionSuggestion.ts|frappe-ui/experimental',
       'mail/utils/quotedContentExtension.test.ts|frappe-ui/experimental',
       'mail/utils/text-editor.ts|frappe-ui/experimental',

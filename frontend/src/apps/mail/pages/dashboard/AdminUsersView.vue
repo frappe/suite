@@ -41,7 +41,7 @@
               </template>
             </Alert>
           </section>
-          <slot v-if="tab === 'users'" name="users"><UsersView /></slot>
+          <slot v-if="tab === 'users'" name="users" />
           <InvitesView v-else ref="invitations" />
         </div>
       </template>
@@ -57,13 +57,12 @@ import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import { api, useQuery } from '@/api'
 import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
 import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
-import UsersView from '@/apps/mail/pages/dashboard/UsersView.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import { DashboardLayout } from '@/platform/dashboard'
 import { translate as __ } from '@/platform/translation'
 
 // Suite composition supplies its preserved-identity directory; Mail owns invitations (§4.3).
-defineSlots<{ users?: () => unknown }>()
+defineSlots<{ users: () => unknown }>()
 
 const tab = ref<'users' | 'invitations'>('users')
 const users = useQuery(api.suite.users.list)

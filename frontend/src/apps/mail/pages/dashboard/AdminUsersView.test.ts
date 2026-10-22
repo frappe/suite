@@ -62,9 +62,6 @@ vi.hoisted(() => {
       }),
     )
 })
-vi.mock('@/apps/mail/pages/dashboard/UsersView.vue', () => ({
-  default: defineComponent({ template: '<div data-test="users">User list</div>' }),
-}))
 vi.mock('@/apps/mail/pages/dashboard/InvitesView.vue', () => ({
   default: defineComponent({
     setup(_, { expose }) {
@@ -89,7 +86,10 @@ afterEach(() => {
 function mount() {
   const element = document.createElement('div')
   document.body.append(element)
-  const app = createApp(AdminUsersView)
+  const app = createApp({
+    render: () =>
+      h(AdminUsersView, {}, { users: () => h('div', { 'data-test': 'users' }, 'User list') }),
+  })
   apps.push(app)
   app.mount(element)
   return element
@@ -121,7 +121,7 @@ describe('Admin Users', () => {
     expect(element.textContent).not.toContain('Preserved Suite identities')
   })
 
-  it('opens the existing user list by default', () => {
+  it('opens the user list by default', () => {
     const element = mount()
     expect(element.querySelector('[data-test="users"]')).not.toBeNull()
     expect(element.querySelector('[data-test="invitations"]')).toBeNull()
