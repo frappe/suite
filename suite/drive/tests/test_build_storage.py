@@ -71,7 +71,7 @@ class ScopedStorage(SiteStorage):
     def run_backfill(self, batch_size):
         from frappe.storage import backfill
 
-        return backfill.run(batch_size=batch_size, filters={"name": ("like", self.prefix + "%")})
+        return backfill.run(batch_size=batch_size, filters=[["name", "like", self.prefix + "%"]])
 
 
 class TestBuildStoragePreparation(IntegrationTestCase):

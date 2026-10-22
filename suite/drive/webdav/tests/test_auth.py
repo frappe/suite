@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.auth import LoginAttemptTracker
 from frappe.tests import IntegrationTestCase
 from frappe.utils.password import update_password
 
@@ -29,6 +30,11 @@ def authenticate(user: str | None, password: str = "", header: str | None = None
     else:
         set_dav_request("PROPFIND", "/dav/", user=user, password=password)
     return auth.authenticate(frappe.local.request)
+
+
+def failures(key: str) -> int:
+    """Failed attempts counted under ``key``, read through the framework's own tracker."""
+    return LoginAttemptTracker(key).login_failed_count
 
 
 class TestWebDAVAuth(IntegrationTestCase):
@@ -82,8 +88,8 @@ class TestWebDAVAuth(IntegrationTestCase):
             with self.assertRaises(AuthRequired):
                 authenticate(user, "wrong-password")
             # the failure lands under the namespaced key, never frappe's web-login key
-            self.assertIsNone(frappe.cache.hget("login_failed_count", user))
-            self.assertIsNotNone(frappe.cache.hget("login_failed_count", f"{auth.LOCKOUT_KEY_NS}{user}"))
+            self.assertEqual(failures(user), 0)
+            self.assertEqual(failures(f"{auth.LOCKOUT_KEY_NS}{user}"), 1)
 
     def test_correct_password_returns_canonical_user(self):
         user = make_user("ok")
@@ -164,7 +170,7 @@ class TestWebDAVAuth(IntegrationTestCase):
             with self.assertRaises(AuthRequired) as ctx:
                 authenticate(api_key, "not-the-secret")
             self.assertEqual(str(ctx.exception), "Incorrect user or password.")
-            self.assertIsNotNone(frappe.cache.hget("login_failed_count", f"{auth.LOCKOUT_KEY_NS}{api_key}"))
+            self.assertEqual(failures(f"{auth.LOCKOUT_KEY_NS}{api_key.lower()}"), 1)
 
     def test_api_keys_bypass_two_factor(self):
         # API credentials are their own factor — the working path for 2FA accounts

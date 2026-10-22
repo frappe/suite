@@ -16,7 +16,7 @@ test.describe("Multi participant", () => {
 		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		let accessChecks = 0;
-		await guest.page.route("**/api/v2/method/suite.meet.api.meeting.check_meeting_access**", (route) => {
+		await guest.page.route("**/api/suite/meet/rooms/access**", (route) => {
 			accessChecks++;
 			return route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
 		});
