@@ -143,10 +143,14 @@
                     </p>
                     <p
                       v-if="capNote(user)"
-                      class="truncate text-p-sm text-ink-amber-6"
+                      class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-6"
                       :title="capNote(user)"
                     >
-                      {{ capNote(user) }}
+                      <span
+                        class="lucide-triangle-alert size-3 shrink-0 text-ink-amber-6"
+                        aria-hidden="true"
+                      />
+                      <span class="truncate">{{ capNote(user) }}</span>
                     </p>
                   </div>
                 </ListCell>

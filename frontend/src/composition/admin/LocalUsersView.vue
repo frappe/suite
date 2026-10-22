@@ -119,10 +119,14 @@
               />
               <p
                 v-if="setupNote(user)"
-                class="mt-1.5 truncate text-p-sm text-ink-amber-6"
+                class="mt-1.5 flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-6"
                 :title="setupNote(user)"
               >
-                {{ setupNote(user) }}
+                <span
+                  class="lucide-triangle-alert size-3 shrink-0 text-ink-amber-6"
+                  aria-hidden="true"
+                />
+                <span class="truncate">{{ setupNote(user) }}</span>
               </p>
             </div>
           </ListCell>

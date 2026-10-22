@@ -26,6 +26,7 @@
       :rows="list.rows"
       row-key="id"
       :loading="list.status !== 'success'"
+      :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
       :empty-state="listOptions.emptyState"
     >
