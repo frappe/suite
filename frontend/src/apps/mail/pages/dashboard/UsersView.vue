@@ -54,7 +54,7 @@
             </template>
             <template v-else-if="column.key === 'role'">
               <Badge
-                :label="row.is_admin ? __('Admin') : __('User')"
+                :label="row.is_admin ? __('Admin') : __('Member')"
                 :theme="row.is_admin ? 'amber' : 'blue'"
               />
             </template>
@@ -81,16 +81,10 @@
       <template #actions>
         <Button variant="ghost" :label="__('Enable')" @click="showEnableMembers = true" />
         <Button variant="ghost" :label="__('Disable')" @click="showDisableMembers = true" />
-        <Button
-          variant="ghost"
-          theme="red"
-          :label="__('Delete')"
-          @click="showDeleteMembers = true"
-        />
       </template>
     </ListSelectBanner>
   </ListView>
-  <DashboardListSkeleton v-else :columns="6" />
+  <DashboardListSkeleton v-else :columns="LIST_COLUMNS" selectable :row-height="50" />
   <DashboardPager
     v-if="list.status === 'success' && list.total"
     :count="list.rows.length"
@@ -103,7 +97,21 @@
   />
   <Dialog v-model:open="showEnableMembers" v-bind="ENABLE_MEMBERS_OPTIONS" />
   <Dialog v-model:open="showDisableMembers" v-bind="DISABLE_MEMBERS_OPTIONS" />
-  <Dialog v-model:open="showDeleteMembers" v-bind="DELETE_MEMBERS_OPTIONS" />
+  <section v-if="lifecycleResults.length" class="space-y-2" :aria-label="__('User access results')">
+    <p
+      v-for="result in lifecycleResults"
+      :key="result.user"
+      :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
+    >
+      {{ result.user }}: {{ result.success ? __('Access updated') : result.error }}
+    </p>
+    <Button
+      v-if="lifecycleResults.some((result) => !result.success)"
+      :label="__('Retry failed users')"
+      :loading="lifecyclePending"
+      @click="retryLifecycle"
+    />
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -122,14 +130,14 @@ import {
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { api, useInfiniteQuery, useMutation, type InputOf } from '@/api'
+import { api, client, useInfiniteQuery, type OutputOf } from '@/api'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import StorageBar from '@/apps/mail/components/StorageBar.vue'
-import { raiseToast } from '@/apps/mail/utils'
 import { fromNow } from '@/apps/mail/utils/datetime'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
 import { DashboardListSkeleton } from '@/platform/dashboard'
+import { translate as __ } from '@/platform/translation'
 
 type MemberRow = {
   name: string
@@ -155,7 +163,6 @@ watch(
 )
 const showEnableMembers = ref(false)
 const showDisableMembers = ref(false)
-const showDeleteMembers = ref(false)
 const listView = useTemplateRef<{
   selections?: Set<string>
   toggleAllRows?: () => void
@@ -240,7 +247,7 @@ const ROLE_FILTER_OPTIONS = [
     value: 'admin',
   },
   {
-    label: __('User'),
+    label: __('Member'),
     value: 'user',
   },
 ]
@@ -280,15 +287,49 @@ const listOptions = computed(() => ({
     },
   }),
 }))
-const enableMembers = useMutation(api.mail.admin.members.enable)
-async function enableMembersSubmit() {
-  const input: InputOf<typeof api.mail.admin.members.enable> = {
-    names: Array.from(listView.value?.selections || []),
+type LifecycleResult = OutputOf<typeof api.mail.admin.members.enable>[number]
+const lifecycleResults = ref<LifecycleResult[]>([])
+const lifecyclePending = ref(false)
+const lifecycleEnabled = ref(false)
+async function updateAccess(names: string[], enabled: boolean, retry = false) {
+  lifecycleEnabled.value = enabled
+  if (!retry) lifecycleResults.value = []
+  lifecyclePending.value = true
+  try {
+    const results = await client.mutation(
+      enabled ? api.mail.admin.members.enable : api.mail.admin.members.disable,
+      { names },
+      { silent: true },
+    )
+    for (const result of results) {
+      if (result.success) listView.value?.selections?.delete(result.user)
+      const previous = lifecycleResults.value.findIndex((previous) => previous.user === result.user)
+      if (previous === -1) lifecycleResults.value.push(result)
+      else lifecycleResults.value[previous] = result
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : __('Unable to change access. Try again.')
+    for (const user of names) {
+      const previous = lifecycleResults.value.findIndex((result) => result.user === user)
+      const result = { user, success: false, error: message }
+      if (previous === -1) lifecycleResults.value.push(result)
+      else lifecycleResults.value[previous] = result
+    }
+  } finally {
+    lifecyclePending.value = false
   }
-  await enableMembers.run(input)
+}
+async function retryLifecycle() {
+  await updateAccess(
+    lifecycleResults.value.filter((result) => !result.success).map((result) => result.user),
+    lifecycleEnabled.value,
+    true,
+  )
+}
+async function enableMembersSubmit() {
+  await updateAccess(Array.from(listView.value?.selections || []), true)
   showEnableMembers.value = false
-  raiseToast(__('Accounts enabled.'))
-  listView.value?.toggleAllRows?.()
 }
 const ENABLE_MEMBERS_OPTIONS = {
   title: __('Enable Accounts'),
@@ -303,15 +344,9 @@ const ENABLE_MEMBERS_OPTIONS = {
     },
   ],
 }
-const disableMembers = useMutation(api.mail.admin.members.disable)
 async function disableMembersSubmit() {
-  const input: InputOf<typeof api.mail.admin.members.disable> = {
-    names: Array.from(listView.value?.selections || []),
-  }
-  await disableMembers.run(input)
+  await updateAccess(Array.from(listView.value?.selections || []), false)
   showDisableMembers.value = false
-  raiseToast(__('Accounts disabled.'))
-  listView.value?.toggleAllRows?.()
 }
 const DISABLE_MEMBERS_OPTIONS = {
   title: __('Disable Accounts'),
@@ -323,30 +358,6 @@ const DISABLE_MEMBERS_OPTIONS = {
       label: __('Confirm'),
       variant: 'solid' as const,
       onClick: disableMembersSubmit,
-    },
-  ],
-}
-const deleteMembers = useMutation(api.mail.admin.members.delete)
-async function deleteMembersSubmit() {
-  const input: InputOf<typeof api.mail.admin.members.delete> = {
-    names: Array.from(listView.value?.selections || []),
-  }
-  await deleteMembers.run(input)
-  showDeleteMembers.value = false
-  raiseToast(__('Accounts deleted.'))
-  listView.value?.toggleAllRows?.()
-}
-const DELETE_MEMBERS_OPTIONS = {
-  title: __('Delete Accounts'),
-  message: __(
-    'Are you sure you want to delete the selected accounts? This action cannot be undone.',
-  ),
-  actions: [
-    {
-      label: __('Confirm'),
-      variant: 'solid' as const,
-      theme: 'red' as const,
-      onClick: deleteMembersSubmit,
     },
   ],
 }

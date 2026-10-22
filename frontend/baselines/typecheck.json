@@ -37,7 +37,6 @@
   "src/apps/mail/components/Modals/ContactsModal.vue": 4,
   "src/apps/mail/components/Modals/DeleteFolderModal.vue": 4,
   "src/apps/mail/components/Modals/EditAccountModal.vue": 1,
-  "src/apps/mail/components/Modals/EditAccountQuotaModal.vue": 1,
   "src/apps/mail/components/Modals/EditDomainModal.vue": 1,
   "src/apps/mail/components/Modals/EditGroupModal.vue": 1,
   "src/apps/mail/components/Modals/EditMailingListModal.vue": 1,

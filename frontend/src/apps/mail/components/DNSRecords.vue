@@ -9,55 +9,37 @@
       </h3>
       <p class="text-ink-gray-5 text-sm">{{ description }}</p>
     </div>
-    <ListView
-      class="max-w-full flex-1"
-      :columns="columns"
-      :rows="rows"
-      :options="{ selectable: false, showTooltip: false }"
-      row-key="key"
-    >
-      <ListHeader />
-      <ListRows>
-        <ListRow v-for="row in rows" :key="row.key" v-slot="{ column, item }" :row="row">
-          <ListRowItem :item="item">
-            <Badge
-              v-if="column.key === 'is_verified'"
-              :theme="item ? 'green' : 'gray'"
-              :label="item ? __('Verified') : __('Not verified')"
+    <DashboardList :columns="columns" :rows="rows" row-key="key">
+      <template #cell="{ column, item }">
+        <Badge
+          v-if="column.key === 'is_verified'"
+          :theme="item ? 'green' : 'gray'"
+          :label="item ? __('Verified') : __('Not verified')"
+        />
+        <span v-else-if="item === null || item === undefined" class="text-ink-gray-5">—</span>
+        <Tooltip v-else :text="__('Click to copy')">
+          <div
+            class="group/copy flex min-w-0 cursor-copy items-center gap-1.5"
+            @click="copyToClipBoard(String(item))"
+          >
+            <span class="truncate">{{ item }}</span>
+            <span
+              class="lucide-copy invisible size-3.5 shrink-0 text-ink-gray-5 group-hover/copy:visible"
+              aria-hidden="true"
             />
-            <span v-else-if="item === null || item === undefined" class="text-ink-gray-5">—</span>
-            <Tooltip v-else :text="__('Click to copy')">
-              <div
-                class="group/copy flex min-w-0 cursor-copy items-center gap-1.5"
-                @click="copyToClipBoard(String(item))"
-              >
-                <span class="truncate">{{ item }}</span>
-                <FeatherIcon
-                  name="copy"
-                  class="text-ink-gray-5 invisible h-3.5 w-3.5 shrink-0 group-hover/copy:visible"
-                />
-              </div>
-            </Tooltip>
-          </ListRowItem>
-        </ListRow>
-      </ListRows>
-    </ListView>
+          </div>
+        </Tooltip>
+      </template>
+    </DashboardList>
   </div>
 </template>
 
 <script setup lang="ts">
 import { Badge, Tooltip } from 'frappe-ui'
-import {
-  Icon as FeatherIcon,
-  ListHeader,
-  ListRow,
-  ListRowItem,
-  ListRows,
-  ListView,
-} from 'frappe-ui/experimental'
 import { computed } from 'vue'
 
 import { copyToClipBoard } from '@/apps/mail/utils'
+import { DashboardList } from '@/platform/dashboard'
 
 // One record as Suite Cloud's Mail Domain holds it: the host is relative to the domain and the
 // SRV fields stay apart from the value, so the page reads like the record table on Suite Cloud.

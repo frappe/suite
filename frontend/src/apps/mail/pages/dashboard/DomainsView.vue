@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between gap-3">
       <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
         <template #prefix>
-          <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
+          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
       <div class="flex items-center gap-3">
@@ -21,43 +21,35 @@
         />
       </div>
     </div>
-    <ListView
-      v-if="list.status === 'success'"
-      class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
+    <DashboardList
       :columns="LIST_COLUMNS"
       :rows="list.rows"
-      :options="listOptions"
       row-key="id"
+      :loading="list.status !== 'success'"
+      :row-route="listOptions.getRowRoute"
+      :empty-state="listOptions.emptyState"
     >
-      <ListHeader />
-      <ListRows>
-        <template v-if="list.rows.length">
-          <ListRow
-            v-for="row in list.rows"
-            :key="row.id"
-            v-slot="{ column, item }"
-            :row="row"
-            class="hover:!bg-surface-gray-1"
-          >
-            <ListRowItem :item="item">
-              <Badge
-                v-if="column.key === 'status'"
-                :theme="domainStatusBadge(item).theme"
-                :label="domainStatusBadge(item).label"
-              />
-              <span
-                v-else-if="column.key === 'last_verified_at' || column.key === 'created_at'"
-                class="text-ink-gray-5 text-sm"
-              >
-                {{ formatAgo(item) }}
-              </span>
-            </ListRowItem>
-          </ListRow>
-        </template>
-        <ListEmptyState v-else />
-      </ListRows>
-    </ListView>
-    <DashboardListSkeleton v-else />
+      <template #cell="{ column, item }">
+        <Badge
+          v-if="column.key === 'status'"
+          :theme="domainStatusBadge(item as DomainStatus).theme"
+          :label="domainStatusBadge(item as DomainStatus).label"
+        />
+        <span
+          v-else-if="column.key === 'last_verified_at' || column.key === 'created_at'"
+          class="text-ink-gray-5 text-sm"
+        >
+          {{ formatAgo(item as string) }}
+        </span>
+        <span
+          v-else
+          class="truncate text-base"
+          :class="column.key === LIST_COLUMNS[0].key ? 'text-ink-gray-8' : 'text-ink-gray-7'"
+        >
+          {{ item ?? '—' }}
+        </span>
+      </template>
+    </DashboardList>
     <DashboardPager
       v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
@@ -74,15 +66,6 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
 import { Badge, FormControl, usePageMeta } from 'frappe-ui'
-import {
-  Icon as FeatherIcon,
-  ListEmptyState,
-  ListHeader,
-  ListRow,
-  ListRowItem,
-  ListRows,
-  ListView,
-} from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'
@@ -96,7 +79,7 @@ import {
   type DomainStatus,
 } from '@/apps/mail/utils/domainStatus'
 import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Domains'), 'Mail'))
@@ -116,14 +99,6 @@ const list = useInfiniteQuery(api.mail.admin.domains.list, () => ({
   start: 0,
   page_length: pageLength.value,
 }))
-type DomainRow = {
-  id: string
-  name: string
-  description?: string
-  status: DomainStatus
-  last_verified_at?: string
-  created_at?: string
-}
 const LIST_COLUMNS = [
   {
     label: __('Domain'),
@@ -167,7 +142,7 @@ const listOptions = computed(() => ({
           onClick: () => (showAddDomain.value = true),
         },
       },
-  getRowRoute: (row: DomainRow) => ({
+  getRowRoute: (row: { id: string }) => ({
     name: 'mail-domain',
     params: {
       domainId: row.id,

@@ -1,20 +1,25 @@
 <template>
   <!-- One headline number per check; the pass rate alone carries a bar and a warning tone. -->
   <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-    <div v-for="tile in tiles" :key="tile.label" class="flex flex-col gap-1 rounded-4 border p-4">
-      <span class="text-ink-gray-5 text-sm">{{ tile.label }}</span>
-      <span class="text-ink-gray-9 text-xl font-semibold leading-7">{{ tile.value }}</span>
-      <span class="text-xs" :class="tile.warn ? 'text-ink-amber-6' : 'text-ink-gray-5'">{{
-        tile.sub || ' '
-      }}</span>
-      <div v-if="tile.bar !== undefined" class="bg-surface-gray-3 mt-1 h-1 w-full rounded-full">
-        <div
-          class="h-1 rounded-full"
-          :class="tile.warn ? 'bg-surface-amber-5' : 'bg-surface-gray-7'"
-          :style="{ width: `${Math.min(100, Math.max(2, tile.bar))}%` }"
-        />
+    <template v-if="tiles">
+      <div v-for="tile in tiles" :key="tile.label" class="flex flex-col gap-1 rounded-4 border p-4">
+        <span class="text-ink-gray-5 text-sm">{{ tile.label }}</span>
+        <span class="text-ink-gray-9 text-xl font-semibold leading-7">{{ tile.value }}</span>
+        <span class="text-xs" :class="tile.warn ? 'text-ink-amber-6' : 'text-ink-gray-5'">{{
+          tile.sub || ' '
+        }}</span>
+        <div v-if="tile.bar !== undefined" class="bg-surface-gray-3 mt-1 h-1 w-full rounded-full">
+          <div
+            class="h-1 rounded-full"
+            :class="tile.warn ? 'bg-surface-amber-5' : 'bg-surface-gray-7'"
+            :style="{ width: `${Math.min(100, Math.max(2, tile.bar))}%` }"
+          />
+        </div>
       </div>
-    </div>
+    </template>
+    <template v-else>
+      <DashboardTileSkeleton v-for="n in 5" :key="n" :bar="n === 2" />
+    </template>
   </div>
 </template>
 
@@ -23,10 +28,12 @@ import { computed } from 'vue'
 
 import type { DmarcTotals } from '@/apps/mail/utils/dmarc'
 import { formatRate, RATE_WARN_BELOW, share } from '@/apps/mail/utils/reports'
+import { DashboardTileSkeleton } from '@/platform/dashboard'
 
-const { totals } = defineProps<{ totals: DmarcTotals }>()
+const { totals } = defineProps<{ /** Absent while loading. */ totals?: DmarcTotals }>()
 
 const tiles = computed(() => {
+  if (!totals) return undefined
   const { messages, passed, failed, dkim_passed, spf_passed, reports, pass_rate } = totals
   const warn = pass_rate !== null && pass_rate < RATE_WARN_BELOW
   return [
