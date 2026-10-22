@@ -71,9 +71,10 @@ export const routes: RouteRecordRaw[] = [
         props: true,
       },
       {
+        // Invitations live on the Users page; old links keep their ?status filter.
         path: 'invitations',
         name: 'mail-invites',
-        component: () => import('@/apps/mail/pages/dashboard/AccountsView.vue'),
+        redirect: (to) => ({ path: '/admin/users/invitations', query: to.query }),
       },
     ],
   },

@@ -53,6 +53,7 @@
 <script setup lang="ts">
 import { Alert, Button, ErrorMessage, Tabs } from 'frappe-ui'
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
@@ -64,7 +65,14 @@ import { translate as __ } from '@/platform/translation'
 // Suite composition supplies its preserved-identity directory; Mail owns invitations (§4.3).
 defineSlots<{ users: () => unknown }>()
 
-const tab = ref<'users' | 'invitations'>('users')
+const route = useRoute()
+const router = useRouter()
+// The tab is the URL: /admin/users or /admin/users/invitations.
+const tab = computed({
+  get: () => (route.path.endsWith('/invitations') ? 'invitations' : 'users'),
+  set: (value: string) =>
+    void router.push(value === 'invitations' ? '/admin/users/invitations' : '/admin/users'),
+})
 const users = useQuery(api.suite.users.list)
 const onlyActiveAdmin = computed(
   () =>
@@ -85,7 +93,7 @@ const adding = ref(false)
 useAddOnArrival(adding)
 const invitations = useTemplateRef('invitations')
 async function reload() {
-  tab.value = 'invitations'
+  if (tab.value !== 'invitations') await router.push('/admin/users/invitations')
   await nextTick()
   await invitations.value?.reloadInvites()
 }

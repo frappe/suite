@@ -15,10 +15,14 @@
   <ErrorMessage v-else-if="storage.error" :message="storage.error.message" />
   <DashboardLayout v-else area="admin" :breadcrumbs="[{ label: __('Users') }]">
     <!-- Same tabs as the Mail users page; the directory below shows its own placeholder rows. -->
-    <Tabs :model-value="'users'" :tabs="SKELETON_TABS" class="pointer-events-none">
+    <Tabs
+      :model-value="onInvitations ? 'invitations' : 'users'"
+      :tabs="SKELETON_TABS"
+      class="pointer-events-none"
+    >
       <template #tab-panel>
         <div class="flex min-h-0 flex-1 flex-col gap-5 pt-5">
-          <LocalUsers embedded />
+          <LocalUsers v-if="!onInvitations" embedded />
         </div>
       </template>
     </Tabs>
@@ -27,7 +31,7 @@
 
 <script setup lang="ts">
 import { ErrorMessage, Tabs } from 'frappe-ui'
-import { defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { api, useQuery } from '@/api'
@@ -39,6 +43,7 @@ const storage = useQuery(api.suite.storage.get)
 const route = useRoute()
 const MailUsers = defineAsyncComponent(loadMailAdminUsers)
 const LocalUsers = defineAsyncComponent(() => import('./LocalUsersView.vue'))
+const onInvitations = computed(() => route.path.endsWith('/invitations'))
 const SKELETON_TABS = [
   { value: 'users', label: __('Users') },
   { value: 'invitations', label: __('Invitations') },

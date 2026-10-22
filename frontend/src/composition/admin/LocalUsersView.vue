@@ -10,7 +10,7 @@
         v-if="storage.data?.cloud"
         variant="solid"
         :label="__('Manage invitations')"
-        route="/admin/mail/invitations"
+        route="/admin/users/invitations"
       />
       <Button v-else variant="solid" :label="__('Invite users')" @click="inviting = true" />
     </template>

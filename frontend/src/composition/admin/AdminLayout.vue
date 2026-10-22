@@ -49,7 +49,6 @@ const groups = computed(() => [
         {
           label: __('Mail'),
           items: [
-            { to: '/admin/mail/invitations', label: __('Invitations'), icon: 'lucide-mail-plus' },
             { to: '/admin/mail/domains', label: __('Domains'), icon: 'lucide-globe' },
             { to: '/admin/mail/groups', label: __('Groups'), icon: 'lucide-users-round' },
             { to: '/admin/mail/mailing-lists', label: __('Mailing lists'), icon: 'lucide-list' },

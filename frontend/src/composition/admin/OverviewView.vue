@@ -58,7 +58,7 @@ const kpis = computed(() => {
           {
             label: __('Pending invitations'),
             value: report.pending_invitations,
-            route: '/admin/mail/invitations',
+            route: '/admin/users/invitations',
           },
           {
             label: __('Domains'),

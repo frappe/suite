@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import AdminUsersView from './AdminUsersView.vue'
 
@@ -79,11 +80,27 @@ vi.mock('@/apps/mail/components/Modals/AddAccountModal.vue', () => ({
 }))
 
 const apps: ReturnType<typeof createApp>[] = []
+let router = makeRouter()
+function makeRouter() {
+  const page = { render: () => null }
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/admin/users', component: page },
+      { path: '/admin/users/invitations', component: page },
+    ],
+  })
+}
+async function install(app: ReturnType<typeof createApp>) {
+  router = makeRouter()
+  await router.push('/admin/users')
+  app.use(router)
+}
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
 })
-function mount() {
+async function mount() {
   const element = document.createElement('div')
   document.body.append(element)
   const app = createApp({
@@ -91,6 +108,7 @@ function mount() {
       h(AdminUsersView, {}, { users: () => h('div', { 'data-test': 'users' }, 'User list') }),
   })
   apps.push(app)
+  await install(app)
   app.mount(element)
   return element
 }
@@ -100,6 +118,7 @@ async function click(element: HTMLElement, label: string) {
   )
   expect(button).toBeDefined()
   button!.click()
+  await new Promise((resolve) => setTimeout(resolve))
   await nextTick()
   await nextTick()
 }
@@ -113,6 +132,7 @@ describe('Admin Users', () => {
         h(AdminUsersView, {}, { users: () => h('section', 'Preserved Suite identities') }),
     })
     apps.push(app)
+    await install(app)
     app.mount(element)
     expect(element.textContent).toContain('Preserved Suite identities')
     expect(element.querySelector('[data-test="users"]')).toBeNull()
@@ -121,28 +141,28 @@ describe('Admin Users', () => {
     expect(element.textContent).not.toContain('Preserved Suite identities')
   })
 
-  it('opens the user list by default', () => {
-    const element = mount()
+  it('opens the user list by default', async () => {
+    const element = await mount()
     expect(element.querySelector('[data-test="users"]')).not.toBeNull()
     expect(element.querySelector('[data-test="invitations"]')).toBeNull()
   })
 
   it('shows invitations without leaving Users', async () => {
-    const element = mount()
+    const element = await mount()
     await click(element, 'Invitations')
     expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
     expect(element.querySelector('[data-test="users"]')).toBeNull()
   })
 
   it('opens invitations after adding a user', async () => {
-    const element = mount()
+    const element = await mount()
     await click(element, 'Add user')
     await click(element, 'Finish adding')
     expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
   })
 
   it('puts Mail setup failure alerts in the Users tab, not Invitations', async () => {
-    const element = mount()
+    const element = await mount()
     await vi.waitFor(() =>
       expect(element.querySelector('[role="alert"]')?.textContent).toContain(
         'Mail account setup failed',

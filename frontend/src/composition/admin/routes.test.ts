@@ -25,6 +25,7 @@ describe('Suite Admin routes', () => {
     expect(children.map((route) => route.path)).toEqual([
       '',
       'users',
+      'users/invitations',
       'storage',
       'settings',
       'mail',
