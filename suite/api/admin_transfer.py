@@ -1,6 +1,6 @@
 """Suite User offboarding transport delegates retained-tree policy to Drive."""
 
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import frappe
 
@@ -23,7 +23,21 @@ class InheritedGrant(TypedDict):
     role: int
 
 
+class DestinationCapacity(TypedDict):
+    stored_bytes: int
+    mail_bytes: int | None
+    reserved_bytes: int
+    current_bytes: int | None
+    projected_bytes: int | None
+    cap_bytes: int | None
+    buffer_bytes: int
+    effective_threshold_bytes: int | None
+    complete: bool
+    blocker: Literal["personal_limit", "unknown_usage", "drive_limit"] | None
+
+
 class TransferPreview(TypedDict):
+    destination_capacity: DestinationCapacity
     source_root: str
     destination: str
     destination_user: str | None

@@ -503,6 +503,111 @@
       "body": null,
       "output": {
         "$defs": {
+          "DestinationCapacity": {
+            "properties": {
+              "stored_bytes": {
+                "title": "Stored Bytes",
+                "type": "integer"
+              },
+              "mail_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mail Bytes"
+              },
+              "reserved_bytes": {
+                "title": "Reserved Bytes",
+                "type": "integer"
+              },
+              "current_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Current Bytes"
+              },
+              "projected_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Projected Bytes"
+              },
+              "cap_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cap Bytes"
+              },
+              "buffer_bytes": {
+                "title": "Buffer Bytes",
+                "type": "integer"
+              },
+              "effective_threshold_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Effective Threshold Bytes"
+              },
+              "complete": {
+                "title": "Complete",
+                "type": "boolean"
+              },
+              "blocker": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "personal_limit",
+                      "unknown_usage",
+                      "drive_limit"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Blocker"
+              }
+            },
+            "required": [
+              "stored_bytes",
+              "mail_bytes",
+              "reserved_bytes",
+              "current_bytes",
+              "projected_bytes",
+              "cap_bytes",
+              "buffer_bytes",
+              "effective_threshold_bytes",
+              "complete",
+              "blocker"
+            ],
+            "title": "DestinationCapacity",
+            "type": "object"
+          },
           "InheritedGrant": {
             "properties": {
               "principal": {
@@ -523,6 +628,9 @@
           }
         },
         "properties": {
+          "destination_capacity": {
+            "$ref": "#/$defs/DestinationCapacity"
+          },
           "source_root": {
             "title": "Source Root",
             "type": "string"
@@ -563,6 +671,7 @@
           }
         },
         "required": [
+          "destination_capacity",
           "source_root",
           "destination",
           "destination_user",
@@ -690,84 +799,6 @@
         "DriveForbidden",
         "DriveNotFound",
         "DriveOverQuota"
-      ],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "storage_buffers",
-      "kind": "mutation",
-      "publicName": "storage.setBuffers",
-      "page": null,
-      "envelope": "data",
-      "method": "PATCH",
-      "path": "storage/buffers",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "properties": {
-          "users": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Users",
-            "type": "array"
-          },
-          "grant": {
-            "title": "Grant",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "users",
-          "grant"
-        ],
-        "title": "BufferInput",
-        "type": "object"
-      },
-      "output": {
-        "$defs": {
-          "LimitResult": {
-            "properties": {
-              "user": {
-                "title": "User",
-                "type": "string"
-              },
-              "success": {
-                "title": "Success",
-                "type": "boolean"
-              },
-              "error": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Error"
-              }
-            },
-            "required": [
-              "user",
-              "success",
-              "error"
-            ],
-            "title": "LimitResult",
-            "type": "object"
-          }
-        },
-        "items": {
-          "$ref": "#/$defs/LimitResult"
-        },
-        "type": "array"
-      },
-      "errors": [
-        "PermissionError",
-        "ValidationError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -916,10 +947,6 @@
                 ],
                 "title": "Cap Bytes"
               },
-              "buffer": {
-                "title": "Buffer",
-                "type": "boolean"
-              },
               "effective_cap_bytes": {
                 "anyOf": [
                   {
@@ -955,7 +982,6 @@
               "mail_bytes",
               "combined_bytes",
               "cap_bytes",
-              "buffer",
               "effective_cap_bytes",
               "mail_fetched_at"
             ],
@@ -1259,10 +1285,6 @@
                 ],
                 "title": "Cap Bytes"
               },
-              "buffer": {
-                "title": "Buffer",
-                "type": "boolean"
-              },
               "effective_cap_bytes": {
                 "anyOf": [
                   {
@@ -1298,7 +1320,6 @@
               "mail_bytes",
               "combined_bytes",
               "cap_bytes",
-              "buffer",
               "effective_cap_bytes",
               "mail_fetched_at"
             ],
@@ -1485,10 +1506,6 @@
               }
             ],
             "title": "Cap Bytes"
-          },
-          "buffer": {
-            "title": "Buffer",
-            "type": "boolean"
           }
         },
         "required": [
@@ -1706,10 +1723,6 @@
                 ],
                 "title": "Cap Bytes"
               },
-              "buffer": {
-                "title": "Buffer",
-                "type": "boolean"
-              },
               "effective_cap_bytes": {
                 "anyOf": [
                   {
@@ -1745,7 +1758,6 @@
               "mail_bytes",
               "combined_bytes",
               "cap_bytes",
-              "buffer",
               "effective_cap_bytes",
               "mail_fetched_at"
             ],

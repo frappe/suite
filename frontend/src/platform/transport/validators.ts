@@ -45,8 +45,6 @@ import type {
   SitePatchCompleteOnboardingOutput,
   SitePatchUpdateSiteSettingsInput,
   SitePatchUpdateSiteSettingsOutput,
-  StorageBuffersInput,
-  StorageBuffersOutput,
   StorageDefaultInput,
   StorageDefaultOutput,
   StorageGetInput,
@@ -316,6 +314,49 @@ export const operationUserTransferPreview: Validators<
       value,
       {
         $defs: {
+          DestinationCapacity: {
+            properties: {
+              stored_bytes: { title: 'Stored Bytes', type: 'integer' },
+              mail_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Mail Bytes' },
+              reserved_bytes: { title: 'Reserved Bytes', type: 'integer' },
+              current_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Current Bytes',
+              },
+              projected_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Projected Bytes',
+              },
+              cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
+              buffer_bytes: { title: 'Buffer Bytes', type: 'integer' },
+              effective_threshold_bytes: {
+                anyOf: [{ type: 'integer' }, { type: 'null' }],
+                title: 'Effective Threshold Bytes',
+              },
+              complete: { title: 'Complete', type: 'boolean' },
+              blocker: {
+                anyOf: [
+                  { enum: ['personal_limit', 'unknown_usage', 'drive_limit'], type: 'string' },
+                  { type: 'null' },
+                ],
+                title: 'Blocker',
+              },
+            },
+            required: [
+              'stored_bytes',
+              'mail_bytes',
+              'reserved_bytes',
+              'current_bytes',
+              'projected_bytes',
+              'cap_bytes',
+              'buffer_bytes',
+              'effective_threshold_bytes',
+              'complete',
+              'blocker',
+            ],
+            title: 'DestinationCapacity',
+            type: 'object',
+          },
           InheritedGrant: {
             properties: {
               principal: { title: 'Principal', type: 'string' },
@@ -327,6 +368,7 @@ export const operationUserTransferPreview: Validators<
           },
         },
         properties: {
+          destination_capacity: { $ref: '#/$defs/DestinationCapacity' },
           source_root: { title: 'Source Root', type: 'string' },
           destination: { title: 'Destination', type: 'string' },
           destination_user: {
@@ -343,6 +385,7 @@ export const operationUserTransferPreview: Validators<
           },
         },
         required: [
+          'destination_capacity',
           'source_root',
           'destination',
           'destination_user',
@@ -408,47 +451,6 @@ export const operationUserTransfer: Validators<UserTransferInput, UserTransferOu
   },
 }
 
-export const operationStorageBuffers: Validators<StorageBuffersInput, StorageBuffersOutput> = {
-  validateInput(value: unknown): asserts value is StorageBuffersInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          users: { items: { type: 'string' }, title: 'Users', type: 'array' },
-          grant: { title: 'Grant', type: 'boolean' },
-        },
-        required: ['users', 'grant'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'storage_buffers input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is StorageBuffersOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          LimitResult: {
-            properties: {
-              user: { title: 'User', type: 'string' },
-              success: { title: 'Success', type: 'boolean' },
-              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
-            },
-            required: ['user', 'success', 'error'],
-            title: 'LimitResult',
-            type: 'object',
-          },
-        },
-        items: { $ref: '#/$defs/LimitResult' },
-        type: 'array',
-      },
-      'storage_buffers output',
-    )
-  },
-}
-
 export const operationStorageGet: Validators<StorageGetInput, StorageGetOutput> = {
   validateInput(value: unknown): asserts value is StorageGetInput {
     assertSchema(
@@ -502,7 +504,6 @@ export const operationStorageGet: Validators<StorageGetInput, StorageGetOutput> 
                 title: 'Combined Bytes',
               },
               cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
-              buffer: { title: 'Buffer', type: 'boolean' },
               effective_cap_bytes: {
                 anyOf: [{ type: 'integer' }, { type: 'null' }],
                 title: 'Effective Cap Bytes',
@@ -524,7 +525,6 @@ export const operationStorageGet: Validators<StorageGetInput, StorageGetOutput> 
               'mail_bytes',
               'combined_bytes',
               'cap_bytes',
-              'buffer',
               'effective_cap_bytes',
               'mail_fetched_at',
             ],
@@ -644,7 +644,6 @@ export const operationStorageRefresh: Validators<StorageRefreshInput, StorageRef
                 title: 'Combined Bytes',
               },
               cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
-              buffer: { title: 'Buffer', type: 'boolean' },
               effective_cap_bytes: {
                 anyOf: [{ type: 'integer' }, { type: 'null' }],
                 title: 'Effective Cap Bytes',
@@ -666,7 +665,6 @@ export const operationStorageRefresh: Validators<StorageRefreshInput, StorageRef
               'mail_bytes',
               'combined_bytes',
               'cap_bytes',
-              'buffer',
               'effective_cap_bytes',
               'mail_fetched_at',
             ],
@@ -742,7 +740,6 @@ export const operationStorageLimits: Validators<StorageLimitsInput, StorageLimit
         properties: {
           users: { items: { type: 'string' }, title: 'Users', type: 'array' },
           cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
-          buffer: { title: 'Buffer', type: 'boolean' },
         },
         required: ['users', 'cap_bytes'],
         additionalProperties: false,
@@ -836,7 +833,6 @@ export const operationStorageDefault: Validators<StorageDefaultInput, StorageDef
                 title: 'Combined Bytes',
               },
               cap_bytes: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Cap Bytes' },
-              buffer: { title: 'Buffer', type: 'boolean' },
               effective_cap_bytes: {
                 anyOf: [{ type: 'integer' }, { type: 'null' }],
                 title: 'Effective Cap Bytes',
@@ -858,7 +854,6 @@ export const operationStorageDefault: Validators<StorageDefaultInput, StorageDef
               'mail_bytes',
               'combined_bytes',
               'cap_bytes',
-              'buffer',
               'effective_cap_bytes',
               'mail_fetched_at',
             ],

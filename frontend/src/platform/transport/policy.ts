@@ -14,7 +14,16 @@ export const mutationEffects = {
   user_transfer: {
     invalidates: ['storage_get', 'users_get', 'drive.node_children', 'drive.view_list'],
   },
-  users_patch: { invalidates: ['users_get', 'storage_get', 'account_get'] },
+  users_patch: {
+    invalidates: [
+      'users_get',
+      'storage_get',
+      'account_get',
+      'mail.get_member',
+      'mail.get_members',
+      'mail.get_overview',
+    ],
+  },
   storage_refresh: { invalidates: ['storage_get'] },
   storage_limits: { invalidates: ['storage_get'] },
   storage_default: { invalidates: ['storage_get'] },

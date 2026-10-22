@@ -20,8 +20,9 @@ def state(*, lock: bool = False):
     return doc, json.loads(doc.policy or "{}"), json.loads(doc.measurements or "{}")
 
 
-def effective_limit(cap: int | None, buffer: bool) -> int | None:
-    return None if cap is None else cap + (cap // 10 if buffer else 0)
+def effective_limit(cap: int | None) -> int | None:
+    """A cap or allowance plus its automatic 10% headroom, rounded down to whole bytes (spec §6.2)."""
+    return None if cap is None else cap + cap // 10
 
 
 def validate_cap(value) -> int | None:
@@ -32,11 +33,9 @@ def validate_cap(value) -> int | None:
     return value
 
 
-def update_limits(users: list[str], cap: int | None, buffer: bool | None = None) -> list[dict]:
+def update_limits(users: list[str], cap: int | None) -> list[dict]:
     require_admin()
     cap = validate_cap(cap)
-    if buffer is not None and not isinstance(buffer, bool):
-        frappe.throw(_("Choose whether storage headroom is granted"))
     doc, policy, _measurements = state(lock=True)
     limits = policy.setdefault("users", {})
     results = []
@@ -46,11 +45,7 @@ def update_limits(users: list[str], cap: int | None, buffer: bool | None = None)
         ):
             results.append({"user": user, "success": False, "error": _("User does not exist")})
             continue
-        previous = limits.get(user, {})
-        limits[user] = {
-            "cap": cap,
-            "buffer": False if cap is None else (previous.get("buffer", False) if buffer is None else buffer),
-        }
+        limits[user] = {"cap": cap}
         results.append({"user": user, "success": True, "error": None})
     doc.policy = json.dumps(policy)
     doc.save(ignore_permissions=True)
@@ -72,43 +67,13 @@ def set_default(cap: int | None) -> None:
     record("storage.default", "site", "completed")
 
 
-def update_buffers(users: list[str], *, grant: bool) -> list[dict]:
-    require_admin()
-    if not isinstance(grant, bool):
-        frappe.throw(_("Choose whether to grant personal headroom"))
-    doc, policy, _measurements = state(lock=True)
-    limits = policy.setdefault("users", {})
-    results = []
-    for user in dict.fromkeys(users):
-        limit = limits.get(user)
-        if user in ("Guest", "Administrator") or not frappe.db.exists("User", user):
-            error = _("User does not exist")
-        elif not limit or limit.get("cap") is None:
-            error = _("Set a personal cap before granting or revoking headroom")
-        else:
-            limit["buffer"] = grant
-            error = None
-        results.append({"user": user, "success": error is None, "error": error})
-    doc.policy = json.dumps(policy)
-    doc.save(ignore_permissions=True)
-    from suite.suite_core.audit import record
-
-    for result in results:
-        record(
-            "storage.headroom.grant" if grant else "storage.headroom.revoke",
-            result["user"],
-            "completed" if result["success"] else "failed",
-        )
-    return results
-
-
 def initialize_user_limit(user: str, *, cap: int | None = None, use_default: bool = True) -> None:
     """Snapshot policy from a trusted creation workflow; subsequent defaults never rewrite it."""
     doc, policy, _measurements = state(lock=True)
     limits = policy.setdefault("users", {})
     if user in limits and use_default:
         return
-    limits[user] = {"cap": policy.get("default_cap") if use_default else validate_cap(cap), "buffer": False}
+    limits[user] = {"cap": policy.get("default_cap") if use_default else validate_cap(cap)}
     doc.policy = json.dumps(policy)
     doc.save(ignore_permissions=True)
 
@@ -134,7 +99,7 @@ def check_addition(
             _("Mail usage or the site allowance is unavailable; refresh storage before adding Drive files")
         )
     # Provider zero preserves its existing unlimited-site semantics, not a zero-byte denial.
-    site_limit = effective_limit(allowance, True) if allowance else None
+    site_limit = effective_limit(allowance) if allowance else None
     if growth > 0 and site_limit is not None and site_drive + site_mail + growth > site_limit:
         frappe.throw(_("Combined Mail and Drive usage exceeds the site allowance"))
     if user is None:
@@ -142,7 +107,6 @@ def check_addition(
     mail = measurements.get("personal", {}).get(user)
     if mail is None:
         frappe.throw(_("This user's Mail usage is unavailable; refresh storage before adding Drive files"))
-    limit = policy.get("users", {}).get(user, {})
-    cap = effective_limit(limit.get("cap"), bool(limit.get("buffer")))
+    cap = effective_limit(policy.get("users", {}).get(user, {}).get("cap"))
     if cap is not None and personal_drive + mail + delta > cap:
         frappe.throw(_("Combined Mail and Drive usage exceeds the user's storage cap"))

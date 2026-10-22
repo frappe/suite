@@ -187,11 +187,25 @@ const operationOnboardingPost: MutationRef<
   loadValidators: async () => (await import('./validators')).operationOnboardingPost,
 }
 
+export type UserTransferPreviewOutputDestinationCapacity = {
+  stored_bytes: number
+  mail_bytes: number | null
+  reserved_bytes: number
+  current_bytes: number | null
+  projected_bytes: number | null
+  cap_bytes: number | null
+  buffer_bytes: number
+  effective_threshold_bytes: number | null
+  complete: boolean
+  blocker: ('personal_limit' | 'unknown_usage' | 'drive_limit') | null
+}
+
 export type UserTransferPreviewOutputInheritedGrant = { principal: string; role: number }
 
 export type UserTransferPreviewInput = { user: string; destination: string }
 
 export type UserTransferPreviewOutput = {
+  destination_capacity: UserTransferPreviewOutputDestinationCapacity
   source_root: string
   destination: string
   destination_user: string | null
@@ -267,37 +281,6 @@ const operationUserTransfer: MutationRef<UserTransferInput, UserTransferOutput, 
     loadValidators: async () => (await import('./validators')).operationUserTransfer,
   }
 
-export type StorageBuffersOutputLimitResult = {
-  user: string
-  success: boolean
-  error: string | null
-}
-
-export type StorageBuffersInput = { users: Array<string>; grant: boolean }
-
-export type StorageBuffersOutput = Array<StorageBuffersOutputLimitResult>
-
-export type StorageBuffersError = 'PermissionError' | 'ValidationError'
-
-const operationStorageBuffers: MutationRef<
-  StorageBuffersInput,
-  StorageBuffersOutput,
-  StorageBuffersError
-> = {
-  id: 'storage_buffers',
-  owner: 'suite',
-  kind: 'mutation',
-  publicName: 'storage.setBuffers',
-  method: 'PATCH',
-  path: 'storage/buffers',
-  prefix: '/api/suite/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationStorageBuffers,
-}
-
 export type StorageGetOutputStorageRoot = {
   name: string
   user: string | null
@@ -321,7 +304,6 @@ export type StorageGetOutputStorageUser = {
   mail_bytes: number | null
   combined_bytes: number | null
   cap_bytes: number | null
-  buffer: boolean
   effective_cap_bytes: number | null
   mail_fetched_at: string | null
 }
@@ -387,7 +369,6 @@ export type StorageRefreshOutputStorageUser = {
   mail_bytes: number | null
   combined_bytes: number | null
   cap_bytes: number | null
-  buffer: boolean
   effective_cap_bytes: number | null
   mail_fetched_at: string | null
 }
@@ -440,11 +421,7 @@ export type StorageLimitsOutputLimitResult = {
   error: string | null
 }
 
-export type StorageLimitsInput = {
-  users: Array<string>
-  cap_bytes: number | null
-  buffer?: boolean
-}
+export type StorageLimitsInput = { users: Array<string>; cap_bytes: number | null }
 
 export type StorageLimitsOutput = Array<StorageLimitsOutputLimitResult>
 
@@ -492,7 +469,6 @@ export type StorageDefaultOutputStorageUser = {
   mail_bytes: number | null
   combined_bytes: number | null
   cap_bytes: number | null
-  buffer: boolean
   effective_cap_bytes: number | null
   mail_fetched_at: string | null
 }
@@ -1194,7 +1170,6 @@ export const api = {
     updateSettings: operationSitePatchUpdateSiteSettings,
   },
   storage: {
-    setBuffers: operationStorageBuffers,
     get: operationStorageGet,
     refresh: operationStorageRefresh,
     setLimits: operationStorageLimits,

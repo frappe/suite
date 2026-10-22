@@ -39,8 +39,7 @@ def report(*, refresh: bool = False) -> dict:
                 "mail_bytes": mail_bytes,
                 "combined_bytes": None if mail_bytes is None else stored + mail_bytes,
                 "cap_bytes": limit.get("cap"),
-                "buffer": bool(limit.get("buffer")),
-                "effective_cap_bytes": effective_limit(limit.get("cap"), bool(limit.get("buffer"))),
+                "effective_cap_bytes": effective_limit(limit.get("cap")),
                 "mail_fetched_at": timestamp,
             }
         )
@@ -58,7 +57,7 @@ def report(*, refresh: bool = False) -> dict:
         "mail_bytes": mail_bytes,
         "combined_bytes": None if mail_bytes is None else stored + mail_bytes,
         "allowance_bytes": allowance,
-        "effective_allowance_bytes": effective_limit(allowance, True) if allowance else None,
+        "effective_allowance_bytes": effective_limit(allowance) if allowance else None,
         "stale": bool(cached.get("stale")) or expired,
         "fetched_at": cached.get("fetched_at"),
         "default_cap_bytes": policy.get("default_cap"),

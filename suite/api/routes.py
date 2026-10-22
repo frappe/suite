@@ -24,7 +24,6 @@ from suite.api.admin_lifecycle import (
 )
 from suite.api.admin_storage import ROUTES as STORAGE_ROUTES
 from suite.api.admin_storage import (
-    storage_buffers,
     storage_default,
     storage_get,
     storage_limits,

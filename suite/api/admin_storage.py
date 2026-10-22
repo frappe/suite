@@ -1,6 +1,6 @@
 """Typed transport for business storage administration."""
 
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 import frappe
 
@@ -19,7 +19,6 @@ class StorageUser(TypedDict):
     mail_bytes: int | None
     combined_bytes: int | None
     cap_bytes: int | None
-    buffer: bool
     effective_cap_bytes: int | None
     mail_fetched_at: str | None
 
@@ -61,16 +60,10 @@ class RefreshInput(TypedDict):
 class LimitInput(TypedDict):
     users: list[str]
     cap_bytes: int | None
-    buffer: NotRequired[bool]
 
 
 class DefaultInput(TypedDict):
     cap_bytes: int | None
-
-
-class BufferInput(TypedDict):
-    users: list[str]
-    grant: bool
 
 
 class LimitResult(TypedDict):
@@ -80,16 +73,6 @@ class LimitResult(TypedDict):
 
 
 ROUTES = (
-    Route(
-        "PATCH",
-        "storage/buffers",
-        "storage_buffers",
-        body=BufferInput,
-        output=list[LimitResult],
-        kind="mutation",
-        public_name="storage.setBuffers",
-        errors=(frappe.PermissionError, frappe.ValidationError),
-    ),
     Route(
         "GET",
         "storage",
@@ -147,10 +130,10 @@ def storage_refresh() -> StorageReport:
 
 
 @frappe.whitelist(methods=["PATCH"])
-def storage_limits(users: list[str], cap_bytes: int | None, buffer: bool | None = None) -> list[LimitResult]:
+def storage_limits(users: list[str], cap_bytes: int | None) -> list[LimitResult]:
     from suite.suite_core.storage import update_limits
 
-    return update_limits(users, cap_bytes, buffer)
+    return update_limits(users, cap_bytes)
 
 
 @frappe.whitelist(methods=["PATCH"])
@@ -159,10 +142,3 @@ def storage_default(cap_bytes: int | None) -> StorageReport:
 
     set_default(cap_bytes)
     return storage_get()
-
-
-@frappe.whitelist(methods=["PATCH"])
-def storage_buffers(users: list[str], grant: bool) -> list[LimitResult]:
-    from suite.suite_core.storage import update_buffers
-
-    return update_buffers(users, grant=grant)

@@ -10,8 +10,9 @@ from suite.drive._core.access import chain_ids
 from suite.drive._core.errors import DriveConflict, DriveForbidden
 from suite.drive._core.nodes import _move, _node, _subtree_charge
 from suite.drive._core.principals import Principals
-from suite.drive._core.quota import _check_combined, preflight, root_for_node
+from suite.drive._core.quota import _check_combined, administration_usage, preflight, root_for_node
 from suite.drive._core.roots import validate_root_pair
+from suite.suite_core.storage import effective_limit, state
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
@@ -44,10 +45,45 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
         order_by="name asc",
     )
     charge = sum(_subtree_charge(_node(item.name)) for item in items)
-    if is_suite_cloud_configured():
-        _check_combined(target_root.name, charge, lock=False, source_root=source.root.name)
-    else:
-        preflight(target_root, charge)
+    usage = administration_usage()
+    personal = target_root.kind == "Personal"
+    rows = [
+        row
+        for row in usage
+        if row["name"] == target_root.name or (personal and row["user"] == target_root.user)
+    ]
+    reserved_bytes = sum(row["reserved_bytes"] for row in rows)
+    stored_bytes = sum(row["stored_bytes"] for row in rows)
+    mail_bytes = 0
+    cap = next(row["effective_quota_bytes"] for row in rows if row["name"] == target_root.name) or None
+    buffer_bytes = 0
+    configured = is_suite_cloud_configured()
+    if configured:
+        _doc, policy, measurements = state()
+        limit = policy.get("users", {}).get(target_root.user, {}) if personal else {}
+        cap = limit.get("cap")
+        buffer_bytes = cap // 10 if cap is not None else 0
+        mail_bytes = measurements.get("personal", {}).get(target_root.user) if personal else 0
+    threshold = effective_limit(cap) if configured else cap
+    current_bytes = stored_bytes + reserved_bytes + mail_bytes if mail_bytes is not None else None
+    projected_bytes = current_bytes + charge if current_bytes is not None else None
+    blocker = None
+    if charge > 0 and current_bytes is None:
+        blocker = "unknown_usage"
+    elif charge > 0 and threshold is not None and projected_bytes is not None and projected_bytes > threshold:
+        blocker = "personal_limit" if configured else "drive_limit"
+    capacity = {
+        "stored_bytes": stored_bytes,
+        "mail_bytes": mail_bytes,
+        "reserved_bytes": reserved_bytes,
+        "current_bytes": current_bytes,
+        "projected_bytes": projected_bytes,
+        "cap_bytes": cap,
+        "buffer_bytes": buffer_bytes,
+        "effective_threshold_bytes": threshold,
+        "complete": mail_bytes is not None,
+        "blocker": blocker,
+    }
     # Destination inheritance is an explicit consequence, even where it gives
     # fewer people access. Stable node/version/grant identities are preserved.
     grants = frappe.get_all(
@@ -78,6 +114,7 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
         "fingerprint": fingerprint,
         "inherited_grants": grants,
         "items": items,
+        "destination_capacity": capacity,
     }
 
 
@@ -90,6 +127,11 @@ def transfer(
     current = preview(user, destination, principals)
     if current["fingerprint"] != fingerprint:
         raise DriveConflict(_("The source or destination changed. Review a new transfer preview."))
+    target_root = root_for_node(_node(destination))
+    if is_suite_cloud_configured():
+        _check_combined(target_root.name, current["bytes"], lock=True, source_root=current["source_root"])
+    else:
+        preflight(target_root, current["bytes"])
     results = []
     # Bounded requests provide observable progress; each item uses Drive's own
     # savepoint. A retry only lists what remains in the source, never copies an

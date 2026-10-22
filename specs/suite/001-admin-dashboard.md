@@ -101,7 +101,7 @@ Current `suite/mail/api/admin.py:delete_members()` deletes the Frappe User and t
 An Admin can explicitly move a disabled user's entire retained personal Drive contents into a named folder in another user's Personal Root or a designated shared folder. Do not transfer automatically on suspension; selective offboarding transfer is not included in this version.
 
 - Include retained versions and trash. Trash remains deleted, not restored into the visible folder, and is attributed to destination personal/shared storage.
-- Preview destination combined usage/cap and access changes. Personal destinations must fit their combined cap plus granted buffer; shared destinations have no personal cap. A byte-neutral site transfer is not refused solely because site allowance is exhausted.
+- Preview destination combined usage/cap and access changes. Personal destinations must fit their combined cap plus its automatic buffer; shared destinations have no personal cap. A byte-neutral site transfer is not refused solely because site allowance is exhausted.
 - Preserve existing explicit grants; destination inheritance applies. Require confirmation of access expansion. Preserve stable links where technically supported and disclose any incompatibility rather than silently promising it.
 - Show progress and per-item failures; retry only unfinished work without duplication or double-counting. Do not promise an all-or-nothing transfer.
 - On completion the source retains an empty Personal Root. Reactivation restores it; transferred content stays at the destination. During partial transfer the root still contains remaining items.
@@ -127,13 +127,12 @@ Drive Root `used_bytes` already includes reservations. Reporting must subtract/s
 ### 6.2 Limits and buffers
 
 - Suite Cloud owns the site base allowance, supplied through `tenant.ping` → `limits.max_disk_gb` with its revised combined-allowance meaning. Suite Admins cannot directly raise it.
-- Suite stores optional combined personal caps, explicit personal-buffer grants, and the optional new-user default. Personal caps do not reserve site capacity.
+- Suite stores optional combined personal caps and the optional new-user default. Personal caps do not reserve site capacity.
 - Default users are uncapped, sharing available site capacity. Bulk cap changes apply the same cap to each selected user, never a shared pool.
-- Site buffer is automatic 10% of base allowance. Personal buffer is explicitly Admin-granted 10% of the current cap, persistent until revoked. No timer in this version. Round percentage headroom down to whole bytes.
-- Removing a personal cap clears its buffer grant. Reapplying a cap requires a fresh grant. Changing a capped user's cap preserves its grant and recalculates the percentage. Use separate bulk grant/revoke actions.
+- Buffers are automatic: the site gets 10% of its base allowance and every capped user gets 10% of their cap. Admins do not grant or revoke them, and uncapped users have none. Round percentage headroom down to whole bytes.
 - Default changes affect future creations/invitations only. Snapshot the default when an invitation is created; allow explicit edits to pending invitation caps.
 - Bulk actions show previews and per-user results. Keep successful changes if others fail; retry failed items.
-- Lowering a cap/allowance or revoking headroom may put usage above threshold. Warn, preserve data, and block subsequent unadmitted Drive growth; do not restrict Mail or automatically delete content.
+- Lowering a cap or allowance may put usage above threshold. Warn, preserve data, and block subsequent unadmitted Drive growth; do not restrict Mail or automatically delete content.
 
 ### 6.3 Drive-only enforcement against combined usage
 
@@ -174,13 +173,13 @@ Reuse existing provider APIs; do not require a new bulk group endpoint or cross-
 
 Inventory must include retained/disabled mailboxes and groups, not only the enabled users on a dashboard page. Preserve identity attribution through address changes/reuse; a new holder must not inherit the deleted mailbox's cached usage or credentials. Clear/update inventory and attribution on confirmed deletion/recreation.
 
-Cache successful Mail measurements on the site for **six hours**. Store per-entry success timestamps because inspected usage responses do not include measurement times. Label these as fetch times, not an atomic provider snapshot. Admin refresh bypasses cache; partial failures do not discard successful values.
+Cache successful Mail measurements on the site for **six hours**. Store per-entry success timestamps because inspected usage responses do not include measurement times; these are internal fetch times, not an atomic provider snapshot. Admin refresh bypasses cache; partial failures do not discard successful values. Refresh controls and timestamps are not shown in the dashboard.
 
 | Condition | Reporting and Drive behavior |
 | --- | --- |
 | Successful value within TTL | Use it for combined reporting/admission. |
-| Expired value during provider failure | Retain/use last success, labelled stale; accept approximate enforcement. |
-| Missing/null result with prior success | Retain prior value/timestamp, visibly stale or refresh-failed. Never replace with zero. |
+| Expired value during provider failure | Retain/use last success and track stale metadata internally; accept approximate enforcement. |
+| Missing/null result with prior success | Retain prior value/timestamp and stale state internally. Never replace with zero. |
 | No personal Mail value ever measured | Unknown, not zero; affected personal Drive additions cannot proceed. |
 | Site inventory has an unknown retained mailbox with no prior value | Site total is incomplete; all new site Drive additions pause until measurable. |
 | No successful allowance yet | Cannot establish effective site threshold; preserve remediation/read access but do not admit new configured-site Drive growth. |
@@ -196,8 +195,8 @@ Entry: an **Admin** item in the Suite app switcher, visible only to authorized A
 | Section | Content/actions |
 | --- | --- |
 | Overview | Combined site usage, base allowance/headroom, Mail/Drive and personal/shared breakdowns, users/invitations, actionable alerts linking to remediation. |
-| Users | Search/list users and invitations; invite/direct-create; profile, role, status, combined usage/cap/buffer; aliases and memberships; disable/reactivate; Mail delivery controls, mailbox-only deletion/recreation, and disabled-user Drive transfer. |
-| Storage | Site totals/breakdowns, reservations separately, user usage/limit table, individual/bulk cap and buffer actions, new-user default, timestamps/stale/unknown states, Admin refresh. |
+| Users | Search/list users and invitations; invite/direct-create; profile, role, status, combined usage/cap; aliases and memberships; disable/reactivate; Mail delivery controls, mailbox-only deletion/recreation, and disabled-user Drive transfer. |
+| Storage | Site totals/breakdowns, reservations separately, user usage/limit table, individual/bulk cap actions, new-user default, and alerts when uploads are blocked or storage needs attention. Refresh is automated; no refresh controls or timestamps. |
 | Mail → Domains | Add/list domains; ownership/DNS verification, description, catch-all, subaddressing, relaying, enabled state, DNS results and zone/CSV/JSON export; deletion subject to valid product constraints. |
 | Mail → Groups | Create/list/search/delete group mailboxes; descriptions, members, aliases/enabled states, actual shared usage. Remove obsolete independent storage-quota controls. |
 | Mail → Mailing lists | Create/list/search/delete lists; descriptions, aliases/enabled states, recipient listing/add/remove. Do not invent unsupported recipient-state controls. |
@@ -206,7 +205,17 @@ Entry: an **Admin** item in the Suite app switcher, visible only to authorized A
 
 Account/invitation controls also retain relevant existing functionality: names/display names, locale/timezone, password reset safeguards, invitation resend/expiry/revocation, and membership/alias management. Do not duplicate Mail Accounts outside Suite Users. Adapt old Mail quota editing to combined personal policy rather than retain separate Mail caps.
 
-Individual cap controls are available in both User details and the Storage table using the same behavior; bulk controls live in Storage. Display configured cap, granted buffer, effective threshold, site threshold, and measurement age explicitly. Uncapped is not zero usage.
+Individual cap controls are available in both User details and the Storage table using the same behavior; bulk controls live in Storage. Display the configured cap; the automatic buffer is not a separate control or figure. Measurement age is internal, not dashboard copy. Uncapped is not zero usage.
+
+### Overview presentation
+
+Use a bordered three-box KPI strip for active users, pending invitations, and domains, without secondary captions. Storage appears only in the expanded segmented storage card below, not as another KPI. The storage breakdown shows personal Drive, shared Drive, Mail, and reservations, followed by a domain-readiness box. Do not show Quick actions or Largest Drive users. Label the domain section “Domains”, not “Mail domains”; when no domain is configured, show “Not set” in the strip and a small “No domain set” alert with an Add domain action instead of `0/0`. This presentation still uses the existing domain directory; site-domain configuration is not added by this change. Reservation bytes are not stored usage. Hide provider-only content on standalone sites (leaving Active users in the strip) and do not substitute zero for unavailable measurements or counts.
+
+Alerts live with their remediation: site storage/measurement/allowance alerts inside the storage summary on both Overview and Storage; DNS verification/domain-health alerts in the domain box; Mail setup/deletion failures in the Users tab. Only site-wide provider availability/suspension alerts appear at the Overview level. Visual reference: the KPI strip and Area cards variants of the [Suite Admin sketch](https://sketch.netchamp.dev/u/netchampfaris/suite-admin-dashboard#/); these local presentation rules own the combined layout and alert placement.
+
+UI copy states what needs attention and what the Admin can do next. Do not explain cache/accounting implementation, repeat a metric in a second caption, or add explanatory labels to self-evident controls. Show extra-storage limits when they become relevant to an alert; describe pending reserved space as “In progress”. Developer-facing accounting rules remain in this spec, not in dashboard footnotes.
+
+Storage usage refreshes automatically through the scheduled job. Do not show refresh-usage controls, prompts, stale-measurement notices, or updated timestamps in Overview or Storage. Retain the admin refresh API for manual intervention outside the dashboard. If unavailable usage or limits pause uploads, explain that impact without exposing refresh machinery.
 
 Warn at **90% of configured personal cap** and **90% of site base allowance**, with stronger buffer-use/over-threshold alerts. Uncapped users have no personal-cap percentage warning. Prioritize failed provisioning, partial deletion/transfer failures, domain health, missing/stale usage, and storage problems. Storage alerts must not imply Mail will stop at the threshold.
 
@@ -216,7 +225,7 @@ For standalone sites retain Users, Settings, local Drive administration, and acc
 
 Follow existing module boundaries, without a broad unrelated refactor:
 
-- **Suite Core:** business identity/role policy, local limit/default/buffer settings, site onboarding and business branding. No imports of private Mail/Drive implementations.
+- **Suite Core:** business identity/role policy, local limit/default settings, site onboarding and business branding. No imports of private Mail/Drive implementations.
 - **Mail:** provider directory operations, mailbox/delivery lifecycle, aliases/groups/lists/domains/reports, existing usage client and normalization.
 - **Drive:** storage accounting, reservations, transfer, and server-side combined-limit admission. Own concurrency/recovery; no quota enforcement delegated to the browser.
 - **Suite composition:** explicit cross-product orchestration and wiring of provider-backed usage/policy into complete lifecycle/storage outcomes via public product interfaces.
@@ -264,9 +273,9 @@ Test public outcomes against independent expectations, including Normal Users—
 9. A 10 GB cap without grant rejects a Drive addition projecting over 10 billion bytes. With a grant, 11 billion is the effective personal threshold. Site 100 GB has 110 billion-byte threshold; applicable personal and site checks both hold.
 10. Incoming/outgoing Mail continues above those thresholds, including Suite UI and external clients. Subsequent Drive growth blocks based on cached combined usage; no exact combined ceiling is advertised.
 11. Uncapped user still faces site admission. Shared additions ignore personal caps. Concurrent additions across separate roots cannot both spend the same site headroom. Valid admitted uploads survive later limit reductions without new excess growth.
-12. Bulk caps are individual, results preserve partial success, removing a cap clears headroom, and pending invitations retain their creation-time default.
+12. Bulk caps are individual, results preserve partial success, every cap carries its automatic 10% headroom, and pending invitations retain their creation-time default.
 13. Account batches cover more than 500 entries; group usage contributes to site totals. Refresh bypasses cache. Failed/null entries preserve previous values or unknown state—not zero. New address holders do not inherit stale deleted-account measurements.
-14. With no first successful required measurement, new Drive additions pause while reads/cleanup remain. After six-hour expiry during outage, last known values remain usable and visibly stale. A partial unmeasured site inventory blocks site additions; Mail remains unrestricted.
+14. With no first successful required measurement, new Drive additions pause while reads/cleanup remain. After six-hour expiry during outage, last known values remain usable and stale metadata is retained internally without dashboard refresh prompts or timestamps. A partial unmeasured site inventory blocks site additions; Mail remains unrestricted.
 15. Non–Suite Cloud keeps local onboarding/access and Drive quotas, with accurate Drive-only labels and no provider readiness lockout. Configuring Suite Cloud opts into configured-instance rules; dev mode does not bypass them.
 16. Old dashboard/admin settings routes are gone without redirects; the unified dashboard retains all available administration capabilities and personal settings remain reachable.
 

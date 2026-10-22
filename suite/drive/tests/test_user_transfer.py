@@ -1,5 +1,6 @@
 """Retained transfer preserves versions, trash, grants and stable node identities."""
 
+import json
 from io import BytesIO
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from suite import drive
 from suite.drive._core.nodes import update
 from suite.drive.framework import principals_for_request
 from suite.suite_core.administration import update_user
+from suite.suite_core.storage import state, update_limits
 from suite.tests.utils import ensure_user
 
 
@@ -71,6 +73,41 @@ class TestUserTransfer(IntegrationTestCase):
         with self.assertRaises(drive.DriveConflict):
             drive.preview_user_transfer(self.source_user, self.destination)
 
+    def test_preview_reports_combined_over_cap_capacity_instead_of_refusing_review(self):
+        drive.store_file(self.source, "retained.txt", BytesIO(b"hello"))
+        drive.store_file(self.target, "existing.txt", BytesIO(b"abc"))
+        drive.create_storage_reservation(self.target, "transfer-preview-reservation", 2)
+        update_user(self.source_user, enabled=False)
+        update_limits([self.target_user], 10)
+        doc, _policy, _measurements = state(lock=True)
+        doc.measurements = json.dumps({"personal": {self.target_user: 4}})
+        doc.save(ignore_permissions=True)
+        with patch("suite.drive._core.offboarding.is_suite_cloud_configured", return_value=True):
+            preview = drive.preview_user_transfer(self.source_user, self.destination)
+        self.assertEqual(
+            preview["destination_capacity"],
+            {
+                "stored_bytes": 3,
+                "mail_bytes": 4,
+                "reserved_bytes": 2,
+                "current_bytes": 9,
+                "projected_bytes": 14,
+                "cap_bytes": 10,
+                "buffer_bytes": 1,
+                "effective_threshold_bytes": 11,
+                "complete": True,
+                "blocker": "personal_limit",
+            },
+        )
+        with (
+            patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True),
+            patch("suite.drive._core.offboarding.is_suite_cloud_configured", return_value=True),
+            self.assertRaises(drive.DriveOverQuota),
+        ):
+            drive.transfer_user_drive(
+                self.source_user, self.destination, preview["fingerprint"], confirm_access=True
+            )
+
     def test_normal_user_cannot_preview_or_execute_a_retained_transfer(self):
         update_user(self.source_user, enabled=False)
         with self.set_user(self.target_user):
@@ -80,6 +117,50 @@ class TestUserTransfer(IntegrationTestCase):
                 drive.transfer_user_drive(
                     self.source_user, self.destination, "untrusted", confirm_access=True
                 )
+
+    def test_missing_personal_mail_usage_is_visible_and_blocks_execution_not_preview(self):
+        drive.store_file(self.source, "retained.txt", BytesIO(b"hello"))
+        update_user(self.source_user, enabled=False)
+        doc, _policy, _measurements = state(lock=True)
+        doc.measurements = "{}"
+        doc.save(ignore_permissions=True)
+        with patch("suite.drive._core.offboarding.is_suite_cloud_configured", return_value=True):
+            preview = drive.preview_user_transfer(self.source_user, self.destination)
+            capacity = preview["destination_capacity"]
+            self.assertFalse(capacity["complete"])
+            self.assertIsNone(capacity["current_bytes"])
+            self.assertIsNone(capacity["projected_bytes"])
+            self.assertEqual(capacity["blocker"], "unknown_usage")
+            with self.assertRaises(drive.DriveOverQuota):
+                drive.transfer_user_drive(
+                    self.source_user, self.destination, preview["fingerprint"], confirm_access=True
+                )
+
+    def test_execution_rechecks_a_lowered_cap_and_requires_access_confirmation(self):
+        drive.store_file(self.source, "retained.txt", BytesIO(b"hello"))
+        update_user(self.source_user, enabled=False)
+        update_limits([self.target_user], 10)
+        doc, _policy, _measurements = state(lock=True)
+        doc.measurements = json.dumps({"personal": {self.target_user: 0}, "site_mail": 999, "allowance": 1})
+        doc.save(ignore_permissions=True)
+        with patch("suite.drive._core.offboarding.is_suite_cloud_configured", return_value=True):
+            preview = drive.preview_user_transfer(self.source_user, self.destination)
+            self.assertIsNone(preview["destination_capacity"]["blocker"])
+            with self.assertRaises(drive.DriveConflict):
+                drive.transfer_user_drive(
+                    self.source_user, self.destination, preview["fingerprint"], confirm_access=False
+                )
+            update_limits([self.target_user], 4)
+            with self.assertRaises(drive.DriveOverQuota):
+                drive.transfer_user_drive(
+                    self.source_user, self.destination, preview["fingerprint"], confirm_access=True
+                )
+            update_limits([self.target_user], 5)
+            with patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True):
+                result = drive.transfer_user_drive(
+                    self.source_user, self.destination, preview["fingerprint"], confirm_access=True
+                )
+            self.assertTrue(result["complete"], result)
 
     def test_changed_destination_grants_require_a_new_preview(self):
         update_user(self.source_user, enabled=False)

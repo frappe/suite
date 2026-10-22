@@ -14,9 +14,9 @@ GB = 1_000_000_000
 
 
 class TestCombinedStorage(TestCase):
-    def check(self, *, cap=10 * GB, buffer=False, site=100 * GB, mail=8 * GB, drive=2 * GB, delta=1):
+    def check(self, *, cap=10 * GB, site=100 * GB, mail=8 * GB, drive=2 * GB, delta=1):
         check_addition(
-            {"users": {"alice": {"cap": cap, "buffer": buffer}}},
+            {"users": {"alice": {"cap": cap}}},
             {"allowance": site, "site_mail": mail, "personal": {"alice": mail}},
             user="alice",
             site_drive=drive,
@@ -25,11 +25,11 @@ class TestCombinedStorage(TestCase):
         )
 
     def test_mail_consumes_capacity_for_drive_without_becoming_a_mail_limit(self):
-        self.assertRaisesRegex(frappe.ValidationError, "user's storage cap", self.check)
+        self.assertRaisesRegex(frappe.ValidationError, "user's storage cap", self.check, delta=GB + 1)
 
-    def test_explicit_buffer_adds_one_decimal_gb_to_a_ten_gb_cap(self):
-        self.check(buffer=True, delta=GB)
-        self.assertRaises(frappe.ValidationError, self.check, buffer=True, delta=GB + 1)
+    def test_every_cap_gets_one_decimal_gb_of_headroom_on_ten_gb(self):
+        self.check(delta=GB)
+        self.assertRaises(frappe.ValidationError, self.check, delta=GB + 1)
 
     def test_uncapped_user_still_cannot_spend_site_headroom_twice(self):
         self.check(cap=None, mail=100 * GB, drive=9 * GB, delta=GB)
@@ -84,8 +84,8 @@ class TestCombinedStorage(TestCase):
             )
 
     def test_cap_validation_and_byte_rounding(self):
-        self.assertEqual(effective_limit(11, True), 12)
-        self.assertIsNone(effective_limit(None, True))
+        self.assertEqual(effective_limit(11), 12)
+        self.assertIsNone(effective_limit(None))
         self.assertIsNone(validate_cap(None))
         for value in (True, -1, 0, 1.5, "100"):
             self.assertRaises(frappe.ValidationError, validate_cap, value)
@@ -123,6 +123,21 @@ class TestAdministrationAccess(IntegrationTestCase):
         frappe.db.delete("Has Role", {"role": "Suite Admin", "parent": ["!=", self.admin]})
         with self.set_user("Administrator"):
             self.assertRaises(frappe.ValidationError, guard_user_change, self.admin, is_admin=False)
+
+    def test_an_ordinary_admin_can_demote_themselves_without_receiving_admin_data(self):
+        other_admin = f"self-demotion-{frappe.generate_hash(length=8)}@example.test"
+        with self.set_user("Administrator"):
+            ensure_user(other_admin)
+            frappe.get_doc("User", other_admin).add_roles("Suite Admin")
+        with self.set_user(self.admin):
+            self.assertEqual(update_user(self.admin, is_admin=False), [])
+            frappe.local.request_cache.clear()
+            self.assertRaises(frappe.PermissionError, list_users)
+            self.assertRaises(frappe.PermissionError, update_user, other_admin, is_admin=False)
+        with self.set_user(other_admin):
+            users = {row["name"]: row for row in list_users()}
+            self.assertFalse(users[self.admin]["is_admin"])
+            self.assertTrue(users[other_admin]["is_admin"])
 
     def test_future_user_default_is_snapshotted_not_retroactively_applied(self):
         with self.set_user("Administrator"):
