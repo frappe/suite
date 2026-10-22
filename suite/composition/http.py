@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from functools import cache, lru_cache
+from functools import cache, lru_cache, wraps
 from typing import Any, Literal
 
 import frappe
@@ -21,6 +22,25 @@ RouteKind = Literal["query", "mutation"]
 
 class BadRequest(frappe.ValidationError):
     http_status_code = 400
+
+
+def refusals_as_bad_request[F: Callable[..., Any]](handler: F) -> F:
+    """Answer a business rule's plain ValidationError (Frappe's 417) as a 400 with its message.
+
+    Shared rules raise ValidationError wherever they run; a route answers with the statuses its
+    contract declares, so it names BadRequest and lets this translate.
+    """
+
+    @wraps(handler)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return handler(*args, **kwargs)
+        except frappe.ValidationError as error:
+            if getattr(error, "http_status_code", None) != frappe.ValidationError.http_status_code:
+                raise
+            raise BadRequest(*error.args) from error
+
+    return wrapper  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)

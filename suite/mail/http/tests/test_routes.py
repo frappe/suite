@@ -27,6 +27,21 @@ class TestHandlers(UnitTestCase):
 
 
 class TestInviteRefusals(UnitTestCase):
+    def setUp(self):
+        # These cases are about the invitation; the storage lock taken first is not.
+        locked = patch("suite.suite_core.storage.state")
+        locked.start()
+        self.addCleanup(locked.stop)
+
+    def opening(self, doc):
+        """Hands `doc` out as the invitation and leaves every other document alone."""
+        real = frappe.get_doc
+
+        def get_doc(doctype, *args, **kwargs):
+            return doc if doctype == "Mail Account Request" else real(doctype, *args, **kwargs)
+
+        return patch.object(invites.frappe, "get_doc", side_effect=get_doc)
+
     def invite(self, **fields):
         return SimpleNamespace(
             **{
@@ -43,7 +58,7 @@ class TestInviteRefusals(UnitTestCase):
 
     def test_an_accepted_invite_cannot_be_edited(self):
         doc = self.invite(is_verified=1)
-        with patch.object(invites.frappe, "get_doc", return_value=doc):
+        with self.opening(doc):
             with self.assertRaises(BadRequest) as refused:
                 invites.update_invite("invite", "2026-10-07T00:00:00Z", 5)
         self.assertEqual(refused.exception.http_status_code, 400)
@@ -51,7 +66,7 @@ class TestInviteRefusals(UnitTestCase):
 
     def test_resending_an_expired_invite_replaces_its_link_before_sending(self):
         doc = self.invite(is_expired=True)
-        with patch.object(invites.frappe, "get_doc", return_value=doc):
+        with self.opening(doc):
             invites.send_invite("invite")
         doc.set_request_key.assert_called_once_with()
         doc.save.assert_called_once_with()
@@ -62,7 +77,7 @@ class TestInviteRefusals(UnitTestCase):
         for backup_email in (None, "not-an-email"):
             doc = self.invite(backup_email=backup_email)
             with self.subTest(backup_email=backup_email):
-                with patch.object(invites.frappe, "get_doc", return_value=doc):
+                with self.opening(doc):
                     with self.assertRaises(BadRequest):
                         invites.send_invite("invite")
                 doc.send_verification_email.assert_not_called()

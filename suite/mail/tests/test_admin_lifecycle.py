@@ -333,7 +333,7 @@ class TestAdminLifecycle(IntegrationTestCase):
             result = add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
             self.assertTrue(result["success"])
             sendmail.assert_called_once()
-            self.assertEqual(sendmail.call_args.kwargs["recipients"], "contact@example.test")
+            self.assertEqual(sendmail.call_args.kwargs["recipients"], ["contact@example.test"])
             name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
             request = frappe.get_doc("Mail Account Request", name)
             old_key = request.request_key

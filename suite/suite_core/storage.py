@@ -40,9 +40,7 @@ def update_limits(users: list[str], cap: int | None) -> list[dict]:
     limits = policy.setdefault("users", {})
     results = []
     for user in dict.fromkeys(users):
-        if user in ("Guest", "Administrator") or not frappe.db.exists(
-            "User", {"name": user, "user_type": "System User"}
-        ):
+        if user in ("Guest", "Administrator") or not frappe.db.exists("User", user):
             results.append({"user": user, "success": False, "error": _("User does not exist")})
             continue
         limits[user] = {"cap": cap}

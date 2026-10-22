@@ -113,8 +113,8 @@
         "type": "object"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -211,8 +211,8 @@
         "type": "object"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -230,8 +230,7 @@
       "pathParams": [
         "user"
       ],
-      "query": null,
-      "body": {
+      "query": {
         "properties": {
           "user": {
             "title": "User",
@@ -249,6 +248,7 @@
         "title": "DeleteInput",
         "type": "object"
       },
+      "body": null,
       "output": {
         "properties": {
           "success": {
@@ -309,8 +309,8 @@
         "type": "object"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -367,8 +367,8 @@
         "type": "object"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -463,8 +463,8 @@
         "type": "object"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -1216,8 +1216,8 @@
         "type": "array"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -1570,8 +1570,8 @@
         "type": "object"
       },
       "errors": [
-        "PermissionError",
-        "ValidationError"
+        "BadRequest",
+        "PermissionError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -2416,7 +2416,6 @@
       "errors": [
         "BadRequest",
         "PermissionError",
-        "ValidationError",
         "DoesNotExistError"
       ],
       "entity": null,

@@ -4,7 +4,7 @@ from typing import TypedDict
 
 import frappe
 
-from suite.composition.http import Route
+from suite.composition.http import BadRequest, Route, refusals_as_bad_request
 
 
 class StorageUser(TypedDict):
@@ -86,7 +86,7 @@ ROUTES = (
         output=list[LimitResult],
         kind="mutation",
         public_name="storage.setLimits",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
     Route(
         "PATCH",
@@ -96,7 +96,7 @@ ROUTES = (
         output=StorageReport,
         kind="mutation",
         public_name="storage.setDefault",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
 )
 
@@ -109,6 +109,7 @@ def storage_get() -> StorageReport:
 
 
 @frappe.whitelist(methods=["PATCH"])
+@refusals_as_bad_request
 def storage_limits(users: list[str], cap_bytes: int | None) -> list[LimitResult]:
     from suite.suite_core.storage import update_limits
 
@@ -116,6 +117,7 @@ def storage_limits(users: list[str], cap_bytes: int | None) -> list[LimitResult]
 
 
 @frappe.whitelist(methods=["PATCH"])
+@refusals_as_bad_request
 def storage_default(cap_bytes: int | None) -> StorageReport:
     from suite.suite_core.storage import set_default
 

@@ -40,7 +40,7 @@ export type TemporaryPasswordPostOutput = {
   expires_at: string
 }
 
-export type TemporaryPasswordPostError = 'PermissionError' | 'ValidationError'
+export type TemporaryPasswordPostError = 'BadRequest' | 'PermissionError'
 
 const operationTemporaryPasswordPost: MutationRef<
   TemporaryPasswordPostInput,
@@ -57,7 +57,7 @@ const operationTemporaryPasswordPost: MutationRef<
   pathParams: ['user'],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationTemporaryPasswordPost,
 }
 
@@ -72,7 +72,7 @@ export type MailAccountPostOutput = {
   expires_at: string | null
 }
 
-export type MailAccountPostError = 'PermissionError' | 'ValidationError'
+export type MailAccountPostError = 'BadRequest' | 'PermissionError'
 
 const operationMailAccountPost: MutationRef<
   MailAccountPostInput,
@@ -89,7 +89,7 @@ const operationMailAccountPost: MutationRef<
   pathParams: ['user'],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationMailAccountPost,
 }
 
@@ -104,7 +104,7 @@ export type MailAccountDeleteOutput = {
   expires_at: string | null
 }
 
-export type MailAccountDeleteError = 'PermissionError' | 'ValidationError'
+export type MailAccountDeleteError = 'BadRequest' | 'PermissionError'
 
 const operationMailAccountDelete: MutationRef<
   MailAccountDeleteInput,
@@ -121,7 +121,7 @@ const operationMailAccountDelete: MutationRef<
   pathParams: ['user'],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationMailAccountDelete,
 }
 
@@ -134,7 +134,7 @@ export type OnboardingGetOutput = {
   ready: boolean
 }
 
-export type OnboardingGetError = 'PermissionError' | 'ValidationError'
+export type OnboardingGetError = 'BadRequest' | 'PermissionError'
 
 const operationOnboardingGet: QueryRef<
   OnboardingGetInput,
@@ -151,7 +151,7 @@ const operationOnboardingGet: QueryRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationOnboardingGet,
 }
 
@@ -166,7 +166,7 @@ export type OnboardingPostOutput = {
   expires_at: string | null
 }
 
-export type OnboardingPostError = 'PermissionError' | 'ValidationError'
+export type OnboardingPostError = 'BadRequest' | 'PermissionError'
 
 const operationOnboardingPost: MutationRef<
   OnboardingPostInput,
@@ -183,7 +183,7 @@ const operationOnboardingPost: MutationRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationOnboardingPost,
 }
 
@@ -356,7 +356,7 @@ export type StorageLimitsInput = { users: Array<string>; cap_bytes: number | nul
 
 export type StorageLimitsOutput = Array<StorageLimitsOutputLimitResult>
 
-export type StorageLimitsError = 'PermissionError' | 'ValidationError'
+export type StorageLimitsError = 'BadRequest' | 'PermissionError'
 
 const operationStorageLimits: MutationRef<
   StorageLimitsInput,
@@ -373,7 +373,7 @@ const operationStorageLimits: MutationRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationStorageLimits,
 }
 
@@ -425,7 +425,7 @@ export type StorageDefaultOutput = {
   roots: Array<StorageDefaultOutputStorageRoot>
 }
 
-export type StorageDefaultError = 'PermissionError' | 'ValidationError'
+export type StorageDefaultError = 'BadRequest' | 'PermissionError'
 
 const operationStorageDefault: MutationRef<
   StorageDefaultInput,
@@ -442,7 +442,7 @@ const operationStorageDefault: MutationRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['PermissionError', 'ValidationError'],
+  errors: ['BadRequest', 'PermissionError'],
   loadValidators: async () => (await import('./validators')).operationStorageDefault,
 }
 
@@ -750,8 +750,7 @@ export type UsersPatchInput = {
 
 export type UsersPatchOutput = Array<UsersPatchOutputUser>
 
-export type UsersPatchError =
-  'BadRequest' | 'PermissionError' | 'ValidationError' | 'DoesNotExistError'
+export type UsersPatchError = 'BadRequest' | 'PermissionError' | 'DoesNotExistError'
 
 const operationUsersPatch: MutationRef<UsersPatchInput, UsersPatchOutput, UsersPatchError> = {
   id: 'users_patch',
@@ -764,7 +763,7 @@ const operationUsersPatch: MutationRef<UsersPatchInput, UsersPatchOutput, UsersP
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['BadRequest', 'PermissionError', 'ValidationError', 'DoesNotExistError'],
+  errors: ['BadRequest', 'PermissionError', 'DoesNotExistError'],
   loadValidators: async () => (await import('./validators')).operationUsersPatch,
 }
 

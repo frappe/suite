@@ -27,6 +27,14 @@ def provision(user: str, address: str, *, password: str, operation: str, **optio
     account = provision_account(
         address, secrets.token_urlsafe(48), operation=operation, disk_quota_gb=0, **options
     )
+    if options.get("disable_receiving") and not account.get("disable_receiving"):
+        # A Suite Cloud older than the option drops it unseen and hands back an ordinary mailbox,
+        # which would take the very mail this account was asked not to receive. It is this
+        # operation's own account, so removing it is safe.
+        from suite.mail.directory import delete_account_by_email
+
+        delete_account_by_email(address)
+        frappe.throw(_("Suite Cloud cannot create accounts with receiving disabled yet."))
     client = get_client()
     client.call("mail.accounts.set_account_enabled", email=address, enabled=True)
     try:

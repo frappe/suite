@@ -5,7 +5,7 @@ from typing import TypedDict
 import frappe
 
 from suite import mail
-from suite.composition.http import Route
+from suite.composition.http import BadRequest, Route, refusals_as_bad_request
 
 
 class CreationResult(TypedDict):
@@ -73,7 +73,7 @@ ROUTES = (
         output=TemporaryCredential,
         kind="mutation",
         public_name="users.replaceTemporaryPassword",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
     Route(
         "POST",
@@ -83,17 +83,17 @@ ROUTES = (
         output=CreationResult,
         kind="mutation",
         public_name="users.recreateMail",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
     Route(
         "DELETE",
         "users/{user}/mail-account",
         "mail_account_delete",
-        body=DeleteInput,
+        query=DeleteInput,
         output=CreationResult,
         kind="mutation",
         public_name="users.deleteMail",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
     Route(
         "GET",
@@ -102,7 +102,7 @@ ROUTES = (
         output=OnboardingOptions,
         kind="query",
         public_name="site.mailOnboarding",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
     Route(
         "POST",
@@ -112,32 +112,37 @@ ROUTES = (
         output=CreationResult,
         kind="mutation",
         public_name="site.setupMail",
-        errors=(frappe.PermissionError, frappe.ValidationError),
+        errors=(BadRequest, frappe.PermissionError),
     ),
 )
 
 
 @frappe.whitelist(methods=["POST"])
+@refusals_as_bad_request
 def temporary_password_post(user: str) -> TemporaryCredential:
     return mail.administer_account("replace_temporary", user=user)
 
 
 @frappe.whitelist(methods=["POST"])
+@refusals_as_bad_request
 def mail_account_post(user: str, address: str) -> CreationResult:
     return mail.administer_account("recreate", user=user, address=address)
 
 
 @frappe.whitelist(methods=["DELETE"])
+@refusals_as_bad_request
 def mail_account_delete(user: str, confirmation: str) -> CreationResult:
     return mail.administer_account("delete", user=user, confirmation=confirmation)
 
 
 @frappe.whitelist(methods=["GET"])
+@refusals_as_bad_request
 def onboarding_get() -> OnboardingOptions:
     return mail.administer_account("onboarding_options")
 
 
 @frappe.whitelist(methods=["POST"])
+@refusals_as_bad_request
 def onboarding_post(address: str, password: str) -> CreationResult:
     return mail.administer_account("onboard", address=address, password=password)
 

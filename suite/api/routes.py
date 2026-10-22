@@ -39,7 +39,7 @@ from suite.api.preferences import (
     languages,
     update_preferences,
 )
-from suite.composition.http import BadRequest, Route
+from suite.composition.http import BadRequest, Route, refusals_as_bad_request
 from suite.utils.user import generate_user_keys
 
 Given = str | int | float | bool | list | dict | None
@@ -348,7 +348,7 @@ ROUTES = (
         "users_patch",
         body=UserChanges,
         output=list[User],
-        errors=(BadRequest, frappe.PermissionError, frappe.ValidationError, frappe.DoesNotExistError),
+        errors=(BadRequest, frappe.PermissionError, frappe.DoesNotExistError),
         kind="mutation",
         public_name="users.update",
     ),
@@ -440,6 +440,7 @@ def users_get() -> list[User]:
 
 
 @frappe.whitelist(methods=["PATCH"])
+@refusals_as_bad_request
 def users_patch(
     user: Given = None, is_admin: Given = None, enabled: Given = None, full_name: Given = None
 ) -> list[User]:

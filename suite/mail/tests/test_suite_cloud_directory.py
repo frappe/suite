@@ -30,6 +30,10 @@ class SuiteCloudTestCase(IntegrationTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        # Each test starts from the same database: a failed creation now keeps its Suite user for
+        # a retry, and the class-level rollback alone would hand it to the next test.
+        frappe.db.savepoint("suite_cloud_test")
+        self.addCleanup(frappe.db.rollback, save_point="suite_cloud_test")
         self._settings = ExitStack()
         self._settings.enter_context(
             self.change_settings("Mail Settings", server_url="https://mail.c1.example.test")
@@ -217,21 +221,21 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         self.fake.accounts__create_account(f"bob@{DOMAIN}", "secret-pw", display_name="Bob")
 
     def test_group_crud_and_membership(self) -> None:
-        group = admin.add_group("sales", DOMAIN, description="Sales", members=[f"alice@{DOMAIN}"], quota_gb=2)
+        group = admin.add_group("sales", DOMAIN, description="Sales", members=[f"alice@{DOMAIN}"])
         self.assertEqual(group, f"sales@{DOMAIN}")
         self.assertEqual([g["name"] for g in admin.get_groups(search="sal")["items"]], ["sales"])
 
         detail = admin.get_group(group)
         self.assertEqual([m["email"] for m in detail["members"]], [f"alice@{DOMAIN}"])
-        self.assertEqual(detail["quota"]["total"], 2 * 1024**3)
+        # Group Mail storage is unlimited; it counts toward the site's combined usage only.
+        self.assertEqual(self.fake.groups[group]["disk_quota_gb"], 0)
+        self.assertEqual(detail["quota"]["total"], 0)
         self.fake.groups[group]["used_disk_bytes"] = 1024
         listed = admin.get_groups()["items"][0]
-        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (2, 1024))
-        # No quota asked for means none: Suite Cloud applies no default.
-        admin.add_group("ops", DOMAIN)
-        self.assertEqual(self.fake.groups[f"ops@{DOMAIN}"]["disk_quota_gb"], 0)
-        self.assertEqual(admin.get_group(f"ops@{DOMAIN}")["quota"]["total"], 0)
-        admin.delete_groups([f"ops@{DOMAIN}"])
+        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (0, 1024))
+        self.assertRaisesRegex(
+            frappe.ValidationError, "unlimited", admin.add_group, "ops", DOMAIN, quota_gb=2
+        )
 
         admin.add_group_members(group, [f"bob@{DOMAIN}"])
         admin.remove_group_member(group, f"alice@{DOMAIN}")
@@ -253,11 +257,9 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         admin.remove_group_email(group, f"team@{DOMAIN}")
         self.assertEqual(len(admin.get_group(group)["email_addresses"]), 1)
 
-        admin.update_group(group, description="Sales team", quota_gb=3)
-        self.assertEqual(
-            (self.fake.groups[group]["description"], self.fake.groups[group]["disk_quota_gb"]),
-            ("Sales team", 3),
-        )
+        admin.update_group(group, description="Sales team")
+        self.assertEqual(self.fake.groups[group]["description"], "Sales team")
+        self.assertRaisesRegex(frappe.ValidationError, "unlimited", admin.update_group, group, quota_gb=3)
 
         admin.delete_groups([group])
         self.assertEqual(admin.get_groups(), {"items": [], "total": 0})
@@ -469,10 +471,7 @@ class TestMembers(SuiteCloudTestCase):
             "suite.mail.doctype.mail_account_request.mail_account_request.create_user",
             side_effect=frappe.ValidationError("Throttled"),
         ):
-            self.assertRaisesRegex(
-                frappe.ValidationError,
-                "Failed to create user",
-                admin.add_member,
+            result = admin.add_member(
                 "erin",
                 DOMAIN,
                 is_admin=False,
@@ -481,32 +480,32 @@ class TestMembers(SuiteCloudTestCase):
                 first_name="Erin",
                 password="a-strong-password-9",
             )
+            self.assertEqual((result["success"], result["status"]), (False, "Setup failed"))
         # Suite Cloud had already created the account; it must not survive as an orphan.
         self.assertNotIn(f"erin@{DOMAIN}", self.fake.accounts)
 
-    def test_timeout_after_the_cluster_created_the_account_removes_it(self) -> None:
-        def create_then_time_out(email, password, **kwargs):
-            self.fake.accounts__create_account(email, password, **kwargs)
+    def test_a_timeout_after_the_cluster_created_the_account_is_recovered_on_retry(self) -> None:
+        def create_then_time_out(email, password, operation=None, **kwargs):
+            self.fake.accounts__create_account(
+                email, password, description=f"Suite setup {operation}", **kwargs
+            )
             raise SuiteCloudUnavailableError("Suite Cloud is unreachable; try again shortly.")
 
-        with patch(
-            "suite.mail.doctype.mail_account_request.mail_account_request.create_account",
-            side_effect=create_then_time_out,
-        ):
-            self.assertRaisesRegex(
-                frappe.ValidationError,
-                "Failed to create the mail account",
-                admin.add_member,
-                "erin",
-                DOMAIN,
-                is_admin=False,
-                send_invite=False,
-                backup_email="erin@backup.test",
-                first_name="Erin",
-                password="a-strong-password-9",
-            )
-        # The answer never arrived, but the account did; a retry must not meet "already exists".
-        self.assertNotIn(f"erin@{DOMAIN}", self.fake.accounts)
+        member = dict(
+            is_admin=False,
+            send_invite=False,
+            backup_email="erin@backup.test",
+            first_name="Erin",
+            password="a-strong-password-9",
+        )
+        with patch("suite.mail.directory.create_account", side_effect=create_then_time_out):
+            result = admin.add_member("erin", DOMAIN, **member)
+        self.assertEqual((result["success"], result["status"]), (False, "Setup failed"))
+        # The answer never arrived but the account did. Its ownership is uncertain, so it is kept,
+        # and the retry recognises it as this setup's own instead of meeting "already exists".
+        self.assertIn(f"erin@{DOMAIN}", self.fake.accounts)
+        retried = admin.add_member("erin", DOMAIN, **member)
+        self.assertEqual((retried["success"], retried["status"]), (True, "Password change required"))
 
     def test_timeout_before_the_creation_leaves_an_existing_mailbox_alone(self) -> None:
         # A mailbox can outlive its user on this site; the cleanup must not take it for its own.
@@ -515,9 +514,7 @@ class TestMembers(SuiteCloudTestCase):
             "suite.mail.doctype.mail_account_request.mail_account_request.MailAccountRequest._surviving",
             side_effect=SuiteCloudUnavailableError("Suite Cloud is unreachable; try again shortly."),
         ):
-            self.assertRaises(
-                frappe.ValidationError,
-                admin.add_member,
+            result = admin.add_member(
                 "frank",
                 DOMAIN,
                 is_admin=False,
@@ -527,17 +524,13 @@ class TestMembers(SuiteCloudTestCase):
                 password="a-strong-password-9",
                 groups=[f"sales@{DOMAIN}"],
             )
+            self.assertEqual((result["success"], result["status"]), (False, "Setup failed"))
         self.assertEqual(self.fake.accounts[f"frank@{DOMAIN}"]["display_name"], "Frank of old")
 
     def test_an_address_the_cluster_already_has_is_refused_before_the_creation(self) -> None:
         self.fake.accounts__create_account(f"grace@{DOMAIN}", "secret-pw", display_name="Grace of old")
-        with patch(
-            "suite.mail.doctype.mail_account_request.mail_account_request.create_account"
-        ) as create_account:
-            self.assertRaisesRegex(
-                frappe.ValidationError,
-                "Failed to create the mail account",
-                admin.add_member,
+        with patch("suite.mail.directory.create_account") as create_account:
+            result = admin.add_member(
                 "grace",
                 DOMAIN,
                 is_admin=False,
@@ -546,6 +539,7 @@ class TestMembers(SuiteCloudTestCase):
                 first_name="Grace",
                 password="a-strong-password-9",
             )
+            self.assertEqual((result["success"], result["status"]), (False, "Setup failed"))
         create_account.assert_not_called()
         self.assertEqual(self.fake.accounts[f"grace@{DOMAIN}"]["display_name"], "Grace of old")
 
@@ -603,13 +597,10 @@ class TestMembers(SuiteCloudTestCase):
             return self.fake.accounts__create_account(email, password, **kwargs)
 
         with patch(
-            "suite.mail.doctype.mail_account_request.mail_account_request.create_account",
+            "suite.mail.directory.create_account",
             side_effect=create_as_before_the_option,
         ):
-            self.assertRaisesRegex(
-                frappe.ValidationError,
-                "Failed to create the mail account",
-                admin.add_member,
+            result = admin.add_member(
                 "judy",
                 DOMAIN,
                 is_admin=False,
@@ -619,9 +610,13 @@ class TestMembers(SuiteCloudTestCase):
                 password="a-strong-password-9",
                 disable_receiving=True,
             )
+            self.assertEqual((result["success"], result["status"]), (False, "Setup failed"))
         # The admin asked for an address that takes no mail; an ordinary mailbox is not that.
         self.assertNotIn(f"judy@{DOMAIN}", self.fake.accounts)
-        self.assertFalse(frappe.db.exists("User", f"judy@{DOMAIN}"))
+        # The Suite user stays, blocked and marked for a retry of the creation.
+        from suite.suite_core.account_state import read
+
+        self.assertEqual(read(f"judy@{DOMAIN}").get("status"), "Setup failed")
 
     def _add_carol(self) -> None:
         admin.add_member(
@@ -683,14 +678,15 @@ class TestMembers(SuiteCloudTestCase):
             aliases=[f"cd@{DOMAIN}"],
             groups=[f"sales@{DOMAIN}"],
             mailing_lists=[f"news@{DOMAIN}"],
-            quota_gb=2,
         )
         account = self.fake.accounts[self.email]
+        # Mail has no quota of its own (the combined cap covers it), and the Admin's chosen
+        # password never becomes the Mail secret.
         self.assertEqual(
             (account["display_name"], account["disk_quota_gb"], account["groups"]),
-            ("Carol Doe", 2, [f"sales@{DOMAIN}"]),
+            ("Carol Doe", 0, [f"sales@{DOMAIN}"]),
         )
-        self.assertEqual(self.fake.passwords[self.email], "a-strong-password-9")
+        self.assertNotEqual(self.fake.passwords[self.email], "a-strong-password-9")
         self.assertEqual(frappe.db.get_value("User Settings", {"user": self.email}, "username"), self.email)
         self.assertEqual(
             frappe.get_doc("User Settings", {"user": self.email}).get_password("app_password"),
@@ -701,7 +697,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual([a["email"] for a in member["email_addresses"]], [self.email, f"cd@{DOMAIN}"])
         self.assertEqual([g["email"] for g in member["groups"]], [f"sales@{DOMAIN}"])
         self.assertEqual([ml["email"] for ml in member["mailing_lists"]], [f"news@{DOMAIN}"])
-        self.assertEqual(member["quota"]["total"], 2 * 1024**3)
+        self.assertEqual(member["quota"]["total"], 0)
         requests = admin.get_account_requests(search="carol")
         self.assertEqual((requests["total"], requests["items"][0]["account"]), (1, self.email))
         self.assertEqual(admin.get_account_requests(search="carol", start=20, page_length=20)["items"], [])
@@ -710,7 +706,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(page["total"], 1)
         listed = next(u for u in page["items"] if u["name"] == self.email)
         # Allotment and usage, fetched for the page in one call.
-        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (2, 4096))
+        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (0, 4096))
         self.assertEqual(admin.get_members(search="carol", start=20, page_length=20)["items"], [])
         self.assertNotIn("quota", listed)
 
@@ -726,10 +722,13 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(frappe.local.message_log, messages_before)
         logged.assert_called_once()
 
-        admin.update_member(self.email, description="Carol D", quota_gb=3, time_zone="Asia/Kolkata")
+        admin.update_member(self.email, description="Carol D", time_zone="Asia/Kolkata")
         self.assertEqual(
             (account["display_name"], account["disk_quota_gb"], account["time_zone"]),
-            ("Carol D", 3, "Asia/Kolkata"),
+            ("Carol D", 0, "Asia/Kolkata"),
+        )
+        self.assertRaisesRegex(
+            frappe.ValidationError, "no storage quota", admin.update_member, self.email, quota_gb=3
         )
 
         admin.add_member_email(self.email, f"Carol.Doe@{DOMAIN}")
@@ -750,13 +749,25 @@ class TestMembers(SuiteCloudTestCase):
         admin.add_member_to_mailing_lists(self.email, [f"news@{DOMAIN}"])
         self.assertIn(self.email, self.fake.lists[f"news@{DOMAIN}"]["recipients"])
 
-        admin.change_member_password(self.email, "another-strong-pw-9")
-        self.assertEqual(self.fake.passwords[self.email], "another-strong-pw-9")
+        # Admins issue one-time credentials instead of choosing a member's password.
+        self.assertRaisesRegex(
+            frappe.ValidationError,
+            "temporary password",
+            admin.change_member_password,
+            self.email,
+            "another-strong-pw-9",
+        )
 
-        admin.disable_members([self.email])
+        # Access changes report one outcome per user and act on the Suite user.
+        self.assertEqual(
+            admin.disable_members([self.email]), [{"user": self.email, "success": True, "error": None}]
+        )
+        self.assertFalse(frappe.db.get_value("User", self.email, "enabled"))
         self.assertFalse(account["enabled"])
-        admin.enable_members([self.email])
-        self.assertTrue(account["enabled"])
+        self.assertEqual(
+            admin.enable_members([self.email]), [{"user": self.email, "success": True, "error": None}]
+        )
+        self.assertTrue(frappe.db.get_value("User", self.email, "enabled"))
 
         overview = admin.get_overview()
         self.assertEqual(
@@ -772,11 +783,12 @@ class TestMembers(SuiteCloudTestCase):
         disabled = [a["name"] for a in admin.get_overview()["disabled_accounts"]]
         self.assertIn(self.email, disabled)
         self.assertEqual(disabled, sorted(disabled))
-        admin.enable_members([self.email])
 
-        admin.delete_members([self.email])
+        # Deleting takes the disabled user's mailbox, confirmed by its address, and keeps the
+        # Suite user and its Drive.
+        admin.delete_members([self.email], confirmation=self.email)
         self.assertNotIn(self.email, self.fake.accounts)
-        self.assertFalse(frappe.db.exists("User", self.email))
+        self.assertTrue(frappe.db.exists("User", self.email))
 
     def test_request_refuses_unknown_groups_and_alias_domains(self) -> None:
         self.assertRaisesRegex(
