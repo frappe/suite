@@ -49,6 +49,8 @@ export interface AreaDefinition {
   requires?: PlatformCapability[]
   /** What the rail's dot counts, in its tooltip ("3 unread"). Translated; "unread" when unset. */
   badgeNoun?: () => string
+  /** `workspace` areas open from the workspace menu instead of the desktop rail. Defaults to `rail`. */
+  placement?: 'rail' | 'workspace'
 }
 
 export interface DocumentTypeDefinition {

@@ -6,15 +6,7 @@
     <div
       class="mx-[11px] flex h-12 shrink-0 items-center justify-center self-stretch border-b border-outline-gray-1"
     >
-      <Avatar
-        :image="workspaceMark"
-        :label="workspaceName"
-        shape="square"
-        size="xl"
-        role="img"
-        :aria-label="workspaceName || 'Suite'"
-        :title="workspaceName || 'Suite'"
-      />
+      <WorkspaceMenu :areas="workspaceAreas" :name="workspaceName" :mark="workspaceMark" />
     </div>
     <div class="relative min-h-0 w-full flex-1">
       <ScrollArea
@@ -32,7 +24,7 @@
             @click="root.paletteOpen = true"
           />
           <RailItem
-            v-for="area in areas"
+            v-for="area in railAreas"
             :key="area.id"
             :area="area.id"
             :label="area.label()"
@@ -82,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, SidebarRail as FrappeRail, ScrollArea } from 'frappe-ui'
+import { SidebarRail as FrappeRail, ScrollArea } from 'frappe-ui'
 import {
   computed,
   nextTick,
@@ -101,12 +93,16 @@ import RailItem from '@/shell/RailItem.vue'
 import SearchIcon from '@/shell/SearchIcon.vue'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useWorkspace } from '@/shell/useWorkspace'
+import WorkspaceMenu from '@/shell/WorkspaceMenu.vue'
 import { useRootStore } from '@/stores/root'
 
-defineProps<{
+const props = defineProps<{
   areas: readonly AreaDefinition[]
   badges: Readonly<Record<string, number>>
 }>()
+
+const railAreas = computed(() => props.areas.filter((area) => area.placement !== 'workspace'))
+const workspaceAreas = computed(() => props.areas.filter((area) => area.placement === 'workspace'))
 
 defineSlots<{ bell?: () => unknown }>()
 

@@ -9,5 +9,6 @@ export const adminArea: AreaDefinition = {
   icon: AdminIcon,
   to: '/admin',
   requires: ['suiteAdmin'],
+  placement: 'workspace',
   loadRoutes: () => import('./routes'),
 }
