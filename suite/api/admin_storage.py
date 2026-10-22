@@ -53,10 +53,6 @@ class StorageReport(TypedDict):
     roots: list[StorageRoot]
 
 
-class RefreshInput(TypedDict):
-    pass
-
-
 class LimitInput(TypedDict):
     users: list[str]
     cap_bytes: int | None
@@ -80,16 +76,6 @@ ROUTES = (
         output=StorageReport,
         kind="query",
         public_name="storage.get",
-        errors=(frappe.PermissionError,),
-    ),
-    Route(
-        "POST",
-        "storage/refresh",
-        "storage_refresh",
-        body=RefreshInput,
-        output=StorageReport,
-        kind="mutation",
-        public_name="storage.refresh",
         errors=(frappe.PermissionError,),
     ),
     Route(
@@ -120,13 +106,6 @@ def storage_get() -> StorageReport:
     from suite.composition.admin_storage import report
 
     return report()
-
-
-@frappe.whitelist(methods=["POST"])
-def storage_refresh() -> StorageReport:
-    from suite.composition.admin_storage import report
-
-    return report(refresh=True)
 
 
 @frappe.whitelist(methods=["PATCH"])

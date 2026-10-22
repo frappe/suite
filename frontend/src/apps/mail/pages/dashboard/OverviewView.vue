@@ -1,73 +1,5 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="[{ label: __('Overview') }]" :loading="!overview.data">
-    <template #loading>
-      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-        <DashboardTileSkeleton v-for="n in 6" :key="n" :bar="n === 6" />
-      </div>
-      <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div class="flex flex-col gap-5 lg:col-span-2">
-          <DashboardCard :title="__('Needs Attention')">
-            <div class="flex h-56 flex-col">
-              <div
-                v-for="n in 4"
-                :key="n"
-                class="flex h-14 shrink-0 items-center gap-3 border-b px-5 last:border-b-0"
-              >
-                <Skeleton class="h-8 w-8 shrink-0 rounded-4" />
-                <div class="min-w-0 flex-1">
-                  <DashboardSkeletonText class="text-sm" width="45%" />
-                  <DashboardSkeletonText class="mt-0.5 text-xs" width="65%" />
-                </div>
-              </div>
-            </div>
-          </DashboardCard>
-          <DashboardCard :title="__('Recent Accounts')">
-            <div class="flex flex-col">
-              <div
-                v-for="n in 6"
-                :key="n"
-                class="flex h-14 items-center gap-3 border-b px-5 last:border-b-0"
-              >
-                <Skeleton class="size-8 shrink-0 rounded-full" />
-                <div class="min-w-0 flex-1">
-                  <DashboardSkeletonText class="text-sm" width="35%" />
-                  <DashboardSkeletonText class="text-xs" width="50%" />
-                </div>
-              </div>
-            </div>
-          </DashboardCard>
-        </div>
-        <div class="flex flex-col gap-5">
-          <DashboardCard :title="__('Quick Actions')">
-            <div class="flex flex-col">
-              <div
-                v-for="action in QUICK_ACTIONS"
-                :key="action.label"
-                class="flex h-14 items-center gap-3 border-b px-5 last:border-b-0"
-              >
-                <Skeleton class="h-8 w-8 shrink-0 rounded-4" />
-                <div class="min-w-0 flex-1">
-                  <DashboardSkeletonText class="text-sm" width="50%" />
-                  <DashboardSkeletonText class="mt-0.5 text-xs" width="75%" />
-                </div>
-              </div>
-            </div>
-          </DashboardCard>
-          <DashboardCard :title="__('Mail Service')">
-            <div class="flex flex-col">
-              <div
-                v-for="row in serviceRows"
-                :key="row.label"
-                class="flex h-14 items-center gap-3 border-b px-5 text-sm last:border-b-0"
-              >
-                <span class="text-ink-gray-5 w-28 shrink-0">{{ row.label }}</span>
-                <DashboardSkeletonText class="flex-1" width="55%" />
-              </div>
-            </div>
-          </DashboardCard>
-        </div>
-      </div>
-    </template>
     <!-- One glanceable number per section, each a link into it. -->
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
       <RouterLink
@@ -245,7 +177,7 @@ import UserPlus from '~icons/lucide/user-plus'
 import UserX from '~icons/lucide/user-x'
 import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
-import { Avatar, Badge, Skeleton, usePageMeta } from 'frappe-ui'
+import { Avatar, Badge, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -254,12 +186,7 @@ import { api, useQuery } from '@/api'
 import { formatBytes, formatGb } from '@/apps/mail/utils'
 import { ADD_QUERY } from '@/apps/mail/utils/addOnArrival'
 import { fromNow } from '@/apps/mail/utils/datetime'
-import {
-  DashboardCard,
-  DashboardLayout,
-  DashboardSkeletonText,
-  DashboardTileSkeleton,
-} from '@/platform/dashboard'
+import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 type CountWithDisabled = { total: number; disabled: number }

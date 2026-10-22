@@ -346,75 +346,6 @@ const operationStorageGet: QueryRef<StorageGetInput, StorageGetOutput, StorageGe
   loadValidators: async () => (await import('./validators')).operationStorageGet,
 }
 
-export type StorageRefreshOutputStorageRoot = {
-  name: string
-  user: string | null
-  kind: string
-  state: string
-  stored_bytes: number
-  reserved_bytes: number
-  quota_bytes: number
-  effective_quota_bytes: number
-}
-
-export type StorageRefreshOutputStorageUser = {
-  name: string
-  email: string
-  full_name: string
-  user_image: string | null
-  enabled: boolean
-  is_admin: boolean
-  drive_bytes: number
-  reserved_bytes: number
-  mail_bytes: number | null
-  combined_bytes: number | null
-  cap_bytes: number | null
-  effective_cap_bytes: number | null
-  mail_fetched_at: string | null
-}
-
-export type StorageRefreshInput = Record<string, never>
-
-export type StorageRefreshOutput = {
-  cloud: boolean
-  drive_bytes: number
-  personal_drive_bytes: number
-  shared_drive_bytes: number
-  group_mail_bytes: number | null
-  pending_invitations: number
-  reserved_bytes: number
-  mail_bytes: number | null
-  combined_bytes: number | null
-  allowance_bytes: number | null
-  effective_allowance_bytes: number | null
-  stale: boolean
-  fetched_at: string | null
-  default_cap_bytes: number | null
-  users: Array<StorageRefreshOutputStorageUser>
-  roots: Array<StorageRefreshOutputStorageRoot>
-}
-
-export type StorageRefreshError = 'PermissionError'
-
-const operationStorageRefresh: MutationRef<
-  StorageRefreshInput,
-  StorageRefreshOutput,
-  StorageRefreshError
-> = {
-  id: 'storage_refresh',
-  owner: 'suite',
-  kind: 'mutation',
-  publicName: 'storage.refresh',
-  method: 'POST',
-  path: 'storage/refresh',
-  prefix: '/api/suite/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError'],
-  loadValidators: async () => (await import('./validators')).operationStorageRefresh,
-}
-
 export type StorageLimitsOutputLimitResult = {
   user: string
   success: boolean
@@ -1171,7 +1102,6 @@ export const api = {
   },
   storage: {
     get: operationStorageGet,
-    refresh: operationStorageRefresh,
     setLimits: operationStorageLimits,
     setDefault: operationStorageDefault,
   },

@@ -1,7 +1,5 @@
 """Join public Mail/Drive accounting with the site's business storage policy."""
 
-import json
-
 from frappe.utils import get_datetime, now_datetime
 
 from suite import drive, mail
@@ -10,14 +8,10 @@ from suite.suite_core.storage import effective_limit, state
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
-def report(*, refresh: bool = False) -> dict:
+def report() -> dict:
     require_admin()
-    doc, policy, cached = state(lock=True)
+    _doc, policy, cached = state()
     cloud = is_suite_cloud_configured()
-    if cloud and refresh:
-        cached = mail.storage_measurements(cached, refresh=refresh)
-        doc.measurements = json.dumps(cached)
-        doc.save(ignore_permissions=True)
     roots = drive.administration_usage()
     fetched_at = cached.get("fetched_at")
     expired = bool(fetched_at and (now_datetime() - get_datetime(fetched_at)).total_seconds() >= 21600)

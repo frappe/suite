@@ -24,7 +24,6 @@ export const mutationEffects = {
       'mail.get_overview',
     ],
   },
-  storage_refresh: { invalidates: ['storage_get'] },
   storage_limits: { invalidates: ['storage_get'] },
   storage_default: { invalidates: ['storage_get'] },
   storage_buffers: { invalidates: ['storage_get'] },
