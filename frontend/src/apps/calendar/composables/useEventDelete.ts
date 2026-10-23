@@ -1,33 +1,37 @@
-import { computed, ref } from 'vue'
+import { toast } from 'frappe-ui'
 import { Trash2 } from 'lucide-vue-next'
-import { createResource, toast } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
+import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
-import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
-import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
-import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
+import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
+import {
+  isFirstOccurrence,
+  scopeOptions,
+  type RecurringScope,
+} from '@/apps/calendar/utils/recurringScope'
 
 /** The part of a calendar event that deleting one reads. */
 interface DeletableEvent {
-	/**
-	 * The server's own id for the event, which `serverEventId` reads — not the `id` the
-	 * grid draws the row with. See utils/eventIdentity.
-	 */
-	event_id?: string
-	/** The series an instance came from; absent on a one-off. */
-	master_id?: string
-	/** Set on an instance of a recurring series; absent on a one-off. */
-	recurrence_id?: string
-	/** The series' own start — the same date on its first occurrence, and only there. */
-	master_start?: string
-	recurrence_rule?: Record<string, unknown>
-	organizer?: string
-	participants?: { email: string }[]
-	/** The account it belongs to: ids are only unique within one. */
-	account?: string
-	/** A draft sent no invitations, so it never asks about a cancellation email. */
-	isDraft?: boolean
+  /**
+   * The server's own id for the event, which `serverEventId` reads — not the `id` the
+   * grid draws the row with. See utils/eventIdentity.
+   */
+  event_id?: string
+  /** The series an instance came from; absent on a one-off. */
+  master_id?: string
+  /** Set on an instance of a recurring series; absent on a one-off. */
+  recurrence_id?: string
+  /** The series' own start — the same date on its first occurrence, and only there. */
+  master_start?: string
+  recurrence_rule?: Record<string, unknown>
+  organizer?: string
+  participants?: { email: string }[]
+  /** The account it belongs to: ids are only unique within one. */
+  account?: string
+  /** A draft sent no invitations, so it never asks about a cancellation email. */
+  isDraft?: boolean
 }
 
 /**
@@ -46,167 +50,170 @@ interface DeletableEvent {
  *   `deleteScope`), and the three of the cancellation-email prompt that follows
  *   it: `showNotifyModal`, `pendingDelete` and `NOTIFY_DELETE_OPTIONS`.
  */
-export function useEventDelete(
-	getEvent: () => DeletableEvent | undefined,
-	onDeleted: () => void,
-) {
-	const store = userStore()
-	const { participantIdentities } = store
+export function useEventDelete(getEvent: () => DeletableEvent | undefined, onDeleted: () => void) {
+  const store = userStore()
+  const { participantIdentities } = store
 
-	const calendarEvent = computed<DeletableEvent>(() => getEvent() ?? {})
-	const eventId = computed(() => serverEventId(calendarEvent.value))
+  const calendarEvent = computed<DeletableEvent>(() => getEvent() ?? {})
+  const eventId = computed(() => serverEventId(calendarEvent.value))
 
-	const deleteEventInstance = createResource({
-		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
-		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: calendarEvent.value.account,
-			master_id: calendarEvent.value.master_id,
-			recurrence_id: calendarEvent.value.recurrence_id,
-			send_scheduling_messages: sendEmail,
-		}),
-		onSuccess: onDeleted,
-	})
+  const deleteEventInstance = useMutation(api.calendar.events.deleteInstance, { silent: true })
+  const deleteEvent = useMutation(api.calendar.events.delete, { silent: true })
+  const deleteFollowing = useMutation(api.calendar.events.deleteFollowing, { silent: true })
 
-	const deleteEvent = createResource({
-		url: 'suite.calendar.doctype.calendar_event.calendar_event.delete_calendar_events',
-		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: calendarEvent.value.account,
-			ids: [eventId.value],
-			send_scheduling_messages: sendEmail,
-		}),
-		onSuccess: onDeleted,
-	})
+  function deletionTarget() {
+    const event = calendarEvent.value
+    const id = eventId.value
+    if (!event.account || !id) throw new Error('An event deletion requires an account and event ID')
+    return { event, account: event.account, id }
+  }
 
-	// "This and following" is an edit, not a delete: the series stops at the occurrence before
-	// this one. The server does the arithmetic — where a counted series stops, and which of its
-	// overrides belonged to the occurrences going away — because a rule truncated here without
-	// them leaves every edited occurrence behind as an event of its own.
-	const deleteFollowing = createResource({
-		url: 'suite.calendar.api.delete_calendar_event_series_from',
-		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-			account: calendarEvent.value.account,
-			master_id: eventId.value,
-			recurrence_id: calendarEvent.value.recurrence_id,
-			send_scheduling_messages: sendEmail,
-		}),
-		onSuccess: onDeleted,
-	})
+  async function deleteEventInstanceSubmit({ sendEmail }: { sendEmail: boolean }) {
+    const { event, account } = deletionTarget()
+    if (!event.master_id || !event.recurrence_id)
+      throw new Error('An instance deletion requires its series and recurrence ID')
+    await deleteEventInstance.run({
+      account,
+      master_id: event.master_id,
+      recurrence_id: event.recurrence_id,
+      send_scheduling_messages: sendEmail,
+    })
+    onDeleted()
+  }
 
-	const isDeleting = computed(
-		() => deleteEventInstance.loading || deleteEvent.loading || deleteFollowing.loading,
-	)
+  async function deleteEventSubmit({ sendEmail }: { sendEmail: boolean }) {
+    const { account, id } = deletionTarget()
+    await deleteEvent.run({ account, ids: [id], send_scheduling_messages: sendEmail })
+    onDeleted()
+  }
 
-	// When the organizer deletes an event with other participants, offer to email a
-	// cancellation (mirrors the "Notify Participants" prompt shown when creating/editing).
-	const isOrganizer = computed(
-		() =>
-			participantIdentities.data?.some(
-				(id: ParticipantIdentity) =>
-					id.email === (calendarEvent.value.organizer || '').replace('mailto:', ''),
-			) ?? false,
-	)
-	const hasParticipantsOtherThanUser = computed(
-		() =>
-			calendarEvent.value.participants?.some((p) =>
-				participantIdentities.data?.every((i: ParticipantIdentity) => i.email !== p.email),
-			) ?? false,
-	)
+  async function deleteFollowingSubmit({ sendEmail }: { sendEmail: boolean }) {
+    const { event, account, id } = deletionTarget()
+    if (!event.recurrence_id) throw new Error('Ending a series requires its recurrence ID')
+    await deleteFollowing.run({
+      account,
+      master_id: id,
+      recurrence_id: event.recurrence_id,
+      send_scheduling_messages: sendEmail,
+    })
+    onDeleted()
+  }
 
-	const showNotifyModal = ref(false)
-	const pendingDelete = ref<((sendEmail: boolean) => void) | null>(null)
+  const isDeleting = computed(
+    () => deleteEventInstance.isPending || deleteEvent.isPending || deleteFollowing.isPending,
+  )
 
-	const confirmDelete = (submit: (sendEmail: boolean) => Promise<unknown>, recurring: boolean) => {
-		const run = (sendEmail: boolean) => {
-			showNotifyModal.value = false
-			toast.promise(submit(sendEmail), {
-				loading: recurring ? __('Deleting events...') : __('Deleting event...'),
-				success: recurring ? __('Events deleted.') : __('Event deleted.'),
-				error: __('Action failed. Please try again in some time.'),
-			})
-		}
+  // When the organizer deletes an event with other participants, offer to email a
+  // cancellation (mirrors the "Notify Participants" prompt shown when creating/editing).
+  const isOrganizer = computed(
+    () =>
+      participantIdentities.data?.some(
+        (id: ParticipantIdentity) =>
+          id.email === (calendarEvent.value.organizer || '').replace('mailto:', ''),
+      ) ?? false,
+  )
+  const hasParticipantsOtherThanUser = computed(
+    () =>
+      calendarEvent.value.participants?.some((p) =>
+        participantIdentities.data?.every((i: ParticipantIdentity) => i.email !== p.email),
+      ) ?? false,
+  )
 
-		// A draft never sent its invitations, so there is no one to tell it is gone.
-		if (isOrganizer.value && hasParticipantsOtherThanUser.value && !calendarEvent.value.isDraft) {
-			pendingDelete.value = run
-			showNotifyModal.value = true
-		} else {
-			run(false)
-		}
-	}
+  const showNotifyModal = ref(false)
+  const pendingDelete = ref<((sendEmail: boolean) => void) | null>(null)
 
-	const handleDeleteEventInstance = () =>
-		confirmDelete((sendEmail) => deleteEventInstance.submit({ sendEmail }), false)
+  const confirmDelete = (submit: (sendEmail: boolean) => Promise<unknown>, recurring: boolean) => {
+    const run = (sendEmail: boolean) => {
+      showNotifyModal.value = false
+      toast.promise(submit(sendEmail), {
+        loading: recurring ? __('Deleting events...') : __('Deleting event...'),
+        success: recurring ? __('Events deleted.') : __('Event deleted.'),
+        error: __('Action failed. Please try again in some time.'),
+      })
+    }
 
-	const handleDeleteEvent = () =>
-		confirmDelete(
-			(sendEmail) => deleteEvent.submit({ sendEmail }),
-			!!calendarEvent.value.recurrence_id,
-		)
+    // A draft never sent its invitations, so there is no one to tell it is gone.
+    if (isOrganizer.value && hasParticipantsOtherThanUser.value && !calendarEvent.value.isDraft) {
+      pendingDelete.value = run
+      showNotifyModal.value = true
+    } else {
+      run(false)
+    }
+  }
 
-	// Through the same prompt as the other two answers. Ending a series cancels the occurrences
-	// after it for everyone on them, so it asks about the cancellation email exactly as deleting
-	// one occurrence or the whole thing does — and a draft, which invited nobody, still asks
-	// nobody.
-	const handleDeleteFollowingEventInstances = () =>
-		confirmDelete((sendEmail) => deleteFollowing.submit({ sendEmail }), true)
+  const handleDeleteEventInstance = () =>
+    confirmDelete((sendEmail) => deleteEventInstanceSubmit({ sendEmail }), false)
 
-	// How far the delete reaches used to be a submenu off the Delete item: three
-	// commands hidden behind a hover, each firing the moment it was touched. It
-	// is one question with three answers, so it is asked once, in the dialog
-	// every other recurring action asks it in.
-	const showScopeModal = ref(false)
+  const handleDeleteEvent = () =>
+    confirmDelete(
+      (sendEmail) => deleteEventSubmit({ sendEmail }),
+      !!calendarEvent.value.recurrence_id,
+    )
 
-	const requestDelete = () => {
-		if (calendarEvent.value.recurrence_id) showScopeModal.value = true
-		else handleDeleteEvent()
-	}
+  // Through the same prompt as the other two answers. Ending a series cancels the occurrences
+  // after it for everyone on them, so it asks about the cancellation email exactly as deleting
+  // one occurrence or the whole thing does — and a draft, which invited nobody, still asks
+  // nobody.
+  const handleDeleteFollowingEventInstances = () =>
+    confirmDelete((sendEmail) => deleteFollowingSubmit({ sendEmail }), true)
 
-	const deleteScopeModalProps = computed(() => ({
-		title: __('Delete repeating event'),
-		icon: 'lucide-trash-2',
-		iconTheme: 'red' as const,
-		// No line above the list: the title already says what is being deleted.
-		// Every answer is the server's to give here: an instance delete, a rule that ends
-		// earlier, the series itself. Editing has no equivalent of the middle one yet.
-		options: scopeOptions({ isFirst: isFirstOccurrence(calendarEvent.value) }),
-		confirmLabel: __('Delete'),
-		theme: 'red' as const,
-		loading: isDeleting.value,
-	}))
+  // How far the delete reaches used to be a submenu off the Delete item: three
+  // commands hidden behind a hover, each firing the moment it was touched. It
+  // is one question with three answers, so it is asked once, in the dialog
+  // every other recurring action asks it in.
+  const showScopeModal = ref(false)
 
-	const deleteScope = (scope: RecurringScope) => {
-		showScopeModal.value = false
-		if (scope === 'instance') handleDeleteEventInstance()
-		else if (scope === 'following') handleDeleteFollowingEventInstances()
-		else handleDeleteEvent()
-	}
+  const requestDelete = () => {
+    if (calendarEvent.value.recurrence_id) showScopeModal.value = true
+    else handleDeleteEvent()
+  }
 
-	// The one entry a host drops into its own dropdown. A recurring event asks
-	// which occurrences first; a one-off has nothing to ask.
-	// Red: the one item in these menus that does not come back. Every host of this
-	// option is a menu of ordinary actions, and the colour is what tells them apart
-	// before the word is read.
-	const deleteOption = computed(() => ({
-		label: __('Delete'),
-		icon: Trash2,
-		theme: 'red',
-		onClick: requestDelete,
-	}))
+  const deleteScopeModalProps = computed(() => ({
+    title: __('Delete repeating event'),
+    icon: 'lucide-trash-2',
+    iconTheme: 'red' as const,
+    // No line above the list: the title already says what is being deleted.
+    // Every answer is the server's to give here: an instance delete, a rule that ends
+    // earlier, the series itself. Editing has no equivalent of the middle one yet.
+    options: scopeOptions({ isFirst: isFirstOccurrence(calendarEvent.value) }),
+    confirmLabel: __('Delete'),
+    theme: 'red' as const,
+    loading: isDeleting.value,
+  }))
 
-	const NOTIFY_DELETE_OPTIONS = {
-		title: __('Notify Participants'),
-		icon: 'lucide-bell',
-		message: __('Send a cancellation email to let attendees know this event was deleted?'),
-	}
+  const deleteScope = (scope: RecurringScope) => {
+    showScopeModal.value = false
+    if (scope === 'instance') handleDeleteEventInstance()
+    else if (scope === 'following') handleDeleteFollowingEventInstances()
+    else handleDeleteEvent()
+  }
 
-	return {
-		deleteOption,
-		isDeleting,
-		showScopeModal,
-		deleteScopeModalProps,
-		deleteScope,
-		showNotifyModal,
-		pendingDelete,
-		NOTIFY_DELETE_OPTIONS,
-	}
+  // The one entry a host drops into its own dropdown. A recurring event asks
+  // which occurrences first; a one-off has nothing to ask.
+  // Red: the one item in these menus that does not come back. Every host of this
+  // option is a menu of ordinary actions, and the colour is what tells them apart
+  // before the word is read.
+  const deleteOption = computed(() => ({
+    label: __('Delete'),
+    icon: Trash2,
+    theme: 'red',
+    onClick: requestDelete,
+  }))
+
+  const NOTIFY_DELETE_OPTIONS = {
+    title: __('Notify Participants'),
+    icon: 'lucide-bell',
+    message: __('Send a cancellation email to let attendees know this event was deleted?'),
+  }
+
+  return {
+    deleteOption,
+    isDeleting,
+    showScopeModal,
+    deleteScopeModalProps,
+    deleteScope,
+    showNotifyModal,
+    pendingDelete,
+    NOTIFY_DELETE_OPTIONS,
+  }
 }

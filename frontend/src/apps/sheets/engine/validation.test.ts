@@ -1,10 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { createValidationEngine, checkRule } from './validation.js'
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import { checkRule, createValidationEngine } from './validation.js'
 
 describe('ValidationEngine', () => {
   let v
 
-  beforeEach(() => { v = createValidationEngine() })
+  beforeEach(() => {
+    v = createValidationEngine()
+  })
 
   it('stores and retrieves a list rule', () => {
     v.set('A1', { type: 'list', options: ['Yes', 'No'] }, 'Sheet1')

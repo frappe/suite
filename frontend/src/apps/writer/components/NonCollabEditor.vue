@@ -19,20 +19,24 @@
         autosave()
       }
     "
-    @save="save"
+    @save="(manual, html, onSuccess) => save(manual, html, onSuccess).catch(reportSaveError)"
     @cleanup="commentsDetail.cleanup"
   />
 </template>
 
 <script setup>
 import { debounce } from 'frappe-ui'
-import { computed, ref, provide } from 'vue'
+import { computed, provide, ref } from 'vue'
+
+import { reportSaveError } from '@/apps/writer/composables/saveError'
 import { useComments } from '@/apps/writer/composables/useYjs'
+
 import CoreEditor from './CoreEditor.vue'
 
 const showSettings = defineModel('showSettings')
-const edited = defineModel('dirty', { default: false })
-
+const edited = defineModel('dirty', {
+  default: false,
+})
 const props = defineProps({
   file: Object,
   document: Object,
@@ -41,28 +45,31 @@ const props = defineProps({
 })
 const rawContent = ref(props.document.doc.html)
 const contentReady = ref(!props.file.write)
-const emit = defineEmits(['saveComment', 'saveDocument'])
-
+defineEmits(['saveComment', 'saveDocument'])
 const textEditor = ref('textEditor')
 const editor = computed(() => {
   const editor = textEditor.value?.editor
   return editor
 })
 provide('editor', editor)
-defineExpose({ editor })
-
+defineExpose({
+  editor,
+})
 const commentsDetail = useComments(props.document, editor)
 const save = async (manual, html, onSuccess) => {
   const content = rawContent.value
-  await props.document.saveHtml.submit({ html: rawContent.value })
+  await props.document.saveHtml.run({
+    html: rawContent.value,
+  })
   if (rawContent.value === content) edited.value = false
   onSuccess?.()
 }
-const autosave = debounce(save, 5000)
+const autosave = debounce(() => {
+  void save().catch(reportSaveError)
+}, 5000)
 
 // Local saving with IndexedDB
 const db = ref(null)
-
 if (props.file.write) {
   const request = window.indexedDB.open('Writer', 1)
   request.onupgradeneeded = () => {
@@ -72,10 +79,9 @@ if (props.file.write) {
   request.onsuccess = (event) => {
     const database = event.target.result
     db.value = database
-    database
-      .transaction(['content'])
-      .objectStore('content')
-      .get(props.file.name).onsuccess = (val) => {
+    database.transaction(['content']).objectStore('content').get(props.file.name).onsuccess = (
+      val,
+    ) => {
       if (
         val.target.result?.val?.length > 20 &&
         val.target.result.saved > new Date(props.file.modified)

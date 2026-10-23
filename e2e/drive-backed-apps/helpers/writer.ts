@@ -1,55 +1,67 @@
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
-import { frappeData } from "../../shared/frappe";
+import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { createDocument, grantAccess, revokeAccess, ROLE, type DriveNode } from "./drive";
 
-export interface WriterFile {
-	name: string;
-	file_name: string;
-	content_docname: string;
-}
+/** The Drive content doctype that Writer documents are stored as. */
+const WRITER_DOCTYPE = "Writer Document";
 
 export function uniqueWriterTitle(runId: string, scenario: string): string {
 	return `E2E Writer ${scenario} ${runId} ${Date.now().toString(36)}`;
 }
 
-export async function createWriterDocument(
+/** A Writer document in the caller's Personal root, through Drive's `node_create` union. */
+export function createWriterDocument(
 	request: APIRequestContext,
 	title: string,
-): Promise<WriterFile> {
-	const response = await request.post(
-		"/api/method/suite.writer.api.docs.create_document",
-		{ form: { title } },
-	);
-	return frappeData<WriterFile>(response);
+	parent?: string,
+): Promise<DriveNode> {
+	return createDocument(request, title, WRITER_DOCTYPE, parent);
 }
 
+/**
+ * Grant `options.user` the highest role the flags name, or publish the
+ * document for reading when no user is named. No flag at all removes the grant.
+ */
 export async function shareWriterDocument(
 	request: APIRequestContext,
-	entityName: string,
+	node: string,
 	options: { user?: string; read: boolean; write?: boolean; comment?: boolean },
 ): Promise<void> {
-	const response = await request.post(
-		"/api/method/suite.drive.api.files.update_access",
-		{
-			form: {
-				entity_name: entityName,
-				method: "share",
-				user: options.user ?? "",
-				read: options.read ? 1 : 0,
-				write: options.write ? 1 : 0,
-				comment: options.comment ? 1 : 0,
-			},
-		},
-	);
-	if (!response.ok()) {
-		throw new Error(`Sharing Writer document failed: ${await response.text()}`);
-	}
+	const principal = options.user || "$PUBLIC";
+	const role = options.write
+		? ROLE.EDIT
+		: options.comment
+			? ROLE.COMMENT
+			: options.read
+				? ROLE.READ
+				: ROLE.NONE;
+	if (role === ROLE.NONE) await revokeAccess(request, node, principal);
+	else await grantAccess(request, node, principal, role);
 }
 
-export async function openWriterDocument(page: Page, id: string): Promise<void> {
-	await page.goto(`/writer/w/${id}`);
+/** Open the document at `/d/<node>` and wait for its editor. */
+export async function openWriterDocument(page: Page, node: string): Promise<void> {
+	await page.goto(`/d/${node}`);
 	await expect(writerEditor(page)).toBeVisible();
 }
 
-export function writerEditor(page: Page) {
+export function writerEditor(page: Page): Locator {
 	return page.getByRole("textbox", { name: "Document editor" });
+}
+
+/** The document title field in the header; renames on Enter, reverts on Escape. */
+export function documentTitle(page: Page): Locator {
+	return page.getByRole("textbox", { name: "Document title" });
+}
+
+export function documentMenuButton(page: Page): Locator {
+	return page.getByRole("button", { name: "More document actions" });
+}
+
+/** Type `content` into the editor and save with the keyboard shortcut. */
+export async function typeAndSave(page: Page, content: string): Promise<void> {
+	const editor = writerEditor(page);
+	await editor.click();
+	await page.keyboard.type(content);
+	await page.keyboard.press("ControlOrMeta+s");
+	await expect(page.getByText("Saved document", { exact: true })).toBeVisible();
 }

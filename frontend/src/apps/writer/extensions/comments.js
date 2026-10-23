@@ -1,9 +1,9 @@
 import { Extension } from '@tiptap/core'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { relativePositionToAbsolutePosition, ySyncPluginKey } from '@tiptap/y-tiptap'
-
 import * as Y from 'yjs'
+
 const commentPluginKey = new PluginKey('comment-anchors')
 
 export const rebuild = (editor) => {

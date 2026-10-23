@@ -15,32 +15,32 @@ import { onMounted, onUnmounted, ref } from 'vue'
  * pane to the window put its toolbar straight back behind the keyboard. Treat these as load-bearing.
  */
 export const useKeyboardInsets = () => {
-	const top = ref(0)
-	/** The visible height — what's left of the screen once the keyboard has taken its share. */
-	const height = ref(window.innerHeight)
+  const top = ref(0)
+  /** The visible height — what's left of the screen once the keyboard has taken its share. */
+  const height = ref(window.innerHeight)
 
-	const update = () => {
-		const viewport = window.visualViewport
-		if (!viewport) return
+  const update = () => {
+    const viewport = window.visualViewport
+    if (!viewport) return
 
-		height.value = viewport.height
-		top.value = viewport.offsetTop
-	}
+    height.value = viewport.height
+    top.value = viewport.offsetTop
+  }
 
-	onMounted(() => {
-		update()
-		// `resize` is the keyboard opening and closing; `scroll` is iOS panning what's left of the
-		// viewport. Missing the second is what lets a pane drift off the top of the screen.
-		window.visualViewport?.addEventListener('resize', update)
-		window.visualViewport?.addEventListener('scroll', update)
-		window.addEventListener('resize', update)
-	})
+  onMounted(() => {
+    update()
+    // `resize` is the keyboard opening and closing; `scroll` is iOS panning what's left of the
+    // viewport. Missing the second is what lets a pane drift off the top of the screen.
+    window.visualViewport?.addEventListener('resize', update)
+    window.visualViewport?.addEventListener('scroll', update)
+    window.addEventListener('resize', update)
+  })
 
-	onUnmounted(() => {
-		window.visualViewport?.removeEventListener('resize', update)
-		window.visualViewport?.removeEventListener('scroll', update)
-		window.removeEventListener('resize', update)
-	})
+  onUnmounted(() => {
+    window.visualViewport?.removeEventListener('resize', update)
+    window.visualViewport?.removeEventListener('scroll', update)
+    window.removeEventListener('resize', update)
+  })
 
-	return { top, height }
+  return { top, height }
 }

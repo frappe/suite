@@ -1,0 +1,477 @@
+// IronCalc-backed workbook adapter. Translates the command schema in
+// commands.ts into calls on @ironcalc/wasm's Model.
+//
+// Callers must initialise the wasm module first (init / initSync from
+// '@ironcalc/wasm'); createWorkbook assumes it is ready.
+//
+// Commands address sheets by name; IronCalc addresses them by index. Names
+// resolve against the live worksheet list on every call, so the mapping can
+// never drift after sheet ops or undo/redo.
+
+import { Model, type ExtendedCellStyle } from '@ironcalc/wasm'
+
+import { CommandTypes, validateCommand, type Command, type CommandType } from './commands.js'
+import { isDateDifference, isDateFormat } from './date-diff.js'
+import { MAX_ROWS } from './limits.js'
+import { percentFormatFor } from './percent-format.js'
+import { typedCurrency, withSymbol } from './typed-currency.js'
+
+const LANGUAGE = 'en'
+
+export interface WorkbookErrorOptions {
+  command?: unknown
+  cause?: unknown
+}
+
+export class WorkbookError extends Error {
+  // The command that failed, as received (it may not have passed validation).
+  command: unknown
+
+  constructor(message: string, { command = null, cause = null }: WorkbookErrorOptions = {}) {
+    super(message, { cause })
+    this.name = 'WorkbookError'
+    this.command = command
+  }
+}
+
+// IronCalc throws Error objects or plain strings across the wasm boundary.
+function messageOf(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message
+  return String(e)
+}
+
+function asWorkbookError(e: unknown, command: unknown): WorkbookError {
+  if (e instanceof WorkbookError) {
+    if (command && !e.command) e.command = command
+    return e
+  }
+  return new WorkbookError(messageOf(e), { command, cause: e })
+}
+
+// Commands whose translation spans more than one engine call. A failure
+// halfway through would leave partial state, so apply() snapshots first
+// and restores on error.
+const MULTI_CALL: ReadonlySet<CommandType> = new Set<CommandType>([
+  CommandTypes.batch,
+  CommandTypes.setFrozen,
+  CommandTypes.setRangeStyle,
+  CommandTypes.addSheet,
+  CommandTypes.duplicateSheet,
+  CommandTypes.setDefinedName,
+])
+
+export interface CreateWorkbookOptions {
+  loadBytes?: Uint8Array | null
+  name?: string
+  locale?: string
+  timezone?: string
+  /** The version to count on from, so a restore keeps versions increasing. */
+  startVersion?: number
+}
+
+export interface VersionResult {
+  version: number
+}
+
+export interface FoundCell {
+  row: number
+  col: number
+  input: string
+}
+
+export interface RangeStats {
+  /** Non-empty cells. */
+  count: number
+  /** Cells holding a number (a formula result included). */
+  numCount: number
+  sum: number
+}
+
+// IronCalc's cell type for a number (getCellType).
+const NUMBER_CELL = 1
+
+// A number cell's value from its shown text: IronCalc exposes no raw value,
+// so drop grouping and currency marks and read a trailing % as /100.
+export function numberFromShown(shown: string): number {
+  const t = shown.replace(/[,\s$€£¥₹]/g, '')
+  return t.endsWith('%') ? parseFloat(t) / 100 : parseFloat(t)
+}
+
+export interface Workbook {
+  apply(cmd: unknown): VersionResult
+  undo(): VersionResult
+  redo(): VersionResult
+  canUndo(): boolean
+  canRedo(): boolean
+  getDisplayValue(sheet: string, row: number, col: number): string
+  /** The editable string: the formula (with '=') or the raw value. */
+  getInput(sheet: string, row: number, col: number): string
+  getStyle(sheet: string, row: number, col: number): ExtendedCellStyle
+  /** Whether the cell holds a number (a formula result included). */
+  isNumber(sheet: string, row: number, col: number): boolean
+  getSheets(): string[]
+  getFrozen(sheet: string): { rows: number; cols: number }
+  getColumnWidth(sheet: string, col: number): number
+  getRowHeight(sheet: string, row: number): number
+  /**
+   * Cells whose input contains `query` (case-insensitive), in reading
+   * order (row by row), at most `limit` of them.
+   */
+  findInputs(sheet: string, query: string, limit: number): FoundCell[]
+  /** Every non-empty cell as flat [row, col, row, col, …] (1-based), row by row. */
+  usedCells(sheet: string): number[]
+  /** Count / numeric count / sum over a range (1-based, inclusive). */
+  rangeStats(sheet: string, r1: number, c1: number, r2: number, c2: number): RangeStats
+  toBytes(): Uint8Array
+  getVersion(): number
+}
+
+export function createWorkbook({
+  loadBytes = null,
+  name = 'Workbook',
+  locale = 'en',
+  timezone = 'UTC',
+  startVersion = 0,
+}: CreateWorkbookOptions = {}): Workbook {
+  let model: Model
+  try {
+    model = loadBytes
+      ? Model.fromBytes(loadBytes, LANGUAGE)
+      : new Model(name, locale, timezone, LANGUAGE)
+  } catch (e) {
+    throw asWorkbookError(e, null)
+  }
+
+  let version = startVersion
+
+  function sheetIndex(sheetName: string): number {
+    const i = model.getWorksheetsProperties().findIndex((p) => p.name === sheetName)
+    if (i === -1) throw new WorkbookError(`unknown sheet "${sheetName}"`)
+    return i
+  }
+
+  function scopeIndex(scope: string | null | undefined): number | null {
+    return scope == null ? null : sheetIndex(scope)
+  }
+
+  function read<T>(fn: () => T): T {
+    try {
+      return fn()
+    } catch (e) {
+      throw asWorkbookError(e, null)
+    }
+  }
+
+  // Rebuilding from bytes resets the native undo history. Only the failure
+  // path of a multi-call command pays that cost, and a failed command is a
+  // protocol error, so this is acceptable.
+  function restore(bytes: Uint8Array): void {
+    try {
+      const fresh = Model.fromBytes(bytes, LANGUAGE)
+      model.free()
+      model = fresh
+    } catch {
+      // Keep the current model if the restore itself fails.
+    }
+  }
+
+  function apply(input: unknown): VersionResult {
+    let cmd: Command
+    try {
+      cmd = validateCommand(input)
+    } catch (e) {
+      throw asWorkbookError(e, input)
+    }
+    const snapshot = MULTI_CALL.has(cmd.type) ? model.toBytes() : null
+    try {
+      applyOne(cmd)
+    } catch (e) {
+      if (snapshot) restore(snapshot)
+      throw asWorkbookError(e, cmd)
+    }
+    version += 1
+    return { version }
+  }
+
+  // A typed input, as IronCalc's setUserInput, plus the formats IronCalc
+  // gets wrong (Google Sheets is the reference):
+  //   - a ₹ or £ amount is a number with that currency (typed-currency.ts);
+  //   - a formula scaling one percent cell by plain numbers shows a percent
+  //     (percent-format.ts);
+  //   - one date minus another shows the days between (date-diff.ts).
+  function setInput(si: number, row: number, col: number, input: string): void {
+    const area = { sheet: si, row, column: col, width: 1, height: 1 }
+    const numFmt = (sheet: string | null, r: number, c: number) =>
+      model.getCellStyle(sheet == null ? si : sheetIndex(sheet), r, c).style.num_fmt
+    const currency = typedCurrency(input)
+    model.setUserInput(si, row, col, currency ? currency.input : input)
+    const fmt = numFmt(null, row, col)
+    if (currency) {
+      if (fmt.includes('$'))
+        model.updateRangeStyle(area, 'num_fmt', withSymbol(fmt, currency.symbol))
+      return
+    }
+    if (!input.startsWith('=')) return
+    if (/^general$/i.test(fmt)) {
+      // Only a cell IronCalc left unformatted: a format it inferred stays.
+      const percent = percentFormatFor(input, numFmt)
+      if (percent) model.updateRangeStyle(area, 'num_fmt', percent)
+    } else if (isDateFormat(fmt) && isDateDifference(input, numFmt)) {
+      model.updateRangeStyle(area, 'num_fmt', 'general')
+    }
+  }
+
+  function applyOne(cmd: Command): void {
+    switch (cmd.type) {
+      case CommandTypes.setInput: {
+        const p = cmd.payload
+        setInput(sheetIndex(p.sheet), p.row, p.col, p.input)
+        return
+      }
+      // setUserArrayFormula pins the result to a fixed width × height
+      // (CSE-style array). Dynamic-array spills go through setInput.
+      case CommandTypes.setArrayFormula: {
+        const p = cmd.payload
+        model.setUserArrayFormula(
+          sheetIndex(p.sheet),
+          p.row,
+          p.col,
+          p.width ?? 1,
+          p.height ?? 1,
+          p.input,
+        )
+        return
+      }
+      case CommandTypes.clearContents: {
+        const {
+          sheet,
+          range: { r1, c1, r2, c2 },
+        } = cmd.payload
+        model.rangeClearContents(sheetIndex(sheet), r1, c1, r2, c2)
+        return
+      }
+      // updateRangeStyle takes one (path, value) string pair per call,
+      // e.g. ('font.b', 'true') or ('fill.color', '#FFEE00').
+      case CommandTypes.setRangeStyle: {
+        const {
+          sheet,
+          range: { r1, c1, r2, c2 },
+          style,
+        } = cmd.payload
+        const area = {
+          sheet: sheetIndex(sheet),
+          row: r1,
+          column: c1,
+          width: c2 - c1 + 1,
+          height: r2 - r1 + 1,
+        }
+        for (const [path, value] of Object.entries(style)) {
+          model.updateRangeStyle(area, path, String(value))
+        }
+        return
+      }
+      case CommandTypes.setColumnsWidth: {
+        const p = cmd.payload
+        model.setColumnsWidth(sheetIndex(p.sheet), p.c1, p.c2, p.width)
+        return
+      }
+      case CommandTypes.setRowsHeight: {
+        const p = cmd.payload
+        model.setRowsHeight(sheetIndex(p.sheet), p.r1, p.r2, p.height)
+        return
+      }
+      case CommandTypes.insertRows: {
+        const p = cmd.payload
+        model.insertRows(sheetIndex(p.sheet), p.row, p.count)
+        return
+      }
+      case CommandTypes.deleteRows: {
+        const p = cmd.payload
+        model.deleteRows(sheetIndex(p.sheet), p.row, p.count)
+        return
+      }
+      case CommandTypes.insertColumns: {
+        const p = cmd.payload
+        model.insertColumns(sheetIndex(p.sheet), p.col, p.count)
+        return
+      }
+      case CommandTypes.deleteColumns: {
+        const p = cmd.payload
+        model.deleteColumns(sheetIndex(p.sheet), p.col, p.count)
+        return
+      }
+      case CommandTypes.moveRows: {
+        const p = cmd.payload
+        model.moveRows(sheetIndex(p.sheet), p.row, p.count, p.delta)
+        return
+      }
+      case CommandTypes.moveColumns: {
+        const p = cmd.payload
+        model.moveColumns(sheetIndex(p.sheet), p.col, p.count, p.delta)
+        return
+      }
+      case CommandTypes.setFrozen: {
+        const p = cmd.payload
+        const idx = sheetIndex(p.sheet)
+        model.setFrozenRowsCount(idx, p.rows)
+        model.setFrozenColumnsCount(idx, p.cols)
+        return
+      }
+      // newSheet() takes no name; the sheet is appended, then renamed.
+      case CommandTypes.addSheet: {
+        model.newSheet()
+        if (cmd.payload.name) {
+          model.renameSheet(model.getWorksheetsProperties().length - 1, cmd.payload.name)
+        }
+        return
+      }
+      case CommandTypes.deleteSheet:
+        model.deleteSheet(sheetIndex(cmd.payload.sheet))
+        return
+      case CommandTypes.renameSheet:
+        model.renameSheet(sheetIndex(cmd.payload.sheet), cmd.payload.name)
+        return
+      // IronCalc names the copy itself; find it and rename it when asked.
+      case CommandTypes.duplicateSheet: {
+        const p = cmd.payload
+        const before = new Set(model.getWorksheetsProperties().map((s) => s.name))
+        model.duplicateSheet(sheetIndex(p.sheet))
+        if (p.name) {
+          const i = model.getWorksheetsProperties().findIndex((s) => !before.has(s.name))
+          model.renameSheet(i, p.name)
+        }
+        return
+      }
+      case CommandTypes.moveSheet:
+        model.moveSheet(sheetIndex(cmd.payload.sheet), cmd.payload.index)
+        return
+      // Upsert: IronCalc splits create/update, the command does not.
+      case CommandTypes.setDefinedName: {
+        const p = cmd.payload
+        const scope = scopeIndex(p.scope)
+        const existing = model
+          .getDefinedNameList()
+          .find((d) => d.name === p.name && (d.scope ?? null) === scope)
+        if (existing) model.updateDefinedName(p.name, scope, p.name, scope, p.formula)
+        else model.newDefinedName(p.name, scope, p.formula)
+        return
+      }
+      case CommandTypes.deleteDefinedName:
+        model.deleteDefinedName(cmd.payload.name, scopeIndex(cmd.payload.scope))
+        return
+      case CommandTypes.batch: {
+        model.pauseEvaluation()
+        try {
+          for (const sub of cmd.payload.commands) applyOne(sub)
+        } finally {
+          model.resumeEvaluation()
+        }
+        model.evaluate()
+        return
+      }
+    }
+  }
+
+  // Undo/redo are local (native IronCalc). They mutate state, so they bump
+  // the version like any applied command. A no-op returns the version as is.
+  function undo(): VersionResult {
+    if (!read(() => model.canUndo())) return { version }
+    read(() => model.undo())
+    version += 1
+    return { version }
+  }
+
+  function redo(): VersionResult {
+    if (!read(() => model.canRedo())) return { version }
+    read(() => model.redo())
+    version += 1
+    return { version }
+  }
+
+  return {
+    apply,
+    undo,
+    redo,
+    canUndo: () => read(() => model.canUndo()),
+    canRedo: () => read(() => model.canRedo()),
+    getDisplayValue: (sheet, row, col) =>
+      read(() => model.getFormattedCellValue(sheetIndex(sheet), row, col)),
+    getInput: (sheet, row, col) => read(() => model.getCellContent(sheetIndex(sheet), row, col)),
+    getStyle: (sheet, row, col) => read(() => model.getCellStyle(sheetIndex(sheet), row, col)),
+    // An empty cell reports the number type too.
+    isNumber: (sheet, row, col) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        return (
+          model.getCellContent(idx, row, col) !== '' &&
+          model.getCellType(idx, row, col) === NUMBER_CELL
+        )
+      }),
+    getSheets: () => read(() => model.getWorksheetsProperties().map((p) => p.name)),
+    getFrozen: (sheet) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        return { rows: model.getFrozenRowsCount(idx), cols: model.getFrozenColumnsCount(idx) }
+      }),
+    getColumnWidth: (sheet, col) => read(() => model.getColumnWidth(sheetIndex(sheet), col)),
+    getRowHeight: (sheet, row) => read(() => model.getRowHeight(sheetIndex(sheet), row)),
+    // IronCalc has no "all cells" call; asking each row for its used
+    // columns is cheap (about 130 ms for every row of a sheet).
+    findInputs: (sheet, query, limit) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const q = query.toLowerCase()
+        const found: FoundCell[] = []
+        if (!q) return found
+        for (let row = 1; row <= MAX_ROWS && found.length < limit; row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            const input = model.getCellContent(idx, row, col)
+            if (input.toLowerCase().includes(q)) found.push({ row, col, input })
+            if (found.length >= limit) break
+          }
+        }
+        return found
+      }),
+    usedCells: (sheet) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const out: number[] = []
+        for (let row = 1; row <= MAX_ROWS; row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            // A styled but empty cell is listed too.
+            if (model.getCellContent(idx, row, col) !== '') out.push(row, col)
+          }
+        }
+        return out
+      }),
+    // The status bar's Count / Sum / Avg. Same row scan as findInputs, so a
+    // whole-column selection costs the used rows, not a million reads.
+    rangeStats: (sheet, r1, c1, r2, c2) =>
+      read(() => {
+        const idx = sheetIndex(sheet)
+        const stats: RangeStats = { count: 0, numCount: 0, sum: 0 }
+        for (let row = Math.max(1, r1); row <= Math.min(r2, MAX_ROWS); row++) {
+          for (const col of model.getColumnsWithData(idx, row)) {
+            // A styled but empty cell is listed too.
+            if (col < c1 || col > c2 || model.getCellContent(idx, row, col) === '') continue
+            stats.count++
+            if (model.getCellType(idx, row, col) !== NUMBER_CELL) continue
+            const shown = model.getFormattedCellValue(idx, row, col)
+            // A date counts but isn't added up: its shown 2026-01-15 read
+            // as the number 2026 (ISSUES #67). Only text that looks like a
+            // date pays for the style read.
+            const dateLike = /\d[-/]\d|[A-Za-z]{3}/.test(shown)
+            if (dateLike && isDateFormat(model.getCellStyle(idx, row, col).style.num_fmt)) continue
+            const n = numberFromShown(shown)
+            if (Number.isFinite(n)) {
+              stats.numCount++
+              stats.sum += n
+            }
+          }
+        }
+        return stats
+      }),
+    toBytes: () => read(() => model.toBytes()),
+    getVersion: () => version,
+  }
+}

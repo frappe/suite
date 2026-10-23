@@ -47,8 +47,17 @@ test("mobile tab bar reflects added tabs and switches the active panel", async (
 
 	// First tab wraps the doc; the bar (ToCMobile) mounts here (CSS-hidden on
 	// desktop). Adding the second tab afterwards is the live-update case.
+	const panels = page.locator("[data-tab-id]");
 	await page.getByRole("button", { name: "Create tab" }).click();
+	await expect(panels).toHaveCount(1);
 	await page.getByRole("button", { name: "Add tab" }).click();
+	await expect(panels).toHaveCount(2);
+	// createTab activates the new tab a tick later; let that settle before the layout changes.
+	const ids = await panels.evaluateAll((els) =>
+		els.map((el) => el.getAttribute("data-tab-id")),
+	);
+	await expect(page.locator(`[data-tab-id="${ids[1]}"]`)).toBeVisible();
+	await expect(page.locator(`[data-tab-id="${ids[0]}"]`)).toBeHidden();
 
 	// Switch to a phone viewport: the bar becomes visible. Only ToCMobile renders
 	// frappe-ui TabButtons (data-slot="tab-button"), so these are its buttons.
@@ -58,12 +67,7 @@ test("mobile tab bar reflects added tabs and switches the active panel", async (
 	const barButtons = page.locator('[data-slot="tab-button"]');
 	await expect(barButtons).toHaveCount(2);
 
-	// Exactly one tab panel is shown; the freshly-added (second) tab is active.
-	const panels = page.locator("[data-tab-id]");
-	await expect(panels).toHaveCount(2);
-	const ids = await panels.evaluateAll((els) =>
-		els.map((el) => el.getAttribute("data-tab-id")),
-	);
+	// Exactly one tab panel is shown; the freshly-added (second) tab stays active.
 	await expect(page.locator(`[data-tab-id="${ids[1]}"]`)).toBeVisible();
 	await expect(page.locator(`[data-tab-id="${ids[0]}"]`)).toBeHidden();
 

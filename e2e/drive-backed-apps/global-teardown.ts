@@ -2,6 +2,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { request, type FullConfig } from "@playwright/test";
 import { loginViaApi, type Credentials } from "../shared/auth";
+import { testApiUrl } from "./global-setup";
 
 const statePath = resolve(__dirname, ".state/run.json");
 const admin: Credentials = {
@@ -17,7 +18,7 @@ export default async function globalTeardown(config: FullConfig): Promise<void> 
 		const { run_id } = JSON.parse(readFileSync(statePath, "utf8")) as {
 			run_id: string;
 		};
-		const api = await request.newContext({ baseURL });
+		const api = await request.newContext({ baseURL: testApiUrl(baseURL) });
 		await loginViaApi(api, admin);
 		const response = await api.post(
 			"/api/method/suite.drive.e2e_api.cleanup_users",

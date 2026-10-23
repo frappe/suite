@@ -66,6 +66,10 @@ def authenticate(request: Request) -> str:
     if frappe.get_system_settings("disable_user_pass_login"):
         raise Forbidden("Password login is disabled on this site, so WebDAV is unavailable.")
 
+    from suite import mail
+
+    user = mail.resolve_business_user(user) or user
+
     canonical = _verify_cached(user, password)
     verified_now = False
     if not canonical:
@@ -114,7 +118,7 @@ def _parse_basic(header: str | None) -> tuple[str, str] | None:
         return None
     try:
         raw = base64.b64decode(token.strip())
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None
     try:
         decoded = raw.decode("utf-8")
@@ -225,7 +229,7 @@ def _verify_cached(user: str, password: str) -> str | None:
     try:
         salt_hex, digest_hex, fingerprint, canonical = payload.split(":", 3)
         digest = hmac.new(bytes.fromhex(salt_hex), password.encode("utf-8"), hashlib.sha256)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
     if not hmac.compare_digest(digest.hexdigest(), digest_hex):
         return None

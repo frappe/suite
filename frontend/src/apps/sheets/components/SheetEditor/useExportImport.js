@@ -1,31 +1,23 @@
-import { colLabel, parseCellId } from '../../utils/cells.js'
-import { toXlsxCell, fromXlsxCell, mergesToXlsx, mergesFromXlsx } from '../../engine/xlsx-io.js'
+import { renameSheetsInFormula } from '../../engine/formula-adjust.js'
+import {
+  fromXlsxCell,
+  mergesFromXlsx,
+  mergesToXlsx,
+  numFmtFromEngine,
+  numFmtToZ,
+  toXlsxCell,
+} from '../../engine/xlsx-io.js'
+import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
+import { dateSerialFromShown, parseNumberFmt } from '../../utils/format-number.js'
 
 // ── private helpers ────────────────────────────────────────────────────────────
 
-function _sheetToAoa(sheetName, sheet) {
-  const data = sheet.getRawData(sheetName)
-  let maxR = 0, maxC = 0
-  for (const id of Object.keys(data)) {
-    const p = parseCellId(id)
-    if (!p) continue
-    if (p.row > maxR) maxR = p.row
-    if (p.col > maxC) maxC = p.col
-  }
-  const rows = []
-  for (let r = 0; r <= maxR; r++) {
-    const row = []
-    for (let c = 0; c <= maxC; c++)
-      row.push(sheet.getDisplayValue(colLabel(c) + (r + 1), sheetName) ?? '')
-    rows.push(row)
-  }
-  return rows
-}
-
 function _esc(v) {
-  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
-
 
 function _parseCSV(text) {
   const rows = []
@@ -40,9 +32,13 @@ function _parseCSV(text) {
         i++
         let cell = ''
         while (i < s.length) {
-          if (s[i] === '"' && s[i + 1] === '"') { cell += '"'; i += 2 }
-          else if (s[i] === '"') { i++; break }
-          else cell += s[i++]
+          if (s[i] === '"' && s[i + 1] === '"') {
+            cell += '"'
+            i += 2
+          } else if (s[i] === '"') {
+            i++
+            break
+          } else cell += s[i++]
         }
         row.push(cell)
       } else {
@@ -51,7 +47,10 @@ function _parseCSV(text) {
         while (i < s.length && s[i] !== ',' && s[i] !== '\n') i++
         row.push(s.slice(start, i))
       }
-      if (i >= s.length || s[i] === '\n') { i++; break }
+      if (i >= s.length || s[i] === '\n') {
+        i++
+        break
+      }
       i++ // skip ','
     }
     rows.push(row)
@@ -59,74 +58,103 @@ function _parseCSV(text) {
   return rows
 }
 
+// The Excel code of one of our date, time or datetime formats, else null.
+function _dateZ(fmt) {
+  return ['date', 'time', 'datetime'].includes(parseNumberFmt(fmt).type) ? numFmtToZ(fmt) : null
+}
+
 // ── composable ────────────────────────────────────────────────────────────────
 
 /**
  * @param {object} opts
- * @param {() => object}  opts.getSheet        – returns the sheet engine
+ * @param {object} opts.cells – the workbook, through IronCalc:
+ *   readSheet(sn, { numFmts }) → Promise<{ inputs, displays, numFmts? }>, rows
+ *     from A1 to the last used cell ([] when the sheet is empty);
+ *   write(sn, map) writes a {cellId: input} map; clear(sn) → Promise, empties
+ *   the sheet's cells; addSheet(name) adds a sheet; idle() resolves once all
+ *   of it applied.
+ * @param {() => string[]} opts.sheetNames – the tab list
  * @param {() => string}  opts.getCurrentTitle – current document title
- * @param {() => object|null} opts.getGrid     – returns the canvas grid or null
- * @param {(op: object) => void} opts.queueOp  – enqueue an operation
  * @param {() => void}    opts.repopulateGrid  – full canvas repaint
  * @param {() => void}    opts.syncFlags       – sync undo/redo button state
  * @param {import('vue').Ref<boolean>} opts.isDirty – dirty flag ref
  */
 export function useExportImport({
-  getSheet,
+  cells,
+  sheetNames,
+  currentSheet,
   getCurrentTitle,
-  getGrid,
   getFormats,
   getMerge,
-  queueOp,
   repopulateGrid,
   syncNames,
   switchSheet,
   syncFlags,
   isDirty,
 }) {
-  function _diffRefs(before, after) {
-    const ids = new Set([...Object.keys(before || {}), ...Object.keys(after || {})])
-    return [...ids].filter(id => (before?.[id]) !== (after?.[id]))
-  }
-
   // ── exports ──────────────────────────────────────────────────────────────────
 
-  function exportCSV() {
-    const sheet = getSheet()
-    const rows  = _sheetToAoa(sheet.getCurrentSheet(), sheet)
-    const csv   = rows.map(row => row.map(v => {
-      const s = String(v ?? '')
-      return s.includes(',') || s.includes('"') || s.includes('\n')
-        ? `"${s.replace(/"/g, '""')}"`
-        : s
-    }).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
+  function _download(blob, ext) {
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(blob),
-      download: `${getCurrentTitle() || 'sheet'}.csv`,
+      download: `${getCurrentTitle() || 'sheet'}.${ext}`,
     })
     a.click()
+  }
+
+  async function exportCSV() {
+    const { displays } = await cells.readSheet(currentSheet.value)
+    const csv = displays
+      .map((row) =>
+        row
+          .map((v) => {
+            const s = String(v ?? '')
+            return s.includes(',') || s.includes('"') || s.includes('\n')
+              ? `"${s.replace(/"/g, '""')}"`
+              : s
+          })
+          .join(','),
+      )
+      .join('\n')
+    _download(new Blob([csv], { type: 'text/csv' }), 'csv')
   }
 
   // Build a SheetJS worksheet from one sub-sheet, preserving value types,
   // formulas (with their computed value), number formats, and merges — the
   // lossy display-string path only round-tripped visible text.
-  function _buildWorksheet(sheet, formats, merge, sn) {
-    const data = sheet.getRawData(sn)
+  async function _buildWorksheet(formats, merge, sn) {
+    // numFmts: IronCalc's own format of a typed $1.50 or 15%, used where
+    // the side store has none.
+    const { inputs, displays, numFmts } = await cells.readSheet(sn, { numFmts: true })
     const ws = {}
-    let maxR = 0, maxC = 0
-    for (const [id, raw] of Object.entries(data)) {
-      const p = parseCellId(id)
-      if (!p) continue
-      const isFormula = typeof raw === 'string' && raw.startsWith('=')
-      const computed  = isFormula ? sheet.getCellValue(id, sn) : null
-      const fmt  = formats?.get(id, sn)?.numberFormat || ''
-      const cell = toXlsxCell(raw, computed, fmt)
-      if (!cell) continue
-      ws[id] = cell
-      if (p.row > maxR) maxR = p.row
-      if (p.col > maxC) maxC = p.col
-    }
+    let maxR = 0,
+      maxC = 0
+    inputs.forEach((row, r) =>
+      row.forEach((raw, c) => {
+        if (raw === '') return
+        const id = cellId(r, c)
+        const computed = raw.startsWith('=') ? displays[r][c] : null
+        const ours = formats?.get(id, sn)?.numberFormat
+        const engineCode = numFmts?.[r]?.[c]
+        // A date IronCalc formatted (a typed 2025-12-09, =TODAY()) goes out
+        // as its day serial with IronCalc's code, which is Excel's grammar,
+        // or with ours when the toolbar gave it a date format.
+        const oursZ = ours ? _dateZ(ours) : null
+        const serial = ours && !oursZ ? NaN : dateSerialFromShown(displays[r][c], engineCode)
+        const cell = !isNaN(serial)
+          ? {
+              ...(raw.startsWith('=') && { f: raw.slice(1) }),
+              t: 'n',
+              v: serial,
+              z: oursZ || engineCode,
+            }
+          : toXlsxCell(raw, computed, ours || numFmtFromEngine(engineCode) || '')
+        if (!cell) return
+        ws[id] = cell
+        if (r > maxR) maxR = r
+        if (c > maxC) maxC = c
+      }),
+    )
     ws['!ref'] = `A1:${colLabel(maxC)}${maxR + 1}`
     const merges = merge ? mergesToXlsx(merge.snapshot()?.[sn]?.masterMap) : []
     if (merges.length) ws['!merges'] = merges
@@ -134,14 +162,13 @@ export function useExportImport({
   }
 
   async function exportXLSX() {
-    const sheet   = getSheet()
     const formats = getFormats?.()
-    const merge   = getMerge?.()
+    const merge = getMerge?.()
     const { utils, writeFile } = await import('xlsx')
     const wb = utils.book_new()
     const used = new Set()
-    for (const sn of sheet.getSheetNames()) {
-      const ws = _buildWorksheet(sheet, formats, merge, sn)
+    for (const sn of sheetNames()) {
+      const ws = await _buildWorksheet(formats, merge, sn)
       utils.book_append_sheet(wb, ws, _excelSheetName(sn, used))
     }
     writeFile(wb, `${getCurrentTitle() || 'sheet'}.xlsx`)
@@ -150,8 +177,13 @@ export function useExportImport({
   // Excel caps sheet names at 31 chars, bans []:*?/\ and duplicates. Coerce to
   // a safe, unique name so book_append_sheet never throws mid-export.
   function _excelSheetName(name, used) {
-    let base = String(name || 'Sheet').replace(/[[\]:*?/\\]/g, ' ').slice(0, 31).trim() || 'Sheet'
-    let out = base, n = 1
+    let base =
+      String(name || 'Sheet')
+        .replace(/[[\]:*?/\\]/g, ' ')
+        .slice(0, 31)
+        .trim() || 'Sheet'
+    let out = base,
+      n = 1
     while (used.has(out.toLowerCase())) {
       const suffix = ` (${++n})`
       out = base.slice(0, 31 - suffix.length) + suffix
@@ -160,14 +192,22 @@ export function useExportImport({
     return out
   }
 
-  function exportPDF() {
-    const sheet = getSheet()
-    const sn    = sheet.getCurrentSheet()
-    const rows  = _sheetToAoa(sn, sheet)
-    if (!rows.length) return
-    const thead = `<tr>${rows[0].map(c => `<th>${_esc(c)}</th>`).join('')}</tr>`
-    const tbody = rows.slice(1)
-      .map(r => `<tr>${r.map(c => `<td>${_esc(c)}</td>`).join('')}</tr>`).join('')
+  async function exportPDF() {
+    const sn = currentSheet.value
+    // Open the window before the read: a popup opened after an await is no
+    // longer tied to the click, and browsers block it.
+    const win = window.open('', '_blank', 'width=800,height=600')
+    if (!win) return
+    const { displays: rows } = await cells.readSheet(sn)
+    if (!rows.length) {
+      win.close()
+      return
+    }
+    const thead = `<tr>${rows[0].map((c) => `<th>${_esc(c)}</th>`).join('')}</tr>`
+    const tbody = rows
+      .slice(1)
+      .map((r) => `<tr>${r.map((c) => `<td>${_esc(c)}</td>`).join('')}</tr>`)
+      .join('')
     const title = getCurrentTitle()
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>${_esc(title)}</title>
@@ -181,8 +221,6 @@ export function useExportImport({
     </style></head>
     <body><h2>${_esc(title)} — ${_esc(sn)}</h2>
     <table><thead>${thead}</thead><tbody>${tbody}</tbody></table></body></html>`
-    const win = window.open('', '_blank', 'width=800,height=600')
-    if (!win) return
     win.document.write(html)
     win.document.close()
     win.focus()
@@ -191,36 +229,33 @@ export function useExportImport({
 
   // ── imports ──────────────────────────────────────────────────────────────────
   //
-  // Large imports (50 MB CSV, 100k+ rows) used to freeze the main thread for
-  // tens of seconds — Chrome would put up its "Page Unresponsive" dialog.
-  // Three changes fix that:
-  //   1) Build a plain {cellId: value} map first, then hand it to the engine's
-  //      batchSetCells (one dep-graph rebuild + one bulk repaint, no per-cell
-  //      formula cascades).
-  //   2) Chunk the cell-id construction loop so it yields to the event loop
-  //      every CHUNK_ROWS rows — the browser stays responsive even if the
-  //      import takes a couple of seconds.
-  //   3) Imports are not undoable (matches Sheets / Excel behaviour). The
-  //      before/after snapshot of every cell was eating ~2× memory and a
-  //      separate iteration pass; dropping it is a clean win.
+  // Large imports (50 MB CSV, 100k+ rows) must not freeze the page:
+  //   1) Cells go to the worker as batch commands of WRITE_CHUNK cells, each
+  //      one recalculation, so no single message or apply is huge.
+  //   2) Building the cell map yields to the event loop every CHUNK_ROWS rows.
+  //   3) Imports are not undoable (matches Sheets / Excel behaviour).
   const CHUNK_ROWS = 2000
+  const WRITE_CHUNK = 50_000
 
-  function _yield() { return new Promise(r => setTimeout(r, 0)) }
+  function _yield() {
+    return new Promise((r) => setTimeout(r, 0))
+  }
 
-  // Build {cellId: value} from a rectangular row array, yielding to the
-  // event loop every CHUNK_ROWS rows so the UI stays responsive on big files.
-  async function _rowsToCellMap(rows) {
-    const out = {}
-    for (let r = 0; r < rows.length; r++) {
-      const row = rows[r]
-      if (!row) continue
-      for (let c = 0; c < row.length; c++) {
-        const val = row[c]
-        if (val !== '' && val != null) out[colLabel(c) + (r + 1)] = String(val)
-      }
-      if ((r + 1) % CHUNK_ROWS === 0) await _yield()
+  // Collects {cellId: input} and hands it to cells.write every WRITE_CHUNK
+  // cells.
+  function _writer(sn) {
+    let map = {}
+    let n = 0
+    return {
+      add(id, value) {
+        map[id] = value
+        if (++n % WRITE_CHUNK === 0) this.flush()
+      },
+      flush() {
+        if (Object.keys(map).length) cells.write(sn, map)
+        map = {}
+      },
     }
-    return out
   }
 
   async function importXLSX(e) {
@@ -229,12 +264,14 @@ export function useExportImport({
     try {
       const { read } = await import('xlsx')
       const buf = await file.arrayBuffer()
-      // cellFormula keeps `=…`, cellDates yields Date objects, cellNF keeps the
-      // number-format code — all three are what makes the import lossless.
-      const wb = read(buf, { type: 'array', cellFormula: true, cellDates: true, cellNF: true })
+      // cellFormula keeps `=…` and cellNF the number-format code. No
+      // cellDates: SheetJS builds those Dates in local time, so a date came
+      // in as the day before at 18:29:50 in India (ISSUES #58). A date
+      // stays its day serial, and fromXlsxCell reads it under its code.
+      const wb = read(buf, { type: 'array', cellFormula: true, cellNF: true })
       await _ingestWorkbook(wb)
     } finally {
-      e.target.value = ''   // always reset so re-picking the same file re-fires
+      e.target.value = '' // always reset so re-picking the same file re-fires
     }
   }
 
@@ -242,28 +279,32 @@ export function useExportImport({
   // current sheets are untouched. Each cell carries its value/formula, number
   // format, and the sheet's merges.
   async function _ingestWorkbook(wb) {
-    const sheet    = getSheet()
-    const formats  = getFormats?.()
-    const merge    = getMerge?.()
-    const existing = new Set(sheet.getSheetNames().map(n => n.toLowerCase()))
+    const formats = getFormats?.()
+    const merge = getMerge?.()
+    const existing = new Set(sheetNames().map((n) => n.toLowerCase()))
+    // Every tab's name first: a formula may name a sheet later in the file,
+    // and must follow it when it gets a new name (`Sales` → `Sales (2)`).
+    const renames = {}
+    for (const wsName of wb.SheetNames) {
+      if (!wb.Sheets[wsName]) continue
+      renames[wsName] = _uniqueSheetName(wsName, existing)
+      existing.add(renames[wsName].toLowerCase())
+    }
     let firstAdded = null
     // finally: even if a worksheet throws mid-import, resync the tab bar so the
     // engine and UI never disagree about which sheets exist, and surface what
     // was already ingested.
     try {
-      for (const wsName of wb.SheetNames) {
-        const ws = wb.Sheets[wsName]
-        if (!ws) continue
-        const name = _uniqueSheetName(wsName, existing)
-        existing.add(name.toLowerCase())
-        sheet.addSheet(name)
+      for (const [wsName, name] of Object.entries(renames)) {
+        cells.addSheet(name)
         if (!firstAdded) firstAdded = name
-        await _ingestWorksheet(ws, sheet, formats, merge, name)
+        await _ingestWorksheet(wb.Sheets[wsName], formats, merge, name, renames)
       }
     } finally {
-      // Always resync the tab bar so engine + UI agree even after a partial
-      // import; only dirty the doc when a sheet was actually added (an empty
+      // The tab list is the engine's as of its last apply, so wait for the
+      // adds. Only dirty the doc when a sheet was actually added (an empty
       // workbook, or a throw before the first add, must not mark it dirty).
+      await cells.idle().catch(() => {})
       syncNames?.()
       if (firstAdded) {
         switchSheet?.(firstAdded)
@@ -275,29 +316,31 @@ export function useExportImport({
     }
   }
 
-  async function _ingestWorksheet(ws, sheet, formats, merge, name) {
-    const map = {}
+  async function _ingestWorksheet(ws, formats, merge, name, renames) {
+    const out = _writer(name)
     const fmts = []
     let n = 0
     for (const [id, cell] of Object.entries(ws)) {
-      if (id[0] === '!') continue                  // !ref, !merges, !cols meta keys
+      if (id[0] === '!') continue // !ref, !merges, !cols meta keys
       if (!parseCellId(id)) continue
       const { value, fmt } = fromXlsxCell(cell)
-      if (value !== '' && value != null) map[id] = value
+      if (value !== '' && value != null) out.add(id, renameSheetsInFormula(value, renames))
       if (fmt) fmts.push([id, fmt])
       if (++n % CHUNK_ROWS === 0) await _yield()
     }
-    sheet.batchSetCells(map, name, { replace: false })
+    out.flush()
     if (formats) for (const [id, fmt] of fmts) formats.set(id, { numberFormat: fmt }, name)
     if (merge && Array.isArray(ws['!merges'])) {
-      for (const { r0, c0, r1, c1 } of mergesFromXlsx(ws['!merges'])) merge.merge(r0, c0, r1, c1, name)
+      for (const { r0, c0, r1, c1 } of mergesFromXlsx(ws['!merges']))
+        merge.merge(r0, c0, r1, c1, name)
     }
   }
 
   // Ensure an imported worksheet name doesn't collide with an existing sheet.
   function _uniqueSheetName(name, existing) {
     const base = String(name || 'Sheet').trim() || 'Sheet'
-    let out = base, n = 1
+    let out = base,
+      n = 1
     while (existing.has(out.toLowerCase())) out = `${base} (${++n})`
     return out
   }
@@ -306,31 +349,31 @@ export function useExportImport({
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = async ev => {
-      const text = ev.target.result
-      const rows = _parseCSV(text)
-      await _ingestRows(rows, file.name)
+    reader.onload = async (ev) => {
+      const rows = _parseCSV(ev.target.result)
+      await _ingestRows(rows)
     }
     reader.readAsText(file)
     e.target.value = ''
   }
 
-  // Shared post-parse pipeline: chunked map build → bulk engine write →
-  // dirty flag. No undo entry (imports replace the sheet, by design).
-  async function _ingestRows(rows, fileName) {
-    const sheet     = getSheet()
-    const grid      = getGrid()
-    const currentSh = sheet.getCurrentSheet()
-    const map       = await _rowsToCellMap(rows)
-    if (grid) grid.clearAll()
-    sheet.batchSetCells(map, currentSh)
-    // No history entry: imports aren't undoable (Sheets parity). The old
-    // markEdited() path pushed a full-workbook snapshot here — a ~1.9s
-    // deepClone on a 2M-cell import, for an op the user can't even undo.
-    // Just flag dirty + refresh the toolbar so autosave picks it up.
+  // A CSV replaces the open sheet's cells. No undo entry (Sheets parity).
+  async function _ingestRows(rows) {
+    const sn = currentSheet.value
+    await cells.clear(sn) // dispatches before the writes below, so it can't erase them
+    const out = _writer(sn)
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r]
+      if (!row) continue
+      for (let c = 0; c < row.length; c++) {
+        const val = row[c]
+        if (val !== '' && val != null) out.add(cellId(r, c), String(val))
+      }
+      if ((r + 1) % CHUNK_ROWS === 0) await _yield()
+    }
+    out.flush()
     syncFlags()
     isDirty.value = true
-    return fileName
   }
 
   return { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX }

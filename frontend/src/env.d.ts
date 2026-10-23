@@ -22,10 +22,21 @@ declare global {
     suite_workspace_logo?: string
     /** Kill switch for the slides service worker (site config, served by www/suite.py). */
     disable_slides_service_worker?: boolean
+    /** The largest file the site accepts, in bytes (served by www/suite.py). Read through `@/platform/boot`. */
+    max_file_size?: number
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */
     __?: (message: string, replace?: Array<string | number>) => string
+  }
+
+  /** Chromium's install prompt event. It is not in the DOM typings yet. */
+  interface BeforeInstallPromptEvent extends Event {
+    prompt(): Promise<void>
+  }
+
+  interface WindowEventMap {
+    beforeinstallprompt: BeforeInstallPromptEvent
   }
 
   /** Bare `__('text')` available in templates via globalProperties. */

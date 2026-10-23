@@ -1,0 +1,3025 @@
+{
+  "owner": "suite",
+  "prefix": "/api/suite/",
+  "operations": [
+    {
+      "id": "admin_health_get",
+      "kind": "query",
+      "publicName": "admin.health",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "admin/health",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "cloud": {
+            "title": "Cloud",
+            "type": "boolean"
+          },
+          "suspended": {
+            "title": "Suspended",
+            "type": "boolean"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "alerts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alerts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cloud",
+          "suspended",
+          "stale",
+          "fetched_at",
+          "alerts"
+        ],
+        "title": "ProviderHealth",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "temporary_password_post",
+      "kind": "mutation",
+      "publicName": "users.replaceTemporaryPassword",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "users/{user}/temporary-password",
+      "pathParams": [
+        "user"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "UserInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "temporary_password": {
+            "title": "Temporary Password",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "TemporaryCredential",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "mail_account_post",
+      "kind": "mutation",
+      "publicName": "users.recreateMail",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "users/{user}/mail-account",
+      "pathParams": [
+        "user"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "address": {
+            "title": "Address",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "address"
+        ],
+        "title": "RecreateInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "success",
+          "user",
+          "status",
+          "error",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "CreationResult",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "mail_account_delete",
+      "kind": "mutation",
+      "publicName": "users.deleteMail",
+      "page": null,
+      "envelope": "data",
+      "method": "DELETE",
+      "path": "users/{user}/mail-account",
+      "pathParams": [
+        "user"
+      ],
+      "query": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "confirmation": {
+            "title": "Confirmation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "confirmation"
+        ],
+        "title": "DeleteInput",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "success",
+          "user",
+          "status",
+          "error",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "CreationResult",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "onboarding_get",
+      "kind": "query",
+      "publicName": "site.mailOnboarding",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "onboarding/mail",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "cloud": {
+            "title": "Cloud",
+            "type": "boolean"
+          },
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cloud",
+          "domains",
+          "account",
+          "ready"
+        ],
+        "title": "OnboardingOptions",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "onboarding_post",
+      "kind": "mutation",
+      "publicName": "site.setupMail",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "onboarding/mail",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "password"
+        ],
+        "title": "OnboardingInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "success",
+          "user",
+          "status",
+          "error",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "CreationResult",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "user_transfer_preview",
+      "kind": "query",
+      "publicName": "users.previewTransfer",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "users/{user}/drive-transfer",
+      "pathParams": [
+        "user"
+      ],
+      "query": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "destination"
+        ],
+        "title": "PreviewInput",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "DestinationCapacity": {
+            "properties": {
+              "stored_bytes": {
+                "title": "Stored Bytes",
+                "type": "integer"
+              },
+              "mail_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mail Bytes"
+              },
+              "reserved_bytes": {
+                "title": "Reserved Bytes",
+                "type": "integer"
+              },
+              "current_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Current Bytes"
+              },
+              "projected_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Projected Bytes"
+              },
+              "cap_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cap Bytes"
+              },
+              "buffer_bytes": {
+                "title": "Buffer Bytes",
+                "type": "integer"
+              },
+              "effective_threshold_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Effective Threshold Bytes"
+              },
+              "complete": {
+                "title": "Complete",
+                "type": "boolean"
+              },
+              "blocker": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "personal_limit",
+                      "unknown_usage",
+                      "drive_limit"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Blocker"
+              }
+            },
+            "required": [
+              "stored_bytes",
+              "mail_bytes",
+              "reserved_bytes",
+              "current_bytes",
+              "projected_bytes",
+              "cap_bytes",
+              "buffer_bytes",
+              "effective_threshold_bytes",
+              "complete",
+              "blocker"
+            ],
+            "title": "DestinationCapacity",
+            "type": "object"
+          },
+          "InheritedGrant": {
+            "properties": {
+              "principal": {
+                "title": "Principal",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "principal",
+              "role"
+            ],
+            "title": "InheritedGrant",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "destination_capacity": {
+            "$ref": "#/$defs/DestinationCapacity"
+          },
+          "source_root": {
+            "title": "Source Root",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "destination_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination User"
+          },
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "inherited_grants": {
+            "items": {
+              "$ref": "#/$defs/InheritedGrant"
+            },
+            "title": "Inherited Grants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destination_capacity",
+          "source_root",
+          "destination",
+          "destination_user",
+          "bytes",
+          "item_count",
+          "fingerprint",
+          "inherited_grants"
+        ],
+        "title": "TransferPreview",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "DriveConflict",
+        "DriveForbidden",
+        "DriveNotFound",
+        "DriveOverQuota"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "user_transfer",
+      "kind": "mutation",
+      "publicName": "users.transferDrive",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "users/{user}/drive-transfer",
+      "pathParams": [
+        "user"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "confirm_access": {
+            "title": "Confirm Access",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user",
+          "destination",
+          "fingerprint",
+          "confirm_access"
+        ],
+        "title": "TransferInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "TransferItem": {
+            "properties": {
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "success": {
+                "title": "Success",
+                "type": "boolean"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Error"
+              }
+            },
+            "required": [
+              "node",
+              "success",
+              "error"
+            ],
+            "title": "TransferItem",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/TransferItem"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "results",
+          "remaining",
+          "complete"
+        ],
+        "title": "TransferResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "DriveConflict",
+        "DriveForbidden",
+        "DriveNotFound",
+        "DriveOverQuota"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "storage_get",
+      "kind": "query",
+      "publicName": "storage.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "storage",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "StorageRoot": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "user": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "state": {
+                "title": "State",
+                "type": "string"
+              },
+              "stored_bytes": {
+                "title": "Stored Bytes",
+                "type": "integer"
+              },
+              "reserved_bytes": {
+                "title": "Reserved Bytes",
+                "type": "integer"
+              },
+              "quota_bytes": {
+                "title": "Quota Bytes",
+                "type": "integer"
+              },
+              "effective_quota_bytes": {
+                "title": "Effective Quota Bytes",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "user",
+              "kind",
+              "state",
+              "stored_bytes",
+              "reserved_bytes",
+              "quota_bytes",
+              "effective_quota_bytes"
+            ],
+            "title": "StorageRoot",
+            "type": "object"
+          },
+          "StorageUser": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "enabled": {
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "drive_bytes": {
+                "title": "Drive Bytes",
+                "type": "integer"
+              },
+              "reserved_bytes": {
+                "title": "Reserved Bytes",
+                "type": "integer"
+              },
+              "mail_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mail Bytes"
+              },
+              "combined_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Combined Bytes"
+              },
+              "cap_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cap Bytes"
+              },
+              "effective_cap_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Effective Cap Bytes"
+              },
+              "mail_fetched_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mail Fetched At"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "user_image",
+              "enabled",
+              "is_admin",
+              "drive_bytes",
+              "reserved_bytes",
+              "mail_bytes",
+              "combined_bytes",
+              "cap_bytes",
+              "effective_cap_bytes",
+              "mail_fetched_at"
+            ],
+            "title": "StorageUser",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "cloud": {
+            "title": "Cloud",
+            "type": "boolean"
+          },
+          "drive_bytes": {
+            "title": "Drive Bytes",
+            "type": "integer"
+          },
+          "personal_drive_bytes": {
+            "title": "Personal Drive Bytes",
+            "type": "integer"
+          },
+          "shared_drive_bytes": {
+            "title": "Shared Drive Bytes",
+            "type": "integer"
+          },
+          "group_mail_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Mail Bytes"
+          },
+          "pending_invitations": {
+            "title": "Pending Invitations",
+            "type": "integer"
+          },
+          "reserved_bytes": {
+            "title": "Reserved Bytes",
+            "type": "integer"
+          },
+          "mail_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Bytes"
+          },
+          "combined_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Combined Bytes"
+          },
+          "allowance_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowance Bytes"
+          },
+          "effective_allowance_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Allowance Bytes"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "default_cap_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Cap Bytes"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/$defs/StorageUser"
+            },
+            "title": "Users",
+            "type": "array"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/$defs/StorageRoot"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cloud",
+          "drive_bytes",
+          "personal_drive_bytes",
+          "shared_drive_bytes",
+          "group_mail_bytes",
+          "pending_invitations",
+          "reserved_bytes",
+          "mail_bytes",
+          "combined_bytes",
+          "allowance_bytes",
+          "effective_allowance_bytes",
+          "stale",
+          "fetched_at",
+          "default_cap_bytes",
+          "users",
+          "roots"
+        ],
+        "title": "StorageReport",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "storage_limits",
+      "kind": "mutation",
+      "publicName": "storage.setLimits",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "storage/limits",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "users": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Users",
+            "type": "array"
+          },
+          "cap_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap Bytes"
+          }
+        },
+        "required": [
+          "users",
+          "cap_bytes"
+        ],
+        "title": "LimitInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "LimitResult": {
+            "properties": {
+              "user": {
+                "title": "User",
+                "type": "string"
+              },
+              "success": {
+                "title": "Success",
+                "type": "boolean"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Error"
+              }
+            },
+            "required": [
+              "user",
+              "success",
+              "error"
+            ],
+            "title": "LimitResult",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/LimitResult"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "storage_default",
+      "kind": "mutation",
+      "publicName": "storage.setDefault",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "storage/default",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "cap_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap Bytes"
+          }
+        },
+        "required": [
+          "cap_bytes"
+        ],
+        "title": "DefaultInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "StorageRoot": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "user": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "state": {
+                "title": "State",
+                "type": "string"
+              },
+              "stored_bytes": {
+                "title": "Stored Bytes",
+                "type": "integer"
+              },
+              "reserved_bytes": {
+                "title": "Reserved Bytes",
+                "type": "integer"
+              },
+              "quota_bytes": {
+                "title": "Quota Bytes",
+                "type": "integer"
+              },
+              "effective_quota_bytes": {
+                "title": "Effective Quota Bytes",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "user",
+              "kind",
+              "state",
+              "stored_bytes",
+              "reserved_bytes",
+              "quota_bytes",
+              "effective_quota_bytes"
+            ],
+            "title": "StorageRoot",
+            "type": "object"
+          },
+          "StorageUser": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "enabled": {
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "drive_bytes": {
+                "title": "Drive Bytes",
+                "type": "integer"
+              },
+              "reserved_bytes": {
+                "title": "Reserved Bytes",
+                "type": "integer"
+              },
+              "mail_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mail Bytes"
+              },
+              "combined_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Combined Bytes"
+              },
+              "cap_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cap Bytes"
+              },
+              "effective_cap_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Effective Cap Bytes"
+              },
+              "mail_fetched_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mail Fetched At"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "user_image",
+              "enabled",
+              "is_admin",
+              "drive_bytes",
+              "reserved_bytes",
+              "mail_bytes",
+              "combined_bytes",
+              "cap_bytes",
+              "effective_cap_bytes",
+              "mail_fetched_at"
+            ],
+            "title": "StorageUser",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "cloud": {
+            "title": "Cloud",
+            "type": "boolean"
+          },
+          "drive_bytes": {
+            "title": "Drive Bytes",
+            "type": "integer"
+          },
+          "personal_drive_bytes": {
+            "title": "Personal Drive Bytes",
+            "type": "integer"
+          },
+          "shared_drive_bytes": {
+            "title": "Shared Drive Bytes",
+            "type": "integer"
+          },
+          "group_mail_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Mail Bytes"
+          },
+          "pending_invitations": {
+            "title": "Pending Invitations",
+            "type": "integer"
+          },
+          "reserved_bytes": {
+            "title": "Reserved Bytes",
+            "type": "integer"
+          },
+          "mail_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mail Bytes"
+          },
+          "combined_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Combined Bytes"
+          },
+          "allowance_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowance Bytes"
+          },
+          "effective_allowance_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Allowance Bytes"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "default_cap_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Cap Bytes"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/$defs/StorageUser"
+            },
+            "title": "Users",
+            "type": "array"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/$defs/StorageRoot"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cloud",
+          "drive_bytes",
+          "personal_drive_bytes",
+          "shared_drive_bytes",
+          "group_mail_bytes",
+          "pending_invitations",
+          "reserved_bytes",
+          "mail_bytes",
+          "combined_bytes",
+          "allowance_bytes",
+          "effective_allowance_bytes",
+          "stale",
+          "fetched_at",
+          "default_cap_bytes",
+          "users",
+          "roots"
+        ],
+        "title": "StorageReport",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_preferences",
+      "kind": "query",
+      "publicName": "preferences.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "preferences",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "user_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "desk_theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desk Theme"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "first_name",
+          "last_name",
+          "user_image",
+          "language",
+          "time_zone",
+          "desk_theme"
+        ],
+        "title": "Preferences",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_preferences",
+      "kind": "mutation",
+      "publicName": "preferences.update",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "preferences",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "user_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
+          },
+          "language": {
+            "title": "Language",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "title": "PreferenceChanges",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "user_image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "desk_theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desk Theme"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "first_name",
+          "last_name",
+          "user_image",
+          "language",
+          "time_zone",
+          "desk_theme"
+        ],
+        "title": "Preferences",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "languages",
+      "kind": "query",
+      "publicName": "locales.languages",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "languages",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Language": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "language_name": {
+                "title": "Language Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "language_name"
+            ],
+            "title": "Language",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/Language"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "account_get",
+      "kind": "query",
+      "publicName": "account.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "account",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Account": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "avatar": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Avatar"
+              },
+              "roles": {
+                "$ref": "#/$defs/AccountRoles"
+              },
+              "is_jmap_configured": {
+                "title": "Is Jmap Configured",
+                "type": "boolean"
+              },
+              "must_change_password": {
+                "title": "Must Change Password",
+                "type": "boolean"
+              },
+              "setup_required": {
+                "title": "Setup Required",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "avatar",
+              "roles",
+              "is_jmap_configured",
+              "must_change_password",
+              "setup_required"
+            ],
+            "title": "Account",
+            "type": "object"
+          },
+          "AccountRoles": {
+            "properties": {
+              "system_manager": {
+                "title": "System Manager",
+                "type": "boolean"
+              },
+              "suite_admin": {
+                "title": "Suite Admin",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "system_manager",
+              "suite_admin"
+            ],
+            "title": "AccountRoles",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Account"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "site_get",
+      "kind": "query",
+      "publicName": "site.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "site",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "is_onboarded": {
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "can_onboard": {
+            "title": "Can Onboard",
+            "type": "boolean"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Site",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "site_patch.complete_onboarding",
+      "kind": "mutation",
+      "publicName": "site.completeOnboarding",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "site",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "is_onboarded": {
+            "const": true,
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded"
+        ],
+        "title": "CompleteOnboarding",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "is_onboarded": {
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "can_onboard": {
+            "title": "Can Onboard",
+            "type": "boolean"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Site",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "site_patch.update_site_settings",
+      "kind": "mutation",
+      "publicName": "site.updateSettings",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "site",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_name"
+        ],
+        "title": "UpdateSiteSettings",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "is_onboarded": {
+            "title": "Is Onboarded",
+            "type": "boolean"
+          },
+          "can_onboard": {
+            "title": "Can Onboard",
+            "type": "boolean"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_onboarded",
+          "can_onboard",
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Site",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "users_get",
+      "kind": "query",
+      "publicName": "users.list",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "users",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "User": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "enabled": {
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "account": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Account"
+              },
+              "setup_status": {
+                "title": "Setup Status",
+                "type": "string"
+              },
+              "must_change_password": {
+                "title": "Must Change Password",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "user_image",
+              "is_admin",
+              "enabled",
+              "account",
+              "setup_status",
+              "must_change_password"
+            ],
+            "title": "User",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/User"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "invitations_get",
+      "kind": "query",
+      "publicName": "invitations.list",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "invitations",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Invitation": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "creation": {
+                "title": "Creation",
+                "type": "string"
+              },
+              "invited_by": {
+                "title": "Invited By",
+                "type": "string"
+              },
+              "invited_by_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Invited By Name"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "creation",
+              "invited_by",
+              "invited_by_name"
+            ],
+            "title": "Invitation",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/Invitation"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "users_patch",
+      "kind": "mutation",
+      "publicName": "users.update",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "users",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "UserChanges",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "User": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "is_admin": {
+                "title": "Is Admin",
+                "type": "boolean"
+              },
+              "enabled": {
+                "title": "Enabled",
+                "type": "boolean"
+              },
+              "account": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Account"
+              },
+              "setup_status": {
+                "title": "Setup Status",
+                "type": "string"
+              },
+              "must_change_password": {
+                "title": "Must Change Password",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "full_name",
+              "user_image",
+              "is_admin",
+              "enabled",
+              "account",
+              "setup_status",
+              "must_change_password"
+            ],
+            "title": "User",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/User"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError",
+        "DoesNotExistError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "invitations_post",
+      "kind": "mutation",
+      "publicName": "invitations.create",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "invitations",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "emails": {
+            "title": "Emails",
+            "type": "string"
+          }
+        },
+        "required": [
+          "emails"
+        ],
+        "title": "InviteUsers",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "disabled_user_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Disabled User Emails",
+            "type": "array"
+          },
+          "accepted_invite_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepted Invite Emails",
+            "type": "array"
+          },
+          "pending_invite_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Invite Emails",
+            "type": "array"
+          },
+          "invited_emails": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Invited Emails",
+            "type": "array"
+          }
+        },
+        "required": [
+          "disabled_user_emails",
+          "accepted_invite_emails",
+          "pending_invite_emails",
+          "invited_emails"
+        ],
+        "title": "InvitationResult",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "people_get",
+      "kind": "query",
+      "publicName": "people.list",
+      "page": {
+        "cursor": "cursor",
+        "rows": "rows",
+        "next": "next_cursor"
+      },
+      "envelope": "data",
+      "method": "GET",
+      "path": "people",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "q": {
+            "title": "Q",
+            "type": "string"
+          },
+          "cursor": {
+            "title": "Cursor",
+            "type": "string"
+          }
+        },
+        "title": "PeopleQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "PersonGroup": {
+            "properties": {
+              "kind": {
+                "const": "group",
+                "title": "Kind",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "member_count": {
+                "title": "Member Count",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "member_count"
+            ],
+            "title": "PersonGroup",
+            "type": "object"
+          },
+          "PersonUser": {
+            "properties": {
+              "kind": {
+                "const": "user",
+                "title": "Kind",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Full Name"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "email",
+              "full_name",
+              "user_image"
+            ],
+            "title": "PersonUser",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "rows": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PersonUser"
+                },
+                {
+                  "$ref": "#/$defs/PersonGroup"
+                }
+              ]
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "rows",
+          "next_cursor"
+        ],
+        "title": "PeoplePage",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "BadCursor",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.login",
+      "kind": "mutation",
+      "publicName": "auth.login",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/login",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "usr": {
+            "title": "Usr",
+            "type": "string"
+          },
+          "pwd": {
+            "title": "Pwd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usr",
+          "pwd"
+        ],
+        "title": "LoginInput",
+        "type": "object"
+      },
+      "output": {},
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.logout",
+      "kind": "mutation",
+      "publicName": "auth.logout",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/logout",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {},
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.translate.get_boot_translations",
+      "kind": "query",
+      "publicName": "translations.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "/api/v2/method/frappe.translate.get_boot_translations",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "subscribe",
+      "kind": "mutation",
+      "publicName": "push.subscribe",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/frappe.push_notification.subscribe",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "fcm_token": {
+            "title": "Fcm Token",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fcm_token",
+          "project_name"
+        ],
+        "title": "PushToken",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "PushResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "unsubscribe",
+      "kind": "mutation",
+      "publicName": "push.unsubscribe",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/frappe.push_notification.unsubscribe",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "fcm_token": {
+            "title": "Fcm Token",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fcm_token",
+          "project_name"
+        ],
+        "title": "PushToken",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "PushResult",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.switch_theme",
+      "kind": "mutation",
+      "publicName": "preferences.setTheme",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/frappe.core.doctype.user.user.switch_theme",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "theme": {
+            "enum": [
+              "Light",
+              "Dark",
+              "Automatic"
+            ],
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme"
+        ],
+        "title": "ThemeChange",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.reset_password",
+      "kind": "mutation",
+      "publicName": "account.resetPassword",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/frappe.core.doctype.user.user.update_password",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "new_password"
+        ],
+        "title": "PasswordReset",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": [
+        "AuthenticationError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.get_timezones",
+      "kind": "query",
+      "publicName": "locales.timezones",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/frappe.core.doctype.user.user.get_timezones",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "timezones": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Timezones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "timezones"
+        ],
+        "title": "Timezones",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "frappe.user.update_password",
+      "kind": "mutation",
+      "publicName": "account.changePassword",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/frappe.core.doctype.user.user.update_password",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "old_password": {
+            "title": "Old Password",
+            "type": "string"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
+        "type": "object"
+      },
+      "output": {
+        "type": "string"
+      },
+      "errors": [
+        "AuthenticationError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "suite.generate_user_keys",
+      "kind": "mutation",
+      "publicName": "account.generateKeys",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.utils.user.generate_user_keys",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "user": {
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "UserKeysInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "api_secret": {
+            "title": "Api Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key",
+          "api_secret"
+        ],
+        "title": "UserKeys",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    }
+  ]
+}

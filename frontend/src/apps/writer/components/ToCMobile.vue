@@ -14,8 +14,9 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watchEffect } from 'vue'
 import { TabButtons } from 'frappe-ui'
+import { onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
+
 import { orderedTabs } from '@/apps/writer/extensions/tabs'
 
 const props = defineProps({
@@ -26,19 +27,14 @@ const bar = ref(null)
 
 // Anything else pinned to the bottom on mobile (comment cards) needs to clear the bar.
 const setBarHeight = (height) =>
-  document.documentElement.style.setProperty(
-    '--writer-tab-bar-height',
-    `${height}px`,
-  )
+  document.documentElement.style.setProperty('--writer-tab-bar-height', `${height}px`)
 
 let observer
 let editorDom
 watchEffect(() => {
   observer?.disconnect()
   if (!bar.value) return setBarHeight(0)
-  observer = new ResizeObserver(([entry]) =>
-    setBarHeight(entry.contentRect.height),
-  )
+  observer = new ResizeObserver(([entry]) => setBarHeight(entry.contentRect.height))
   observer.observe(bar.value)
 })
 

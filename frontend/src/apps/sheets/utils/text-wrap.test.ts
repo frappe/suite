@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { getTextWrap, isWrapText, WRAP_MODES, lineHeightFor, wrapLines } from './text-wrap.js'
+import { describe, expect, it } from 'vitest'
+
+import { getTextWrap, isWrapText, lineHeightFor, WRAP_MODES, wrapLines } from './text-wrap.js'
 
 // Monospace stand-in: every char is 10px wide, matching the canvas mock style.
-const mono = t => t.length * 10
+const mono = (t) => t.length * 10
 
 describe('getTextWrap', () => {
   it('returns "overflow" for missing format / missing field', () => {

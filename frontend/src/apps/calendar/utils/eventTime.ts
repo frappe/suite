@@ -18,9 +18,9 @@ type Dayjs = ReturnType<typeof dayjs>
  * `format_calendar_event`): a JSCalendar wall clock, an ISO-8601 duration, and the all-day flag.
  */
 interface EventTiming {
-	start: string
-	duration?: string | null
-	show_without_time?: boolean | 0 | 1
+  start: string
+  duration?: string | null
+  show_without_time?: boolean | 0 | 1
 }
 
 /**
@@ -31,16 +31,16 @@ interface EventTiming {
  * that: midnight to midnight, with the end an *exclusive* boundary on the following day).
  */
 export const isAllDayEvent = (event: EventTiming): boolean => {
-	const start = dayjs(event.start)
-	const duration = dayjs.duration(event.duration || 'PT0S')
-	return Boolean(
-		event.show_without_time ||
-			(start.hour() === 0 &&
-				start.minute() === 0 &&
-				start.second() === 0 &&
-				duration.asDays() >= 1 &&
-				duration.asDays() % 1 === 0),
-	)
+  const start = dayjs(event.start)
+  const duration = dayjs.duration(event.duration || 'PT0S')
+  return Boolean(
+    event.show_without_time ||
+    (start.hour() === 0 &&
+      start.minute() === 0 &&
+      start.second() === 0 &&
+      duration.asDays() >= 1 &&
+      duration.asDays() % 1 === 0),
+  )
 }
 
 /**
@@ -49,13 +49,13 @@ export const isAllDayEvent = (event: EventTiming): boolean => {
  * may shift.
  */
 export const eventStartLocal = (event: EventTiming & { time_zone?: string | null }): Dayjs =>
-	event.time_zone && !isAllDayEvent(event)
-		? dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
-		: dayjs(event.start)
+  event.time_zone && !isAllDayEvent(event)
+    ? dayjs.tz(event.start, event.time_zone).tz(dayjs.tz.guess())
+    : dayjs(event.start)
 
 /** The moment an event stops, from its start and ISO-8601 duration. */
 const eventEnd = (start: Dayjs, duration?: string | null): Dayjs =>
-	start.add(dayjs.duration(duration || 'PT0S'))
+  start.add(dayjs.duration(duration || 'PT0S'))
 
 /**
  * The last calendar day an all-day event touches: the day its final instant falls on. The
@@ -64,14 +64,14 @@ const eventEnd = (start: Dayjs, duration?: string | null): Dayjs =>
  * names the day it actually reaches into, where rounding the duration would drop it.
  */
 const allDayLast = (start: Dayjs, duration?: string | null): Dayjs => {
-	const end = eventEnd(start, duration)
-	if (!end.isAfter(start)) return start.startOf('day')
-	return end.subtract(1, 'millisecond').startOf('day')
+  const end = eventEnd(start, duration)
+  if (!end.isAfter(start)) return start.startOf('day')
+  return end.subtract(1, 'millisecond').startOf('day')
 }
 
 /** Whole days an all-day event covers, first to last inclusive. */
 const allDayCount = (start: Dayjs, duration?: string | null): number =>
-	allDayLast(start, duration).diff(start.startOf('day'), 'day') + 1
+  allDayLast(start, duration).diff(start.startOf('day'), 'day') + 1
 
 /**
  * Under this, an event that passes midnight is one sitting rather than a span — an evening that
@@ -81,7 +81,7 @@ const OVERNIGHT_LIMIT_HOURS = 24
 
 /** Whether a timed event runs past midnight without being long enough to count as a span. */
 const isOvernight = (start: Dayjs, end: Dayjs) =>
-	!end.isSame(start, 'day') && end.diff(start, 'hour', true) < OVERNIGHT_LIMIT_HOURS
+  !end.isSame(start, 'day') && end.diff(start, 'hour', true) < OVERNIGHT_LIMIT_HOURS
 
 /**
  * The inclusive last day an event covers, or `null` when it reads as living on a single one —
@@ -93,17 +93,17 @@ const isOvernight = (start: Dayjs, end: Dayjs) =>
  * a two-day event, so the label names that day inline instead.
  */
 export const eventLastDay = (
-	start: Dayjs,
-	duration?: string | null,
-	allDay = false,
+  start: Dayjs,
+  duration?: string | null,
+  allDay = false,
 ): Dayjs | null => {
-	if (allDay) {
-		const last = allDayLast(start, duration)
-		return last.isSame(start, 'day') ? null : last
-	}
-	const end = eventEnd(start, duration)
-	if (end.isSame(start, 'day') || isOvernight(start, end)) return null
-	return end
+  if (allDay) {
+    const last = allDayLast(start, duration)
+    return last.isSame(start, 'day') ? null : last
+  }
+  const end = eventEnd(start, duration)
+  if (end.isSame(start, 'day') || isOvernight(start, end)) return null
+  return end
 }
 
 /** Years are worth printing only when they aren't the one the reader is living in. */
@@ -121,37 +121,36 @@ const yearFormat = (day: Dayjs, now: Dayjs) => (day.year() === now.year() ? '' :
  * a line whose whole job is to be short.
  */
 const dayLabel = (day: Dayjs, now: Dayjs, compact = false) => {
-	if (day.isSame(now, 'day')) return __('Today')
-	if (day.year() !== now.year()) return day.format(`ddd, D MMM${yearFormat(day, now)}`)
-	return day.format(compact ? 'ddd' : 'ddd, D MMM')
+  if (day.isSame(now, 'day')) return __('Today')
+  if (day.year() !== now.year()) return day.format(`ddd, D MMM${yearFormat(day, now)}`)
+  return day.format(compact ? 'ddd' : 'ddd, D MMM')
 }
 
 /** A span of days: `Mon, 17 – Wed, 19 Aug`, dropping the month from the first end when shared. */
 const dayRangeLabel = (first: Dayjs, last: Dayjs, now: Dayjs) => {
-	const sharesMonth = first.isSame(last, 'month')
-	const from = first.format(sharesMonth ? 'ddd, D' : `ddd, D MMM${yearFormat(first, now)}`)
-	return `${from} – ${last.format(`ddd, D MMM${yearFormat(last, now)}`)}`
+  const sharesMonth = first.isSame(last, 'month')
+  const from = first.format(sharesMonth ? 'ddd, D' : `ddd, D MMM${yearFormat(first, now)}`)
+  return `${from} – ${last.format(`ddd, D MMM${yearFormat(last, now)}`)}`
 }
 
 /** `3:00 – 4:00 pm`, keeping the first meridiem only when the span crosses one. */
 const timeRangeLabel = (start: Dayjs, end: Dayjs) => {
-	if (end.isSame(start)) return start.format('h:mm a')
-	const sharesMeridiem = start.format('a') === end.format('a')
-	return `${start.format(sharesMeridiem ? 'h:mm' : 'h:mm a')} – ${end.format('h:mm a')}`
+  if (end.isSame(start)) return start.format('h:mm a')
+  const sharesMeridiem = start.format('a') === end.format('a')
+  return `${start.format(sharesMeridiem ? 'h:mm' : 'h:mm a')} – ${end.format('h:mm a')}`
 }
 
 /** How long an all-day event runs: `All day`, or `3 days` once it spans more than one. */
-const allDayLabel = (days: number) =>
-	days === 1 ? __('All day') : __('{0} days', [String(days)])
+const allDayLabel = (days: number) => (days === 1 ? __('All day') : __('{0} days', [String(days)]))
 
 /** How long a timed event runs: `3 hr`, `1 hr 30 min`, `45 min`. */
 const lengthLabel = (start: Dayjs, end: Dayjs) => {
-	const minutes = end.diff(start, 'minute')
-	const hours = Math.floor(minutes / 60)
-	const rest = minutes % 60
-	if (!hours) return __('{0} min', [String(rest)])
-	if (!rest) return __('{0} hr', [String(hours)])
-	return __('{0} hr {1} min', [String(hours), String(rest)])
+  const minutes = end.diff(start, 'minute')
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (!hours) return __('{0} min', [String(rest)])
+  if (!rest) return __('{0} hr', [String(hours)])
+  return __('{0} hr {1} min', [String(hours), String(rest)])
 }
 
 /**
@@ -167,50 +166,45 @@ const lengthLabel = (start: Dayjs, end: Dayjs) => {
  * with no clock times on the line `All day` is the only thing saying there are none.
  */
 export const formatEventWhen = (
-	start: Dayjs,
-	duration?: string | null,
-	options: {
-		allDay?: boolean
-		compact?: boolean
-		now?: Dayjs
-		length?: boolean
-	} = {},
+  start: Dayjs,
+  duration?: string | null,
+  options: {
+    allDay?: boolean
+    compact?: boolean
+    now?: Dayjs
+    length?: boolean
+  } = {},
 ): string => {
-	const {
-		allDay = false,
-		compact = false,
-		now = dayjs(),
-		length = true,
-	} = options
+  const { allDay = false, compact = false, now = dayjs(), length = true } = options
 
-	if (allDay) {
-		const last = eventLastDay(start, duration, true)
-		const when = last ? dayRangeLabel(start, last, now) : dayLabel(start, now, compact)
-		return `${when} · ${allDayLabel(allDayCount(start, duration))}`
-	}
+  if (allDay) {
+    const last = eventLastDay(start, duration, true)
+    const when = last ? dayRangeLabel(start, last, now) : dayLabel(start, now, compact)
+    return `${when} · ${allDayLabel(allDayCount(start, duration))}`
+  }
 
-	const end = eventEnd(start, duration)
+  const end = eventEnd(start, duration)
 
-	// A genuine span carries a time at each end, so both dates spell themselves out in full and
-	// the `·` separator — which reads as "on this day, at this time" — goes.
-	if (eventLastDay(start, duration)) {
-		const from = `${dayLabel(start, now)}, ${start.format('h:mm a')}`
-		return `${from} – ${dayLabel(end, now)}, ${end.format('h:mm a')}`
-	}
+  // A genuine span carries a time at each end, so both dates spell themselves out in full and
+  // the `·` separator — which reads as "on this day, at this time" — goes.
+  if (eventLastDay(start, duration)) {
+    const from = `${dayLabel(start, now)}, ${start.format('h:mm a')}`
+    return `${from} – ${dayLabel(end, now)}, ${end.format('h:mm a')}`
+  }
 
-	// An overnight stays one day's entry, with the second day named after the closing time.
-	// Never compacted: the closing `Tue` already names a weekday, and a line opening on another
-	// bare one — `Mon · 11:00 pm – 1:00 am Tue` — reads as a span between the two.
-	if (isOvernight(start, end)) {
-		const times = `${start.format('h:mm a')} – ${end.format('h:mm a ddd')}`
-		if (!length) return `${dayLabel(start, now)} · ${times}`
-		return `${dayLabel(start, now)} · ${times} · ${lengthLabel(start, end)}`
-	}
+  // An overnight stays one day's entry, with the second day named after the closing time.
+  // Never compacted: the closing `Tue` already names a weekday, and a line opening on another
+  // bare one — `Mon · 11:00 pm – 1:00 am Tue` — reads as a span between the two.
+  if (isOvernight(start, end)) {
+    const times = `${start.format('h:mm a')} – ${end.format('h:mm a ddd')}`
+    if (!length) return `${dayLabel(start, now)} · ${times}`
+    return `${dayLabel(start, now)} · ${times} · ${lengthLabel(start, end)}`
+  }
 
-	// Every `·` sentence closes on a length — `All day`, `3 days`, `1 hr`. Whether the reader
-	// *could* subtract two clock times isn't a rule they can see, so a length that came and went
-	// between events would read as missing data rather than as inference.
-	const times = timeRangeLabel(start, end)
-	if (end.isSame(start) || !length) return `${dayLabel(start, now, compact)} · ${times}`
-	return `${dayLabel(start, now, compact)} · ${times} · ${lengthLabel(start, end)}`
+  // Every `·` sentence closes on a length — `All day`, `3 days`, `1 hr`. Whether the reader
+  // *could* subtract two clock times isn't a rule they can see, so a length that came and went
+  // between events would read as missing data rather than as inference.
+  const times = timeRangeLabel(start, end)
+  if (end.isSame(start) || !length) return `${dayLabel(start, now, compact)} · ${times}`
+  return `${dayLabel(start, now, compact)} · ${times} · ${lengthLabel(start, end)}`
 }

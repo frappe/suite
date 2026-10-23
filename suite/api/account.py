@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils.caching import redis_cache
 
 from suite.mail.utils.user import can_use_mail
+from suite.suite_core.administration import require_admin
 from suite.suite_core.setup import build_setup_args, uses_suite_setup_wizard
 
 ALLOWED_LOGO_EXTENSIONS = ("png", "jpg", "jpeg", "webp")
@@ -14,13 +15,19 @@ def get_onboarding_state() -> dict[str, bool]:
     return {
         # Suite-owned, not frappe.is_setup_complete(): decoupled from framework/press state.
         "is_onboarded": bool(frappe.db.get_single_value("Suite Settings", "is_onboarded")),
-        "can_onboard": "System Manager" in frappe.get_roles(),
+        "can_onboard": frappe.session.user == "Administrator" or "Suite Admin" in frappe.get_roles(),
     }
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_onboarded(timezone: str | None = None) -> None:
-    frappe.only_for("System Manager")
+    require_admin()
+    from suite.suite_core.utils import is_suite_cloud_configured
+
+    if is_suite_cloud_configured():
+        from suite.composition.admin_onboarding import require_readiness
+
+        require_readiness()
 
     if not frappe.is_setup_complete() and uses_suite_setup_wizard():
         from frappe.desk.page.setup_wizard.setup_wizard import complete_app_setup
@@ -40,7 +47,7 @@ def get_workspace() -> dict[str, str]:
 
 @frappe.whitelist(methods=["POST"])
 def update_workspace(workspace_name: str, workspace_logo: str = "") -> None:
-    frappe.only_for("System Manager")
+    require_admin()
 
     workspace_name = workspace_name.strip()
     if not workspace_name:
@@ -52,7 +59,7 @@ def update_workspace(workspace_name: str, workspace_logo: str = "") -> None:
     old_logo = settings.workspace_logo
     settings.workspace_name = workspace_name
     settings.workspace_logo = workspace_logo
-    settings.save()
+    settings.save(ignore_permissions=True)
 
     if old_logo and old_logo != workspace_logo:
         delete_logo_file(old_logo)
@@ -71,17 +78,29 @@ def validate_workspace_logo(workspace_logo: str) -> None:
     if workspace_logo.rsplit(".", 1)[-1].lower() not in ALLOWED_LOGO_EXTENSIONS:
         frappe.throw(_("Workspace logo must be a PNG, JPEG, or WebP image"))
 
-    file_exists = frappe.db.exists(
+    file = frappe.db.get_value(
         "File",
+        {"file_url": workspace_logo, "is_private": 0},
+        ["name", "owner", "attached_to_doctype", "attached_to_name"],
+        as_dict=True,
+    )
+    if not file:
+        frappe.throw(_("Workspace logo file not found"))
+    if file.attached_to_doctype == "Suite Settings" and file.attached_to_name == "Suite Settings":
+        return
+    if file.owner != frappe.session.user or file.attached_to_doctype or file.attached_to_name:
+        frappe.throw(_("Choose an image uploaded by you for this business"), frappe.PermissionError)
+    # The business workflow authorizes only attaching this caller's new public
+    # raster file; it grants no generic write access to provider credentials.
+    frappe.db.set_value(
+        "File",
+        file.name,
         {
-            "file_url": workspace_logo,
-            "is_private": 0,
             "attached_to_doctype": "Suite Settings",
             "attached_to_name": "Suite Settings",
+            "attached_to_field": "workspace_logo",
         },
     )
-    if not file_exists:
-        frappe.throw(_("Workspace logo file not found"))
 
 
 def delete_logo_file(file_url: str) -> None:
@@ -99,7 +118,7 @@ def delete_logo_file(file_url: str) -> None:
 
 @frappe.whitelist(methods=["POST"])
 def invite_users(emails: str) -> dict[str, list[str]]:
-    frappe.only_for("System Manager")
+    require_admin()
 
     from frappe.core.api.user_invitation import invite_by_email
 
@@ -124,32 +143,14 @@ def get_invite_roles() -> list[str]:
 
 @frappe.whitelist()
 def get_users() -> list[dict]:
-    frappe.only_for("System Manager")
+    from suite.suite_core.administration import list_users
 
-    users = frappe.get_all(
-        "User",
-        filters={
-            "enabled": 1,
-            "name": ["not in", ["Administrator", "Guest"]],
-        },
-        fields=["name", "email", "full_name", "user_image"],
-        order_by="full_name asc",
-    )
-    admins = set(
-        frappe.get_all(
-            "Has Role",
-            filters={"role": "System Manager", "parenttype": "User"},
-            pluck="parent",
-        )
-    )
-    for user in users:
-        user["is_admin"] = user["name"] in admins
-    return users
+    return list_users()
 
 
 @frappe.whitelist()
 def get_pending_invites() -> list[dict]:
-    frappe.only_for("System Manager")
+    require_admin()
 
     invites = frappe.get_all(
         "User Invitation",

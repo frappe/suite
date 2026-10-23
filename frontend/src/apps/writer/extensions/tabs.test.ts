@@ -1,15 +1,30 @@
-import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { TabsExtension, orderedTabs, tabsIn } from './tabs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { orderedTabs, TabsExtension, tabsIn } from './tabs'
+
+const editors: Editor[] = []
+
+beforeEach(() => vi.useFakeTimers())
+
+afterEach(async () => {
+  try {
+    await vi.runAllTimersAsync()
+  } finally {
+    editors.splice(0).forEach((editor) => editor.destroy())
+    vi.useRealTimers()
+  }
+})
 
 const makeEditor = (labels: string[]) => {
   const editor = new Editor({
     extensions: [Document, Paragraph, Text, TabsExtension],
     content: '<p>first</p>',
   })
+  editors.push(editor)
   editor.commands.wrapInTab({ label: labels[0] })
   labels.slice(1).forEach((label) => editor.commands.createTab({ label }))
   return editor
@@ -18,8 +33,7 @@ const makeEditor = (labels: string[]) => {
 const labelsOf = (editor: Editor) =>
   orderedTabs(editor.state.doc).map(({ node }) => node.attrs.label)
 
-const idsOf = (editor: Editor) =>
-  tabsIn(editor.state.doc).map(({ node }) => node.attrs.id)
+const idsOf = (editor: Editor) => tabsIn(editor.state.doc).map(({ node }) => node.attrs.id)
 
 describe('tab reordering', () => {
   it('reorders without moving nodes', () => {
@@ -41,9 +55,7 @@ describe('tab reordering', () => {
 
     expect(idsOf(editor).sort()).toEqual([...ids].sort())
     expect(labelsOf(editor).sort()).toEqual(['a', 'b', 'c', 'd'])
-    expect(
-      orderedTabs(editor.state.doc).map(({ node }) => node.attrs.order),
-    ).toEqual([0, 1, 2, 3])
+    expect(orderedTabs(editor.state.doc).map(({ node }) => node.attrs.order)).toEqual([0, 1, 2, 3])
   })
 
   it('rejects out-of-range and no-op moves', () => {
@@ -75,10 +87,7 @@ describe('tab id integrity', () => {
 
     tr.insert(
       editor.state.doc.content.size,
-      editor.schema.nodes.tab.create(
-        first.node.attrs,
-        editor.schema.nodes.paragraph.create(),
-      ),
+      editor.schema.nodes.tab.create(first.node.attrs, editor.schema.nodes.paragraph.create()),
     )
     editor.view.dispatch(tr)
 
@@ -102,6 +111,7 @@ describe('ordered serialisation', () => {
       extensions: [Document, Paragraph, Text, TabsExtension],
       content: '<p>plain</p>',
     })
+    editors.push(editor)
     expect(editor.getHTML()).toBe('<p>plain</p>')
   })
 })

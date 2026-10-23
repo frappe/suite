@@ -26,14 +26,10 @@ const getByDayMessage = (byDay?: { day: string; nthOfPeriod?: number }[]) => {
   if (!byDay?.length) return ''
   const [first] = byDay
 
-  if (first.nthOfPeriod === -1)
-    return __(' on the last {0}', [DAYS_MAP[first.day]])
+  if (first.nthOfPeriod === -1) return __(' on the last {0}', [DAYS_MAP[first.day]])
 
   if (first.nthOfPeriod != null)
-    return __(' on the {0} {1}', [
-      getNthLabel(first.nthOfPeriod),
-      DAYS_MAP[first.day],
-    ])
+    return __(' on the {0} {1}', [getNthLabel(first.nthOfPeriod), DAYS_MAP[first.day]])
 
   return __(' on {0}', [
     [...byDay]
@@ -102,8 +98,7 @@ export const getRepeatMessage = (recurrenceRule: RecurrenceRule) => {
       : __('Every {0} {1}', [interval, frequency.label.toLowerCase()])
 
   const suffix =
-    getByDayMessage(recurrenceRule.byDay) ||
-    getByMonthDayMessage(recurrenceRule.byMonthDay)
+    getByDayMessage(recurrenceRule.byDay) || getByMonthDayMessage(recurrenceRule.byMonthDay)
 
   const fullMessage = `${message}${suffix}`
 
@@ -114,8 +109,7 @@ export const getRepeatMessage = (recurrenceRule: RecurrenceRule) => {
       fullMessage,
       dayjs(recurrenceRule.until.replace(/Z$/, '')).format('MMM DD, YYYY'),
     ])
-  if (recurrenceRule?.count)
-    return __('{0}, {1} times', [fullMessage, recurrenceRule.count])
+  if (recurrenceRule?.count) return __('{0}, {1} times', [fullMessage, recurrenceRule.count])
 
   return fullMessage
 }

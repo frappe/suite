@@ -22,6 +22,10 @@ INDEX_TTL = 60  # seconds an index is served before Suite Cloud is asked again
 INDEX_KEEP = 24 * 3600  # the last good index stays this long to cover a refresh Suite Cloud refuses
 
 
+class ListingCutShortError(frappe.ValidationError):
+    """A paged listing was still going after ``MAX_PAGES``; what came back is not the whole set."""
+
+
 def get_domains() -> list[dict]:
     """The site's domains, read from Suite Cloud on every call so the dashboard is never stale."""
 
@@ -50,10 +54,10 @@ def get_mailing_list_index() -> dict[str, list[str]]:
 
     try:
         index = build_mailing_list_index()
-    except frappe.TooManyRequestsError, SuiteCloudUnavailableError:
+    except (frappe.TooManyRequestsError, SuiteCloudUnavailableError, ListingCutShortError) as e:
         if index is None:
             raise
-        log_mail_error("Mailing list index could not be refreshed; the previous one is in use")
+        log_mail_error("Mailing list index could not be refreshed; the previous one is in use", str(e))
     else:
         # Only a successful build writes the index, so a failed one cannot undo a parallel success.
         frappe.cache.set_value(INDEX_KEY, index, expires_in_sec=INDEX_KEEP)
@@ -77,7 +81,11 @@ def clear_mailing_list_index() -> None:
 
 
 def all_pages(method: str, limit: int = LIST_PAGE, **params) -> list[dict]:
-    """Every item of a paged listing (``{items, total}``), read page by page."""
+    """Every item of a paged listing (``{items, total}``), read page by page.
+
+    Raises ``ListingCutShortError`` rather than return part of the set: a caller that checks for
+    a duplicate or expands a list must not act on a listing with the tail missing.
+    """
 
     client = get_client()
     items: list[dict] = []
@@ -88,8 +96,7 @@ def all_pages(method: str, limit: int = LIST_PAGE, **params) -> list[dict]:
         start += len(page["items"])
         if not page["items"] or start >= page["total"]:
             return items
-    log_mail_error(f"{method} kept answering after {MAX_PAGES} pages; the listing was cut short")
-    return items
+    raise ListingCutShortError(f"{method} kept answering after {MAX_PAGES} pages")
 
 
 def get_group_addresses() -> set[str]:
@@ -129,6 +136,7 @@ def create_account(
     locale: str | None = None,
     time_zone: str | None = None,
     disable_receiving: bool = False,
+    operation: str | None = None,
 ) -> dict:
     """Creates the account and returns its payload, including the app password (shown once).
 
@@ -147,7 +155,26 @@ def create_account(
         locale=locale,
         time_zone=time_zone,
         disable_receiving=disable_receiving or None,
+        description=f"Suite setup {operation}" if operation else None,
     )
+
+
+def provision_account(email: str, password: str, *, operation: str, **options) -> dict:
+    """Retry only an account positively identified as this operation's resource.
+
+    A durable non-secret description bridges provider/local transactions. A lost
+    response is recovered by rotating the app credential, never deleting an
+    account whose ownership is uncertain or retrieving a previous secret.
+    """
+    client = get_client()
+    try:
+        existing = client.call("mail.accounts.get_account", email=email)
+    except frappe.DoesNotExistError:
+        return create_account(email, password, operation=operation, **options)
+    if existing.get("description") != f"Suite setup {operation}":
+        frappe.throw(_("This business address is already claimed by another account"), frappe.ValidationError)
+    client.call("mail.accounts.set_password", email=email, password=password)
+    return {**existing, **client.call("mail.accounts.rotate_app_password", email=email)}
 
 
 def update_password(user: str | None = None, new_password: str | None = None) -> None:

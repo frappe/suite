@@ -3,10 +3,10 @@
 // package from the lockfile. This runs before plain `yarn dev`, so switching
 // back from local-frappe-ui work is automatic. No-op (and cheap) when nothing
 // is linked.
+import { execSync } from 'node:child_process'
 import { lstatSync, unlinkSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execSync } from 'node:child_process'
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const linkPath = resolve(frontendDir, 'node_modules/frappe-ui')

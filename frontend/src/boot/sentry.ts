@@ -33,7 +33,8 @@ export async function initSentry(app: App, router: Router): Promise<void> {
         if (original && typeof original === 'object') {
           const error = original as Record<string, unknown>
           const exceptionType = error.exc_type ?? error.excType
-          if (exceptionType === 'PermissionError' || exceptionType === 'ValidationError') return null
+          if (exceptionType === 'PermissionError' || exceptionType === 'ValidationError')
+            return null
         }
 
         const stack = original instanceof Error ? original.stack : ''

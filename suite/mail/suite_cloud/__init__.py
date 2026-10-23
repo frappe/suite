@@ -120,6 +120,8 @@ class SuiteCloudClient:
             frappe.throw(_("Suite Cloud is unreachable; try again shortly."), SuiteCloudUnavailableError)
 
         if response.ok:
+            if method == "tenant.ping":
+                frappe.cache.delete_value("suite:provider_suspended")
             payload = response.json() if response.content else {}  # a delete answers 204, no body
             return payload.get("data") if isinstance(payload, dict) else payload
 
@@ -127,6 +129,8 @@ class SuiteCloudClient:
 
     def _raise_for(self, method: str, response: requests.Response) -> None:
         exc_type, message = _error_payload(response)
+        if exc_type == "TenantSuspendedError":
+            frappe.cache.set_value("suite:provider_suspended", True)
         exc = _EXCEPTIONS_BY_TYPE.get(exc_type) or _EXCEPTIONS_BY_STATUS.get(response.status_code)
         if exc is None and 400 <= response.status_code < 500:
             exc = frappe.ValidationError
@@ -186,7 +190,7 @@ def _error_payload(response: requests.Response) -> tuple[str | None, str | None]
     except ValueError:
         return None, None
     errors = payload.get("errors") if isinstance(payload, dict) else None
-    if not errors or not isinstance(errors[0], dict):
+    if not isinstance(errors, list) or not errors or not isinstance(errors[0], dict):
         return None, None
 
     exc_type, message = errors[0].get("type"), errors[0].get("message")
@@ -198,6 +202,10 @@ def _error_payload(response: requests.Response) -> tuple[str | None, str | None]
 
 @request_cache
 def get_client() -> SuiteCloudClient:
+    from suite.mail import dev_suite_cloud
+
+    if dev_suite_cloud.is_enabled():
+        return dev_suite_cloud.DevSuiteCloud()  # type: ignore[return-value]
     is_suite_cloud_configured(raise_exception=True)
     url, tenant, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)
     # The same Verify SSL as the JMAP URL: Suite Cloud and the cluster share a deployment.

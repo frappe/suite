@@ -11,6 +11,10 @@ const NORMAL_LINE_HEIGHT = 1.2
 
 export const DEFAULT_LINE_HEIGHT = 1.5
 
+/** Font sizes, in px, that the toolbar and settings accept. */
+export const FONT_SIZE_MIN = 6
+export const FONT_SIZE_MAX = 96
+
 export function toLineSpacing(cssLineHeight: number | string | null | undefined): number {
   const css = Number(cssLineHeight) || DEFAULT_LINE_HEIGHT
   return Math.round((css / NORMAL_LINE_HEIGHT) * 100) / 100

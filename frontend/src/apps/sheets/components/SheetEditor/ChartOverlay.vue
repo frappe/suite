@@ -34,7 +34,11 @@
         <button class="co-action" title="Refresh data" @click="$emit('refresh', chart.id)">
           <FeatherIcon name="refresh-cw" class="co-action-icon" />
         </button>
-        <button class="co-action co-action--danger" title="Delete chart" @click="$emit('delete', chart.id)">
+        <button
+          class="co-action co-action--danger"
+          title="Delete chart"
+          @click="$emit('delete', chart.id)"
+        >
           <FeatherIcon name="trash-2" class="co-action-icon" />
         </button>
       </div>
@@ -50,8 +54,9 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
+import { computed, defineAsyncComponent, ref } from 'vue'
+
 // Lazy-load ChartView so ECharts (~600 KB) only enters the bundle when a
 // sheet actually has charts. Vite produces a separate chunk for the
 // component and all its transitive `echarts/*` imports.
@@ -60,31 +65,33 @@ const ChartView = defineAsyncComponent(() => import('./ChartView.vue'))
 const props = defineProps({
   // List of all chart configs across all sheets — the overlay filters down
   // to the active sub-sheet itself.
-  charts:       { type: Array,  default: () => [] },
+  charts: { type: Array, default: () => [] },
   currentSheet: { type: String, required: true },
   // (sourceSheet, sourceRange) → 2D matrix. Caller-owned so it can pull from
   // the sheet engine and re-derive on cell edits.
-  getMatrix:    { type: Function, required: true },
+  getMatrix: { type: Function, required: true },
   // Bumps when the source data should be re-pulled — on refresh and on any
   // sheet cell edit, but NOT on drag/resize/scroll. Part of the matrix cache
   // key so position-only re-renders (drag/resize) reuse the cached matrix
   // instead of re-materialising it every frame, while edits refresh the chart.
-  dataVersion:  { type: Number, default: 0 },
-  selectedId:   { type: String, default: '' },
+  dataVersion: { type: Number, default: 0 },
+  selectedId: { type: String, default: '' },
   // When true the whole overlay is hidden (e.g. while the chart dialog is
   // open) — prevents the chart's z-indexed action toolbar from floating
   // over the dialog body.
-  suppressed:   { type: Boolean, default: false },
+  suppressed: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select', 'edit', 'delete', 'refresh', 'move', 'resize'])
 
-const chartsForSheet = computed(() => props.charts.filter(c => c.position?.sheet === props.currentSheet))
+const chartsForSheet = computed(() =>
+  props.charts.filter((c) => c.position?.sheet === props.currentSheet),
+)
 
 function _hostStyle(chart) {
   const p = chart.position || {}
   return {
     transform: `translate(${p.x || 0}px, ${p.y || 0}px)`,
-    width:  (p.width  || 480) + 'px',
+    width: (p.width || 480) + 'px',
     height: (p.height || 320) + 'px',
   }
 }
@@ -111,14 +118,14 @@ let _drag = null
 function _startDrag(chart, e) {
   emit('select', chart.id)
   _drag = {
-    id:     chart.id,
+    id: chart.id,
     startX: e.clientX,
     startY: e.clientY,
-    origX:  chart.position?.x || 0,
-    origY:  chart.position?.y || 0,
+    origX: chart.position?.x || 0,
+    origY: chart.position?.y || 0,
   }
   document.addEventListener('mousemove', _onDragMove)
-  document.addEventListener('mouseup',   _onDragEnd)
+  document.addEventListener('mouseup', _onDragEnd)
 }
 
 function _onDragMove(e) {
@@ -130,7 +137,7 @@ function _onDragMove(e) {
 
 function _onDragEnd() {
   document.removeEventListener('mousemove', _onDragMove)
-  document.removeEventListener('mouseup',   _onDragEnd)
+  document.removeEventListener('mouseup', _onDragEnd)
   _drag = null
 }
 
@@ -141,14 +148,14 @@ let _resize = null
 function _startResize(chart, e) {
   emit('select', chart.id)
   _resize = {
-    id:     chart.id,
+    id: chart.id,
     startX: e.clientX,
     startY: e.clientY,
-    origW:  chart.position?.width  || 480,
-    origH:  chart.position?.height || 320,
+    origW: chart.position?.width || 480,
+    origH: chart.position?.height || 320,
   }
   document.addEventListener('mousemove', _onResizeMove)
-  document.addEventListener('mouseup',   _onResizeEnd)
+  document.addEventListener('mouseup', _onResizeEnd)
 }
 
 function _onResizeMove(e) {
@@ -160,7 +167,7 @@ function _onResizeMove(e) {
 
 function _onResizeEnd() {
   document.removeEventListener('mousemove', _onResizeMove)
-  document.removeEventListener('mouseup',   _onResizeEnd)
+  document.removeEventListener('mouseup', _onResizeEnd)
   _resize = null
 }
 
@@ -175,7 +182,7 @@ function _onLayerMousedown(e) {
 .co-layer {
   position: absolute;
   inset: 0;
-  pointer-events: none;  /* let canvas receive clicks; charts opt back in */
+  pointer-events: none; /* let canvas receive clicks; charts opt back in */
   /* Above .sn-pivot-fab (z-20) and .sn-pivot-highlight (z-15) so a chart
      dragged on top of a pivot table fully occludes both the pivot's edit
      fab and its dotted output border — otherwise they punch through the
@@ -184,53 +191,78 @@ function _onLayerMousedown(e) {
 }
 .co-host {
   position: absolute;
-  top: 0; left: 0;
+  top: 0;
+  left: 0;
   pointer-events: auto;
   cursor: move;
   background: var(--surface-base, #ffffff);
   border-radius: 10px;
   border: 1px solid var(--outline-gray-2, #e5e5e5);
   box-shadow:
-    0 0 0 1px rgba(0,0,0,.02),
-    0 4px 12px -4px rgba(0,0,0,.08);
-  transition: border-color .12s, box-shadow .12s;
+    0 0 0 1px rgba(0, 0, 0, 0.02),
+    0 4px 12px -4px rgba(0, 0, 0, 0.08);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
 }
-.co-host:hover { border-color: var(--outline-gray-3, #d4d4d4); }
+.co-host:hover {
+  border-color: var(--outline-gray-3, #d4d4d4);
+}
 .co-host--selected {
-  border-color: var(--ink-cyan-6, #0891B2);
+  border-color: var(--ink-cyan-6, #0891b2);
   box-shadow:
-    0 0 0 2px rgba(8,145,178,.18),
-    0 6px 16px -4px rgba(0,0,0,.12);
+    0 0 0 2px rgba(8, 145, 178, 0.18),
+    0 6px 16px -4px rgba(0, 0, 0, 0.12);
 }
 
 .co-actions {
   position: absolute;
   top: -36px;
   right: 0;
-  display: flex; gap: 4px;
+  display: flex;
+  gap: 4px;
   padding: 4px;
   background: var(--surface-base);
   border: 1px solid var(--outline-gray-2);
   border-radius: 8px;
-  box-shadow: 0 4px 12px -4px rgba(0,0,0,.12);
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.12);
 }
 .co-action {
-  width: 28px; height: 28px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: transparent; border: 0; border-radius: 4px;
-  color: var(--ink-gray-7); cursor: pointer;
-  transition: background-color .1s, color .1s;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--ink-gray-7);
+  cursor: pointer;
+  transition:
+    background-color 0.1s,
+    color 0.1s;
 }
-.co-action:hover            { background: var(--surface-gray-2); color: var(--ink-gray-9); }
-.co-action--danger:hover    { background: var(--surface-red-1, #fee2e2); color: var(--ink-red-6, #dc2626); }
-.co-action-icon             { width: 14px; height: 14px; }
+.co-action:hover {
+  background: var(--surface-gray-2);
+  color: var(--ink-gray-9);
+}
+.co-action--danger:hover {
+  background: var(--surface-red-1, #fee2e2);
+  color: var(--ink-red-6, #dc2626);
+}
+.co-action-icon {
+  width: 14px;
+  height: 14px;
+}
 
 .co-resize {
   position: absolute;
-  bottom: -4px; right: -4px;
-  width: 12px; height: 12px;
+  bottom: -4px;
+  right: -4px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: var(--ink-cyan-6, #0891B2);
+  background: var(--ink-cyan-6, #0891b2);
   border: 2px solid var(--surface-base);
   cursor: nwse-resize;
 }

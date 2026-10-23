@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
 import { overlayRectStyle } from './overlay-rect.js'
 
 // Header gutter + a 1000×600 viewport for all cases.
@@ -19,8 +20,8 @@ describe('overlayRectStyle', () => {
     const s = overlayRectStyle(cell(50, 24), cell(118000, 118000, 200, 24), opts)
     // Width/height are pinned to the viewport, never the true extent — this is
     // what stops the grid-wrap from gaining scrollable overflow.
-    expect(s.width).toBe('950px')   // 1000 - left(50)
-    expect(s.height).toBe('576px')  // 600 - top(24)
+    expect(s.width).toBe('950px') // 1000 - left(50)
+    expect(s.height).toBe('576px') // 600 - top(24)
     expect(s.borderRightWidth).toBe('0')
     expect(s.borderBottomWidth).toBe('0')
   })
@@ -28,9 +29,9 @@ describe('overlayRectStyle', () => {
   it('clamps only the axis that overflows', () => {
     // Wide but short: overflows right only.
     const s = overlayRectStyle(cell(100, 100), cell(5000, 200), opts)
-    expect(s.width).toBe('900px')   // clamped to viewW - left
+    expect(s.width).toBe('900px') // clamped to viewW - left
     expect(s.borderRightWidth).toBe('0')
-    expect(s.height).toBe('124px')  // unclamped
+    expect(s.height).toBe('124px') // unclamped
     expect(s.borderBottomWidth).toBeUndefined()
   })
 

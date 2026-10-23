@@ -22,10 +22,13 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 
+from suite.mail import classification
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
-from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
+from suite.mail.doctype.sieve_script.sieve_script import UNSCREENED_KEYWORD
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
+    SetResult,
+    SuiteJMAPClient,
     account_view,
     chunked_get,
     chunked_set,
@@ -812,6 +815,19 @@ def fetch_threads(
     across all mailboxes), ordered oldest to newest.
     """
 
+    return query_threads(account, filter, position, limit)[0]
+
+
+def query_threads(
+    account: str,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    calculate_total: bool = False,
+) -> tuple[dict[str, list[dict]], dict[str, str], int]:
+    """A page of threads matching the filter, as `fetch_threads` returns them, with each thread's
+    newest message that matched (by id, keyed by thread) and, if asked, how many threads match."""
+
     client = get_account_client(account)
     with client.batch() as b:
         q = b.mail.email.query(
@@ -820,15 +836,19 @@ def fetch_threads(
             collapseThreads=True,
             position=position,
             limit=limit,
+            calculate_total=calculate_total,
         )
-        g = b.mail.email.get(ids=q.ref_ids(), properties=["threadId"])
+        g = b.mail.email.get(ids=q.ref_ids(), properties=["id", "threadId"])
         t = b.mail.thread.get(ids=g.ref_list("threadId"), properties=["id", "emailIds"])
 
+    # One match per thread: the query collapses each to its newest matching message.
+    matches = {email["threadId"]: email["id"] for email in (e.to_wire() for e in g.result.items)}
+    total = q.result.total or 0
     thread_email_ids = {
         thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in t.result.items)
     }
     if not thread_email_ids:
-        return {}
+        return {}, matches, total
 
     # Fetch every message in the page's threads once, then group them back by thread.
     threads: dict[str, list[dict]] = {thread_id: [] for thread_id in thread_email_ids}
@@ -838,10 +858,11 @@ def fetch_threads(
             threads[message["thread_id"]].append(message)
 
     # Order each conversation oldest to newest so callers don't have to re-sort.
-    return {
+    conversations = {
         thread_id: sorted(messages, key=lambda message: message["received_at"])
         for thread_id, messages in threads.items()
     }
+    return conversations, matches, total
 
 
 def fetch_thread(account: str, thread_id: str, sort: Literal["asc", "desc"] = "asc") -> list[dict]:
@@ -864,71 +885,68 @@ def get_thread_email_ids(account: str, thread_ids: list[str]) -> dict[str, list[
     return {thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in threads)}
 
 
-def search_messages(
-    account: str, filter: dict, position: int = 0, limit: int = 20, sort: list[dict] | None = None
-) -> tuple[list[dict], int]:
-    """Returns a list of messages and total count based on the provided search filter."""
-
-    if not account or not filter:
-        frappe.throw(_("Account and filter are required."))
-
-    fields = [
-        "name",
-        "id",
-        "subject",
-        "preview",
-        "recipients",
-        "sent_at",
-        "received_at",
-        "from_name",
-        "from_email",
-        "thread_id",
-        "mailboxes",
-        "attachments",
-        "seen",
-    ]
-
-    messages, total = fetch_messages(account, filter=filter, position=position, limit=limit, sort=sort)
-    return [{field: message[field] for field in fields} for message in messages], total
-
-
 def get_messages(account: str, ids: list[str]) -> list[dict]:
     """Returns a list of messages for the provided IDs in the same order as ids."""
 
     get_user_for_jmap_account(account, allow_system_manager=False, raise_exception=True)
 
     cached_messages = _get_cached_messages(account, ids)
+    classify = classification.is_enabled()
 
     messages = {}
     ids_to_fetch = []
     for id in ids:
-        if cached_message := cached_messages.get(id):
+        cached_message = cached_messages.get(id)
+        # A copy cached while classification was off - or before there was any - has never been
+        # through it, and would stay without a category for as long as it stayed cached. It is
+        # fetched again as if it were not held, the once: the copy that replaces it is marked.
+        if cached_message and (cached_message.get("classified") or not classify):
             messages[id] = cached_message
         else:
             ids_to_fetch.append(id)
 
     if ids_to_fetch:
+        fetched_at = _now()
         client = get_account_client(account)
+        properties = EMAIL_PROPERTIES + classification.EMAIL_PROPERTIES if classify else EMAIL_PROPERTIES
         emails = [
             e.to_wire()
             for e in chunked_get(
                 client,
-                lambda b, chunk: b.mail.email.get(
-                    ids=chunk, properties=EMAIL_PROPERTIES, fetchAllBodyValues=True
-                ),
+                lambda b, chunk: b.mail.email.get(ids=chunk, properties=properties, fetchAllBodyValues=True),
                 ids_to_fetch,
             )
         ]
-        mailbox_map = {mb["id"]: mb["name"] for mb in get_cached_mailboxes(account)}
+        mailboxes = get_cached_mailboxes(account)
+
+        # A message from the server is one the cache does not hold, or holds unclassified: new
+        # mail, or old mail seen here for the first time. Either may still be without a category.
+        owed = classification.classify_emails(client, account, emails, mailboxes) if classify else set()
+
+        mailbox_map = {mb["id"]: mb["name"] for mb in mailboxes}
 
         messages_to_cache = {}
         for email in emails:
             message = format_message(account, mailbox_map, email)
+            if classify and message["id"] not in owed:
+                # Been through classification, whatever came of it: mail the user wrote gets no
+                # category and a write can be refused, and neither is a reason to fetch it again.
+                # A write that only failed is: left unmarked, the message is tried again when it
+                # is next read.
+                message["classified"] = 1
             messages_to_cache[message["id"]] = message
             messages[message["id"]] = message
 
+        # A message changed through Suite since this read began may be held here as it was before:
+        # it is returned, but left for the next read to cache.
+        for id in _written_since(account, list(messages_to_cache), fetched_at):
+            messages_to_cache.pop(id)
         if messages_to_cache:
             _cache_messages(account, messages_to_cache)
+            # A change can land between that check and the write just made: looked at again, and
+            # anything changed since this read began goes back out.
+            if changed := _written_since(account, list(messages_to_cache), fetched_at):
+                get_data_store(account).delete_many(Entity.EMAIL, keys=list(changed))
 
     return [messages[id] for id in ids if id in messages]
 
@@ -967,7 +985,7 @@ def get_message_ids(
 
 def _update_emails(
     account: str, emails: list[dict], replace_keywords: bool = False, replace_mailboxes: bool = False
-) -> None:
+) -> SetResult:
     """Update email keywords/mailboxes, as whole-value replacement or per-key patches."""
 
     payload = {}
@@ -990,7 +1008,7 @@ def _update_emails(
             raise ValueError("At least one of 'keywords' or 'mailbox_ids' must be provided for update.")
 
     client = get_account_client(account)
-    chunked_set(client, lambda b, chunk: b.mail.email.set(update=chunk), payload)
+    return chunked_set(client, lambda b, chunk: b.mail.email.set(update=chunk), payload)
 
 
 def _delete_emails(account: str, ids: list[str]) -> None:
@@ -1042,10 +1060,10 @@ def empty_mailbox(account: str, mailbox_id: str) -> None:
             _remove_cached_messages(account, ids)
     except Exception:
         log_mail_error(
-            _("Failed to empty mailbox"),
+            _("Failed to empty folder"),
             frappe.get_traceback(with_context=True),
         )
-        frappe.throw(_("Failed to empty mailbox."))
+        frappe.throw(_("Failed to empty folder."))
 
 
 def move_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> None:
@@ -1060,10 +1078,36 @@ def move_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> N
         _remove_cached_messages(account, ids)
     except Exception:
         log_mail_error(
-            _("Failed to move mail(s) to mailbox"),
+            _("Failed to move mail(s) to folder"),
             frappe.get_traceback(with_context=True),
         )
-        frappe.throw(_("Failed to move mail(s) to mailbox."))
+        frappe.throw(_("Failed to move mail(s) to folder."))
+
+
+def _try_update_emails(
+    account: str, emails: list[dict], error: str, **replace: bool
+) -> tuple[list[str], bool]:
+    """Updates emails as far as the server will, returning the ids it updated and whether that was
+    all of them: a failure part way still says what it had already updated."""
+
+    try:
+        result = _update_emails(account, emails, **replace)
+        complete = not result.not_updated
+    except Exception as e:
+        log_mail_error(error, frappe.get_traceback(with_context=True))
+        result, complete = getattr(e, "applied", None) or SetResult(), False
+    return [email["id"] for email in emails if email["id"] in result.updated], complete
+
+
+def try_move_messages(account: str, ids: list[str], mailbox_id: str) -> tuple[list[str], bool]:
+    """Moves messages to a mailbox as far as the server will (see `_try_update_emails`)."""
+
+    emails = [{"id": id, "mailbox_ids": {mailbox_id: True}} for id in ids]
+    moved, complete = _try_update_emails(
+        account, emails, _("Failed to move mail(s) to folder"), replace_mailboxes=True
+    )
+    _remove_cached_messages(account, moved)
+    return moved, complete
 
 
 def set_messages_mailboxes(account: str, mails: list[dict]) -> None:
@@ -1087,10 +1131,28 @@ def set_messages_mailboxes(account: str, mails: list[dict]) -> None:
         _remove_cached_messages(account, [mail["id"] for mail in mails])
     except Exception:
         log_mail_error(
-            _("Failed to restore mailbox membership for mail(s)"),
+            _("Failed to restore folders for mail(s)"),
             frappe.get_traceback(with_context=True),
         )
-        frappe.throw(_("Failed to restore mailbox membership for mail(s)."))
+        frappe.throw(_("Failed to restore folders for mail(s)."))
+
+
+def get_messages_mailboxes(account: str, ids: list[str]) -> list[dict]:
+    """Each message's mailbox membership and junk status, as `set_messages_mailboxes` restores them."""
+
+    emails = chunked_get(
+        get_account_client(account),
+        lambda b, chunk: b.mail.email.get(ids=chunk, properties=["id", "mailboxIds", "keywords"]),
+        ids,
+    )
+    return [
+        {
+            "id": email["id"],
+            "mailbox_ids": [mailbox_id for mailbox_id, held in email["mailboxIds"].items() if held],
+            "junk": int(bool((email.get("keywords") or {}).get("$junk"))),
+        }
+        for email in (e.to_wire() for e in emails)
+    ]
 
 
 def add_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> None:
@@ -1105,10 +1167,10 @@ def add_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> No
         _remove_cached_messages(account, ids)
     except Exception:
         log_mail_error(
-            _("Failed to add mail(s) to mailbox"),
+            _("Failed to add mail(s) to folder"),
             frappe.get_traceback(with_context=True),
         )
-        frappe.throw(_("Failed to add mail(s) to mailbox."))
+        frappe.throw(_("Failed to add mail(s) to folder."))
 
 
 def remove_messages_from_mailbox(account: str, ids: list[str], mailbox_id: str) -> None:
@@ -1123,10 +1185,39 @@ def remove_messages_from_mailbox(account: str, ids: list[str], mailbox_id: str) 
         _remove_cached_messages(account, ids)
     except Exception:
         log_mail_error(
-            _("Failed to remove mail(s) from mailbox"),
+            _("Failed to remove mail(s) from folder"),
             frappe.get_traceback(with_context=True),
         )
-        frappe.throw(_("Failed to remove mail(s) from mailbox."))
+        frappe.throw(_("Failed to remove mail(s) from folder."))
+
+
+def _cache_seen(account: str, ids: list[str], seen: bool) -> None:
+    """Bring the cached copies of these messages in line with their new seen status."""
+
+    messages_to_cache = {}
+    for message_id, message in _get_cached_messages(account, ids).items():
+        if message:
+            keywords = json.loads(message["keywords"])
+            keywords["$seen"] = bool(seen)
+
+            message["seen"] = cint(seen)
+            message["keywords"] = json.dumps(keywords, indent=4)
+
+            messages_to_cache[message_id] = message
+
+    if messages_to_cache:
+        _cache_messages(account, messages_to_cache)
+
+
+def try_set_seen(account: str, ids: list[str], seen: bool = True) -> tuple[list[str], bool]:
+    """Sets the seen status of messages as far as the server will (see `_try_update_emails`)."""
+
+    emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
+    changed, complete = _try_update_emails(
+        account, emails, _("Failed to set seen status for mail(s)"), replace_keywords=False
+    )
+    _cache_seen(account, changed, seen)
+    return changed, complete
 
 
 def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
@@ -1138,20 +1229,7 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
     try:
         emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
         _update_emails(account, emails, replace_keywords=False)
-
-        messages_to_cache = {}
-        for message_id, message in _get_cached_messages(account, ids).items():
-            if message:
-                keywords = json.loads(message["keywords"])
-                keywords["$seen"] = bool(seen)
-
-                message["seen"] = cint(seen)
-                message["keywords"] = json.dumps(keywords, indent=4)
-
-                messages_to_cache[message_id] = message
-
-        if messages_to_cache:
-            _cache_messages(account, messages_to_cache)
+        _cache_seen(account, ids, seen)
 
     except Exception:
         log_mail_error(
@@ -1159,6 +1237,48 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
             frappe.get_traceback(with_context=True),
         )
         frappe.throw(_("Failed to set seen status for mail(s)."))
+
+
+def is_unscreened_message(message: dict) -> bool:
+    """Whether the message is from a sender nobody has allowed or denied yet (UNSCREENED_KEYWORD)."""
+
+    keywords = message.get("keywords") or {}
+    if isinstance(keywords, str):
+        keywords = json.loads(keywords or "{}")
+    return bool(keywords.get(UNSCREENED_KEYWORD))
+
+
+def set_unscreened_status(account: str, ids: list[str], unscreened: bool) -> None:
+    """Put the unscreened keyword on messages, or take it off (see UNSCREENED_KEYWORD)."""
+
+    if not account or not ids:
+        frappe.throw(_("Account and Mail IDs are required."))
+
+    try:
+        # A null patch removes a keyword; JMAP has no false keyword.
+        value = True if unscreened else None
+        _update_emails(account, [{"id": id, "keywords": {UNSCREENED_KEYWORD: value}} for id in ids])
+
+        messages_to_cache = {}
+        for message_id, message in _get_cached_messages(account, ids).items():
+            if message:
+                keywords = json.loads(message["keywords"])
+                if unscreened:
+                    keywords[UNSCREENED_KEYWORD] = True
+                else:
+                    keywords.pop(UNSCREENED_KEYWORD, None)
+                message["keywords"] = json.dumps(keywords, indent=4)
+                messages_to_cache[message_id] = message
+
+        if messages_to_cache:
+            _cache_messages(account, messages_to_cache)
+
+    except Exception:
+        log_mail_error(
+            _("Failed to change the screening of mail(s)"),
+            frappe.get_traceback(with_context=True),
+        )
+        frappe.throw(_("Failed to change the screening of mail(s)."))
 
 
 def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> None:
@@ -1494,6 +1614,32 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
                 rebuild_email_address_index(account)
 
 
+# When each message was last changed through Suite: a read of the server that began before then may
+# hold the message as it was, and must not cache it. Kept a minute, far longer than a read takes.
+_WRITTEN_KEY = "mail:written:{}"
+_WRITTEN_KEEP = 60
+
+
+def _now() -> float:
+    """Redis's clock, so a writer and a reader on different machines tell time alike."""
+
+    seconds, micros = frappe.cache.time()
+    return seconds + micros / 1_000_000
+
+
+def _written_key(account: str, id: str) -> str:
+    return frappe.cache.make_key(_WRITTEN_KEY.format(account) + f":{id}")
+
+
+def _written_since(account: str, ids: list[str], since: float) -> set[str]:
+    """The given messages changed through Suite at or after `since`."""
+
+    if not ids:
+        return set()
+    stamps = frappe.cache.mget([_written_key(account, id) for id in ids])
+    return {id for id, at in zip(ids, stamps, strict=True) if at is not None and float(at) >= since}
+
+
 def _remove_cached_messages(account: str, ids: list[str]) -> None:
     """Remove messages from cache for the provided IDs.
 
@@ -1506,6 +1652,13 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
 
     store = get_data_store(account)
     store.delete_many(Entity.EMAIL, keys=ids)
+    # Noted, so a read already on its way with the message as it was doesn't cache it back (see
+    # get_messages): a list reloading as a message is archived would otherwise keep it unarchived.
+    now = _now()
+    with frappe.cache.pipeline() as pipe:
+        for id in ids:
+            pipe.set(_written_key(account, id), now, ex=_WRITTEN_KEEP)
+        pipe.execute()
 
 
 def _message_addresses(messages: list[dict]) -> list[dict]:
@@ -1518,6 +1671,47 @@ def _message_addresses(messages: list[dict]) -> list[dict]:
             addresses.append({"name": recipient.get("display_name"), "email": recipient.get("email")})
 
     return addresses
+
+
+def _without_classification_echoes(
+    account: str, client: SuiteJMAPClient, updated_ids: list[str]
+) -> list[str]:
+    """Returns `updated_ids` less the messages whose only change is the category this site gave them.
+
+    Giving a message its category changes it on the server, so the write comes back through
+    Email/changes like an update from anywhere else - and would evict a message cached a moment
+    ago with that very category, to be fetched whole a second time, and tell every open client
+    to reload for it.
+
+    The cached copy is checked against the server rather than taken on trust: the same run of
+    changes can hold a real one, such as the message being read on another device, and that
+    still has to evict it. Keywords and mailboxes are all that can change on an Email.
+    """
+
+    updated_ids = list(updated_ids or [])
+    echoes = classification.take_echoes(account, updated_ids) if updated_ids else set()
+    cached = {id: m for id, m in _get_cached_messages(account, list(echoes)).items() if m} if echoes else {}
+    if not cached:
+        return updated_ids
+
+    emails = chunked_get(
+        client,
+        lambda b, chunk: b.mail.email.get(ids=chunk, properties=["id", "keywords", "mailboxIds"]),
+        list(cached),
+    )
+
+    def held(values: dict) -> set[str]:
+        return {key for key, value in values.items() if value}
+
+    unchanged = set()
+    for email in (e.to_wire() for e in emails):
+        message = cached[email["id"]]
+        same_keywords = held(json.loads(message["keywords"])) == held(email["keywords"])
+        same_mailboxes = {m["mailbox_id"] for m in message["mailboxes"]} == held(email["mailboxIds"])
+        if same_keywords and same_mailboxes:
+            unchanged.add(email["id"])
+
+    return [id for id in updated_ids if id not in unchanged]
 
 
 def _get_cached_blobs(account: str, blob_ids: list[str]) -> dict[str, bytes | None]:
@@ -1599,10 +1793,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                         pluck="mailbox_id",
                     )
                 ) | {
-                    m["id"]
-                    for m in mailboxes
-                    if m["role"] in ["sent", "drafts", "junk", "trash", "archive"]
-                    or m["name"] == SCREENER_MAILBOX_NAME
+                    m["id"] for m in mailboxes if m["role"] in ["sent", "drafts", "junk", "trash", "archive"]
                 }
                 logger.debug("resolved-disabled-mailboxes", disabled_mailboxes=disabled_mailboxes)
 
@@ -1610,7 +1801,9 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 mailboxes_to_reload = set()
 
                 for message in messages:
-                    if message["draft"] or message["seen"]:
+                    # Mail from a sender nobody has decided on yet waits quietly, as it did in the
+                    # Screener folder: no push until the sender is allowed.
+                    if message["draft"] or message["seen"] or is_unscreened_message(message):
                         continue
 
                     mailbox_id = None
@@ -1656,7 +1849,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 if mailboxes_to_reload:
                     frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
 
-        if updated_ids := result.updated:
+        if updated_ids := _without_classification_echoes(account, client, result.updated):
             logger.info("messages-updated", count=len(updated_ids))
             _remove_cached_messages(account, updated_ids)
 

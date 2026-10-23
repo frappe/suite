@@ -8,9 +8,6 @@
  "field_order": [
   "account_section",
   "user",
-  "account_column_break",
-  "user_folder",
-  "quota",
   "preferences_section",
   "webdav_enabled",
   "writer_section",
@@ -18,7 +15,7 @@
  ],
  "fields": [
   {
-   "description": "Who these settings belong to, plus the admin-managed storage details.",
+   "description": "Who these settings belong to.",
    "fieldname": "account_section",
    "fieldtype": "Section Break",
    "label": "Account"
@@ -30,25 +27,6 @@
    "label": "User",
    "options": "User",
    "unique": 1
-  },
-  {
-   "fieldname": "account_column_break",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "File entity backing this user's Home folder; created automatically on first use. Only admins may change it.",
-   "fieldname": "user_folder",
-   "fieldtype": "Link",
-   "label": "User Folder",
-   "options": "File",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "description": "Storage quota override for this user (in megabytes). 0 falls back to the site default. Only admins may change it.",
-   "fieldname": "quota",
-   "fieldtype": "Int",
-   "label": "Quota"
   },
   {
    "description": "External access to this user's Drive files.",

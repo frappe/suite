@@ -1,0 +1,410 @@
+import { cellId } from '../utils/cells.js'
+import { deepClone } from '../utils/deep-clone.js'
+import { dateSerialFromShown, displayNumber } from '../utils/format-number.js'
+import { adjustFormula } from './formula-adjust.js'
+import { remapIndexKeys, remapRect } from './ref-remap.js'
+import type { CellPort, IndexMap, Rect } from './types.js'
+
+// Ranged, per-sheet sort & filter — Google-Sheets-style "basic filter":
+//   At most one filter per sheet, scoped to a rectangular range. The range's
+//   first row is treated as the header row; subsequent rows are the data the
+//   filter hides/shows. Columns outside the range never get a chevron and
+//   never participate in hiding. Inserts/deletes inside the range shift it.
+//
+//   Persisted shape:
+//     { [sheetName]: { range: { r0, c0, r1, c1 }, byCol: { [colIdx]: spec } } }
+//
+//   - range.r0 is the header row (chevrons go on these cells)
+//   - byCol keys are GLOBAL column indices; specs only apply to columns in
+//     [range.c0 .. range.c1]
+//
+// Cells are read and written through `cells` (the same port as the clipboard):
+//   read(sheetName, rect)  → Promise<{ inputs: string[][], displays: string[][] }>
+//   write(sheetName, map)  → writes a {cellId: input} map as one edit
+// Filtering matches displayed values, which refresh(sheetName) reads into a
+// cache; computeHiddenRows, getColumnValues and getHeader read that cache, so
+// the UI can call them synchronously.
+
+export type FilterOperator = 'contains' | 'equals' | 'gt' | 'lt' | 'empty' | 'notempty' | 'inSet'
+
+/** One column's filter. An unknown operator hides nothing. */
+export interface FilterSpec {
+  operator: FilterOperator | string
+  /** Compared against the displayed value (contains / equals / gt / lt). */
+  value?: unknown
+  /** inSet: the displayed values to keep ('' = blanks). */
+  values?: string[]
+}
+
+/** One sheet's filter: its range (null = no filter) and per-column specs. */
+export interface SheetFilter {
+  range: Rect | null
+  byCol: Record<string, FilterSpec>
+}
+
+export type SortFilterSnapshot = Record<string, SheetFilter>
+
+export type SortFilter = ReturnType<typeof createSortFilter>
+
+export function createSortFilter(cells: CellPort) {
+  const _byShet: SortFilterSnapshot = {} // { [sheetName]: { range, byCol } }
+  // { [sheetName]: { rect, rows: string[][] } } display values
+  const _shown: Record<string, { rect: Rect; rows: string[][]; codes?: string[][] | undefined }> =
+    {}
+
+  function _entry(sn: string): SheetFilter {
+    if (!_byShet[sn]) _byShet[sn] = { range: null, byCol: {} }
+    return _byShet[sn]
+  }
+
+  function _inCols(colIdx: number, range: Rect) {
+    return colIdx >= range.c0 && colIdx <= range.c1
+  }
+
+  // Reads the filter range's displayed values (formula results, so a row
+  // showing "306" from `=A1*B1` matches "contains 0"). No-op without a range.
+  async function refresh(sheetName: string) {
+    const range = getRange(sheetName)
+    if (!range) {
+      delete _shown[sheetName]
+      return
+    }
+    const rect = { ...range }
+    const { displays, numFmts } = await cells.read(sheetName, rect, { numFmts: true })
+    // A newer range replaced this one while reading: its own refresh wins.
+    const now = getRange(sheetName)
+    if (
+      !now ||
+      now.r0 !== rect.r0 ||
+      now.r1 !== rect.r1 ||
+      now.c0 !== rect.c0 ||
+      now.c1 !== rect.c1
+    )
+      return
+    _shown[sheetName] = { rect, rows: displays, codes: numFmts }
+  }
+
+  // Displayed value at (r, c) from the last refresh, '' when unknown.
+  function _shownAt(sheetName: string, r: number, c: number) {
+    const s = _shown[sheetName]
+    if (!s) return ''
+    return String(s.rows[r - s.rect.r0]?.[c - s.rect.c0] ?? '')
+  }
+
+  // The number at (r, c) for greater / less than, and the one typed into
+  // the filter: a date's day serial (it shows as `12/9/2025`, ISSUES #53),
+  // else the number shown. A typed date is read in the column's day order,
+  // or as 2026-01-31.
+  function _codeAt(sheetName: string, r: number, c: number) {
+    const s = _shown[sheetName]
+    return s?.codes?.[r - s.rect.r0]?.[c - s.rect.c0] ?? ''
+  }
+  function _asNumber(v: string, code: string) {
+    const n = displayNumber(v)
+    if (!isNaN(n)) return n
+    return dateSerialFromShown(v, /^\d{4}[-/.]/.test(v.trim()) ? 'yyyy-mm-dd' : code || 'm/d/yyyy')
+  }
+  function _compare(sheetName: string, r: number, c: number, spec: string) {
+    const shown = _shownAt(sheetName, r, c)
+    const code = _codeAt(sheetName, r, c)
+    const serial = dateSerialFromShown(shown, code)
+    const cell = isNaN(serial) ? displayNumber(shown) : serial
+    return cell - _asNumber(spec, isNaN(serial) ? '' : code)
+  }
+
+  // Sort data rows of the active filter range (range.r0 stays as the header)
+  // by their displayed values. Formulas move with their row and shift their
+  // references by the distance moved. Returns the {cellId: input} maps of
+  // the rows before and after, for undo, and the order and rect it used;
+  // null when nothing to sort.
+  async function sort(colIndex: number, dir: 'asc' | 'desc' = 'asc', sheetName: string) {
+    const range = getRange(sheetName)
+    if (!range || !_inCols(colIndex, range) || range.r1 <= range.r0) return null
+    const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
+    const { inputs, displays, numFmts } = await cells.read(sheetName, rect, { numFmts: true })
+    const key = colIndex - rect.c0
+    // A date shows as text (12/9/2025); its format turns it back into a date.
+    const shown = (i: number) => {
+      const s = displays[i]?.[key] ?? ''
+      const serial = dateSerialFromShown(s, numFmts?.[i]?.[key])
+      return isNaN(serial) ? s : serial
+    }
+    const order = inputs.map((_, i) => i)
+    order.sort((a, b) => _cmp(shown(a), shown(b), dir))
+    const before: Record<string, string> = {}
+    const after: Record<string, string> = {}
+    order.forEach((from, to) => {
+      for (let c = rect.c0; c <= rect.c1; c++) {
+        before[cellId(rect.r0 + to, c)] = inputs[to]?.[c - rect.c0] ?? ''
+        const v = inputs[from]?.[c - rect.c0] ?? ''
+        after[cellId(rect.r0 + to, c)] = v.startsWith('=') ? adjustFormula(v, to - from, 0) : v
+      }
+    })
+    cells.write(sheetName, after)
+    // `order[to] = from`: the data row each sorted row came from, so the
+    // caller can move the rows' formats the same way (formatsAfterSort).
+    return { before, after, order, rect }
+  }
+
+  function _cmp(av: string | number, bv: string | number, dir: 'asc' | 'desc') {
+    if (av === '' && bv === '') return 0
+    if (av === '') return 1
+    if (bv === '') return -1
+    const an = displayNumber(av),
+      bn = displayNumber(bv)
+    const cmp = !isNaN(an) && !isNaN(bn) ? an - bn : String(av).localeCompare(String(bv))
+    return dir === 'asc' ? cmp : -cmp
+  }
+
+  // ── Range management ──────────────────────────────────────────────────────
+  function setRange(range: Rect | null | undefined, sheetName: string) {
+    const e = _entry(sheetName)
+    if (!range) {
+      e.range = null
+      e.byCol = {}
+      return
+    }
+    const r = { ...range }
+    e.range = r
+    // Drop column specs that fall outside the new range bounds.
+    for (const k of Object.keys(e.byCol)) {
+      if (!_inCols(parseInt(k, 10), r)) delete e.byCol[k]
+    }
+  }
+
+  function getRange(sheetName: string) {
+    return _byShet[sheetName]?.range || null
+  }
+
+  function clearRange(sheetName: string) {
+    if (_byShet[sheetName]) _byShet[sheetName] = { range: null, byCol: {} }
+  }
+
+  function hasFilter(sheetName: string) {
+    return !!getRange(sheetName)
+  }
+
+  // ── Per-column specs (within the range) ───────────────────────────────────
+  function setFilter(colId: number, spec: FilterSpec, sheetName: string) {
+    const e = _entry(sheetName)
+    if (!e.range || !_inCols(colId, e.range)) return
+    e.byCol[colId] = spec
+  }
+
+  function clearFilter(colId: number, sheetName: string) {
+    if (_byShet[sheetName]) delete _byShet[sheetName].byCol[colId]
+  }
+
+  function clearAll(sheetName: string) {
+    if (_byShet[sheetName]) _byShet[sheetName].byCol = {}
+  }
+
+  function getFilterConfig(sheetName: string) {
+    return _byShet[sheetName]?.byCol || {}
+  }
+
+  function _rowFails(sheetName: string, r: number, entries: [string, FilterSpec][]) {
+    for (const [colId, spec] of entries) {
+      const cellVal = _shownAt(sheetName, r, parseInt(colId))
+      const specVal = String(spec.value ?? '')
+      const op = spec.operator
+      if (op === 'contains' && !cellVal.toLowerCase().includes(specVal.toLowerCase())) return true
+      else if (op === 'equals' && cellVal !== specVal) return true
+      else if (op === 'gt' && !(_compare(sheetName, r, +colId, specVal) > 0)) return true
+      else if (op === 'lt' && !(_compare(sheetName, r, +colId, specVal) < 0)) return true
+      else if (op === 'empty' && cellVal !== '') return true
+      else if (op === 'notempty' && cellVal === '') return true
+      // Google-Sheets-style "Filter by values": spec.values is an array of the
+      // values the user CHECKED to keep visible. Anything not in the set is
+      // hidden. Empty cells are represented by the empty string in the array.
+      else if (op === 'inSet' && !(spec.values || []).includes(cellVal)) return true
+    }
+    return false
+  }
+
+  // The header cell's displayed value for a column of the range.
+  function getHeader(colIdx: number, sheetName: string) {
+    const range = getRange(sheetName)
+    return range ? _shownAt(sheetName, range.r0, colIdx) : ''
+  }
+
+  // Distinct displayed values within the column's data range (header row is
+  // excluded). Drives the "Filter by values" checklist in the UI.
+  function getColumnValues(colIdx: number, sheetName: string) {
+    const range = getRange(sheetName)
+    if (!range || !_inCols(colIdx, range)) return []
+    const seen = new Set<string>()
+    for (let r = range.r0 + 1; r <= range.r1; r++) seen.add(_shownAt(sheetName, r, colIdx))
+    // Sort so the list is stable across opens; empty string first so
+    // "(Blanks)" sits at the top like Google Sheets.
+    return [...seen].sort((a, b) => {
+      if (a === '' && b !== '') return -1
+      if (b === '' && a !== '') return 1
+      const an = displayNumber(a),
+        bn = displayNumber(b)
+      if (!isNaN(an) && !isNaN(bn)) return an - bn
+      return a.localeCompare(b)
+    })
+  }
+
+  // Returns a Set of row indices that should be hidden in the given sheet.
+  // Only rows inside [range.r0+1, range.r1] are ever hidden — rows outside the
+  // filter range stay visible regardless of specs.
+  function computeHiddenRows(sheetName: string) {
+    const hidden = new Set<number>()
+    const e = _byShet[sheetName]
+    if (!e?.range) return hidden
+    const entries = Object.entries(e.byCol)
+    if (!entries.length) return hidden
+    for (let ri = e.range.r0 + 1; ri <= e.range.r1; ri++) {
+      if (_rowFails(sheetName, ri, entries)) hidden.add(ri)
+    }
+    return hidden
+  }
+
+  // ── Row / column structural shifts (called from SheetEditor handlers) ────
+  function insertRow(atRow: number, sheetName: string) {
+    const e = _byShet[sheetName]
+    if (!e?.range) return
+    if (atRow <= e.range.r0) e.range.r0++
+    if (atRow <= e.range.r1) e.range.r1++
+  }
+
+  function deleteRow(atRow: number, sheetName: string) {
+    const e = _byShet[sheetName]
+    if (!e?.range) return
+    if (atRow < e.range.r0) e.range.r0--
+    if (atRow <= e.range.r1) e.range.r1--
+    if (e.range.r1 < e.range.r0) clearRange(sheetName)
+  }
+
+  function insertCol(atCol: number, sheetName: string) {
+    const e = _byShet[sheetName]
+    if (!e?.range) return
+    if (atCol <= e.range.c0) e.range.c0++
+    if (atCol <= e.range.c1) e.range.c1++
+    e.byCol = _shiftByColKeys(e.byCol, atCol, +1)
+  }
+
+  function deleteCol(atCol: number, sheetName: string) {
+    const e = _byShet[sheetName]
+    if (!e?.range) return
+    if (atCol < e.range.c0) e.range.c0--
+    if (atCol <= e.range.c1) e.range.c1--
+    if (e.range.c1 < e.range.c0) {
+      clearRange(sheetName)
+      return
+    }
+    delete e.byCol[atCol]
+    e.byCol = _shiftByColKeys(e.byCol, atCol, -1)
+  }
+
+  function remapCols(mapCol: IndexMap, sheetName: string) {
+    const e = _byShet[sheetName]
+    if (!e?.range) return
+    const rect = remapRect(e.range, mapCol, null)
+    if (!rect) {
+      clearRange(sheetName)
+      return
+    }
+    e.range = rect
+    e.byCol = remapIndexKeys(e.byCol, mapCol)
+    // Drop specs for columns no longer inside the (grown/shrunk) range.
+    for (const k of Object.keys(e.byCol)) if (!_inCols(parseInt(k, 10), rect)) delete e.byCol[k]
+  }
+
+  function remapRows(mapRow: IndexMap, sheetName: string) {
+    const e = _byShet[sheetName]
+    if (!e?.range) return
+    const rect = remapRect(e.range, null, mapRow)
+    if (!rect) {
+      clearRange(sheetName)
+      return
+    }
+    e.range = rect
+  }
+
+  function _shiftByColKeys(byCol: Record<string, FilterSpec>, atCol: number, delta: number) {
+    const next: Record<string, FilterSpec> = {}
+    for (const [k, v] of Object.entries(byCol)) {
+      const ci = parseInt(k, 10)
+      if (delta > 0 && ci >= atCol) next[ci + 1] = v
+      else if (delta < 0 && ci > atCol) next[ci - 1] = v
+      else next[ci] = v
+    }
+    return next
+  }
+
+  // ── Sheet-level operations ────────────────────────────────────────────────
+  function renameSheet(oldName: string, newName: string) {
+    if (!_byShet[oldName] || _byShet[newName] || oldName === newName) return
+    _byShet[newName] = _byShet[oldName]
+    delete _byShet[oldName]
+  }
+
+  function deleteSheet(name: string) {
+    delete _byShet[name]
+  }
+
+  function duplicateSheet(srcName: string, newName: string) {
+    if (_byShet[newName]) return
+    _byShet[newName] = deepClone(_byShet[srcName] || { range: null, byCol: {} })
+  }
+
+  function snapshot() {
+    return deepClone(_byShet)
+  }
+
+  function restore(snap: SortFilterSnapshot | null | undefined) {
+    for (const k of Object.keys(_byShet)) delete _byShet[k]
+    if (snap) for (const [k, v] of Object.entries(snap)) _byShet[k] = v
+  }
+
+  return {
+    refresh,
+    sort,
+    setFilter,
+    clearFilter,
+    clearAll,
+    getFilterConfig,
+    computeHiddenRows,
+    getColumnValues,
+    getHeader,
+    setRange,
+    getRange,
+    clearRange,
+    hasFilter,
+    insertRow,
+    deleteRow,
+    insertCol,
+    deleteCol,
+    remapCols,
+    remapRows,
+    renameSheet,
+    deleteSheet,
+    duplicateSheet,
+    snapshot,
+    restore,
+  }
+}
+
+/**
+ * Each cell of a sorted rect mapped to the format of the cell its value came
+ * from (`order[to] = from`, rows relative to rect.r0), so formats travel
+ * with their rows as in Google Sheets. `before` is {cellId: format | null}
+ * over the rect; a missing or empty source maps to null (clear).
+ */
+export function formatsAfterSort<F>(
+  order: number[],
+  rect: Rect,
+  before: Record<string, F | null | undefined>,
+): Record<string, F | null> {
+  const out: Record<string, F | null> = {}
+  order.forEach((from, to) => {
+    for (let c = rect.c0; c <= rect.c1; c++) {
+      const src = before[cellId(rect.r0 + from, c)]
+      out[cellId(rect.r0 + to, c)] = src && Object.keys(src).length ? src : null
+    }
+  })
+  return out
+}

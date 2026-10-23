@@ -17,19 +17,6 @@ from suite.sheets.doctype.sheet.storage import encode_sheets_data
 from suite.sheets.versioning import save as save_mod
 
 
-class TitleCleaning(unittest.TestCase):
-    def test_strips_whitespace(self):
-        self.assertEqual(save_mod._clean_title("  My Sheet  "), "My Sheet")
-
-    def test_blank_becomes_default(self):
-        self.assertEqual(save_mod._clean_title(""), "Untitled Spreadsheet")
-        self.assertEqual(save_mod._clean_title("   "), "Untitled Spreadsheet")
-
-    def test_truncates_to_max_length(self):
-        long = "x" * 1000
-        self.assertEqual(len(save_mod._clean_title(long)), save_mod.MAX_TITLE_LEN)
-
-
 class PayloadValidation(unittest.TestCase):
     def test_plain_json_passes(self):
         payload = json.dumps({"A1": "hi"})

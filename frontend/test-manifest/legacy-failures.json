@@ -1,0 +1,297 @@
+{
+  "version": 1,
+  "recordedAt": "2026-09-15",
+  "failures": [],
+  "resolvedBeforeGate": [
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "growth right after the panel switches back to auto anchors the first keystroke on the width it collapsed to"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "alignment-anchored growth of auto-width text keeps left-aligned text anchored at its left edge"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "alignment-anchored growth of auto-width text grows centered text symmetrically"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "alignment-anchored growth of auto-width text grows right-aligned text leftward"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "alignment-anchored growth of auto-width text shrinks centered text back toward its anchor on deletion"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "alignment-anchored growth of auto-width text leaves mixed-alignment text anchored at its left edge"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "alignment-anchored growth of auto-width text never moves a fixed-width element"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "history of the growth shift undoes a coalesced burst back to the original content and left"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "history of the growth shift redoes a coalesced burst forward to the shifted left"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "history of the growth shift drops a burst that types and deletes back to the start"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "history of the growth shift starts a fresh entry when the width turns fixed mid-burst"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "history of the growth shift seeds the growth baseline from the mounted editor, not the empty shell"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/growthShift.test.ts",
+      "name": "history of the growth shift rebases the growth baseline after a history rewrite"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/historyReconcile.test.ts",
+      "name": "the caret when history rewrites the content underneath the editor leaves a caret before the change where it was"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/historyReconcile.test.ts",
+      "name": "the caret when history rewrites the content underneath the editor moves a caret after the change by what the change added"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/historyReconcile.test.ts",
+      "name": "the caret when history rewrites the content underneath the editor carries a caret at the change over what the change added"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/historyReconcile.test.ts",
+      "name": "the caret when history rewrites the content underneath the editor pulls a caret inside the change back to the start of it"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/styleScope.test.ts",
+      "name": "what an empty selection styles styles only the cell the cursor is in"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "how the editor draws a table renders no wrapper element around it"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tablePaste.test.ts",
+      "name": "a table pasted into an element that is not one leaves its text behind as lines"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableCells.test.ts",
+      "name": "setCellFill fills every cell of an uneditable table"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableStructure.test.ts",
+      "name": "setRowCount adds and removes rows at the trailing edge"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/styleScope.test.ts",
+      "name": "what an empty selection styles keeps a repeated update on the cell the cursor started in"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/styleScope.test.ts",
+      "name": "what an empty selection styles styles the whole text box, cursor or not"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "backspace over a whole table empties the cells and leaves the table standing"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "backspace over a whole table empties the cells when the whole document is selected instead"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "backspace over a whole table still empties just the cells that are selected"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "backspace over a whole table leaves the cells something for their styles to sit on"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "what the table can still say about its own width stays measurable after a paste grows it by a column"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "what the table can still say about its own width stays measurable after tab appends a row at the last cell"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "what the table can still say about its own width invents no widths for a table that states none"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "what the table can still say about its own width leaves the other columns alone when one of them is dragged"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tablePaste.test.ts",
+      "name": "a table pasted into an element that is not one keeps the text around it"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tablePaste.test.ts",
+      "name": "a table pasted into an element that is not one lands whole in a table element"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableCells.test.ts",
+      "name": "setCellFill fills only the cell the caret is in"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/textIndentation.test.ts",
+      "name": "indentation through a parse keeps the leading spaces of a line the editor opens on"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/textIndentation.test.ts",
+      "name": "indentation through a parse keeps them when history rewrites the content underneath the editor"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/textIndentation.test.ts",
+      "name": "indentation through a parse writes them back out to the stored content"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/textIndentation.test.ts",
+      "name": "indentation through a parse holds the caret where it was when a line is erased down to its indent"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/composables/textIndentation.test.ts",
+      "name": "indentation through a parse reads no line out of the gaps in indented html"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/blankLineStyles.test.ts",
+      "name": "a style the mark does not carry goes unwritten rather than out as a value of its own"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/emptyLineBackspace.test.ts",
+      "name": "backspace on an empty line takes one press per empty line, not two"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/emptyLineBackspace.test.ts",
+      "name": "backspace on an empty line keeps the alignment when the whole document is selected"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/emptyLineBackspace.test.ts",
+      "name": "backspace on an empty line still swaps in a placeholder when the whole line is selected"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/lineIndent.test.ts",
+      "name": "indenting a line with tab indents every line a selection reaches, from their starts"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "where Tab leaves the caret leaves a selection the user drew across two lines alone"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/lineIndent.test.ts",
+      "name": "indenting a line with tab writes the indent where the caret stands"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/listShortcuts.test.ts",
+      "name": "list shortcuts leaves the cursor in the new bullet item, not the next block"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "where Tab leaves the caret collapses to a caret in a cell that has not been typed in"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "where Tab leaves the caret still selects the contents of a cell that has text"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "where Tab leaves the caret seeds the row it appends at the last cell"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableStructure.test.ts",
+      "name": "mergeCells keeps the table width when cells merge"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableStructure.test.ts",
+      "name": "mergeCells leaves the merged cell a single paragraph"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableStructure.test.ts",
+      "name": "mergeCells keeps the text when a filled cell merges with an empty one"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableStructure.test.ts",
+      "name": "setTableHeaders reads a column of merged header cells as a column header"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/utils/tableStructure.test.ts",
+      "name": "setTableHeaders writes a column header onto the cell that covers column 0"
+    },
+    {
+      "type": "assertion",
+      "file": "src/apps/slides/stores/tableEditor.test.ts",
+      "name": "where undo leaves the caret leaves a position a caret can actually sit in when cells were selected"
+    },
+    {
+      "type": "collection",
+      "file": "src/apps/writer/utils/docximporter.test.js",
+      "messageIncludes": "Failed to resolve import \"mammoth\""
+    }
+  ]
+}

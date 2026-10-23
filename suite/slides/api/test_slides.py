@@ -31,8 +31,10 @@ class TestSaveSlides(IntegrationTestCase):
         ensure_user(OTHER_USER)
 
     def setUp(self):
+        # Every test in the class shares one transaction, and Drive refuses a
+        # second sibling with the same title in the owner's root.
         with self.set_user(OWNER):
-            self.presentation = make_presentation("Save Slides").name
+            self.presentation = make_presentation(f"Save Slides {self._testMethodName}").name
 
     def modified(self):
         return cstr(frappe.db.get_value("Presentation", self.presentation, "modified"))
