@@ -208,3 +208,16 @@ def delete_account(doc: Document, method: str | None = None) -> None:
     from suite.mail.jmap import clear_jmap_session
 
     clear_jmap_session(user)
+
+
+def refresh_local_email_addresses(doc: Document, method: str | None = None) -> None:
+    """Rebuild the local email-address index when a user's suggested address could change."""
+
+    if method == "on_update" and not any(
+        doc.has_value_changed(field) for field in ("email", "full_name", "enabled")
+    ):
+        return
+
+    from suite.mail.store import rebuild_local_email_address_index
+
+    rebuild_local_email_address_index()

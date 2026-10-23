@@ -64,7 +64,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
-from suite.mail.store import get_email_address_index
+from suite.mail.store import search_email_addresses as search_account_email_addresses
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.delivery_status import parse_delivery_status
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
@@ -1214,19 +1214,19 @@ def get_avatar(email: str, size: int = 128, strict: bool = False) -> None:
 
 @frappe.whitelist()
 def search_email_addresses(account: str, text: str, limit: int = 10) -> list[dict]:
-    """Search the account's local address index for names/emails matching `text`."""
+    """Search local users, JMAP accounts and the account's address index for names/emails matching `text`."""
 
     get_user_for_jmap_account(account, raise_exception=True)
 
-    return get_email_address_index(account).search_email_addresses(text, limit=cint(limit))
+    return search_account_email_addresses(account, text, limit=cint(limit))
 
 
 @frappe.whitelist()
 def get_email_suggestions(account: str, text: str, limit: int = 10) -> list[dict]:
     """Suggest up to `limit` {name, email, user_image} recipients matching `text`.
 
-    Sources are tried in cost order — the account's local address index (built from cached messages
-    and contacts), then a JMAP contact search, and finally the server-side email search (slowest —
+    Sources are tried in cost order — the local address indexes (local users and JMAP accounts first,
+    then the account's own, built from cached messages and contacts), then a JMAP contact search, and finally the server-side email search (slowest —
     it queries the JMAP server's messages) — falling through to the next source only when the
     previous one returned nothing.
     """
@@ -1238,7 +1238,7 @@ def get_email_suggestions(account: str, text: str, limit: int = 10) -> list[dict
     if not text:
         return []
 
-    suggestions = get_email_address_index(account).search_email_addresses(text, limit=limit)
+    suggestions = search_account_email_addresses(account, text, limit=limit)
 
     if not suggestions:
         filter = {"operator": "OR", "conditions": [{"text": text}, {"email": text}]}

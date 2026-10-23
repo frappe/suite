@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import create_batch
 
-from suite.mail.store.indexes import EmailAddressIndex
+from suite.mail.store.indexes import EmailAddressIndex, LocalEmailAddressIndex
 from suite.store import (
     destroy_namespace,
     get_blob_base_path,
@@ -14,6 +14,7 @@ from suite.store import (
 from suite.store.blob_store import BlobStore
 from suite.store.data_store import DataStore
 from suite.utils import enqueue_job
+from suite.utils.user import RESERVED_USERS
 
 # Root namespace segment under which all of mail's stores live, e.g. ``mail/<account>``.
 # Destroying this segment clears every mail store while leaving other apps' stores intact.
@@ -80,6 +81,60 @@ def get_email_address_index(account: str) -> EmailAddressIndex:
     """Get the EmailAddressIndex for the given JMAP account ID."""
 
     return EmailAddressIndex(get_account_namespace(account))
+
+
+def get_local_email_address_index() -> LocalEmailAddressIndex:
+    """Get the site-wide index of local users' and JMAP accounts' addresses, at ``mail/local_email_address``."""
+
+    return LocalEmailAddressIndex((MAIL_NAMESPACE,))
+
+
+def search_email_addresses(account: str, query: str, limit: int = 10) -> list[dict]:
+    """Return up to `limit` {name, email} addresses matching `query` for the JMAP account.
+
+    Local users and accounts come first, followed by the account's own correspondents and contacts
+    not already listed; each group keeps its own relevance order.
+    """
+
+    local = get_local_email_address_index().search_email_addresses(query, limit=limit)
+    listed = {address["email"].lower() for address in local}
+    others = [
+        address
+        for address in get_email_address_index(account).search_email_addresses(query, limit=limit)
+        if address["email"].lower() not in listed
+    ]
+
+    return (local + others)[:limit]
+
+
+def rebuild_local_email_address_index(in_background: bool = True) -> None:
+    """Replace the local address index with every enabled user's email and every JMAP account's name.
+
+    Runs in a background job enqueued after the current commit by default, so it reads the change
+    that triggered it; pass `in_background=False` to run inline.
+    """
+
+    if in_background:
+        enqueue_job(
+            rebuild_local_email_address_index,
+            job_id="rebuild-local-email-address-index",
+            deduplicate=True,
+            enqueue_after_commit=True,
+            in_background=False,
+        )
+        return
+
+    users = frappe.get_all(
+        "User",
+        filters={"enabled": 1, "name": ["not in", RESERVED_USERS]},
+        fields=["full_name", "email"],
+    )
+    accounts = frappe.get_all("JMAP Account", pluck="_name")
+
+    # Users first, so an address that is both keeps the user's full name.
+    addresses = [{"name": user.full_name, "email": user.email} for user in users]
+    addresses += [{"email": name} for name in accounts]
+    get_local_email_address_index().replace_addresses(addresses)
 
 
 @frappe.whitelist()
@@ -172,7 +227,7 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
 
 @frappe.whitelist()
 def rebuild_all_email_address_indexes() -> None:
-    """Rebuild the email-address index for every JMAP account. System Manager only.
+    """Rebuild the local email-address index and the one for every JMAP account. System Manager only.
 
     Fans the accounts out into long-queue background jobs of `_ACCOUNTS_PER_REBUILD_BATCH` each;
     every job rebuilds its accounts inline. Safe to run from a scheduler or the console.
@@ -182,6 +237,8 @@ def rebuild_all_email_address_indexes() -> None:
 
     if not is_system_manager(frappe.session.user):
         frappe.throw(_("Only System Manager can rebuild the email address indexes."))
+
+    rebuild_local_email_address_index()
 
     accounts = frappe.db.get_all("JMAP Account", {}, pluck="name")
     for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_REBUILD_BATCH)):

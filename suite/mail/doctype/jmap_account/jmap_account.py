@@ -25,6 +25,7 @@ from suite.mail.store import (
     get_blob_store,
     get_data_store,
     rebuild_email_address_index,
+    rebuild_local_email_address_index,
 )
 from suite.mail.utils.user import get_account_emails
 from suite.store import destroy_namespace, get_search_base_path
@@ -142,6 +143,7 @@ class JMAPAccount(Document):
 
     def after_insert(self) -> None:
         maybe_create_archive_mailbox(self.name)
+        rebuild_local_email_address_index()
 
     def on_update(self) -> None:
         if frappe.flags.in_migrate:
@@ -159,6 +161,7 @@ class JMAPAccount(Document):
         self.clear_cached_contact_cards()
         self.clear_cached_blobs()
         self.clear_search_indexes()
+        rebuild_local_email_address_index()
 
     @frappe.whitelist()
     def clear_cached_jmap_identities(self) -> None:

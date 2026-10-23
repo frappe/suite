@@ -182,6 +182,33 @@ class SearchStore:
 
         return len(ids)
 
+    def replace_documents(self, sources: list[dict]) -> int:
+        """Replace every document in the index with `sources` in one commit; returns the number processed.
+
+        Searches see either the old set or the new one, never the empty index a `drop` followed by
+        `index_documents` would leave in between. Sources without an ID are skipped.
+        """
+
+        documents = [self.to_document(source) for source in sources]
+        documents = [document for document in documents if document.get(self.ID_FIELD) is not None]
+
+        with write_lock(self._lockname, acquire_timeout=30, lock_timeout=300):
+            index = self._open()
+            writer = index.writer(heap_size=self.HEAP_SIZE, num_threads=1)
+
+            try:
+                writer.delete_all_documents()
+                for document in documents:
+                    writer.add_document(self._to_tantivy_document(document))
+
+                writer.commit()
+                writer.wait_merging_threads()
+            finally:
+                # Release the writer's lock even if commit raised.
+                del writer
+
+        return len(sources)
+
     def search(
         self,
         query: str,

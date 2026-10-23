@@ -89,6 +89,33 @@ def _sanitize_name(name: str | None) -> str | None:
     return name or None
 
 
+def _unique_addresses(addresses: list[dict], count: bool) -> list[dict]:
+    """Dedupe {name, email} dicts by address, dropping invalid ones, each tagged with its sightings."""
+
+    unique = {}
+    sightings = {}
+    for address in addresses:
+        email = (address.get("email") or "").strip()
+        if not EMAIL_MATCH_PATTERN.fullmatch(email):
+            continue
+
+        key = email.lower()
+        current = unique.get(key)
+        # Last one wins, so the freshest name and casing survive — but not a *nameless* later
+        # sighting: one batch can carry the same address named from one message and bare from
+        # the next, and dropping the name there would index it as an address with no one behind
+        # it. `merge_document` keeps a name across batches; this keeps one within a batch.
+        # Sanitized on both sides, so a name that is only quote characters counts as no name —
+        # which is what it will be by the time `to_document` is through with it.
+        named = _sanitize_name(address.get("name"))
+        if current is None or named or not _sanitize_name(current.get("name")):
+            unique[key] = address
+
+        sightings[key] = sightings.get(key, 0) + 1
+
+    return [{**address, "sightings": sightings[key] if count else 0} for key, address in unique.items()]
+
+
 class EmailAddressIndex(SearchStore):
     """Shared, per-account index of email addresses for recipient suggestions.
 
@@ -164,31 +191,7 @@ class EmailAddressIndex(SearchStore):
         never writes to above the addresses they do.
         """
 
-        unique = {}
-        sightings = {}
-        for address in addresses:
-            email = (address.get("email") or "").strip()
-            if not EMAIL_MATCH_PATTERN.fullmatch(email):
-                continue
-
-            key = email.lower()
-            current = unique.get(key)
-            # Last one wins, so the freshest name and casing survive — but not a *nameless* later
-            # sighting: one batch can carry the same address named from one message and bare from
-            # the next, and dropping the name there would index it as an address with no one behind
-            # it. `merge_document` keeps a name across batches; this keeps one within a batch.
-            # Sanitized on both sides, so a name that is only quote characters counts as no name —
-            # which is what it will be by the time `to_document` is through with it.
-            named = _sanitize_name(address.get("name"))
-            if current is None or named or not _sanitize_name(current.get("name")):
-                unique[key] = address
-
-            sightings[key] = sightings.get(key, 0) + 1
-
-        sources = [
-            {**address, "sightings": sightings[key] if count else 0} for key, address in unique.items()
-        ]
-        return self.index_documents(sources)
+        return self.index_documents(_unique_addresses(addresses, count))
 
     def search_email_addresses(self, query: str, limit: int = 10) -> list[dict]:
         """Return up to `limit` {name, email} addresses matching `query`, most relevant first.
@@ -218,3 +221,18 @@ class EmailAddressIndex(SearchStore):
         hits, _total = self.search_prefix(tokens, limit=None)
         hits.sort(key=lambda hit: _relevance_key(tokens, hit))
         return [{"name": hit.get("name"), "email": hit.get("email")} for hit in hits[:limit]]
+
+
+class LocalEmailAddressIndex(EmailAddressIndex):
+    """Site-wide index of local users' and JMAP accounts' addresses, suggested ahead of an account's own.
+
+    Unlike an account's index it holds exactly the current set of local addresses, so it is replaced
+    wholesale on every rebuild rather than accumulated, and carries no correspondence counts.
+    """
+
+    ENTITY = "local_email_address"
+
+    def replace_addresses(self, addresses: list[dict]) -> int:
+        """Replace the index with the given {name, email} dicts, deduped and validated like `index_addresses`."""
+
+        return self.replace_documents(_unique_addresses(addresses, count=False))

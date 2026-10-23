@@ -262,11 +262,13 @@ doc_events = {
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
+            "suite.mail.events.refresh_local_email_addresses",
         ],
         "on_trash": [
             "suite.mail.events.delete_account",
             "suite.mail.events.delete_user_accounts",
             "suite.mail.events.delete_user_settings",
+            "suite.mail.events.refresh_local_email_addresses",
         ],
     },
 }
