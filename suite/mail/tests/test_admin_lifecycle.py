@@ -41,6 +41,7 @@ class Provider:
 
     def __init__(self):
         self.accounts = {}
+        self.emails = []
         self.created = 0
         self.fail = None
 
@@ -53,6 +54,9 @@ class Provider:
             return [{"domain": "company.frappe.cloud", "enabled": True, "is_verified": True}]
         if method == "mail.domains.get_domain":
             return {"domain": "company.frappe.cloud", "enabled": True, "is_verified": True}
+        if method == "email.send_email":
+            self.emails.append(args)
+            return {"status": "Sent", "error": None}
         email = args.get("email")
         if method == "mail.accounts.create_account":
             if email in self.accounts:
@@ -180,8 +184,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         from suite.suite_core.storage import set_default, state
 
         set_default(4_000_000_000)
-        with patch("frappe.sendmail"):
-            add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
         name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
         request = frappe.get_doc("Mail Account Request", name)
         update_invite(name, to_utc_z(request.expires_at), 5_000_000_000)
@@ -354,23 +357,31 @@ class TestAdminLifecycle(IntegrationTestCase):
         from suite.suite_core.storage import set_default
 
         set_default(4_000_000_000)
-        with patch("frappe.sendmail") as sendmail:
-            result = add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
-            self.assertTrue(result["success"])
-            sendmail.assert_called_once()
-            self.assertEqual(sendmail.call_args.kwargs["recipients"], ["contact@example.test"])
-            name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
-            request = frappe.get_doc("Mail Account Request", name)
-            old_key = request.request_key
-            set_default(6_000_000_000)
-            self.assertEqual(request.combined_cap_bytes, 4_000_000_000)
-            update_invite(name, to_utc_z(request.expires_at), 5_000_000_000, is_admin=True)
-            request.reload()
-            self.assertNotEqual(request.request_key, old_key)
-            replaced = request.request_key
-            send_invite(name)
-            request.reload()
-            self.assertNotEqual(request.request_key, replaced)
+        result = add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        self.assertTrue(result["success"])
+        self.assertEqual(len(self.provider.emails), 1)
+        name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+        request = frappe.get_doc("Mail Account Request", name)
+        old_key = request.request_key
+        first_email = self.provider.emails[0]
+        self.assertEqual(first_email["email_type"], "account-invite")
+        self.assertEqual(first_email["recipient"], "contact@example.test")
+        self.assertTrue(first_email["params"]["link"].endswith(f"/mail/signup/{old_key}"))
+
+        set_default(6_000_000_000)
+        self.assertEqual(request.combined_cap_bytes, 4_000_000_000)
+        update_invite(name, to_utc_z(request.expires_at), 5_000_000_000, is_admin=True)
+        request.reload()
+        self.assertNotEqual(request.request_key, old_key)
+        replaced = request.request_key
+        send_invite(name)
+        request.reload()
+        self.assertNotEqual(request.request_key, replaced)
+        self.assertEqual(len(self.provider.emails), 2)
+        resent_email = self.provider.emails[1]
+        self.assertEqual(resent_email["email_type"], "account-invite")
+        self.assertEqual(resent_email["recipient"], "contact@example.test")
+        self.assertTrue(resent_email["params"]["link"].endswith(f"/mail/signup/{request.request_key}"))
         with self.set_user("Guest"):
             with self.assertRaises(frappe.DoesNotExistError):
                 accept_invitation(old_key, "Employee", "", "Chosen-invite-passphrase-55!")

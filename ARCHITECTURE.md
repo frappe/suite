@@ -279,6 +279,11 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
 ### 4. Seams and adapters
 
+Suite Core owns first-party notification routing. At most one `suite_email_provider` Frappe hook
+is declared in `suite/hooks.py` and points to Mail's package-root provider interface. The provider
+owns Suite Cloud delivery; Suite Core owns the local Email Account fallback, post-commit scheduling,
+and retries.
+
 1. Introduce a seam only when behavior genuinely varies or a remote/external dependency requires one.
 2. A proposed seam SHOULD have at least two justified adapters.
 3. HTTP and WebDAV are adapters into the same Drive workflows; they MUST NOT own Drive policy.

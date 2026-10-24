@@ -143,12 +143,14 @@ drive_content_types = [
     "suite.writer.drive.SPEC",
     "suite.slides.drive.SPEC",
     "suite.sheets.drive.SPEC",
+    "suite.draw.drive.SPEC",
 ]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
+    "Drawing": "suite.drive.framework.doc_query_conditions",
     # slides — governed by Drive (§10.4). `Slide` is the deck's satellite and
     # takes its rights from the deck's node.
     "Presentation": "suite.drive.framework.doc_query_conditions",
@@ -175,6 +177,7 @@ permission_query_conditions = {
 # Permissions — has_permission (deep-merged union; no key clashes)
 # ============================================================================
 has_permission = {
+    "Drawing": "suite.drive.framework.doc_has_permission",
     # slides — governed by Drive (§10.4).
     "Presentation": "suite.drive.framework.doc_has_permission",
     "Slide": "suite.drive.framework.satellite_has_permission",
@@ -280,6 +283,9 @@ user_invitation = {
         "System Manager": ["Suite User"],
     },
 }
+
+# Suite Core owns notification routing; Mail provides configured Suite Cloud delivery.
+suite_email_provider = "suite.mail"
 
 # Suite's onboarding replaces the built-in desk setup wizard
 setup_wizard_url = "/suite/setup"

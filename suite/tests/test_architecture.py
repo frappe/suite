@@ -8,8 +8,8 @@ from suite import drive
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SUITE_ROOT = REPOSITORY_ROOT / "suite"
-PRODUCTS = frozenset({"calendar", "drive", "mail", "meet", "sheets", "slides", "writer"})
-CONTENT_PRODUCTS = frozenset({"sheets", "slides", "writer"})
+PRODUCTS = frozenset({"calendar", "draw", "drive", "mail", "meet", "sheets", "slides", "writer"})
+CONTENT_PRODUCTS = frozenset({"draw", "sheets", "slides", "writer"})
 
 
 @dataclass(frozen=True)
@@ -49,19 +49,6 @@ BASELINE_DEBT = {
             "suite/hooks.py|dotted-string|suite.drive.webdav.locks.purge_expired_locks",
             "suite/hooks.py|dotted-string|suite.drive.webdav.dispatch.handle_before_request",
             "suite/writer/doctype/writer_document/test_writer_document.py|import|suite.drive._core.errors",
-        ),
-    ),
-    **_debt(
-        "Suite migration",
-        "Remove when this fixture stops asserting what the shipped `drive_content_types` hook holds.",
-        # A Drive test that proves what activation settled has to name the
-        # three dotted paths the hook ships. Naming a path is not importing
-        # one: nothing here reaches into a content product, and the registry
-        # is still built by the framework.
-        (
-            "suite/drive/tests/test_content.py|dotted-string|suite.sheets.drive.SPEC",
-            "suite/drive/tests/test_content.py|dotted-string|suite.slides.drive.SPEC",
-            "suite/drive/tests/test_content.py|dotted-string|suite.writer.drive.SPEC",
         ),
     ),
     **_debt(
@@ -263,11 +250,11 @@ BASELINE_DEBT = {
     ),
     **_debt(
         "Mail, Calendar, and Suite core owners",
-        "Remove when Mail declares a package-root interface and Suite settings reach Mail through composition.",
+        "Remove when Calendar uses Mail's public interfaces and Suite settings reach Mail through composition.",
         # Source: upstream `develop`, merged at a3dba155c and again at
-        # 082e84001 (the move to jmaplib). Mail has no package-root interface
-        # to import through, and `suite_core` reaching Mail needs a
-        # composition seam, so neither is a one-line fix.
+        # 082e84001 (the move to jmaplib). Mail exposes its email provider at
+        # package root, but these Calendar dependencies still use internal
+        # modules, and Suite settings need a composition seam.
         (
             "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.utils",
             "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.directory",
@@ -290,9 +277,6 @@ BASELINE_DEBT = {
             "suite/suite_core/doctype/suite_settings/suite_settings.py|dotted-string|suite.mail.directory.push_tenant_profile",
             "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail",
             "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail.utils",
-            "suite/suite_core/suite_email.py|import|suite.mail",
-            "suite/suite_core/suite_email.py|import|suite.mail.suite_cloud",
-            "suite/suite_core/test_suite_email.py|import|suite.mail.tests.fake_suite_cloud",
             "suite/suite_core/test_utils.py|import|suite.mail.utils",
         ),
     ),

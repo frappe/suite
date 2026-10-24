@@ -16,12 +16,16 @@ test.describe("Multi participant", () => {
 		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		let accessChecks = 0;
-		await guest.page.route("**/api/suite/meet/rooms/access**", (route) => {
+		await guest.page.route("**/api/suite/meet/rooms/access**", async (route) => {
 			accessChecks++;
-			return route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+			if (accessChecks === 1) {
+				await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
+				return;
+			}
+			await route.continue();
 		});
 		await guest.joinAsGuest(meetingId, "Access Retry");
-		expect(accessChecks).toBeGreaterThan(0);
+		expect(accessChecks).toBeGreaterThan(1);
 		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
 	});
 

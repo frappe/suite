@@ -1,4 +1,4 @@
-"""Cleanup's wiring: one entry point, registered once, directly after Build.
+"""Cleanup's wiring: one entry point, registered once, after Build and Draw adoption.
 
 Mirrors `suite.drive.patches.build.tests.test_registration`, against this
 package instead. Cleanup is the destructive half of the migration, so the
@@ -21,6 +21,7 @@ SUITE_ROOT = REPOSITORY_ROOT / "suite"
 
 PATCH_NAME = "suite.drive.patches.cleanup"
 BUILD_NAME = "suite.drive.patches.build"
+DRAW_ADOPTION_NAME = "suite.drive.patches.adopt_drawings"
 
 
 def patch_lines():
@@ -45,10 +46,11 @@ class TestCleanupIsRegisteredOnce(unittest.TestCase):
         # cleanup_unused_thumbnail_files` is an unrelated patch.
         self.assertEqual([line for line in lines if line.startswith(f"{PATCH_NAME}.")], [])
 
-    def test_it_runs_directly_after_build_after_model_sync(self):
+    def test_it_runs_after_build_and_draw_adoption_after_model_sync(self):
         lines = patch_lines()
         self.assertGreater(lines.index(PATCH_NAME), lines.index("[post_model_sync]"))
-        self.assertEqual(lines.index(PATCH_NAME), lines.index(BUILD_NAME) + 1)
+        build_index = lines.index(BUILD_NAME)
+        self.assertEqual(lines[build_index : build_index + 3], [BUILD_NAME, DRAW_ADOPTION_NAME, PATCH_NAME])
 
     def test_hooks_and_fixtures_do_not_reference_it(self):
         hooks = ast.parse((SUITE_ROOT / "hooks.py").read_text())

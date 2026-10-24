@@ -31,6 +31,7 @@ def check_suite_resources(owners: dict[str, str]) -> None:
 HTTP_OWNERS = {
     **dict.fromkeys(SUITE_RESOURCES, SUITE_TABLE),
     "drive": "suite.drive.framework.HTTP",
+    "draw": "suite.draw.http.framework.HTTP",
     "mail": "suite.mail.http.framework.HTTP",
     "calendar": "suite.calendar.http.framework.HTTP",
     "writer": "suite.writer.http.framework.HTTP",

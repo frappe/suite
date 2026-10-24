@@ -16,6 +16,7 @@ from frappe.utils import cint
 from frappe.utils.caching import request_cache
 
 from suite.mail.utils import get_config, log_mail_error
+from suite.suite_core.suite_email import EmailDeliveryUnavailableError
 from suite.suite_core.utils import (
     SUITE_CLOUD_CONFIG_KEYS,
     get_suite_cloud_config,
@@ -38,7 +39,7 @@ VERB_BY_PREFIX = {
 }
 
 
-class SuiteCloudUnavailableError(frappe.ValidationError):
+class SuiteCloudUnavailableError(EmailDeliveryUnavailableError):
     http_status_code = 503
 
 

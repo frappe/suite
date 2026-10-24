@@ -104,11 +104,13 @@ suite.drive.patches.migrate_preview_size_unit #2026-10-06
 # --- drive (the Drive migration, spec §14) ---
 # Last in the file, in this order. Build reads the legacy Drive tables after
 # every patch above has finished reshaping them and writes only new rows.
-# Cleanup then drops the legacy tables, columns and files in the same
+# Draw adoption links the app's existing bodies and converts its shares.
+# Cleanup then drops the legacy Drive tables, columns and files in the same
 # `bench migrate`: model sync never drops a column and orphan doctypes are
 # removed only after the patches, so everything Build read is still there
 # when Cleanup starts. Cleanup refuses until the operator has recorded the
 # backup taken before this migrate (`drive_cleanup_backup` in site config);
 # restoring that backup is the only rollback (§14.11).
 suite.drive.patches.build
+suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup
