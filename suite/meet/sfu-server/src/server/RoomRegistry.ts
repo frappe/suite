@@ -22,6 +22,8 @@ import type {
 	UserData,
 } from '../types';
 
+import { SharedStage } from './SharedStage';
+
 type ServerSocket = Socket<
 	ClientToServerEvents,
 	ServerToClientEvents,
@@ -72,6 +74,7 @@ export class RoomRegistry {
 	private nextSenderIdByRoom: Map<string, number> = new Map();
 	private participantToSender: Map<string, Map<string, number>> = new Map();
 	private revokedParticipants = new Map<string, Set<string>>();
+	private sharedStages = new Map<string, SharedStage>();
 	private recorderProjection = new Map<string, RecorderProjectionState>();
 
 	constructor(io: Server<ClientToServerEvents, ServerToClientEvents>) {
@@ -344,6 +347,7 @@ export class RoomRegistry {
 			})),
 			raised_hands: { ...this.getRaisedHands(roomId) },
 			active_speaker_ids: [...state.activeSpeakerIds],
+			shared_stage: this.getSharedStage(roomId).snapshot,
 		};
 	}
 
@@ -428,6 +432,8 @@ export class RoomRegistry {
 		this.nextSenderIdByRoom.delete(roomId);
 		this.participantToSender.delete(roomId);
 		this.revokedParticipants.delete(roomId);
+		this.sharedStages.get(roomId)?.close();
+		this.sharedStages.delete(roomId);
 		this.recorderProjection.delete(roomId);
 	}
 
@@ -536,6 +542,7 @@ export class RoomRegistry {
 			observed_at: observedAt,
 			payload,
 		});
+		if (payload.type !== 'shared_stage') this.syncSharedStage(roomId, state);
 	}
 
 	emitProducerCreated(
@@ -630,6 +637,36 @@ export class RoomRegistry {
 		});
 	}
 
+	getSharedStageSnapshot(roomId: string) {
+		return this.getSharedStage(roomId).snapshot;
+	}
+
+	private getSharedStage(roomId: string): SharedStage {
+		let stage = this.sharedStages.get(roomId);
+		if (!stage) {
+			stage = new SharedStage((snapshot) => {
+				this.emitToFullAccessParticipants(roomId, 'shared_stage', snapshot);
+				const state = this.getRecorderProjectionState(roomId);
+				this.emitProjection(roomId, state, this.observeProjectionAt(state), {
+					type: 'shared_stage',
+					state: snapshot,
+				});
+			});
+			this.sharedStages.set(roomId, stage);
+		}
+		return stage;
+	}
+
+	private syncSharedStage(
+		roomId: string,
+		state: RecorderProjectionState,
+	): void {
+		this.getSharedStage(roomId).inventory(
+			[...state.participants.values()],
+			this.getRaisedHands(roomId),
+		);
+	}
+
 	emitActiveSpeaker(roomId: string, participantIds: string[]): void {
 		const payload = { participantIds };
 		this.emitToFullAccessParticipants(roomId, 'active_speaker', payload);
@@ -644,6 +681,7 @@ export class RoomRegistry {
 			type: 'active_speaker',
 			participant_ids: retainedIds,
 		});
+		this.getSharedStage(roomId).activity(retainedIds);
 	}
 
 	emitScreenShare(

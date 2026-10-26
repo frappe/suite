@@ -1,3 +1,4 @@
+import { parseSharedStage, type SharedStageState } from "../sharedStage";
 /** Owns one browser endpoint's SFU lifecycle from setup through cleanup. */
 
 import type { ConsumerEntry } from "../media/ConsumerManager";
@@ -131,6 +132,7 @@ export interface SFUEventHandlers {
 	) => void;
 	onScreenShareStarted?: (data: ScreenShareEvent) => void;
 	onScreenShareStopped?: (data: ScreenShareEvent) => void;
+	onSharedStageChanged?: (state: SharedStageState, snapshot?: boolean) => void;
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
 	onNetworkQualityUpdated?: (participantId: string, quality: string) => void;
 	onHostMutedYou?: () => void;
@@ -1778,6 +1780,15 @@ export class ParticipantConnection {
 			this.mediaManager.isScreenShareActive = screenConsumers.some(
 				(consumer) => consumer.producerId !== d.producerId,
 			);
+		});
+
+		this.sfuClient.on("shared_stage_snapshot", (value: unknown) => {
+			const state = parseSharedStage(value);
+			if (state) this.eventHandlers.onSharedStageChanged?.(state, true);
+		});
+		this.sfuClient.on("shared_stage", (value: unknown) => {
+			const state = parseSharedStage(value);
+			if (state) this.eventHandlers.onSharedStageChanged?.(state);
 		});
 
 		this.sfuClient.on("active_speaker", (value: unknown) => {

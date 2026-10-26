@@ -1,3 +1,12 @@
+/** Full room order, before local self exclusion, pins, and capacity projection. */
+export interface SharedStageState {
+	epoch: string;
+	protocolVersion: 1;
+	version: number;
+	participantIds: string[];
+	activeSpeakerIds: string[];
+}
+
 export type SFUScope = 'presence-preview' | 'full' | 'recording';
 
 export interface RecordingJoinRequest {
@@ -44,9 +53,11 @@ export interface RecorderStageSnapshot {
 	producers: RecorderStageProducer[];
 	raised_hands: Record<string, string>;
 	active_speaker_ids: string[];
+	shared_stage?: SharedStageState;
 }
 
 export type RecorderStageProjectionPayload =
+	| { type: 'shared_stage'; state: SharedStageState }
 	| { type: 'participant_joined'; participant: RecorderStageParticipant }
 	| { type: 'participant_updated'; participant: RecorderStageParticipant }
 	| { type: 'participant_left'; participant_id: string }

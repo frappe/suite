@@ -1,3 +1,4 @@
+import { parseSharedStage } from "../src/apps/meet/utils/sharedStage";
 import type {
 	RecorderStageParticipant,
 	RecorderStageProducer,
@@ -216,6 +217,10 @@ const parseProjectionPayload = (
 						action: value.action,
 					}
 				: null;
+		case "shared_stage": {
+			const state = parseSharedStage(value.state);
+			return exactKeys(value, ["type", "state"]) && state ? { type: "shared_stage", state } : null;
+		}
 		case "active_speaker":
 			return exactKeys(value, ["type", "participant_ids"]) &&
 				stringArray(value.participant_ids)
@@ -280,7 +285,9 @@ export const parseRecorderStageSnapshot = (
 			"producers",
 			"raised_hands",
 			"active_speaker_ids",
-		]) ||
+		],
+			["shared_stage"],
+		) ||
 		value.protocol_version !== 1 ||
 		!nonemptyString(value.room_id) ||
 		!Number.isSafeInteger(value.cursor) ||
@@ -289,7 +296,8 @@ export const parseRecorderStageSnapshot = (
 		!Array.isArray(value.participants) ||
 		!Array.isArray(value.producers) ||
 		!record(value.raised_hands) ||
-		!stringArray(value.active_speaker_ids)
+		!stringArray(value.active_speaker_ids) ||
+		(value.shared_stage !== undefined && !parseSharedStage(value.shared_stage))
 	)
 		return null;
 	const participants: RecorderStageParticipant[] = [];
@@ -306,9 +314,7 @@ export const parseRecorderStageSnapshot = (
 	}
 	const observedAt = value.observed_at;
 	const participantIds = new Set(
-		participants.flatMap((participant) =>
-			participant ? [participant.participant_id] : [],
-		),
+		participants.flatMap((participant) => (participant ? [participant.participant_id] : [])),
 	);
 	const producerIds = new Set(
 		producers.flatMap((producer) => (producer ? [producer.producer_id] : [])),
@@ -343,6 +349,9 @@ export const parseRecorderStageSnapshot = (
 			]),
 		),
 		active_speaker_ids: value.active_speaker_ids,
+		...(value.shared_stage === undefined
+			? {}
+			: { shared_stage: parseSharedStage(value.shared_stage)! }),
 	};
 };
 

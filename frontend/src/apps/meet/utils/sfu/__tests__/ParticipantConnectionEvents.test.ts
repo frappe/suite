@@ -842,3 +842,17 @@ describe("ParticipantConnection", () => {
 		expect(transportManager.createReceiveTransport).not.toHaveBeenCalled();
 	});
 });
+
+
+it("delivers canonical join snapshots and updates through the connection, rejecting malformed state", async () => {
+ const { manager, handlers } = createManager();
+ const onSharedStageChanged = vi.fn();
+ manager.eventHandlers.onSharedStageChanged = onSharedStageChanged;
+ await manager.connect("token");
+ const state = { epoch: "room", protocolVersion: 1, version: 4, participantIds: ["me", "other"], activeSpeakerIds: ["other"] };
+ handlers.get("shared_stage_snapshot")?.(state);
+ handlers.get("shared_stage")?.({ ...state, version: 5 });
+ handlers.get("shared_stage")?.({ ...state, participantIds: ["me", "me"] });
+ expect(onSharedStageChanged.mock.calls).toEqual([[state, true], [{ ...state, version: 5 }]]);
+ await manager.disconnect();
+});

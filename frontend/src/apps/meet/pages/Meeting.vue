@@ -683,9 +683,6 @@ const sfuConnection = useSFUConnection({
 			mediaState.screenShareStreams = store;
 		}
 	},
-	onActiveSpeakerChanged: (participantIds: string[]) => {
-		participantStore.activeSpeakerIds = participantIds;
-	},
 	onRoomRejoined: () => void captions.restoreCaptionSubscription(),
 	onE2EERequired: () => captions.disableCaptionsForE2EE(),
 	onRecordingState: recording.syncState,

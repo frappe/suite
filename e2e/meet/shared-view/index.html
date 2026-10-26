@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>Camera layout integration evidence</title><div id="app" style="height:440px"></div><script type="module" src="/client.js"></script>
+<style>
+/* Fixture geometry for utility classes; production layout calculations stay real. */
+[data-testid="meeting-layout"] {position:relative; height:440px; display:flex; flex-direction:column;overflow:hidden}
+[data-testid="meeting-layout"] > div:first-child:not(:last-child) {position:relative;height:180px;display:flex;flex-shrink:0}
+[data-testid="meeting-layout"] > div:first-child:not(:last-child) > div {flex:1;height:180px}
+[data-testid="meeting-layout"] > div {display:flex; flex-wrap:wrap}
+[data-participant] video {width:100%!important;height:100%!important;object-fit:contain}
+</style>
+<style>body{margin:0;background:#101827;color:white}[data-participant]{position:relative;border:2px solid #4a6080;box-sizing:border-box}.hidden-tile{display:none!important}</style><style>[data-testid="meeting-layout"] > div:only-child{align-content:start!important;gap:6px}[data-testid="meeting-layout"] > div:only-child [data-participant]{width:180px!important;height:135px!important;flex:0 0 180px!important;transform:none!important;position:relative!important}</style><style>[data-testid="meeting-layout"] > div.h-full{height:430px!important;flex-wrap:wrap!important;align-content:start!important;gap:6px}[data-testid="meeting-layout"] > div.h-full [data-participant]{width:180px!important;height:135px!important;flex:0 0 180px!important;transform:none!important;position:relative!important}</style>

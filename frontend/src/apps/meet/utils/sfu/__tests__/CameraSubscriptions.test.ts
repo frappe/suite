@@ -299,3 +299,12 @@ describe("camera demand", () => {
 		expect(f.createConsumer).toHaveBeenCalledTimes(1);
 	});
 });
+
+
+it("never creates a remote Consumer for self even when self is demanded by shared ranking", async () => {
+ const f = setup();
+ await f.demand("self");
+ await f.manager.subscribeToRemoteProducer({ producerId: "camera-self", participantId: "self", isScreen: false });
+ expect(f.createConsumer).not.toHaveBeenCalled();
+ await f.manager.cleanup();
+});

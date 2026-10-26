@@ -11,3 +11,13 @@ The recorder browser owns recorded Shared Stage policy: the SFU supplies an auth
 - Recovery after a Recording Interruption repeats snapshot reconciliation, media attachment, transient reset, and rendered-frame readiness before a new capture epoch launches.
 - Unknown or invalid recorder projection data fails closed into a Recording Interruption and fresh snapshot recovery within the existing deadline.
 - Most tests drive snapshots, ordered events, synthetic media, and capture handshakes through the projection Module's Interface. One real SFU-to-browser-to-FFmpeg test decodes representative video frames and audio to verify the complete path.
+
+## Shared conversational ranking
+
+The SFU owns the room's versioned conversational ranking, including sustained
+activity and recent speaker turns. Human endpoints receive it on join/rejoin and
+as full versioned updates; the recorder receives the same state in its safe
+snapshot and ordered projection. The browser still owns layout: it projects this
+room ranking through viewport capacity, the local self tile, and personal pins.
+This removes independent browser history from default membership and order
+without moving viewport or recording-readiness policy into the SFU.

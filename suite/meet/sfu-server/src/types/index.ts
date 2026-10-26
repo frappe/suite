@@ -19,6 +19,7 @@ import type {
 } from 'mediasoup/types';
 import type {
 	ActiveSpeakerEvent,
+	SharedStageState,
 	AuthExpiredEvent,
 	ChatMessage,
 	ChatSendRequest,
@@ -75,6 +76,7 @@ import type {
 
 // Types shared with other SFU modules
 export type {
+	SharedStageState,
 	AppData,
 	ChatMessage,
 	Consumer,
@@ -137,6 +139,8 @@ export interface ServerToClientEvents {
 	'poll:update': (data: PollPayloadFE) => void;
 	existing_polls: (data: { polls: PollPayloadFE[] }) => void;
 	active_speaker: (data: ActiveSpeakerEvent) => void;
+	shared_stage: (data: SharedStageState) => void;
+	shared_stage_snapshot: (data: SharedStageState) => void;
 	sfu_error: (data: SFUErrorEvent) => void;
 	'auth:expired': (data: AuthExpiredEvent) => void;
 	hand_raised: (data: HandRaisedEvent) => void;
