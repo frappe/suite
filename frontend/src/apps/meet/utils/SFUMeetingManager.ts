@@ -376,6 +376,12 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		});
 	}
 
+	setVisibleRemoteVideoParticipants(
+		participantIds: Iterable<string>,
+	): Promise<void> {
+		return this.connectionManager.setVisibleCameraParticipants(participantIds);
+	}
+
 	reconcileExpectedMedia(): Promise<void> {
 		return this.connectionManager.reconcileExpectedMedia();
 	}

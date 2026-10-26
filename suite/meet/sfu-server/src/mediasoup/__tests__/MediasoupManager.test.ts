@@ -496,6 +496,13 @@ describe('MediasoupManager resource access', () => {
 		).toThrow('is not a recv transport');
 	});
 
+	it('accepts repeated closes after the consumer has gone', () => {
+		const mgr = createManager();
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue(undefined);
+		expect(() => mgr.closeConsumer('gone', 'room-1', 'peer-1')).not.toThrow();
+		expect(() => mgr.closeConsumer('gone', 'room-1', 'peer-1')).not.toThrow();
+	});
+
 	it('rejects a foreign consumer before mutating it', async () => {
 		const mgr = createManager();
 		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
@@ -508,6 +515,9 @@ describe('MediasoupManager resource access', () => {
 		const pause = vi.spyOn(mgr.consumerManager, 'pauseConsumer');
 
 		expect(() => mgr.closeConsumer('c1', 'room-2', 'peer-1')).toThrow(
+			'Consumer ownership mismatch',
+		);
+		expect(() => mgr.closeConsumer('c1', 'room-1', 'peer-2')).toThrow(
 			'Consumer ownership mismatch',
 		);
 		expect(close).not.toHaveBeenCalled();

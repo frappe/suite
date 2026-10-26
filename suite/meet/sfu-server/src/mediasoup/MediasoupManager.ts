@@ -730,6 +730,7 @@ export class MediasoupManager {
 	}
 
 	closeConsumer(consumerId: string, roomId: string, peerId: string): void {
+		if (!this.consumerManager.getConsumerData(consumerId)) return;
 		this.assertConsumerAccess(consumerId, roomId, peerId);
 		this.consumerManager.closeConsumer(consumerId);
 	}

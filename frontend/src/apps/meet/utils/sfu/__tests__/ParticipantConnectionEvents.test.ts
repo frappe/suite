@@ -19,6 +19,7 @@ function createManager({ e2eeRequired = false } = {}) {
 	};
 	const mediaManager = {
 		cancelPendingSubscriptions: vi.fn(),
+		unsubscribeFromRemoteProducer: vi.fn().mockResolvedValue(undefined),
 		cleanup: vi.fn(),
 		rebuildSendSide: vi.fn().mockResolvedValue({}),
 		repairLocalPublication: vi.fn().mockResolvedValue(undefined),
@@ -72,6 +73,41 @@ function createManager({ e2eeRequired = false } = {}) {
 describe("ParticipantConnection", () => {
 	afterEach(() => {
 		E2EEMeeting.instance.wipeMeetingContext();
+	});
+
+	it("keeps hidden camera discovery, subscribes on demand, and releases it without changing media state", async () => {
+		const { handlers, manager, mediaManager, participantManager } =
+			createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote" },
+		});
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			kind: "video",
+		});
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(
+			true,
+		);
+		await manager.setVisibleCameraParticipants(["remote-1"]);
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			participantId: "remote-1",
+			producerId: "camera-1",
+			isScreen: false,
+		});
+		await manager.setVisibleCameraParticipants([]);
+		expect(mediaManager.unsubscribeFromRemoteProducer).toHaveBeenCalledWith(
+			expect.objectContaining({ producerId: "camera-1" }),
+		);
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(
+			true,
+		);
+		mediaManager.subscribeToRemoteProducer.mockClear();
+		await manager.reconcileExpectedMedia();
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
 	});
 
 	it("subscribes to remote audio producers", async () => {
@@ -402,6 +438,7 @@ describe("ParticipantConnection", () => {
 			e2eeRequired: true,
 		});
 
+		await manager.setVisibleCameraParticipants(["remote-1"]);
 		await manager.connect("token");
 		const producerPromise = handlers.get("producer_created")?.({
 			participantId: "remote-1",
