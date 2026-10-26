@@ -219,8 +219,7 @@ or restart after provisioning and deploying the new image; **restarting the SFU
 disconnects active meetings**. Confirm actual listener buffers with
 `sudo ss -uanmp` (Linux normally reports roughly twice the requested size for
 accounting overhead) and compare per-socket drop-counter deltas and
-`UdpRcvbufErrors` under comparable traffic before and after rollout. Test host
-provisioning without privileges using `node --test deploy/tune-host.test.mjs`.
+`UdpRcvbufErrors` under comparable traffic before and after rollout.
 
 8 MiB is a starting point to validate, not a bandwidth increase or capacity
 guarantee. Larger buffers cannot fix sustained overload and can allow more
