@@ -115,6 +115,7 @@ jobs:
       - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
+          npm install --global yarn@1.22.22 pnpm@10
           pip install uv "unittest-xml-reporting~=4.0"
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
           mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
@@ -442,6 +443,7 @@ jobs:
       - name: Setup Pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
+          npm install --global yarn@1.22.22 pnpm@10
           pip install uv "unittest-xml-reporting~=4.0"
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
           mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
