@@ -52,8 +52,8 @@ export class SharedStage {
 		this.participants = participants;
 		this.hands = { ...hands };
 		const ids = new Set(participants.map((p) => p.participant_id));
-		for (const id of this.arrivals.keys())
-			if (!ids.has(id)) this.arrivals.delete(id);
+		for (const map of [this.arrivals, this.selfSlots])
+			for (const id of map.keys()) if (!ids.has(id)) map.delete(id);
 		for (const id of [...ids].sort(compareIds))
 			if (!this.arrivals.has(id)) this.arrivals.set(id, ++this.arrival);
 		for (const map of [this.candidates, this.recent])
@@ -212,5 +212,19 @@ export class SharedStage {
 			this.timer = setTimeout(this.reconcile, Math.min(...deadlines) - now);
 			this.timer.unref?.();
 		}
+	};
+}
+
+export function sharedStageForClient(
+	state: SharedStageState,
+	presentationSlots: boolean,
+): SharedStageState {
+	if (presentationSlots) return state;
+	return {
+		epoch: state.epoch,
+		protocolVersion: state.protocolVersion,
+		version: state.version,
+		participantIds: state.participantIds,
+		activeSpeakerIds: state.activeSpeakerIds,
 	};
 }

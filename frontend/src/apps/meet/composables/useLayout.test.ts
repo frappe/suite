@@ -166,3 +166,85 @@ describe('server-owned presentation', () => {
 		expect(layout.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'e']);
 	});
 });
+
+it("keeps the retained unpinned camera in its strip slot when a hidden pin reserves a tile", () => {
+	const { participants, deps } = setupLayout();
+	const ranking = ref(["a", "b", "c", "d", "e"]);
+	const orders = ref({ "2": ["a", "b"], "3": ["a", "b", "c"] });
+	const pins = ref<PinnedTile[]>([{ type: "participant", id: "e" }]);
+	const shared = {
+		...deps,
+		sharedStageParticipantIds: ranking,
+		sharedStagePresentationOrders: orders,
+	};
+	const layout = useLayout(participants, pins, shared, ref(0));
+	const strip = () =>
+		layout.displayParticipants.value.list
+			.filter((p) => p.user_id !== "e")
+			.map((p) => p.user_id);
+	expect(strip()).toEqual(["a", "b"]);
+	ranking.value = ["b", "c", "a", "d", "e"];
+	orders.value = { "2": ["c", "b"], "3": ["a", "b", "c"] };
+	expect(strip()).toEqual(["c", "b"]);
+	const late = useLayout(participants, pins, shared, ref(0));
+	expect(
+		late.displayParticipants.value.list
+			.filter((p) => p.user_id !== "e")
+			.map((p) => p.user_id),
+	).toEqual(["c", "b"]);
+});
+
+it("reserves multiple personal pins separately from screen and self tiles", () => {
+	const { participants, deps } = setupLayout();
+	participants.value.f = {
+		...participants.value.a,
+		user_id: "f",
+		user_name: "f",
+	};
+	const pins = ref<PinnedTile[]>([
+		{ type: "participant", id: "d" },
+		{ type: "participant", id: "e" },
+		{ type: "participant", id: "self" },
+	]);
+	const screens = ref(0);
+	const layout = useLayout(
+		participants,
+		pins,
+		{
+			...deps,
+			sharedStageParticipantIds: ref(["self", "a", "b", "c", "d", "e"]),
+			sharedStagePresentationOrders: ref({
+				"1": ["a"],
+				"2": ["b", "a"],
+				"3": ["c", "b", "a"],
+			}),
+		},
+		screens,
+	);
+	expect(layout.displayParticipants.value.list.map((p) => p.user_id)).toEqual([
+		"b",
+		"a",
+		"d",
+		"e",
+	]);
+	screens.value = 1;
+	expect(layout.displayParticipants.value.list.map((p) => p.user_id)).toEqual([
+		"a",
+		"d",
+		"e",
+	]);
+	pins.value = [
+		{ type: "participant", id: "a" },
+		{ type: "participant", id: "e" },
+	];
+	expect(layout.displayParticipants.value.list.map((p) => p.user_id)).toEqual([
+		"b",
+		"a",
+		"e",
+	]);
+	screens.value = 2;
+	expect(layout.displayParticipants.value.list.map((p) => p.user_id)).toEqual([
+		"a",
+		"e",
+	]);
+});

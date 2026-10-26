@@ -40,3 +40,12 @@ and differing self/capacity projections can intentionally produce different view
 A change of tile count, viewport, screen share or pin mode can change grid geometry;
 stable order does not promise fixed pixel rectangles across those layout changes.
 An older SFU without presentation orders retains the previous ranking fallback.
+Human and recorder endpoints advertise `sharedStagePresentation` on their existing
+join request. Unadvertised endpoints receive the original ranking-only state in
+both snapshots and updates, including ordered recorder projection events. This
+keeps strict protocol-version-1 parsers compatible during separate deployments.
+Personal pins reserve tiles separately from the unpinned strip; its presentation
+uses the smallest ranked prefix covering that strip. The room does not store
+presentation histories for personal pin combinations. If pins cross that ranked
+prefix, the covering capacity can change; positions across different capacities
+are not guaranteed to match.

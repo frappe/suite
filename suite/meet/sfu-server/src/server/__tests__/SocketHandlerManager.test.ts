@@ -18,6 +18,7 @@ function emitJoin(
 	socket: MockSocket,
 	opts: {
 		roomId?: string;
+		sharedStagePresentation?: boolean;
 		name?: string;
 		userId?: string;
 		avatar?: string;
@@ -34,6 +35,7 @@ function emitJoin(
 		'join_room',
 		{
 			roomId: opts.roomId ?? 'room-1',
+			sharedStagePresentation: opts.sharedStagePresentation,
 			connectionId: opts.connectionId,
 			conflictId: opts.conflictId,
 			userData: {
@@ -2581,4 +2583,36 @@ describe('receiver readiness acknowledgement', () => {
 		expect(harness.mediasoup.resumeConsumer).not.toHaveBeenCalled();
 		expect(callback).toHaveBeenCalledWith({ success: false, error: 'E2EE join handshake not completed' });
 	});
+});
+
+it.each([
+	false,
+	true,
+])('negotiates human shared stage join and updates (slots: %s)', async (capable) => {
+	const harness = createManager();
+	const socket = connectFullSocket(harness);
+	const callback = vi.fn();
+	vi.spyOn(socket, 'emit');
+	emitJoin(socket, { sharedStagePresentation: capable }, callback);
+	await new Promise((resolve) => setImmediate(resolve));
+	expect(callback).toHaveBeenCalledWith(
+		expect.objectContaining({ success: true }),
+	);
+	const expected = {
+		epoch: expect.any(String),
+		protocolVersion: 1,
+		version: 1,
+		participantIds: ['user-1'],
+		activeSpeakerIds: [],
+		...(capable
+			? {
+					excludedParticipantId: 'user-1',
+					presentationOrders: Object.fromEntries(
+						Array.from({ length: 16 }, (_, i) => [i + 1, []]),
+					),
+				}
+			: {}),
+	};
+	expect(socket.emit).toHaveBeenCalledWith('shared_stage_snapshot', expected);
+	expect(socket.emit).toHaveBeenCalledWith('shared_stage', expected);
 });

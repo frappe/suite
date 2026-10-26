@@ -803,6 +803,7 @@ describe("E2EE signaling payloads", () => {
 			);
 
 			expect(sendRequestSpy).toHaveBeenCalledWith("join_room", {
+				sharedStagePresentation: true,
 				roomId: "room-1",
 				userData: { name: "Alice" },
 				mediaState: { audio_enabled: true },

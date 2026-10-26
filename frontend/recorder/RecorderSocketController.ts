@@ -211,7 +211,10 @@ export class RecorderSocketController {
 			});
 			await proved;
 			this.bridge.reportProofComplete();
-			await this.request("recording:join", { roomId: config.meetingId });
+			await this.request("recording:join", {
+				roomId: config.meetingId,
+				sharedStagePresentation: true,
+			});
 			this.bridge.reportJoinComplete();
 			this.deps.sfuClient.connected = true;
 			this.deps.sfuClient.connectionDetails.meetingId = config.meetingId;

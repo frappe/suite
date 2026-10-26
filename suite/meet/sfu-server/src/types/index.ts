@@ -347,6 +347,7 @@ export type ClientTelemetryEvent =
 	  };
 
 export interface SocketData {
+	sharedStagePresentation?: boolean;
 	userId: string;
 	peerId?: string;
 	userName: string;
@@ -588,6 +589,7 @@ interface PollPayloadFE {
 // Socket.IO module augmentation
 declare module 'socket.io' {
 	interface Socket {
+		sharedStagePresentation?: boolean;
 		userId: string;
 		peerId?: string;
 		userName: string;

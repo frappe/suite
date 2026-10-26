@@ -158,7 +158,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (socket.scope === 'full')
 				socket.emit(
 					'shared_stage_snapshot',
-					deps.registry.getSharedStageSnapshot(scopedRoomId, participantId),
+					deps.registry.getSharedStageSnapshot(
+					scopedRoomId,
+					participantId,
+					socket.sharedStagePresentation === true,
+				),
 				);
 			socket.emit('existing_raised_hands', {
 				hands: deps.registry.getRaisedHands(scopedRoomId),
@@ -250,6 +254,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				await socket.join(roomId);
 				socket.roomId = roomId;
 				socket.participantId = peerId;
+				socket.sharedStagePresentation = data.sharedStagePresentation === true;
 				fieldsAssigned = true;
 				recorderJoinAttempted = true;
 				deps.registry.joinRecorder(socket, roomId, peerId);
@@ -318,6 +323,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					return;
 				}
 
+				socket.sharedStagePresentation = data.sharedStagePresentation === true;
 				const { roomId, userData, mediaState, e2ee } = data;
 				await handleJoinRoom(socket, {
 					roomId,

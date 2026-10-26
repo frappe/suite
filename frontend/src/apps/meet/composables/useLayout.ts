@@ -126,57 +126,19 @@ export function useLayout(
 		return priorityMap;
 	};
 
-	const ensurePinnedParticipantVisible = (
-		visibleRemotes: Participant[],
-		remotes: Participant[],
-		pinnedParticipantIds: string[],
-		remoteCapacity: number,
-	): Participant[] => {
-		if (pinnedParticipantIds.length === 0 || remoteCapacity <= 0)
-			return visibleRemotes;
-
-		const newVisible = [...visibleRemotes];
-
-		for (const pinnedId of pinnedParticipantIds) {
-			const isPinnedVisible = newVisible.some((p) => p.user_id === pinnedId);
-
-			if (!isPinnedVisible) {
-				const pinnedParticipant = remotes.find((p) => p.user_id === pinnedId);
-				if (pinnedParticipant) {
-					if (newVisible.length >= remoteCapacity) {
-						newVisible.pop();
-					}
-					newVisible.unshift(pinnedParticipant);
-				}
-			}
-		}
-		return newVisible;
-	};
-
 	const partitionVisibleAndHidden = (
 		sortedRemotes: Participant[],
 		remoteCapacity: number,
-		remotes: Participant[],
-		pinnedParticipantId: string[],
+		pinnedParticipantIds: string[],
 	): DisplayParticipantsResult => {
-		const visibleRemotes = ensurePinnedParticipantVisible(
-			sortedRemotes.slice(0, remoteCapacity),
-			remotes,
-			pinnedParticipantId,
-			remoteCapacity,
-		);
-
-		const visibleIds = new Set(
-			visibleRemotes.map((participant) => participant.user_id),
-		);
-		const hidden = sortedRemotes.filter(
-			(participant) => !visibleIds.has(participant.user_id),
-		);
-
+		const pins = new Set(pinnedParticipantIds);
+		const pinned = sortedRemotes.filter((p) => pins.has(p.user_id));
+		const unpinned = sortedRemotes.filter((p) => !pins.has(p.user_id));
+		const stripCapacity = Math.max(0, remoteCapacity - pinned.length);
 		return {
-			list: visibleRemotes,
-			hidden,
-			extra: hidden.length,
+			list: [...unpinned.slice(0, stripCapacity), ...pinned],
+			hidden: unpinned.slice(stripCapacity),
+			extra: Math.max(0, unpinned.length - stripCapacity),
 		};
 	};
 
@@ -184,7 +146,9 @@ export function useLayout(
 
 	const displayParticipants = computed<DisplayParticipantsResult>(() => {
 		const remotes = Object.values(stripParticipants.value || {});
-		const pinnedParticipantIds = getPinnedParticipantId();
+		const pinnedParticipantIds = [...new Set(getPinnedParticipantId())].filter(
+			(id) => remotes.some((p) => p.user_id === id),
+		);
 		const remoteCapacity = getRemoteCapacity(
 			remotes.length,
 			pinnedParticipantIds,
@@ -226,14 +190,20 @@ export function useLayout(
 		const partitioned = partitionVisibleAndHidden(
 			sortedRemotes,
 			remoteCapacity,
-			remotes,
 			pinnedParticipantIds,
 		);
 
-		// Selection follows priority; presentation follows the room's stable slots.
-		// Human snapshots already exclude self; pins may change the projection.
+		// Use the smallest ranked prefix containing the unpinned strip. Hidden
+		// personal pins reserve tiles but must not inflate its presentation capacity.
+		const pins = new Set(pinnedParticipantIds);
+		const strip = partitioned.list.filter((p) => !pins.has(p.user_id));
+		const presentationCapacity = strip.length
+			? sortedRemotes.findIndex(
+					(p) => p.user_id === strip[strip.length - 1].user_id,
+				) + 1
+			: 0;
 		const order =
-			layoutDeps.sharedStagePresentationOrders?.value[remoteCapacity];
+			layoutDeps.sharedStagePresentationOrders?.value[presentationCapacity];
 		if (order) {
 			const positions = new Map(order.map((id, index) => [id, index]));
 			partitioned.list.sort(

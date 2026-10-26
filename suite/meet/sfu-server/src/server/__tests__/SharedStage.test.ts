@@ -199,3 +199,34 @@ it('gives equal hidden-self viewers and a late viewer the same remote slots', ()
 	expect(reconnect.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
 	stage.close();
 });
+
+it('discards a departed self projection and seeds a rejoin from current canonical slots', () => {
+	const { stage } = room();
+	stage.activity(['d']);
+	vi.advanceTimersByTime(1000);
+	stage.activity([]);
+	stage.inventory(
+		participants.filter((p) => p.participant_id !== 'a'),
+		{},
+	);
+	expect(stage.snapshot.presentationOrders?.[2]).toEqual(['b', 'd']);
+	stage.inventory(participants, {});
+	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'd']);
+	expect(stage.snapshotFor('a').participantIds).toEqual(['d', 'b', 'c', 'a']);
+	stage.close();
+});
+
+it('bounds stored self projections by current room membership after identity churn', () => {
+	const { stage } = room();
+	for (let i = 0; i < 100; i++) {
+		stage.inventory(
+			[...participants, { ...participants[0], participant_id: `guest-${i}` }],
+			{},
+		);
+	}
+	stage.inventory(participants, {});
+	// Resource bound: departed identities must not retain sixteen orders each.
+	expect(stage).toHaveProperty('selfSlots.size', 4);
+	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
+	stage.close();
+});

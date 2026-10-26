@@ -14,6 +14,7 @@ export interface SharedStageState {
 export type SFUScope = 'presence-preview' | 'full' | 'recording';
 
 export interface RecordingJoinRequest {
+	sharedStagePresentation?: boolean;
 	roomId: string;
 }
 
@@ -436,6 +437,7 @@ export type E2eeEpochJoinStatus = {
 };
 
 export interface JoinRoomRequest {
+	sharedStagePresentation?: boolean;
 	roomId: string;
 	connectionId?: string;
 	conflictId?: string;
