@@ -1,0 +1,369 @@
+name: Pilot complete migration proof
+on:
+  push:
+    branches: [proof/suite-pilot-complete]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    name: Backend
+    timeout-minutes: 20
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: echo "run=1" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Install MariaDB Client
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          sudo apt-get install -y --no-install-recommends mariadb-client || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mariadb-client
+          }
+
+      - name: Setup Pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          npm install --global yarn@1.22.22 pnpm@10
+          pip install uv "unittest-xml-reporting~=4.0"
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot"
+          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          cat > ~/frappe-bench/bench.toml <<'TOML'
+          [bench]
+          name = "frappe-bench"
+          python = "3.14"
+          [[apps]]
+          name = "frappe"
+          repo = "https://github.com/frappe/frappe"
+          branch = "develop"
+          [redis]
+          cache_port = 13000
+          queue_port = 11000
+          [admin]
+          enabled = false
+          TOML
+          cat > ~/common_config.toml <<'TOML'
+          [mariadb]
+          existing = true
+          host = "127.0.0.1"
+          port = 3306
+          root_password = "root"
+          TOML
+          "$RUNNER_TEMP/pilot/bin/pilot" -b ~/frappe-bench init
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        id: install-suite
+        working-directory: /home/runner/frappe-bench
+        run: |
+          pilot get-app "$GITHUB_WORKSPACE"
+          pilot new-site test_site --admin-password admin --apps frappe suite
+        env:
+          CI: "Yes"
+
+      - name: Run Backend Tests
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
+          pilot frappe --site test_site set-config allow_tests true
+          status=0
+          pilot frappe --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
+        env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          TYPE: server
+
+      - name: Check Background Worker
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          pilot frappe worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+          kill "$worker_pid" 2>/dev/null || true
+          wait "$worker_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Collect Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-evidence
+          path: |
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Backend Coverage
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  mail-calendar:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.name }}
+    timeout-minutes: 20
+
+    # One matrix leg per module; both legs run whenever either module changes,
+    # since the calendar tests build on the mail harness and Stalwart accounts.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: mail
+            name: Mail
+          - module: calendar
+            name: Calendar
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check mail/calendar changes
+        id: mail-calendar-changes
+        run: |
+          if [ "1" = "1" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_tests=1
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/mail/|suite/calendar/|pyproject\.toml|\.github/workflows/suite-ci\.yml)' && run_tests=1 || run_tests=0
+          else
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              changed_files="$(git diff --name-only HEAD~1 HEAD)"
+            else
+              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+            fi
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/mail/|suite/calendar/|pyproject\.toml|\.github/workflows/suite-ci\.yml)' && run_tests=1 || run_tests=0
+          fi
+
+          echo "run=$run_tests" >> $GITHUB_OUTPUT
+          echo "Run mail/calendar tests: $run_tests"
+
+      - name: Start Stalwart
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        run: |
+          # The JMAP session advertises URLs at https://mail.example.test (the bootstrap
+          # serverHostname), which must resolve to the local container.
+          echo "127.0.0.1 mail.example.test" | sudo tee -a /etc/hosts
+          bash $GITHUB_WORKSPACE/suite/mail/tests/docker/start-stalwart.sh
+        env:
+          STALWART_VERSION: v0.16.20
+          STALWART_CLI_VERSION: v1.0.12
+          STALWART_ADMIN_USER: admin
+          STALWART_ADMIN_PASSWORD: admin
+
+      - name: Setup Python
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Install MariaDB Client
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        run: |
+          sudo apt-get install -y --no-install-recommends mariadb-client || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mariadb-client
+          }
+
+      - name: Setup Pilot
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        run: |
+          npm install --global yarn@1.22.22 pnpm@10
+          pip install uv "unittest-xml-reporting~=4.0"
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot"
+          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          cat > ~/frappe-bench/bench.toml <<'TOML'
+          [bench]
+          name = "frappe-bench"
+          python = "3.14"
+          [[apps]]
+          name = "frappe"
+          repo = "https://github.com/frappe/frappe"
+          branch = "develop"
+          [redis]
+          cache_port = 13000
+          queue_port = 11000
+          [admin]
+          enabled = false
+          TOML
+          cat > ~/common_config.toml <<'TOML'
+          [mariadb]
+          existing = true
+          host = "127.0.0.1"
+          port = 3306
+          root_password = "root"
+          TOML
+          "$RUNNER_TEMP/pilot/bin/pilot" -b ~/frappe-bench init
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install Suite
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          pilot get-app "$GITHUB_WORKSPACE"
+          pilot new-site test_site --admin-password admin --apps frappe suite
+        env:
+          CI: "Yes"
+
+      - name: Run ${{ matrix.name }} Tests
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/${{ matrix.module }}"
+          pilot frappe --site test_site set-config allow_tests true
+          # Invite/OTP flows send transactional emails; with mute_emails set, frappe
+          # builds the queue against a dummy outgoing account and never sends.
+          pilot frappe --site test_site set-config mute_emails 1
+          pilot frappe --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
+          # Mail Settings wins over site_config and its verify_ssl checkbox defaults to on,
+          # which would shadow the verify_ssl: 0 above (the container's cert is self-signed).
+          pilot frappe --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
+          pilot frappe --site test_site clear-cache
+
+          status=0
+          for path in $GITHUB_WORKSPACE/suite/${{ matrix.module }}/tests/test_*.py; do
+            [ -e "$path" ] || continue
+            rel="${path#"$GITHUB_WORKSPACE"/}"
+            module="$(echo "${rel%.py}" | tr / .)"
+            fragments="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}-fragments.xml"
+            junit="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}.xml"
+            echo "::group::$module"
+            if ! pilot frappe --site test_site run-tests --module "$module" --junit-xml-output "$fragments"; then
+              status=1
+            fi
+            python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" "$fragments" "$junit"
+            rm "$fragments"
+            echo "::endgroup::"
+          done
+          exit "$status"
+        env:
+          TYPE: server
+
+      - name: Upload ${{ matrix.name }} Evidence
+        if: always() && steps.mail-calendar-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-${{ matrix.module }}-evidence
+          path: test-results/${{ matrix.module }}/
+          if-no-files-found: warn
+          retention-days: 30
+
