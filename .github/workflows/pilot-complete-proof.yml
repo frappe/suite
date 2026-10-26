@@ -72,6 +72,8 @@ jobs:
         run: |
           npm install --global yarn@1.22.22 pnpm@10
           pip install uv
+          curl -fsSL https://r.mariadb.com/downloads/mariadb_repo_setup \
+            | sudo bash -s -- --mariadb-server-version=mariadb-11.8 --skip-maxscale
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev mariadb-server redis-server
           mkdir -p "$RUNNER_TEMP/pilot"
           # Use Pilot #703 until its branch flag is released.
@@ -243,6 +245,8 @@ jobs:
         run: |
           npm install --global yarn@1.22.22 pnpm@10
           pip install uv
+          curl -fsSL https://r.mariadb.com/downloads/mariadb_repo_setup \
+            | sudo bash -s -- --mariadb-server-version=mariadb-11.8 --skip-maxscale
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev mariadb-server redis-server
           mkdir -p "$RUNNER_TEMP/pilot"
           # Use Pilot #703 until its branch flag is released.
