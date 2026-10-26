@@ -21,3 +21,22 @@ snapshot and ordered projection. The browser still owns layout: it projects this
 room ranking through viewport capacity, the local self tile, and personal pins.
 This removes independent browser history from default membership and order
 without moving viewport or recording-readiness policy into the SFU.
+
+### Stable presentation slots
+
+Conversational priority selects each capacity's participant set; it does not
+specify tile positions. The SFU snapshots a presentation order for each supported
+ranked prefix (1–16 tiles). Retained members keep their slots and entrants fill
+vacancies. Equal-priority joins follow room arrival order, so a new identifier
+cannot evict an incumbent merely by sorting earlier. Departures that reduce the
+population move tail survivors only when needed to fill a hole.
+
+The SFU also maintains these orders after each human endpoint's self exclusion,
+and sends only that endpoint's projection on join and updates. This prevents local
+speaking priority from changing remote slots. Endpoints project the received
+orders through screen tiles, capacity and personal pins. No endpoint accumulates presentation history; fresh
+join/reconnect snapshots reproduce the room's current presentation. Personal pins
+and differing self/capacity projections can intentionally produce different views.
+A change of tile count, viewport, screen share or pin mode can change grid geometry;
+stable order does not promise fixed pixel rectangles across those layout changes.
+An older SFU without presentation orders retains the previous ranking fallback.

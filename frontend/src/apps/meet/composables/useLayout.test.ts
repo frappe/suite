@@ -129,3 +129,40 @@ describe("participant promotion", () => {
 		expect(ids(right)).not.toContain("b");
 	});
 });
+
+describe('server-owned presentation', () => {
+	it('uses shared slots rather than ranking, including a fresh late viewer and reconnect', () => {
+		const { participants, deps } = setupLayout();
+		const ranking = ref(['e', 'a', 'b', 'c', 'd']);
+		const orders = ref({ '2': ['a', 'e'], '3': ['a', 'b', 'e'] });
+		const shared = { ...deps, sharedStageParticipantIds: ranking, sharedStagePresentationOrders: orders };
+		const first = useLayout(participants, ref([]), shared, ref(0));
+		expect(first.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'e']);
+		ranking.value = ['a', 'e', 'b', 'c', 'd'];
+		expect(first.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'e']);
+		const late = useLayout(ref(Object.fromEntries(Object.entries(participants.value).reverse())), ref([]), shared, ref(0));
+		expect(late.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'e']);
+		ranking.value = ['b', 'a', 'e', 'c', 'd'];
+		orders.value = { '2': ['a', 'b'], '3': ['a', 'b', 'e'] };
+		expect(first.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'b']);
+		expect(late.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'b']);
+	});
+	it('projects self exclusion, screen capacity and personal pins without client history', () => {
+		const { participants, deps } = setupLayout();
+		const ranking = ref(['self', 'e', 'a', 'b', 'c', 'd']);
+		const shared = { ...deps, sharedStageParticipantIds: ranking, sharedStagePresentationOrders: ref({
+			'1': ['e'], '2': ['a', 'e'], '3': ['a', 'b', 'e'],
+		}) };
+		const pins = ref<PinnedTile[]>([]);
+		const screens = ref(0);
+		const layout = useLayout(participants, pins, shared, screens);
+		expect(layout.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'e']);
+		screens.value = 1;
+		expect(layout.displayParticipants.value.list.map(p => p.user_id)).toEqual(['e']);
+		pins.value = [{ type: 'participant', id: 'd' }];
+		expect(layout.displayParticipants.value.list.map(p => p.user_id)).toContain('d');
+		pins.value = [];
+		screens.value = 0;
+		expect(layout.displayParticipants.value.list.map(p => p.user_id)).toEqual(['a', 'e']);
+	});
+});

@@ -74,3 +74,128 @@ describe('canonical Shared Stage', () => {
 		stage.close();
 	});
 });
+
+describe('shared presentation slots', () => {
+	it('keeps visible speakers, hands and camera changes in their slots while ranking changes', () => {
+		const { stage } = room();
+		stage.activity(['d', 'b']);
+		vi.advanceTimersByTime(1000);
+		expect(stage.snapshot.participantIds).toEqual(['b', 'd', 'a', 'c']);
+		expect(stage.snapshot.presentationOrders?.[4]).toEqual([
+			'a',
+			'b',
+			'c',
+			'd',
+		]);
+		stage.inventory(
+			participants.map((p) => ({
+				...p,
+				video_enabled: p.participant_id !== 'b',
+			})),
+			{ c: '2026-01-01' },
+		);
+		expect(stage.snapshot.presentationOrders?.[4]).toEqual([
+			'a',
+			'b',
+			'c',
+			'd',
+		]);
+		stage.activity([]);
+		stage.inventory(participants, {});
+		vi.advanceTimersByTime(120000);
+		expect(stage.snapshot.presentationOrders?.[4]).toEqual([
+			'a',
+			'b',
+			'c',
+			'd',
+		]);
+		stage.close();
+	});
+	it('replaces only the exiting slot on overflow promotion and expiry', () => {
+		const { stage } = room();
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'b', 'c']);
+		stage.activity(['d']);
+		vi.advanceTimersByTime(1000);
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+		stage.activity(['b', 'd']);
+		vi.advanceTimersByTime(1000);
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+		stage.activity([]);
+		vi.advanceTimersByTime(120000);
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'b', 'c']);
+		stage.close();
+	});
+	it('fills departure vacancies and appends joins without evicting equal priority incumbents', () => {
+		const { stage } = room();
+		const newcomer = { ...participants[0], participant_id: '0' };
+		stage.inventory([newcomer, ...participants], {});
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'b', 'c']);
+		expect(stage.snapshot.presentationOrders?.[5]).toEqual([
+			'a',
+			'b',
+			'c',
+			'd',
+			'0',
+		]);
+		stage.inventory(
+			[newcomer, ...participants.filter((p) => p.participant_id !== 'b')],
+			{},
+		);
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'd', 'c']);
+		expect(stage.snapshot.presentationOrders?.[4]).toEqual([
+			'a',
+			'0',
+			'c',
+			'd',
+		]);
+		stage.close();
+	});
+	it('snapshots contain independent complete slot history for late join and reconnect', () => {
+		const { stage } = room();
+		stage.activity(['d']);
+		vi.advanceTimersByTime(1000);
+		const late = stage.snapshot;
+		expect(late.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+		late.presentationOrders![3][0] = 'corrupted';
+		expect(stage.snapshot.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+		stage.close();
+	});
+});
+
+it('compacts only tail survivors when departures reduce the population below capacity', () => {
+	const { stage } = room();
+	stage.inventory(participants.filter(p => ['c', 'd'].includes(p.participant_id)), {});
+	expect(stage.snapshot.presentationOrders?.[4]).toEqual(['c', 'd']);
+	stage.inventory(participants, {});
+	expect(stage.snapshot.presentationOrders?.[4]).toEqual(['c', 'd', 'a', 'b']);
+	stage.close();
+});
+
+it('keeps remote slots when local self enters and exits the ranked prefix', () => {
+	const { stage } = room();
+	stage.activity(['d']); vi.advanceTimersByTime(1000); stage.activity([]);
+	stage.activity(['b']); vi.advanceTimersByTime(1000); stage.activity([]);
+	const before = stage.snapshotFor('a');
+	expect(before.presentationOrders?.[2]).toEqual(['b', 'd']);
+	stage.activity(['a']); vi.advanceTimersByTime(1000);
+	expect(stage.snapshotFor('a').participantIds[0]).toBe('a');
+	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'd']);
+	stage.activity([]); vi.advanceTimersByTime(120000);
+	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
+	expect(stage.snapshotFor('a').excludedParticipantId).toBe('a');
+	stage.close();
+});
+
+it('gives equal hidden-self viewers and a late viewer the same remote slots', () => {
+	const { stage } = room();
+	const viewers = ['viewer-one', 'viewer-two'].map(id => ({ ...participants[0], participant_id: id, video_enabled: false }));
+	stage.inventory([...participants, ...viewers], {});
+	stage.activity(['d']); vi.advanceTimersByTime(1000);
+	expect(stage.snapshotFor('viewer-one').presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+	expect(stage.snapshotFor('viewer-two').presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+	stage.inventory([...participants, ...viewers, { ...viewers[0], participant_id: 'late-viewer' }], {});
+	expect(stage.snapshotFor('late-viewer').presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+	const reconnect = stage.snapshotFor('viewer-one');
+	expect(reconnect.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+	stage.close();
+});

@@ -5,6 +5,10 @@ export interface SharedStageState {
 	version: number;
 	participantIds: string[];
 	activeSpeakerIds: string[];
+	/** Server-owned stable slots for each ranked prefix capacity. */
+	presentationOrders?: Record<string, string[]>;
+	/** Human endpoints receive slots after canonical self exclusion. */
+	excludedParticipantId?: string;
 }
 
 export type SFUScope = 'presence-preview' | 'full' | 'recording';

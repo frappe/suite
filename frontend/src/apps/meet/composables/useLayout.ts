@@ -8,6 +8,7 @@ interface LayoutDeps {
 	activeSpeakerIds: Ref<string[]>;
 	stableSpeakerIds: Ref<string[]>;
 	sharedStageParticipantIds?: Ref<string[]>;
+	sharedStagePresentationOrders?: Ref<Record<string, string[]>>;
 }
 
 interface DisplayParticipantsResult {
@@ -202,7 +203,10 @@ export function useLayout(
 			raisedHands,
 		);
 		const ranking = new Map(
-			(layoutDeps.sharedStageParticipantIds?.value ?? []).map((id, index) => [id, index]),
+			(layoutDeps.sharedStageParticipantIds?.value ?? []).map((id, index) => [
+				id,
+				index,
+			]),
 		);
 		const sortedRemotes = [...remotes].sort((a, b) => {
 			if (ranking.size)
@@ -213,7 +217,9 @@ export function useLayout(
 				);
 			return (
 				(priorityMap.get(a.user_id) ?? 6) - (priorityMap.get(b.user_id) ?? 6) ||
-				(raisedHands[a.user_id] ?? "").localeCompare(raisedHands[b.user_id] ?? "") ||
+				(raisedHands[a.user_id] ?? "").localeCompare(
+					raisedHands[b.user_id] ?? "",
+				) ||
 				(a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0)
 			);
 		});
@@ -224,6 +230,18 @@ export function useLayout(
 			pinnedParticipantIds,
 		);
 
+		// Selection follows priority; presentation follows the room's stable slots.
+		// Human snapshots already exclude self; pins may change the projection.
+		const order =
+			layoutDeps.sharedStagePresentationOrders?.value[remoteCapacity];
+		if (order) {
+			const positions = new Map(order.map((id, index) => [id, index]));
+			partitioned.list.sort(
+				(a, b) =>
+					(positions.get(a.user_id) ?? Infinity) -
+					(positions.get(b.user_id) ?? Infinity),
+			);
+		}
 		return partitioned;
 	});
 

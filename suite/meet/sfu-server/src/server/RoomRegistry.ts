@@ -637,15 +637,18 @@ export class RoomRegistry {
 		});
 	}
 
-	getSharedStageSnapshot(roomId: string) {
-		return this.getSharedStage(roomId).snapshot;
+	getSharedStageSnapshot(roomId: string, excludedParticipantId?: string) {
+		return this.getSharedStage(roomId).snapshotFor(excludedParticipantId);
 	}
 
 	private getSharedStage(roomId: string): SharedStage {
 		let stage = this.sharedStages.get(roomId);
 		if (!stage) {
 			stage = new SharedStage((snapshot) => {
-				this.emitToFullAccessParticipants(roomId, 'shared_stage', snapshot);
+				for (const socketId of this.io.sockets.adapter.rooms.get(fullRoom(roomId)) ?? []) {
+					const socket = this.io.sockets.sockets.get(socketId);
+					if (socket) socket.emit('shared_stage', stage!.snapshotFor(socket.participantId));
+				}
 				const state = this.getRecorderProjectionState(roomId);
 				this.emitProjection(roomId, state, this.observeProjectionAt(state), {
 					type: 'shared_stage',

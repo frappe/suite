@@ -347,6 +347,9 @@ const {
 		sharedStageParticipantIds: computed(
 			() => meetingCtx.participantStore.sharedStage?.participantIds ?? [],
 		),
+		sharedStagePresentationOrders: computed(
+			() => meetingCtx.participantStore.sharedStage?.presentationOrders ?? {},
+		),
 		stableSpeakerIds: computed(
 			() => meetingCtx.participantStore.stableSpeakerIds,
 		),
