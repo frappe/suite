@@ -77,7 +77,7 @@ jobs:
         run: |
           pip install frappe-bench uv "unittest-xml-reporting~=4.0"
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
-          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench/config/pids
           curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
             | tar -xz -C "$RUNNER_TEMP/pilot"
           echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
