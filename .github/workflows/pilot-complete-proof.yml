@@ -35,7 +35,29 @@ jobs:
 
       - name: Check backend changes
         id: backend-changes
-        run: echo "run=1" >> "$GITHUB_OUTPUT"
+        run: |
+          # node server suites are exercised by the node-servers job; changes
+          # confined to them do not need the bench
+          if [ "1" = "1" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_backend=1
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            else
+              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                changed_files="$(git diff --name-only HEAD~1 HEAD)"
+              else
+                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+              fi
+            fi
+            backend_paths="$(printf '%s\n' "$changed_files" \
+              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+          fi
+
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
+          echo "Run backend tests: $run_backend"
 
       - name: Setup Python
         if: steps.backend-changes.outputs.run == '1'
@@ -110,6 +132,7 @@ jobs:
         id: install-suite
         working-directory: /home/runner/frappe-bench
         run: |
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
           pilot get-app "$GITHUB_WORKSPACE"
           pilot new-site test_site --admin-password admin --apps frappe suite
         env:
@@ -319,6 +342,7 @@ jobs:
         if: steps.mail-calendar-changes.outputs.run == '1'
         working-directory: /home/runner/frappe-bench
         run: |
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
           pilot get-app "$GITHUB_WORKSPACE"
           pilot new-site test_site --admin-password admin --apps frappe suite
         env:
