@@ -115,9 +115,9 @@ jobs:
       - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          pip install frappe-bench uv "unittest-xml-reporting~=4.0"
+          pip install uv "unittest-xml-reporting~=4.0"
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
-          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench/config/pids
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
           curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
             | tar -xz -C "$RUNNER_TEMP/pilot"
           echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
@@ -151,11 +151,8 @@ jobs:
         id: install-suite
         working-directory: /home/runner/frappe-bench
         run: |
-          bench get-app suite $GITHUB_WORKSPACE --skip-assets
-          bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app suite
-          bench build --app suite
+          pilot get-app "$GITHUB_WORKSPACE"
+          pilot new-site test_site --admin-password admin --apps frappe suite
         env:
           CI: "Yes"
 
@@ -165,9 +162,9 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
           printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
-          bench --site test_site set-config allow_tests true
+          pilot frappe --site test_site set-config allow_tests true
           status=0
-          bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          pilot frappe --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
           python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
             "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
             "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
@@ -184,10 +181,10 @@ jobs:
           marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
           rm -f "$marker"
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
-          bench worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
+          pilot frappe worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
           worker_pid=$!
           trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
-          bench --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
           timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
           kill "$worker_pid" 2>/dev/null || true
           wait "$worker_pid" 2>/dev/null || true
@@ -442,11 +439,37 @@ jobs:
             sudo apt-get install -y --no-install-recommends mariadb-client
           }
 
-      - name: Setup Bench
+      - name: Setup Pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          pip install frappe-bench "unittest-xml-reporting~=4.0"
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          pip install uv "unittest-xml-reporting~=4.0"
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot"
+          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          cat > ~/frappe-bench/bench.toml <<'TOML'
+          [bench]
+          name = "frappe-bench"
+          python = "3.14"
+          [[apps]]
+          name = "frappe"
+          repo = "https://github.com/frappe/frappe"
+          branch = "develop"
+          [redis]
+          cache_port = 13000
+          queue_port = 11000
+          [admin]
+          enabled = false
+          TOML
+          cat > ~/common_config.toml <<'TOML'
+          [mariadb]
+          existing = true
+          host = "127.0.0.1"
+          port = 3306
+          root_password = "root"
+          TOML
+          "$RUNNER_TEMP/pilot/bin/pilot" -b ~/frappe-bench init
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
@@ -454,13 +477,8 @@ jobs:
         if: steps.mail-calendar-changes.outputs.run == '1'
         working-directory: /home/runner/frappe-bench
         run: |
-          git clone "$GITHUB_WORKSPACE" apps/suite
-          uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          printf 'frappe\nsuite\n' > sites/apps.txt
-          bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app suite
-          bench build --using-cached
+          pilot get-app "$GITHUB_WORKSPACE"
+          pilot new-site test_site --admin-password admin --apps frappe suite
         env:
           CI: "Yes"
 
@@ -469,15 +487,15 @@ jobs:
         working-directory: /home/runner/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/${{ matrix.module }}"
-          bench --site test_site set-config allow_tests true
+          pilot frappe --site test_site set-config allow_tests true
           # Invite/OTP flows send transactional emails; with mute_emails set, frappe
           # builds the queue against a dummy outgoing account and never sends.
-          bench --site test_site set-config mute_emails 1
-          bench --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
+          pilot frappe --site test_site set-config mute_emails 1
+          pilot frappe --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
           # Mail Settings wins over site_config and its verify_ssl checkbox defaults to on,
           # which would shadow the verify_ssl: 0 above (the container's cert is self-signed).
-          bench --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
-          bench --site test_site clear-cache
+          pilot frappe --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
+          pilot frappe --site test_site clear-cache
 
           status=0
           for path in $GITHUB_WORKSPACE/suite/${{ matrix.module }}/tests/test_*.py; do
@@ -487,7 +505,7 @@ jobs:
             fragments="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}-fragments.xml"
             junit="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}.xml"
             echo "::group::$module"
-            if ! bench --site test_site run-tests --module "$module" --junit-xml-output "$fragments"; then
+            if ! pilot frappe --site test_site run-tests --module "$module" --junit-xml-output "$fragments"; then
               status=1
             fi
             python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" "$fragments" "$junit"
