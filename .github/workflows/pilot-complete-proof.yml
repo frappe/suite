@@ -86,7 +86,7 @@ jobs:
           pilot new frappe-bench --frappe-branch develop
           ln -s "$RUNNER_TEMP/pilot/benches/frappe-bench" ~/frappe-bench
           pilot -b frappe-bench init
-          pilot -b frappe-bench build frappe
+          pilot -b frappe-bench build
           redis-server ~/frappe-bench/config/redis_cache.conf --daemonize yes
           redis-server ~/frappe-bench/config/redis_queue.conf --daemonize yes
 
@@ -260,7 +260,7 @@ jobs:
           pilot new frappe-bench --frappe-branch develop
           ln -s "$RUNNER_TEMP/pilot/benches/frappe-bench" ~/frappe-bench
           pilot -b frappe-bench init
-          pilot -b frappe-bench build frappe
+          pilot -b frappe-bench build
           redis-server ~/frappe-bench/config/redis_cache.conf --daemonize yes
           redis-server ~/frappe-bench/config/redis_queue.conf --daemonize yes
 
