@@ -626,15 +626,17 @@ export class TransportManager {
 				remoteSenderId: rawConsumerParams.senderId,
 				mediaType: rawConsumerParams.kind,
 			});
-			if (e2eeWanted && consumer.rtpReceiver) {
+			if (e2eeWanted) {
 				try {
 					const remoteSenderId = rawConsumerParams.senderId ?? 0;
 					const mediaType = rawConsumerParams.kind ?? "video";
-					const installed = await this.e2eePolicy.setupReceiverTransform(
-						consumer.rtpReceiver,
-						remoteSenderId,
-						mediaType,
-					);
+					const installed = consumer.rtpReceiver
+						? await this.e2eePolicy.setupReceiverTransform(
+								consumer.rtpReceiver,
+								remoteSenderId,
+								mediaType,
+							)
+						: false;
 					if (rawConsumerParams.paused && !installed) {
 						throw new Error("Failed to install E2EE receiver transform");
 					}

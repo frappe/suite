@@ -243,13 +243,17 @@ export class ConsumerManager {
 		}
 
 		const { consumer } = consumerData;
-		if (!consumer.paused) {
-			return false;
-		}
+		if (consumer.closed) return false;
+		// Readiness acknowledgements may be retried after the first response is lost.
+		if (!consumer.paused) return true;
 
 		try {
 			await consumer.resume();
-			return true;
+			return (
+				this.consumers.get(consumerId) === consumerData &&
+				!consumer.closed &&
+				!consumer.paused
+			);
 		} catch (error) {
 			loggers.consumerManager.warn(
 				'Failed to resume consumer %s: %s',

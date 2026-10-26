@@ -991,6 +991,24 @@ describe("receiver-ready video handshake", () => {
 		expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id);
 	});
 
+	it.each([true, false])("handles a missing encrypted receiver with paused=%s", async (paused) => {
+		const { manager, consumer, client } = setup("video", paused);
+		Object.assign(consumer, { rtpReceiver: undefined });
+		vi.spyOn(manager.e2eePolicy, "transformsEnabled", "get").mockReturnValue(true);
+		const install = vi.spyOn(manager.e2eePolicy, "setupReceiverTransform");
+		if (paused) {
+			await expect(manager.createConsumer("camera")).rejects.toThrow("Failed to install");
+			expect(consumer.close).toHaveBeenCalledOnce();
+			expect(client.closeConsumer).toHaveBeenCalledExactlyOnceWith(consumer.id);
+			expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled();
+		} else {
+			await expect(manager.createConsumer("camera")).resolves.toBe(consumer);
+			manager.cleanup();
+		}
+		expect(install).not.toHaveBeenCalled();
+		expect(client.resumeConsumer).not.toHaveBeenCalled();
+	});
+
 	it("disposes both consumers if the readiness acknowledgement fails", async () => {
 		const { manager, consumer, client } = setup();
 		client.resumeConsumer.mockRejectedValue(new Error("resume failed"));
