@@ -214,17 +214,3 @@ export class SharedStage {
 		}
 	};
 }
-
-export function sharedStageForClient(
-	state: SharedStageState,
-	presentationSlots: boolean,
-): SharedStageState {
-	if (presentationSlots) return state;
-	return {
-		epoch: state.epoch,
-		protocolVersion: state.protocolVersion,
-		version: state.version,
-		participantIds: state.participantIds,
-		activeSpeakerIds: state.activeSpeakerIds,
-	};
-}

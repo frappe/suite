@@ -673,7 +673,7 @@ describe('RoomRegistry', () => {
 						event: 'participant_joined',
 						data: { roomId: 'r1', participantId: 'u-1', userData },
      },
-     { event: 'shared_stage', data: { epoch: expect.any(String), protocolVersion: 1, version: 1, participantIds: ['u-1'], activeSpeakerIds: [] } },
+     { event: 'shared_stage', data: { epoch: expect.any(String), protocolVersion: 1, version: 1, participantIds: ['u-1'], activeSpeakerIds: [], presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['u-1']])) } },
 				],
 			);
 			expect(
@@ -1187,8 +1187,8 @@ it('shares late snapshots, orders updates, removes departures and cancels room r
 
 it('delivers each human self-excluded slot snapshot while retaining the recorder room view', () => {
  const setup = makeIo(), registry = new RoomRegistry(setup.io);
- const left = Object.assign(makeSocket('left'), { participantId: 'a', sharedStagePresentation: true });
- const right = Object.assign(makeSocket('right'), { participantId: 'b', sharedStagePresentation: true });
+ const left = Object.assign(makeSocket('left'), { participantId: 'a' });
+ const right = Object.assign(makeSocket('right'), { participantId: 'b' });
  vi.spyOn(left, 'emit'); vi.spyOn(right, 'emit');
  addFullSocket(setup, 'r1', left); addFullSocket(setup, 'r1', right);
  for (const id of ['a', 'b', 'c']) registry.emitParticipantEvent('r1', 'participant_joined', id, { name: id, video_enabled: true });
@@ -1198,41 +1198,4 @@ it('delivers each human self-excluded slot snapshot while retaining the recorder
  expect(registry.getSharedStageSnapshot('r1', 'b').presentationOrders?.[2]).toEqual(['a', 'c']);
  expect(registry.getRecorderStageSnapshot('r1').shared_stage?.presentationOrders?.[3]).toEqual(['a', 'b', 'c']);
  registry.cleanupMediaRoom('r1');
-});
-
-it.each([
-	false,
-	true,
-])('projects recorder events for presentation capability %s without changing the room cursor', (capable) => {
-	const setup = makeIo(),
-		registry = new RoomRegistry(setup.io);
-	const recorder = makeSocket('recorder');
-	recorder.sharedStagePresentation = capable;
-	addRecorderSocket(setup, registry, 'r1', recorder);
-	const emit = vi.spyOn(recorder, 'emit');
-	registry.emitParticipantEvent('r1', 'participant_joined', 'a', {
-		name: 'Alice',
-		video_enabled: true,
-	});
-	const snapshot = registry.getRecorderStageSnapshot('r1', capable);
-	const shared = snapshot.shared_stage!;
-	if (capable) expect(shared.presentationOrders?.[2]).toEqual(['a']);
-	else
-		expect(Object.keys(shared).sort()).toEqual([
-			'activeSpeakerIds',
-			'epoch',
-			'participantIds',
-			'protocolVersion',
-			'version',
-		]);
-	expect(shared.participantIds).toEqual(['a']);
-	expect(emit).toHaveBeenCalledWith('recording:projection', {
-		protocol_version: 1,
-		room_id: 'r1',
-		cursor: 2,
-		observed_at: expect.any(String),
-		payload: { type: 'shared_stage', state: shared },
-	});
-	expect(snapshot.cursor).toBe(2);
-	registry.cleanupMediaRoom('r1');
 });

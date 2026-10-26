@@ -22,7 +22,7 @@ import type {
 	UserData,
 } from '../types';
 
-import { SharedStage, sharedStageForClient } from './SharedStage';
+import { SharedStage } from './SharedStage';
 
 type ServerSocket = Socket<
 	ClientToServerEvents,
@@ -331,10 +331,7 @@ export class RoomRegistry {
 		return this.raisedHands[roomId] ?? {};
 	}
 
-	getRecorderStageSnapshot(
-		roomId: string,
-		presentationSlots = true,
-	): RecorderStageSnapshot {
+	getRecorderStageSnapshot(roomId: string): RecorderStageSnapshot {
 		const state = this.getRecorderProjectionState(roomId);
 		const observedAt = this.observeProjectionAt(state);
 		return {
@@ -350,10 +347,7 @@ export class RoomRegistry {
 			})),
 			raised_hands: { ...this.getRaisedHands(roomId) },
 			active_speaker_ids: [...state.activeSpeakerIds],
-			shared_stage: sharedStageForClient(
-				this.getSharedStage(roomId).snapshot,
-				presentationSlots,
-			),
+			shared_stage: this.getSharedStage(roomId).snapshot,
 		};
 	}
 
@@ -541,26 +535,13 @@ export class RoomRegistry {
 		payload: RecorderStageProjectionPayload,
 	): void {
 		state.cursor += 1;
-		for (const id of this.recorderSockets.get(roomId) ?? []) {
-			const socket = this.io.sockets.sockets.get(id);
-			if (!socket || !this.isJoinedActiveRecorder(socket, roomId)) continue;
-			socket.emit('recording:projection', {
-				protocol_version: 1,
-				room_id: roomId,
-				cursor: state.cursor,
-				observed_at: observedAt,
-				payload:
-					payload.type === 'shared_stage'
-						? {
-							type: 'shared_stage',
-							state: sharedStageForClient(
-								payload.state,
-								socket.sharedStagePresentation === true,
-							),
-						}
-						: payload,
-			});
-		}
+		this.emitToRecorders(roomId, 'recording:projection', {
+			protocol_version: 1,
+			room_id: roomId,
+			cursor: state.cursor,
+			observed_at: observedAt,
+			payload,
+		});
 		if (payload.type !== 'shared_stage') this.syncSharedStage(roomId, state);
 	}
 
@@ -656,15 +637,8 @@ export class RoomRegistry {
 		});
 	}
 
-	getSharedStageSnapshot(
-		roomId: string,
-		excludedParticipantId?: string,
-		presentationSlots = true,
-	) {
-		return sharedStageForClient(
-			this.getSharedStage(roomId).snapshotFor(excludedParticipantId),
-			presentationSlots,
-		);
+	getSharedStageSnapshot(roomId: string, excludedParticipantId?: string) {
+		return this.getSharedStage(roomId).snapshotFor(excludedParticipantId);
 	}
 
 	private getSharedStage(roomId: string): SharedStage {
@@ -673,15 +647,7 @@ export class RoomRegistry {
 			stage = new SharedStage((snapshot) => {
 				for (const socketId of this.io.sockets.adapter.rooms.get(fullRoom(roomId)) ?? []) {
 					const socket = this.io.sockets.sockets.get(socketId);
-					if (socket)
-						socket.emit(
-							'shared_stage',
-							this.getSharedStageSnapshot(
-								roomId,
-								socket.participantId,
-								socket.sharedStagePresentation === true,
-							),
-						);
+					if (socket) socket.emit('shared_stage', stage!.snapshotFor(socket.participantId));
 				}
 				const state = this.getRecorderProjectionState(roomId);
 				this.emitProjection(roomId, state, this.observeProjectionAt(state), {

@@ -28,6 +28,8 @@ interface UseLayoutReturn {
 	displayParticipants: ComputedRef<DisplayParticipantsResult>;
 	allParticipants: ComputedRef<LayoutParticipant[]>;
 	visibleTileCount: ComputedRef<number>;
+	vacantStripSlots: ComputedRef<number[]>;
+	overflowSlotIndex: ComputedRef<number>;
 	hiddenParticipantsTooltip: ComputedRef<string>;
 }
 
@@ -142,6 +144,12 @@ export function useLayout(
 		};
 	};
 
+	let personalSlots: (string | undefined)[] = [];
+	let personalLayoutKey = "";
+	let personalOverflowSlot: number | undefined;
+	const stripSlots = new Map<string, number>();
+	let vacancies: number[] = [];
+
 	// ── Display participants ──────────────────────────────────────────────────
 
 	const displayParticipants = computed<DisplayParticipantsResult>(() => {
@@ -193,8 +201,8 @@ export function useLayout(
 			pinnedParticipantIds,
 		);
 
-		// Use the smallest ranked prefix containing the unpinned strip. Hidden
-		// personal pins reserve tiles but must not inflate its presentation capacity.
+		// Seed personal layouts from the shared presentation; subsequent selection
+		// changes replace vacancies without moving retained strip tiles.
 		const pins = new Set(pinnedParticipantIds);
 		const strip = partitioned.list.filter((p) => !pins.has(p.user_id));
 		const presentationCapacity = strip.length
@@ -212,7 +220,60 @@ export function useLayout(
 					(positions.get(b.user_id) ?? Infinity),
 			);
 		}
+		const key = JSON.stringify([
+			pinnedTiles.value, maxVisibleTiles.value, extraTiles.value,
+		]);
+		stripSlots.clear();
+		vacancies = [];
+		if (key !== personalLayoutKey || !pinnedTiles.value.length) {
+			personalSlots = [];
+			personalOverflowSlot = undefined;
+		}
+		personalLayoutKey = key;
+		if (pinnedTiles.value.length) {
+			const selected = partitioned.list.filter((p) => !pins.has(p.user_id));
+			const selectedIds = new Set(selected.map((p) => p.user_id));
+			personalSlots = personalSlots.map((id) => id && selectedIds.has(id) ? id : undefined);
+			if (!partitioned.extra) personalOverflowSlot = undefined;
+			for (const participant of selected) {
+				if (personalSlots.includes(participant.user_id)) continue;
+				const vacancy = personalSlots.findIndex(
+					(id, index) => id === undefined && index !== personalOverflowSlot,
+				);
+				if (vacancy < 0) personalSlots.push(participant.user_id);
+				else personalSlots[vacancy] = participant.user_id;
+			}
+			if (partitioned.extra && personalOverflowSlot === undefined) {
+				const vacancy = personalSlots.indexOf(undefined);
+				personalOverflowSlot = vacancy < 0 ? personalSlots.length : vacancy;
+				if (vacancy < 0) personalSlots.push(undefined);
+			}
+			while (
+				personalSlots.length > 0 &&
+				personalSlots[personalSlots.length - 1] === undefined &&
+				personalSlots.length - 1 !== personalOverflowSlot
+			) personalSlots.pop();
+			personalSlots.forEach((id, index) => {
+				if (id) stripSlots.set(id, index);
+				else if (index !== personalOverflowSlot) vacancies.push(index);
+			});
+			const byId = new Map(selected.map((p) => [p.user_id, p]));
+			partitioned.list = [
+				...personalSlots.flatMap((id) => id ? [byId.get(id)!] : []),
+				...pinnedParticipantIds.map((id) => participants.value[id]),
+			];
+		}
 		return partitioned;
+	});
+
+	const vacantStripSlots = computed(() => {
+		void displayParticipants.value;
+		return vacancies;
+	});
+
+	const overflowSlotIndex = computed(() => {
+		const { list, hidden } = displayParticipants.value;
+		return personalOverflowSlot ?? list.length + hidden.length;
 	});
 
 	const visibleTileCount = computed<number>(
@@ -220,19 +281,14 @@ export function useLayout(
 			localTileCount +
 			extraTiles.value +
 			displayParticipants.value.list.length +
+			vacantStripSlots.value.length +
 			(displayParticipants.value.extra > 0 ? 1 : 0),
 	);
 
 	const gridColumns = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 1;
-			const pinnedParticipantIds = new Set(getPinnedParticipantId());
-			const stripTileCount =
-				visibleTileCount.value -
-				displayParticipants.value.list.filter((participant) =>
-					pinnedParticipantIds.has(participant.user_id),
-				).length;
-			return Math.min(stripTileCount > 4 ? 2 : 1, sidebarMaxColumns.value);
+			return Math.min(2, sidebarMaxColumns.value);
 		}
 		const count = visibleTileCount.value;
 		if (count <= 0) return 1;
@@ -246,7 +302,7 @@ export function useLayout(
 		const visible: LayoutParticipant[] = list.map((p, idx) => ({
 			...p,
 			isVisible: true,
-			slotIndex: idx,
+			slotIndex: stripSlots.get(p.user_id) ?? idx,
 		}));
 
 		const invisible: LayoutParticipant[] = hidden.map((p, idx) => ({
@@ -276,6 +332,8 @@ export function useLayout(
 		displayParticipants,
 		allParticipants,
 		visibleTileCount,
+		vacantStripSlots,
+		overflowSlotIndex,
 		hiddenParticipantsTooltip,
 	};
 }

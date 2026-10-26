@@ -67,6 +67,13 @@
 				v-bind="getScreenShareTileBindings(shareTile)"
 			/>
 
+			<div
+				v-for="slot in vacantStripSlots"
+				:key="`vacant-${slot}`"
+				aria-hidden="true"
+				:style="{ ...tileStyle, order: slot + 1 }"
+			/>
+
 			<!-- Remote participants -->
 			<template
 				v-for="participant in allParticipants"
@@ -85,7 +92,7 @@
 				:tooltip="hiddenParticipantsTooltip"
 				:participants="displayParticipants.hidden"
 				:size="mode === 'sidebar' ? 'xl' : '2xl'"
-				:style="tileStyle"
+				:style="{ ...tileStyle, order: overflowSlotIndex + 1 }"
 				@click="interactive && emit('open-people-panel')"
 			/>
 		</TransitionGroup>
@@ -262,7 +269,7 @@ const getScreenShareTileBindings = (shareTile: ScreenShareTile) => {
 };
 
 const getParticipantTileBindings = (
-	participant: Participant & { isVisible: boolean },
+	participant: Participant & { isVisible: boolean; slotIndex: number },
 ) => {
 	const isPinned = isPinnedParticipant(participant.user_id);
 
@@ -282,7 +289,7 @@ const getParticipantTileBindings = (
 		style: isPinned
 			? pinnedTileStyles.value[`participant-${participant.user_id}`]
 			: participant.isVisible
-				? tileStyle.value
+				? { ...tileStyle.value, order: participant.slotIndex + 1 }
 				: undefined,
 	};
 };
@@ -317,13 +324,9 @@ const localParticipant = computed(() => {
 });
 
 // Number of extra strip tiles (pinned screenshares overlay the main panel instead)
-const extraTileCount = computed(() => {
-	const hasPinnedScreenShare = pinnedTiles.value.some(
-		(t) => t.type === "screenshare",
-	);
-	if (!hasPinnedScreenShare) return allScreenShareTiles.value.length;
-	return Math.max(0, allScreenShareTiles.value.length - 1);
-});
+const extraTileCount = computed(() =>
+	allScreenShareTiles.value.filter((tile) => !isPinnedScreenShare(tile.pinId)).length,
+);
 
 const { isMobile } = useResponsiveGrid();
 
@@ -335,6 +338,8 @@ const {
 	displayParticipants,
 	allParticipants,
 	visibleTileCount,
+	vacantStripSlots,
+	overflowSlotIndex,
 	hiddenParticipantsTooltip,
 } = useLayout(
 	participants,

@@ -15,10 +15,7 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 
 				callback({
 					success: true,
-					snapshot: deps.registry.getRecorderStageSnapshot(
-						roomId,
-						socket.sharedStagePresentation === true,
-					),
+					snapshot: deps.registry.getRecorderStageSnapshot(roomId),
 				});
 			} catch (error) {
 				callback({ success: false, error: (error as Error).message });

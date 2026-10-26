@@ -300,11 +300,6 @@ describe("RecorderSocketController", () => {
 		const frameCommitted = vi.fn(async () => undefined);
 		const h = harness({ state: { frameCommitted } });
 		await h.controller.connect(config);
-		expect(h.channel.emit).toHaveBeenCalledWith(
-			"recording:join",
-			{ roomId: "r", sharedStagePresentation: true },
-			expect.any(Function),
-		);
 		expect(h.calls).toEqual([
 			"connect",
 			"recording:proof",

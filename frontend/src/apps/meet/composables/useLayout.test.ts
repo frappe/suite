@@ -4,8 +4,10 @@ import type { Participant } from "../utils/media/ParticipantManager";
 import type { PinnedTile } from "./useGridLayout";
 import { useLayout } from "./useLayout";
 
+const viewport = vi.hoisted(() => ({ sidebarColumns: 1 }));
+
 vi.mock("./useResponsiveGrid", () => ({
-	useResponsiveGrid: () => ({ isMobile: ref(false), maxColumns: ref(1), sidebarMaxColumns: ref(1) }),
+	useResponsiveGrid: () => ({ isMobile: ref(false), maxColumns: ref(1), sidebarMaxColumns: ref(viewport.sidebarColumns) }),
 }));
 
 describe("useLayout", () => {
@@ -247,4 +249,121 @@ it("reserves multiple personal pins separately from screen and self tiles", () =
 		"a",
 		"e",
 	]);
+});
+
+it("keeps strip slots when a personal pin crosses the canonical prefix", () => {
+	const { participants, deps } = setupLayout();
+	const ranking = ref(["a", "b", "c", "d", "e"]);
+	const orders = ref<Record<string, string[]>>({ "2": ["a", "b"], "3": ["a", "b", "c"] });
+	const layout = useLayout(participants, ref([{ type: "participant", id: "a" }]), {
+		...deps, sharedStageParticipantIds: ranking, sharedStagePresentationOrders: orders,
+	}, ref(0));
+	const strip = () => layout.displayParticipants.value.list.filter(p => p.user_id !== "a").map(p => p.user_id);
+	expect(strip()).toEqual(["b", "c"]);
+	ranking.value = ["b", "c", "d", "e", "a"];
+	orders.value = { "2": ["c", "b"], "3": ["d", "b", "c"] };
+	expect(strip()).toEqual(["b", "c"]);
+	ranking.value = ["d", "c", "a", "b", "e"];
+	orders.value = { "2": ["c", "d"], "3": ["d", "a", "c"] };
+	expect(strip()).toEqual(["d", "c"]);
+});
+
+it("preserves personal strip slots through speech, hands, cameras, joins and departures", () => {
+	const { participants, deps } = setupLayout();
+	const pins = ref<PinnedTile[]>([{ type: "participant", id: "e" }]);
+	const layout = useLayout(participants, pins, deps, ref(0));
+	const strip = () => layout.allParticipants.value.filter(p => p.isVisible && p.user_id !== "e").map(p => [p.user_id, p.slotIndex]);
+	expect(strip()).toEqual([["a", 0], ["b", 1]]);
+	deps.activeSpeakerIds.value = ["d"];
+	expect(strip()).toEqual([["a", 0], ["d", 1]]);
+	deps.stableSpeakerIds.value = ["d"];
+	deps.activeSpeakerIds.value = [];
+	expect(strip()).toEqual([["a", 0], ["d", 1]]);
+	deps.raisedHands.value = { c: "2026-10-01T10:00:00Z" };
+	expect(strip()).toEqual([["c", 0], ["d", 1]]);
+	participants.value.d.video_enabled = false;
+	expect(strip()).toEqual([["c", 0], ["d", 1]]);
+	participants.value.f = { ...participants.value.a, user_id: "f" };
+	expect(strip()).toEqual([["c", 0], ["d", 1]]);
+	delete participants.value.d;
+	expect(strip()).toEqual([["c", 0], ["a", 1]]);
+	delete participants.value.b;
+	delete participants.value.f;
+	expect(strip()).toEqual([["c", 0], ["a", 1]]);
+	delete participants.value.c;
+	expect(strip()).toEqual([["a", 1]]);
+	expect(layout.vacantStripSlots.value).toEqual([0]);
+	participants.value.g = { ...participants.value.a, user_id: "g" };
+	expect(strip()).toEqual([["g", 0], ["a", 1]]);
+});
+
+it("keeps multiple pins in pin order and resets personal slots on explicit layout changes", () => {
+	const { participants, deps } = setupLayout();
+	const pins = ref<PinnedTile[]>([{ type: "participant", id: "e" }, { type: "participant", id: "a" }]);
+	const ranking = ref(["a", "b", "c", "d", "e"]);
+	const screens = ref(0);
+	const layout = useLayout(participants, pins, { ...deps, sharedStageParticipantIds: ranking }, screens, { localTileCount: 0 });
+	const ids = () => layout.displayParticipants.value.list.map(p => p.user_id);
+	expect(ids()).toEqual(["b", "c", "d", "e", "a"]);
+	ranking.value = ["d", "c", "b", "e", "a"];
+	expect(ids()).toEqual(["b", "c", "d", "e", "a"]);
+	screens.value = 2;
+	expect(ids()).toEqual(["d", "e", "a"]);
+	pins.value = [];
+	expect(ids()).toEqual(["d"]);
+	screens.value = 0;
+	expect(ids()).toEqual(["d", "c", "b"]);
+});
+
+
+it("keeps pinned panel width fixed as the strip grows across four tiles", () => {
+	viewport.sidebarColumns = 2;
+	try {
+		const { participants, deps } = setupLayout();
+		delete participants.value.b;
+		delete participants.value.c;
+		delete participants.value.d;
+		const layout = useLayout(participants, ref([{ type: "participant", id: "e" }]), deps, ref(0));
+		expect(layout.gridColumns.value).toBe(2);
+		for (const id of ["b", "c", "d", "f", "g"])
+			participants.value[id] = { ...participants.value.a, user_id: id };
+		expect(layout.gridColumns.value).toBe(2);
+	} finally {
+		viewport.sidebarColumns = 1;
+	}
+});
+
+
+it("leaves a screen-pinned strip vacancy when a participant departs without replacement", () => {
+	const { participants, deps } = setupLayout();
+	delete participants.value.c;
+	delete participants.value.d;
+	delete participants.value.e;
+	const layout = useLayout(participants, ref<PinnedTile[]>([{ type: "screenshare", id: "screen" }]), deps, ref(0));
+	expect(layout.allParticipants.value.map(p => [p.user_id, p.slotIndex])).toEqual([["a", 0], ["b", 1]]);
+	delete participants.value.a;
+	expect(layout.allParticipants.value.map(p => [p.user_id, p.slotIndex])).toEqual([["b", 1]]);
+	expect(layout.vacantStripSlots.value).toEqual([0]);
+});
+
+
+it("uses a vacated strip slot for overflow when a join crosses capacity", () => {
+	const { participants, deps } = setupLayout();
+	delete participants.value.d;
+	const layout = useLayout(participants, ref<PinnedTile[]>([{ type: "participant", id: "e" }]), deps, ref(0));
+	const strip = () => layout.allParticipants.value.filter(p => p.isVisible && p.user_id !== "e").map(p => [p.user_id, p.slotIndex]);
+	expect(strip()).toEqual([["a", 0], ["b", 1], ["c", 2]]);
+	expect(layout.displayParticipants.value.extra).toBe(0);
+	participants.value.d = { ...participants.value.a, user_id: "d" };
+	expect(strip()).toEqual([["a", 0], ["b", 1]]);
+	expect(layout.overflowSlotIndex.value).toBe(2);
+	expect(layout.vacantStripSlots.value).toEqual([]);
+	expect(layout.visibleTileCount.value).toBe(5);
+	deps.raisedHands.value = { b: "2026-10-01T10:00:00Z" };
+	deps.activeSpeakerIds.value = ["d"];
+	expect(strip()).toEqual([["d", 0], ["b", 1]]);
+	expect(layout.overflowSlotIndex.value).toBe(2);
+	delete participants.value.a;
+	expect(strip()).toEqual([["d", 0], ["b", 1], ["c", 2]]);
+	expect(layout.displayParticipants.value.extra).toBe(0);
 });

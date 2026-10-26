@@ -1056,7 +1056,6 @@ export class SFUClient {
 		const e2eeShouldBeActive = this.isE2EERequired();
 		const result = (await this.sendRequest("join_room", {
 			roomId,
-			sharedStagePresentation: true,
 			...(options.connectionId ? { connectionId: options.connectionId } : {}),
 			...(options.conflictId ? { conflictId: options.conflictId } : {}),
 			userData,

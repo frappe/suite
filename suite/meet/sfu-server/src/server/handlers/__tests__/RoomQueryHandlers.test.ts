@@ -38,7 +38,7 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 		});
 	});
 
-	it.each([false, true])('returns the negotiated projection cut to a joined recorder (slots: %s)', async (capable) => {
+	it('returns one retained projection cut to the joined active recorder', async () => {
 		const harness = createManager();
 		const socket = harness.createSocket({
 			id: 'recorder-socket',
@@ -53,7 +53,7 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 		harness.connect(socket);
 		const registry = getRegistry(harness);
 		registry.activateRecorder(socket, 'recording-1', 'job-1');
-		socket.fire('recording:join', { roomId: 'room-1', sharedStagePresentation: capable }, vi.fn());
+		socket.fire('recording:join', { roomId: 'room-1' }, vi.fn());
 		await new Promise((resolve) => setImmediate(resolve));
 		registry.emitParticipantEvent('room-1', 'participant_joined', 'p1', {
 			name: 'Alice',
@@ -77,7 +77,7 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 					version: 1,
 					participantIds: ['p1'],
 					activeSpeakerIds: [],
-					...(capable ? { presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['p1']])) } : {}),
+					presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['p1']])),
 				},
 				participants: [
 					{

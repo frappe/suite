@@ -34,18 +34,16 @@ population move tail survivors only when needed to fill a hole.
 The SFU also maintains these orders after each human endpoint's self exclusion,
 and sends only that endpoint's projection on join and updates. This prevents local
 speaking priority from changing remote slots. Endpoints project the received
-orders through screen tiles, capacity and personal pins. No endpoint accumulates presentation history; fresh
-join/reconnect snapshots reproduce the room's current presentation. Personal pins
-and differing self/capacity projections can intentionally produce different views.
-A change of tile count, viewport, screen share or pin mode can change grid geometry;
-stable order does not promise fixed pixel rectangles across those layout changes.
-An older SFU without presentation orders retains the previous ranking fallback.
-Human and recorder endpoints advertise `sharedStagePresentation` on their existing
-join request. Unadvertised endpoints receive the original ranking-only state in
-both snapshots and updates, including ordered recorder projection events. This
-keeps strict protocol-version-1 parsers compatible during separate deployments.
-Personal pins reserve tiles separately from the unpinned strip; its presentation
-uses the smallest ranked prefix covering that strip. The room does not store
-presentation histories for personal pin combinations. If pins cross that ranked
-prefix, the covering capacity can change; positions across different capacities
-are not guaranteed to match.
+orders through screen tiles and capacity. Unpinned defaults have no browser
+presentation history; fresh join/reconnect snapshots reproduce the room's current
+presentation.
+
+Pinned layouts keep their panels in pin order. Their unpinned strip
+starts from the shared presentation, then retains local slots while pin settings,
+viewport capacity and screen layout are unchanged. Selection still follows shared
+priority; entrants fill vacancies. Interior vacancies remain empty when no
+replacement is available, so survivors do not move. The overflow tile reserves
+a vacancy when first needed and retains it through selection changes. Only the current personal layout is
+retained, without server histories for pin combinations. Pin/unpin, viewport and
+screen-layout changes may reset these slots. Sidebar column count follows viewport
+capacity so participant joins do not resize the pinned panel.
