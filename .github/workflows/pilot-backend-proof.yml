@@ -1,0 +1,369 @@
+name: Compare Suite backend with Pilot
+on:
+  push:
+    branches: [proof/suite-pilot-assets]
+permissions:
+  contents: read
+env:
+  FRAPPE_COMMIT: b9e4d35824d2fb0827c35d11a8f65c1c1a5a54c6
+jobs:
+  backend-bench:
+    runs-on: ubuntu-latest
+    name: Backend (bench)
+    timeout-minutes: 20
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: echo "run=1" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Install MariaDB Client
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          sudo apt-get install -y --no-install-recommends mariadb-client || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mariadb-client
+          }
+
+      - name: Clone pinned framework
+        run: |
+          git clone --depth 1 --branch develop https://github.com/frappe/frappe.git "$RUNNER_TEMP/frappe-source"
+          git -C "$RUNNER_TEMP/frappe-source" fetch --depth 1 origin "$FRAPPE_COMMIT"
+          git -C "$RUNNER_TEMP/frappe-source" checkout -B develop FETCH_HEAD
+
+      - name: Setup Bench
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pip install frappe-bench "unittest-xml-reporting~=4.0"
+          bench init --frappe-path "$RUNNER_TEMP/frappe-source" --frappe-branch develop --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        id: install-suite
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench get-app suite $GITHUB_WORKSPACE --skip-assets
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin test_site
+          bench --site test_site install-app suite
+          bench build
+        env:
+          CI: "Yes"
+
+      - name: Check HTTP contract
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          # The route tables export to contract.json. The frontend job checks
+          # that generated.ts matches contract.json; this step checks that
+          # contract.json matches the Python route tables.
+          bench --site test_site execute suite.composition.contract.write_all
+          git -C apps/suite diff --exit-code --stat -- ':(glob)frontend/src/**/contract.json'
+
+      - name: Type-check Python
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench/apps/suite
+        run: |
+          pip install "mypy~=2.4"
+          mypy
+
+      - name: Run Backend Tests
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
+          bench --site test_site set-config allow_tests true
+          # Frappe refuses a new User once 60 were created in the last hour.
+          # The suite creates more than that, so the later modules would fail.
+          bench --site test_site set-config throttle_user_limit 1000 --parse
+          status=0
+          bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
+        env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          TYPE: server
+
+      - name: Check Background Worker
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          bench worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          bench --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+          kill "$worker_pid" 2>/dev/null || true
+          wait "$worker_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Collect Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-evidence-bench
+          path: |
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Backend Coverage
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage-bench
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  backend-pilot:
+    runs-on: ubuntu-latest
+    name: Backend (pilot)
+    timeout-minutes: 20
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: echo "run=1" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Install MariaDB Client
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          sudo apt-get install -y --no-install-recommends mariadb-client || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends mariadb-client
+          }
+
+      - name: Setup Pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pip install frappe-bench uv "unittest-xml-reporting~=4.0"
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot"
+          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          cat > ~/frappe-bench/bench.toml <<'TOML'
+          [bench]
+          name = "frappe-bench"
+          python = "3.14"
+          [[apps]]
+          name = "frappe"
+          repo = "https://github.com/frappe/frappe"
+          branch = "develop"
+          [mariadb]
+          existing = true
+          host = "127.0.0.1"
+          port = 3306
+          root_password = "root"
+          [redis]
+          cache_port = 13000
+          queue_port = 11000
+          [admin]
+          enabled = false
+          TOML
+          "$RUNNER_TEMP/pilot/bin/pilot" -b ~/frappe-bench init --commit "$FRAPPE_COMMIT"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        id: install-suite
+        working-directory: /home/runner/frappe-bench
+        run: |
+          pilot -b /home/runner/frappe-bench get-app "$GITHUB_WORKSPACE" --branch "$GITHUB_SHA"
+          pilot -b /home/runner/frappe-bench new-site test_site
+          bench --site test_site install-app suite
+        env:
+          CI: "Yes"
+
+      - name: Check HTTP contract
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          # The route tables export to contract.json. The frontend job checks
+          # that generated.ts matches contract.json; this step checks that
+          # contract.json matches the Python route tables.
+          bench --site test_site execute suite.composition.contract.write_all
+          git -C apps/suite diff --exit-code --stat -- ':(glob)frontend/src/**/contract.json'
+
+      - name: Type-check Python
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench/apps/suite
+        run: |
+          pip install "mypy~=2.4"
+          mypy
+
+      - name: Run Backend Tests
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
+          bench --site test_site set-config allow_tests true
+          # Frappe refuses a new User once 60 were created in the last hour.
+          # The suite creates more than that, so the later modules would fail.
+          bench --site test_site set-config throttle_user_limit 1000 --parse
+          status=0
+          bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
+        env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          TYPE: server
+
+      - name: Check Background Worker
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          bench worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          bench --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+          kill "$worker_pid" 2>/dev/null || true
+          wait "$worker_pid" 2>/dev/null || true
+          trap - EXIT
+
+      - name: Collect Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-evidence-pilot
+          path: |
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Backend Coverage
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage-pilot
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
