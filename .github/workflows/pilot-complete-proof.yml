@@ -74,11 +74,11 @@ jobs:
           pip install uv
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev mariadb-server redis-server
           mkdir -p "$RUNNER_TEMP/pilot"
-          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
-            | tar -xz -C "$RUNNER_TEMP/pilot"
-          # Pilot #703 is not released yet; retain the bundle's prebuilt admin UI.
+          # Use Pilot #703 until its branch flag is released.
           curl -fsSL https://github.com/frappe/pilot/archive/13b1fc6497e26c68a33b0d8a0c79fc9c9e73b429.tar.gz \
             | tar -xz --strip-components=1 -C "$RUNNER_TEMP/pilot"
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot" ./admin/backend/static
           export PATH="$RUNNER_TEMP/pilot/bin:$PATH"
           echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
@@ -245,11 +245,11 @@ jobs:
           pip install uv
           sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev mariadb-server redis-server
           mkdir -p "$RUNNER_TEMP/pilot"
-          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
-            | tar -xz -C "$RUNNER_TEMP/pilot"
-          # Pilot #703 is not released yet; retain the bundle's prebuilt admin UI.
+          # Use Pilot #703 until its branch flag is released.
           curl -fsSL https://github.com/frappe/pilot/archive/13b1fc6497e26c68a33b0d8a0c79fc9c9e73b429.tar.gz \
             | tar -xz --strip-components=1 -C "$RUNNER_TEMP/pilot"
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot" ./admin/backend/static
           export PATH="$RUNNER_TEMP/pilot/bin:$PATH"
           echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
