@@ -216,7 +216,7 @@ it('discards a departed self projection and seeds a rejoin from current canonica
 	stage.close();
 });
 
-it('bounds stored self projections by current room membership after identity churn', () => {
+it('discards departed projections after identity churn', () => {
 	const { stage } = room();
 	for (let i = 0; i < 100; i++) {
 		stage.inventory(
@@ -225,8 +225,26 @@ it('bounds stored self projections by current room membership after identity chu
 		);
 	}
 	stage.inventory(participants, {});
-	// Resource bound: departed identities must not retain sixteen orders each.
-	expect(stage).toHaveProperty('selfSlots.size', 4);
+	// A departed identity receives the current canonical order, including itself on rejoin.
+	expect(stage.snapshotFor('guest-5').presentationOrders?.[2]).toEqual(['a', 'b']);
+	stage.inventory([...participants, { ...participants[0], participant_id: 'guest-5' }], {});
+	expect(stage.snapshotFor('guest-5').presentationOrders?.[4]).toEqual(['a', 'b', 'c', 'd']);
+	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
+	stage.close();
+});
+
+it('publishes activity changes even when ranking and presentation remain unchanged', () => {
+	vi.useFakeTimers();
+	const updates: import('../../types').SharedStageState[] = [];
+	const stage = new SharedStage(state => updates.push(state));
+	stage.inventory(participants, {});
+	stage.activity(['a']);
+	vi.advanceTimersByTime(1000);
+	expect(stage.snapshot.participantIds).toEqual(['a', 'b', 'c', 'd']);
+	expect(updates.at(-1)?.activeSpeakerIds).toEqual(['a']);
+	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
+	stage.activity([]);
+	expect(updates.at(-1)?.activeSpeakerIds).toEqual([]);
 	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
 	stage.close();
 });

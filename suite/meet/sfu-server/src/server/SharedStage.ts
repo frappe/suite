@@ -170,30 +170,33 @@ export class SharedStage {
 		// Keep a canonical presentation for every prefix. A selected survivor stays
 		// in its slot; only vacancies receive entrants. This history belongs to the
 		// room snapshot, never to an endpoint that may have joined late.
-		const previousSlots = JSON.stringify(this.slots);
-		this.updateSlots(ids, this.slots);
-		for (const id of ids) {
-			let slots = this.selfSlots.get(id);
-			if (!slots) {
-				slots = Object.fromEntries(
-					Object.entries(this.slots).map(([capacity, order]) => [
-						capacity,
-						order.filter((member) => member !== id),
-					]),
-				);
-				this.selfSlots.set(id, slots);
+		const rankingChanged = ids.length !== this.state.participantIds.length ||
+			ids.some((id, index) => id !== this.state.participantIds[index]);
+		if (rankingChanged) {
+			this.updateSlots(ids, this.slots);
+			for (const id of ids) {
+				let slots = this.selfSlots.get(id);
+				if (!slots) {
+					slots = Object.fromEntries(
+						Object.entries(this.slots).map(([capacity, order]) => [
+							capacity,
+							order.filter((member) => member !== id),
+						]),
+					);
+					this.selfSlots.set(id, slots);
+				}
 			}
+			for (const [self, slots] of this.selfSlots)
+				this.updateSlots(
+					ids.filter((id) => id !== self),
+					slots,
+				);
 		}
-		for (const [self, slots] of this.selfSlots)
-			this.updateSlots(
-				ids.filter((id) => id !== self),
-				slots,
-			);
 		const activeIds = ids.filter((id) => active.has(id));
 		if (
-			previousSlots !== JSON.stringify(this.slots) ||
-			JSON.stringify([ids, activeIds]) !==
-				JSON.stringify([this.state.participantIds, this.state.activeSpeakerIds])
+			rankingChanged ||
+			activeIds.length !== this.state.activeSpeakerIds.length ||
+			activeIds.some((id, index) => id !== this.state.activeSpeakerIds[index])
 		) {
 			this.state = {
 				epoch: this.state.epoch,

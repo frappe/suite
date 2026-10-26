@@ -316,18 +316,25 @@ it("keeps multiple pins in pin order and resets personal slots on explicit layou
 });
 
 
-it("keeps pinned panel width fixed as the strip grows across four tiles", () => {
+it("keeps a small pinned call one column with bounded growth", () => {
 	viewport.sidebarColumns = 2;
 	try {
 		const { participants, deps } = setupLayout();
 		delete participants.value.b;
 		delete participants.value.c;
 		delete participants.value.d;
-		const layout = useLayout(participants, ref([{ type: "participant", id: "e" }]), deps, ref(0));
-		expect(layout.gridColumns.value).toBe(2);
+		const pins = ref<PinnedTile[]>([{ type: "participant", id: "e" }]);
+		const layout = useLayout(participants, pins, deps, ref(0));
+		expect(layout.gridColumns.value).toBe(1);
 		for (const id of ["b", "c", "d", "f", "g"])
 			participants.value[id] = { ...participants.value.a, user_id: id };
+		expect(layout.gridColumns.value).toBe(1);
+		expect(layout.displayParticipants.value.list.map(p => p.user_id)).toEqual(["a", "b", "e"]);
+		expect(layout.displayParticipants.value.extra).toBe(4);
+		expect(layout.overflowSlotIndex.value).toBe(2);
+		pins.value = [{ type: "participant", id: "a" }];
 		expect(layout.gridColumns.value).toBe(2);
+		expect(layout.displayParticipants.value.extra).toBe(0);
 	} finally {
 		viewport.sidebarColumns = 1;
 	}
@@ -366,4 +373,20 @@ it("uses a vacated strip slot for overflow when a join crosses capacity", () => 
 	delete participants.value.a;
 	expect(strip()).toEqual([["d", 0], ["b", 1], ["c", 2]]);
 	expect(layout.displayParticipants.value.extra).toBe(0);
+});
+
+
+it("retains the same slots regardless of intermediate computed reads", () => {
+	const run = (read: boolean) => {
+		const { participants, deps } = setupLayout();
+		const layout = useLayout(participants, ref<PinnedTile[]>([{ type: "participant", id: "e" }]), deps, ref(0));
+		if (read) void layout.allParticipants.value;
+		deps.activeSpeakerIds.value = ["d"];
+		if (read) void layout.overflowSlotIndex.value;
+		deps.activeSpeakerIds.value = ["c"];
+		if (read) void layout.vacantStripSlots.value;
+		return layout.allParticipants.value.filter(p => p.isVisible && p.user_id !== "e").map(p => [p.user_id, p.slotIndex]);
+	};
+	expect(run(true)).toEqual([["a", 0], ["c", 1]]);
+	expect(run(false)).toEqual([["a", 0], ["c", 1]]);
 });

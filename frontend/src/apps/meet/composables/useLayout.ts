@@ -1,4 +1,4 @@
-import { type ComputedRef, computed, type Ref } from "vue";
+import { type ComputedRef, computed, shallowRef, watch, watchEffect, type Ref } from "vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import type { PinnedTile } from "./useGridLayout";
 import { useResponsiveGrid } from "./useResponsiveGrid";
@@ -55,10 +55,29 @@ export function useLayout(
 		return participants.value;
 	});
 
+	const getPinnedParticipantId = (): string[] =>
+		pinnedTiles.value.filter((t) => t.type === "participant").map((t) => t.id);
+
+	// Pin, viewport and screen changes start a new layout session. Joins do not.
+	const sidebarColumns = shallowRef(1);
+	watch(
+		() => JSON.stringify([
+			pinnedTiles.value, isMobile.value, sidebarMaxColumns.value, extraTiles.value,
+		]),
+		() => {
+			const pinned = new Set(getPinnedParticipantId());
+			const count = Object.keys(participants.value).filter(id => !pinned.has(id)).length
+				+ localTileCount + extraTiles.value;
+			sidebarColumns.value = isMobile.value
+				? 1 : Math.min(sidebarMaxColumns.value, count > 4 ? 2 : 1);
+		},
+		{ immediate: true, flush: "sync" },
+	);
+
 	const maxVisibleTiles = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 3;
-			return sidebarMaxColumns.value * 4;
+			return sidebarColumns.value * 4;
 		}
 		return maxColumns.value * 4;
 	});
@@ -83,8 +102,6 @@ export function useLayout(
 		return 6;
 	};
 
-	const getPinnedParticipantId = (): string[] =>
-		pinnedTiles.value.filter((t) => t.type === "participant").map((t) => t.id);
 
 	const getRemoteCapacity = (
 		remoteCount: number,
@@ -152,7 +169,13 @@ export function useLayout(
 
 	// ── Display participants ──────────────────────────────────────────────────
 
-	const displayParticipants = computed<DisplayParticipantsResult>(() => {
+	const projection = shallowRef<{
+		display: DisplayParticipantsResult;
+		slots: Map<string, number>;
+		vacancies: number[];
+		overflow: number | undefined;
+	}>();
+	watchEffect(() => {
 		const remotes = Object.values(stripParticipants.value || {});
 		const pinnedParticipantIds = [...new Set(getPinnedParticipantId())].filter(
 			(id) => remotes.some((p) => p.user_id === id),
@@ -263,17 +286,20 @@ export function useLayout(
 				...pinnedParticipantIds.map((id) => participants.value[id]),
 			];
 		}
-		return partitioned;
-	});
+		projection.value = {
+			display: partitioned, slots: new Map(stripSlots),
+			vacancies, overflow: personalOverflowSlot,
+		};
+	}, { flush: "sync" });
+	const displayParticipants = computed(() => projection.value!.display);
 
 	const vacantStripSlots = computed(() => {
-		void displayParticipants.value;
-		return vacancies;
+		return projection.value!.vacancies;
 	});
 
 	const overflowSlotIndex = computed(() => {
 		const { list, hidden } = displayParticipants.value;
-		return personalOverflowSlot ?? list.length + hidden.length;
+		return projection.value!.overflow ?? list.length + hidden.length;
 	});
 
 	const visibleTileCount = computed<number>(
@@ -288,7 +314,7 @@ export function useLayout(
 	const gridColumns = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 1;
-			return Math.min(2, sidebarMaxColumns.value);
+			return sidebarColumns.value;
 		}
 		const count = visibleTileCount.value;
 		if (count <= 0) return 1;
@@ -302,7 +328,7 @@ export function useLayout(
 		const visible: LayoutParticipant[] = list.map((p, idx) => ({
 			...p,
 			isVisible: true,
-			slotIndex: stripSlots.get(p.user_id) ?? idx,
+			slotIndex: projection.value!.slots.get(p.user_id) ?? idx,
 		}));
 
 		const invisible: LayoutParticipant[] = hidden.map((p, idx) => ({
