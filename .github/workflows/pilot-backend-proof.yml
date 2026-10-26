@@ -111,9 +111,11 @@ jobs:
         id: install-suite
         working-directory: /home/runner/frappe-bench
         run: |
-          pilot -b /home/runner/frappe-bench get-app "$GITHUB_WORKSPACE" --branch "$GITHUB_SHA"
-          pilot -b /home/runner/frappe-bench new-site test_site
+          bench get-app suite $GITHUB_WORKSPACE --skip-assets
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin test_site
           bench --site test_site install-app suite
+          bench build --app suite
         env:
           CI: "Yes"
 
