@@ -2559,3 +2559,26 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 });
+
+
+describe('receiver readiness acknowledgement', () => {
+	it('authenticates and forwards the socket room and peer', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, { userId: 'viewer-1', roomId: 'room-1' });
+		const callback = vi.fn();
+		socket.fire('resume_consumer', { consumerId: 'fresh' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(harness.authManager.ensureMediaConsumerAccess).toHaveBeenCalledWith(socket);
+		expect(harness.mediasoup.resumeConsumer).toHaveBeenCalledExactlyOnceWith('fresh', 'room-1', 'viewer-1');
+		expect(callback).toHaveBeenCalledWith({ success: true, resumed: true });
+	});
+	it('rejects acknowledgement before the required encryption handshake', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, { e2eeRequired: true, e2eeReady: false });
+		const callback = vi.fn();
+		socket.fire('resume_consumer', { consumerId: 'fresh' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(harness.mediasoup.resumeConsumer).not.toHaveBeenCalled();
+		expect(callback).toHaveBeenCalledWith({ success: false, error: 'E2EE join handshake not completed' });
+	});
+});

@@ -24,6 +24,7 @@ export class ConsumerManager {
 		roomId: string,
 		peerId: string,
 		rtpCapabilities: RtpCapabilities,
+		startPaused = false,
 	): Promise<{
 		id: string;
 		producerId: string;
@@ -87,11 +88,12 @@ export class ConsumerManager {
 				producerId,
 			);
 
-			if (consumer.paused) {
+			// Opted-in video receivers acknowledge readiness before media starts.
+			if (consumer.paused && !(startPaused && consumer.kind === 'video')) {
 				await consumer.resume();
 			}
 
-			if (consumer.kind === 'video') {
+			if (consumer.kind === 'video' && !consumer.paused) {
 				// Fire-and-forget. PLI/RPLI is a UDP-side signal to the producer;
 				// awaiting it blocks createConsumer's return on the mediasoup
 				// internal round-trip with no observable benefit. Errors are

@@ -213,6 +213,7 @@ function createMockMediasoupManager(): MediasoupManager {
 			return result;
 		}),
 		closeConsumer: vi.fn().mockResolvedValue(undefined),
+		resumeConsumer: vi.fn().mockResolvedValue(true),
 		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),
 		updateConsumerPreferences: vi.fn().mockResolvedValue({ paused: false }),
 		createProducer: vi.fn().mockResolvedValue({

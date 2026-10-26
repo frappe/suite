@@ -570,6 +570,7 @@ export class MediasoupManager {
 		roomId: string,
 		peerId: string,
 		rtpCapabilities: RtpCapabilities,
+		startPaused = false,
 	): Promise<{
 		id: string;
 		producerId: string;
@@ -631,6 +632,7 @@ export class MediasoupManager {
 				roomId,
 				peerId,
 				rtpCapabilities,
+				startPaused,
 			);
 		} finally {
 			this.creatingConsumers.delete(consumerKey);
@@ -741,6 +743,15 @@ export class MediasoupManager {
 
 	async resumeProducer(producerId: string): Promise<boolean> {
 		return this.producerManager.resumeProducer(producerId);
+	}
+
+	async resumeConsumer(
+		consumerId: string,
+		roomId: string,
+		peerId: string,
+	): Promise<boolean> {
+		this.assertConsumerAccess(consumerId, roomId, peerId);
+		return this.consumerManager.resumeConsumer(consumerId);
 	}
 
 	async requestConsumerKeyFrame(

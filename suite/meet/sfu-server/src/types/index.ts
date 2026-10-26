@@ -197,11 +197,16 @@ export interface ClientToServerEvents {
 		},
 		callback: (response: ProducerResponse) => void,
 	) => void;
+	resume_consumer: (
+		data: { consumerId: string },
+		callback: (response: SFUResponse & { resumed?: boolean }) => void,
+	) => void;
 	create_consumer: (
 		data: {
 			transportId: string;
 			producerId: string;
 			rtpCapabilities: RtpCapabilities;
+			startPaused?: boolean;
 		},
 		callback: (response: ConsumerResponse) => void,
 	) => void;

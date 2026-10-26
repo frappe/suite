@@ -66,3 +66,32 @@ describe('ConsumerManager', () => {
 		expect(consumer.close).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('receiver-ready startup', () => {
+	it.each([
+		['video', true, false],
+		['audio', true, true],
+		['video', false, true],
+		['video', undefined, true],
+	] as const)('starts %s with readiness requested=%s (running=%s)', async (kind, startPaused, running) => {
+		const manager = new ConsumerManager();
+		const consumer = Object.assign(new EventEmitter(), {
+			id: 'fresh', kind, paused: true, rtpParameters: {}, close: vi.fn(),
+			resume: vi.fn(async () => { consumer.paused = false; }),
+			requestKeyFrame: vi.fn().mockResolvedValue(undefined),
+		});
+		const response = await manager.createConsumer({ id: 'recv', closed: false, dtlsState: 'connected', consume: vi.fn().mockResolvedValue(consumer) } as never,
+			{ closed: false } as never, 'producer', 'room', 'peer', {}, startPaused);
+		expect(response.paused).toBe(!running);
+		expect(consumer.paused).toBe(!running);
+		expect(consumer.resume).toHaveBeenCalledTimes(running ? 1 : 0);
+		expect(consumer.requestKeyFrame).toHaveBeenCalledTimes(running && kind === 'video' ? 1 : 0);
+		if (!running) {
+			expect(await manager.resumeConsumer('fresh')).toBe(true);
+			expect(consumer.paused).toBe(false);
+		}
+		manager.closeConsumer('fresh');
+		expect(await manager.resumeConsumer('fresh')).toBe(false);
+		expect(consumer.resume).toHaveBeenCalledTimes(1);
+	});
+});
