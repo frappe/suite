@@ -30,23 +30,6 @@ jobs:
     name: Backend
     timeout-minutes: 20
 
-    services:
-      redis-cache:
-        image: redis:alpine
-        ports:
-          - 13000:6379
-      redis-queue:
-        image: redis:alpine
-        ports:
-          - 11000:6379
-      mariadb:
-        image: mariadb:10.6
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
-
     steps:
       - name: Clone
         uses: actions/checkout@v7
@@ -104,44 +87,47 @@ jobs:
             ${{ runner.os }}-pip-
             ${{ runner.os }}-
 
-      - name: Install MariaDB Client
+      - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          sudo apt-get install -y --no-install-recommends mariadb-client || {
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends mariadb-client
-          }
-
-      - name: Setup Bench
-        if: steps.backend-changes.outputs.run == '1'
-        run: |
-          pip install frappe-bench "unittest-xml-reporting~=4.0"
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop
+          pilot -b frappe-bench init
 
       - name: Install Suite
         if: steps.backend-changes.outputs.run == '1'
-        id: install-suite
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          bench get-app suite $GITHUB_WORKSPACE --skip-assets
-          bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app suite
-          bench build
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE"
         env:
           CI: "Yes"
 
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
+
       - name: Run Backend Tests
         if: steps.backend-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
           printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
-          bench --site test_site set-config allow_tests true
+          pilot frappe --site test_site set-config allow_tests true
           status=0
-          bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          pilot frappe --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
           python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
             "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
             "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
@@ -153,25 +139,25 @@ jobs:
 
       - name: Check Background Worker
         if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          marker=/home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready
           rm -f "$marker"
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
-          bench worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
-          worker_pid=$!
-          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
-          bench --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
-          timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
-          kill "$worker_pid" 2>/dev/null || true
-          wait "$worker_pid" 2>/dev/null || true
-          trap - EXIT
+          pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+
+      - name: Collect Pilot Logs
+        if: always() && steps.start-pilot.outcome == 'success'
+        run: |
+          mkdir -p test-results/backend
+          cp "$RUNNER_TEMP/pilot.log" test-results/backend/pilot.log
 
       - name: Collect Backend Evidence
         if: always() && steps.backend-changes.outputs.run == '1'
         run: |
-          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
-            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          if [ -f /home/runner/pilot/benches/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/pilot/benches/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
           fi
 
       - name: Upload Backend Evidence
@@ -327,23 +313,6 @@ jobs:
           - module: calendar
             name: Calendar
 
-    services:
-      redis-cache:
-        image: redis:alpine
-        ports:
-          - 13000:6379
-      redis-queue:
-        image: redis:alpine
-        ports:
-          - 11000:6379
-      mariadb:
-        image: mariadb:10.6
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
-
     steps:
       - name: Clone
         uses: actions/checkout@v7
@@ -408,50 +377,52 @@ jobs:
             ${{ runner.os }}-pip-
             ${{ runner.os }}-
 
-      - name: Install MariaDB Client
+      - name: Setup Pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          sudo apt-get install -y --no-install-recommends mariadb-client || {
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends mariadb-client
-          }
-
-      - name: Setup Bench
-        if: steps.mail-calendar-changes.outputs.run == '1'
-        run: |
-          pip install frappe-bench "unittest-xml-reporting~=4.0"
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop
+          pilot -b frappe-bench init
 
       - name: Install Suite
         if: steps.mail-calendar-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          git clone "$GITHUB_WORKSPACE" apps/suite
-          uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          printf 'frappe\nsuite\n' > sites/apps.txt
-          bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin test_site
-          bench --site test_site install-app suite
-          bench build --using-cached
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE"
         env:
           CI: "Yes"
 
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
+
       - name: Run ${{ matrix.name }} Tests
         if: steps.mail-calendar-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/${{ matrix.module }}"
-          bench --site test_site set-config allow_tests true
+          pilot frappe --site test_site set-config allow_tests true
           # Invite/OTP flows send transactional emails; with mute_emails set, frappe
           # builds the queue against a dummy outgoing account and never sends.
-          bench --site test_site set-config mute_emails 1
-          bench --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
+          pilot frappe --site test_site set-config mute_emails 1
+          pilot frappe --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
           # Mail Settings wins over site_config and its verify_ssl checkbox defaults to on,
           # which would shadow the verify_ssl: 0 above (the container's cert is self-signed).
-          bench --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
-          bench --site test_site clear-cache
+          pilot frappe --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
+          pilot frappe --site test_site clear-cache
 
           status=0
           for path in $GITHUB_WORKSPACE/suite/${{ matrix.module }}/tests/test_*.py; do
@@ -461,7 +432,7 @@ jobs:
             fragments="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}-fragments.xml"
             junit="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}.xml"
             echo "::group::$module"
-            if ! bench --site test_site run-tests --module "$module" --junit-xml-output "$fragments"; then
+            if ! pilot frappe --site test_site run-tests --module "$module" --junit-xml-output "$fragments"; then
               status=1
             fi
             python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" "$fragments" "$junit"
@@ -471,6 +442,12 @@ jobs:
           exit "$status"
         env:
           TYPE: server
+
+      - name: Collect Pilot Logs
+        if: always() && steps.start-pilot.outcome == 'success'
+        run: |
+          mkdir -p "test-results/${{ matrix.module }}"
+          cp "$RUNNER_TEMP/pilot.log" "test-results/${{ matrix.module }}/pilot.log"
 
       - name: Upload ${{ matrix.name }} Evidence
         if: always() && steps.mail-calendar-changes.outputs.run == '1'
