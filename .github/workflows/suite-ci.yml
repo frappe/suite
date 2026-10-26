@@ -112,11 +112,37 @@ jobs:
             sudo apt-get install -y --no-install-recommends mariadb-client
           }
 
-      - name: Setup Bench
+      - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          pip install frappe-bench "unittest-xml-reporting~=4.0"
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          pip install frappe-bench uv "unittest-xml-reporting~=4.0"
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev redis-server
+          mkdir -p "$RUNNER_TEMP/pilot" ~/frappe-bench/config/pids
+          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/pilot"
+          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          cat > ~/frappe-bench/bench.toml <<'TOML'
+          [bench]
+          name = "frappe-bench"
+          python = "3.14"
+          [[apps]]
+          name = "frappe"
+          repo = "https://github.com/frappe/frappe"
+          branch = "develop"
+          [redis]
+          cache_port = 13000
+          queue_port = 11000
+          [admin]
+          enabled = false
+          TOML
+          cat > ~/common_config.toml <<'TOML'
+          [mariadb]
+          existing = true
+          host = "127.0.0.1"
+          port = 3306
+          root_password = "root"
+          TOML
+          "$RUNNER_TEMP/pilot/bin/pilot" -b ~/frappe-bench init
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
@@ -129,7 +155,7 @@ jobs:
           bench setup requirements --dev
           bench new-site --db-root-password root --admin-password admin test_site
           bench --site test_site install-app suite
-          bench build
+          bench build --app suite
         env:
           CI: "Yes"
 
