@@ -225,7 +225,6 @@ it('discards departed projections after identity churn', () => {
 		);
 	}
 	stage.inventory(participants, {});
-	// A departed identity receives the current canonical order, including itself on rejoin.
 	expect(stage.snapshotFor('guest-5').presentationOrders?.[2]).toEqual(['a', 'b']);
 	stage.inventory([...participants, { ...participants[0], participant_id: 'guest-5' }], {});
 	expect(stage.snapshotFor('guest-5').presentationOrders?.[4]).toEqual(['a', 'b', 'c', 'd']);
