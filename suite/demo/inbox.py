@@ -11,6 +11,7 @@ OUTSIDE = {
     "ledgerly": ("Ledgerly", "billing@ledgerly.example"),
     "codehost": ("Codehost", "notifications@codehost.example"),
     "dana": ("Dana Whitfield", "dana@acmeresearch.example"),
+    "brightwave": ("Dana Brooks", "dana@brightwave.example"),
 }
 
 NEWSLETTER_HEADERS = {
@@ -499,6 +500,51 @@ THREADS = (
                 "14:30",
                 html("Great. I will ask Dana for a quote for the launch page.", "Theo"),
                 cc=("leo",),
+            ),
+        ),
+    ),
+    Thread(
+        "agency-landing-page",
+        "Beacon launch page: banner and copy from Brightwave",
+        (
+            Message(
+                "theo",
+                ("brightwave",),
+                4,
+                "10:15",
+                html(
+                    "Hi Dana,",
+                    "We launch the Beacon beta on 2 November. Could Brightwave draft the hero banner "
+                    "and the first screen of copy for the landing page? Leo's logo direction B is the "
+                    "starting point.",
+                    "Theo",
+                ),
+            ),
+            Message(
+                "brightwave",
+                ("theo",),
+                1,
+                "16:40",
+                html(
+                    "Hi Theo,",
+                    "First draft attached: a dark banner with the flat lighthouse, and three headline "
+                    "options. We can deliver final files by 29 October if you pick a headline this week.",
+                    "Dana Brooks<br>Brightwave Agency",
+                ),
+                attachments=(
+                    Attachment(
+                        "beacon-landing-draft.txt",
+                        "text/plain",
+                        (
+                            "Banner: flat lighthouse on dark navy, wordmark right",
+                            "",
+                            "Headline options:",
+                            "1 - Keep the evidence beside the decision",
+                            "2 - Every interview, one place to decide",
+                            "3 - Research your whole team can use",
+                        ),
+                    ),
+                ),
             ),
         ),
     ),
