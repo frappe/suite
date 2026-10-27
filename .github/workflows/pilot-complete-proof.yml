@@ -70,21 +70,12 @@ jobs:
       - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          npm install --global yarn@1.22.22 pnpm@10
-          pip install uv
-          curl -fsSL https://r.mariadb.com/downloads/mariadb_repo_setup \
-            | sudo bash -s -- --mariadb-server-version=mariadb-11.8 --skip-maxscale
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev mariadb-server redis-server
-          mkdir -p "$RUNNER_TEMP/pilot"
-          # Use Pilot #703 until its branch flag is released.
-          curl -fsSL https://github.com/frappe/pilot/archive/13b1fc6497e26c68a33b0d8a0c79fc9c9e73b429.tar.gz \
-            | tar -xz --strip-components=1 -C "$RUNNER_TEMP/pilot"
-          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
-            | tar -xz -C "$RUNNER_TEMP/pilot" ./admin/backend/static
-          export PATH="$RUNNER_TEMP/pilot/bin:$PATH"
-          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          echo "$HOME/pilot/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          ln -s "$RUNNER_TEMP/pilot/benches/frappe-bench" ~/frappe-bench
+          ln -s "$HOME/pilot/benches/frappe-bench" ~/frappe-bench
           pilot -b frappe-bench init
           pilot -b frappe-bench build
           redis-server ~/frappe-bench/config/redis_cache.conf --daemonize yes
@@ -244,21 +235,12 @@ jobs:
       - name: Setup Pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          npm install --global yarn@1.22.22 pnpm@10
-          pip install uv
-          curl -fsSL https://r.mariadb.com/downloads/mariadb_repo_setup \
-            | sudo bash -s -- --mariadb-server-version=mariadb-11.8 --skip-maxscale
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3-dev libmariadb-dev mariadb-server redis-server
-          mkdir -p "$RUNNER_TEMP/pilot"
-          # Use Pilot #703 until its branch flag is released.
-          curl -fsSL https://github.com/frappe/pilot/archive/13b1fc6497e26c68a33b0d8a0c79fc9c9e73b429.tar.gz \
-            | tar -xz --strip-components=1 -C "$RUNNER_TEMP/pilot"
-          curl -fsSL https://github.com/frappe/pilot/releases/download/v0.0.87-pre-alpha/pilot.tar.gz \
-            | tar -xz -C "$RUNNER_TEMP/pilot" ./admin/backend/static
-          export PATH="$RUNNER_TEMP/pilot/bin:$PATH"
-          echo "$RUNNER_TEMP/pilot/bin" >> "$GITHUB_PATH"
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          echo "$HOME/pilot/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          ln -s "$RUNNER_TEMP/pilot/benches/frappe-bench" ~/frappe-bench
+          ln -s "$HOME/pilot/benches/frappe-bench" ~/frappe-bench
           pilot -b frappe-bench init
           pilot -b frappe-bench build
           redis-server ~/frappe-bench/config/redis_cache.conf --daemonize yes
