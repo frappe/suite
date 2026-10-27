@@ -68,6 +68,7 @@ jobs:
             ${{ runner.os }}-
 
       - name: Setup Pilot
+        id: setup-pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
           curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
@@ -119,11 +120,9 @@ jobs:
           timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
 
       - name: Stop Pilot
-        if: always() && steps.backend-changes.outputs.run == '1'
+        if: always() && steps.setup-pilot.outcome == 'success'
         run: |
-          if [ -f "$HOME/pilot/benches/frappe-bench/pids/pilot.pid" ]; then
-            pilot -b frappe-bench stop
-          fi
+          pilot -b frappe-bench stop
           mkdir -p test-results/backend
           cp "$RUNNER_TEMP/pilot.log" test-results/backend/pilot.log
 
@@ -234,6 +233,7 @@ jobs:
             ${{ runner.os }}-
 
       - name: Setup Pilot
+        id: setup-pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
           curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
@@ -290,11 +290,9 @@ jobs:
           TYPE: server
 
       - name: Stop Pilot
-        if: always() && steps.mail-calendar-changes.outputs.run == '1'
+        if: always() && steps.setup-pilot.outcome == 'success'
         run: |
-          if [ -f "$HOME/pilot/benches/frappe-bench/pids/pilot.pid" ]; then
-            pilot -b frappe-bench stop
-          fi
+          pilot -b frappe-bench stop
           mkdir -p "test-results/${{ matrix.module }}"
           cp "$RUNNER_TEMP/pilot.log" "test-results/${{ matrix.module }}/pilot.log"
 
