@@ -68,7 +68,6 @@ jobs:
             ${{ runner.os }}-
 
       - name: Setup Pilot
-        id: setup-pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
           curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
@@ -76,20 +75,29 @@ jobs:
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
           pilot -b frappe-bench init
-          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
-            http://127.0.0.1:7000/api/v1/health
 
       - name: Install Suite
         if: steps.backend-changes.outputs.run == '1'
-        id: install-suite
         working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           uv pip install --python env/bin/python -e "apps/frappe[test]"
           pilot get-app "$GITHUB_WORKSPACE"
-          pilot new-site test_site --admin-password admin --apps frappe suite
         env:
           CI: "Yes"
+
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
 
       - name: Run Backend Tests
         if: steps.backend-changes.outputs.run == '1'
@@ -120,7 +128,7 @@ jobs:
           timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
 
       - name: Stop Pilot
-        if: always() && steps.setup-pilot.outcome == 'success'
+        if: always() && steps.start-pilot.outcome == 'success'
         run: |
           pilot -b frappe-bench stop
           mkdir -p test-results/backend
@@ -233,7 +241,6 @@ jobs:
             ${{ runner.os }}-
 
       - name: Setup Pilot
-        id: setup-pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
           curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
@@ -241,9 +248,6 @@ jobs:
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
           pilot -b frappe-bench init
-          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
-            http://127.0.0.1:7000/api/v1/health
 
       - name: Install Suite
         if: steps.mail-calendar-changes.outputs.run == '1'
@@ -251,9 +255,22 @@ jobs:
         run: |
           uv pip install --python env/bin/python -e "apps/frappe[test]"
           pilot get-app "$GITHUB_WORKSPACE"
-          pilot new-site test_site --admin-password admin --apps frappe suite
         env:
           CI: "Yes"
+
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.mail-calendar-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
 
       - name: Run ${{ matrix.name }} Tests
         if: steps.mail-calendar-changes.outputs.run == '1'
@@ -290,7 +307,7 @@ jobs:
           TYPE: server
 
       - name: Stop Pilot
-        if: always() && steps.setup-pilot.outcome == 'success'
+        if: always() && steps.start-pilot.outcome == 'success'
         run: |
           pilot -b frappe-bench stop
           mkdir -p "test-results/${{ matrix.module }}"
