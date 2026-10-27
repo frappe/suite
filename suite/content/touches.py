@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import frappe
+from frappe.query_builder import Criterion, Table
 from frappe.utils import now_datetime
 
 from suite import drive
+from suite.content.db import changed_rows
 from suite.content.log import Refusal
 from suite.content.tables import table
 
@@ -95,27 +97,27 @@ class Claim:
 
 def claimed(app: str, doc_id: str, follower: Follower) -> Claim | None:
     """Mark the head followed when it is due, committed, so only one request follows it."""
-    at_column = f"{follower.column}_at"
-    rev_column = f"{follower.column}_rev"
-    due_condition = f"""`id` = %s AND `mode` != 'purged' AND `head_rev` > `{rev_column}`
-        AND (`{at_column}` IS NULL OR `{at_column}` <= %s)"""
     now = now_datetime()
     followed_before = now - TOUCH_EVERY
-    doc_table = table(app, "doc")
-    previous = frappe.db.sql(
-        f"SELECT `{rev_column}` FROM `{doc_table}` WHERE {due_condition}", (doc_id, followed_before)
+    doc = Table(table(app, "doc"))
+    followed_at = getattr(doc, f"{follower.column}_at")
+    followed_rev = getattr(doc, f"{follower.column}_rev")
+    due_condition = Criterion.all(
+        [
+            doc.id == doc_id,
+            doc.mode != "purged",
+            doc.head_rev > followed_rev,
+            followed_at.isnull() | (followed_at <= followed_before),
+        ]
     )
+    previous = frappe.qb.from_(doc).select(followed_rev).where(due_condition).run()
     if not previous:
         return None
 
-    frappe.db.sql(
-        f"UPDATE `{doc_table}` SET `{at_column}` = %s, `{rev_column}` = `head_rev` WHERE {due_condition}",
-        (now, doc_id, followed_before),
+    claimed_count = changed_rows(
+        frappe.qb.update(doc).set(followed_at, now).set(followed_rev, doc.head_rev).where(due_condition)
     )
-    ((claimed_count,),) = frappe.db.sql("SELECT ROW_COUNT()")
-    ((node, claimed_rev),) = frappe.db.sql(
-        f"SELECT `node`, `{rev_column}` FROM `{doc_table}` WHERE `id` = %s", doc_id
-    )
+    ((node, claimed_rev),) = frappe.qb.from_(doc).select(doc.node, followed_rev).where(doc.id == doc_id).run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     if not claimed_count:
         return None
@@ -126,13 +128,16 @@ def claimed(app: str, doc_id: str, follower: Follower) -> Claim | None:
 
 def give_back(app: str, doc_id: str, follower: Follower, claim: Claim) -> None:
     """Put the followed head back to before `claim`, unless another request has claimed it since."""
-    at_column = f"{follower.column}_at"
-    rev_column = f"{follower.column}_rev"
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `{rev_column}` = %s
-        WHERE `id` = %s AND `{at_column}` = %s AND `{rev_column}` = %s""",
-        (claim.previous_rev, doc_id, claim.at, claim.rev),
+    doc = Table(table(app, "doc"))
+    followed_at = getattr(doc, f"{follower.column}_at")
+    followed_rev = getattr(doc, f"{follower.column}_rev")
+    (
+        frappe.qb.update(doc)
+        .set(followed_rev, claim.previous_rev)
+        .where(doc.id == doc_id)
+        .where(followed_at == claim.at)
+        .where(followed_rev == claim.rev)
+        .run()
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
@@ -145,14 +150,19 @@ def sweep(app: str) -> None:
 
 def sweep_for(app: str, follower: Follower) -> None:
     """Follow the documents edited since `follower` last did, longest waiting first, TOUCH_BATCH at most."""
-    at_column = f"{follower.column}_at"
-    rev_column = f"{follower.column}_rev"
     followed_before = now_datetime() - TOUCH_EVERY
-    doc_table = table(app, "doc")
-    due_doc_ids = frappe.db.sql(
-        f"""SELECT `id` FROM `{doc_table}` WHERE `{at_column}` <= %s AND `head_rev` > `{rev_column}`
-        AND `mode` != 'purged' ORDER BY `{at_column}` LIMIT %s""",
-        (followed_before, TOUCH_BATCH),
+    doc = Table(table(app, "doc"))
+    followed_at = getattr(doc, f"{follower.column}_at")
+    followed_rev = getattr(doc, f"{follower.column}_rev")
+    due_doc_ids = (
+        frappe.qb.from_(doc)
+        .select(doc.id)
+        .where(followed_at <= followed_before)
+        .where(doc.head_rev > followed_rev)
+        .where(doc.mode != "purged")
+        .orderby(followed_at)
+        .limit(TOUCH_BATCH)
+        .run()
     )
     for (doc_id,) in due_doc_ids:
         follow(app, doc_id, follower)
