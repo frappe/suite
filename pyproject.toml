@@ -43,6 +43,9 @@ packages = [
 requires = ["flit_core >=3.4,<4"]
 build-backend = "flit_core.buildapi"
 
+[tool.bench]
+validation-ignore = ["suite/meet/sfu-server/*"]
+
 [tool.bench.frappe-dependencies]
 frappe = ">=16.0.0,<18.0.0"
 
