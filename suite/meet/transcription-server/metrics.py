@@ -33,8 +33,8 @@ DEFINITIONS = {
         "counter",
         "Wall time spent on jobs including retrieval and protocol overhead",
     ),
-    "gpu_allocated_bytes": ("gauge", "Current candidate Torch GPU allocation"),
-    "gpu_reserved_bytes": ("gauge", "Current candidate Torch GPU reserved memory"),
+    "gpu_allocated_bytes": ("gauge", "Current worker Torch GPU allocation"),
+    "gpu_reserved_bytes": ("gauge", "Current worker Torch GPU reserved memory"),
     "resident_memory_peak_bytes": ("gauge", "Peak worker resident memory"),
     "queue_observation_age_seconds": (
         "gauge",

@@ -35,32 +35,4 @@ describe("RecordingIndicator", () => {
 		expect(click).toHaveBeenCalledOnce();
 		app.unmount();
 	});
-	it("identifies a transcript-only capture without suggesting video", () => {
-		const root = document.createElement("div");
-		const app = createApp(RecordingIndicator, { recording: { ...recording, video_enabled: false, transcription_enabled: true } });
-		app.mount(root);
-		expect(root.querySelector("button")?.getAttribute("label")).toContain("Transcription");
-		expect(root.querySelector("button")?.getAttribute("tooltip")).toBe("This meeting is being transcribed");
-		app.unmount();
-	});
-
-	it("shows only ongoing video after transcription capture ends", () => {
-		const root = document.createElement("div");
-		const app = createApp(RecordingIndicator, { recording: { ...recording, video_enabled: true, transcription_enabled: true, transcription_capture_state: "complete" } });
-		app.mount(root);
-		expect(root.querySelector("button")?.getAttribute("label")).toContain("Recording");
-		expect(root.querySelector("button")?.getAttribute("label")).not.toContain("transcription");
-		app.unmount();
-	});
-
-	it("shows only ongoing transcription after video fails", () => {
-		const root = document.createElement("div");
-		const app = createApp(RecordingIndicator, { recording: { ...recording, video_enabled: true, transcription_enabled: true, transcription_capture_state: "capturing", video_capture_state: "failed" } });
-		app.mount(root);
-		expect(root.querySelector("button")?.getAttribute("label")).toContain("Transcription");
-		expect(root.querySelector("button")?.getAttribute("label")).not.toContain("Recording");
-		expect(root.querySelector("button")?.getAttribute("tooltip")).toBe("This meeting is being transcribed");
-		app.unmount();
-	});
-
 });

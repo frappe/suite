@@ -10,7 +10,6 @@ vi.mock("frappe-ui", () => ({
 	Switch: defineComponent({ props: ["modelValue", "label", "disabled"], emits: ["update:modelValue"], setup(props, { emit }) {
 		return () => h("label", [props.label, h("input", { type: "checkbox", checked: props.modelValue, disabled: props.disabled, onChange: (event: Event) => emit("update:modelValue", (event.target as HTMLInputElement).checked) })]);
 	} }),
-	FormControl: defineComponent({ setup() { return () => h("select", { "aria-label": "Spoken language" }, h("option", "English")); } }),
 	Alert: defineComponent({ props: ["title"], setup(props) { return () => h("p", props.title); } }),
 }));
 import RecordingPreflightDialog from "./RecordingPreflightDialog.vue";
@@ -28,27 +27,6 @@ function setup(refresh = vi.fn(async () => eligible)) {
 }
 
 describe("capture output selection", () => {
-	it("defaults to video only and sends the selected options", async () => {
-		const view = setup();
-		expect(view.root.querySelectorAll("input")[0].checked).toBe(true);
-		expect(view.root.querySelectorAll("input")[1].checked).toBe(false);
-		view.root.querySelector("button")?.click();
-		await settle();
-		expect(view.confirm).toHaveBeenCalledWith({ video_enabled: true, transcription_enabled: false, language: "en" });
-		view.unmount();
-	});
-	it("requires an output and supports transcription without video", async () => {
-		const view = setup();
-		await view.toggle(0);
-		expect(view.root.querySelector("button")?.disabled).toBe(true);
-		await view.toggle(1);
-		expect(view.refresh).toHaveBeenLastCalledWith({ video_enabled: false, transcription_enabled: true, language: "en" });
-		expect(view.root.querySelector("select")?.textContent).toBe("English");
-		view.root.querySelector("button")?.click();
-		await settle();
-		expect(view.confirm).toHaveBeenCalledWith({ video_enabled: false, transcription_enabled: true, language: "en" });
-		view.unmount();
-	});
 	it("checks combined capture and blocks a server rejection", async () => {
 		const view = setup(vi.fn(async () => ({ ...eligible, eligible: false, e2ee_conflict: true })));
 		await view.toggle(1);

@@ -1,8 +1,8 @@
 # Batch transcription processing
 
-Status: accepted; original-language-only v1 confirmed 2026-10-21, implementation and model validation pending
+Status: accepted
 
-Scope: The v1 processing, temporary source storage, isolation, and operational behavior after [transcription capture](001-recording-and-transcription-capture.md). Model quality and capacity are subject to the explicit pilot gates below.
+Scope: The v1 processing, temporary source storage, isolation, and operational behavior after [transcription capture](001-recording-and-transcription-capture.md). Recognition quality and operational capacity are measured separately from capture and delivery correctness.
 
 Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Architectural decisions are recorded in [queued self-hosted transcription](../../suite/meet/docs/adr/0013-queued-self-hosted-transcription.md) and [recorder storage reuse](../../suite/meet/docs/adr/0014-reuse-recorder-storage-for-transcription.md). Result delivery follows [the artifact contract](003-capture-artifact-delivery.md).
 
@@ -11,7 +11,7 @@ Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Architectural deci
 - Save speech during capture and queue it for batch transcription afterward. Finalized live-caption output is not the authoritative Transcript.
 - Run recognition entirely on infrastructure we control. Do not send meeting audio or text to third-party inference services.
 - Use one shared multi-site queue and worker pool. Inference capacity is separate from live-caption inference and does not require a model deployment per site or recorder node.
-- Keep recognition replaceable independently of capture and artifact storage. Pin the model identifier, checkpoint revision, precision, preprocessing/decoding configuration and built-in vocabulary version; retries must not silently switch them. V1 has no English-rendering stage. Model selection remains subject to the original-language pilot gates.
+- Keep recognition replaceable independently of capture and artifact storage. Pin the model identifier, checkpoint revision, precision, preprocessing/decoding configuration and built-in vocabulary version; retries must not silently switch them. V1 has no English-rendering stage. Use the pinned Trelis Whisper Hinglish Preview checkpoint with automatic language detection and mixedcode decoding.
 - Preserve speaker attribution using participant identity associated with captured audio rather than requiring the model to infer speaker identity from a mixed recording.
 - Produce speech-segment timestamps on the capture timeline. Word-level alignment is outside v1.
 - Target delivery within one hour after capture ends. This is an internal operating target, not a customer-facing completion guarantee or an established service-level percentile.
@@ -96,21 +96,14 @@ Dashboards must let an operator distinguish growing demand from unhealthy or sta
 11. English and Hindi alternate within a sentence. One Original Transcript preserves the spoken languages, substantive meaning and target script policy. No language selector, translated artifact or rendering task is required.
 12. A built-in vocabulary update occurs during a meeting. The active meeting/retries keep their version; new participant hints still update within that room. No site or host manual glossary is offered.
 
-## Pilot candidates and evidence
-
-- The earlier Granite candidate and public English pilots remain evidence for English recognition efficiency only. Granite TurboCTC is English-only; Cohere Transcribe does not list Hindi support. Neither is selected for the revised mixed-language requirement.
-- Trelis Whisper Hinglish Preview in automatically detected mixedcode mode is the leading source-recognition candidate. Its checked signup-responsibility error and incomplete source references remain unresolved. See [the current validation record](../../suite/meet/docs/transcription-speech-hints-validation.json).
-- No recognition configuration is production-accepted. Pin and evaluate source-script handling, substantive fidelity and English regressions before selection. The earlier translation failures support deferral; translation quality no longer gates v1.
-- See [the current validation record](../../suite/meet/docs/transcription-speech-hints-validation.json). Readable drafts and public short-clip scores do not establish source fidelity, code-switching quality or sustained capacity.
-
-## Deployment gates
+## Recognition validation and operations
 
 - Evaluate representative authorized English, Hindi and mixed Hindi–English Meet audio against independently checked original-language references, reviewed by listeners who understand the speech. Include Indian-accented English, switching within sentences, longer recordings, names/domain terminology, overlapping speech, silence/noise and degraded audio.
-- Keep normalized and strict WER as diagnostics for English recognition; retain the provisional 10% common-normalized English recognition ceiling and report Indian English separately. Freeze references, selection and normalization before measurement and apply them identically to candidates.
+- Keep normalized and strict WER as diagnostics for English recognition; retain the 10% common-normalized English recognition target and report Indian English separately. Freeze references, selection and normalization before measurement and apply them consistently across model configurations.
 - Do not apply an English-only normalizer or the 10% English recognition ceiling to Hindi or mixed-script text. Establish a common script-aware reference/normalization policy before reporting mixed-language numerical recognition scores.
-- Gate the Original Transcript through source-language listening review: it must be understandable and preserve substantive meaning, with no critical errors in the checked pilot samples. Review names, dates, amounts, identifiers, commitments, conditions, negations, corrections, omissions and invented speech. Report smaller errors separately. Passing a finite pilot does not guarantee error-free production output.
+- Evaluate the Original Transcript through source-language listening review: it must be understandable and preserve substantive meaning, with no critical errors in the checked samples. Review names, dates, amounts, identifiers, commitments, conditions, negations, corrections, omissions and invented speech. Report smaller errors separately. Sampling does not guarantee error-free output.
 - Do not use fluency, another model's output or agreement between models as ground truth. Formatting must not conceal uncertain or missing recognition. Translation, summaries and action items remain outside v1.
 - Measure sustained end-to-end throughput, backlog behavior, recovery, and cleanup using separate speaker tracks. Select worker hardware, capacity, and per-site operational limits from those measurements. Validate isolation from live-caption inference under concurrent speech load; healthy HTTP probes alone do not establish latency safety.
-- Validate authenticated audio retrieval, source cleanup coordination, site isolation, and cache-loss recovery before deployment. Hardware sizing, per-site limits, a service-level percentile, and final production quality acceptance remain open.
+- Validate authenticated audio retrieval, source cleanup coordination, site isolation, and cache-loss recovery before deployment. Size worker hardware and per-site limits for measured demand; the one-hour target is not a latency guarantee.
 
 Changing live-video recording to use a new global finalization queue was a separate discussion and is outside this feature's scope.

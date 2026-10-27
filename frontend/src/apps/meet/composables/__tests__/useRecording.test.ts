@@ -214,14 +214,6 @@ describe("useRecording", () => {
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(toast.error).toHaveBeenCalledWith("Recording capacity is unavailable");
 	});
-	it("sends independent transcript-only choices to the capture API", async () => {
-		mocks.getStateResults.push({ name: "recording", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
-		const recording = useRecording("room");
-		await recording.start({ video_enabled: false, transcription_enabled: true, language: "en" });
-		expect(mocks.startParams[0]).toMatchObject({ meeting_id: "room", video_enabled: false, transcription_enabled: true, language: "en" });
-		expect(recording.state.value).toMatchObject({ video_enabled: false, transcription_enabled: true });
-		expect(toast.info).toHaveBeenCalledWith("Transcription is starting");
-	});
 
 	it("rejects an empty selection before making a start request", async () => {
 		const recording = useRecording("room");

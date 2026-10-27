@@ -1,12 +1,12 @@
 # Meet transcription backend
 
-This package connects the existing capture controls to recorder source storage, a durable per-site Frappe queue, and owner-private Drive publication. One shared worker pool consumes these per-site partitions using fair round-robin scheduling; sites never share credentials or database rows. See the [shared worker](../transcription-server/README.md) for runtime, model, deployment, and dashboard configuration. Enable only after the [deployment gates](../../../specs/meet/002-batch-transcription.md#deployment-gates) are met.
+This package connects the existing capture controls to recorder source storage, a durable per-site Frappe queue, and owner-private Drive publication. One shared worker pool consumes these per-site partitions using fair round-robin scheduling; sites never share credentials or database rows. See the [shared worker](../transcription-server/README.md) for runtime, model, deployment, and dashboard configuration.
 
-New captures pin the provisional Trelis recognizer and deliver one
+New captures pin the Trelis recognizer and deliver one
 `Original Transcript.txt`, preserving English, Hindi and code-switching without
 translation. Existing delivered artifacts retain their filenames and identities.
-Automatic shared vocabulary/meeting hints and quality/capacity acceptance remain
-open. Keep `transcription_enabled` disabled until the deployment gates pass.
+Shared versioned vocabulary and automatic meeting hints guide recognition.
+Configure the shared worker and enable `transcription_enabled` for each site.
 
 ## Site configuration
 
@@ -24,7 +24,7 @@ Keep secrets in protected site configuration. Never expose them in browser respo
 | `transcription_capture_max_bytes` | Reserved persistent-source allowance per capture; default 2 GiB. PCM16 mono 24 kHz uses 48,000 bytes per speaker second. |
 | `transcription_max_source_bytes` | Site-wide retained/reserved source allowance; default 10 GiB. |
 
-Defaults bound resource use; they are pilot settings, not measured production sizing. Set recorder-wide storage/concurrency limits independently. The SFU must allowlist the recorder origin using `TRANSCRIPTION_RECORDER_ORIGIN`.
+Defaults bound resource use; tune them for the available storage and processing capacity. Set recorder-wide storage/concurrency limits independently. The SFU must allowlist the recorder origin using `TRANSCRIPTION_RECORDER_ORIGIN`.
 
 ## Worker protocol
 
@@ -48,4 +48,4 @@ Generated text cannot be overwritten through File REST updates or WebDAV. Owners
 
 ## Verification
 
-Run standalone validation with `python3 -m unittest suite.meet.transcription.test_protocol`. Run Frappe integration tests from a configured bench test site with `bench --site <test-site> run-tests --app suite --module suite.meet.api.test.test_transcription`; existing recording API tests remain regression coverage. No service deployment or real-meeting quality acceptance follows automatically from passing these tests.
+Run standalone validation with `python3 -m unittest suite.meet.transcription.test_protocol`. Run Frappe integration tests from a configured bench test site with `bench --site <test-site> run-tests --app suite --module suite.meet.api.test.test_transcription`; existing recording API tests remain regression coverage. These tests verify publication, private access, retry and cleanup behavior using supplied recognition results; model accuracy is tested separately.

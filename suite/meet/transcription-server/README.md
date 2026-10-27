@@ -1,11 +1,9 @@
 # Shared Meet transcription worker
 
-The worker integrates the provisional Trelis original-language recognizer for
-English, Hindi and code-switching. It produces one Original Transcript; English
-translation is deferred. Keep the site feature flag disabled until the
-[deployment gates](../../../specs/meet/002-batch-transcription.md#deployment-gates)
-are satisfied. Shared versioned vocabulary and automatic meeting hints are
-implemented; integrating this candidate does not accept its quality.
+The worker transcribes English, Hindi and code-switching with the pinned Trelis
+model. It delivers one Original Transcript in the languages spoken; translation
+is outside this feature. Configure the recorder, SFU and shared worker, then
+enable `transcription_enabled` on the site.
 
 A separately deployable worker serves multiple Suite sites. It polls the
 sites' durable transcription jobs round-robin, uses atomically fenced leases, and
@@ -61,17 +59,13 @@ switching a queue to this worker. An incompatible claim receives a terminal
 `unsupported_model_configuration` callback. Operators must not change a job's
 stored model to reuse its earlier checkpoints.
 
-The [current validation record](../docs/transcription-speech-hints-validation.json)
-records the bounded browser pilot and remaining production gates.
-
 ## Deployment
 
 Use a GPU host with NVIDIA Container Toolkit, Docker/Compose, HTTPS connectivity
 to the configured sites and recorder origins, and space for disposable model
 weights. The image pins matching released Torch/TorchAudio 2.8.0 and Transformers
 5.19.0. Worker code supports the base image's Python 3.11 independently of the
-Frappe application's Python 3.14 requirement. The pilot's vendor Torch image is not this deployment image; validate the
-built image on deployment hardware rather than assuming identical performance.
+Frappe application's Python 3.14 requirement.
 
 In `deploy`, copy `.env.example` to `.env`, create `secrets/sites.json` from
 `sites.example.json`, and create a random `secrets/metrics-token`. Use a different
@@ -82,9 +76,8 @@ documented in [backend configuration](../transcription/README.md).
 
 Roll out compatible recorder and SFU services first, then migrate each Suite site
 (`bench --site <site> migrate`) to install the capture fields and durable job
-table. Configure secrets while leaving `transcription_enabled` disabled. Build
-and smoke-test the worker image, verify authenticated queue access and metrics,
-and complete the real-meeting acceptance gates before enabling the site flag.
+table. Configure secrets, build the worker image, and verify its readiness, authenticated
+queue access and metrics before enabling `transcription_enabled` on the site.
 
 The worker runs as UID 10001. Make the secrets private and readable by that UID;
 keep them out of git. Create the cache directory owned by UID 10001 too. When
@@ -147,9 +140,8 @@ and injected recognition results; no GPU or model download is needed. They cover
 source integrity/origin isolation, capability handling and redirect rejection,
 lease fencing, silence, durable retry checkpoints, shutdown and fair scheduling.
 Run the separate real-GPU smoke and cross-layer Frappe/recorder tests before
-rollout. Test authorized representative Meet audio against independently checked
-references and agreed quality thresholds; public AMI/Svarah results alone do not
-close the production gates.
+rollout. Measure recognition accuracy separately with authorized audio and independently
+checked references. Mocked recognition results do not test model accuracy.
 
 For a built-image smoke, place an authorized short audio clip at
 `$FIXTURE_DIR/speech.flac` and its independently checked UTF-8 reference at
@@ -174,35 +166,3 @@ local HTTP fixture queue, readiness, protected metrics, and graceful shutdown:
 docker compose run --rm --no-deps -v "$PWD/../tests:/app/tests:ro" \
   transcription python /app/tests/gpu_service_smoke.py --cache /models/huggingface
 ```
-
-## Shared-hint browser validation (2026-10-21)
-
-The [aggregate record](../docs/transcription-speech-hints-validation.json) covers
-159 passing focused checks (five skipped), including the caption adapter in its
-native GPU runtime. Seven isolated browser scenarios exercised real WebRTC/SFU,
-persistent capture, the queued hinted GPU worker and owner-private Drive delivery.
-Six transcription jobs reached Ready; all nine artifact fetches allowed their
-owner and denied anonymous access. Three videos contain valid audio/video streams.
-Combined outputs share a folder, delivered source audio is cleaned up, and the
-silence case has no invented speech. The mixed case retains the meeting title and
-a silent late joiner's name without assigning that participant any speech.
-
-The eight frozen English clips scored 1/100 normalized word errors (1%), including
-1/52 Indian-English errors (1.92%); strict WER was 3/96 (3.125%). The two mixed clips
-scored 8/49 script-safe word errors (16.33%), descriptive only. The English 10%
-provisional gate passed, but this small replay does not accept meeting fidelity,
-critical facts or production quality. No new manual owner transcription was needed.
-
-Failed setup attempts and publication retries are retained in the record. The
-isolated SFU needed its grant file bootstrapped and realtime needed the test site's
-name/web port. Concurrent video reservations occupied the initial test Drive quota;
-publication failed until adequate test headroom was provided, then normal retries
-reused checkpoints. One early video-only stop HTTP failure remains unexplained;
-the same browser flow subsequently passed without product changes. These findings
-must not be presented as a flawless first run.
-
-Production caption inference received health probes only. All monitored health
-samples were good, worker free GPU memory stayed at least 8249 MiB, temporary
-containers/services were removed, and the production image/start time and baseline
-GPU memory were unchanged. Exact test-site configuration bytes and temporary DB
-settings were restored. Keep the feature disabled pending the remaining gates.

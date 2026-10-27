@@ -2,7 +2,7 @@
 
 Status: accepted; original-language-only v1 confirmed 2026-10-21
 
-Scope: The v1 Drive organization, Original Transcript presentation, notifications, access and deletion behavior for new outputs from the [shared capture flow](001-recording-and-transcription-capture.md). Acceptance does not establish implementation or model readiness.
+Scope: The v1 Drive organization, Original Transcript presentation, notifications, access and deletion behavior for new outputs from the [shared capture flow](001-recording-and-transcription-capture.md).
 
 Use the definitions in [Meet context](../../suite/meet/CONTEXT.md). Processing follows [the batch contract](002-batch-transcription.md). This changes organization for new outputs; it does not migrate existing artifacts.
 

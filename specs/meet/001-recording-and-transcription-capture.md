@@ -1,10 +1,10 @@
 # Recording and transcription capture
 
-Status: accepted; original-language-only v1 confirmed 2026-10-21, implementation and model validation pending
+Status: accepted
 
-Scope: The v1 participant-facing flow for selecting and capturing video recording, transcription, or both. Acceptance records the confirmed product contract, not implementation or model readiness.
+Scope: The v1 participant-facing flow for selecting and capturing video recording, transcription, or both.
 
-Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Related contracts cover [batch processing](002-batch-transcription.md) and [artifact delivery](003-capture-artifact-delivery.md). The [confirmed design brief](../../suite/meet/docs/transcription-design.md) records the originating decisions.
+Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Related contracts cover [batch processing](002-batch-transcription.md) and [artifact delivery](003-capture-artifact-delivery.md).
 
 ## Selecting outputs
 

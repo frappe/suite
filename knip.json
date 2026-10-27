@@ -39,7 +39,7 @@
         "drive-backed-apps/**/*.ts",
         "meet/**/*.{ts,mjs}"
       ],
-      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts", "meet/captions/playwright.config.ts", "meet/transcription/pilot.config.ts"]}
+      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts"]}
     },
     "suite/meet/sfu-server": {
       "entry": ["src/server/RecordingGrantPersistenceFile.ts"],
