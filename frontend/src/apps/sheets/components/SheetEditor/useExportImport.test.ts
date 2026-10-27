@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createChartEngine } from '../../engine/charts.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
 import { createFormatsEngine } from '../../engine/formats.js'
+import { createHistory } from '../../engine/history'
 import { createMergeEngine } from '../../engine/merge.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { useExportImport } from './useExportImport.js'
@@ -587,5 +588,113 @@ describe('xlsx charts, and importing into a new file', () => {
     const back = editor({ Rates: sales })
     await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
     expect(back.charts.list()[0]).toMatchObject({ sourceSheet: 'Sales' })
+  })
+})
+
+describe('importXLSX of a file with formulas and no cached values', () => {
+  it('keeps the formulas', async () => {
+    const { utils, write } = await import('xlsx')
+    const wb = utils.book_new()
+    // `<f>` with no `<v>`, as openpyxl writes it.
+    utils.book_append_sheet(
+      wb,
+      {
+        '!ref': 'A1:B3',
+        A1: { t: 'n', v: 1 },
+        A2: { t: 'n', v: 2 },
+        A3: { t: 'z', f: 'SUM(A1:A2)' },
+        B3: { t: 'z', f: 'A3/A1' },
+      },
+      'Budget',
+    )
+    const buf = write(wb, { type: 'array', bookType: 'xlsx' })
+    const writes: Record<string, Record<string, string>> = {}
+    const { importXLSX } = useExportImport({
+      cells: {
+        write: (sn: string, map: Record<string, string>) =>
+          (writes[sn] = { ...writes[sn], ...map }),
+        addSheet: vi.fn(),
+        idle: async () => {},
+      },
+      sheetNames: () => ['Sheet1'],
+      currentSheet: { value: 'Sheet1' },
+      getCurrentTitle: () => 't',
+      getFormats: () => null,
+      getMerge: () => null,
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      isDirty: { value: false },
+    })
+    await importXLSX(file(buf))
+    expect(writes.Budget).toEqual({ A1: '1', A2: '2', A3: '=SUM(A1:A2)', B3: '=A3/A1' })
+  })
+})
+
+// An import was not undoable: undo after it skipped back past it.
+describe('Sheets: importing a file', () => {
+  type Workbook = Map<string, Record<string, string>>
+
+  // An editor's workbook, its undo history and its import, wired as the editor wires them.
+  function openWorkbook() {
+    let workbook: Workbook = new Map([['Sheet1', {}]])
+    const currentSheet = { value: 'Sheet1' }
+    const history = createHistory<Workbook>({
+      snapshot: () => structuredClone(workbook),
+      restore: (snap) => {
+        workbook = structuredClone(snap)
+      },
+    })
+    history.init()
+    const io = useExportImport({
+      cells: {
+        write: (sheet: string, map: Record<string, string>) =>
+          Object.assign(workbook.get(sheet)!, map),
+        addSheet: (name: string) => workbook.set(name, {}),
+        idle: async () => {},
+      },
+      sheetNames: () => [...workbook.keys()],
+      currentSheet,
+      getCurrentTitle: () => 'Budget',
+      getFormats: () => null,
+      getMerge: () => null,
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: (name: string) => {
+        currentSheet.value = name
+      },
+      syncFlags: vi.fn(),
+      recordUndoStep: () => history.push(),
+      isDirty: { value: false },
+    })
+    return {
+      history,
+      sheets: () => [...workbook.keys()],
+      deleteSheet(name: string) {
+        workbook.delete(name)
+        history.push()
+      },
+      async importXlsx(sheets: Record<string, string[][]>) {
+        const { utils, write } = await import('xlsx')
+        const book = utils.book_new()
+        for (const [name, rows] of Object.entries(sheets))
+          utils.book_append_sheet(book, utils.aoa_to_sheet(rows), name)
+        await io.importXLSX(file(write(book, { type: 'array', bookType: 'xlsx' })))
+      },
+    }
+  }
+
+  it('undoes an import as one step, after the step that followed it', async () => {
+    const editor = openWorkbook()
+    await editor.importXlsx({ 'Q4 Budget': [['Item', 'Cost']], Headcount: [['Team']] })
+    expect(editor.history.canUndo()).toBe(true)
+
+    editor.deleteSheet('Sheet1')
+    editor.history.undo()
+    expect(editor.sheets()).toEqual(['Sheet1', 'Q4 Budget', 'Headcount'])
+
+    editor.history.undo()
+    expect(editor.sheets()).toEqual(['Sheet1'])
   })
 })

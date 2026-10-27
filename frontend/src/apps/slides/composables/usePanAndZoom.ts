@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 type Origin = {
   x: number
@@ -14,8 +14,19 @@ type Transform = {
   }
 }
 
-export const usePanAndZoom = (containerElement: any, targetElement: any, initialScale = 1) => {
+/**
+ * Wheel pan and pinch zoom for the slide. The slide starts at `initialScale` and
+ * follows it, for example as the window resizes, until the user pans or zooms.
+ */
+export const usePanAndZoom = (
+  containerElement: any,
+  targetElement: any,
+  initialScale: MaybeRefOrGetter<number> = 1,
+) => {
   const allowPanAndZoom = ref(true)
+  // the scale the slide rests at before any gesture; frozen by the first one
+  const baseScale = ref(toValue(initialScale))
+  let moved = false
 
   const SCALE_SPEED = 0.8
   const TRANSLATE_SPEED = 0.8
@@ -28,7 +39,8 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
 
   let wheelTimeout: ReturnType<typeof setTimeout>
 
-  const transform = ref(`matrix(${initialScale}, 0, 0, ${initialScale}, 0, 0)`)
+  const restingTransform = () => `matrix(${baseScale.value}, 0, 0, ${baseScale.value}, 0, 0)`
+  const transform = ref(restingTransform())
   const transformOrigin = ref('0 0')
 
   const isPanningOrZooming = ref(false)
@@ -43,6 +55,11 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
   }
 
   const startGesture = () => {
+    moved = true
+    // the slide's untransformed corner: its offsets can change after pan and zoom were set up
+    const container = containerElement.value.getBoundingClientRect()
+    initialX = container.left + targetElement.value.offsetLeft
+    initialY = container.top + targetElement.value.offsetTop
     transform.value = ''
     isPanningOrZooming.value = true
     setOrigin()
@@ -170,11 +187,8 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
 
   const addPanAndZoom = () => {
     if (!containerElement.value || !targetElement.value) return
-    initialMatrix = new DOMMatrix().scale(initialScale)
+    initialMatrix = new DOMMatrix().scale(baseScale.value)
     gestureMatrix = new DOMMatrix()
-    let rect = targetElement.value.getBoundingClientRect()
-    initialX = rect.x
-    initialY = rect.y
     containerElement.value.addEventListener('wheel', handlePanAndZoom, {
       passive: false,
     })
@@ -183,7 +197,9 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
   const removePanAndZoom = () => {
     if (!containerElement.value) return
     if (wheelTimeout) window.clearTimeout(wheelTimeout)
-    transform.value = `matrix(${initialScale}, 0, 0, ${initialScale}, 0, 0)`
+    moved = false
+    baseScale.value = toValue(initialScale)
+    transform.value = restingTransform()
     transformOrigin.value = '0 0'
     containerElement.value.removeEventListener('wheel', handlePanAndZoom)
   }
@@ -192,6 +208,16 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
     () => allowPanAndZoom.value,
     (value: boolean) => {
       value ? addPanAndZoom() : removePanAndZoom()
+    },
+  )
+
+  watch(
+    () => toValue(initialScale),
+    (scale) => {
+      if (moved) return
+      baseScale.value = scale
+      initialMatrix = new DOMMatrix().scale(scale)
+      transform.value = restingTransform()
     },
   )
 
@@ -204,6 +230,7 @@ export const usePanAndZoom = (containerElement: any, targetElement: any, initial
   })
 
   return {
+    baseScale,
     transform,
     transformOrigin,
     allowPanAndZoom,

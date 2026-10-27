@@ -1028,7 +1028,7 @@ def node_versions(node: Given = None, limit: Given = None, cursor: Given = None)
         cursor=shapes.text(cursor, "cursor") or None,
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
     )
-    return shapes.page(result, [shapes.version_shape(row) for row in result["rows"]])
+    return shapes.page(result, shapes.version_shapes(result["rows"]))
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])

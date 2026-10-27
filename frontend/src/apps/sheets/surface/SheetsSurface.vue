@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toast } from 'frappe-ui'
+import { Dialog, toast } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
@@ -35,6 +35,11 @@ const panel = ref<DocumentPanel | null>(null)
 const bodyRevision = ref(0)
 const restoring = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
+// Edits another editor's save left out (`edits-not-applied`). Their recovery
+// copy stays until it is downloaded: later saves do not carry those edits.
+const notApplied = ref<string[]>([])
+const showNotApplied = ref(false)
+let keepUntilDownloaded = false
 const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
@@ -73,6 +78,7 @@ watch(
   (now, before) => {
     if (before !== 'saving' || now !== 'clean' || !access.writable.value || !hasRecovery.value)
       return
+    if (keepUntilDownloaded) return
     clearRecovery(props.session.nodeId)
     hasRecovery.value = false
   },
@@ -118,10 +124,23 @@ async function retainRecovery() {
     toast.error('Your latest changes could not be kept on this device.')
   }
 }
+function keepEditsNotApplied(event: { edits: string[]; workbook: string | null }) {
+  notApplied.value = event.edits
+  showNotApplied.value = true
+  if (!event.workbook) return
+  try {
+    keepRecovery(props.session.nodeId, event.workbook)
+    hasRecovery.value = true
+    keepUntilDownloaded = true
+  } catch {
+    toast.error('Your latest changes could not be kept on this device.')
+  }
+}
 async function downloadChanges() {
   try {
     const downloaded = await downloadRecovery(props.session.nodeId, props.session.title.value)
     hasRecovery.value = false
+    keepUntilDownloaded = false
     if (!downloaded) toast.error('No recovery copy is kept for this spreadsheet.')
   } catch {
     toast.error('Your changes could not be downloaded. They are still kept on this device.')
@@ -159,6 +178,7 @@ useDocumentLeaveGuard({
       :request-context="session.credentials.context"
       @access-refused="access.refuse()"
       @notes-opened="panel = null"
+      @edits-not-applied="keepEditsNotApplied"
     >
       <template #header="{ viewOnly, status: EditorStatus, actions: EditorActions }">
         <DriveDocumentHeader
@@ -201,6 +221,37 @@ useDocumentLeaveGuard({
         />
       </template>
     </SheetEditor>
+    <Dialog
+      v-model:open="showNotApplied"
+      :title="__('Some of your edits could not be added')"
+      icon="lucide-triangle-alert"
+      theme="amber"
+      :actions="
+        hasRecovery
+          ? [
+              {
+                label: __('Download my changes'),
+                variant: 'solid',
+                onClick: ({ close }) => {
+                  close()
+                  void downloadChanges()
+                },
+              },
+            ]
+          : []
+      "
+    >
+      <p class="text-p-base text-ink-gray-7">
+        {{
+          __(
+            'Someone else saved this spreadsheet while you were editing. These edits could not be added to their version. Your copy of the spreadsheet is kept on this device.',
+          )
+        }}
+      </p>
+      <ul class="mt-3 max-h-60 list-disc space-y-1 overflow-y-auto pl-5 text-p-sm text-ink-gray-8">
+        <li v-for="(edit, index) in notApplied" :key="index">{{ edit }}</li>
+      </ul>
+    </Dialog>
   </div>
 </template>
 

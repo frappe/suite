@@ -65,6 +65,10 @@
           "node": {
             "title": "Node",
             "type": "string"
+          },
+          "head_seq": {
+            "title": "Head Seq",
+            "type": "integer"
           }
         },
         "required": [
@@ -73,7 +77,8 @@
           "can_write",
           "sheets_data",
           "owner",
-          "node"
+          "node",
+          "head_seq"
         ],
         "title": "SheetBody",
         "type": "object"
@@ -104,6 +109,10 @@
             "title": "Sheets Data",
             "type": "string"
           },
+          "base_seq": {
+            "title": "Base Seq",
+            "type": "integer"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -119,7 +128,8 @@
         },
         "required": [
           "name",
-          "sheets_data"
+          "sheets_data",
+          "base_seq"
         ],
         "title": "SaveSheet",
         "type": "object"

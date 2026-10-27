@@ -46,7 +46,31 @@
       <!-- Bar 1 · Identity. The status chips and the app actions are defined once
          and placed in either top bar. -->
       <DefineTopbarStatus>
-        <template v-if="saveError">
+        <template v-if="isStale">
+          <span class="sn-save-error">
+            <Badge
+              class="max-w-full"
+              theme="red"
+              variant="subtle"
+              size="sm"
+              :tooltip="
+                __(
+                  'Someone else saved this sheet first, and your latest edits could not be added to their version. A copy of your workbook is kept on this device.',
+                )
+              "
+            >
+              <span class="truncate">{{ __('Changed elsewhere') }}</span>
+            </Badge>
+          </span>
+          <Button size="sm" variant="subtle" @click="reloadFromServer">{{
+            discardedOnReload === 1
+              ? __('Reload and discard 1 edit')
+              : discardedOnReload > 1
+                ? __('Reload and discard {0} edits', [discardedOnReload])
+                : __('Reload')
+          }}</Button>
+        </template>
+        <template v-else-if="saveError">
           <span class="sn-save-error">
             <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
               <span class="truncate">{{ saveError }}</span>
@@ -218,7 +242,7 @@
       </div>
 
       <SheetUpgradeBanner
-        v-if="legacyUpgrade && !upgradeBannerClosed"
+        v-if="legacyUpgrade && !legacyUpgrade.imported && !upgradeBannerClosed"
         :upgrade="legacyUpgrade"
         :read-only="readOnly"
         @close="upgradeBannerClosed = true"
@@ -500,6 +524,12 @@
         @unfreeze-rows="doUnfreezeRows()"
         @unfreeze-cols="doUnfreezeCols()"
         @paste-special="doPasteSpecial"
+        @sort="
+          (dir) =>
+            fromContextMenu(() =>
+              sortRange(dir, contextMenu.mode === 'colHeader' ? contextMenu.targetCol : null),
+            )
+        "
         @validation="fromContextMenu(openValidationDialog)"
         @cond-format="fromContextMenu(() => openCfDialog(null))"
         @protect="protectSelection()"
@@ -809,6 +839,7 @@ import {
   FormControl,
   KeyboardShortcutsDialog,
   Spinner,
+  toast,
   Tooltip,
   usePageMeta,
 } from 'frappe-ui'
@@ -829,6 +860,7 @@ import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 import { confirmLeave } from '@/utils/confirmLeave'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -882,6 +914,7 @@ import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
 import { buildAlignOptions, buildBorderOptions, buildMoreToolbarOptions } from './toolbar.config.js'
+import { createUnsentCommands, describeEdits } from './unsentCommands'
 import { useAiAssist } from './useAiAssist.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import { useClipboard } from './useClipboard.js'
@@ -945,7 +978,10 @@ const props = defineProps({
 })
 // `access-refused`: the server refused a save, or the collaboration relay
 // refused a write. `notes-opened`: the notes panel took the right edge.
-const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
+// `edits-not-applied` ({ edits, workbook }): another editor saved first and
+// these edits could not be put on top of their copy. `workbook` is this
+// editor's workbook from before, for a recovery copy.
+const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened', 'edits-not-applied'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.
 const [DefineTopbarStatus, ReuseTopbarStatus] = createReusableTemplate()
@@ -992,6 +1028,9 @@ const brandMenuOptions = computed(() => [
 
 // The open tab. The editor owns it; IronCalc's sheet list sets it on load.
 const currentSheet = ref('Sheet1')
+// Commands no landed save carries yet: put on top of another editor's save,
+// and kept as this tab's local draft (usePersistence.js, "Rebase").
+const unsent = createUnsentCommands()
 // IronCalc holds every cell (see useWorkbook.js). Declared up here because
 // setup code (the sheet tabs) reads it.
 const {
@@ -1030,6 +1069,10 @@ const {
     if (grid) _expandGridTo(max.maxCol, max.maxRow)
   },
   onCrash: (reason) => _onEngineCrash(reason),
+  onEdit: (edit) => {
+    unsent.record(edit)
+    _keepDraftSoon()
+  },
 })
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
@@ -1459,13 +1502,17 @@ const fileDropdownOptions = computed(() => [
       },
       {
         label: 'Export as XLSX',
+        description: __("Charts and conditional formatting aren't exported yet."),
         icon: 'lucide-download',
         onClick: () => exportXLSX(),
       },
       {
-        label: 'Export as PDF',
+        label: __('Print…'),
         icon: 'lucide-printer',
-        onClick: () => exportPDF(),
+        submenu: [
+          { label: __('This sheet'), onClick: () => print('sheet') },
+          { label: __('All sheets'), onClick: () => print('all') },
+        ],
       },
     ],
   },
@@ -1629,7 +1676,7 @@ const hAlignIcon = computed(() => {
 const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
 const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
 
-const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
+const { exportCSV, exportXLSX, print, importCSV, importXLSX } = useExportImport({
   cells: {
     readSheet: _readWholeSheet,
     write: _writeInputs,
@@ -1657,6 +1704,7 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
   syncNames: () => syncNames(),
   switchSheet: (n) => switchSheet(n),
   syncFlags,
+  recordUndoStep: () => history.push(),
   isDirty,
 })
 
@@ -2008,11 +2056,17 @@ const {
   canWrite,
   loadError,
   legacyUpgrade,
+  headSeq,
+  isStale,
   loadSheet,
   autoCreate,
   saveExisting,
   retrySave,
   workbookJson,
+  rebase,
+  keepDraft,
+  dropDraft,
+  restoreDraft,
 } = usePersistence({
   engine: {
     start: _startEngine,
@@ -2042,6 +2096,7 @@ const {
   onRefused: () => emit('access-refused'),
   recordVisits: !props.embedded,
   requestContext: props.requestContext,
+  unsent,
 })
 
 // View-only mode: the loaded sheet is shared with the current user at read
@@ -2049,10 +2104,18 @@ const {
 // grid edit gate, the toolbar/formula-bar disable, the context menu, and the
 // autosave path all no-op so a viewer is never misled into editing a doc they
 // can't persist (and never triggers the server's PermissionError on save).
-const readOnly = computed(() => !canWrite.value || !props.writable)
-// Where the workbook's edits are: clean, saving, unsaved or failed.
+// A stale workbook is read-only too: another editor saved first.
+const readOnly = computed(() => !canWrite.value || !props.writable || isStale.value)
+// Where the workbook's edits are: clean, saving, unsaved or failed. A stale
+// workbook is failed: the edits its save carried are only on this screen.
 const saveState = computed(() =>
-  isSaving.value ? 'saving' : saveError.value ? 'failed' : isDirty.value ? 'unsaved' : 'clean',
+  isSaving.value
+    ? 'saving'
+    : saveError.value || isStale.value
+      ? 'failed'
+      : isDirty.value
+        ? 'unsaved'
+        : 'clean',
 )
 
 // Losing write access drops every pending edit from the save path: the queued
@@ -2069,6 +2132,8 @@ watch(readOnly, (frozen) => {
   clearTimeout(_saveWatchdogTimer)
   _opQueue.length = 0
   _pendingSaveBatch = null
+  unsent.clear()
+  _keepDraft()
   isDirty.value = false
   saveError.value = ''
 })
@@ -2264,6 +2329,9 @@ const {
   currentSheet,
   repopulateGrid: _repopulateGrid,
   onRefused: () => emit('access-refused'),
+  onRemoteSave: (seq) => {
+    remoteHeadSeq.value = Math.max(remoteHeadSeq.value, seq)
+  },
   credentialFetch: props.credentialFetch,
 })
 // Wire the binding's per-segment touch-tracking into the history we declared
@@ -2427,6 +2495,7 @@ const {
   applyFilter,
   clearFilterCol,
   doSort,
+  sortRange,
 } = useSortFilter({
   sortFilter,
   currentSheet,
@@ -2811,8 +2880,9 @@ function _setupGridInstance() {
       },
       // Gate every in-canvas mutation (begin-edit, delete, fill, resize,
       // checkbox/dropdown) on write permission. Read-only viewers keep
-      // selection, navigation and copy.
-      canEdit: () => !readOnly.value,
+      // selection, navigation and copy. A rebase swaps the workbook, so
+      // nothing is typed while it runs.
+      canEdit: () => !readOnly.value && !_catchingUp && !_reloading,
     },
     lazyValues: true,
   })
@@ -2858,8 +2928,9 @@ function _setupEventListeners() {
   window.addEventListener('focus', _refocusGridIfIdle)
   document.addEventListener('visibilitychange', _refocusGridIfIdle)
   // Reload / tab close never unmount the editor, so onBeforeUnmount's save
-  // doesn't run for them. These two cover the page going away.
+  // doesn't run for them. These cover the page going away.
   window.addEventListener('beforeunload', _onBeforeUnload)
+  window.addEventListener('pagehide', _keepDraft)
   document.addEventListener('visibilitychange', _saveWhenHidden)
 }
 // The tab each viewer had open, per document, kept in this browser only: a
@@ -2919,6 +2990,12 @@ async function _loadInitialData() {
     const last = _lastTab() ?? legacyUpgrade.value?.current
     if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
     _rememberTab = true
+    // Edits a reload inside the autosave delay left in this tab's draft.
+    if (!readOnly.value && restoreDraft(props.id)) {
+      isDirty.value = true
+      toast.info(__('Restored edits that were not saved before the page reloaded.'))
+    }
+    _draftReady = true
     activeCell.value = 'A1'
     _showInputInFormulaBar('A1')
     refreshActiveFormat()
@@ -2991,6 +3068,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', _refocusGridIfIdle)
   document.removeEventListener('visibilitychange', _refocusGridIfIdle)
   window.removeEventListener('beforeunload', _onBeforeUnload)
+  window.removeEventListener('pagehide', _keepDraft)
   document.removeEventListener('visibilitychange', _saveWhenHidden)
 })
 
@@ -3014,6 +3092,127 @@ function _onEngineCrash(reason) {
 function reloadPage() {
   window.location.reload()
 }
+
+// The newest head another editor's save announced. With nothing unsaved here,
+// their copy opens in place. With edits pending, those are put on top of it
+// and saved on the new head (specs/sheets/002, "Unsaved edits"). A save still
+// settling decides first: `_doAutoSave` follows the head again once it has.
+// Unsent edits, not `isDirty`, say whether a reload would throw work away:
+// `isDirty` is false while a save is out.
+const remoteHeadSeq = ref(0)
+let _reloading = null
+function _followRemoteHead() {
+  if (remoteHeadSeq.value <= headSeq.value || _reloading || _catchingUp) return
+  if (_savePromise || isSaving.value || isStale.value) return
+  if (isDirty.value || unsent.edits().length) void catchUp()
+  else void reloadFromServer()
+}
+watch([remoteHeadSeq, isDirty, isSaving, isStale], _followRemoteHead)
+// Edits the stale workbook holds that Reload discards.
+const discardedOnReload = ref(0)
+async function reloadFromServer() {
+  if (_reloading) return _reloading
+  const sheet = currentSheet.value
+  const cell = activeCell.value
+  _reloading = loadSheet(props.id, { visit: false })
+  try {
+    await _reloading
+  } finally {
+    _reloading = null
+  }
+  if (loadError.value) return
+  discardedOnReload.value = 0
+  _rebaseAttempts = 0
+  _showReloaded(sheet, cell)
+}
+function _showReloaded(sheet, cell) {
+  if (sheet !== currentSheet.value && sheetNames.value.includes(sheet)) switchSheet(sheet)
+  _repopulateGrid()
+  _showInputInFormulaBar(cell)
+  refreshActiveFormat()
+  history.reset()
+  syncFlags()
+}
+
+// Another editor saved first: put this editor's unsent edits on top of their
+// copy, then save on the new head. Runs when their `sheet_saved` arrives while
+// edits are pending, and when the server refuses a save built on an old head.
+// A cell edit still being typed finishes first. A save refused again right
+// after rebases again, at most MAX_REBASES times in a row.
+const MAX_REBASES = 3
+let _catchingUp = null
+let _rebaseAttempts = 0
+function catchUp() {
+  if (_catchingUp) return _catchingUp
+  if (_draftEdit()) {
+    setTimeout(() => void catchUp(), 1000)
+    return Promise.resolve()
+  }
+  _catchingUp = _rebaseUnsent().finally(() => {
+    _catchingUp = null
+  })
+  return _catchingUp.then((rebased) => (rebased ? flushSave() : undefined)).catch(() => {})
+}
+async function _rebaseUnsent() {
+  clearTimeout(_autoSaveTimer)
+  if (readOnly.value || !props.id || props.id === 'new') return false
+  _rebaseAttempts += 1
+  if (_rebaseAttempts > MAX_REBASES) {
+    _keepAsChangedElsewhere(describeEdits(unsent.edits()), await workbookJson(_draftEdit()))
+    return false
+  }
+  const sheet = currentSheet.value
+  const cell = activeCell.value
+  let outcome
+  try {
+    outcome = await rebase(props.id)
+  } catch (err) {
+    // The workbook and its unsent edits stay; the rebase is tried again.
+    console.error('[sheets] could not put unsaved edits on the newer copy:', err)
+    saveError.value = __('Not saved: the newer version of this sheet could not be loaded.')
+    isDirty.value = true
+    setTimeout(() => void catchUp(), 1000 * _rebaseAttempts)
+    return false
+  }
+  if (!outcome.rebased) {
+    _keepAsChangedElsewhere(outcome.notApplied, outcome.workbook)
+    return false
+  }
+  _showReloaded(sheet, cell)
+  _pendingSaveBatch = null
+  isDirty.value = true
+  _keepDraft()
+  if (outcome.notApplied.length)
+    emit('edits-not-applied', { edits: outcome.notApplied, workbook: outcome.workbook })
+  return true
+}
+// The edits cannot go on top of the stored copy: the workbook here stays as
+// it is, read-only, and the surface keeps it as a recovery copy.
+function _keepAsChangedElsewhere(edits, workbook) {
+  discardedOnReload.value = edits.length
+  emit('edits-not-applied', { edits, workbook })
+  isStale.value = true
+}
+
+// This tab's local draft of unsent edits, written after every edit and when
+// the page goes away (usePersistence.js, "Local draft"). Not before the
+// initial load has taken the previous draft, and not while a load swaps the
+// workbook.
+let _draftReady = false
+let _draftScheduled = false
+function _keepDraftSoon() {
+  if (_draftScheduled) return
+  _draftScheduled = true
+  queueMicrotask(() => {
+    _draftScheduled = false
+    _keepDraft()
+  })
+}
+function _keepDraft() {
+  if (!_draftReady || _catchingUp || _reloading || !props.id || props.id === 'new') return
+  if (readOnly.value) dropDraft(props.id)
+  else keepDraft(props.id)
+}
 const confirmUnsavedNavigation = () => {
   // Embedded, the surface's leave guard flushes and keeps a recovery copy.
   if (props.embedded) return true
@@ -3025,6 +3224,7 @@ const confirmUnsavedNavigation = () => {
 // the workbook from the worker first), so staying gives it time to land and
 // leaving is the user's informed choice.
 function _onBeforeUnload(e) {
+  _keepDraft()
   if (!hasUnsavedChanges() || readOnly.value) return
   _flushSoon()
   e.preventDefault()
@@ -3034,7 +3234,9 @@ function _onBeforeUnload(e) {
 // close): save now instead of waiting out the autosave debounce. On phones
 // this is the last event that reliably fires before the page is killed.
 function _saveWhenHidden() {
-  if (document.visibilityState === 'hidden' && isDirty.value) _flushSoon()
+  if (document.visibilityState !== 'hidden') return
+  _keepDraft()
+  if (isDirty.value) _flushSoon()
 }
 // Not for a doc that has no id yet: _doAutoSave skips it without clearing
 // isDirty, so flushSave would loop forever.
@@ -3277,10 +3479,12 @@ function _truncatedSummary(op) {
 }
 function _triggerAutoSave() {
   clearTimeout(_autoSaveTimer)
-  _autoSaveTimer = setTimeout(_doAutoSave, 2000)
+  // A failed save already shows saveError or queues a rebase.
+  _autoSaveTimer = setTimeout(() => void _doAutoSave().catch(() => {}), 2000)
 }
 async function _doAutoSave() {
   if (_savePromise) await _savePromise.catch(() => {})
+  if (_catchingUp) return
   if (!isDirty.value) return
   // Backstop: a viewer should never reach save_sheet (which would throw
   // PermissionError). The input layer already blocks their edits, so isDirty
@@ -3310,9 +3514,15 @@ async function _doAutoSave() {
   } catch (error) {
     batch.failed = true
     if (epoch === _accessEpoch) isDirty.value = true
+    // Built on an old head: never sent again. The rebase builds the next one.
+    if (error?.type === 'TimestampMismatchError') {
+      _pendingSaveBatch = null
+      queueMicrotask(() => void catchUp())
+    }
     throw error
   } finally {
     _savePromise = null
+    queueMicrotask(_followRemoteHead)
   }
   // Access narrowed while this save was out. Its edits left the save path.
   if (epoch !== _accessEpoch) {
@@ -3326,6 +3536,8 @@ async function _doAutoSave() {
   }
   _opQueue.splice(0, batch.count)
   _pendingSaveBatch = null
+  _rebaseAttempts = 0
+  _keepDraft()
   isDirty.value = _dirtyRevision > batch.revision
   justSaved.value = true
   setTimeout(() => {
@@ -3607,6 +3819,8 @@ const { onGlobalKey } = useShortcuts({
   openQuickFilterForActive,
   zoomBy,
   resetZoom,
+  contextMenu,
+  tabMenu,
   commentPanel,
   dropdownPanel,
   splitText,

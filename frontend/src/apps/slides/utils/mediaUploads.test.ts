@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 
-// Build rewrites a migrated deck's element `src` to the media node's id (spec
-// §14.7). The renderer shows it through the deck session's media handle, the
-// signed url `GET /nodes/<deck>/media` answers (§6.8). Everything else keeps
-// the url it was given, including the `/f/` url a fresh upload stores.
+// A deck names its pictures by media node id: Build rewrote migrated decks (spec
+// §14.7) and every upload stores one (T3-21). The renderer shows it through the
+// deck session's media handle, the signed url `GET /nodes/<deck>/media` answers
+// (§6.8). A legacy `/private/files/` url keeps the url it was given.
 
 vi.mock('@/apps/slides/stores/presentation', () => ({
   presentationId: ref('p1'),
@@ -17,7 +17,7 @@ vi.mock('@/apps/slides/stores/element', () => ({
 }))
 vi.mock('frappe-ui', () => ({ toast: {}, FileUploadHandler: class {} }))
 
-const { getAttachmentUrl } = await import('./mediaUploads')
+const { getAttachmentUrl, mediaFileName } = await import('./mediaUploads')
 const { setDocumentMedia } = await import('../stores/documentMedia')
 
 type Status = 'loading' | 'ready' | 'refused'
@@ -73,5 +73,16 @@ describe('a picture named by url', () => {
     expect(getAttachmentUrl('/private/files/a.png')).toBe(
       '/api/method/suite.slides.api.file.get_media_file?src=%2Fprivate%2Ffiles%2Fa.png&presentation=p1',
     )
+  })
+})
+
+describe('the file name the panel shows', () => {
+  it("reads a media node's name from its signed url, and a legacy url's from the url", () => {
+    const banner = handle('82gtqds5ao', '/private/files/ff9k/q3%20banner.png?e=1&s=x', 'ready')
+    release = setDocumentMedia(() => banner)
+
+    expect(mediaFileName('82gtqds5ao')).toBe('q3 banner.png')
+    expect(mediaFileName('/private/files/old-logo.png')).toBe('old-logo.png')
+    expect(mediaFileName(undefined)).toBe('')
   })
 })

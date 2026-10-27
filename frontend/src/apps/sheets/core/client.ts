@@ -114,6 +114,8 @@ export interface WorkbookClient {
   dispatch(cmd: unknown): void
   onVersion(cb: (version: number) => void): () => void
   onCommandError(cb: (failure: CommandFailure) => void): () => void
+  /** Every command as it is dispatched, and 'restore' for each restore, in order. */
+  onEdit(cb: (edit: Command | 'restore') => void): () => void
   getVersion(): number
   readViewport(args: ViewportArgs): Promise<ViewportResult>
   readCells(args: ReadCellsArgs): Promise<{ cells: CellRead[] }>
@@ -221,6 +223,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   let version = init.version
   const versionListeners = new Set<(version: number) => void>()
   const errorListeners = new Set<(failure: CommandFailure) => void>()
+  const editListeners = new Set<(edit: Command | 'restore') => void>()
   let sheets = init.sheets
   const sheetListeners = new Set<(sheets: string[]) => void>()
 
@@ -286,6 +289,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     }
     queue.push(cmd)
     mutations++
+    for (const cb of editListeners) cb(cmd)
     scheduleFlush()
   }
 
@@ -395,6 +399,10 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       errorListeners.add(cb)
       return () => errorListeners.delete(cb)
     },
+    onEdit(cb) {
+      editListeners.add(cb)
+      return () => editListeners.delete(cb)
+    },
     getVersion: () => version,
     // Reads wait for the edits already dispatched, so they see them: a sheet
     // just added exists, a cell just typed holds its new input.
@@ -433,6 +441,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     },
     restore(bytes) {
       mutations++
+      for (const cb of editListeners) cb('restore')
       return new Promise<void>((resolve, reject) => {
         queue.push({ restore: bytes, done: (e) => (e ? reject(e) : resolve()) })
         scheduleFlush()

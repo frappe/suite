@@ -1,16 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-const replace = vi.fn(() => Promise.resolve())
-
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
-vi.mock('@/apps/slides/router', () => ({
-  router: { replace, currentRoute: { value: { params: { presentationId: 'p1' } } } },
-}))
 
 const { slides, slideIndex } = await import('./slide')
-const { applyReverseTransition } = await import('./presentation')
+const { applyReverseTransition, slidesLength } = await import('./presentation')
 const {
+  inSlideShowMode,
   startSlideShow,
   resetSlideShowState,
   endSlideShow,
@@ -19,7 +15,7 @@ const {
   cancelAdvance,
 } = await import('./slideshow')
 
-const lastSlideQuery = () => replace.mock.lastCall?.[0]?.query?.slide
+const shownSlide = () => slideIndex.value + 1
 
 const leaveLastSlide = async () => {
   slideIndex.value = slides.value.length - 1
@@ -32,7 +28,6 @@ describe('presenting from the navbar', () => {
     vi.useFakeTimers()
     slides.value = [{ elements: [] }, { elements: [] }, { elements: [], advanceAfter: '1' }] as any
     slideIndex.value = 0
-    replace.mockClear()
   })
 
   afterEach(() => {
@@ -41,11 +36,24 @@ describe('presenting from the navbar', () => {
     vi.useRealTimers()
   })
 
+  it('returns to the editor on the slide it was showing', async () => {
+    slidesLength.value = slides.value.length
+    startSlideShow()
+    expect(inSlideShowMode.value).toBe(true)
+    changeSlideInSlideshow(1)
+    await nextTick()
+
+    endSlideShow()
+
+    expect(inSlideShowMode.value).toBe(false)
+    expect(shownSlide()).toBe(2)
+  })
+
   it('starts on loop from the first slide', () => {
     slideIndex.value = 2
     startSlideShow({ loop: true })
 
-    expect(lastSlideQuery()).toBe(1)
+    expect(shownSlide()).toBe(1)
   })
 
   it('starts over after the last slide', async () => {
@@ -54,20 +62,19 @@ describe('presenting from the navbar', () => {
 
     await leaveLastSlide()
 
-    expect(lastSlideQuery()).toBe(1)
+    expect(shownSlide()).toBe(1)
     expect(applyReverseTransition.value).toBe(false)
   })
 
   it('starts over on its own as well', async () => {
     startSlideShow({ loop: true })
-    replace.mockClear()
     slideIndex.value = 2
     scheduleAdvance()
 
     vi.advanceTimersByTime(1000)
     await nextTick()
 
-    expect(lastSlideQuery()).toBe(1)
+    expect(shownSlide()).toBe(1)
   })
 
   it('replays a single slide on its own', async () => {
@@ -99,10 +106,10 @@ describe('presenting from the navbar', () => {
     slideIndex.value = 2
 
     startSlideShow()
-    expect(lastSlideQuery()).toBe(3)
+    expect(shownSlide()).toBe(3)
 
     startSlideShow({ fromStart: true })
-    expect(lastSlideQuery()).toBe(1)
+    expect(shownSlide()).toBe(1)
   })
 
   it('ends after the last slide when presented plainly', async () => {
@@ -110,7 +117,7 @@ describe('presenting from the navbar', () => {
 
     await leaveLastSlide()
 
-    expect(lastSlideQuery()).toBe(slides.value.length + 1)
+    expect(shownSlide()).toBe(slides.value.length + 1)
   })
 
   it('ends after the last slide once the show was left', async () => {
@@ -120,7 +127,7 @@ describe('presenting from the navbar', () => {
 
     await leaveLastSlide()
 
-    expect(lastSlideQuery()).toBe(slides.value.length + 1)
+    expect(shownSlide()).toBe(slides.value.length + 1)
   })
 
   it('ends after the last slide once the show was navigated away from', async () => {
@@ -129,6 +136,6 @@ describe('presenting from the navbar', () => {
 
     await leaveLastSlide()
 
-    expect(lastSlideQuery()).toBe(slides.value.length + 1)
+    expect(shownSlide()).toBe(slides.value.length + 1)
   })
 })

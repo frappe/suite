@@ -5,11 +5,11 @@ import {
   fullName as sessionFullName,
   imageURL as sessionImageURL,
 } from '@/boot/session'
+import { realtime as sharedRealtime } from '@/platform/realtime'
 
 import { createAwareness } from '../../collab/awareness.js'
 import { bindCells } from '../../collab/cells-binding.js'
 import { createFrappeProvider } from '../../collab/frappe-provider.js'
-import { ensureFrappeRealtime } from '../../collab/frappe-realtime-init.js'
 import { createRealtimeAdapter } from '../../collab/realtime-adapter.js'
 import { createYDoc, hydrateYDoc } from '../../collab/ydoc.js'
 import { isRefusal, relay } from '../../utils/relay.js'
@@ -100,8 +100,9 @@ function _throttle(fn, wait) {
  *   getSheet?:      () => object | null,  the engine cell sync binds to; none
  *                   means presence and cursors only
  *   repopulateGrid: () => void,
+ *   onRemoteSave?:  (headSeq: number) => void,  another editor saved the sheet
  *   _self?:         string,
- *   _realtime?:     { on: Function, off: Function },
+ *   _realtime?:     import('@/platform/realtime').Realtime,
  *   _watch?:        typeof watch,
  *   _onUnmounted?:  typeof onUnmounted,
  * }} opts
@@ -114,11 +115,12 @@ export function useCollaboration({
   // A collaboration verdict: the relay refused this client's write. The
   // editor narrows access.
   onRefused = () => {},
+  onRemoteSave = () => {},
   // Send relay calls through this fetch. The `/d/` surface passes the Drive
   // session's, which adds its link credentials.
   credentialFetch,
   _self = getSessionUser(),
-  _realtime = window.frappe?.realtime,
+  _realtime = sharedRealtime,
   _callFn = (method, args) => relay(method, args, { fetch: credentialFetch }),
   _watch = watch,
   _onUnmounted = onUnmounted,
@@ -139,7 +141,8 @@ export function useCollaboration({
   let _provider = null
   let _awareness = null
   let _binding = null
-  let _adapter = null // legacy relay only: holds the sheet-room subscription
+  let _adapter = null // holds the sheet-room subscription
+  let _stopSaveWatch = null
   let _sheetId = null
 
   // ── Outbound API (kept for backwards-compatibility with index.vue) ──────────
@@ -253,20 +256,13 @@ export function useCollaboration({
 
     hydrateYDoc(_doc, { sheet: sheet?.snapshot?.() })
 
-    // 3. Relay through frappe.realtime. The www/sheets page doesn't load
-    //    Frappe's socketio_client, so `window.frappe.realtime` is undefined
-    //    and there would be no transport. ensureFrappeRealtime stands up a
-    //    minimal shim against the site's socketio namespace on first use;
-    //    no-op when a real client already exists (Desk-embedded paths, tests
-    //    injecting `_realtime`).
-    if (!_realtime || typeof _realtime.on !== 'function') {
-      _realtime = ensureFrappeRealtime() || _realtime
-    }
+    // 3. Relay over the suite's shared realtime socket, in the sheet's room.
     const adapter = (_adapter = createRealtimeAdapter({
       sheetId: _sheetId,
       realtime: _realtime,
       callFn: _relay,
     }))
+    _stopSaveWatch = adapter.onSheet('sheet_saved', (msg) => onRemoteSave(msg.head_seq))
     _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
     _awareness = createAwareness({
       sheetId: _sheetId,
@@ -280,11 +276,12 @@ export function useCollaboration({
 
   function _stop() {
     _binding?.dispose()
+    _stopSaveWatch?.()
     _awareness?.destroy()
     _provider?.destroy()
     _adapter?.close()
     _doc?.destroy()
-    _binding = _awareness = _provider = _adapter = _doc = null
+    _binding = _awareness = _provider = _adapter = _doc = _stopSaveWatch = null
     _sheetId = null
     presentUsers.value = []
     remoteCursors.value = new Map()

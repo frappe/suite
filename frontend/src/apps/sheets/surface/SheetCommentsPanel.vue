@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton, Textarea, TextInput, toast } from 'frappe-ui'
+import { Avatar, Button, Skeleton, Textarea, TextInput, toast } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 
 import {
@@ -9,7 +9,14 @@ import {
   type DocumentSession,
 } from '@/apps/drive'
 
-import { cellAnchor, readThreads, stampLabel, type CellAnchor, type SheetThread } from './records'
+import {
+  cellAnchor,
+  readThreads,
+  stampLabel,
+  type CellAnchor,
+  type SheetComment,
+  type SheetThread,
+} from './records'
 
 const props = defineProps<{
   session: DocumentSession
@@ -99,6 +106,11 @@ function resolve(thread: SheetThread) {
     () => props.session.comments.resolve(thread.name, !thread.resolved),
     thread.resolved ? 'Could not reopen the thread.' : 'Could not resolve the thread.',
   )
+}
+
+// A guest's typed name, else the signed-in author's full name.
+function authorLabel(comment: SheetComment) {
+  return comment.author_name || comment.person?.full_name || comment.author || 'Someone'
 }
 
 function message(error: unknown, fallback: string): string {
@@ -209,10 +221,17 @@ onMounted(load)
               />
             </div>
             <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="min-w-0 text-sm-medium text-ink-gray-8">
+              <div class="flex items-center gap-2">
+                <Avatar
+                  v-if="comment.person"
+                  :image="comment.person.user_image ?? undefined"
+                  :label="comment.person.full_name"
+                  size="sm"
+                  shape="circle"
+                />
+                <span class="min-w-0 flex-1 text-sm-medium text-ink-gray-8">
                   <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                    comment.author_name || comment.author || 'Someone'
+                    authorLabel(comment)
                   }}</DriveCommentAuthor>
                 </span>
                 <span class="shrink-0 text-xs text-ink-gray-5">{{

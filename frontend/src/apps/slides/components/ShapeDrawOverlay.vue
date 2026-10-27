@@ -22,6 +22,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDrawRect } from '@/apps/slides/composables/useDrawRect'
 import {
   addShapeElement,
+  addTextElement,
   getShapeDefaults,
   pendingShapePreset,
   pendingShapeType,
@@ -182,7 +183,15 @@ const presetOverrides = () => {
   return overrides
 }
 
+// the text tool places a box where the user clicks and starts editing it
+const placeText = (e) => {
+  const point = toSlideCoords(e)
+  pendingShapeType.value = null
+  addTextElement(undefined, { left: point.x, top: point.y })
+}
+
 const handleMouseDown = (e) => {
+  if (pendingShapeType.value === 'text') return placeText(e)
   startBind = null
   if (isConnector.value) startBind = findBind(e)
   hoverBind.value = null

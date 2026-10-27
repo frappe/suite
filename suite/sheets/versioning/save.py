@@ -3,11 +3,14 @@
 The save model (no data loss):
 
   1. Validate the incoming sheets_data (size + JSON).
-  2. Append any client-batched ops to `Sheet Op Log`, allocating
+  2. Refuse a save built on an older head than the stored one: it would
+     overwrite another editor's body (specs/sheets/002 "What one save does").
+  3. Append any client-batched ops to `Sheet Op Log`, allocating
      consecutive monotonic seqs.
-  3. Write the implicit `save` op as the final entry of the batch.
-  4. Update the live `Sheet` row: sheets_data, head_seq.
-  5. Take a `Drive Node Version` INLINE when the newest one is older than
+  4. Write the implicit `save` op as the final entry of the batch.
+  5. Update the live `Sheet` row: sheets_data, head_seq, and tell the editors
+     watching the sheet that the head moved.
+  6. Take a `Drive Node Version` INLINE when the newest one is older than
      `AUTO_VERSION_SECS`, so version history works with no background worker
      and rapid saves cluster into one version. A failure there never fails
      the save: the ops are already persisted.
@@ -43,12 +46,15 @@ def save_sheet(
     sheets_data: str,
     ops: list | str | None = None,
     request_id: str | None = None,
+    *,
+    base_seq: int,
 ) -> dict:
     """Write one sheet's body and return ``{"name", "head_seq"}``.
 
     ``head_seq`` tells the client where its ops landed in the canonical order.
     A ``request_id`` the log already carries answers the seq it landed at
-    without writing anything again.
+    without writing anything again. ``base_seq`` is the head the body was built
+    on; any other head raises ``frappe.TimestampMismatchError``, as Slides does.
     """
     if not name:
         frappe.throw(_("A sheet is created through Drive"), frappe.ValidationError)
@@ -63,6 +69,7 @@ def save_sheet(
     byte_size = len(plain.encode("utf-8"))
     ops_list = _coerce_ops(ops)
 
+    _require_head(name, base_seq)
     head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save", request_id=request_id)
     # The op log is the single chokepoint for advancing the head, so the row is
     # written directly rather than through the document lifecycle.
@@ -72,12 +79,34 @@ def save_sheet(
         {"sheets_data": encoded, "head_seq": head_seq},
         update_modified=True,
     )
+    frappe.publish_realtime(
+        "sheet_saved",
+        {"sheet": name, "head_seq": head_seq, "user": frappe.session.user},
+        doctype="Sheet",
+        docname=name,
+        after_commit=True,
+    )
 
     try:
         _maybe_take_version(name)
     except Exception:
         frappe.log_error(title="sheets: inline version failed", message=frappe.get_traceback())
     return {"name": name, "head_seq": head_seq}
+
+
+def _require_head(name: str, base_seq: int) -> None:
+    """Refuse a body built on a head other than the stored one.
+
+    Every writer that advances the head takes the seq lock first, so checking
+    under it means two saves built on the same head cannot both pass.
+    """
+    seq_mod.lock(name)
+    head_seq = frappe.db.get_value("Sheet", name, "head_seq", for_update=True)
+    if int(head_seq or 0) != int(base_seq):
+        frappe.throw(
+            _("This sheet was changed elsewhere. Reload to get the latest version."),
+            frappe.TimestampMismatchError,
+        )
 
 
 def _maybe_take_version(name: str) -> None:

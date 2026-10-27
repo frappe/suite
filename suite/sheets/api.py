@@ -180,6 +180,8 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
         # The Drive node, so the editor can record a visit through
         # `POST /api/suite/drive/nodes/<id>/visit`.
         "node": doc.get(NODE_FIELD),
+        # The head this body is at; the editor's next save names it as `base_seq`.
+        "head_seq": int(doc.head_seq or 0),
     }
 
 
@@ -190,15 +192,21 @@ def save_sheet(
     name: str = "",
     ops: str = "",
     request_id: str = "",
+    base_seq: int | None = None,
 ) -> dict:
     # Delegates to versioning.save — appends a batch of ops + the implicit
     # save op atomically, advances head_seq, and takes a Drive version when
     # one is due. Returns {"name": <sheet_id>, "head_seq": <int>} so the
-    # caller knows where its ops landed in the canonical order.
+    # caller knows where its ops landed in the canonical order. `base_seq` is
+    # the head the editor loaded or last saved; a stale one is refused.
     #
     # `title` is accepted and ignored: the editor still sends it with every
     # save, but Drive owns the title and a rename is a Drive workflow.
-    return save_mod.save_sheet(name, sheets_data, ops or None, request_id=request_id or None)
+    if base_seq is None:
+        frappe.throw(_("Reload the sheet to save it"), frappe.TimestampMismatchError)
+    return save_mod.save_sheet(
+        name, sheets_data, ops or None, request_id=request_id or None, base_seq=int(base_seq)
+    )
 
 
 @frappe.whitelist()

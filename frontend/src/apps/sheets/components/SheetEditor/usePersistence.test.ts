@@ -87,8 +87,9 @@ beforeEach(() => {
           sheets_data: '{}',
           owner: 'a@example.com',
           node: 'node-1',
+          head_seq: 4,
         }
-      : { name: 'sheet-1' }
+      : { name: 'sheet-1', head_seq: 5 }
 })
 
 describe('Sheets persistence', () => {
@@ -235,6 +236,22 @@ describe('Sheets persistence', () => {
     expect(saves()).toHaveLength(1)
   })
 
+  it('builds each save on the head it last saw, and never resends one another editor got ahead of', async () => {
+    const saved = persistence()
+    await saved.loadSheet('sheet-1')
+    await saved.saveExisting('sheet-1', 'Budget')
+    await saved.saveExisting('sheet-1', 'Budget')
+    expect(saves().map((call) => call.args.base_seq)).toEqual([4, 5])
+
+    server.answer = () =>
+      Object.assign(new Error('Changed elsewhere'), { type: 'TimestampMismatchError', status: 417 })
+    await expect(saved.saveExisting('sheet-1', 'Budget')).rejects.toMatchObject({
+      type: 'TimestampMismatchError',
+    })
+    expect(saves()).toHaveLength(3)
+    expect(await saved.retrySave()).toBeNull()
+  })
+
   it('puts a cell edit still in progress into the recovery copy', async () => {
     const draft = { sheet: 'Sheet1', cell: 'B2', value: 'typing' }
     const workbook = JSON.parse(await persistence().workbookJson(draft))
@@ -351,6 +368,18 @@ describe('Sheets persistence: opening a develop sheet', () => {
       kind: 'named',
       label: 'Before upgrade',
     })
+  })
+
+  it('saves a sheet Drive imported from a file without a "Before upgrade" version', async () => {
+    answerWith(developSheet({ sheets_data: JSON.stringify({ ...DEVELOP_BODY, imported: true }) }))
+    const saved = persistence({ engine: realEngine() })
+    await saved.loadSheet('old-1')
+    expect(saved.legacyUpgrade.value).toMatchObject({ ok: true, save: true, imported: true })
+
+    await saved.saveExisting('old-1', 'From develop')
+
+    expect(versionCalls()).toEqual([])
+    expect(saves()).toHaveLength(1)
   })
 
   it('sends no save while that version could not be kept, and keeps trying it', async () => {

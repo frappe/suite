@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { Button, Skeleton, TextInput, toast } from 'frappe-ui'
+import { Avatar, Button, Skeleton, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 
 import { api, client } from '@/api'
@@ -14,11 +14,14 @@ import {
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
+import PresentButton from '@/apps/slides/components/PresentButton.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
+import Slideshow from '@/apps/slides/pages/Slideshow.vue'
+import { router } from '@/apps/slides/router'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { resetFocus } from '@/apps/slides/stores/element'
 import {
@@ -47,7 +50,6 @@ import {
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
-  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
@@ -56,6 +58,8 @@ import {
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 
 import { createSlidesAccess } from './access'
+import { useAutosave } from './autosave'
+import { authorLabel, commentTime, type CommentThread } from './comments'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -71,18 +75,6 @@ import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
 type Panel = DocumentPanel
 
-/** `GET nodes/<id>/threads` */
-interface CommentThread {
-  name: string
-  resolved: boolean
-  comments: {
-    name: string
-    content: string
-    author: string | null
-    author_name: string | null
-    creation: string | null
-  }[]
-}
 const props = defineProps<{
   session: DocumentSession
 }>()
@@ -107,7 +99,6 @@ const {
 const exporting = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 const isSlideInteractionActive = ref(false)
-let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
@@ -337,7 +328,7 @@ async function load() {
     )
     if (run !== latestLoad) return
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
-    setSlideIndex(1)
+    setSlideIndex(slideInAddress())
     loadTemplates()
     composite.value = !!doc?.is_composite
     if (composite.value) await loadComposite()
@@ -347,6 +338,11 @@ async function load() {
   } finally {
     if (run === latestLoad) loading.value = false
   }
+}
+// The editor keeps `?slide=N` in the address, so a reload or a shared link opens on that slide
+function slideInAddress() {
+  const asked = Number(router.currentRoute.value.query.slide)
+  return Number.isInteger(asked) && asked >= 1 ? asked : 1
 }
 function normalizeCompositeSlide(value: unknown) {
   const slide: Record<string, unknown> = {
@@ -403,6 +399,33 @@ useDocumentLeaveGuard({
   flush,
   retainRecovery,
 })
+useAutosave({
+  editable,
+  interacting: isSlideInteractionActive,
+  state: () => saveState.value,
+})
+// The show takes the keyboard: the editor under it is inert, so no editor menu opens over
+// the audience, and focus goes back where it was, or to Present, once the show ends
+const presentControls = ref<InstanceType<typeof PresentButton> | null>(null)
+let focusedBeforeShow: Element | null = null
+watch(
+  inSlideShowMode,
+  (presenting) => {
+    if (presenting) focusedBeforeShow = document.activeElement
+  },
+  { flush: 'sync' },
+)
+// After the render, once the editor is no longer inert
+watch(
+  inSlideShowMode,
+  (presenting) => {
+    if (presenting) return
+    const before = focusedBeforeShow?.isConnected ? focusedBeforeShow : null
+    const target = before ?? presentControls.value?.$el.querySelector('button')
+    if (target instanceof HTMLElement) target.focus()
+  },
+  { flush: 'post' },
+)
 function setOnline() {
   online.value = true
 }
@@ -411,14 +434,10 @@ function setOffline() {
 }
 onMounted(() => {
   void load()
-  autosaveTimer = window.setInterval(() => {
-    if (editable.value && !isSlideInteractionActive.value && !focusedSlide.value) void saveChanges()
-  }, 1_000)
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
 })
 onBeforeUnmount(() => {
-  if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   resetFocus()
@@ -433,7 +452,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base">
+  <div
+    class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base"
+    :inert="inSlideShowMode"
+  >
     <DriveDocumentHeader
       :session="session"
       title-label="Presentation title"
@@ -446,6 +468,11 @@ onBeforeUnmount(() => {
       @download-changes="downloadChanges"
     >
       <template #actions>
+        <PresentButton
+          ref="presentControls"
+          class="max-md:hidden"
+          :disabled="loading || !access.readable.value || !slides.length"
+        />
         <Button
           icon="lucide-file-down"
           tooltip="Export"
@@ -602,11 +629,19 @@ onBeforeUnmount(() => {
             class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
             :class="thread.resolved && 'opacity-60'"
           >
-            <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="text-sm-medium text-ink-gray-8">
+            <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
+              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
+                <Avatar
+                  v-if="comment.person"
+                  :image="comment.person.user_image ?? undefined"
+                  :label="comment.person.full_name"
+                  size="sm"
+                  shape="circle"
+                />
                 <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                  comment.author_name || 'Someone'
+                  authorLabel(comment)
                 }}</DriveCommentAuthor>
+                <span class="flex-1 text-xs text-ink-gray-5">{{ commentTime(comment) }}</span>
               </p>
               <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
             </div>
@@ -627,6 +662,10 @@ onBeforeUnmount(() => {
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
 
     <teleport to="body">
+      <!-- drawn over the editor, so the deck's document session stays open while presenting -->
+      <div v-if="inSlideShowMode" class="fixed inset-0 z-50">
+        <Slideshow />
+      </div>
       <ExportView v-if="exporting" :slides="slides" />
     </teleport>
   </div>

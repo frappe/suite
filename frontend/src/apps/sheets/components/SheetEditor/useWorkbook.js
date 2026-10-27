@@ -10,7 +10,8 @@
 // What reacts to the workbook stays with the editor and comes in as
 // callbacks: syncNames when its sheet list changes, onVersion after every
 // applied edit, onUsedExtent when the open sheet's data extent is read,
-// onCrash(reason) if the worker dies (the workbook is lost with it).
+// onCrash(reason) if the worker dies (the workbook is lost with it), and
+// onEdit(command | 'restore') for every change sent to the workbook.
 
 import { createCellProvider } from '../../core/cell-provider'
 import { createWorkbookClient } from '../../core/client'
@@ -28,8 +29,9 @@ export function useWorkbook({
   onVersion,
   onUsedExtent,
   onCrash,
+  onEdit = () => {},
 }) {
-  // { client, provider, offSheets, offVersion, offCrash } once started (see startEngine).
+  // { client, provider, offSheets, offVersion, offCrash, offEdit } once started (see startEngine).
   let engine = null
 
   async function startEngine(snapshotBytes = null) {
@@ -48,7 +50,8 @@ export function useWorkbook({
     const offSheets = client.onSheets(() => syncNames())
     const offVersion = client.onVersion(() => onVersion())
     const offCrash = client.onCrash((reason) => onCrash(reason))
-    engine = { client, provider, offSheets, offVersion, offCrash }
+    const offEdit = client.onEdit((edit) => onEdit(edit))
+    engine = { client, provider, offSheets, offVersion, offCrash, offEdit }
     // Nothing is sent yet: the next sync sends every name. A load restores
     // the names after this and syncs then (usePersistence).
     namesInEngine = new Map()
@@ -62,6 +65,7 @@ export function useWorkbook({
     engine?.offSheets()
     engine?.offVersion()
     engine?.offCrash()
+    engine?.offEdit()
     engine?.provider.dispose()
     engine?.client.terminate()
     engine = null
@@ -72,9 +76,10 @@ export function useWorkbook({
     return engine?.client ?? null
   }
 
+  // The workbook as of the commands dispatched so far; later ones are not in it.
   function engineBytes() {
     if (!engine) return Promise.reject(new Error('IronCalc is not running'))
-    return engine.client.toBytes()
+    return engine.client.snapshot()
   }
 
   let commandSeq = 0
@@ -138,12 +143,24 @@ export function useWorkbook({
   // A rect's inputs and display strings (0-based rect), read from the worker in
   // chunks of rows that fit one readViewport. `numFmts: true` also returns
   // IronCalc's own number format per cell (what typing `$1.50` sets), for
-  // copy and fill to carry.
-  async function readRect(sn, rect, { numFmts: wantFmts = false } = {}) {
+  // copy and fill to carry. `numbers: true` also returns the ids of the cells
+  // that hold a number.
+  async function readRect(
+    sn,
+    rect,
+    { numFmts: wantFmts = false, numbers: wantNumbers = false } = {},
+  ) {
     const inputs = []
     const displays = []
     const numFmts = []
-    if (!engine) return wantFmts ? { inputs, displays, numFmts } : { inputs, displays }
+    const numbers = new Set()
+    const result = () => ({
+      inputs,
+      displays,
+      ...(wantFmts && { numFmts }),
+      ...(wantNumbers && { numbers }),
+    })
+    if (!engine) return result()
     const cols = rect.c1 - rect.c0 + 1
     const step = Math.max(1, Math.floor(MAX_VIEWPORT_CELLS / cols))
     for (let r = rect.r0; r <= rect.r1; r += step) {
@@ -155,11 +172,15 @@ export function useWorkbook({
         c2: rect.c1 + 1,
         includeInputs: true,
         includeStyles: wantFmts,
+        includeNumbers: wantNumbers,
       })
       inputs.push(...(res.inputs ?? []))
       displays.push(...res.values)
       if (wantFmts)
         numFmts.push(...(res.styles ?? []).map((row) => row.map((s) => s.style.num_fmt)))
+      const found = res.numbers ?? []
+      for (let i = 0; i < found.length; i += 2)
+        numbers.add(cellId(r + found[i], rect.c0 + found[i + 1]))
     }
     // A sparkline shows a chart, not IronCalc's #NAME?, to every reader
     // (charts, copied text, filter lists), as it does in the grid.
@@ -168,7 +189,7 @@ export function useWorkbook({
         if (parseSparkline(input)) displays[i][j] = ''
       }),
     )
-    return wantFmts ? { inputs, displays, numFmts } : { inputs, displays }
+    return result()
   }
 
   // {cellId: input} for a rect: an edit op's before or after.
@@ -252,7 +273,9 @@ export function useWorkbook({
         if (usedMax) onUsedExtent(usedMax)
       })
       .catch((e) => {
-        if (engine) console.error('[sheets] reading used cells failed', e) // see readCells
+        // An undo can remove the sheet while its read is out.
+        if (engine && currentSheet.value === sn)
+          console.error('[sheets] reading used cells failed', e) // see readCells
       })
       .finally(() => {
         usedReading = false
@@ -289,7 +312,7 @@ export function useWorkbook({
   // A whole sheet's inputs and displays, A1 to its last used cell.
   async function readWholeSheet(sn, opts = {}) {
     const ext = await sheetExtent(sn)
-    if (!ext) return { inputs: [], displays: [], numFmts: [] }
+    if (!ext) return { inputs: [], displays: [], numFmts: [], numbers: new Set() }
     return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol }, opts)
   }
 

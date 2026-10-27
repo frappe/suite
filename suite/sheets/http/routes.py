@@ -20,11 +20,13 @@ class SheetBody(TypedDict):
     sheets_data: str | None
     owner: str
     node: str
+    head_seq: int
 
 
 class SaveSheet(TypedDict):
     name: str
     sheets_data: str
+    base_seq: int
     title: NotRequired[str]
     ops: NotRequired[str]
     request_id: NotRequired[str]
