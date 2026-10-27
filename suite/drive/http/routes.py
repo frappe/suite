@@ -131,6 +131,8 @@ def _refuse(kind: type, message: str, **fields) -> None:
         # A password link is opened at POST /links/<token>/unlock, not by
         # logging in, so name that instead of inviting a browser login prompt.
         frappe.local.response_headers["WWW-Authenticate"] = 'DriveLink realm="drive"'
+    # A refusal is an answer, not a crash, so it carries no server traceback
+    frappe.local.flags.disable_traceback = True
     extra = {name: value for name, value in fields.items() if value is not None}
     try:
         frappe.throw(message, kind)
@@ -177,6 +179,7 @@ def node_create(
     content_doctype: Given = None,
     from_node: Given = None,
     is_template: Given = None,
+    deduplicate_title: Given = None,
 ) -> shapes.NodeShape:
     """Create one node of any kind a client may create below `parent_node` (§8.3).
 
@@ -202,6 +205,7 @@ def node_create(
         content_doctype=shapes.text(content_doctype, "content_doctype"),
         from_node=shapes.text(from_node, "from_node"),
         is_template=shapes.flag(is_template, "is_template", False),
+        deduplicate_title=shapes.flag(deduplicate_title, "deduplicate_title", False),
     )
     return shapes.node_shape(node_core.stored(created))
 

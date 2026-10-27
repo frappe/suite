@@ -1,5 +1,9 @@
 import { mergeAttributes, Node } from '@tiptap/core'
-import { TextSelection } from '@tiptap/pm/state'
+import type { NodeType } from '@tiptap/pm/model'
+import type { Transaction } from '@tiptap/pm/state'
+
+import { selectEmptyLineAfter } from '@/apps/writer/extensions/empty-line-after'
+import { translate as __ } from '@/platform/translation'
 
 interface PageBreakRuleOptions {
   HTMLAttributes: Record<string, any>
@@ -46,43 +50,30 @@ export const PageBreakExtension = Node.create<PageBreakRuleOptions>({
     return ['div', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)]
   },
 
+  // The editor labels the break; saved and exported HTML keep the bare div
+  addNodeView() {
+    return () => {
+      const dom = document.createElement('div')
+      dom.dataset.pageBreak = 'true'
+      dom.dataset.label = __('Page break')
+      return { dom }
+    }
+  },
+
   addCommands() {
     return {
       setPageBreak:
         () =>
         ({ chain }) => {
-          return (
-            chain()
-              .insertContent({ type: this.name })
-              // set cursor after page break
-              .command(({ dispatch, tr }) => {
-                if (dispatch) {
-                  const { $to } = tr.selection
-                  const posAfter = $to.end()
-
-                  if ($to.nodeAfter) {
-                    tr.setSelection(TextSelection.create(tr.doc, $to.pos))
-                  } else {
-                    // add node after page break if it’s the end of the document
-                    const node = $to.parent.type.contentMatch.defaultType?.create({
-                      style: {
-                        pageBreakAfter: 'always',
-                      },
-                      'data-page-break': 'true',
-                    })
-                    if (node) {
-                      tr.insert(posAfter, node)
-                      tr.setSelection(TextSelection.create(tr.doc, posAfter))
-                    }
-                  }
-
-                  tr.scrollIntoView()
-                }
-
-                return true
-              })
-              .run()
-          )
+          return chain()
+            .insertContent({ type: this.name })
+            .command(({ dispatch, tr }) => {
+              const end = insertedBreakEnd(tr, this.type)
+              if (end === null) return false
+              if (dispatch) selectEmptyLineAfter(tr, end).scrollIntoView()
+              return true
+            })
+            .run()
         },
       unsetPageBreak:
         () =>
@@ -95,3 +86,14 @@ export const PageBreakExtension = Node.create<PageBreakRuleOptions>({
     }
   },
 })
+
+/** Where the page break the last step put in ends, or `null` without one. */
+function insertedBreakEnd(tr: Transaction, type: NodeType): number | null {
+  let end: number | null = null
+  tr.mapping.maps.at(-1)?.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+    tr.doc.nodesBetween(newStart, newEnd, (node, position) => {
+      if (node.type === type) end = position + node.nodeSize
+    })
+  })
+  return end
+}

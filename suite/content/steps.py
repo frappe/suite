@@ -6,9 +6,20 @@ from collections.abc import Callable
 from http import HTTPStatus
 
 import frappe
-from frappe import _
 
-from suite.content import copies, jobs, live, log, restores, scheduling, sessions, stage, suspect, touches
+from suite.content import (
+    copies,
+    jobs,
+    live,
+    log,
+    restore_notice,
+    restores,
+    scheduling,
+    sessions,
+    stage,
+    suspect,
+    touches,
+)
 from suite.content.pushes import push, put_piece
 from suite.content.snapshot import read, rows_after, with_tombstones
 from suite.content.tables import table
@@ -183,19 +194,20 @@ def begin_restore(app: str, node: str, body: dict) -> tuple[int, dict]:
     doc = logged_doc(app, node)
     seen_rev = body.get("seen_rev")
     version = body.get("version")
-    if type(seen_rev) is not int or type(version) is not int:
+    if type(seen_rev) is not int or type(version) is not int or version < 1:
         raise log.Refusal(400, "malformed")
 
-    fence = restores.begin(app, doc.id, seen_rev)
+    restored = restore_notice.restored_version(node, version)
+    fence = restores.begin(app, doc.id, seen_rev, restore_notice.notice(restored))
     if not fence["has_milestone"]:
-        take_milestone(app, doc.id, node, version, fence)
+        label = restore_notice.before_restoring_label(restored, version)
+        take_milestone(app, doc.id, node, label, fence)
 
     return 200, {"token": fence["token"], "base_rev": fence["base_rev"], "fence_ms": fence["fence_ms"]}
 
 
-def take_milestone(app: str, doc_id: str, node: str, version: int, fence: dict) -> None:
+def take_milestone(app: str, doc_id: str, node: str, label: str, fence: dict) -> None:
     """Nothing is restored without a version of the head first; a refused one lifts the fence."""
-    label = _("Before restoring version {0}").format(version)
     try:
         touches.version_body(node, "milestone", label)
         restores.milestone_taken(app, doc_id, fence["head_chain"])

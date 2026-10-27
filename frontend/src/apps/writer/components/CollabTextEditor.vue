@@ -1,7 +1,6 @@
 <template>
   <CoreEditor
     ref="textEditor"
-    v-model:show-settings="showSettings"
     v-model:edited="edited"
     :file
     :document
@@ -35,7 +34,9 @@ import {
 import { peopleOf, presenceColours } from '@/apps/writer/collab/peers'
 import { anchorSelection } from '@/apps/writer/collab/places'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
+import { ThreadsAfterUndo } from '@/apps/writer/collab/undone-anchors'
 import { PasteSizeGuard } from '@/apps/writer/extensions/paste-size-guard'
+import { OpeningHandover } from '@/apps/writer/opening/openingEditor'
 import type {
   EditorFile,
   WriterDocument,
@@ -54,12 +55,18 @@ const props = defineProps<{
   threads: DocumentThread[]
   /** The thread whose row is pointed at in the comments panel. */
   litThread?: string | null
+  /** The anchors of the comments being written in the panel. */
+  draftAnchors?: string[]
 }>()
 
-const showSettings = defineModel<boolean>('showSettings')
 /** The thread open in the comments panel; clicking its highlighted text opens it. */
 const openThread = defineModel<string | null>('openThread', { default: null })
-const emit = defineEmits<{ comment: [anchor: string]; commentOnDocument: [] }>()
+const emit = defineEmits<{
+  comment: [anchor: string]
+  commentOnDocument: []
+  /** Threads an undo here put back on their text, with their new anchors for Drive. */
+  reanchor: [anchors: Record<string, string>]
+}>()
 
 const edited = ref(false)
 const textEditor = ref<InstanceType<typeof CoreEditor> | null>(null)
@@ -97,6 +104,7 @@ const extensions = [
   }),
   ThreadHighlights.configure({
     threads: () => props.threads,
+    drafts: () => props.draftAnchors ?? [],
     onPlaced: (placed) => {
       places.value = placed
     },
@@ -106,13 +114,18 @@ const extensions = [
       openThread.value = name
     },
   }),
+  ThreadsAfterUndo.configure({
+    threads: () => props.threads,
+    moved: (anchors) => emit('reanchor', anchors),
+  }),
   CommentShortcut.configure({
     onText: commentOnSelection,
     onDocument: () => emit('commentOnDocument'),
   }),
+  OpeningHandover.configure({ node: props.file.doc.name }),
 ]
 
-watch([() => props.threads, openThread, () => props.litThread], () => {
+watch([() => props.threads, () => props.draftAnchors, openThread, () => props.litThread], () => {
   if (editor.value) {
     redrawThreads(editor.value.view)
   }

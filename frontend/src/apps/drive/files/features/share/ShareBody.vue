@@ -329,10 +329,10 @@ function rowDescription(row: UnifiedRow): string {
   if (row.type === 'owner')
     return row.person.full_name === row.person.id ? __('Owns this item') : row.person.id
   if (row.type === 'general') {
-    if (row.access.state === 'off')
-      return row.kind === 'public'
-        ? __('Not published on the web')
-        : __('Workspace access is turned off')
+    // Switching web access off writes a deny, so both read as not published.
+    const isOff = row.access.state === 'off' || row.access.state === 'denied'
+    if (row.kind === 'public' && isOff) return __('Not published on the web')
+    if (row.access.state === 'off') return __('Workspace access is turned off')
     if (row.access.state === 'denied') return __('Denied here')
     if (row.access.state === 'expired') {
       const expired = __('Expired {0}', [formatDay(row.access.row.grant.expires_on ?? '')])

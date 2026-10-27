@@ -48,6 +48,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('commenting on the whole document', () => {
   function documentBox() {
     return document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Add a comment"]')
@@ -72,6 +77,7 @@ describe('commenting on the whole document', () => {
       places: PLACES,
       canComment: true,
       canEditDocument: false,
+      canShare: true,
       actions: {} as ThreadActions,
       drafts,
     }

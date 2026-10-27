@@ -74,6 +74,12 @@ export interface DocumentTypeDefinition {
   icon: Component
   /** Lazy document surface. It receives the prop `session: DocumentSession`. */
   loadSurface: () => Promise<Component>
+  /**
+   * Lazy editor the host shows while a document just created opens, so typing
+   * starts at once. It receives the prop `node`; the surface takes over what
+   * was typed in it.
+   */
+  loadOpeningEditor?: () => Promise<Component>
   /** Lazy list of this type's work kept on this device that never reached the server. */
   loadUnsavedWork?: () => Promise<Component>
   /** Each such copy this device keeps, without loading the list. */

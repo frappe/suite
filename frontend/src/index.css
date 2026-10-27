@@ -64,3 +64,9 @@ body {
   :is(a[href^='http:'], a[href^='https:'], a[href^='//'], a[href^='mailto:'], a[href^='tel:']) {
   cursor: pointer;
 }
+
+/* frappe-ui's off switch puts a thumb the colour of the page on a dark track, which is
+   about 1.8:1 in dark mode. A light thumb reads as a control. */
+:root[data-theme='dark'] [role='switch'][data-state='unchecked'] > span {
+  background-color: var(--ink-gray-7);
+}

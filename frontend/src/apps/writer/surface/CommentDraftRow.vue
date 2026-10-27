@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dropdown, type DropdownOptions } from 'frappe-ui'
+import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { anchorQuote } from '@/apps/writer/collab/anchors'
@@ -75,7 +75,7 @@ function noteMenu(isShown: boolean) {
     </div>
     <p
       v-if="quote"
-      class="mx-3 mt-1 truncate border-l-2 pl-2 text-sm text-ink-gray-5"
+      class="mx-3 mt-1 truncate border-l-2 border-outline-gray-3 pl-2 text-sm text-ink-gray-5"
       @click="toggle"
     >
       {{ quote }}
@@ -90,13 +90,12 @@ function noteMenu(isShown: boolean) {
         </p>
         <div v-if="isNotPosted" class="absolute -top-1.5 right-0" :class="menuClass">
           <Dropdown :options="actions" align="end" @update:open="noteMenu">
-            <button
-              type="button"
-              class="flex size-7 items-center justify-center text-ink-gray-5 hover:text-ink-gray-8"
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="lucide-ellipsis"
               :aria-label="__('More comment actions')"
-            >
-              <span class="lucide-ellipsis size-4" aria-hidden="true" />
-            </button>
+            />
           </Dropdown>
         </div>
       </div>

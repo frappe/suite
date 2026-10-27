@@ -1,12 +1,7 @@
 <template>
   <div class="flex flex-col w-full bg-surface-base">
     <slot name="toolbar">
-      <TextEditorFixedMenu
-        v-if="editable"
-        class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
-        :editor="editor"
-        :items="menuButtons"
-      />
+      <WriterToolbar v-if="editable && editor" :editor :settings :is-painting />
     </slot>
     <div class="flex flex-1 overflow-hidden">
       <ToC v-if="editor" :editor :anchors :class="hasCover() && 'invisible'" />
@@ -14,7 +9,7 @@
         <div
           v-show="!hasCover()"
           id="editor-scroll-container"
-          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
+          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-1"
         >
           <div
             class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
@@ -28,29 +23,20 @@
                 v-model="localContent"
                 :upload-function="uploadFunction"
                 :autofocus="true"
-                :placeholder="__('Start thinking…')"
+                :placeholder="__('Type / for blocks, @ to mention…')"
                 :extensions="editorExtensions"
                 :editable
                 @change="handleEditorChange"
               >
                 <template #default="{ editor }">
-                  <BubbleMenu
+                  <WriterBubbleMenu
                     v-if="editor"
                     :editor
-                    :should-show="bubbleMenuOpts.shouldShow"
-                    class="z-10"
-                    data-slot="bubble-menu"
-                  >
-                    <button
-                      type="button"
-                      class="flex h-7 items-center gap-1.5 rounded-4 border border-outline-gray-2 bg-surface-elevation-2 pl-2 pr-2.5 text-sm text-ink-gray-8 shadow-sm hover:bg-surface-gray-2"
-                      @click="addComment"
-                    >
-                      <span class="lucide-message-square-plus size-4" aria-hidden="true" />
-                      {{ __('Comment') }}
-                    </button>
-                  </BubbleMenu>
-                  <EditorTableMenu :editor />
+                    :should-show="shouldShowBubbleMenu"
+                    @comment="addComment"
+                  />
+                  <LinkPopover v-if="editor && editable" :editor />
+                  <TableControls v-if="editor && editable" :editor />
                   <EditorDropZone :editor :disabled="isReadOnly" class="grow flex flex-col">
                     <EditorContent
                       :editor
@@ -77,16 +63,9 @@
 
 <script setup lang="ts">
 import type { AnyExtension, Content } from '@tiptap/core'
-import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { onKeyDown } from '@vueuse/core'
-import { toast, useFileUpload } from 'frappe-ui'
-import {
-  EditorContent,
-  EditorDropZone,
-  EditorTableMenu,
-  Editor as FTextEditor,
-  EditorFixedMenu as TextEditorFixedMenu,
-} from 'frappe-ui/editor'
+import { toast } from 'frappe-ui'
+import { EditorContent, EditorDropZone, Editor as FTextEditor } from 'frappe-ui/editor'
 import {
   computed,
   inject,
@@ -98,8 +77,9 @@ import {
   watch,
 } from 'vue'
 
-import { hasDefaultDocumentTitle } from '@/apps/drive'
-import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
+import { hasDefaultDocumentTitle, useDriveDialogs } from '@/apps/drive'
+import { useUsers } from '@/apps/writer/composables/useUsers'
+import { uploadMedia } from '@/apps/writer/drive'
 import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import emitter from '@/apps/writer/emitter'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
@@ -117,8 +97,11 @@ import {
   editorTextStyle,
 } from '@/apps/writer/utils/editor-layout'
 
-import { bubbleMenuOptions } from './core-editor/bubble-menu'
-import { buildMenuButtons } from './core-editor/menu-buttons'
+import { bubbleMenuShouldShow } from './core-editor/bubble-menu'
+import LinkPopover from './core-editor/LinkPopover.vue'
+import TableControls from './core-editor/table/TableControls.vue'
+import WriterBubbleMenu from './core-editor/WriterBubbleMenu.vue'
+import WriterToolbar from './core-editor/WriterToolbar.vue'
 import ToC from './ToC.vue'
 import ToCMobile from './ToCMobile.vue'
 
@@ -143,7 +126,6 @@ const emit = defineEmits<{
   cleanup: []
 }>()
 
-const showSettings = defineModel<boolean>('showSettings')
 const edited = defineModel<boolean>('edited')
 const slots = useSlots()
 
@@ -201,45 +183,33 @@ function onCommentActivated(id: string) {
   }
 }
 
-const { users } = useUsers()
+// Ranks the `@` menu for this document and loads its first page
+useUsers()
 const renameDocument = inject(RENAME_DOCUMENT, null)
 
+const driveDialogs = useDriveDialogs()
 const writerEditorOptions = {
   isCollaborative: props.collaborative,
-  mentionItems: () => users.value,
-  onMentionQuery: searchMentions,
   onCommentActivated,
   onAnchors: (found: unknown[]) => {
     anchors.value = found
   },
   scrollParent: () => scrollParent.value!,
   media: inject(DOCUMENT_MEDIA, null),
+  pickDriveFile: () =>
+    driveDialogs.pickFile({ title: __('Insert from Drive'), action: __('Insert') }),
 }
 
 const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]
 
-const menuButtons = computed(() =>
-  buildMenuButtons({
-    editor,
-    settings: props.settings,
-    isPainting,
-    openSettings: () => (showSettings.value = true),
-  }),
-)
-
-const bubbleMenuOpts = bubbleMenuOptions()
+const shouldShowBubbleMenu = bubbleMenuShouldShow()
 
 const gridStyle = computed(() => editorColumns(props.settings))
 
 const editorStyle = computed(() => editorTextStyle(props.settings))
 
-function uploadFunction(file: File) {
-  const fileUpload = useFileUpload()
-  return fileUpload.upload(file, {
-    private: false,
-    params: { file_id: props.file.doc.name },
-    upload_endpoint: `/api/method/suite.writer.api.embed.add`,
-  })
+function uploadFunction(file: File, options?: Parameters<typeof uploadMedia>[2]) {
+  return uploadMedia(props.file.doc.name, file, options)
 }
 
 function onBackgroundClick(event: MouseEvent) {

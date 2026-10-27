@@ -170,6 +170,7 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
     run: state.createDocument,
   }),
   driveNodeRoute: (node: { name: string }) => `/d/${node.name}/document`,
+  newDocumentRoute: (node: { name: string }) => `/d/${node.name}/document?new`,
 }))
 vi.mock('@/apps/calendar', async (importOriginal) => ({
   upcomingEventWindow: (await importOriginal<typeof import('@/apps/calendar')>())
@@ -427,7 +428,7 @@ describe('Home page', () => {
       expect(state.createDocument).toHaveBeenCalledWith({
         content_doctype: contentDoctype,
       })
-      expect(state.push).toHaveBeenCalledWith('/d/new-node/document')
+      expect(state.push).toHaveBeenCalledWith('/d/new-node/document?new')
     },
   )
 })

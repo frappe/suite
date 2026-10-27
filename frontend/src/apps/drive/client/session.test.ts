@@ -170,10 +170,11 @@ describe('document session comments', () => {
 })
 
 describe('document session visits', () => {
-  it("records a visit for the caller's own access, and none when a share link decides it", async () => {
+  it("records a visit for the caller's own access, and none when a share link decides it or nobody is signed in", async () => {
     const visits: string[] = []
-    const open = (viaLink: string | null) =>
-      openDriveDocumentSession(viaLink ? 'linked' : 'own', {
+    const open = (viaLink: string | null, user: string | null = 'owner@suite.test') =>
+      openDriveDocumentSession(viaLink ? 'linked' : user ? 'own' : 'public', {
+        signedIn: () => user,
         client: testClient(
           transport((id, input) => {
             if (id === 'node_visit') visits.push(input.node)
@@ -186,10 +187,12 @@ describe('document session visits', () => {
 
     const own = await open(null)
     const linked = await open(`$LINK:${code(1)}`)
+    const publicRead = await open(null, null)
 
     expect(visits).toEqual(['own'])
     own.dispose()
     linked.dispose()
+    publicRead.dispose()
   })
 })
 

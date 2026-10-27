@@ -37,6 +37,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('resolving and reopening a thread', () => {
   it('keeps the open thread open while another is resolved from its row', async () => {
     const { host, asked } = showList()

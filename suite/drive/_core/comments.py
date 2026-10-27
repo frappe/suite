@@ -67,10 +67,17 @@ def insert_thread(
         principals,
         node_row.name,
         "comment",
-        detail={"thread": thread.name, "comment": comment, "resolved": False},
+        detail={
+            "thread": thread.name,
+            "comment": comment,
+            "resolved": False,
+            "mentions": mentions,
+        },
         via_link=via_link,
     )
-    notify_users(activity, mentions)
+    # The owner hears of every new thread on their item, except their own
+    owner = [node_row.owner] if node_row.owner != principals.user else []
+    notify_users(activity, [*mentions, *owner])
     return thread.name
 
 
@@ -541,7 +548,8 @@ def threads(
     if resolved is not None and type(resolved) is not bool:
         frappe.throw(_("Drive comment resolution filter must be a boolean"), frappe.ValidationError)
     node_row = _comment_node(node)
-    require(node_row, READ, principals)
+    # A public reader sees the document, not its discussion; a Guest needs a comment link
+    require(node_row, COMMENT if principals.user == "Guest" else READ, principals)
     _require_document(node_row)
     filters = {"node": node_row.name}
     if resolved is not None:
@@ -626,7 +634,7 @@ def _comment_node(node: str, *, for_update: bool = False) -> frappe._dict:
     row = frappe.db.get_value(
         "Drive Node",
         node,
-        ["name", "parent_node", "root", "path", "kind", "state", "content_doctype"],
+        ["name", "parent_node", "root", "path", "kind", "state", "content_doctype", "owner"],
         as_dict=True,
         for_update=for_update,
     )

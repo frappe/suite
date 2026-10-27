@@ -378,10 +378,13 @@ def push_locked(app: str, doc_id: str, doc: frappe._dict, incoming: Incoming, us
         frappe.db.rollback()
         raise
 
-    is_restore = unsent.header.restore is not None
-    live.publish_row(app, doc_id, doc.lineage, rev, unsent.header.schema, unsent.payload, restore=is_restore)
-    if is_restore:
-        live.publish_control(app, doc_id, doc.lineage, kind="restored", restore_rev=rev)
+    token = unsent.header.restore
+    live.publish_row(
+        app, doc_id, doc.lineage, rev, unsent.header.schema, unsent.payload, restore=token is not None
+    )
+    if token is not None:
+        notice = restores.landed_notice(app, doc_id, token)
+        live.publish_control(app, doc_id, doc.lineage, kind="restored", restore_rev=rev, **notice)
 
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": unsent.header.seq_to, "pace_ms": PACE_MS}
 

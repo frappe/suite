@@ -6,15 +6,16 @@ import type { EditorFile, WriterDocument } from '@/apps/writer/surface/writerDoc
 
 import ReadOnlyEditor from './ReadOnlyEditor.vue'
 
-vi.mock('./core-editor/menu-buttons', () => ({ buildMenuButtons: () => [] }))
 vi.mock('./ToC.vue', () => ({ default: { render: () => null } }))
 vi.mock('./ToCMobile.vue', () => ({ default: { render: () => null } }))
-vi.mock('@/apps/drive', () => ({ hasDefaultDocumentTitle: () => false }))
+vi.mock('@/apps/drive', () => ({
+  hasDefaultDocumentTitle: () => false,
+  useDriveDialogs: () => ({ pickFile: async () => undefined }),
+}))
 vi.mock('@/apps/writer/composables/useUsers', () => ({
   useUsers: () => ({ users: ref([]) }),
   searchMentions: () => [],
 }))
-vi.mock('@/stores/root', () => ({ useRootStore: () => ({ paletteOpen: false }) }))
 
 interface Exposed {
   editor: { isEditable: boolean } | undefined

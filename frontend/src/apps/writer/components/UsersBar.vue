@@ -20,57 +20,33 @@
               :image="user.avatar"
               :label="user.name"
             />
-            <span
-              v-else
-              class="peer-colour peer-avatar peer-initials"
-              :style="peerColourStyle(user)"
-            >
+            <span v-else class="peer-colour peer-chip peer-initials" :style="peerColourStyle(user)">
               {{ initialsOf(user.name) }}
             </span>
           </Tooltip>
         </div>
         <Tooltip v-if="hasHiddenUsers" :text="moreUsersLabel">
-          <div
-            :style="{ fontSize: '10px' }"
-            class="relative inline-block shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5 text-xs cursor-pointer border-[1.5px] border-gray-300"
-          >
-            +{{ hiddenCount }}
-          </div>
+          <div class="peer-chip bg-surface-gray-2 text-ink-gray-5">+{{ hiddenCount }}</div>
         </Tooltip>
       </button>
     </template>
     <template #item="{ item }">
       <div
-        class="flex items-center justify-between py-1.5 px-2 rounded-4 cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
+        class="flex items-center gap-2 py-1.5 px-2 rounded-4 cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
       >
-        <div class="flex gap-2 items-center">
-          <Tooltip :text="item.name">
-            <Avatar :size="'md'" :image="item.avatar" :label="item.name" />
-          </Tooltip>
-          <div class="text-sm text-ink-gray-8 mr-4 flex flex-col gap-0.5">
-            <span>{{ item.name }}</span>
-            <span class="text-xs text-ink-gray-5">{{ item.id }}</span>
-          </div>
-        </div>
-        <svg
-          class="ml-auto"
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
+        <Avatar v-if="item.avatar" :size="'md'" :image="item.avatar" :label="item.name" />
+        <span
+          v-else
+          class="peer-colour peer-chip peer-chip-md peer-initials"
+          :style="peerColourStyle(item)"
+          aria-hidden="true"
         >
-          <circle
-            class="peer-colour"
-            :style="peerColourStyle(item)"
-            cx="8"
-            cy="8"
-            r="4.5"
-            fill="transparent"
-            stroke="var(--peer-solid)"
-            stroke-width="3"
-          />
-        </svg>
+          {{ initialsOf(item.name) }}
+        </span>
+        <div class="text-sm text-ink-gray-8 mr-4 flex flex-col gap-0.5">
+          <span>{{ item.name }}</span>
+          <span v-if="emailOf(item)" class="text-xs text-ink-gray-5">{{ emailOf(item) }}</span>
+        </div>
       </div>
     </template>
   </Dropdown>
@@ -80,10 +56,14 @@ import { Avatar, Dropdown, Tooltip } from 'frappe-ui'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import { colourStyle } from '@/apps/writer/collab/colours'
+import { initialsOf } from '@/apps/writer/collab/peers'
+import { useUsers } from '@/apps/writer/composables/useUsers'
 
 const props = defineProps({
   users: Array,
 })
+
+const { getUser } = useUsers()
 
 const MINUTE_MS = 60_000
 const TICK_MS = 30_000
@@ -130,6 +110,12 @@ function tooltipOf(user) {
   return __('{0} · Idle for {1} min', [user.name, minutes])
 }
 
+// A second line only when it tells more than the name: a guest has no email, and a user id can equal the name
+function emailOf(user) {
+  const email = getUser(user.id)?.email
+  return email && email !== user.name ? email : ''
+}
+
 // A collaborative document's person has a colour with a dark-mode variant; the older editor's has one colour,
 // which fills its initials in white
 function peerColourStyle(user) {
@@ -146,18 +132,6 @@ function peerColourStyle(user) {
     '--peer-dark-ink': '#ffffff',
   }
 }
-
-const INITIALS = 2
-
-// The first letters of a person's first two names
-function initialsOf(name) {
-  const words = name.split(' ').filter(Boolean)
-  return words
-    .slice(0, INITIALS)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase()
-}
 </script>
 
 <style scoped>
@@ -170,16 +144,28 @@ function initialsOf(name) {
   border-radius: 50%;
 }
 
-/* Drawn like the person's caret flag: their tint, their name's ink */
-.peer-initials {
+.peer-chip {
   align-items: center;
-  background-color: var(--peer-tint);
-  color: var(--peer-ink);
+  border-radius: 50%;
   display: inline-flex;
+  flex-shrink: 0;
   font-size: 10px;
   font-weight: 500;
   height: 20px;
   justify-content: center;
   width: 20px;
+}
+
+/* As large as the list's photo avatars */
+.peer-chip-md {
+  font-size: 11px;
+  height: 24px;
+  width: 24px;
+}
+
+/* Drawn like the person's caret flag: their tint, their name's ink */
+.peer-initials {
+  background-color: var(--peer-tint);
+  color: var(--peer-ink);
 }
 </style>

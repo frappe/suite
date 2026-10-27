@@ -2517,6 +2517,10 @@
           "cursor": {
             "title": "Cursor",
             "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
           }
         },
         "title": "PeopleQuery",
@@ -2585,6 +2589,10 @@
                   }
                 ],
                 "title": "User Image"
+              },
+              "has_access": {
+                "title": "Has Access",
+                "type": "boolean"
               }
             },
             "required": [
@@ -2635,7 +2643,9 @@
       "errors": [
         "BadRequest",
         "BadCursor",
-        "PermissionError"
+        "PermissionError",
+        "DriveForbidden",
+        "DriveNotFound"
       ],
       "entity": null,
       "nodeParams": [],

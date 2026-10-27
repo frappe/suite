@@ -3,6 +3,7 @@ import { createApp, h } from 'vue'
 
 import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 
+import FilePicker from './FilePicker.vue'
 import {
   canOpenFolder,
   destination,
@@ -31,13 +32,13 @@ const net = vi.hoisted(() => {
   ) => ({
     name,
     title,
-    kind: 'folder',
+    kind: 'folder' as string,
     parent_node: parent,
     root: 'mine',
     state: 'Active',
     trash_root: null,
     size: 0,
-    mime: null,
+    mime: null as string | null,
     url: null,
     content_doctype: null,
     content_docname: null,
@@ -69,19 +70,27 @@ const net = vi.hoisted(() => {
         { name: 'launch', title: 'Launch', kind: 'folder' },
       ]),
     ],
+    [
+      'brief',
+      { ...folder('brief', 'Brief.pdf', 'launch', []), kind: 'file', mime: 'application/pdf' },
+    ],
   ])
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(status === 200 ? { data } : data), { status })
   globalThis.fetch = async (url: RequestInfo | URL) => {
-    const path = new URL(String(url), 'http://drive.test').pathname.replace('/api/suite/drive/', '')
+    const { pathname, searchParams } = new URL(String(url), 'http://drive.test')
+    const path = pathname.replace('/api/suite/drive/', '')
     if (path === 'roots')
       return json({ personal: { node: 'mine', title: 'Aanya' }, organization: null })
     const [, name, children] = path.match(/^nodes\/([^/]+)(\/children)?$/) ?? []
     const node = name ? nodes.get(name) : undefined
     if (node && !children) return json(node)
+    const type = searchParams.get('type')
     if (node)
       return json({
-        rows: [...nodes.values()].filter((row) => row.parent_node === name),
+        rows: [...nodes.values()].filter(
+          (row) => row.parent_node === name && (!type || row.kind === type),
+        ),
         next_cursor: null,
       })
     return json({ errors: [{ type: 'NotFound', message: path }] }, 404)
@@ -206,5 +215,46 @@ describe('Folder picker', () => {
   it('does not open inside a folder that is being moved', async () => {
     openPicker({ mode: 'move', items: [projects, notes], folder: 'launch' })
     await vi.waitFor(() => expect(shownFolder()).toBe('My files'))
+  })
+})
+
+describe('File picker', () => {
+  let cleanup: (() => void) | undefined
+  afterEach(() => cleanup?.())
+
+  const rowButton = (title: string) =>
+    vi.waitFor(() => {
+      const found = [...document.querySelectorAll('li button')].find((candidate) =>
+        candidate.textContent?.includes(title),
+      )
+      if (!(found instanceof HTMLButtonElement)) throw new Error(`${title} is not listed`)
+      return found
+    })
+  const actionButton = (label: string) =>
+    [...document.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === label,
+    ) as HTMLButtonElement
+
+  it('opens folders and picks the file the user chose', async () => {
+    const onChoose = vi.fn()
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp({
+      setup: () => () => h(FilePicker, { open: true, action: 'Insert', onChoose }),
+    })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+
+    ;(await rowButton('Projects')).click()
+    ;(await rowButton('Launch')).click()
+    expect(actionButton('Insert').disabled).toBe(true)
+    ;(await rowButton('Brief.pdf')).click()
+    await vi.waitFor(() => expect(actionButton('Insert').disabled).toBe(false))
+    actionButton('Insert').click()
+
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ name: 'brief' }))
   })
 })

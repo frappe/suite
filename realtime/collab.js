@@ -9,7 +9,6 @@ const STATE_BYTES_MAX = 2048;
 const FLUSH_MS = 100;
 const MESSAGES_PER_SECOND = 50;
 const CARETS_MAX = 50;
-const GUEST_CARETS_MAX = 10;
 const ROSTER_MAX = 50;
 const WRITES_PER_SECOND = 20000;
 const JOINABLE_CACHE_MS = 30000;
@@ -17,6 +16,9 @@ const MS_PER_SECOND = 1000;
 const PID_FLOOR = 2 ** 31;
 const JSON_WRAPPER_BYTES = 2;
 const JSON_KEY_EXTRA_BYTES = 4;
+
+// Signed-out sockets hear a document's changes but no presence: who is there, or where
+const GUESTS = "suite_collab_guests";
 
 // Per site: room -> Map(pid -> entry), and room -> the pids changed since the last flush
 const sites = new Map();
@@ -36,18 +38,13 @@ function has_caret_slot(members, entry) {
 	}
 
 	let caretCount = 0;
-	let guestCaretCount = 0;
 	for (const other of members.values()) {
-		if (!other.hasCaret) continue;
-
-		caretCount++;
-		if (other.isGuest) {
-			guestCaretCount++;
+		if (other.hasCaret) {
+			caretCount++;
 		}
 	}
 
-	const guestFits = !entry.isGuest || guestCaretCount < GUEST_CARETS_MAX;
-	return caretCount < CARETS_MAX && guestFits;
+	return caretCount < CARETS_MAX;
 }
 
 function string_bytes(text, budget) {
@@ -208,7 +205,7 @@ function flush_site(site, writeBudget) {
 
 		writeBudget.remaining -= recipients;
 		writeBudget.hasSent = true;
-		site.nsp.to(room).emit("suite_collab_presence", { room, states });
+		site.nsp.to(room).except(GUESTS).emit("suite_collab_presence", { room, states });
 	}
 }
 
@@ -272,8 +269,10 @@ function leave_rooms(connection, site, wanted) {
 		socket.leave(room);
 	}
 
+	if (connection.isGuest) return;
+
 	for (const room of left) {
-		socket.to(room).emit("suite_collab_presence_gone", { room, pid });
+		socket.to(room).except(GUESTS).emit("suite_collab_presence_gone", { room, pid });
 	}
 }
 
@@ -283,6 +282,12 @@ function join_rooms(connection, site, wanted) {
 		if (connection.joinedRooms.has(room)) continue;
 
 		connection.joinedRooms.add(room);
+		socket.join(room);
+		if (connection.isGuest) {
+			socket.join(GUESTS);
+			continue;
+		}
+
 		if (!site.rooms.has(room)) {
 			site.rooms.set(room, new Map());
 		}
@@ -291,14 +296,12 @@ function join_rooms(connection, site, wanted) {
 			pid,
 			user,
 			arrival,
-			isGuest: connection.isGuest,
 			state: null,
 			hasCaret: false,
 			clock: 0,
 		};
 		site.rooms.get(room).set(pid, entry);
-		socket.join(room);
-		socket.to(room).emit("suite_collab_presence_join", { room, pid, user, arrival });
+		socket.to(room).except(GUESTS).emit("suite_collab_presence_join", { room, pid, user, arrival });
 	}
 }
 
@@ -347,6 +350,8 @@ function join_reply(connection, rooms) {
 		count: 0,
 		carets: [],
 	};
+	if (connection.isGuest) return reply;
+
 	for (const room of rooms) {
 		add_room_to_reply(reply, room, site.rooms.get(room)?.values() ?? []);
 	}
@@ -439,7 +444,7 @@ function record_presence(connection, rooms, state) {
 
 function handle_presence(connection, payload) {
 	try {
-		if (!within_rate(connection)) return;
+		if (connection.isGuest || !within_rate(connection)) return;
 
 		const rooms = named_joined_rooms(connection, payload?.rooms);
 		if (!rooms) return;

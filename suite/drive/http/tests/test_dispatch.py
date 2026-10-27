@@ -689,6 +689,21 @@ class TestNodeWorkflows(DriveHTTPCase):
         error = self.refusal(response, 409, "DriveConflict")
         self.assertEqual(error["free_title"], "Folder (2)")
 
+    def test_only_a_document_may_ask_for_a_numbered_title(self):
+        # A folder's title is typed, so a taken one is the user's to change
+        response = self.as_owner(
+            "POST",
+            f"{PREFIX}/nodes",
+            body={
+                "parent_node": self.root.name,
+                "title": "Folder",
+                "kind": "folder",
+                "deduplicate_title": True,
+            },
+        )
+        error = self.refusal(response, 400, "DriveError")
+        self.assertNotIn("exception", error)
+
     def test_a_purge_reports_how_many_nodes_it_removed(self):
         doomed = create_folder(self.owner, self.root.name, "Doomed")
         frappe.db.commit()

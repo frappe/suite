@@ -26,7 +26,7 @@ interface Panel {
 
 function openEditor(
   doc: yjs.Doc,
-  threads: { list: DocumentThread[] },
+  threads: { list: DocumentThread[]; drafts?: string[] },
   placed: (places: ThreadPlaces) => void = () => {},
   panel: Panel = { open: null, lit: null, opened: [] },
 ) {
@@ -39,6 +39,7 @@ function openEditor(
       Collaboration.configure({ document: doc }),
       ThreadHighlights.configure({
         threads: () => threads.list,
+        drafts: () => threads.drafts ?? [],
         onPlaced: placed,
         open: () => panel.open,
         lit: () => panel.lit,
@@ -135,6 +136,35 @@ describe('thread highlights', () => {
     editor.commands.deleteRange({ from: 7, to: 12 })
 
     expect(told).toEqual([[], [], ['open:text'], ['open:deleted']])
+  })
+})
+
+describe('the text of a comment being written', () => {
+  function drafted(editor: Editor) {
+    const spans = editor.view.dom.querySelectorAll('[data-comment-draft]')
+    return [...spans].map((span) => span.textContent)
+  }
+
+  it('is marked while the draft is open, opens no thread when clicked, and leaves the text as it was', () => {
+    const doc = new yjs.Doc()
+    const threads = { list: [] as DocumentThread[], drafts: [] as string[] }
+    const panel: Panel = { open: null, lit: null, opened: [] }
+    const editor = openEditor(doc, threads, () => {}, panel)
+    editor.commands.setContent('<p>hello world</p>')
+    const before = JSON.stringify(yjs.encodeStateAsUpdate(doc))
+
+    threads.drafts = [threadOn(doc, 'draft', 6, 11).anchor]
+    redrawThreads(editor.view)
+    const whileOpen = drafted(editor)
+    const world = editor.view.dom.querySelector('[data-comment-draft]')!
+    editor.view.someProp('handleClick', (click) =>
+      click(editor.view, 8, { target: world } as never),
+    )
+    threads.drafts = []
+    redrawThreads(editor.view)
+
+    expect([whileOpen, drafted(editor), panel.opened]).toEqual([['world'], [], []])
+    expect(JSON.stringify(yjs.encodeStateAsUpdate(doc))).toBe(before)
   })
 })
 

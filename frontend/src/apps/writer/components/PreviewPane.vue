@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { EditorContent, type Editor } from '@tiptap/vue-3'
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 
 import {
   editorColumns,
@@ -20,10 +20,16 @@ const props = defineProps<{
 defineSlots<{ loading?: () => unknown; failed: () => unknown }>()
 
 const shownEditor = computed(() => props.editor ?? undefined)
+
+const scroller = useTemplateRef<HTMLElement>('scroller')
+defineExpose({ scroller })
 </script>
 
 <template>
-  <div class="min-w-0 flex-1 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2">
+  <div
+    ref="scroller"
+    class="min-w-0 flex-1 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2"
+  >
     <div
       class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
       :style="editorColumns(settings)"

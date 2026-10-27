@@ -805,16 +805,18 @@ export type PeopleGetOutputPersonUser = {
   email: string
   full_name: string | null
   user_image: string | null
+  has_access?: boolean
 }
 
-export type PeopleGetInput = { q?: string; cursor?: string }
+export type PeopleGetInput = { q?: string; cursor?: string; node?: string }
 
 export type PeopleGetOutput = {
   rows: Array<PeopleGetOutputPersonUser | PeopleGetOutputPersonGroup>
   next_cursor: string | null
 }
 
-export type PeopleGetError = 'BadRequest' | 'BadCursor' | 'PermissionError'
+export type PeopleGetError =
+  'BadRequest' | 'BadCursor' | 'PermissionError' | 'DriveForbidden' | 'DriveNotFound'
 
 const operationPeopleGet: PageRef<
   PeopleGetInput,
@@ -833,7 +835,7 @@ const operationPeopleGet: PageRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['BadRequest', 'BadCursor', 'PermissionError'],
+  errors: ['BadRequest', 'BadCursor', 'PermissionError', 'DriveForbidden', 'DriveNotFound'],
   loadValidators: async () => (await import('./validators')).operationPeopleGet,
 }
 

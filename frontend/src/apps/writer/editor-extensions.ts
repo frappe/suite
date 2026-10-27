@@ -1,18 +1,14 @@
 import type { AnyExtension } from '@tiptap/core'
 import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import { LineHeight } from '@tiptap/extension-text-style'
-import { CharacterCount, Selection } from '@tiptap/extensions'
-import {
-  Heading,
-  ImageGroup,
-  ImageViewer,
-  type MentionSuggestionItem,
-  type StarterKitOptions,
-} from 'frappe-ui/editor'
+import { CharacterCount } from '@tiptap/extensions'
+import { Heading, ImageGroup, ImageViewer, type StarterKitOptions } from 'frappe-ui/editor'
 
 import { BlockLayout } from '@/apps/writer/extensions/block-layout'
+import { BlurredSelection } from '@/apps/writer/extensions/blurred-selection'
 import CleanStyles from '@/apps/writer/extensions/clean-styles'
 import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
+import { DriveFiles, type PickDriveFile } from '@/apps/writer/extensions/drive-files'
 import { DriveMedia, type DocumentMedia } from '@/apps/writer/extensions/drive-media'
 import EmbedExtension from '@/apps/writer/extensions/embed-extension'
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
@@ -20,15 +16,25 @@ import FontFamily from '@/apps/writer/extensions/font-family'
 import { FontSize } from '@/apps/writer/extensions/font-size'
 import { HeadingAnchors } from '@/apps/writer/extensions/heading-anchors'
 import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
+import { WriterKeyboard } from '@/apps/writer/extensions/keyboard'
+import { LinkEditing } from '@/apps/writer/extensions/link-editing'
 import { ListJoin } from '@/apps/writer/extensions/list-join'
 import MediaDownload from '@/apps/writer/extensions/media-download'
+import { MediaInsert } from '@/apps/writer/extensions/media-insert'
 import { Image, Video } from '@/apps/writer/extensions/media-sizes'
-import { MentionSearch } from '@/apps/writer/extensions/mention-search'
+import { MentionMenuExtension } from '@/apps/writer/extensions/mention-menu'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
+import { WriterPaste } from '@/apps/writer/extensions/paste'
 import { ReceivedContentGuard } from '@/apps/writer/extensions/received-content-guard'
+import { ScrollToInserted } from '@/apps/writer/extensions/scroll-to-inserted'
+import { WriterSlashCommands } from '@/apps/writer/extensions/slash-commands'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
+import { TablePaste } from '@/apps/writer/extensions/table-paste'
+import { TablePointer } from '@/apps/writer/extensions/table-pointer'
+import { WriterTableView } from '@/apps/writer/extensions/table-view'
 import { TabsExtension } from '@/apps/writer/extensions/tabs'
+import { UndoCaret } from '@/apps/writer/extensions/undo-caret'
 import {
   HiddenWhenEmpty,
   KeptFormatting,
@@ -36,20 +42,14 @@ import {
   WriterKit,
 } from '@/apps/writer/schema'
 
-declare module '@tiptap/core' {
-  interface Storage {
-    styleClipboard?: { painting: boolean }
-  }
-}
-
 export interface WriterEditorOptions {
   isCollaborative: boolean
-  mentionItems: () => MentionSuggestionItem[]
-  onMentionQuery: (query: string) => void
   onCommentActivated: (id: string) => void
   onAnchors: (anchors: unknown[]) => void
   scrollParent: () => HTMLElement | Window
   media: DocumentMedia | null
+  /** Opens Drive's file picker for "From Drive". Without it, the command is off. */
+  pickDriveFile?: PickDriveFile
 }
 
 const MEDIA_EXTENSIONS: AnyExtension[] = [Image, ImageGroup, ImageViewer, Video]
@@ -67,7 +67,12 @@ const EDITING_EXTENSIONS: AnyExtension[] = [
   CoreEditorExtension,
   PageBreakExtension,
   CharacterCount,
-  Selection,
+  BlurredSelection,
+  WriterKeyboard,
+  WriterPaste,
+  ScrollToInserted,
+  MediaInsert,
+  UndoCaret,
   CleanStyles.configure({
     allowProperty: (_prop: string, value: string) => value !== '',
     validators: {
@@ -75,6 +80,8 @@ const EDITING_EXTENSIONS: AnyExtension[] = [
       fontFamily: (value: string) => value.trim() !== '""',
     },
   }),
+  TablePointer,
+  TablePaste,
   TabsExtension,
   TabTrailingNode,
   HiddenWhenEmpty,
@@ -97,8 +104,10 @@ function writerKit(options: WriterEditorOptions) {
     heading: false,
     image: false,
     video: false,
-    mention: { items: options.mentionItems },
+    mention: {},
+    slashCommands: false,
     styleClipboard: {},
+    table: { View: WriterTableView, cellMinWidth: 64 },
   })
 }
 
@@ -106,7 +115,7 @@ export function writerEditorExtensions(options: WriterEditorOptions): AnyExtensi
   return [
     writerKit(options),
     ...MEDIA_EXTENSIONS,
-    MentionSearch.configure({ onQuery: options.onMentionQuery }),
+    MentionMenuExtension,
     ...EDITING_EXTENSIONS,
     OldCommentExtension.configure({ onCommentActivated: options.onCommentActivated }),
     KeptFormatting,
@@ -117,5 +126,8 @@ export function writerEditorExtensions(options: WriterEditorOptions): AnyExtensi
     }),
     MediaDownload,
     DriveMedia.configure({ media: options.media }),
+    DriveFiles.configure({ pickFile: options.pickDriveFile ?? null }),
+    WriterSlashCommands,
+    LinkEditing,
   ]
 }

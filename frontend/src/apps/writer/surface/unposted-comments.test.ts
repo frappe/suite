@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createRelativePositionFromTypeIndex, Doc, XmlText } from 'yjs'
 
 import { encodeAnchor } from '@/apps/writer/collab/anchors'
@@ -8,6 +9,8 @@ import {
   buttonNamed,
   click,
   fakeDrafts,
+  ON_TEXT,
+  rowButton,
   rows,
   settled,
   showList,
@@ -37,6 +40,11 @@ vi.mock('frappe-ui', async () => {
 vi.mock('@/apps/drive', async () => {
   const { fakeDrive } = await import('./comment-list-fakes')
   return fakeDrive()
+})
+
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
 })
 
 describe('comments not yet posted', () => {
@@ -96,6 +104,23 @@ describe('comments not yet posted', () => {
     await settled()
 
     expect([posted, opened]).toEqual([['draft-0', 'draft-1'], ['thread-9']])
+  })
+
+  it('hands the writer back to the text when a new comment is sent, but not on a reply', async () => {
+    const { list } = fakeDrafts([{ text: 'New words' }], ['thread-9'])
+    const { host, sent } = showList({ drafts: list, threads: [ON_TEXT] })
+
+    host.querySelector('form')!.requestSubmit()
+    await settled()
+    await click(rowButton(host, 'Is this right?'))
+    const replyBox = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Reply"]')!
+    replyBox.value = 'A reply'
+    replyBox.dispatchEvent(new Event('input'))
+    await nextTick()
+    replyBox.closest('form')!.requestSubmit()
+    await settled()
+
+    expect(sent).toEqual(['sent'])
   })
 
   it('discards a refused comment from its ⋯ only once confirmed, and offers no ⋯ while posting', async () => {
@@ -164,7 +189,7 @@ describe('comments not yet posted', () => {
         'You Not posted · Retry Refused',
         expect.stringMatching(/^Ben Ito \S.* Looks good overall$/),
         expect.stringMatching(/^Asha Rao \S.* Is this right\? · 2 replies$/),
-        expect.stringMatching(/^Asha Rao Text deleted .* Fixed the title · 1 reply$/),
+        expect.stringMatching(/^Asha Rao .* gone Text deleted Fixed the title · 1 reply$/),
       ],
     ])
   })

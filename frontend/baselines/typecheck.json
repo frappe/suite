@@ -94,7 +94,7 @@
   "src/apps/people/pages/AddressBooksView.vue": 2,
   "src/apps/people/pages/ContactView.vue": 1,
   "src/apps/slides/utils/clipboardTable.ts": 1,
-  "src/apps/writer/extensions/clean-styles.ts": 8,
+  "src/apps/writer/extensions/clean-styles.ts": 2,
   "src/apps/writer/extensions/tabs.ts": 26,
   "src/components/AdaptiveDropdown.vue": 1,
   "src/realtime.ts": 1

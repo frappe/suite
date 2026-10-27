@@ -11,6 +11,7 @@ from frappe.core.doctype.user.user import get_timezones, switch_theme, update_pa
 from frappe.handler import logout
 from frappe.translate import get_boot_translations
 
+from suite import drive
 from suite.api import account, people
 from suite.api.admin_lifecycle import ROUTES as LIFECYCLE_ROUTES
 from suite.api.admin_lifecycle import (
@@ -119,6 +120,7 @@ class InvitationResult(TypedDict):
 class PeopleQuery(TypedDict, total=False):
     q: str
     cursor: str
+    node: str
 
 
 class UserKeysInput(TypedDict):
@@ -362,7 +364,13 @@ ROUTES = (
         "GET",
         "people",
         "people_get",
-        errors=(BadRequest, people.BadCursor, frappe.PermissionError),
+        errors=(
+            BadRequest,
+            people.BadCursor,
+            frappe.PermissionError,
+            drive.DriveForbidden,
+            drive.DriveNotFound,
+        ),
         query=PeopleQuery,
         output=people.PeoplePage,
         kind="query",
@@ -465,8 +473,10 @@ def invitations_post(emails: Given = None) -> InvitationResult:
 
 
 @frappe.whitelist(methods=["GET"])
-def people_get(q: Given = None, cursor: Given = None) -> people.PeoplePage:
-    return people.search(_optional_text(q, "q"), _optional_text(cursor, "cursor"))
+def people_get(q: Given = None, cursor: Given = None, node: Given = None) -> people.PeoplePage:
+    return people.search(
+        _optional_text(q, "q"), _optional_text(cursor, "cursor"), _optional_text(node, "node")
+    )
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])

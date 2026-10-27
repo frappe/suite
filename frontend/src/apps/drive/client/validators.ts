@@ -557,6 +557,7 @@ export const operationNodeCreateCreateDocument: Validators<
           content_doctype: { title: 'Content Doctype', type: 'string' },
           from_node: { title: 'From Node', type: 'string' },
           is_template: { title: 'Is Template', type: 'boolean' },
+          deduplicate_title: { title: 'Deduplicate Title', type: 'boolean' },
         },
         required: ['kind', 'parent_node', 'title', 'content_doctype'],
         additionalProperties: false,

@@ -13,12 +13,11 @@ import {
 const NATURAL_LINE_HEIGHT = 1.2;
 
 // The popover's three number inputs, in DOM order: line spacing, above, below.
-// Scoped to the popover because the toolbar's font-size stepper (ManageFont) is
-// a spinbutton as well, and it comes first in the DOM.
+// Scoped to the popover so no other number input on the page matches.
 function spacingInputs(page: Page) {
 	return page
 		.locator('[data-slot="content"]')
-		.filter({ has: page.getByText("Paragraph spacing") })
+		.filter({ has: page.getByText("Line spacing") })
 		.getByRole("spinbutton");
 }
 
@@ -46,11 +45,9 @@ async function computedPx(
 	return Number.parseFloat(await computed(locator, property));
 }
 
-// The toolbar Button that MenuItems.vue renders for a component item carries no
-// tooltip, so SpacingDialog renders its own trigger. Wrapping the slot in a
-// Tooltip instead breaks the popover — PopoverTrigger can't wire as-child
-// through it — so assert both halves together.
-test("the Custom Spacing button has a tooltip and still opens the popover", async ({
+// A Tooltip around a Popover trigger stops the popover opening, so the toolbar's
+// spacing control names itself with a title. Assert the name and the popover together.
+test("the Custom spacing button names itself and opens the popover", async ({
 	owner,
 	run,
 }) => {
@@ -62,12 +59,7 @@ test("the Custom Spacing button has a tooltip and still opens the popover", asyn
 	await openWriterDocument(page, file.name);
 
 	const button = page.getByRole("button", { name: "Custom spacing" });
-	await button.hover();
-	// reka's role="tooltip" node is an sr-only, aria-hidden span, so assert on the
-	// visible bubble the popper renders instead.
-	await expect(
-		page.locator("[data-reka-popper-content-wrapper]", { hasText: "Custom spacing" }),
-	).toBeVisible();
+	await expect(button).toHaveAttribute("title", "Custom spacing");
 
 	await button.click();
 	await expect(spacingInputs(page)).toHaveCount(3);

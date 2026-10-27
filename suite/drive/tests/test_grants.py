@@ -1,3 +1,4 @@
+import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Event
@@ -26,6 +27,7 @@ from suite.drive._core.access import (
     unlock_link,
     update_grant,
 )
+from suite.drive._core.content import registry
 from suite.drive._core.errors import (
     DriveForbidden,
     DriveLinkExpired,
@@ -154,6 +156,23 @@ class _GrantFixture(IntegrationTestCase):
 
 
 class TestGrantWorkflows(_GrantFixture):
+    def test_a_grant_change_on_a_folder_tells_each_document_below_it_once_committed(self):
+        inside = self._child(self.folder.name, "Inside")
+        outside = self._child(self.root.name, "Outside")
+        for document in (inside, outside):
+            frappe.db.set_value("Drive Node", document.name, "content_doctype", "Writer Document")
+        told = []
+        spec = dataclasses.replace(registry()["Writer Document"], access_changed=told.append)
+
+        with patch("suite.drive._core.content.registry", return_value={"Writer Document": spec}):
+            grant(self.folder.name, "$PUBLIC", READ, self.admin)
+            revoke(self.folder.name, "$PUBLIC", self.admin)
+            before_commit = list(told)
+            frappe.db.commit()
+
+        self.assertEqual(before_commit, [])
+        self.assertEqual(told, [inside.name, inside.name])
+
     def test_all_twelve_refusals_use_the_specified_errors_and_mutate_nothing(self):
         outsider = Principals(MANAGER, (MANAGER,), ("$PUBLIC",))
         cases = (

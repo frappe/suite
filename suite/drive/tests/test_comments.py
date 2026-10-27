@@ -32,6 +32,7 @@ from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, READ
 from suite.drive._core.roots import create_root
+from suite.drive._core.versions import list_versions
 from suite.drive.http import routes
 from suite.drive.patches.build import comments as build_comments
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent, epoch_millis
@@ -73,6 +74,7 @@ class TestCommentWorkflows(IntegrationTestCase):
                 "is_template": 0,
             }
         ).insert(ignore_permissions=True)
+        frappe.db.set_value("Drive Node", self.document.name, "owner", OWNER, update_modified=False)
         grant(self.document.name, COMMENTER, COMMENT, self.admin)
 
     def tearDown(self):
@@ -613,6 +615,21 @@ class TestCommentWorkflows(IntegrationTestCase):
         )
         self.assertIn(thread, {frappe.parse_json(detail).get("thread") for detail in deletions})
 
+    def test_a_public_reader_sees_the_document_but_not_its_discussion_or_history(self):
+        grant(self.document.name, "$PUBLIC", READ, self.admin)
+        create_thread(self.commenter, self.document.name, "opaque", "Internal note")
+        comment_link = grant(self.document.name, "$LINK", COMMENT, self.admin)["principal"]
+        public_reader = Principals("Guest", (), ("$PUBLIC",))
+        signed_in_reader = Principals(OUTSIDER, (OUTSIDER,), ("$PUBLIC",))
+        link_commenter = Principals("Guest", (), ("$PUBLIC", comment_link))
+
+        with self.assertRaises(DriveForbidden):
+            threads(public_reader, self.document.name)
+        with self.assertRaises(DriveForbidden):
+            list_versions(public_reader, self.document.name)
+        self.assertEqual(len(threads(signed_in_reader, self.document.name)), 1)
+        self.assertEqual(len(threads(link_commenter, self.document.name)), 1)
+
     def test_guest_name_and_link_attribution_distinguish_guest_authors(self):
         # §5.9 step 1 mints the token server-side, so the fixture asks for two
         # links with the bare `$LINK` spelling and reads back what it was given.
@@ -714,8 +731,32 @@ class TestCommentWorkflows(IntegrationTestCase):
         notified = frappe.get_all(
             "Drive Notification", filters={"activity": ["in", activity]}, pluck="to_user"
         )
-        self.assertEqual(sorted(notified), sorted([MENTIONED, OWNER]))
+        # The thread notifies the person it mentions and the owner; the edits notify OWNER once more.
+        self.assertEqual(sorted(notified), sorted([MENTIONED, OWNER, OWNER]))
         self.assertEqual(len(activity), 4)
+
+    def test_the_owner_hears_of_each_new_thread_once_but_not_of_their_own(self):
+        plain = create_thread(self.commenter, self.document.name, "anchor", "No mention").name
+        mentioning = create_thread(self.commenter, self.document.name, "anchor", f"See @[{OWNER}]").name
+        reply(self.commenter, mentioning, "A reply")
+        create_thread(self.owner, self.document.name, "anchor", "My own note")
+
+        activity = frappe.get_all("Drive Notification", filters={"to_user": OWNER}, pluck="activity")
+        details = frappe.get_all("Drive Activity", filters={"name": ["in", activity]}, pluck="detail")
+        heard = sorted(frappe.parse_json(detail)["thread"] for detail in details)
+        self.assertEqual(len(activity), 2)
+        self.assertEqual(heard, sorted([plain, mentioning]))
+
+    def test_a_new_thread_records_whom_it_mentions(self):
+        create_thread(self.commenter, self.document.name, "anchor", "No mention")
+        create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
+        details = frappe.get_all(
+            "Drive Activity",
+            filters={"node": self.document.name, "action": "comment"},
+            pluck="detail",
+            order_by="creation asc",
+        )
+        self.assertEqual([frappe.parse_json(detail)["mentions"] for detail in details], [[], [MENTIONED]])
 
     def test_unreadable_threads_are_hidden_and_trash_refuses_writes(self):
         thread = create_thread(self.owner, self.document.name, "anchor", "Before trash").name

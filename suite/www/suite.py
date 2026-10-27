@@ -43,7 +43,8 @@ def get_context(context):
 
 def get_desk_theme():
     if frappe.session.user == "Guest":
-        return "Light"
+        # A public reader has no saved preference, so the page follows their system.
+        return "Automatic"
     return frappe.get_cached_value("User", frappe.session.user, "desk_theme") or "Light"
 
 

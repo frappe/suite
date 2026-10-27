@@ -30,6 +30,9 @@ export interface TabRoom {
   onChange(listener: () => void): () => void
 }
 
+// jsdom has no scrollIntoView, which the editor calls once a block is put in
+Element.prototype.scrollIntoView ??= () => {}
+
 const editors: Editor[] = []
 afterEach(() => {
   for (const editor of editors.splice(0)) {
@@ -59,8 +62,6 @@ function openTab(state: Uint8Array, clientID: number): Tab {
   yjs.applyUpdate(ydoc, state, REMOTE)
   const extensions = writerEditorExtensions({
     isCollaborative: true,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,

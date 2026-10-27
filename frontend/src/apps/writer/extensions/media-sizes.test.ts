@@ -12,6 +12,9 @@ import { writerSchema } from '../schema'
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 
+// jsdom has no scrollIntoView, which the editor calls once a picture is put in
+Element.prototype.scrollIntoView ??= () => {}
+
 interface Size {
   width: number
   height: number
@@ -90,8 +93,6 @@ function doc(...content: object[]): JSONContent {
 function editorExtensions(ydoc: yjs.Doc | null) {
   const options: WriterEditorOptions = {
     isCollaborative: !!ydoc,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,

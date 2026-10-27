@@ -7,13 +7,16 @@ from unittest.mock import patch
 import frappe
 from frappe.utils import now_datetime
 
+from suite import drive
 from suite.content import jobs, scheduling, touches
 from suite.content.http import routes
 from suite.drive._core import content as drive_content
+from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
+from suite.tests.utils import ensure_user
 from suite.writer.content.tests.drive_callback_case import DriveCallbackCase
-from suite.writer.content.tests.support import WRITER
+from suite.writer.content.tests.support import OUTSIDER, WRITER
 
 
 class TestWriterTouches(DriveCallbackCase):
@@ -178,6 +181,36 @@ class TestWriterTouches(DriveCallbackCase):
             jobs.sweep()
 
         self.assertEqual(self.automatic_versions(node), [self.doc_row(node).head_rev])
+
+    def automatic_version_actors(self, node: str) -> list[str]:
+        return frappe.get_all(
+            "Drive Node Version", filters={"node": node, "kind": "auto"}, pluck="actor", order_by="seq"
+        )
+
+    def test_an_automatic_version_credits_who_made_most_of_its_changes_not_who_took_it(self):
+        ensure_user(OUTSIDER)
+        node = self.new_document()
+        owner = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        grant(node, OUTSIDER, drive.EDIT, owner)
+        frappe.db.commit()
+        start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        with self.frozen_clock(start):
+            self.type_into(node, ["one"])
+
+        frappe.set_user(OUTSIDER)
+        with self.frozen_clock(start + timedelta(minutes=1)):
+            self.type_into(node, [" two", " three"])
+
+        frappe.set_user(WRITER)
+        with self.frozen_clock(start + timedelta(minutes=2)):
+            self.type_into(node, [" four"])
+
+        # The sweep runs as the system user
+        frappe.set_user("Administrator")
+        with self.frozen_clock(start + timedelta(minutes=10)), patch.object(scheduling, "enqueue"):
+            jobs.sweep()
+
+        self.assertEqual(self.automatic_version_actors(node), [WRITER, OUTSIDER])
 
     def test_a_document_nobody_edits_gets_no_automatic_version(self):
         node = self.new_document()

@@ -254,8 +254,6 @@ const moduleGraphDebtGroups = [
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
-      'writer/components/CoreEditor.test.ts|@/stores/root',
-      'writer/components/ReadOnlyEditor.test.ts|@/stores/root',
     ],
   },
 ]
