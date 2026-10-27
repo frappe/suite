@@ -122,13 +122,9 @@ def load_model() -> None:
     # while other participants have active hypotheses.
     decoding = model.cfg.decoding.copy()
     OmegaConf.update(decoding, "greedy.enable_per_stream_biasing", True, force_add=True)
-    OmegaConf.update(
-        decoding,
-        "greedy.boosting_tree",
-        OmegaConf.structured(BoostingTreeModelConfig(key_phrases_list=list(FRAPPE_TERMS))),
-        force_add=True,
-    )
-    OmegaConf.update(decoding, "greedy.boosting_tree_alpha", 0.35, force_add=True)
+    # Every utterance selects its pinned vocabulary; do not install a newer
+    # global terminology tree over other rooms' active hypotheses.
+    OmegaConf.update(decoding, "greedy.boosting_tree", None, force_add=True)
     model.change_decoding_strategy(decoding)
     model.encoder.set_default_att_context_size(att_context_size)
     _label(event="model_loaded", backend="nemo", context=att_context_size, elapsed=f"{time.time() - t0:.2f}s")
@@ -268,8 +264,9 @@ class StreamingFeatureBuffer:
 class IncrementalDecoder:
     """Stateful decoder that owns one stream's encoder cache and hypothesis."""
 
-    def __init__(self, names=()):
+    def __init__(self, names=(), context=None):
         self.names = list(names)
+        self.speech_context = context
         streaming_cfg = model.encoder.streaming_cfg
         self.chunk_samples = int(_streaming_value(streaming_cfg.chunk_size)) * MEL_HOP_SAMPLES
         self.drop_extra_pre_encoded = streaming_cfg.drop_extra_pre_encoded
@@ -279,7 +276,7 @@ class IncrementalDecoder:
     def reset(self) -> None:
         if hasattr(self, "bias"):
             self.bias.release()
-        self.bias = UtteranceBias(model, self.names)
+        self.bias = UtteranceBias(model, self.names, context=self.speech_context)
         self.cache_last_channel, self.cache_last_time, self.cache_last_channel_len = (
             model.encoder.get_initial_cache_state(batch_size=1)
         )
@@ -342,14 +339,14 @@ class IncrementalDecoder:
 
 
 class RealtimeTranscriptionSession:
-    def __init__(self, language: str, names=()):
+    def __init__(self, language: str, names=(), context=None):
         self.language = language or NEMOTRON_LANGUAGE
         self.last_sent_text = ""
         # Keep fallback audio without growing RAM with utterance duration.
         self.fallback_audio = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         self.input_sample_count = 0
         self.resampler = StreamingResampler(REALTIME_SAMPLE_RATE, MODEL_SAMPLE_RATE)
-        self.incremental_decoder = IncrementalDecoder(names)
+        self.incremental_decoder = IncrementalDecoder(names, context)
         self.incremental_failed = False
         self.last_final_used_fallback = False
 
@@ -622,8 +619,10 @@ async def realtime_transcription(websocket: WebSocket):
                         if transcription is not None:
                             transcription.language = language
                             transcription.incremental_decoder.names = config["names"]
+                            transcription.incremental_decoder.speech_context = config["speech_context"]
                             transcription.incremental_decoder.reset()
                         names = config["names"]
+                        speech_context = config["speech_context"]
                         effective_session = realtime_session(realtime_session_id, config["model"], language)
                         configured = True
                         await websocket.send_json(
@@ -680,7 +679,7 @@ async def realtime_transcription(websocket: WebSocket):
                         if transcription is None:
                             language = effective_session["audio"]["input"]["transcription"]["language"]
                             transcription = await run_inference(
-                                language, RealtimeTranscriptionSession, language, names
+                                language, RealtimeTranscriptionSession, language, names, speech_context
                             )
                         text = await run_inference(
                             transcription.language,

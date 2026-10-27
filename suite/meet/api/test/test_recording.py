@@ -460,10 +460,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             frappe.set_user("Guest")
             with (
                 patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}),
-                patch(
-                    "suite.meet.recording.ingest._recordings_folder",
-                    return_value=recording.drive_home_folder,
-                ),
                 patch("suite.drive.utils.update_file_size"),
                 patch("suite.drive.utils.files.FileManager.upload_file"),
                 patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue,
@@ -505,10 +501,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertTrue(completed.notification_pending)
             self.assertIsNone(get_storage_reservation(recording_storage_reservation_key(recording.name)))
             self.assertEqual(artifact.owner, self.owner)
-            self.assertEqual(artifact.folder, recording.drive_home_folder)
+            self.assertEqual(artifact.folder, completed.capture_folder)
             self.assertEqual(artifact.file_type, "Video")
             self.assertEqual(artifact.mime_type, "video/mp4")
-            self.assertTrue(artifact.file_name.startswith(f"{self.room.name} - "))
+            self.assertEqual(artifact.file_name, "Recording.mp4")
             artifact.status = "Trashed"
             artifact.save(ignore_permissions=True)
             self.assertTrue(frappe.db.exists("Meet Recording", recording.name))
@@ -725,10 +721,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         try:
             with (
                 patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}),
-                patch(
-                    "suite.meet.recording.ingest._recordings_folder",
-                    return_value=recording.drive_home_folder,
-                ),
                 patch("suite.drive.utils.update_file_size"),
                 patch("suite.drive.utils.files.FileManager.upload_file"),
             ):

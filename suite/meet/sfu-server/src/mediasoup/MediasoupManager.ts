@@ -1,3 +1,9 @@
+import {
+	LEGACY_VOCABULARY_VERSION,
+	parseSpeechScope,
+	participantHintNames,
+	type SpeechScope,
+} from '../speechHints';
 import type { SttManager } from '../stt/SttManager';
 import type {
 	CloseProducerResult,
@@ -146,23 +152,35 @@ export class MediasoupManager {
 		);
 	}
 
+	pinRoomSpeechHints(roomId: string, context?: SpeechScope): void {
+		const room = this.roomManager.getRoom(roomId);
+		if (room && !room.speechContext)
+			room.speechContext = parseSpeechScope(
+				context ?? { vocabulary_version: LEGACY_VOCABULARY_VERSION, title: '' },
+			);
+	}
+
 	setSttManager(sttManager: SttManager): void {
 		this.sttManager = sttManager;
+		sttManager.setGetSpeechContext(
+			(roomId) => this.roomManager.getRoom(roomId)?.speechContext,
+		);
 		this.sttManager.setGetRouter((roomId) =>
 			this.roomManager.getRouter(roomId),
 		);
 		this.sttManager.setGetRoomNames((roomId) =>
-			this.getRoomParticipants(roomId)
-				.filter((participant) => !participant.id.startsWith('recorder:'))
-				.map((participant) => participant.info.name?.normalize('NFKC').trim())
-				.filter(
-					(name): name is string =>
-						typeof name === 'string' &&
-						name.length > 0 &&
-						name.length <= 80 &&
-						!/[\p{C}]/u.test(name),
-				)
-				.slice(0, 20),
+			participantHintNames(
+				this.getRoomParticipants(roomId)
+					.filter((participant) => !participant.id.startsWith('recorder:'))
+					.map((participant) => participant.info.name?.normalize('NFKC').trim())
+					.filter(
+						(name): name is string =>
+							typeof name === 'string' &&
+							name.length > 0 &&
+							name.length <= 80 &&
+							!/[\p{C}]/u.test(name),
+					),
+			).slice(0, 20),
 		);
 		this.sttManager.setRestartRoomTranscription((roomId) =>
 			this.startSttForExistingProducers(roomId),
@@ -1161,6 +1179,10 @@ export class MediasoupManager {
 					break;
 			}
 		}
+	}
+
+	getTranscriptionRoom(roomId: string): Room | undefined {
+		return this.roomManager.getRoom(roomId);
 	}
 
 	getRoomPeers(roomId: string): Map<string, Peer> | undefined {

@@ -1,0 +1,7 @@
+[
+  {
+    "origin": "https://site.example.com",
+    "secret": "REPLACE_WITH_A_SEPARATE_RANDOM_SECRET_FOR_THIS_SITE",
+    "recorder_origins": ["https://recorder.example.com"]
+  }
+]

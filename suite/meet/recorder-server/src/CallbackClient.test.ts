@@ -828,7 +828,7 @@ describe('CallbackClient', () => {
 				{
 					started_at: '2026-01-01T00:00:59.000Z',
 					ended_at: '2026-01-01T00:01:00.000Z',
-					reason_code: 'ffmpeg_exited',
+					reason_code: 'capture_interrupted',
 				},
 			],
 		});

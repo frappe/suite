@@ -31,6 +31,33 @@ function token(
 }
 
 describe('AuthManager', () => {
+	it('accepts only signed supported speech context and clears it on cleanup', () => {
+		const manager = new AuthManager(SECRET);
+		const socket = createMockSocket();
+		socket.handshake.auth = {
+			token: token({
+				speech_context: {
+					vocabulary_version: 'frappe-v1',
+					title: 'Atlas review',
+				},
+			}),
+		};
+		expect(manager.authenticateSocket(socket)).toBe(true);
+		expect(socket.speechContext).toEqual({
+			vocabulary_version: 'frappe-v1',
+			title: 'Atlas review',
+		});
+		manager.cleanupSocket(socket);
+		expect(socket.speechContext).toBeUndefined();
+		for (const context of [
+			{ vocabulary_version: 'unknown', title: '' },
+			{ vocabulary_version: 'frappe-v1', title: 'x'.repeat(161) },
+		]) {
+			socket.handshake.auth.token = token({ speech_context: context });
+			expect(manager.authenticateSocket(socket)).toBe(false);
+		}
+	});
+
 	it('binds the JWT site claim to the socket', () => {
 		const manager = new AuthManager(SECRET);
 		const authToken = token();

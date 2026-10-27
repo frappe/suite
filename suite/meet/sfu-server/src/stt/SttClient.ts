@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { LEGACY_VOCABULARY_VERSION, type SpeechScope } from '../speechHints';
 import { loggers } from '../utils/logger';
 import type { SttDiagnostics } from './SttDiagnostics';
 
@@ -7,6 +8,7 @@ export interface SttStreamMetadata {
 	sampleRate: number;
 	language?: string;
 	getNames?: () => string[];
+	getSpeechContext?: () => SpeechScope | undefined;
 	diagnostics?: SttDiagnostics;
 }
 
@@ -412,7 +414,15 @@ class SttStream implements ISttStream {
 					audio: {
 						input: {
 							format: { type: 'audio/pcm', rate: this.metadata.sampleRate },
-							transcription: { model, language, names },
+							transcription: {
+								model,
+								language,
+								names,
+								...(this.metadata.getSpeechContext?.() ?? {
+									vocabulary_version: LEGACY_VOCABULARY_VERSION,
+									title: '',
+								}),
+							},
 							turn_detection: null,
 						},
 					},

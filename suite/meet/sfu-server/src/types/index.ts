@@ -19,7 +19,6 @@ import type {
 } from 'mediasoup/types';
 import type {
 	ActiveSpeakerEvent,
-	SharedStageState,
 	AuthExpiredEvent,
 	ChatMessage,
 	ChatSendRequest,
@@ -67,6 +66,7 @@ import type {
 	ScreenShareStoppedEvent,
 	SFUErrorEvent,
 	SFUScope,
+	SharedStageState,
 	SttSegmentEvent,
 	SttToggleRequest,
 	TranscriptSegment,
@@ -76,7 +76,6 @@ import type {
 
 // Types shared with other SFU modules
 export type {
-	SharedStageState,
 	AppData,
 	ChatMessage,
 	Consumer,
@@ -106,6 +105,7 @@ export type {
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
 	SFUScope,
+	SharedStageState,
 	TranscriptSegment,
 	UserData,
 	WebRtcTransport,
@@ -347,6 +347,7 @@ export type ClientTelemetryEvent =
 	  };
 
 export interface SocketData {
+	speechContext?: import('../speechHints').SpeechScope;
 	userId: string;
 	peerId?: string;
 	userName: string;
@@ -457,6 +458,7 @@ export interface ExistingProducer {
 
 // Mediasoup Manager types
 export interface Room {
+	speechContext?: import('../speechHints').SpeechScope;
 	id: string;
 	workerId: number;
 	router: Router;
@@ -534,6 +536,7 @@ export interface WebRTCServerOptions {
 
 // JWT types
 export interface JWTPayload {
+	speech_context?: import('../speechHints').SpeechScope;
 	user_id: string;
 	user_name: string;
 	meeting_id: string;
@@ -588,6 +591,7 @@ interface PollPayloadFE {
 // Socket.IO module augmentation
 declare module 'socket.io' {
 	interface Socket {
+		speechContext?: import('../speechHints').SpeechScope;
 		userId: string;
 		peerId?: string;
 		userName: string;

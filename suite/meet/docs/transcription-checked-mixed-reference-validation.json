@@ -1,0 +1,183 @@
+{
+  "date": "2026-10-20",
+  "case": "diagnostic-30-50",
+  "source_sha256": "8062f14890247b60fd6b07e7dcd65db83d28097b070d6868760b42411a5e527f",
+  "start_seconds": 30,
+  "duration_seconds": 20,
+  "reference": {
+    "kind": "English meaning reference, supplemented on 2026-10-21 by a separate partial Romanized Hindi-English spoken-word reference.",
+    "sha256": "803a54e4d8441dff51775b8edaa3b1feb3592bde49b670bdc3bd95d35f980d7a",
+    "timestamp_basis": "Response to the requested 00:30–00:50 listening check; not separately reconfirmed.",
+    "source_language": "Hindi-English code-switching, explicitly confirmed by the listener after the pilot.",
+    "model_exposure": "Earlier model drafts exist for the overlapping 00:30–01:00 diagnostic; not a held-out blind sample.",
+    "uncertainty": "Opening action word and adjacent unclear span unresolved; spoken wording also differs from earlier meaning reference on tentative date qualifier.",
+    "private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-mixed-reference/reference-002.json",
+    "language_confirmation_private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-mixed-reference/reference-002-language-confirmation.json",
+    "spoken_word_reference": {
+      "private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-mixed-reference/reference-003-source-wording.json",
+      "sha256": "c53881ae73eb4220e6ad4d493a1f5f2d1b4f03919308d8571018e53dc7e1e4b3",
+      "date": "2026-10-21",
+      "kind": "Partial user-supplied Romanized Hindi-English; not held-out."
+    }
+  },
+  "input": {
+    "source_sha256": "8062f14890247b60fd6b07e7dcd65db83d28097b070d6868760b42411a5e527f",
+    "selection": "First 20 seconds of the earlier frozen opening-30 diagnostic. Meaning reference supplied before this exact-window rerun; overlapping 30-second predictions already existed.",
+    "cases": [
+      {
+        "id": "diagnostic-30-50",
+        "start_seconds": 30,
+        "duration_seconds": 20,
+        "pcm_sha256": "7c65b7582bc4d6a6817ba0e17760c1809da3386caa4fbaff719a431f770eda48"
+      }
+    ]
+  },
+  "methods": [
+    {
+      "phase": "qwen",
+      "precision": "float16",
+      "batch_size": 1,
+      "input_manifest_sha256": "b77abc1a3063529f442c5ef90f854651c04dbb1f53b4c83bef0aaccc0a47188b",
+      "reference_in_prompt": false,
+      "model": "Qwen/Qwen3-ASR-1.7B-hf",
+      "revision": "bcd2b5b7f32b480ab5790554cfa8347f246a14f3",
+      "decoding": "greedy, max_new_tokens=448; automatic language, no hints",
+      "load_seconds": 12.812317562289536,
+      "completed": true,
+      "total_seconds": 18.78315659891814,
+      "peak_gpu_allocated_bytes": 4268894208,
+      "peak_gpu_reserved_bytes": 4385144832,
+      "script_sha256": "ca41d9e2fd445d4730e05f2020a2962188dcc5ba93f89ad01e4c3dd0d3a18003",
+      "generation_ended_with_eos": {
+        "auto": true
+      }
+    },
+    {
+      "phase": "hy",
+      "precision": "float16",
+      "batch_size": 1,
+      "input_manifest_sha256": "b77abc1a3063529f442c5ef90f854651c04dbb1f53b4c83bef0aaccc0a47188b",
+      "reference_in_prompt": false,
+      "model": "tencent/HY-MT1.5-1.8B",
+      "revision": "dbad03788f49709801014c95d481a514c272ca52",
+      "decoding": "greedy, repetition_penalty=1.05, max_new_tokens=384",
+      "load_seconds": 9.245998684316874,
+      "completed": true,
+      "total_seconds": 12.25551665108651,
+      "peak_gpu_allocated_bytes": 4324630528,
+      "peak_gpu_reserved_bytes": 4353687552,
+      "script_sha256": "ca41d9e2fd445d4730e05f2020a2962188dcc5ba93f89ad01e4c3dd0d3a18003",
+      "generation_ended_with_eos": {
+        "render": true
+      }
+    },
+    {
+      "phase": "whisper",
+      "precision": "float16",
+      "batch_size": 1,
+      "input_manifest_sha256": "b77abc1a3063529f442c5ef90f854651c04dbb1f53b4c83bef0aaccc0a47188b",
+      "reference_in_prompt": false,
+      "model": "openai/whisper-large-v3",
+      "revision": "06f233fe06e710322aca913c1bc4249a0d71fce1",
+      "decoding": "greedy, max_new_tokens=400; automatic source language, diagnostic confidence thresholds disabled, no prior-window context",
+      "load_seconds": 8.817851465195417,
+      "completed": true,
+      "total_seconds": 12.644067658111453,
+      "peak_gpu_allocated_bytes": 3849791488,
+      "peak_gpu_reserved_bytes": 3925868544,
+      "script_sha256": "ca41d9e2fd445d4730e05f2020a2962188dcc5ba93f89ad01e4c3dd0d3a18003",
+      "generation_ended_with_eos": {
+        "transcribe": true,
+        "translate": true
+      }
+    }
+  ],
+  "evaluation": {
+    "method": "Agent semantic comparison against independently supplied user English wording/meaning. No direct audio perception by the agent. Earlier overlapping diagnostic model outputs existed before this reference, so this is not a held-out blind test.",
+    "wer": null,
+    "wer_reason": "Partial source wording has an unclear span and no agreed Romanized/Devanagari common-script normalization; no mixed-language recognition WER.",
+    "qwen_source": "Retains location/date tokens but English is phonetic Devanagari and the date phrase is unclear. This is not an accepted Original Transcript, and no source-language accuracy score is available.",
+    "qwen_to_hy": {
+      "decision": "Fails tested English-rendering configuration on this diagnostic.",
+      "critical_findings": [
+        "Turns the tentative unfinished date line into an unsupported definite negative assertion about advertising.",
+        "Replaces the destination question with declarative quoted travel statements and an unsupported framing."
+      ],
+      "attribution": "Source recognition is already garbled; the complete pipeline fails fidelity. The two-stage architecture itself is not ruled out."
+    },
+    "whisper_transcribe": {
+      "decision": "Retain as a diagnostic comparison candidate; not accepted.",
+      "findings": [
+        "Retains the tentative date phrase and the destination question/answer better than the other tested English outputs.",
+        "Opening wording differs from the partial reference and needs listener adjudication.",
+        "English output alone does not establish fidelity to the Original Transcript source-language/script requirements."
+      ]
+    },
+    "whisper_translate": {
+      "decision": "Fails tested direct-translation configuration on this diagnostic.",
+      "critical_findings": [
+        "Omits the explicit date from the user reference."
+      ],
+      "findings": [
+        "Preserves the destination question and answer.",
+        "Also omits the positive interjection; do not count that separately as a critical error.",
+        "Opening clause differs from the incomplete reference; do not declare an audio hallucination without adjudication."
+      ]
+    },
+    "limits": [
+      "No verified participant attribution from mixed audio.",
+      "Partial Romanized Hindi-English source wording now available; unclear span and date-qualifier discrepancy remain.",
+      "No representative meeting-quality aggregate or statistical acceptance result.",
+      "Reference ellipses remain unresolved; do not over-classify every unmatched word as invented speech."
+    ],
+    "source_wording_followup": {
+      "date": "2026-10-21",
+      "reference_sha256": "c53881ae73eb4220e6ad4d493a1f5f2d1b4f03919308d8571018e53dc7e1e4b3",
+      "evaluation": "Agent text comparison only; no audio adjudication or WER.",
+      "qwen_source": "Recognizes much of the Hindi opening and date but asserts a negative confirmation clause absent from supplied wording; unclear span prevents complete opening adjudication. English question is phonetic Devanagari with added/garbled words around the date. Does not meet mixed-script Original Transcript contract.",
+      "qwen_to_hy": "Invents advertising assertions and replaces the audible English question with quoted declarative statements. Source corruption contributes; renderer compounds it. Pipeline failure remains.",
+      "native_whisper": "Keeps date and question, but transcribe returns English rather than preserving Hindi. Opening completion exceeds partial source certainty. No acceptance.",
+      "qualifier_revision": "Earlier probably omission finding suspended: earlier English meaning includes it, latest spoken wording does not. Neither omission nor hallucination is established without resolving the discrepancy.",
+      "decision": "No model accepted; no new inference performed."
+    }
+  },
+  "decision": {
+    "pipeline_accepted": false,
+    "accuracy_gate_passed": null,
+    "semantic_gate_passed_for_tested_qwen_hy": false,
+    "semantic_gate_passed_for_tested_whisper_translate": false,
+    "next": "Use the confirmed question/uncertainty/date errors as regression expectations. Evaluate improved self-hosted configurations against original-language and English meaning references; do not select a pipeline from readability or the earlier one-window English WER."
+  },
+  "runtime": {
+    "status": "completed",
+    "elapsed_seconds": 68.4379856903106,
+    "candidates": [
+      "qwen",
+      "hy",
+      "whisper"
+    ],
+    "samples": 37,
+    "all_sampled_production_healthy": true,
+    "minimum_gpu_free_mib": 7581,
+    "peak_gpu_used_mib": 7331,
+    "image": "sha256:bb1e6e6127ee5c83c363f1e6635d2d81bcdca0735dc5cc9ac725587ceedc5581",
+    "wer": null,
+    "checked_reference_available": true
+  },
+  "cleanup": {
+    "production_healthy": true,
+    "production_image_unchanged": true,
+    "production_start_unchanged": true,
+    "isolated_caption_replica_stopped": true,
+    "isolated_runtime_removed": true,
+    "gpu_memory": "3015, 11897"
+  },
+  "private_local": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-mixed-reference",
+  "private_gpu": "/opt/asr-eval/meet-checked-mixed-reference-20261020",
+  "opening_uncertainty_followup": {
+    "date": "2026-10-21",
+    "private_annotation_path": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-mixed-reference/reference-003-opening-uncertainty.json",
+    "annotation_sha256": "2c1b111d39967030a68e6f22b33cd663950271658d701c3351ebd4688a15aa97",
+    "finding": "Listener also marked the opening action word uncertain. Exclude that word and adjacent unclear span from lexical/semantic error judgments; no action or tense adjudication. Date and travel-question findings remain separate."
+  }
+}

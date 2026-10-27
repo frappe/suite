@@ -2,6 +2,7 @@
 import { Button } from "frappe-ui";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { RecordingState } from "../composables/useRecording";
+import { captureLabel, captureNotice, captureActivityLabel } from "../utils/capturePresentation";
 
 const props = withDefaults(defineProps<{ recording: RecordingState; canStop?: boolean }>(), {
 	canStop: false,
@@ -32,13 +33,13 @@ const elapsed = computed(() => {
 });
 
 const interruptionLabel = computed(() => {
-	if (!props.recording.interruption_deadline) return "Recording interrupted";
+	if (!props.recording.interruption_deadline) return `${captureActivityLabel(props.recording) || "Capture"} interrupted`;
 	const deadline = props.recording.interruption_deadline.includes("T")
 		? props.recording.interruption_deadline
 		: props.recording.interruption_deadline.replace(" ", "T");
 	const timestamp = /(?:Z|[+-]\d\d:\d\d)$/.test(deadline) ? deadline : `${deadline}Z`;
 	const seconds = Math.max(0, Math.ceil((new Date(timestamp).getTime() - now.value) / 1000));
-	return `Recording interrupted - ${seconds}s`;
+	return `${captureActivityLabel(props.recording) || "Capture"} interrupted - ${seconds}s`;
 });
 
 onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 1000)));
@@ -51,11 +52,11 @@ onUnmounted(() => timer && clearInterval(timer));
 		variant="subtle"
 		size="sm"
 		:icon-left="recording.status === 'Interrupted' ? 'lucide-triangle-alert' : 'lucide-circle-stop'"
-		:label="recording.status === 'Interrupted' ? interruptionLabel : `REC ${elapsed}`"
+		:label="recording.status === 'Interrupted' ? interruptionLabel : `${captureActivityLabel(recording) || 'Capture ended'} ${elapsed}`"
 		:disabled="!canStop || recording.status === 'Stopping'"
 		role="status"
 		aria-live="polite"
-		:tooltip="canStop ? 'Stop recording' : 'This meeting is being recorded'"
+		:tooltip="canStop ? `Stop ${captureLabel(recording).toLowerCase()}` : captureNotice(recording)"
 		@click="emit('click')"
 	/>
 </template>

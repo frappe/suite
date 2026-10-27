@@ -1,4 +1,5 @@
 import type { Producer, Router } from 'mediasoup/types';
+import type { SpeechScope } from '../speechHints';
 import type { ServerToClientEvents, TranscriptSegment } from '../types';
 import { loggers } from '../utils/logger';
 import { AudioIngester } from './AudioIngester';
@@ -42,6 +43,12 @@ export class SttManager {
 	private stoppingRooms = new Map<string, number>();
 	private emitToSubscribers: EmitSttToSubscribers | undefined;
 	private getRouter: ((roomId: string) => Router | undefined) | undefined;
+	private getSpeechContext:
+		| ((roomId: string) => SpeechScope | undefined)
+		| undefined;
+	setGetSpeechContext(fn: (roomId: string) => SpeechScope | undefined): void {
+		this.getSpeechContext = fn;
+	}
 	private getRoomNames: ((roomId: string) => string[]) | undefined;
 	private restartRoomTranscription:
 		| ((roomId: string) => Promise<void>)
@@ -198,6 +205,7 @@ export class SttManager {
 			router,
 			sttClient: this.sttClient,
 			getNames: () => this.getRoomNames?.(roomId) ?? [],
+			getSpeechContext: () => this.getSpeechContext?.(roomId),
 			onAudioSent: this.onAudioSent,
 			onUnexpectedStreamClose: () => {
 				void this.recoverIngester(

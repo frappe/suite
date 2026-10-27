@@ -363,7 +363,15 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
         frappe.set_user(recording.room_owner)
         parent = _recordings_folder(recording)
         existing_name = frappe.db.get_value("File", recording.publication_key, "file_name")
-        file_name = existing_name or get_new_file_name(_artifact_name(recording), parent, "Video")
+        if recording.capture_contract:
+            file_name = existing_name or "Recording.mp4"
+            collision = frappe.db.get_value(
+                "File", {"folder": parent, "file_name": file_name, "status": ["!=", "Removed"]}, "name"
+            )
+            if collision and collision != recording.publication_key:
+                frappe.throw("The capture destination already contains a recording")
+        else:
+            file_name = existing_name or get_new_file_name(_artifact_name(recording), parent, "Video")
     finally:
         frappe.set_user(callback_user)
 
@@ -381,6 +389,10 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
             owner=recording.room_owner,
             name=recording.publication_key,
         )
+        if recording.capture_contract:
+            from suite.meet.transcription.artifacts import owner_boundary
+
+            owner_boundary(drive_file.name, recording.room_owner)
         frappe.db.after_rollback.add(lambda: _delete_drive_blob(manager, drive_file))
         transfer_path = path.with_name(f"{path.name}.{frappe.generate_hash(length=12)}.transfer")
         try:
@@ -704,7 +716,7 @@ def _validate_media(path: Path) -> dict:
         raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is too large"))
     try:
         media = json.loads(result.stdout)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
     if not isinstance(media, dict):
         raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
@@ -732,7 +744,7 @@ def _validate_media(path: Path) -> dict:
             and float(audio.get("start_time", -1)) >= 0
             and abs(float(video.get("start_time", 0)) - float(audio.get("start_time", 0))) <= 0.1
         )
-    except (TypeError, ValueError, ZeroDivisionError):
+    except TypeError, ValueError, ZeroDivisionError:
         valid_profile = False
     if not valid_profile:
         raise DeterministicFinalizationError(
@@ -741,7 +753,7 @@ def _validate_media(path: Path) -> dict:
     try:
         media_format = media.get("format", {})
         duration = float(media_format.get("duration", 0)) if isinstance(media_format, dict) else 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         duration = 0
     if not math.isfinite(duration) or duration <= 0:
         raise DeterministicFinalizationError("invalid_duration", _("Recording artifact duration is invalid"))
@@ -778,7 +790,7 @@ def _callback_datetime(value):
         frappe.throw(_("Recording callback timestamps must use canonical UTC milliseconds"))
     try:
         parsed = get_datetime(value)
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         frappe.throw(_("Recording callback timestamp is invalid"))
     if parsed.tzinfo is None:
         frappe.throw(_("Recording callback timestamps must include a timezone"))
@@ -786,6 +798,18 @@ def _callback_datetime(value):
 
 
 def _recordings_folder(recording) -> str:
+    if recording.capture_contract:
+        from suite.meet.transcription.artifacts import capture_folder
+
+        folder = capture_folder(
+            recording.name,
+            recording.room_owner,
+            frappe.db.get_value("Meet Room", recording.meet_room, "title") or "Meet",
+            recording.started_at,
+            recording.capture_folder,
+        )
+        recording.capture_folder = folder
+        return folder
     from suite.drive.utils import create_drive_file
     from suite.drive.utils.files import FileManager
 
@@ -827,6 +851,8 @@ def _recordings_folder(recording) -> str:
 
 
 def _artifact_name(recording) -> str:
+    if recording.capture_contract:
+        return "Recording.mp4"
     title = frappe.db.get_value("Meet Room", recording.meet_room, "title")
     title = title or recording.meet_room or "Meet Recording"
     timezone = frappe.db.get_value("User", recording.room_owner, "time_zone") or get_system_timezone()
@@ -844,5 +870,5 @@ def delete_recording_metadata_for_removed_artifact(doc, _method=None):
     if doc.status != "Removed":
         return
     recording = frappe.db.get_value("Meet Recording", {"artifact": doc.name}, "name")
-    if recording:
+    if recording and not frappe.db.exists("Meet Transcription Job", {"capture": recording}):
         frappe.delete_doc("Meet Recording", recording, ignore_permissions=True)

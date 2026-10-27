@@ -30,6 +30,7 @@
         "drive-backed-apps/global-setup.ts",
         "drive-backed-apps/global-teardown.ts",
         "meet/global-setup.ts",
+        "meet/captions/global-setup.ts",
         "meet/load/client.ts",
         "meet/load/*.test.mjs"
       ],
@@ -38,7 +39,7 @@
         "drive-backed-apps/**/*.ts",
         "meet/**/*.{ts,mjs}"
       ],
-      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts"]}
+      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts", "meet/captions/playwright.config.ts", "meet/transcription/pilot.config.ts"]}
     },
     "suite/meet/sfu-server": {
       "entry": ["src/server/RecordingGrantPersistenceFile.ts"],

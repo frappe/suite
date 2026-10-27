@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-21",
+  "status": "inference_completed_review_pending",
+  "protocol": {
+    "date": "2026-10-21",
+    "scope": "Original-language draft and human listening review only; translation deferred.",
+    "source_sha256": "8062f14890247b60fd6b07e7dcd65db83d28097b070d6868760b42411a5e527f",
+    "continuous_input": {
+      "continuous_start_seconds": 7540,
+      "continuous_duration_seconds": 300,
+      "continuous_pcm_sha256": "7fa405ffe1d69d4bca99e5f81497484edca2aa8c40b190ba9fca75158f789f73"
+    },
+    "selection": "Continuous5min centered on previously reviewed mixed-language sample85. Post-failure development selection, not held-out or representative acceptance.",
+    "windowing": "Fixed20s nonoverlapping, no previous-text carry, no overlap repair or deduplication; same short-call recognition settings as prior Trelis trial.",
+    "model": "Trelis/whisper-hinglish-preview",
+    "revision": "eab1188fd2d0e91f2584229b32b3bfe1901c896c",
+    "decoding": "Unchanged FP16/SDPA, auto dominantlanguage, mixedcodeuniform, greedy440, batch1; no tasktranslation, no vocabularyhints.15windows total.",
+    "reference_in_prompts": false,
+    "quality_reference": "No complete checked5min reference. Prior partial85reference overlaps two windows; no numericWER or quality acceptance.",
+    "atlas_recheck": {
+      "start_seconds": 3160,
+      "duration_seconds": 35,
+      "pcm_sha256": "39628ca053954453b5bc622defc9a6094416e9b96d4cd5754b7f2be460d2d71a",
+      "purpose": "Listen and write actual phrase without candidate alternatives; prior reference/model exposure exists, not blind. No new inference on this contextual audio."
+    },
+    "capture_path_limit": "Mixed recording audio, not separate participant capture sources. No validated speaker attribution, word alignment or production assembly.",
+    "guard": "Own offline runtime,7GiBallocator,>=3072MiBfree,1200sbound, productionhealth/image/start guard andcleanup."
+  },
+  "input_manifest_sha256": "4f45f9b875ef1309798f8b410c0315f71948834085a0f0d212626eef3986a566",
+  "input_continuity": "15adjacent20s files concatenate byte-for-byte to frozen300s PCM. No inserted silence or overlap reconciliation.",
+  "extraction": "FFmpeg resampler tail1376bytes (688samples/28.667ms) trimmed after requested300s. No reference-word-based trimming.",
+  "setup": "Initial extraction assertion expected exact resampler duration, then SCP nested a preexisting partial directory. Both corrected before inference; no prior quality output discarded.",
+  "human_review_status": "Atlas recheck received; continuous five-minute passage still pending.",
+  "accuracy_gate_passed": null,
+  "pipeline_accepted": false,
+  "private_local": "/home/t3code/.local/share/suite-transcription-pilot/20261021/trelis-long",
+  "private_gpu": "/opt/asr-eval/meet-trelis-long-20261021",
+  "model_metadata": {
+    "model": "Trelis/whisper-hinglish-preview",
+    "revision": "eab1188fd2d0e91f2584229b32b3bfe1901c896c",
+    "weights": [
+      {
+        "name": "model-00001-of-00002.safetensors",
+        "bytes": 4993454000,
+        "sha256": "084aa9aadbf48503a73cee2d5a2960bb272428e33fc96fcb7cc09cad53fcdfe4"
+      },
+      {
+        "name": "model-00002-of-00002.safetensors",
+        "bytes": 1180663192,
+        "sha256": "c0d42c5d57befad7b259b42a9061bf8c157c8a65b2c444a68cfddf15bd4ba5c2"
+      }
+    ],
+    "architecture": {
+      "model_type": "whisper",
+      "d_model": 1280,
+      "encoder_layers": 32,
+      "decoder_layers": 32,
+      "vocab_size": 51867
+    },
+    "config_sha256": "b2238baac80847d564ccee28305c3dd5cda64e60cfe92f60030049c5aa0f70a6",
+    "license": "Apache2.0 per model card",
+    "gated": false,
+    "precision": "FP16 from F32 checkpoint; SDPA/T4",
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "5.19.0",
+      "numpy": "1.26.4",
+      "tokenizers": "0.23.3"
+    },
+    "reference_in_prompt": false,
+    "hints": false,
+    "mixedcode_ids": [
+      51866
+    ],
+    "mixedcode_is_special": true,
+    "input_sha256": "4f45f9b875ef1309798f8b410c0315f71948834085a0f0d212626eef3986a566",
+    "load_seconds": 11.331025932915509,
+    "completed": true,
+    "total_seconds": 72.42418000102043,
+    "peak_gpu_allocated_bytes": 3929151488,
+    "peak_gpu_reserved_bytes": 4001366016
+  },
+  "runtime": {
+    "status": "completed",
+    "elapsed_seconds": 80.26121283043176,
+    "candidates": [
+      "qwen"
+    ],
+    "samples": 41,
+    "all_sampled_production_healthy": true,
+    "minimum_gpu_free_mib": 7947,
+    "peak_gpu_used_mib": 6965,
+    "image": "sha256:bb1e6e6127ee5c83c363f1e6635d2d81bcdca0735dc5cc9ac725587ceedc5581",
+    "wer": null,
+    "checked_reference_available": false
+  },
+  "cleanup": {
+    "production_healthy": true,
+    "production_image_unchanged": true,
+    "production_start_unchanged": true,
+    "isolated_caption_replica_stopped": true,
+    "isolated_runtime_removed": true,
+    "gpu_memory": "3015, 11897"
+  },
+  "processing": {
+    "completed_windows": 15,
+    "total_source_audio_seconds": 300,
+    "all_generations_ended_with_eos": true,
+    "maximum_generated_tokens": 201,
+    "empty_drafts": 0,
+    "language_predictions": {
+      "<|hi|>": 15
+    },
+    "interpretation": "No unprocessed windows in this run; does not establish no missing speech, correct languages or faithful words. Predicted Hindi labels are not checked truth."
+  },
+  "review_packet": {
+    "private_html": "/home/t3code/.local/share/suite-transcription-pilot/20261021/trelis-long/review.html",
+    "private_draft": "/home/t3code/.local/share/suite-transcription-pilot/20261021/trelis-long/Original Transcript.draft.txt",
+    "mode": "Atlas35scontext with blank wording field; full300spassage and15windows with optional modeldraft reveal; rawnotes exported as post-pilot feedback, never labeled blind or scored.",
+    "checks": "Desktop/mobile preview; audio metadata9047.12s loaded; note preservation across selections, export IDs/timestamps and per-selection model exposure checked; metadata load preserves unsaved notes.",
+    "limitations": "No agent audio perception or complete independent source reference. Atlas phrase remains unadjudicated; common mixed-script normalization unset. Real separate-speaker capture path, attribution and subtitle alignment not tested."
+  },
+  "output_sha256": "ca6df8350b54b85258172bad5da18d10da70e10eeac539bb7512243fb9bf9c08",
+  "draft_sha256": "53685d02bb069398f969577b2e3c879de01b10f43ce1e66dc95d317263ba4939",
+  "script_sha256": {
+    "infer.py": "3f14ad08db41926a11ebad7031e3e5cc191204b1b91d7bff47c0b8c543a6ccee",
+    "run.py": "4acb0061cc912d69651668d11966193ec87a90fc5d1c496d8b28ebbed86c7c35",
+    "make-review.py": "2d0c42a633d4f97893a6edfbd07693cf3fd828509046ac08e9cd9e8b02f5c1fa"
+  },
+  "wer": null,
+  "quality_gate_passed": null,
+  "atlas_review": {
+    "private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261021/trelis-long/reference-007-atlas-recheck.json",
+    "sha256": "100a199870d312c2eceabe8d0883b274399e566798e4ae90936c7790a8bbf243",
+    "reviewed_at": "2026-10-21T12:01:21.453Z",
+    "audibility": "clear per listener; one bracketed unresolved span retained",
+    "language": "English",
+    "model_draft_revealed_in_form": false,
+    "prior_exposure": true,
+    "finding": "Listener again confirms Atlas signup responsibility in expanded35s context. Earlier Trelis sign-of-responsibility output remains a recognition error under checked reference. Context also supplies pre-release checklist and VM-creation discussion; new wording is not fed to inference.",
+    "wer": null,
+    "wer_reason": "Recheck35s context differs from original20s inference; unresolved span and no word-level alignment. Do not score unmatched context against20s output."
+  }
+}

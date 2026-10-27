@@ -1,0 +1,79 @@
+{
+  "created_date": "2026-10-21",
+  "source_sha256": "8062f14890247b60fd6b07e7dcd65db83d28097b070d6868760b42411a5e527f",
+  "selection": "Reuse remaining three frozen percentage-selected20s clips from original packet; no output-driven reselection.",
+  "review_exposure": "Form contains no model drafts. Whole recording was previously processed with Granite; these are unreviewed references, not a wholly untouched held-out corpus.",
+  "scope": "First reference collection batch,60s total. Language/coverage determined by listener; insufficient by itself for production acceptance.",
+  "development_cases": [
+    "blind-10: partly unclear English reference, already evaluated",
+    "diagnostic-30-50: partial Hindi-English source and English meaning, exposed development regression; uncertain opening excluded; date qualifier unresolved"
+  ],
+  "manifest_sha256": "368f356d365d72f5fc9ecb15334830e02c4c461aca0be6d50584b8c0b126e295",
+  "private_packet_path": "/home/t3code/.local/share/suite-transcription-pilot/20261021/bilingual-review",
+  "cases": [
+    {
+      "id": "blind-35",
+      "start_seconds": 3166,
+      "duration_seconds": 20,
+      "wav_sha256": "7a85a4a274f2421ab0a85d5b04cfe6c629d46bdc69acf57ec1f94a402cfac254",
+      "reference_status": "received",
+      "reference_private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261021/reference35/reference-004.json",
+      "reference_sha256": "a6167bbbc806486053fd8aab64056d298d3319e529970a78d4d22d8bb351f4c0",
+      "language": "English",
+      "audibility": "partly_unclear",
+      "prior_model_draft_exposure": "unknown",
+      "english_meaning": "Same as source wording per user; no separate translated reference.",
+      "scoring": "Clear-span semantic review only; no full-window WER.",
+      "candidate_comparison": "Both retain Atlas and list-review purpose, neither faithfully preserves signup responsibility; no full-window WER."
+    },
+    {
+      "id": "blind-65",
+      "start_seconds": 5880,
+      "duration_seconds": 20,
+      "wav_sha256": "329356dc1e2eb8e3842a3c70257e9b805f5b59796b927c6f5ea27f62270579db",
+      "reference_status": "received",
+      "reference_private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261021/reference85/reference-005.json",
+      "reference_sha256": "765c311f43a25b969a2007e93e19bfc636157267b2f6990c4c97f06df074b597",
+      "language": "english",
+      "audibility": "unintelligible",
+      "prior_model_draft_exposure": "unknown",
+      "english_meaning": "No independent translation supplied.",
+      "scoring": "Excluded: marked unintelligible."
+    },
+    {
+      "id": "blind-85",
+      "start_seconds": 7690,
+      "duration_seconds": 20,
+      "wav_sha256": "839fd5486ea3570f9c307aa9a1c46850e3db03d60d45dd20fd1485b197e35cfe",
+      "reference_status": "received",
+      "reference_private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261021/reference85/reference-006.json",
+      "reference_sha256": "4216db001c17f2d0bd4e802b70501ccca78384f15abea5d4c8e10f00a4d416c1",
+      "language": "mixed",
+      "audibility": "not selected",
+      "prior_model_draft_exposure": "unknown",
+      "english_meaning": "No independent translation supplied.",
+      "scoring": "Partial source-wording comparison; no mixed WER or full English-meaning gate.",
+      "candidate_comparison": "Whisper English retains clear central wording; both recognition outputs fail mixed-script contract. Opening and Hindi meaning unresolved; no full-window score."
+    }
+  ],
+  "evaluation_policy": {
+    "source": "Keep original-language wording separate from English meaning. Preserve explicit uncertainty; do not infer identities from mixed recording. Romanized/Devanagari mismatch must be adjudicated before mixed-language WER.",
+    "english": "Compare against human meaning for omissions, invented facts, questions, negation, dates, numbers, names and uncertainty. Readability and keyword overlap cannot pass fidelity.",
+    "eligibility": "Clear bilingual references required for mixed-language comparison. Other/English/no-speech cases retained in their strata, never silently relabeled. Collect more cases if mixed-language coverage is absent.",
+    "gate": "English normalized WER<=10% remains provisional and separate; no application to translated English or unresolved mixed script. Critical errors reviewed separately. Three20s references cannot establish representative acceptance.",
+    "freeze": "User submissions saved as new private immutable references; clarifications as separate annotations. No candidate prediction for these exact clips until initial references frozen; previous full-recording Granite processing disclosed."
+  },
+  "inference_run": true,
+  "pipeline_accepted": false,
+  "checked_mixed_language_cases": 1,
+  "inference_status": "Completed Qwen/native comparison on35 and85. Case65 excluded as unintelligible; no inference on65 in these runs.",
+  "results": [
+    "transcription-reference35-validation.json",
+    "transcription-reference85-validation.json"
+  ],
+  "complete_bilingual_meaning_references": 0,
+  "duplicate_entries_counted_once": [
+    "blind-65"
+  ],
+  "reference_collection_status": "All3 unique cases received; one unintelligible, one partly unclear English, one partial mixed with audibility unspecified."
+}

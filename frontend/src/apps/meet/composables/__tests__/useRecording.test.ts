@@ -214,4 +214,84 @@ describe("useRecording", () => {
 		expect(toast.success).not.toHaveBeenCalled();
 		expect(toast.error).toHaveBeenCalledWith("Recording capacity is unavailable");
 	});
+	it("sends independent transcript-only choices to the capture API", async () => {
+		mocks.getStateResults.push({ name: "recording", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
+		const recording = useRecording("room");
+		await recording.start({ video_enabled: false, transcription_enabled: true, language: "en" });
+		expect(mocks.startParams[0]).toMatchObject({ meeting_id: "room", video_enabled: false, transcription_enabled: true, language: "en" });
+		expect(recording.state.value).toMatchObject({ video_enabled: false, transcription_enabled: true });
+		expect(toast.info).toHaveBeenCalledWith("Transcription is starting");
+	});
+
+	it("rejects an empty selection before making a start request", async () => {
+		const recording = useRecording("room");
+		await expect(recording.start({ video_enabled: false, transcription_enabled: false, language: "en" })).rejects.toThrow("Select video recording or transcription");
+		expect(mocks.startParams).toHaveLength(0);
+	});
+
+	it("announces transcription-only and combined capture accurately to late joiners", () => {
+		const recording = useRecording("room");
+		recording.syncState({ name: "transcript", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
+		expect(toast.info).toHaveBeenCalledWith("This meeting is being transcribed");
+		recording.syncState(null);
+		recording.syncState({ name: "both", status: "Recording", state_revision: 1, video_enabled: true, transcription_enabled: true });
+		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded and transcribed");
+	});
+
+	it("ignores transcription source events for other rooms and captures", () => {
+		const recording = useRecording("room");
+		recording.syncState({ name: "capture", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
+		vi.clearAllMocks();
+		recording.syncTranscriptionCapture({ room: "another-room", capture: "capture", state: "partial", interrupted: true });
+		recording.syncTranscriptionCapture({ room: "room", capture: "another-capture", state: "complete" });
+		expect(recording.isCapturing.value).toBe(true);
+		expect(recording.state.value?.transcription_capture_state).toBeUndefined();
+		expect(toast.info).not.toHaveBeenCalled();
+		expect(toast.error).not.toHaveBeenCalled();
+	});
+
+	it("keeps video live when only transcription has ended", async () => {
+		const recording = useRecording("room");
+		const capture: RecordingState = { name: "capture", status: "Recording", state_revision: 1, video_enabled: true, transcription_enabled: true, transcription_capture_state: "capturing" };
+		recording.syncState(capture);
+		mocks.getStateResults.push(capture);
+		recording.syncTranscriptionCapture({ room: "room", capture: "capture", state: "complete" });
+		await Promise.resolve(); await Promise.resolve();
+		expect(recording.isLive.value).toBe(true);
+		expect(recording.isCapturing.value).toBe(true);
+		expect(recording.state.value).toMatchObject({ video_enabled: true, transcription_enabled: true, transcription_capture_state: "complete" });
+		expect(toast.info).toHaveBeenCalledWith("Transcription capture has ended. Video recording continues.");
+	});
+
+	it("ends the transcription activity indicator while retaining canonical stop state", () => {
+		const recording = useRecording("room");
+		recording.syncState({ name: "capture", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
+		recording.syncTranscriptionCapture({ room: "room", capture: "capture", state: "partial", interrupted: true });
+		expect(recording.isCapturing.value).toBe(false);
+		expect(recording.isLive.value).toBe(true);
+		expect(recording.state.value?.transcription_enabled).toBe(true);
+		expect(toast.error).toHaveBeenCalledWith("Transcription capture was interrupted. Missing speech will be marked in any recovered transcript.");
+		recording.syncTranscriptionCapture({ room: "room", capture: "capture", state: "capturing" });
+		expect(recording.isCapturing.value).toBe(false);
+	});
+
+	it("keeps transcription live when the video output has failed", () => {
+		const recording = useRecording("room");
+		recording.syncState({ name: "capture", status: "Recording", state_revision: 4, video_enabled: true, transcription_enabled: true, video_capture_state: "failed", transcription_capture_state: "capturing" });
+		expect(recording.isLive.value).toBe(true);
+		expect(recording.isCapturing.value).toBe(true);
+		expect(recording.state.value?.video_enabled).toBe(true);
+		expect(toast.info).toHaveBeenCalledWith("This meeting is being transcribed");
+	});
+
+	it("refreshes surviving audio after video start is rejected", async () => {
+		mocks.startResults.push({ status: "Rejected" });
+		mocks.getStateResults.push({ name: "capture", status: "Recording", state_revision: 3, video_enabled: true, transcription_enabled: true, video_capture_state: "failed", transcription_capture_state: "capturing" });
+		const recording = useRecording("room");
+		await recording.start({ video_enabled: true, transcription_enabled: true, language: "en" });
+		expect(recording.isCapturing.value).toBe(true);
+		expect(recording.state.value?.transcription_enabled).toBe(true);
+		expect(toast.error).toHaveBeenCalledWith("Video recording could not start. Transcription capture continues.");
+	});
+
 });

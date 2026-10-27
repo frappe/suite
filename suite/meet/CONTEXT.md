@@ -4,6 +4,22 @@ Meet provides persistent rooms in which participants communicate through live au
 
 ## Language
 
+**Transcript**:
+A saved text account of speech available after the conversation, owned by the Room Owner and available to others through explicit sharing.
+_Avoid_: Live Captions, Recording Artifact
+
+**Original Transcript**:
+A Transcript that preserves the languages spoken, their substantive meaning and participant attribution, rather than translating the conversation into another language.
+_Avoid_: Raw Model Output, Translation
+
+**Transcription Capture**:
+One continuous interval of collecting participant speech for an Original Transcript, independent of video recording.
+_Avoid_: Recording Session, Meeting Session
+
+**Transcription Job**:
+The queued or running work to produce an Original Transcript from captured speech, including retries before its delivery outcome is available.
+_Avoid_: Transcript, Recording Session
+
 **Meet Room**:
 A persistent joinable space whose membership and meeting policies survive individual calls.
 _Avoid_: Meeting Session, Call
@@ -29,7 +45,7 @@ A period during an active Recording Session when the Recorder Endpoint cannot ca
 _Avoid_: Recording Stop, Processing Failure
 
 **Room Owner**:
-The user who owns the Meet Room and the Recording Artifacts produced in it.
+The user who owns the Meet Room and the Recording Artifacts and Transcripts produced in it.
 _Avoid_: Recording Initiator
 
 **Recording Initiator**:
@@ -74,6 +90,10 @@ _Avoid_: Server-side Encryption
 
 ## Relationships
 
+- Recording and transcription are independently selectable outputs of one capture flow; a Transcript does not require a Recording Artifact.
+- A Transcript and a Recording Artifact from the same capture may become available independently; failure of one does not discard a usable result from the other.
+- A Transcription Capture produces at most one Original Transcript, preserving the languages spoken. Its availability remains independent of video.
+- Only usable complete or explicitly partial Original Transcripts appear in Drive. Recognition progress alone is not a delivered Transcript.
 - Global recording availability gates new sessions; disabling it does not interrupt an active Recording Session.
 - An authenticated participant has at most one active **Participant Connection** to a Meet Room and switches explicitly between tabs or devices.
 - A **Meet Room** can have many **Recording Sessions** over its lifetime.
@@ -89,7 +109,7 @@ _Avoid_: Server-side Encryption
 - A **Recording Interruption** is visible to all participants and may recover for up to 60 seconds before the Recording Session stops; it produces a Partial Artifact only when valid captured media exists, otherwise it fails without an artifact.
 - A **Recording Artifact** belongs to exactly one **Room Owner**.
 - A **Recording Artifact** appears in Drive only after its video is valid and ready.
-- A **Recording Artifact** is named from its Meet Room title and Recording Session start time.
+- New **Recording Artifacts** and **Transcripts** from one capture are grouped under its Meet Room title and capture start time; existing artifacts keep their placement.
 - Only the **Room Owner** receives post-processing ready, partial, or failed notifications, delivered by email rather than an in-app notification.
 - Trashing a **Recording Artifact** follows normal reversible Drive behavior; permanently deleting it also deletes its Recording Session metadata.
 - A **Recording Initiator** controls a **Recording Session** but does not thereby own its **Recording Artifact**.

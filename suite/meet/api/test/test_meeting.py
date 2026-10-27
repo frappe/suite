@@ -122,6 +122,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             ("site", "other.example.com"),
             ("iat", 1),
             ("exp", 2),
+            ("speech_context", {"vocabulary_version": "frappe-v1", "title": "Forged"}),
         ):
             with self.subTest(claim=claim), self.assertRaises(frappe.ValidationError):
                 _generate_sfu_token("user-a", "all-hands", **{claim: value})
@@ -149,12 +150,17 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
                 "is_host",
                 "is_cohost",
                 "e2ee_required",
+                "speech_context",
             },
         )
         self.assertEqual(decoded["site"], frappe.local.site)
         self.assertEqual(decoded["iat"], now)
         self.assertEqual(decoded["exp"], now + 3600)
         self.assertEqual(decoded["scope"], "full")
+
+        self.assertEqual(
+            decoded["speech_context"], {"vocabulary_version": "frappe-v1", "title": self.meeting.title or ""}
+        )
 
     def test_restricted_meeting_non_member_cannot_get_sfu_connection_details(self):
         frappe.set_user(self.outsider_email)

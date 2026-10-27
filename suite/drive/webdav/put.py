@@ -90,6 +90,8 @@ def handle(ctx: DavContext) -> Response:
             raise MethodNotAllowed("Cannot PUT to a collection.")
         if not user_has_permission(row.name, "write"):
             raise Forbidden("You cannot overwrite this file.")
+        if frappe.db.exists("Meet Transcription Job", {"artifact": row.name}):
+            raise Forbidden("Generated Meet transcripts are read-only. Download a copy to edit.")
         owner, existing = row.owner, row.file_size or 0
 
     evaluate_preconditions(ctx.request, row)

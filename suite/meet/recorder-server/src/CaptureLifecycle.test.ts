@@ -8,6 +8,7 @@ import { CaptureWorkerManager } from './CaptureWorkerManager.js';
 import type { ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
+import { logger } from './logger.js';
 import {
 	COMMAND_AUDIENCE,
 	type CommandClaims,
@@ -878,7 +879,12 @@ describe('capture lifecycle', () => {
 	it('recovers FFmpeg capture with a durable bounded interruption', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
-		const exits: Array<() => void> = [];
+		const exits: Array<
+			NonNullable<Parameters<ProcessSupervisor['start']>[2]['onUnexpectedExit']>
+		> = [];
+		const errors = vi
+			.spyOn(logger, 'error')
+			.mockImplementation(() => undefined);
 		const adopted: Array<(segment: never) => void | Promise<void>> = [];
 		let now = Date.parse('2026-08-30T12:00:30.000Z');
 		const supervisor = {
@@ -939,11 +945,11 @@ describe('capture lifecycle', () => {
 			});
 		});
 
-		exits[0]?.();
+		exits[0]?.({ code: null, signal: 'SIGKILL' });
 		await vi.waitFor(() => expect(onInterrupted).toHaveBeenCalledOnce());
 		await vi.waitFor(() => expect(adopted).toHaveLength(2));
 		const adoption = adopted[1]?.({} as never);
-		exits[1]?.();
+		exits[1]?.({ code: 1, signal: null });
 		await adoption;
 		await vi.waitFor(() => expect(adopted).toHaveLength(3));
 		expect(onRecovered).not.toHaveBeenCalled();
@@ -979,6 +985,13 @@ describe('capture lifecycle', () => {
 			},
 		]);
 		await worker.stop();
+		expect(errors).toHaveBeenCalledWith({
+			event: 'capture_process_exited',
+			job: 'ffmpeg-recovery',
+			exit_code: null,
+			signal: 'SIGKILL',
+		});
+		errors.mockRestore();
 	});
 
 	it('keeps recovery launch timestamps nondecreasing when the clock regresses', async () => {

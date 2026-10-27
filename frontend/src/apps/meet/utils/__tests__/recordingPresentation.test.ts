@@ -22,7 +22,7 @@ describe("recording preflight presentation", () => {
 			...preflight,
 			e2ee_conflict: true,
 		});
-		expect(reason.title).toBe("Encrypted meetings can't be recorded");
+		expect(reason.title).toBe("Capture is unavailable in encrypted meetings");
 	});
 
 	it("distinguishes recorder service outages", () => {

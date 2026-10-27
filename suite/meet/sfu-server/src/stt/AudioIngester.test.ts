@@ -63,6 +63,22 @@ describe('AudioIngester', () => {
 		vi.restoreAllMocks();
 		vi.unstubAllEnvs();
 	});
+	it('delivers decoded source PCM through a separate capture tap without sending it into live-caption buffers', async () => {
+		const onPcm = vi.fn();
+		const detector = fixtureDetector();
+		vi.spyOn(detector, 'detect');
+		const ingester = testIngester({ onPcm, speechDetector: detector });
+		const internals = ingester as unknown as {
+			handleDecodedAudio(audio: Buffer): void;
+			vadQueueBytes: number;
+		};
+		const original = Buffer.concat([speechFrame(), silenceFrame()]);
+		internals.handleDecodedAudio(original);
+		expect(onPcm).toHaveBeenCalledExactlyOnceWith(original);
+		expect(internals.vadQueueBytes).toBe(0);
+		expect(detector.detect).not.toHaveBeenCalled();
+		await ingester.stop();
+	});
 	it('uses detector speech decisions rather than amplitude while preserving pre-roll and short-utterance silence', async () => {
 		const decisions = [
 			false,
@@ -134,7 +150,9 @@ describe('AudioIngester', () => {
 			return frame;
 		});
 		const positiveFrame = speechFrame();
-		internals.handleDecodedAudio(Buffer.concat([...softPrefix, positiveFrame, positiveFrame]));
+		internals.handleDecodedAudio(
+			Buffer.concat([...softPrefix, positiveFrame, positiveFrame]),
+		);
 		await internals.runVadCheck();
 		const expectedPrefix =
 			override === undefined

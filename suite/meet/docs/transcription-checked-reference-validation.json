@@ -1,0 +1,191 @@
+{
+  "date": "2026-10-20",
+  "case": "blind-10",
+  "source_sha256": "8062f14890247b60fd6b07e7dcd65db83d28097b070d6868760b42411a5e527f",
+  "start_seconds": 904,
+  "duration_seconds": 20,
+  "reference": {
+    "reviewed_at": "2026-10-20T14:16:29.870Z",
+    "model_drafts_shown": false,
+    "language": "English",
+    "audibility": "partly_unclear",
+    "sha256": "b92bc0fdbef27066e50f7e8dd54b32ffcf68707d00cdfcd6f247599ad79b0f0f",
+    "scope": "User supplied checked text or meaning. It includes fragmentary start/end and has not been adjudicated as a complete verbatim reference. Raw wording remains private.",
+    "immutable_private_path": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-reference/reference-001.json"
+  },
+  "input": {
+    "source_sha256": "8062f14890247b60fd6b07e7dcd65db83d28097b070d6868760b42411a5e527f",
+    "selection": "Only the first preselected blind window, after an independently supplied user listening reference. Reference never sent in inference prompts.",
+    "cases": [
+      {
+        "id": "blind-10",
+        "start_seconds": 904,
+        "duration_seconds": 20,
+        "pcm_sha256": "0582e1c6efac6fd88ca28299d8068d399ba062bf4c4f3b4bf5acf70f7ecac383"
+      }
+    ]
+  },
+  "methods": [
+    {
+      "phase": "qwen",
+      "precision": "float16",
+      "batch_size": 1,
+      "input_manifest_sha256": "36e3bd96fb872ba1e5cd12933f5f2227921bb4772cf1c14963ffeb097f5d42ea",
+      "reference_in_prompt": false,
+      "model": "Qwen/Qwen3-ASR-1.7B-hf",
+      "revision": "bcd2b5b7f32b480ab5790554cfa8347f246a14f3",
+      "decoding": "greedy, max_new_tokens=448; automatic language, no hints",
+      "load_seconds": 13.154803066514432,
+      "completed": true,
+      "total_seconds": 17.657464518211782,
+      "peak_gpu_allocated_bytes": 4268894208,
+      "peak_gpu_reserved_bytes": 4385144832,
+      "script_sha256": "ca41d9e2fd445d4730e05f2020a2962188dcc5ba93f89ad01e4c3dd0d3a18003",
+      "generation_ended_with_eos": {
+        "auto": true
+      }
+    },
+    {
+      "phase": "hy",
+      "precision": "float16",
+      "batch_size": 1,
+      "input_manifest_sha256": "36e3bd96fb872ba1e5cd12933f5f2227921bb4772cf1c14963ffeb097f5d42ea",
+      "reference_in_prompt": false,
+      "model": "tencent/HY-MT1.5-1.8B",
+      "revision": "dbad03788f49709801014c95d481a514c272ca52",
+      "decoding": "greedy, repetition_penalty=1.05, max_new_tokens=384",
+      "load_seconds": 10.518866405822337,
+      "completed": true,
+      "total_seconds": 14.941736230626702,
+      "peak_gpu_allocated_bytes": 4324630528,
+      "peak_gpu_reserved_bytes": 4351590400,
+      "script_sha256": "ca41d9e2fd445d4730e05f2020a2962188dcc5ba93f89ad01e4c3dd0d3a18003",
+      "generation_ended_with_eos": {
+        "render": true
+      }
+    },
+    {
+      "phase": "whisper",
+      "precision": "float16",
+      "batch_size": 1,
+      "input_manifest_sha256": "36e3bd96fb872ba1e5cd12933f5f2227921bb4772cf1c14963ffeb097f5d42ea",
+      "reference_in_prompt": false,
+      "model": "openai/whisper-large-v3",
+      "revision": "06f233fe06e710322aca913c1bc4249a0d71fce1",
+      "decoding": "greedy, max_new_tokens=400; automatic source language, diagnostic confidence thresholds disabled, no prior-window context",
+      "load_seconds": 8.771032674238086,
+      "completed": true,
+      "total_seconds": 14.3715163115412,
+      "peak_gpu_allocated_bytes": 3869781504,
+      "peak_gpu_reserved_bytes": 3944742912,
+      "script_sha256": "ca41d9e2fd445d4730e05f2020a2962188dcc5ba93f89ad01e4c3dd0d3a18003",
+      "generation_ended_with_eos": {
+        "transcribe": true,
+        "translate": true
+      }
+    }
+  ],
+  "metrics": {
+    "normalizer": "Whisper EnglishTextNormalizer",
+    "dictionary_sha256": "bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd",
+    "strict_policy": "Case-fold and remove non-word/non-whitespace punctuation except apostrophes, then whitespace split.",
+    "reference_sha256": "b92bc0fdbef27066e50f7e8dd54b32ffcf68707d00cdfcd6f247599ad79b0f0f",
+    "reference_status": "User-listened, partly unclear and fragmentary; diagnostic only. No full-window accuracy gate decision.",
+    "normalizer_postprocessing": "Remove normalized tokens with no alphanumeric character, identically on reference and hypotheses. The English normalizer left a standalone period from the trailing ellipsis; it is annotation/punctuation, not a spoken word.",
+    "postprocessing_timing": "Discovered after initial scores. Raw scores retained and both reported; no acceptance decision.",
+    "scores": {
+      "qwen-asr": {
+        "normalized": {
+          "reference_words": 68,
+          "errors": 5,
+          "wer": 0.07352941176470588,
+          "substitutions": 1,
+          "deletions": 1,
+          "insertions": 3
+        },
+        "strict": {
+          "reference_words": 60,
+          "errors": 5,
+          "wer": 0.08333333333333333,
+          "substitutions": 1,
+          "deletions": 1,
+          "insertions": 3
+        },
+        "raw_common_normalizer": {
+          "reference_words": 69,
+          "errors": 5,
+          "wer": 0.07246376811594203,
+          "substitutions": 2,
+          "deletions": 1,
+          "insertions": 2
+        }
+      },
+      "whisper-asr": {
+        "normalized": {
+          "reference_words": 68,
+          "errors": 11,
+          "wer": 0.16176470588235295,
+          "substitutions": 1,
+          "deletions": 8,
+          "insertions": 2
+        },
+        "strict": {
+          "reference_words": 60,
+          "errors": 10,
+          "wer": 0.16666666666666666,
+          "substitutions": 1,
+          "deletions": 7,
+          "insertions": 2
+        },
+        "raw_common_normalizer": {
+          "reference_words": 69,
+          "errors": 11,
+          "wer": 0.15942028985507245,
+          "substitutions": 2,
+          "deletions": 8,
+          "insertions": 1
+        }
+      }
+    }
+  },
+  "semantic_review": {
+    "method": "Agent comparison of candidate text with user reference, not independent audio listening.",
+    "qwen": "Close textual match; tentative implementation and negation preserved. Initial reference fragment omitted, grammar changed and extra tokens present. No unqualified critical-error pass.",
+    "hy": "Improves fluency but changes a singular technical-looking term to plural ordinary noun. This is a term-fidelity regression relative to its input; interpretation of the intended tool requires listener confirmation. Tentative implementation and negation retained.",
+    "whisper": "Recognition and direct translation outputs are identical on this English window. More omitted wording; no evidence about Hindi translation from this case.",
+    "boundary_warning": "Both recognizers complete a word beyond the reference ending. The user left that ending fragmentary, so this is unresolved, not a confirmed hallucination. Keep the original reference and scores without post-hoc exclusions.",
+    "critical_error_gate": "Not adjudicated. No mixed-language acceptance result."
+  },
+  "decision": {
+    "accuracy_gate_passed": null,
+    "pipeline_accepted": false,
+    "interpretation": "Qwen scores better on this one English sample. This does not select a Hindi-English pipeline or validate the renderer.",
+    "next": "Collect a checked Hindi-English source and English meaning, resolve critical terms and boundary uncertainty, then evaluate representative coverage."
+  },
+  "runtime": {
+    "status": "completed",
+    "elapsed_seconds": 72.54195905383676,
+    "candidates": [
+      "qwen",
+      "hy",
+      "whisper"
+    ],
+    "samples": 39,
+    "all_sampled_production_healthy": true,
+    "minimum_gpu_free_mib": 7581,
+    "peak_gpu_used_mib": 7331,
+    "image": "sha256:bb1e6e6127ee5c83c363f1e6635d2d81bcdca0735dc5cc9ac725587ceedc5581",
+    "wer": null,
+    "checked_reference_available": true
+  },
+  "cleanup": {
+    "production_healthy": true,
+    "production_image_unchanged": true,
+    "production_start_unchanged": true,
+    "isolated_caption_replica_stopped": true,
+    "isolated_runtime_removed": true,
+    "gpu_memory": "3015, 11897"
+  },
+  "private_local": "/home/t3code/.local/share/suite-transcription-pilot/20261020/checked-reference",
+  "private_gpu": "/opt/asr-eval/meet-checked-reference-20261020"
+}

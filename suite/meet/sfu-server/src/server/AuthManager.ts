@@ -1,5 +1,6 @@
 import * as jwt from 'jsonwebtoken';
 import type { Socket } from 'socket.io';
+import { parseSpeechScope } from '../speechHints';
 import type { JWTPayload } from '../types';
 import { loggers } from '../utils/logger';
 import type { RecordingGrantManager } from './RecordingGrantManager';
@@ -29,6 +30,7 @@ export class AuthManager {
 
 			const header = jwt.decode(token, { complete: true })?.header;
 			if (header?.typ === 'meet-recording-grant+jwt') {
+				delete socket.speechContext;
 				if (!this.recordingGrantManager) return false;
 				const claims = this.recordingGrantManager.verifyGrant(token);
 				socket.userId = `recorder:${claims.recording_id}`;
@@ -52,6 +54,7 @@ export class AuthManager {
 			const decoded = parseParticipantClaims(jwt.verify(token, this.jwtSecret));
 
 			// Attach user info to socket
+			socket.speechContext = decoded.speech_context;
 			socket.userId = decoded.user_id;
 			socket.userName = decoded.user_name;
 			socket.meetingId = decoded.meeting_id;
@@ -111,6 +114,7 @@ export class AuthManager {
 		}
 
 		this.clearTokenExpiryTimer(socket);
+		socket.speechContext = decoded.speech_context;
 		socket.currentToken = token;
 		socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 		socket.isHost = decoded.is_host || false;
@@ -184,6 +188,7 @@ export class AuthManager {
 	}
 
 	cleanupSocket(socket: Socket): void {
+		delete socket.speechContext;
 		this.clearTokenExpiryTimer(socket);
 		socket.currentToken = undefined;
 		socket.tokenExpiresAt = undefined;
@@ -262,6 +267,10 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Invalid participant claims');
 	}
+	const speechContext =
+		'speech_context' in value
+			? parseSpeechScope(value.speech_context)
+			: undefined;
 	const userId = claimString(value, 'user_id');
 	const userName = claimString(value, 'user_name');
 	const meetingId = claimString(value, 'meeting_id');
@@ -287,6 +296,7 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 	const exp = optionalInteger(value, 'exp');
 	const iat = optionalInteger(value, 'iat');
 	return {
+		...(speechContext ? { speech_context: speechContext } : {}),
 		user_id: userId,
 		user_name: userName,
 		meeting_id: meetingId,

@@ -40,7 +40,14 @@ def filter_file(user=None):
     public files, DocShares, and readable attachments — folder-inherited access
     needs Drive's recursive path traversal, impractical in SQL, so it's left to
     `has_permission`."""
-    return file_permission_criterion(user)
+    criterion = file_permission_criterion(user)
+    # Frappe 16 stringifies hook results before adding them to SQL. Render
+    # identifiers with the active database dialect rather than PyPika defaults.
+    return (
+        criterion.get_sql(quote_char="`" if frappe.db.db_type == "mariadb" else '"')
+        if criterion is not None
+        else ""
+    )
 
 
 def common_filters(func):

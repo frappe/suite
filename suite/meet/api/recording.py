@@ -155,8 +155,27 @@ def _recorder_available() -> bool:
     return True
 
 
+def _capture_options(video_enabled, transcription_enabled, language):
+    def selected(value):
+        if value in (True, 1, "1", "true", "True"):
+            return True
+        if value in (False, 0, "0", "false", "False"):
+            return False
+        frappe.throw(_("Invalid capture selection"))
+
+    video, transcript = selected(video_enabled), selected(transcription_enabled)
+    if not video and not transcript:
+        frappe.throw(_("Select video recording or transcription"))
+    if transcript and language != "en":
+        frappe.throw(_("Only English transcription is supported"))
+    return video, transcript
+
+
 @frappe.whitelist()
-def get_preflight(meeting_id: str) -> dict:
+def get_preflight(
+    meeting_id: str, video_enabled: bool = True, transcription_enabled: bool = False, language: str = "en"
+) -> dict:
+    video_enabled, transcription_enabled = _capture_options(video_enabled, transcription_enabled, language)
     room = _get_room(meeting_id)
     estimated_seconds, estimated_bytes = _get_estimate(room)
     global_enabled = bool(frappe.get_cached_doc("Meet Settings").enable_recording)
@@ -168,14 +187,21 @@ def get_preflight(meeting_id: str) -> dict:
     except frappe.ValidationError:
         storage_available = False
 
-    budget_bytes = min(MAX_BUDGET_BYTES, free_bytes)
+    budget_bytes = min(MAX_BUDGET_BYTES, free_bytes) if video_enabled else 0
+    from suite.meet.transcription.capture import admission, enabled
+
+    transcription_available = enabled() and admission()
     return {
         "eligible": global_enabled
         and not bool(room.e2ee_enabled)
         and storage_available
-        and budget_bytes >= MINIMUM_BUDGET_BYTES
+        and (not video_enabled or budget_bytes >= MINIMUM_BUDGET_BYTES)
+        and (not transcription_enabled or transcription_available)
         and _recorder_available(),
         "global_enabled": global_enabled,
+        "transcription_available": transcription_available,
+        "video_enabled": video_enabled,
+        "transcription_enabled": transcription_enabled,
         "e2ee_conflict": bool(room.e2ee_enabled),
         "storage_available": storage_available,
         "recorder_available": _recorder_available(),
@@ -196,23 +222,75 @@ def get_state(meeting_id: str) -> dict | None:
     return get_active_recording_state(meeting_id)
 
 
-def get_active_recording_state(meeting_id: str) -> dict | None:
-    state = frappe.db.get_value(
-        "Meet Recording",
-        {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]},
-        [
-            "name",
-            "status",
-            "started_at",
-            "capture_started_at",
-            "state_revision",
-            "interruption_id",
-            "interrupted_at",
-            "interruption_deadline",
-        ],
-        as_dict=True,
+def _active_audio_capture(meeting_id):
+    return frappe.db.get_value(
+        "Meet Transcription Job", {"meet_room": meeting_id, "status": "Capturing"}, "capture"
     )
-    if state and state.status == "Starting":
+
+
+def _participant_recording_state(recording):
+    state = frappe._dict(
+        {
+            key: recording.get(key)
+            for key in (
+                "name",
+                "status",
+                "started_at",
+                "capture_started_at",
+                "state_revision",
+                "interruption_id",
+                "interrupted_at",
+                "interruption_deadline",
+                "video_enabled",
+                "transcription_enabled",
+                "transcription_language",
+            )
+        }
+    )
+    state.video_enabled = bool(state.video_enabled)
+    state.transcription_enabled = bool(state.transcription_enabled)
+    state.video_capture_state = (
+        (
+            "starting"
+            if state.status == "Starting"
+            else "capturing"
+            if state.status in ACTIVE_RECORDING_STATUSES
+            else "complete"
+            if state.status in ("Processing", "Ready", "Partial")
+            else "failed"
+        )
+        if state.video_enabled
+        else None
+    )
+    if state.transcription_enabled:
+        from suite.meet.transcription.capture import participant_state
+
+        job = frappe.db.get_value(
+            "Meet Transcription Job",
+            {"capture": state.name},
+            ["status", "stop_requested", "participant_revision", "capture_started_at"],
+            as_dict=True,
+        )
+        state.transcription_capture_state = participant_state(state.name)
+        if job:
+            state.state_revision = cint(state.state_revision) + cint(job.participant_revision)
+            if job.status == "Capturing":
+                audio_started = _system_datetime_as_utc(job.capture_started_at).replace(tzinfo=None)
+                state.started_at = state.started_at or audio_started
+                state.capture_started_at = state.capture_started_at or audio_started
+                if state.status not in ("Recording", "Interrupted", "Stopping"):
+                    state.status = "Stopping" if job.stop_requested else "Recording"
+    return state
+
+
+def get_active_recording_state(meeting_id: str) -> dict | None:
+    name = frappe.db.get_value(
+        "Meet Recording", {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]}, "name"
+    ) or _active_audio_capture(meeting_id)
+    if not name or not frappe.db.exists("Meet Recording", name):
+        return None
+    state = _participant_recording_state(frappe.get_doc("Meet Recording", name))
+    if state.status == "Starting":
         room = frappe.get_doc("Meet Room", meeting_id)
         if not room.is_host_or_cohost(frappe.session.user):
             return None
@@ -223,31 +301,16 @@ def _validate_request_id(request_id: str):
     try:
         if str(uuid.UUID(request_id)) != request_id.lower():
             raise ValueError
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         frappe.throw(_("Request ID must be a UUID"))
 
 
 def _publish_state(room, recording, *, hosts_only: bool = False):
-    payload = {
-        "meeting_id": room.name,
-        "recording": (
-            {
-                "name": recording.name,
-                "status": recording.status,
-                "started_at": recording.started_at,
-                "capture_started_at": recording.capture_started_at,
-                "state_revision": recording.state_revision,
-                "interruption_id": recording.interruption_id,
-                "interrupted_at": recording.interrupted_at,
-                "interruption_deadline": recording.interruption_deadline,
-            }
-            if recording
-            else None
-        ),
-    }
+    state = _participant_recording_state(recording) if recording else None
+    payload = {"meeting_id": room.name, "recording": state}
     users = (
         {room.owner, *room.get_co_hosts()}
-        if hosts_only or (recording and recording.status == "Starting")
+        if hosts_only or (state and state.status == "Starting")
         else set(room.get_members())
     )
     for user in users:
@@ -360,12 +423,16 @@ def _reject_pending(room, recording):
 def _fail_startup(room, recording, failure_code: str):
     if recording.status not in ("Pending", "Starting"):
         return
+    audio_active = bool(recording.transcription_enabled and _active_audio_capture(room.name))
     recording.status = "Failed"
     recording.state_revision += 1
     recording.failure_code = failure_code
     recording.flags.startup_failure = True
+    if audio_active and recording.video_enabled:
+        recording.notification_pending = 1
+        recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
-    _publish_state(room, None, hosts_only=True)
+    _publish_state(room, recording if audio_active else None, hosts_only=not audio_active)
 
 
 def _fixture_enabled() -> bool:
@@ -376,7 +443,14 @@ def _fixture_enabled() -> bool:
 
 
 @frappe.whitelist()
-def start(meeting_id: str, request_id: str) -> dict:
+def start(
+    meeting_id: str,
+    request_id: str,
+    video_enabled: bool = True,
+    transcription_enabled: bool = False,
+    language: str = "en",
+) -> dict:
+    video_enabled, transcription_enabled = _capture_options(video_enabled, transcription_enabled, language)
     _validate_request_id(request_id)
     room = _get_room(meeting_id)
     existing = frappe.db.get_value(
@@ -389,6 +463,8 @@ def start(meeting_id: str, request_id: str) -> dict:
         if existing.status != "Pending":
             if existing.status in ("Starting", "Recording"):
                 recording = frappe.get_doc("Meet Recording", existing.name)
+                if not recording.video_enabled:
+                    return {"name": recording.name, "status": recording.status, "grant_delivered": True}
                 if existing.status == "Starting" and not recording.recorder_accepted_at:
                     client = None if _fixture_enabled() else _client()
                     outcome = (
@@ -446,21 +522,24 @@ def start(meeting_id: str, request_id: str) -> dict:
     )
     if active:
         return active
+    if _active_audio_capture(meeting_id):
+        return get_active_recording_state(meeting_id)
     destination = _get_drive_destination(room.owner)
     acquire_owner_storage_lock(room.owner)
     owner_limit = max(1, cint(frappe.conf.get("recorder_max_concurrent_per_owner") or 1))
-    if (
+    if video_enabled and (
         frappe.db.count(
             "Meet Recording",
             {
                 "room_owner": room.owner,
+                "video_enabled": 1,
                 "status": ["in", ("Pending", *ACTIVE_RECORDING_STATUSES)],
             },
         )
         >= owner_limit
     ):
         frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
-    preflight = get_preflight(meeting_id)
+    preflight = get_preflight(meeting_id, video_enabled, transcription_enabled, language)
     if not preflight["eligible"]:
         frappe.throw(_("Recording is not currently available for this meeting"))
     if frappe.db.exists(
@@ -472,6 +551,10 @@ def start(meeting_id: str, request_id: str) -> dict:
     recording = frappe.get_doc(
         {
             "doctype": "Meet Recording",
+            "video_enabled": video_enabled,
+            "transcription_enabled": transcription_enabled,
+            "transcription_language": language,
+            "capture_contract": 1,
             "meet_room": room.name,
             "room_owner": room.owner,
             "initiated_by": frappe.session.user,
@@ -487,11 +570,33 @@ def start(meeting_id: str, request_id: str) -> dict:
             "drive_home_folder": destination,
         }
     ).insert(ignore_permissions=True)
-    create_storage_reservation(
-        room.owner,
-        recording_storage_reservation_key(recording.name),
-        cint(recording.budget_bytes),
-    )
+    if video_enabled:
+        create_storage_reservation(
+            room.owner,
+            recording_storage_reservation_key(recording.name),
+            cint(recording.budget_bytes),
+        )
+    if transcription_enabled:
+        from suite.meet.transcription.capture import prepare
+
+        try:
+            prepare(recording)
+            _publish_state(room, recording)
+        except Exception:
+            _fail_startup(room, recording, "capture_failed")
+            frappe.db.commit()
+            raise
+        if not video_enabled:
+            recording.started_at = _utc_now_naive()
+            recording.capture_started_at = recording.started_at
+            recording.max_ends_at = add_to_date(now_datetime(), seconds=MAX_SECONDS)
+            recording.status = "Recording"
+            recording.state_revision += 1
+            recording.recorder_event_sequence = cint(recording.recorder_event_sequence) + 1
+            recording.flags.reconciliation_update = True
+            recording.save(ignore_permissions=True)
+            _publish_state(room, recording)
+            return {"name": recording.name, "status": recording.status, "grant_delivered": True}
     frappe.db.commit()
     client = None if _fixture_enabled() else _client()
     outcome = (
@@ -518,9 +623,13 @@ def _finish_start(
 ) -> dict:
     if outcome.outcome == "rejected":
         _reject_pending(room, recording)
-        return {"status": "Rejected"}
+        return get_active_recording_state(room.name) or {"status": "Rejected"}
     if outcome.outcome != "accepted":
-        return {"name": recording.name, "status": recording.status}
+        return (
+            _participant_recording_state(recording)
+            if recording.transcription_enabled
+            else {"name": recording.name, "status": recording.status}
+        )
 
     room = frappe.get_doc("Meet Room", recording.meet_room)
     if not room_locked:
@@ -606,7 +715,8 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
     recording.flags.startup_failure = True
     operation_id = _stop_operation_id(recording)
     recording.save(ignore_permissions=True)
-    _publish_state(room, None, hosts_only=True)
+    audio_active = bool(recording.transcription_enabled and _active_audio_capture(room.name))
+    _publish_state(room, recording if audio_active else None, hosts_only=not audio_active)
     frappe.db.commit()
     if client:
         client.stop(
@@ -616,7 +726,11 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
             limits=_limits(recording),
             operation_id=operation_id,
         )
-    return {"name": recording.name, "status": recording.status, "grant_delivered": False}
+    return (
+        {**_participant_recording_state(recording), "grant_delivered": False}
+        if audio_active
+        else {"name": recording.name, "status": recording.status, "grant_delivered": False}
+    )
 
 
 @frappe.whitelist()
@@ -629,9 +743,14 @@ def stop(meeting_id: str) -> dict | None:
     recording_name = frappe.db.get_value(
         "Meet Recording", {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]}, "name"
     )
+    recording_name = recording_name or _active_audio_capture(meeting_id)
     if not recording_name:
         return None
     recording = _locked_recording(recording_name)
+    if recording.transcription_enabled:
+        from suite.meet.transcription.capture import request_stop
+
+        request_stop(recording.name)
     if recording.status == "Starting":
         recording.status = "Cancelled"
         recording.state_revision += 1
@@ -643,7 +762,7 @@ def stop(meeting_id: str) -> dict | None:
         recording.end_reason = "host_stop"
         _stop_operation_id(recording)
         recording.save(ignore_permissions=True)
-        if _fixture_enabled():
+        if _fixture_enabled() and recording.video_enabled:
             recording.status = "Processing"
             recording.state_revision += 1
             recording.recorder_event_sequence += 1
@@ -651,7 +770,16 @@ def stop(meeting_id: str) -> dict | None:
             recording.save(ignore_permissions=True)
     _publish_state(room, recording, hosts_only=recording.status == "Cancelled")
     frappe.db.commit()
-    if not _fixture_enabled():
+    if recording.transcription_enabled:
+        from suite.meet.transcription.capture import stop as stop_audio
+
+        try:
+            stop_audio(recording)
+        except Exception:
+            # Durable Stopping state lets the capture reconciler retry audio;
+            # an unavailable SFU must not prevent stopping paired video.
+            frappe.logger("meet_transcription").warning("Audio stop deferred")
+    if not _fixture_enabled() and recording.video_enabled and recording.status in ("Cancelled", "Stopping"):
         _client().stop(
             room=recording.meet_room,
             recording=recording.name,
@@ -659,7 +787,11 @@ def stop(meeting_id: str) -> dict | None:
             limits=_limits(recording),
             operation_id=recording.stop_operation_id,
         )
-    return {"name": recording.name, "status": recording.status}
+    return (
+        _participant_recording_state(recording)
+        if recording.transcription_enabled
+        else {"name": recording.name, "status": recording.status}
+    )
 
 
 def _stop_operation_id(recording) -> str:
@@ -894,7 +1026,7 @@ def _apply_interruption(
     try:
         if str(uuid.UUID(interruption_id)) != interruption_id.lower():
             raise ValueError
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         frappe.throw(_("Invalid recording interruption ID"))
     interrupted = _startup_timestamp(interrupted_at)
     deadline = _startup_timestamp(interruption_deadline)
@@ -972,7 +1104,7 @@ def _apply_replacement_ready(
     generation = cint(endpoint_generation)
     try:
         normalized_jwk = normalize_public_jwk(frappe.parse_json(public_jwk))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         frappe.throw(_("Invalid replacement Recorder Endpoint key"))
     ready = _startup_timestamp(ready_at)
 
@@ -1343,8 +1475,8 @@ def recorder_failed(
     recording.save(ignore_permissions=True)
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),
-        None if startup_failure else recording,
-        hosts_only=startup_failure,
+        None if startup_failure and not _active_audio_capture(recording.meet_room) else recording,
+        hosts_only=startup_failure and not _active_audio_capture(recording.meet_room),
     )
     return _callback_response({"status": "Failed"})
 
@@ -1425,6 +1557,8 @@ def _run_reconciliation(name: str, operation):
 
 
 def _fail_stale_recording(name: str):
+    if not frappe.db.get_value("Meet Recording", name, "video_enabled"):
+        return
     recording = frappe.get_doc("Meet Recording", name)
     if recording.status not in ("Pending", "Starting", "Recording", "Interrupted", "Stopping"):
         return
@@ -1441,8 +1575,8 @@ def _fail_stale_recording(name: str):
     startup_failure = previous_status in ("Pending", "Starting")
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),
-        None if startup_failure else recording,
-        hosts_only=startup_failure,
+        None if startup_failure and not _active_audio_capture(recording.meet_room) else recording,
+        hosts_only=startup_failure and not _active_audio_capture(recording.meet_room),
     )
 
 
@@ -1455,6 +1589,8 @@ def _delete_expired_failed_recording(name: str):
 
 
 def _retry_stopping(name: str):
+    if not frappe.db.get_value("Meet Recording", name, "video_enabled"):
+        return
     recording = frappe.get_doc("Meet Recording", name)
     if _fixture_enabled():
         return
@@ -1480,6 +1616,8 @@ def _timeout_interruption(name: str):
 
 
 def _reconcile_recording(name: str):
+    if not frappe.db.get_value("Meet Recording", name, "video_enabled"):
+        return
     recording = frappe.get_doc("Meet Recording", name)
     client = _client()
     outcome = client.query(

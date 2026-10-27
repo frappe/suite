@@ -1,0 +1,42 @@
+{
+  "current": "frappe-v1",
+  "versions": {
+    "frappe-v1": [
+      "Frappe",
+      "ERPNext",
+      "DocType",
+      "Frappe Cloud",
+      "Frappe Framework",
+      "Frappe HR",
+      "Frappe CRM",
+      "Frappe Helpdesk",
+      "Frappe Books",
+      "Frappe Drive",
+      "Frappe Insights",
+      "Frappe Builder",
+      "Frappe Learning",
+      "Frappe Wiki",
+      "Frappe Mail",
+      "Frappe Meet",
+      "Frappe Studio",
+      "Frappe Payments",
+      "Frappe Gameplan",
+      "Frappe Bench",
+      "Frappe UI",
+      "Frappe Desk",
+      "Frappe Sheets",
+      "Frappe Press",
+      "Frappe LMS",
+      "Frappe Education",
+      "frappe-ui",
+      "Frappe Workflow",
+      "Frappe DocType",
+      "Child Table",
+      "Client Script",
+      "Server Script",
+      "Print Format",
+      "Web Form",
+      "Frappe Workspace"
+    ]
+  }
+}

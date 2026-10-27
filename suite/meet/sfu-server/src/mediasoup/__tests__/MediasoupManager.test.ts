@@ -577,12 +577,55 @@ describe('MediasoupManager resource access', () => {
 describe('MediasoupManager receiver-ready ownership', () => {
 	it('resumes only the owning peer in the owning room', async () => {
 		const manager = createManager();
-		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({ roomId: 'room', peerId: 'peer', consumer: makeConsumer({ paused: true }) } as never);
-		const resume = vi.spyOn(manager.consumerManager, 'resumeConsumer').mockResolvedValue(true);
-		await expect(manager.resumeConsumer('c1', 'other-room', 'peer')).rejects.toThrow('ownership');
-		await expect(manager.resumeConsumer('c1', 'room', 'other-peer')).rejects.toThrow('ownership');
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'room',
+			peerId: 'peer',
+			consumer: makeConsumer({ paused: true }),
+		} as never);
+		const resume = vi
+			.spyOn(manager.consumerManager, 'resumeConsumer')
+			.mockResolvedValue(true);
+		await expect(
+			manager.resumeConsumer('c1', 'other-room', 'peer'),
+		).rejects.toThrow('ownership');
+		await expect(
+			manager.resumeConsumer('c1', 'room', 'other-peer'),
+		).rejects.toThrow('ownership');
 		expect(resume).not.toHaveBeenCalled();
-		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(true);
+		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(
+			true,
+		);
 		expect(resume).toHaveBeenCalledExactlyOnceWith('c1');
+	});
+});
+
+describe('meeting speech context', () => {
+	it('pins the initial authenticated title without leaking it to another room', () => {
+		const manager = createManager();
+		const first = { speechContext: undefined };
+		const second = { speechContext: undefined };
+		vi.spyOn(manager.roomManager, 'getRoom').mockImplementation(
+			(id) => (id === 'first' ? first : second) as never,
+		);
+		manager.pinRoomSpeechHints('first', {
+			vocabulary_version: 'frappe-v1',
+			title: 'Frappe planning',
+		});
+		manager.pinRoomSpeechHints('first', {
+			vocabulary_version: 'frappe-v1',
+			title: 'Changed title',
+		});
+		manager.pinRoomSpeechHints('second', {
+			vocabulary_version: 'frappe-v1',
+			title: 'Other room',
+		});
+		expect(first.speechContext).toEqual({
+			vocabulary_version: 'frappe-v1',
+			title: 'Frappe planning',
+		});
+		expect(second.speechContext).toEqual({
+			vocabulary_version: 'frappe-v1',
+			title: 'Other room',
+		});
 	});
 });

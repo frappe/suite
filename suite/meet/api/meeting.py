@@ -62,7 +62,7 @@ def _generate_sfu_token(
     **extra,
 ) -> str:
     """Generate a JWT token for SFU authentication."""
-    reserved_claims = {"user_id", "meeting_id", "site", "scope", "exp", "iat"}
+    reserved_claims = {"user_id", "meeting_id", "site", "scope", "exp", "iat", "speech_context"}
     if reserved_claims.intersection(extra):
         frappe.throw(_("Reserved SFU token claims cannot be overridden"), frappe.ValidationError)
 
@@ -81,6 +81,11 @@ def _generate_sfu_token(
         "iat": now,
         **extra,
     }
+    if scope == "full":
+        from suite.meet.speech_context import make_hints
+
+        hints = make_hints(frappe.db.get_value("Meet Room", meeting_id, "title") or "", [])
+        payload["speech_context"] = {k: hints[k] for k in ("vocabulary_version", "title")}
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
@@ -133,6 +138,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
 
     return {
         "sfu_url": sfu_config["sfu_server_url"],
+        "recording": get_active_recording_state(meeting.name),
         "sfu_port": sfu_config["sfu_server_port"],
         "auth_token": auth_token,
         "user_id": user,

@@ -1,8 +1,8 @@
 <template>
-	<Dialog v-model:open="open" title="Stop recording?" size="sm">
+	<Dialog v-model:open="open" :title="`Stop ${captureLabel(recording).toLowerCase()}?`" size="sm">
 		<template #default>
 			<p class="text-base text-ink-gray-7">
-				The recording will stop and the video will be saved privately to the room owner's Drive.
+				Capture will stop. Each selected output will be saved privately to the room owner's Drive when ready.
 			</p>
 		</template>
 		<template #actions>
@@ -12,7 +12,7 @@
 					variant="solid"
 					theme="red"
 					icon-left="lucide-circle-stop"
-					label="Stop recording"
+					:label="`Stop ${captureLabel(recording).toLowerCase()}`"
 					:loading="loading"
 					@click="emit('confirm')"
 				/>
@@ -24,8 +24,10 @@
 <script setup lang="ts">
 import { Button, Dialog } from "frappe-ui";
 import { computed } from "vue";
+import type { RecordingState } from "../composables/useRecording";
+import { captureLabel } from "../utils/capturePresentation";
 
-const props = withDefaults(defineProps<{ modelValue?: boolean; loading?: boolean }>(), {
+const props = withDefaults(defineProps<{ modelValue?: boolean; loading?: boolean; recording?: RecordingState | null }>(), {
 	modelValue: false,
 	loading: false,
 });

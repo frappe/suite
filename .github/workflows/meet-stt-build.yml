@@ -6,11 +6,15 @@ on:
       - develop
     paths:
       - "suite/meet/sfu-server/stt-server/**"
+      - "suite/meet/speech_context.py"
+      - "suite/meet/speech-vocabulary.json"
       - "!suite/meet/sfu-server/stt-server/load/**"
       - ".github/workflows/meet-stt-build.yml"
   pull_request:
     paths:
       - "suite/meet/sfu-server/stt-server/**"
+      - "suite/meet/speech_context.py"
+      - "suite/meet/speech-vocabulary.json"
       - "!suite/meet/sfu-server/stt-server/load/**"
       - ".github/workflows/meet-stt-build.yml"
   workflow_dispatch:
@@ -49,6 +53,8 @@ jobs:
 
       - name: Test protocol, runtime, and resampling
         working-directory: suite/meet/sfu-server/stt-server
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: python -m unittest context_bias_test.py protocol_test.py runtime_test.py resampling_test.py
 
       - name: Set up Docker Buildx
@@ -76,7 +82,7 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: suite/meet/sfu-server/stt-server
+          context: suite/meet
           file: suite/meet/sfu-server/stt-server/Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}

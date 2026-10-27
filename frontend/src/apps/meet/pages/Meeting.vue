@@ -15,7 +15,7 @@
 			>
 				<template #right>
 					<RecordingIndicator
-						v-if="!showPreview && recording.isLive.value && recording.state.value"
+						v-if="!showPreview && recording.isCapturing.value && recording.state.value"
 						:recording="recording.state.value"
 						:can-stop="isCurrentUserHost || isCurrentUserCohost"
 						@click="handleRecordingAction"
@@ -283,10 +283,12 @@
 			v-model:open="recordingDialogOpen"
 			:preflight="recordingPreflight"
 			:confirm="confirmRecordingStart"
+			:refresh="recording.getPreflight"
 		/>
 		<RecordingStopDialog
 			v-model="recordingStopDialogOpen"
 			:loading="recording.stopLoading.value"
+			:recording="recording.state.value"
 			@confirm="confirmRecordingStop"
 		/>
 	</div>
@@ -356,6 +358,7 @@ import { useRaiseHand } from "../composables/useRaiseHand";
 import { useRaiseHandStore } from "../composables/useRaiseHandStore";
 import {
 	type RecordingPreflight,
+	type CaptureOptions,
 	useRecording,
 } from "../composables/useRecording";
 import { useReactionStore } from "../composables/useReactionStore";
@@ -494,7 +497,7 @@ async function handleRecordingAction() {
 		recordingPreflight.value = await recording.getPreflight();
 		recordingDialogOpen.value = true;
 	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not manage recording");
+		toast.error(error instanceof Error ? error.message : "Could not manage capture");
 	}
 }
 
@@ -503,15 +506,15 @@ async function confirmRecordingStop() {
 		await recording.stop();
 		recordingStopDialogOpen.value = false;
 	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not stop recording");
+		toast.error(error instanceof Error ? error.message : "Could not stop capture");
 	}
 }
 
-async function confirmRecordingStart() {
+async function confirmRecordingStart(options: CaptureOptions) {
 	try {
-		await recording.start();
+		await recording.start(options);
 	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not start recording");
+		toast.error(error instanceof Error ? error.message : "Could not start capture");
 		throw error;
 	}
 }
@@ -686,6 +689,7 @@ const sfuConnection = useSFUConnection({
 	onRoomRejoined: () => void captions.restoreCaptionSubscription(),
 	onE2EERequired: () => captions.disableCaptionsForE2EE(),
 	onRecordingState: recording.syncState,
+	onTranscriptionCaptureState: recording.syncTranscriptionCapture,
 	onRecordingEnabled: recording.setGlobalEnabled,
 	onCohostPromoted: () => meetingDoc.reload(),
 });

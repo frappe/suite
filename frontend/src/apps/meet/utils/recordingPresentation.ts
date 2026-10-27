@@ -8,10 +8,12 @@ export function getRecordingUnavailableReason(preflight: RecordingPreflight) {
 		};
 	if (preflight.e2ee_conflict)
 		return {
-			title: "Encrypted meetings can't be recorded",
-			message: "Turn off end-to-end encryption before enabling recording.",
+			title: "Capture is unavailable in encrypted meetings",
+			message: "Turn off end-to-end encryption before recording or transcribing.",
 		};
-	if (!preflight.storage_available || preflight.budget_bytes <= 0)
+	if (preflight.transcription_enabled && preflight.transcription_available === false)
+		return { title: "Transcription is unavailable", message: "An administrator needs to configure transcription for Meet." };
+	if (!preflight.storage_available || (preflight.video_enabled !== false && preflight.budget_bytes <= 0))
 		return {
 			title: "Drive storage is unavailable",
 			message: "The room owner needs enough available Drive storage for a recording.",

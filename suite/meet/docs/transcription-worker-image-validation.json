@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-20",
+  "status": "passed",
+  "image": {
+    "id": "sha256:2ee23d1c990c711cf4b4c8bca04ea2e4ff11c17e4833a2e4067844c5c405acde",
+    "size_bytes": 7927953846,
+    "architecture": "amd64",
+    "user": "transcription",
+    "base": "pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385"
+  },
+  "source_sha256": {
+    "Dockerfile": "ef39a7568ac05825ed9def3752de061e80c8b15a2c1bf79e2bece371a17d14b8",
+    "requirements.txt": "a0c5757b78b9f10a7e8d7fda1c7a1ec0cf7a95a9d492d81e900038488c51c357",
+    "client.py": "b434bc0b44328d479fd8b2c644def4b4db35805220cd68829ddbfed584a8a96c",
+    "metrics.py": "1c4e68e952085962b689d07bff29ed02cfe67ea2d4993ab8af1f2cc9c5d76255",
+    "protocol.py": "57a5169bca49dd1cea7b2d7b3e54448bb185f4fe8ec90e0be8f8e7c10f5b39c7",
+    "recognizer.py": "60528676574cfd6b3dbd834b77659cccdcae2b196803ce24a02ef4426bcc5ebd",
+    "server.py": "d42f355a42630dee6b23af33bbc12e78ea2ccf1104edcd65624c4bde09a4e8b4",
+    "worker.py": "b2196c8b213251dd3c364da75fd4c8d93f6b14d94b10df8501ad509487fa6259"
+  },
+  "unit": {
+    "exit": 0,
+    "stop_reason": null,
+    "elapsed_seconds": 6.122,
+    "peak_total_gpu_mib": 3015,
+    "minimum_gpu_free_mib": 11897,
+    "tests_passed": 21
+  },
+  "speech": {
+    "exit": 0,
+    "stop_reason": null,
+    "elapsed_seconds": 10.16,
+    "peak_total_gpu_mib": 4093,
+    "minimum_gpu_free_mib": 10819,
+    "result": {
+      "status": "passed",
+      "speech_reference_words": 8,
+      "speech_word_errors": 0,
+      "silence_words": 0,
+      "processed_sources": 2,
+      "peak_allocated_mib": 921.89111328125,
+      "versions": {
+        "torch": "2.8.0+cu128",
+        "torchaudio": "2.8.0+cu128",
+        "transformers": "5.19.0"
+      }
+    },
+    "scoring": "Case-folded words with punctuation removed except apostrophes; independently checked eight-word reference."
+  },
+  "service": {
+    "exit": 0,
+    "stop_reason": null,
+    "elapsed_seconds": 10.173,
+    "peak_total_gpu_mib": 4029,
+    "minimum_gpu_free_mib": 10883,
+    "result": {
+      "status": "passed",
+      "python": "3.11.13",
+      "ready_seconds": 6.773,
+      "shutdown_seconds": 1.416,
+      "authenticated_queue_calls": 2,
+      "metrics_authentication": "passed",
+      "credential_log_check": "passed"
+    }
+  },
+  "runtime": {
+    "cpus": 1,
+    "memory_limit_gib": 6,
+    "read_only_root": true,
+    "network": "none",
+    "capabilities_dropped": "ALL",
+    "offline_model_cache": true,
+    "gpu": "NVIDIA T4",
+    "queue": "local authenticated HTTP fixture; no production jobs"
+  },
+  "setup_incident": {
+    "description": "Initial temporary daemon removed the shared default Docker bridge, making production ASR unreachable over its host port while ASR remained healthy inside its container.",
+    "recovery": "Stopped temporary daemon; recreated the documented bridge address and reattached its existing veth. Host health and a new primary-daemon bridge container connectivity check passed without restarting ASR. Subsequent build used an isolated network namespace and a separate container runtime sharing the isolated mount namespace.",
+    "production_container_restarted": false
+  },
+  "limitations": [
+    "Short speech/silence smoke is not real-Meet quality acceptance or sustained throughput validation.",
+    "Production health polling does not measure concurrent live-caption latency.",
+    "Built image and model cache are on disposable ephemeral storage; no production feature was enabled."
+  ],
+  "cleanup": {
+    "temporary_daemon_stopped": true,
+    "temporary_containerd_stopped": true,
+    "temporary_network_namespace_removed": true,
+    "production_health": "ok",
+    "production_image_unchanged": true,
+    "production_start_time_unchanged": true,
+    "gpu_used_free_mib": "3015, 11897"
+  }
+}

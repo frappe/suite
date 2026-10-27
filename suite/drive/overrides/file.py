@@ -42,6 +42,7 @@ class File(FrappeFile):
     `after_file_upload`."""
 
     def validate(self):
+        self._validate_generated_transcript()
         self._validate_content_link()
         if self.is_new() and not self.flags.file_created:
             return super().validate()
@@ -68,6 +69,19 @@ class File(FrappeFile):
             frappe.throw(
                 "Rename Drive files from the Drive interface, not the File form.",
                 frappe.ValidationError,
+            )
+
+    def _validate_generated_transcript(self):
+        if self.is_new() or not frappe.db.table_exists("Meet Transcription Job"):
+            return
+        if not frappe.db.exists("Meet Transcription Job", {"artifact": self.name}):
+            return
+        immutable = ("file_size", "content_hash", "mime_type", "file_type", "is_private")
+        if any(self.has_value_changed(field) for field in immutable) or (
+            self.has_value_changed("file_url") and not self.flags.drive_disk_rename
+        ):
+            frappe.throw(
+                "Generated Meet transcripts are read-only. Download a copy to edit.", frappe.PermissionError
             )
 
     def _validate_content_link(self):

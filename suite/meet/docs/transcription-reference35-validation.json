@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-21",
+  "case": "blind-35",
+  "method": "Agent text comparison against frozen clear-span expectations, no direct audio adjudication.",
+  "language": "English",
+  "audibility": "partly_unclear",
+  "reference_sha256": "a6167bbbc806486053fd8aab64056d298d3319e529970a78d4d22d8bb351f4c0",
+  "expectations_sha256": "e1dfa4242068dcf1a98389bd0e6419fae16d5389b266a7f91fb9285265343bc1",
+  "findings": {
+    "qwen": "Preserves list-review purpose, whether-needed condition and Atlas spelling. Fails to clearly preserve signup responsibility, rendering a different phrase.",
+    "native_whisper": "Preserves list-review purpose, whether-needed condition and Atlas spelling. Does not preserve signup responsibility and changes final construction.",
+    "unclear_spans": "Models supply different apparent event names/connectors in unreferenced spans. Neither completion is endorsed or counted as an established hallucination.",
+    "critical_term": "Atlas retained by both without a supplied hint; signup meaning not faithfully retained by either."
+  },
+  "wer": null,
+  "wer_reason": "Partial reference with multiple unclear spans; no independently aligned complete truth. No full-window score or10% gate decision.",
+  "quality_decision": "No candidate accepted; neither reliably preserves all clear substantive meaning on this sample. English-only evidence does not resolve mixed-language quality.",
+  "runtime": {
+    "status": "completed",
+    "elapsed_seconds": 57.95995220169425,
+    "candidates": [
+      "qwen",
+      "native"
+    ],
+    "samples": 31,
+    "all_sampled_production_healthy": true,
+    "minimum_gpu_free_mib": 7601,
+    "peak_gpu_used_mib": 7311,
+    "image": "sha256:bb1e6e6127ee5c83c363f1e6635d2d81bcdca0735dc5cc9ac725587ceedc5581",
+    "wer": null,
+    "checked_reference_available": true
+  },
+  "cleanup": {
+    "production_healthy": true,
+    "production_image_unchanged": true,
+    "production_start_unchanged": true,
+    "isolated_caption_replica_stopped": true,
+    "isolated_runtime_removed": true,
+    "gpu_memory": "3015, 11897"
+  },
+  "setup_note": "Initial isolated run could not read root-owned report directory. No inference occurred. Runtime cleaned and production baseline verified, directory ownership corrected to worker UID10001, retry completed.",
+  "private_local": "/home/t3code/.local/share/suite-transcription-pilot/20261021/reference35",
+  "private_gpu": "/opt/asr-eval/meet-reference35-20261021"
+}

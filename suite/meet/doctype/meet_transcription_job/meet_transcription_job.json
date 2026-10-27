@@ -1,0 +1,214 @@
+{
+ "doctype": "DocType",
+ "name": "Meet Transcription Job",
+ "module": "Meet",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "field_order": [
+  "capture",
+  "meet_room",
+  "room_owner",
+  "room_title",
+  "capture_started_at",
+  "capture_folder",
+  "status",
+  "manifest",
+  "model_configuration",
+  "recognition_hints",
+  "completed_segments",
+  "gaps",
+  "attempts",
+  "retry_at",
+  "lease_token_hash",
+  "lease_worker",
+  "lease_expires_at",
+  "retention_deadline",
+  "audio_seconds",
+  "source_bytes",
+  "source_deleted",
+  "artifact",
+  "failure_code",
+  "notification_pending",
+  "notification_sent_at",
+  "processing_started_at",
+  "ready_at",
+  "queued_at",
+  "stop_requested",
+  "participant_revision"
+ ],
+ "fields": [
+  {
+   "fieldname": "capture",
+   "fieldtype": "Data",
+   "label": "Capture",
+   "unique": 1
+  },
+  {
+   "fieldname": "meet_room",
+   "fieldtype": "Data",
+   "label": "Meet Room"
+  },
+  {
+   "fieldname": "room_owner",
+   "fieldtype": "Link",
+   "label": "Room Owner",
+   "options": "User"
+  },
+  {
+   "fieldname": "room_title",
+   "fieldtype": "Data",
+   "label": "Room Title"
+  },
+  {
+   "fieldname": "capture_started_at",
+   "fieldtype": "Datetime",
+   "label": "Capture Started At"
+  },
+  {
+   "fieldname": "capture_folder",
+   "fieldtype": "Link",
+   "label": "Capture Folder",
+   "options": "File"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Capturing\nQueued\nProcessing\nReady\nPartial\nFailed\nDeleted",
+   "search_index": 1
+  },
+  {
+   "fieldname": "manifest",
+   "fieldtype": "Long Text",
+   "label": "Manifest"
+  },
+  {
+   "fieldname": "model_configuration",
+   "fieldtype": "Long Text",
+   "label": "Model Configuration"
+  },
+  {
+   "fieldname": "recognition_hints",
+   "fieldtype": "Long Text",
+   "label": "Recognition Hints"
+  },
+  {
+   "fieldname": "completed_segments",
+   "fieldtype": "Long Text",
+   "label": "Completed Segments"
+  },
+  {
+   "fieldname": "gaps",
+   "fieldtype": "Long Text",
+   "label": "Gaps"
+  },
+  {
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Attempts",
+   "default": "0"
+  },
+  {
+   "fieldname": "retry_at",
+   "fieldtype": "Datetime",
+   "label": "Retry At"
+  },
+  {
+   "fieldname": "lease_token_hash",
+   "fieldtype": "Data",
+   "label": "Lease Token Hash"
+  },
+  {
+   "fieldname": "lease_worker",
+   "fieldtype": "Data",
+   "label": "Lease Worker"
+  },
+  {
+   "fieldname": "lease_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Lease Expires At"
+  },
+  {
+   "fieldname": "retention_deadline",
+   "fieldtype": "Datetime",
+   "label": "Retention Deadline"
+  },
+  {
+   "fieldname": "audio_seconds",
+   "fieldtype": "Float",
+   "label": "Audio Seconds",
+   "default": "0"
+  },
+  {
+   "fieldname": "source_bytes",
+   "fieldtype": "Float",
+   "label": "Source Bytes",
+   "default": "0"
+  },
+  {
+   "fieldname": "source_deleted",
+   "fieldtype": "Check",
+   "label": "Source Deleted",
+   "default": "0"
+  },
+  {
+   "fieldname": "artifact",
+   "fieldtype": "Link",
+   "label": "Artifact",
+   "options": "File"
+  },
+  {
+   "fieldname": "failure_code",
+   "fieldtype": "Data",
+   "label": "Failure Code"
+  },
+  {
+   "fieldname": "notification_pending",
+   "fieldtype": "Check",
+   "label": "Notification Pending",
+   "default": "0"
+  },
+  {
+   "fieldname": "notification_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Notification Sent At"
+  },
+  {
+   "fieldname": "processing_started_at",
+   "fieldtype": "Datetime",
+   "label": "Processing Started At"
+  },
+  {
+   "fieldname": "ready_at",
+   "fieldtype": "Datetime",
+   "label": "Ready At",
+   "search_index": 1
+  },
+  {
+   "fieldname": "queued_at",
+   "fieldtype": "Datetime",
+   "label": "Queued At",
+   "search_index": 1
+  },
+  {
+   "fieldname": "stop_requested",
+   "fieldtype": "Check",
+   "label": "Stop Requested",
+   "default": "0"
+  },
+  {
+   "fieldname": "participant_revision",
+   "fieldtype": "Int",
+   "label": "Participant Revision",
+   "default": "0"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1
+  }
+ ],
+ "track_changes": 0,
+ "allow_rename": 0
+}

@@ -3,7 +3,7 @@ import re
 import time
 import uuid
 
-from context_bias import validate_names
+from context_bias import LEGACY_VERSION, make_hints, validate_names
 
 MODEL_SAMPLE_RATE = 16000
 REALTIME_SAMPLE_RATE = 24000
@@ -118,9 +118,19 @@ def validate_session_update(
     )
     try:
         names = validate_names(transcription.get("names", []))
+        version = transcription.get("vocabulary_version", LEGACY_VERSION)
+        title = transcription.get("title", "")
+        hints = make_hints(title, names, version)
+        if hints["title"] != title:
+            raise ValueError("invalid_speech_hint_title")
     except ValueError as error:
         return None, str(error)
-    return {"model": model, "language": language, "names": names}, None
+    return {
+        "model": model,
+        "language": language,
+        "names": names,
+        "speech_context": {"vocabulary_version": version, "title": hints["title"]},
+    }, None
 
 
 def realtime_error(

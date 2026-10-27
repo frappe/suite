@@ -10,6 +10,25 @@
 			reverse_proxy 127.0.0.1:3010
 		}
 
+        @transcription_audio {
+            method PUT
+            path /v1/transcriptions/*/segments/*
+        }
+        handle @transcription_audio {
+            request_body {
+                max_size 2MB
+            }
+            reverse_proxy 127.0.0.1:3010
+        }
+
+        @transcription_control path /v1/transcriptions/*
+        handle @transcription_control {
+            request_body {
+                max_size 512KB
+            }
+            reverse_proxy 127.0.0.1:3010
+        }
+
 		@control path /v1/deployment-health /v1/recordings /v1/recordings/*
 		handle @control {
 			request_body {

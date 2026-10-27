@@ -1,0 +1,8 @@
+{
+    email {$TLS_EMAIL}
+}
+{$TRANSCRIPTION_DOMAIN} {
+    @worker path /health /metrics
+    reverse_proxy @worker transcription:8011
+    respond 404
+}
