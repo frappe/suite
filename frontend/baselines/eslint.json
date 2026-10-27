@@ -9,7 +9,7 @@
   "src/apps/calendar/components/EventAlertList.vue|@typescript-eslint/no-explicit-any": 2,
   "src/apps/calendar/components/EventDetail.vue|@typescript-eslint/no-explicit-any": 4,
   "src/apps/calendar/components/EventParticipantList.vue|@typescript-eslint/no-explicit-any": 2,
-  "src/apps/calendar/components/Modals/EventModal.vue|@typescript-eslint/no-explicit-any": 9,
+  "src/apps/calendar/components/Modals/EventModal.vue|@typescript-eslint/no-explicit-any": 7,
   "src/apps/calendar/components/Modals/EventRepeatSettingsModal.vue|@typescript-eslint/no-explicit-any": 2,
   "src/apps/calendar/components/Modals/ShortcutsModal.vue|@typescript-eslint/no-explicit-any": 1,
   "src/apps/calendar/components/ParticipantSelector.vue|@typescript-eslint/no-explicit-any": 2,
