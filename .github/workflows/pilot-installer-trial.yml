@@ -1,0 +1,474 @@
+name: Trial Pilot installer package costs
+on:
+  push:
+    branches: [proof/pilot-installer-packages]
+permissions:
+  contents: read
+env:
+  FRAPPE_COMMIT: e60e0591fe2018ec08ef0373b7b7059c8a778b94
+jobs:
+  vanilla-mariadb:
+    runs-on: ubuntu-latest
+    name: vanilla-mariadb
+    timeout-minutes: 20
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: |
+          # node server suites are exercised by the node-servers job; changes
+          # confined to them do not need the bench
+          if [ "1" = "1" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_backend=1
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            else
+              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                changed_files="$(git diff --name-only HEAD~1 HEAD)"
+              else
+                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+              fi
+            fi
+            backend_paths="$(printf '%s\n' "$changed_files" \
+              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+          fi
+
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
+          echo "Run backend tests: $run_backend"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Setup Pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          sh "$GITHUB_WORKSPACE/.github/scripts/pilot-install-vanilla-mariadb-trial.sh"
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop
+          pilot -b frappe-bench init --commit "$FRAPPE_COMMIT"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE"
+        env:
+          CI: "Yes"
+
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
+
+      - name: Run Backend Tests
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
+          pilot frappe --site test_site set-config allow_tests true
+          status=0
+          pilot frappe --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
+        env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          TYPE: server
+
+      - name: Check Background Worker
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          marker=/home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+
+      - name: Stop Pilot
+        if: always() && steps.start-pilot.outcome == 'success'
+        run: |
+          pilot -b frappe-bench stop
+          mkdir -p test-results/backend
+          cp "$RUNNER_TEMP/pilot.log" test-results/backend/pilot.log
+
+      - name: Collect Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f /home/runner/pilot/benches/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/pilot/benches/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-evidence-vanilla-mariadb
+          path: |
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Backend Coverage
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage-vanilla-mariadb
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  reduced-mariadb:
+    runs-on: ubuntu-latest
+    name: reduced-mariadb
+    timeout-minutes: 20
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: |
+          # node server suites are exercised by the node-servers job; changes
+          # confined to them do not need the bench
+          if [ "1" = "1" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_backend=1
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            else
+              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                changed_files="$(git diff --name-only HEAD~1 HEAD)"
+              else
+                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+              fi
+            fi
+            backend_paths="$(printf '%s\n' "$changed_files" \
+              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+          fi
+
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
+          echo "Run backend tests: $run_backend"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Setup Pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          sh "$GITHUB_WORKSPACE/.github/scripts/pilot-install-reduced-mariadb-trial.sh"
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop
+          pilot -b frappe-bench init --commit "$FRAPPE_COMMIT"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE"
+        env:
+          CI: "Yes"
+
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
+
+      - name: Run Backend Tests
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
+          pilot frappe --site test_site set-config allow_tests true
+          status=0
+          pilot frappe --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
+        env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          TYPE: server
+
+      - name: Check Background Worker
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          marker=/home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+
+      - name: Stop Pilot
+        if: always() && steps.start-pilot.outcome == 'success'
+        run: |
+          pilot -b frappe-bench stop
+          mkdir -p test-results/backend
+          cp "$RUNNER_TEMP/pilot.log" test-results/backend/pilot.log
+
+      - name: Collect Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f /home/runner/pilot/benches/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/pilot/benches/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-evidence-reduced-mariadb
+          path: |
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Backend Coverage
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage-reduced-mariadb
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  reduced-sqlite:
+    runs-on: ubuntu-latest
+    name: reduced-sqlite
+    timeout-minutes: 20
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: |
+          # node server suites are exercised by the node-servers job; changes
+          # confined to them do not need the bench
+          if [ "1" = "1" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_backend=1
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            else
+              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                changed_files="$(git diff --name-only HEAD~1 HEAD)"
+              else
+                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+              fi
+            fi
+            backend_paths="$(printf '%s\n' "$changed_files" \
+              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+          fi
+
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
+          echo "Run backend tests: $run_backend"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Setup Pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          sh "$GITHUB_WORKSPACE/.github/scripts/pilot-install-reduced-sqlite-trial.sh"
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop --database sqlite
+          pilot -b frappe-bench init --commit "$FRAPPE_COMMIT"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE"
+        env:
+          CI: "Yes"
+
+      - name: Start Pilot
+        id: start-pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Test Site
+        id: install-suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site test_site --admin-password admin --apps frappe suite
+
+      - name: Run Backend Tests
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
+          pilot frappe --site test_site set-config allow_tests true
+          status=0
+          pilot frappe --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
+        env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          TYPE: server
+
+      - name: Check Background Worker
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          marker=/home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+
+      - name: Stop Pilot
+        if: always() && steps.start-pilot.outcome == 'success'
+        run: |
+          pilot -b frappe-bench stop
+          mkdir -p test-results/backend
+          cp "$RUNNER_TEMP/pilot.log" test-results/backend/pilot.log
+
+      - name: Collect Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f /home/runner/pilot/benches/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/pilot/benches/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always() && steps.backend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-evidence-reduced-sqlite
+          path: |
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Backend Coverage
+        if: always() && steps.backend-changes.outputs.run == '1' && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage-reduced-sqlite
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+

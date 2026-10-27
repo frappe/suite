@@ -1,0 +1,855 @@
+#!/bin/sh
+set -e
+
+# POSIX sh (not bash) so a bare box can bootstrap via `wget -qO- ... | sh`
+# before bash exists. Supported distros: Debian, Ubuntu, Fedora, Arch, and
+# their derivatives via ID_LIKE. Unknown distros fall back to apt.
+#
+# Two passes. As root it prepares the host and the bench user, then stops.
+# As that user it installs Pilot itself, needing no privileges at all.
+
+# ── configuration ─────────────────────────────────────────────────────────────
+# All three point at the same GitHub repo; override PILOT_GITHUB_SLUG to install
+# from a fork (releases + self-reference URL follow it).
+GITHUB_SLUG="${PILOT_GITHUB_SLUG:-frappe/pilot}"
+INSTALL_URL="https://raw.githubusercontent.com/$GITHUB_SLUG/develop/install.sh"
+REPO_URL="${PILOT_REPO_URL:-https://github.com/$GITHUB_SLUG}"
+BRANCH_NAME="${PILOT_BRANCH:-develop}"
+PILOT_DIR="$HOME/pilot"
+BENCH_USER="${BENCH_USER:-frappe}"
+# Answers sudo for an unattended run, which `curl | sh` cannot prompt for. Set it
+# in the environment: an argument would expose the password to every local `ps`.
+SUDO_PASS="${SUDO_PASS:-}"
+# The default install pulls a prebuilt release tarball; --dev clones develop and
+# compiles the admin frontend from source.
+DEV_MODE="${PILOT_DEV:-}"
+
+MARIADB_REPO_SETUP_URL="https://r.mariadb.com/downloads/mariadb_repo_setup"
+FLUENT_BIT_REPO="https://packages.fluentbit.io"
+# Match the runtime's own defaults (MariaDBManager/PostgresManager).
+MARIADB_VERSION="11.8"
+POSTGRES_VERSION="16"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --user) BENCH_USER="$2"; shift 2 ;;
+        --user=*) BENCH_USER="${1#*=}"; shift ;;
+        --dev) DEV_MODE=1; shift ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+# ── platform ──────────────────────────────────────────────────────────────────
+detect_distro() {
+    if [ "$(uname)" = "Darwin" ]; then
+        echo macos
+        return
+    fi
+    if [ ! -r /etc/os-release ]; then
+        echo unknown
+        return
+    fi
+    # os-release is sh syntax by spec; source it in subshells so its variables
+    # never leak into ours.
+    # shellcheck disable=SC1091
+    distro_id=$(. /etc/os-release; echo "$ID")
+    # shellcheck disable=SC1091
+    distro_like=$(. /etc/os-release; echo "${ID_LIKE:-}")
+    case "$distro_id" in
+        debian|ubuntu|fedora|arch) echo "$distro_id"; return ;;
+    esac
+    # Derivatives advertise their parent in ID_LIKE (e.g. Mint -> ubuntu).
+    for token in $distro_like; do
+        case "$token" in
+            debian|ubuntu|fedora|arch) echo "$token"; return ;;
+        esac
+    done
+    echo unknown
+}
+
+DISTRO="$(detect_distro)"
+
+# The last two releases of each distro. Derivatives number releases differently
+# (Mint 22 is Ubuntu 24.04), so only the parents are checked.
+require_supported_release() {
+    os_release="${1:-/etc/os-release}"
+    [ -r "$os_release" ] || return 0
+    # shellcheck disable=SC1090
+    distro_id=$(. "$os_release"; echo "$ID")
+    # shellcheck disable=SC1090
+    major=$(. "$os_release"; echo "${VERSION_ID%%.*}")
+    case "$distro_id" in
+        ubuntu) minimum=24; label="Ubuntu 24.04" ;;
+        debian) minimum=12; label="Debian 12" ;;
+        fedora) minimum=43; label="Fedora 43" ;;
+        *) return 0 ;;
+    esac
+    # Debian testing and sid have no VERSION_ID; they are newer than any release.
+    [ -z "$major" ] && return 0
+    [ "$major" -ge "$minimum" ] && return 0
+    echo "Pilot does not support $distro_id $major. Use $label or newer." >&2
+    exit 1
+}
+
+is_root() {
+    [ "$(id -u)" -eq 0 ]
+}
+
+# Piping this script through `curl | sh` leaves stdin occupied, so sudo's own
+# prompt cannot read an answer. Ask via /dev/tty and cache it instead.
+run_sudo() {
+    if is_root; then
+        "$@"
+        return
+    fi
+    if [ -z "$SUDO_PASS" ] && ! sudo -n true 2>/dev/null && [ -r /dev/tty ]; then
+        printf "[sudo] password for %s: " "$(id -un)" > /dev/tty
+        stty -echo < /dev/tty 2>/dev/null
+        read -r SUDO_PASS < /dev/tty
+        stty echo < /dev/tty 2>/dev/null
+        printf "\n" > /dev/tty
+    fi
+    if [ -n "$SUDO_PASS" ]; then
+        echo "$SUDO_PASS" | sudo -S "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# ── package manager ───────────────────────────────────────────────────────────
+# Unknown distros fall back to apt, mirroring pilot/managers/packages.py.
+# macOS uses Homebrew, which is per-user and never goes through run_sudo.
+pkg_update() {
+    case "$DISTRO" in
+        macos)  ensure_homebrew; brew update ;;
+        fedora) run_sudo dnf -y makecache ;;
+        arch)   run_sudo pacman -Sy --noconfirm --disable-download-timeout ;;
+        *)      run_sudo apt-get update ;;
+    esac
+}
+
+pkg_install() {
+    case "$DISTRO" in
+        macos)  ensure_homebrew; brew install "$@" ;;
+        # --allowerasing: containers ship curl-minimal, which conflicts with curl.
+        fedora) run_sudo dnf install -y --allowerasing "$@" ;;
+        # -Sy: stale Arch mirrors 404 otherwise. The download timeout aborts
+        # large transfers on slow links, so turn it off.
+        arch)   run_sudo pacman -Sy --noconfirm --needed --disable-download-timeout "$@" ;;
+        *)      run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" ;;
+    esac
+}
+
+pkg_installed() {
+    case "$DISTRO" in
+        macos)  brew list --versions "$1" >/dev/null 2>&1 ;;
+        fedora) rpm -q "$1" >/dev/null 2>&1 ;;
+        # -T accepts a provider, such as mariadb-lts for mariadb.
+        arch)   pacman -T "$1" >/dev/null 2>&1 ;;
+        *)      dpkg -l "$1" 2>/dev/null | grep -q '^ii' ;;
+    esac
+}
+
+pkg_available() {
+    case "$DISTRO" in
+        debian|ubuntu) apt-cache show "$1" >/dev/null 2>&1 ;;
+        fedora) dnf -q info "$1" >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Naming an installed provider's package again makes pacman remove the provider.
+pkg_install_missing() {
+    missing=""
+    for package in "$@"; do
+        pkg_installed "$package" || missing="$missing $package"
+    done
+    [ -z "$missing" ] && return 0
+    # shellcheck disable=SC2086
+    pkg_install $missing
+}
+
+# Vendors (MariaDB, NodeSource, Homebrew) only publish `curl | bash` installers
+# with nothing to pin against, so the content is trusted the way their docs
+# instruct. A truncated transfer or non-HTTPS redirect is still caught here.
+download_installer() {
+    tmp="$(mktemp)"
+    curl -fsSL --proto '=https' --tlsv1.2 "$1" -o "$tmp"
+    if [ ! -s "$tmp" ] || ! head -c 2 "$tmp" | grep -q '^#'; then
+        echo "Downloaded installer from $1 looks invalid, aborting." >&2
+        rm -f "$tmp"
+        exit 1
+    fi
+    echo "$tmp"
+}
+
+fetch_and_run_as_root() {
+    url="$1"; shift
+    tmp="$(download_installer "$url")" || exit 1
+    run_sudo bash "$tmp" "$@"
+    rm -f "$tmp"
+}
+
+# download_installer needs curl before bootstrap_packages would install it.
+ensure_curl() {
+    command -v curl >/dev/null 2>&1 && return 0
+    [ "$DISTRO" = "macos" ] && return 0
+    echo "Installing curl..."
+    pkg_update
+    pkg_install curl
+}
+
+# The one macOS dependency the runtime cannot install for itself. Priming the
+# sudo timestamp first means Homebrew's installer reuses it on Intel Macs
+# rather than prompting again, where it could not read an answer.
+ensure_homebrew() {
+    command -v brew >/dev/null 2>&1 && return 0
+    echo "Installing Homebrew..."
+    run_sudo true
+    tmp="$(download_installer "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh")" || exit 1
+    NONINTERACTIVE=1 bash "$tmp"
+    rm -f "$tmp"
+    if [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [ -x /usr/local/bin/brew ]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+}
+
+# ── system packages ───────────────────────────────────────────────────────────
+# Everything Pilot needs at runtime is installed here, as root, once. The bench
+# user has no passwordless sudo, so anything missing from this list becomes a
+# password prompt in the middle of `pilot init` or a deploy.
+
+# Bare images ship almost nothing: the tools this script and Pilot both need
+# before first use, plus the build deps for the admin venv and frappe wheels.
+# cron runs scheduled backups; Frappe's restore runs `file` to tell a gzipped dump apart.
+bootstrap_packages() {
+    case "$DISTRO" in
+        macos)
+            pkg_install git python3 ;;
+        debian|ubuntu)
+            pkg_install git curl bash sudo ca-certificates python3 python3-dev build-essential tzdata cron file ;;
+        fedora)
+            pkg_install git curl bash sudo shadow-utils python3 python3-devel gcc gcc-c++ make tzdata cronie file ;;
+        arch)
+            pkg_install git curl bash sudo python base-devel tzdata cronie file ;;
+    esac
+}
+
+# Debian's cron starts itself.
+enable_cron() {
+    case "$DISTRO" in
+        fedora) run_sudo systemctl enable --now crond 2>/dev/null || true ;;
+        arch)   run_sudo systemctl enable --now cronie 2>/dev/null || true ;;
+    esac
+}
+
+# Debian/Ubuntu ship an older MariaDB than we want, so add the official repo
+# before the single pkg_update below refreshes both it and the base indices.
+add_distro_repos() {
+    case "$DISTRO" in
+        debian|ubuntu)
+            ;;
+    esac
+}
+
+# Debian/Ubuntu do not package Fluent Bit, which ships the bench logs to Datum.
+add_fluent_bit_repo() {
+    # shellcheck disable=SC1091
+    codename=$(. /etc/os-release; echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+    repo="$FLUENT_BIT_REPO/$DISTRO/$codename"
+    # A release without packages would fail the apt-get update every other package needs.
+    if ! curl -fsI "$repo/dists/$codename/InRelease" >/dev/null 2>&1; then
+        echo "Warning: Fluent Bit has no packages for $DISTRO $codename, so bench logs are not shipped."
+        return 0
+    fi
+
+    # Staged files, not a pipe: run_sudo may feed the sudo password on stdin.
+    key="$(mktemp)"
+    list="$(mktemp)"
+    curl -fsSL --proto '=https' --tlsv1.2 "$FLUENT_BIT_REPO/fluentbit.key" -o "$key"
+    echo "deb [signed-by=/etc/apt/keyrings/fluentbit.asc] $repo $codename main" > "$list"
+    run_sudo install -D -m 644 "$key" /etc/apt/keyrings/fluentbit.asc
+    run_sudo install -m 644 "$list" /etc/apt/sources.list.d/fluent-bit.list
+    rm -f "$key" "$list"
+}
+
+# One MariaDB, PostgreSQL and Redis per bench user (rootless, systemctl --user),
+# shared across that user's benches. The dev headers are for the Python client
+# libraries frappe's virtualenv compiles during `pilot init`.
+install_database_engines() {
+    case "$DISTRO" in
+        macos)
+            pkg_install "mariadb@$MARIADB_VERSION" "postgresql@$POSTGRES_VERSION" redis ;;
+        debian|ubuntu)
+            pkg_install libmariadb-dev pkg-config redis-server ;;
+        fedora)
+            # Fedora 41+ ships valkey in place of redis (the alias the runtime resolves).
+            pkg_install mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey ;;
+        arch)
+            pkg_install_missing mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis ;;
+    esac
+}
+
+# What `pilot setup production` needs. Installing the WAF module up front keeps
+# enabling the WAF later a non-root operation too.
+install_production_packages() {
+    case "$DISTRO" in
+        macos)  pkg_install nginx certbot ;;
+        debian|ubuntu|fedora)
+            waf=$(waf_packages)
+            [ -n "$waf" ] || echo "Warning: the nginx ModSecurity module is not packaged for this release, so the WAF is unavailable."
+            # shellcheck disable=SC2086
+            pkg_install nginx certbot supervisor $waf
+            # The bench user cannot sudo apt, so `pilot setup telemetry` relies on this install.
+            if pkg_available fluent-bit; then pkg_install fluent-bit; fi ;;
+        arch)   pkg_install nginx certbot supervisor ;;
+    esac
+}
+
+# Some releases do not package the ModSecurity module.
+waf_packages() {
+    case "$DISTRO" in
+        debian|ubuntu) pkg_available libnginx-mod-http-modsecurity && echo libnginx-mod-http-modsecurity ;;
+        fedora) pkg_available nginx-mod-modsecurity && echo nginx-mod-modsecurity ;;
+    esac
+    return 0
+}
+
+# NodeSource pins Node 24 on deb/rpm distros; Arch ships a current Node itself.
+install_node() {
+    if command -v node >/dev/null 2>&1; then
+        NODE_VERSION=$(node -v | tr -d 'v' | cut -d'.' -f1)
+        if [ "$NODE_VERSION" -ge 24 ] 2>/dev/null; then
+            return 0
+        fi
+        echo "❌ Error: Pilot needs Node.js 24 or later, but found $(node -v)."
+        echo "Please install Node.js 24 or later and retry."
+        exit 1
+    fi
+    # An unknown distro only gets Node when apt is there to install it.
+    if [ "$DISTRO" = "unknown" ] && ! command -v apt-get >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "Installing Node.js..."
+    case "$DISTRO" in
+        macos)  pkg_install node ;;
+        arch)   pkg_install nodejs npm ;;
+        fedora)
+            fetch_and_run_as_root "https://rpm.nodesource.com/setup_24.x"
+            run_sudo dnf install -y nodejs ;;
+        *)
+            fetch_and_run_as_root "https://deb.nodesource.com/setup_24.x"
+            run_sudo apt-get install -y nodejs ;;
+    esac
+}
+
+# Services not enabled before this run. A rerun must leave alone the nginx that
+# `pilot setup production` enabled, or every production bench goes down.
+services_to_disable() {
+    for service in mariadb postgresql redis-server redis valkey nginx supervisor; do
+        systemctl is-enabled "$service" >/dev/null 2>&1 || echo "$service"
+    done
+}
+
+# The distro packages auto-start services on their default ports. Benches run
+# their own instances, so free the ports and the memory right away. `pilot setup
+# production` starts nginx and enables it at boot, which a sudoers grant allows.
+disable_system_services() {
+    case "$DISTRO" in
+        macos|unknown) return 0 ;;
+    esac
+    for service in "$@"; do
+        run_sudo systemctl disable --now "$service" 2>/dev/null || true
+    done
+}
+
+install_system_packages() {
+    if [ "$DISTRO" = "unknown" ]; then
+        # Timezone data still applies where apt exists; only root may install it.
+        if is_root; then ensure_tzdata; fi
+        return 0
+    fi
+    # Root always runs this (idempotent, and bare containers need it before
+    # useradd). A non-root install may skip it only when the complete host stack
+    # is already present, such as the second pass after root provisioning.
+    if ! is_root; then
+        system_packages_present && return 0
+        if ! command -v sudo >/dev/null 2>&1; then
+            echo "sudo is not installed and you are not root, so base packages cannot"
+            echo "be installed. Re-run this installer as root first, then as the bench user:"
+            echo ""
+            echo "   wget -qO- $INSTALL_URL | sh   # as root"
+            exit 1
+        fi
+    fi
+    echo "$DISTRO detected — installing base dependencies..."
+    new_services=$(services_to_disable)
+    ensure_curl
+    add_distro_repos
+    pkg_update
+    bootstrap_packages
+    enable_cron
+    install_database_engines
+    # shellcheck disable=SC2086
+    disable_system_services $new_services
+    install_node
+    ensure_tzdata
+}
+
+base_tools_present() {
+    if [ "$DISTRO" = "macos" ]; then
+        tools="git brew python3"
+    else
+        tools="git curl bash sudo python3 crontab file"
+    fi
+    for tool in $tools; do
+        command -v "$tool" >/dev/null 2>&1 || return 1
+    done
+    return 0
+}
+
+system_packages_present() {
+    base_tools_present || return 1
+
+    case "$DISTRO" in
+        macos)
+            packages="mariadb@$MARIADB_VERSION postgresql@$POSTGRES_VERSION redis nginx certbot" ;;
+        debian|ubuntu)
+            packages="libmariadb-dev pkg-config redis-server" ;;
+        fedora)
+            packages="mariadb-server mariadb mariadb-connector-c-devel postgresql-server postgresql libpq-devel pkgconf-pkg-config valkey nginx certbot supervisor $(waf_packages)" ;;
+        arch)
+            packages="mariadb mariadb-clients mariadb-libs postgresql postgresql-libs pkgconf redis nginx certbot supervisor" ;;
+        *)
+            return 1 ;;
+    esac
+
+    for package in $packages; do
+        pkg_installed "$package" || return 1
+    done
+    command -v node >/dev/null 2>&1 || return 1
+    return 0
+}
+
+# ── host provisioning (root only) ─────────────────────────────────────────────
+# Each of these exists so the bench user never has to ask for a password later.
+# All are idempotent: re-running the installer repairs a host in place.
+
+bench_home() {
+    getent passwd "$1" | cut -d: -f6
+}
+
+systemd_booted() {
+    [ -d /run/systemd/system ] && command -v loginctl >/dev/null 2>&1
+}
+
+linger_enabled() {
+    [ "$(loginctl show-user "$1" --property=Linger 2>/dev/null)" = "Linger=yes" ]
+}
+
+# The group conventionally granted admin rights, so the bench user can
+# authenticate sudo interactively if it ever needs to.
+admin_group() {
+    case "$DISTRO" in
+        debian|ubuntu|unknown) echo sudo ;;
+        *) echo wheel ;;
+    esac
+}
+
+create_bench_user() {
+    id "$1" >/dev/null 2>&1 && return 0
+    echo "Creating user '$1'..."
+    useradd -m -s /bin/bash "$1"
+    usermod -aG "$(admin_group)" "$1" 2>/dev/null || true
+    add_user_bus_env "$1"
+}
+
+# `su` and `sudo -iu` open no login session, so `systemctl --user` finds no
+# runtime directory or D-Bus socket without these.
+add_user_bus_env() {
+    rc="$(getent passwd "$1" | cut -d: -f6)/.bashrc"
+    cat >>"$rc" <<'EOF'
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+EOF
+    chown "$1:" "$rc"
+}
+
+# Bench services are `systemctl --user` units, which need this user's systemd
+# instance alive with no login session. Enabling lingering also starts it,
+# creating the D-Bus socket every systemctl --user call talks to.
+enable_linger() {
+    systemd_booted || return 0
+    linger_enabled "$1" && return 0
+    echo "Enabling systemd lingering for '$1'..."
+    loginctl enable-linger "$1"
+}
+
+# nginx reads each bench's vhost from a file the bench user owns. Dropping the
+# one glob that pulls them in makes publishing a vhost an ordinary file write
+# rather than a privileged symlink into /etc/nginx.
+install_nginx_include() {
+    home="$(bench_home "$1")"
+    [ -n "$home" ] && [ -d /etc/nginx/conf.d ] || return 0
+    echo "Installing the nginx include for '$1'..."
+    cat > /etc/nginx/conf.d/00-pilot.conf <<EOF
+include $home/pilot/system/nginx/*.conf;
+include $home/pilot/benches/*/config/nginx/include.conf;
+EOF
+    chmod 644 /etc/nginx/conf.d/00-pilot.conf
+    # The stock default site also claims default_server on :80 and nginx
+    # rejects the duplicate, so let a bench's vhost win.
+    rm -f /etc/nginx/sites-enabled/default
+    # Older installs symlinked each bench into conf.d. The glob above loads the
+    # same file now, and nginx rejects the duplicate server blocks.
+    for link in /etc/nginx/conf.d/*.conf; do
+        [ -L "$link" ] || continue
+        case "$(readlink "$link")" in
+            "$home"/pilot/benches/*) rm -f "$link" ;;
+        esac
+    done
+}
+
+# nginx workers must run as the bench user to read its sites.
+set_nginx_worker_user() {
+    conf=/etc/nginx/nginx.conf
+    [ "$DISTRO" != "macos" ] && [ -f "$conf" ] || return 0
+    grep -q "^[[:space:]]*user[[:space:]]\{1,\}$1;" "$conf" && return 0
+    echo "Setting the nginx worker user to '$1'..."
+    if grep -q "^[[:space:]]*user[[:space:]]" "$conf"; then
+        sed -i "s/^[[:space:]]*user[[:space:]].*;/user $1;/" "$conf"
+    else
+        sed -i "1i user $1;" "$conf"
+    fi
+}
+
+# logrotate ignores a config it does not own, so the bench user cannot write
+# one. This single glob covers every bench and monitor, present and future.
+install_logrotate() {
+    home="$(bench_home "$1")"
+    [ -n "$home" ] && [ -d /etc/logrotate.d ] || return 0
+    echo "Installing log rotation for '$1'..."
+    cat > /etc/logrotate.d/pilot <<EOF
+$home/pilot/system/logs/*.log $home/pilot/benches/*/logs/*.log {
+    size 500M
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su $1 $1
+}
+EOF
+    chmod 644 /etc/logrotate.d/pilot
+}
+
+# `command -v` returns the bare name for shell builtins like `test`, but a
+# sudoers Cmnd must be a fully-qualified path or visudo rejects the whole file.
+# Mirror the runtime's shutil.which by taking only an absolute PATH match.
+resolve_binary() {
+    resolved="$(command -v "$1" 2>/dev/null || true)"
+    case "$resolved" in
+        /*) echo "$resolved" ;;
+        *) echo "$2" ;;
+    esac
+}
+
+# Reloading nginx and running certbot need root every time a bench deploys or a
+# cert renews. These mirror NginxManager.setup_sudoers and
+# LetsEncryptManager.setup_sudoers, which check whether a grant works before
+# rewriting it — so the two only have to agree in effect, not in text.
+install_sudoers_grants() {
+    [ -d /etc/sudoers.d ] || return 0
+    command -v visudo >/dev/null 2>&1 || return 0
+    nginx_bin="$(resolve_binary nginx /usr/sbin/nginx)"
+    certbot_bin="$(resolve_binary certbot /usr/bin/certbot)"
+    openssl_bin="$(resolve_binary openssl /usr/bin/openssl)"
+    systemctl_bin="$(resolve_binary systemctl /bin/systemctl)"
+    mkdir_bin="$(resolve_binary mkdir /bin/mkdir)"
+    test_bin="$(resolve_binary test /usr/bin/test)"
+    webroot=/var/www/letsencrypt
+    live=/etc/letsencrypt/live
+    hook="systemctl reload nginx"
+
+    echo "Granting '$1' passwordless sudo for nginx and certbot..."
+    write_sudoers_file "$1-pilot-nginx" \
+"$1 ALL=(ALL) NOPASSWD: $nginx_bin -t,$nginx_bin -T,$systemctl_bin start nginx,$systemctl_bin stop nginx,$systemctl_bin reload nginx,$systemctl_bin enable nginx"
+    # Domain and email tokens stay wildcarded (sites arrive long after this is
+    # written), but each wildcard is anchored between fixed literal text, so no
+    # extra flag can be smuggled in before or after the match.
+    write_sudoers_file "$1-pilot-certbot" \
+"$1 ALL=(ALL) NOPASSWD: $certbot_bin certonly --webroot -w $webroot * --cert-name * --expand --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin certonly --webroot -w $webroot -d * --email * --agree-tos --non-interactive --deploy-hook $hook,$certbot_bin renew --quiet,$mkdir_bin -p $webroot,$test_bin -f $live/*/fullchain.pem -a -f $live/*/privkey.pem,$openssl_bin x509 -noout -ext subjectAltName -in $live/*/fullchain.pem,$openssl_bin x509 -enddate -noout -in $live/*/fullchain.pem" \
+"$1 ALL=(ALL) NOPASSWD: $certbot_bin,$mkdir_bin,$test_bin,$openssl_bin"
+}
+
+# Asset builds of large frontends need more memory than a small host without swap
+# has. The bench user may add this swap file for the length of a build; the count
+# lets concurrent builds share it, and a reboot (the file is not in fstab) resets it.
+install_build_swap_helper() {
+    [ "$(uname)" = "Linux" ] || return 0
+    command -v swapon >/dev/null 2>&1 || return 0
+    helper=/usr/local/sbin/pilot-build-swap
+    cat > "$helper" <<'HELPER'
+#!/bin/sh
+set -eu
+dir=/var/lib/pilot
+swapfile=$dir/build.swap
+size_mb=2048
+mkdir -p "$dir"
+exec 9>"$dir/build-swap.lock"
+flock 9
+active() { grep -q "^$swapfile " /proc/swaps; }
+count=$(cat "$dir/build-swap.count" 2>/dev/null || echo 0)
+active || count=0
+case "${1:-}" in
+on)
+    echo $((count + 1)) > "$dir/build-swap.count"
+    [ "$count" -eq 0 ] || exit 0
+    [ "$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo)" -eq 0 ] || exit 0
+    if [ "$(df -Pm "$dir" | awk 'NR == 2 {print $4}')" -lt $((size_mb + 1024)) ]; then
+        echo "Not enough free disk for the build swap file." >&2
+        exit 0
+    fi
+    fallocate -l "${size_mb}M" "$swapfile" 2>/dev/null || dd if=/dev/zero of="$swapfile" bs=1M count="$size_mb" status=none
+    chmod 600 "$swapfile"
+    mkswap "$swapfile" >/dev/null
+    swapon --priority -10 "$swapfile"
+    ;;
+off)
+    if [ "$count" -gt 0 ]; then count=$((count - 1)); fi
+    echo "$count" > "$dir/build-swap.count"
+    if [ "$count" -eq 0 ] && active; then swapoff "$swapfile"; fi
+    if [ "$count" -eq 0 ]; then rm -f "$swapfile"; fi
+    ;;
+*)
+    echo "usage: pilot-build-swap on|off" >&2
+    exit 2
+    ;;
+esac
+HELPER
+    chmod 755 "$helper"
+    write_sudoers_file "$1-pilot-build-swap" "$1 ALL=(root) NOPASSWD: $helper on,$helper off"
+}
+
+# A malformed file in /etc/sudoers.d breaks sudo for every user, including the
+# recovery path, so validate before installing. sudo-rs (Ubuntu 26.04) rejects
+# wildcards in arguments; the optional third grant names the same commands bare.
+write_sudoers_file() {
+    staged="$(mktemp)"
+    echo "$2" > "$staged"
+    if [ -n "${3:-}" ] && sudo --version 2>/dev/null | grep -q '^sudo-rs' && ! visudo -cf "$staged" >/dev/null 2>&1; then
+        echo "Warning: this sudo rejects argument wildcards, so $1 grants its commands without argument limits." >&2
+        echo "$3" > "$staged"
+    fi
+    if visudo -cf "$staged" >/dev/null 2>&1; then
+        install -m 440 "$staged" "/etc/sudoers.d/$1"
+    else
+        echo "Refusing to install a malformed sudoers grant ($1)." >&2
+    fi
+    rm -f "$staged"
+}
+
+# We never switch users mid-run: prepare the account, then ask the operator to
+# come back as that user.
+prepare_host() {
+    echo "Running as root. Preparing the '$BENCH_USER' user for bench..."
+    create_bench_user "$BENCH_USER"
+    enable_linger "$BENCH_USER"
+    install_nginx_include "$BENCH_USER"
+    set_nginx_worker_user "$BENCH_USER"
+    install_logrotate "$BENCH_USER"
+    install_sudoers_grants "$BENCH_USER"
+    install_build_swap_helper "$BENCH_USER"
+
+    echo ""
+    echo "========================================================================"
+    echo " User '$BENCH_USER' is ready — base tools, database engines and the"
+    echo " production stack are installed system-wide, so day-to-day Pilot"
+    echo " commands never need root."
+    echo ""
+    echo " Pilot must NOT be installed as root. Switch to '$BENCH_USER' and run"
+    echo " the installer again:"
+    echo ""
+    echo "   su - $BENCH_USER"
+    echo "   curl -fsSL $INSTALL_URL | bash"
+    echo "========================================================================"
+}
+
+# ── bench user install ────────────────────────────────────────────────────────
+# Nothing below here needs privileges: prepare_host granted them all already.
+
+# Only root can turn lingering on. Fail now rather than midway through
+# `pilot init`, where systemctl --user finds no bus to talk to.
+require_linger() {
+    systemd_booted || return 0
+    linger_enabled "$(id -un)" && return 0
+    sudo -n loginctl enable-linger "$(id -un)" 2>/dev/null && return 0
+    echo "systemd lingering is not enabled for '$(id -un)', and this user cannot" >&2
+    echo "enable it without a password. Bench services run as systemctl --user" >&2
+    echo "units, which need it." >&2
+    echo "" >&2
+    echo "Run this as root, then re-run the installer:" >&2
+    echo "" >&2
+    echo "   loginctl enable-linger $(id -un)" >&2
+    exit 1
+}
+
+# The release tarball ships the compiled admin frontend and a VERSION file;
+# --dev clones the source so contributors build the frontend locally.
+fetch_pilot() {
+    if [ -n "$DEV_MODE" ]; then
+        if [ -d "$PILOT_DIR/.git" ]; then
+            echo "Updating pilot (dev)..."
+            git -C "$PILOT_DIR" pull
+        else
+            echo "Cloning pilot ($BRANCH_NAME branch)..."
+            git clone -b "$BRANCH_NAME" "$REPO_URL" "$PILOT_DIR"
+        fi
+        return
+    fi
+
+    echo "Fetching the latest pilot release..."
+    asset_url=$(curl -fsSL --proto '=https' --tlsv1.2 \
+        "https://api.github.com/repos/$GITHUB_SLUG/releases/tags/v0.0.89-pre-alpha" \
+        | grep -o 'https://[^"]*/pilot\.tar\.gz' | head -n1)
+    if [ -z "$asset_url" ]; then
+        echo "Could not find a pilot.tar.gz release asset." >&2
+        echo "Install a development checkout instead with: $INSTALL_URL --dev" >&2
+        exit 1
+    fi
+    tmp="$(mktemp)"
+    curl -fsSL --proto '=https' --tlsv1.2 "$asset_url" -o "$tmp"
+    # tar only writes archived paths, so an existing benches/ is left intact.
+    mkdir -p "$PILOT_DIR"
+    tar -xzf "$tmp" -C "$PILOT_DIR"
+    rm -f "$tmp"
+}
+
+ensure_uv() {
+    command -v uv >/dev/null 2>&1 && return 0
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+}
+
+# Python's zoneinfo needs this on systems without system tzdata.
+ensure_tzdata() {
+    case "$DISTRO" in
+        macos) return 0 ;;
+        unknown) command -v apt-get >/dev/null 2>&1 || return 0 ;;
+    esac
+    if ! pkg_installed tzdata; then
+        echo "Installing timezone data..."
+        pkg_install tzdata
+    fi
+    ensure_tzdata_legacy
+}
+
+# Ubuntu 24.04 moved the deprecated zone aliases (Asia/Calcutta, US/Eastern) out
+# of tzdata, and zoneinfo cannot load a name the distro does not ship. Fedora and
+# Arch keep them in tzdata, so test for a missing alias instead of a version.
+ensure_tzdata_legacy() {
+    [ -e "${ZONEINFO_DIR:-/usr/share/zoneinfo}/Asia/Calcutta" ] && return 0
+    case "$DISTRO" in
+        fedora|arch) return 0 ;;
+    esac
+    echo "Installing deprecated timezone names..."
+    pkg_install tzdata-legacy || echo "Warning: tzdata-legacy is unavailable; deprecated timezone names such as Asia/Calcutta will not resolve."
+}
+
+# Appends the given PATH line to a file once, if not already there.
+add_path_line() {
+    file="$1"; line="$2"
+    mkdir -p "$(dirname "$file")"
+    case "$line" in
+        fish_add_path*) legacy_line="fish_add_path \$HOME/pilot" ;;
+        *) legacy_line="export PATH=\"\$HOME/pilot:\$PATH\"" ;;
+    esac
+    if grep -qFx "$legacy_line" "$file" 2>/dev/null; then
+        tmp="$(mktemp)"
+        awk -v old="$legacy_line" -v new="$line" '$0 == old { print new; next } { print }' "$file" > "$tmp"
+        cat "$tmp" > "$file"
+        rm -f "$tmp"
+        echo "Updated Pilot PATH in $file"
+        return 0
+    fi
+    grep -qFx "$line" "$file" 2>/dev/null && return 0
+    echo "$line" >> "$file"
+    echo "Added Pilot to PATH in $file"
+}
+
+# Sets RC_FILE to the rc it touched, for the closing hint.
+add_pilot_to_path() {
+    # Escaped so $HOME lands literally in the rc file and expands at shell start.
+    export_line="export PATH=\"\$HOME/pilot/bin:\$PATH\""
+    case "$SHELL" in
+        */fish)
+            RC_FILE="$HOME/.config/fish/config.fish"
+            add_path_line "$RC_FILE" "fish_add_path \$HOME/pilot/bin" ;;
+        */zsh)
+            RC_FILE="$HOME/.zshrc"
+            add_path_line "$RC_FILE" "$export_line" ;;
+        # POSIX login shells read ~/.profile.
+        */ash|*/sh|"")
+            RC_FILE="$HOME/.profile"
+            add_path_line "$RC_FILE" "$export_line" ;;
+        *)
+            # bash reads ~/.bashrc when interactive but ~/.profile on login
+            # (and non-interactive login, e.g. `su - user -c`), so cover both.
+            RC_FILE="$HOME/.bashrc"
+            add_path_line "$RC_FILE" "$export_line"
+            add_path_line "$HOME/.profile" "$export_line" ;;
+    esac
+
+    export PATH="$PILOT_DIR/bin:$PATH"
+    # fish rc syntax is not sh, so never source it back into this shell.
+    case "$SHELL" in */fish) RC_FILE=""; return ;; esac
+    # Best-effort: shell-specific rc syntax may not parse here, which is fine —
+    # the export above already applies and a new terminal reads the rc.
+    if [ -f "$RC_FILE" ]; then
+        # shellcheck disable=SC1090
+        . "$RC_FILE" 2>/dev/null || true
+    fi
+}
+
+ensure_admin_venv() {
+    admin_venv="$PILOT_DIR/.admin-venv"
+    [ -f "$admin_venv/bin/python" ] && return 0
+    echo "Setting up admin environment..."
+    uv venv "$admin_venv" --quiet
+    uv pip install --python "$admin_venv/bin/python" --quiet -r "$PILOT_DIR/pyproject.toml" --extra admin
+    echo "Admin environment ready."
+}
+
+install_for_user() {
+    echo "Setting up your environment..."
+    require_linger
+    fetch_pilot
+    rm -f "$PILOT_DIR/bench"
+    chmod +x "$PILOT_DIR/bin/pilot"
+    ensure_uv
+    add_pilot_to_path
+    ensure_admin_venv
+
+    echo ""
+    echo "Pilot installed to $PILOT_DIR"
+    echo ""
+    echo "Quick start:"
+    echo "  pilot new my-bench"
+    echo "  pilot start"
+    echo ""
+    echo "If 'pilot' is not found, open a new terminal or run: . ${RC_FILE:-$HOME/.bashrc}"
+}
+
+# ── run ───────────────────────────────────────────────────────────────────────
+require_supported_release
+install_system_packages
+
+if is_root; then
+    prepare_host
+    exit 0
+fi
+
+install_for_user
