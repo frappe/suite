@@ -82,6 +82,23 @@ describe("useRecording", () => {
 		vi.clearAllMocks();
 	});
 
+	it.each(["Failed", "Captured"] as const)("does not announce a %s retry result as a successful start", async (status) => {
+		const recording = useRecording("room");
+		mocks.startResults.push({ name: "failed-start", status, state_revision: 1 });
+		await expect(recording.start({ video_enabled: false, transcription_enabled: true, language: "en" })).rejects.toThrow("Transcription did not start");
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(recording.isCapturing.value).toBe(false);
+	});
+
+	it("does not announce success when the state refresh says capture has ended", async () => {
+		const recording = useRecording("room");
+		mocks.startResults.push({ name: "ended-capture", status: "Recording", state_revision: 1 });
+		mocks.getStateResults.push(null);
+		await expect(recording.start({ video_enabled: false, transcription_enabled: true, language: "en" })).rejects.toThrow("Transcription did not start");
+		expect(toast.success).not.toHaveBeenCalled();
+		expect(recording.isCapturing.value).toBe(false);
+	});
+
 	it("reuses the request id while a start remains pending", async () => {
 		const recording = useRecording("room");
 

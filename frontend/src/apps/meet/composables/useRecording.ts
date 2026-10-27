@@ -123,6 +123,11 @@ export function useRecording(meetingId: string) {
 			toast.error(isLive.value && state.value?.transcription_enabled ? "Video recording could not start. Transcription capture continues." : `${captureLabel(options)} capacity is unavailable`);
 			return result;
 		}
+		if (!["Pending", "Starting", "Recording", "Interrupted", "Stopping"].includes(result.status)) {
+			requestId.value = null;
+			await loadState();
+			throw new Error(`${captureLabel(options)} did not start. Try again.`);
+		}
 		const preserveLiveState = state.value?.name === result.name && isLive.value && result.state_revision === undefined;
 		if (!preserveLiveState) setState({
 			...state.value,
@@ -132,8 +137,10 @@ export function useRecording(meetingId: string) {
 		});
 		if (result.status === "Recording" || options.transcription_enabled) await loadState();
 		if (!["Pending", "Starting"].includes(result.status)) requestId.value = null;
+		if (result.status === "Recording" && !isCapturing.value && state.value?.status !== "Stopping")
+			throw new Error(`${captureLabel(options)} did not start. Try again.`);
 		if (["Pending", "Starting"].includes(result.status)) toast.info(`${captureLabel(options)} is starting`);
-		else if (result.status === "Stopping")
+		else if (result.status === "Stopping" || state.value?.status === "Stopping")
 			toast.error(`${captureLabel(options)} could not start and is stopping`);
 		else toast.success(`${captureLabel(options)} started`);
 		return result;

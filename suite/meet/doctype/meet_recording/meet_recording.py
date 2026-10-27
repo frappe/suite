@@ -195,11 +195,13 @@ class MeetRecording(Document):
                     and getattr(self.flags, "recovery_update", False)
                 )
             )
-            if not is_local_transition and self.recorder_event_sequence <= previous.recorder_event_sequence:
+            if not is_local_transition and cint(self.recorder_event_sequence) <= cint(
+                previous.recorder_event_sequence
+            ):
                 frappe.throw(_("A recording state change requires a newer recorder event"))
         elif self.state_revision != previous.state_revision:
             frappe.throw(_("State revision changes only with recording state"))
-        if self.recorder_event_sequence < previous.recorder_event_sequence:
+        if cint(self.recorder_event_sequence) < cint(previous.recorder_event_sequence):
             frappe.throw(_("Recorder event sequence cannot decrease"))
 
     def validate_state(self):

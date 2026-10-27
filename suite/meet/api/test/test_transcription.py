@@ -68,6 +68,33 @@ class IntegrationTestTranscription(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             start(self.room.name, "4d818270-fad0-4cd1-9fa1-be7987c06599", False, True)
 
+    def test_start_failure_preserves_service_error_with_default_event_sequence(self):
+        config = {
+            "recorder_server_url": "http://localhost:3999",
+            "sfu_server_url": "http://localhost:3998",
+            "recorder_secret": "recorder-test-secret",
+            "sfu_secret": "sfu-test-secret",
+            "transcription_enabled": True,
+            "transcription_worker_secret": "a" * 40,
+            "recording_fixture_mode": True,
+        }
+        frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
+        frappe.clear_cache(doctype="Meet Settings")
+        with (
+            patch.dict(frappe.conf, config),
+            patch("suite.meet.transcription.client.recorder"),
+            patch(
+                "suite.meet.transcription.client.sfu",
+                side_effect=ConnectionError("Capture service unavailable"),
+            ),
+            self.assertRaisesRegex(ConnectionError, "Capture service unavailable"),
+        ):
+            start(self.room.name, "2b79388b-85c6-4eba-8e89-064c41adbc10", False, True)
+        failed = frappe.get_doc("Meet Recording", {"meet_room": self.room.name})
+        self.assertEqual(failed.status, "Failed")
+        self.assertEqual(failed.failure_code, "capture_failed")
+        self.assertIsNone(failed.started_at)
+
     def test_worker_auth_is_not_an_owner_privilege(self):
         with (
             patch("frappe.get_request_header", return_value=""),
