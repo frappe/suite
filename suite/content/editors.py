@@ -48,7 +48,8 @@ class HtmlCopy:
 
     def read(self, doctype: str, docname: str) -> Mapping[str, str]:
         """Answer the field as the copy's one row, or no row when it is empty."""
-        found = frappe.db.sql(f"SELECT `{self.field}` FROM `tab{doctype}` WHERE `name` = %s", docname)
+        row = frappe.qb.DocType(doctype)
+        found = frappe.qb.from_(row).select(row[self.field]).where(row.name == docname).run()
         if not found or not found[0][0]:
             return {}
 
@@ -56,10 +57,8 @@ class HtmlCopy:
 
     def write(self, doctype: str, docname: str, changed: Mapping[str, str | None]) -> None:
         """Write the field, emptied when its row is removed."""
-        frappe.db.sql(
-            f"UPDATE `tab{doctype}` SET `{self.field}` = %s WHERE `name` = %s",
-            (changed[self.field] or "", docname),
-        )
+        row = frappe.qb.DocType(doctype)
+        frappe.qb.update(row).set(row[self.field], changed[self.field] or "").where(row.name == docname).run()
 
     def serialized(self, rows: Mapping[str, str]) -> str:
         """Answer the field's HTML."""
