@@ -1,0 +1,98 @@
+name: Compare framework island build scope
+on:
+  push:
+    branches: [proof/app-scoped-framework-islands]
+permissions:
+  contents: read
+env:
+  FRAPPE_COMMIT: e60e0591fe2018ec08ef0373b7b7059c8a778b94
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    name: Framework island comparison
+    timeout-minutes: 20
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: backend-changes
+        run: |
+          # node server suites are exercised by the node-servers job; changes
+          # confined to them do not need the bench
+          if [ "1" = "1" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_backend=1
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            else
+              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                changed_files="$(git diff --name-only HEAD~1 HEAD)"
+              else
+                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+              fi
+            fi
+            backend_paths="$(printf '%s\n' "$changed_files" \
+              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+          fi
+
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
+          echo "Run backend tests: $run_backend"
+
+      - name: Setup Python
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Setup Pilot
+        if: steps.backend-changes.outputs.run == '1'
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop
+          pilot -b frappe-bench init --commit "$FRAPPE_COMMIT"
+
+      - name: Install Suite
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE"
+        env:
+          CI: "Yes"
+
+      - name: Compare build app selection
+        run: python "$GITHUB_WORKSPACE/.github/scripts/benchmark-framework-islands.py"
+
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: framework-island-comparison
+          path: island-comparison/
