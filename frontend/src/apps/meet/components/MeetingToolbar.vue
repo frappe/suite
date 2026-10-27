@@ -278,7 +278,7 @@ const moreOptions = computed(() => [
 						props.recordingStatus || "",
 					)
 						? "Stop capture"
-						: "Recording and transcription",
+						: "Capture",
 					disabled:
 						props.recordingLoading ||
 						["Pending", "Stopping"].includes(props.recordingStatus || ""),

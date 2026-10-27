@@ -60,12 +60,11 @@ const limitedByStorage = computed(() => options.value.video_enabled && currentPr
 </script>
 
 <template>
-	<Dialog v-model:open="open" title="Recording and transcription" size="md" :actions="actions" :dismissible="!starting">
+	<Dialog v-model:open="open" title="Capture" size="md" :actions="actions" :dismissible="!starting">
 		<div class="space-y-4">
 			<Switch v-model="options.video_enabled" label="Record video" :disabled="starting" />
 			<Switch v-model="options.transcription_enabled" label="Transcribe speech" :disabled="starting" />
-			<p class="text-p-base text-ink-gray-7">Everyone will see a notice. Selected outputs will be saved privately to the room owner's Drive. To change outputs after starting, stop and start a new capture.</p>
-			<p v-if="options.transcription_enabled" class="text-p-sm text-ink-gray-6">Transcription is delivered after the conversation in the languages spoken. English and Hindi are detected automatically.</p>
+			<p class="text-p-base text-ink-gray-7">Everyone will be notified. Your recording and transcript will be saved to the room owner's Drive.</p>
 			<Alert v-if="!selected" theme="amber" title="Select at least one output" />
 			<Alert v-else-if="checkError" theme="red" :title="checkError" />
 			<Alert v-else-if="unavailable && !checking" theme="red" :title="unavailable.title" :description="unavailable.message" />
