@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import frappe
+from frappe.query_builder import Table
+from frappe.query_builder.functions import Concat, Length
 from frappe.utils import now_datetime
 
 from suite.content import (
@@ -38,8 +40,9 @@ from suite.content import (
     suspect,
 )
 from suite.content.app_row import body_row, forget_cached, write_body
+from suite.content.db import Unhex, insert_into
 from suite.content.log import ChainBroken, chain_next, chain_seed, node_of
-from suite.content.snapshot import Snapshot, fallback_rev, read, rows_after
+from suite.content.snapshot import Snapshot, fallback_rev, read, rows_after, tail_sums
 from suite.content.tables import table
 
 PACED_FROM = 512 * 2**10
@@ -181,25 +184,37 @@ class Compaction:
     def write_checked_body(self, snapshot: Snapshot, result: compaction.Compacted, app_row_name: str) -> None:
         """Write the body, its newest edit's time and its stamp, and delete the fallbacks it covers."""
         through_rev = snapshot.head_rev
-        update_table = self.table("update")
-        checkpoint_table = self.table("checkpoint")
-        doc_table = self.table("doc")
-        edited_rows = frappe.db.sql(
-            f"SELECT `created` FROM `{update_table}` WHERE `doc_id` = %s AND `rev` = %s",
-            (self.doc_id, through_rev),
-        )
-        last_edited = edited_rows[0][0]
-        write_body(self.app, app_row_name, result.state, edited_at=last_edited)
-        frappe.db.sql(
-            f"DELETE FROM `{checkpoint_table}` WHERE `doc_id` = %s AND `through_rev` <= %s",
-            (self.doc_id, through_rev),
+        checkpoint = Table(self.table("checkpoint"))
+        doc = Table(self.table("doc"))
+        write_body(self.app, app_row_name, result.state, edited_at=self.edited_at(through_rev))
+        (
+            frappe.qb.from_(checkpoint)
+            .delete()
+            .where(checkpoint.doc_id == self.doc_id)
+            .where(checkpoint.through_rev <= through_rev)
+            .run()
         )
         state_sha = hashlib.sha256(result.state).hexdigest()
-        frappe.db.sql(
-            f"""UPDATE `{doc_table}` SET `body_rev` = %s, `body_chain` = UNHEX(%s), `body_sha` = UNHEX(%s)
-            WHERE `id` = %s""",
-            (through_rev, snapshot.head_chain.hex(), state_sha, self.doc_id),
+        (
+            frappe.qb.update(doc)
+            .set(doc.body_rev, through_rev)
+            .set(doc.body_chain, Unhex(snapshot.head_chain.hex()))
+            .set(doc.body_sha, Unhex(state_sha))
+            .where(doc.id == self.doc_id)
+            .run()
         )
+
+    def edited_at(self, rev: int) -> datetime:
+        """Load when row `rev` was written."""
+        update = Table(self.table("update"))
+        edited_rows = (
+            frappe.qb.from_(update)
+            .select(update.created)
+            .where(update.doc_id == self.doc_id)
+            .where(update.rev == rev)
+            .run()
+        )
+        return edited_rows[0][0]
 
     def install_body(self, snapshot: Snapshot, result: compaction.Compacted) -> bool:
         """Install the body in one transaction under the control and app rows' locks; pushes answer busy."""
@@ -230,8 +245,8 @@ class Compaction:
 
     def replace_fallback(self, snapshot: Snapshot, result: compaction.Compacted) -> None:
         """Replace the document's fallback with the result, as a checkpoint through the snapshot's head."""
-        checkpoint_table = self.table("checkpoint")
-        frappe.db.sql(f"DELETE FROM `{checkpoint_table}` WHERE `doc_id` = %s", self.doc_id)
+        checkpoint = Table(self.table("checkpoint"))
+        frappe.qb.from_(checkpoint).delete().where(checkpoint.doc_id == self.doc_id).run()
         state_sha = hashlib.sha256(result.state).digest()
         report = {**result.report, "ms": result.ms}
         insert_checkpoint(
@@ -267,49 +282,43 @@ class Compaction:
 
     def lock_control_row(self) -> frappe._dict | None:
         """Lock and load the control row in the caller's transaction."""
-        doc_table = self.table("doc")
-        control_rows = frappe.db.sql(
-            f"""SELECT `node`, `lineage`, `mode`, `body_rev`, `state_bytes` + `tail_bound` AS `room_used`
-            FROM `{doc_table}` WHERE `id` = %s FOR UPDATE""",
-            self.doc_id,
-            as_dict=True,
+        doc = Table(self.table("doc"))
+        control_rows = (
+            frappe.qb.from_(doc)
+            .select(
+                doc.node,
+                doc.lineage,
+                doc.mode,
+                doc.body_rev,
+                (doc.state_bytes + doc.tail_bound).as_("room_used"),
+            )
+            .where(doc.id == self.doc_id)
+            .for_update()
+            .run(as_dict=True)
         )
         if not control_rows:
             return None
 
         return control_rows[0]
 
-    def compaction_values(self, base: int, result: compaction.Compacted) -> dict:
-        """Answer the values `record_compaction` writes for a result whose tail starts after `base`."""
-        return {
-            "doc": self.doc_id,
-            "base": base,
-            "crdt_version": compaction.CRDT_VERSION,
-            "state_bytes": len(result.state),
-            "ms": result.ms,
-            "next": paced_until(result),
-        }
-
     def record_compaction(self, base: int, result: compaction.Compacted) -> None:
         """Count the state and the tail after `base`, and clear the failures."""
-        update_table = self.table("update")
-        doc_table = self.table("doc")
-        values = self.compaction_values(base, result)
-        frappe.db.sql(
-            f"""UPDATE `{doc_table}` SET
-                `crdt_version` = %(crdt_version)s,
-                `state_bytes` = %(state_bytes)s,
-                `tail_rows` = (SELECT COUNT(*) FROM `{update_table}` WHERE `doc_id` = %(doc)s AND `rev` > %(base)s),
-                `tail_bytes` = (SELECT COALESCE(SUM(LENGTH(`payload`)), 0) FROM `{update_table}` WHERE `doc_id` = %(doc)s AND `rev` > %(base)s),
-                `tail_bound` = (SELECT COALESCE(SUM(COALESCE(`bound`, LENGTH(`payload`))), 0) FROM `{update_table}`
-                    WHERE `doc_id` = %(doc)s AND `rev` > %(base)s),
-                `compaction_failures` = 0,
-                `suspect_judged_clean` = 0,
-                `last_compaction_ms` = %(ms)s,
-                `last_compaction_error` = NULL,
-                `next_compaction_at` = %(next)s
-            WHERE `id` = %(doc)s""",
-            values,
+        doc = Table(self.table("doc"))
+        tail = tail_sums(self.app, self.doc_id, base)
+        (
+            frappe.qb.update(doc)
+            .set(doc.crdt_version, compaction.CRDT_VERSION)
+            .set(doc.state_bytes, len(result.state))
+            .set(doc.tail_rows, tail.rows)
+            .set(doc.tail_bytes, tail.nbytes)
+            .set(doc.tail_bound, tail.bound)
+            .set(doc.compaction_failures, 0)
+            .set(doc.suspect_judged_clean, 0)
+            .set(doc.last_compaction_ms, result.ms)
+            .set(doc.last_compaction_error, None)
+            .set(doc.next_compaction_at, paced_until(result))
+            .where(doc.id == self.doc_id)
+            .run()
         )
 
     def announce_room(self, control_row: frappe._dict) -> None:
@@ -321,21 +330,20 @@ class Compaction:
         """Count the attempt as a failure, with its backoff, before pycrdt runs; an install resets it."""
         failures = self.failure_count()
         retry_at = next_retry_at(failures + 1)
-        doc_table = self.table("doc")
-        frappe.db.sql(
-            f"""UPDATE `{doc_table}` SET `compaction_failures` = `compaction_failures` + 1,
-            `next_compaction_at` = %s WHERE `id` = %s""",
-            (retry_at, self.doc_id),
+        doc = Table(self.table("doc"))
+        (
+            frappe.qb.update(doc)
+            .set(doc.compaction_failures, doc.compaction_failures + 1)
+            .set(doc.next_compaction_at, retry_at)
+            .where(doc.id == self.doc_id)
+            .run()
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
     def record_failure(self, reason: str, error: Exception) -> None:
         """Record why the attempt, already counted, failed, and alert when it repeats or can't wait."""
-        doc_table = self.table("doc")
-        frappe.db.sql(
-            f"UPDATE `{doc_table}` SET `last_compaction_error` = %s WHERE `id` = %s",
-            (reason[:140], self.doc_id),
-        )
+        doc = Table(self.table("doc"))
+        frappe.qb.update(doc).set(doc.last_compaction_error, reason[:140]).where(doc.id == self.doc_id).run()
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         failures = self.failure_count()
         repeated = failures >= ALERT_AT
@@ -345,20 +353,21 @@ class Compaction:
 
     def clear_attempt(self) -> None:
         """Nothing to compact: clear the attempt this job counted."""
-        doc_table = self.table("doc")
-        frappe.db.sql(
-            f"""UPDATE `{doc_table}` SET `compaction_failures` = 0, `next_compaction_at` = NULL
-            WHERE `id` = %s AND `body_rev` = `head_rev`""",
-            self.doc_id,
+        doc = Table(self.table("doc"))
+        (
+            frappe.qb.update(doc)
+            .set(doc.compaction_failures, 0)
+            .set(doc.next_compaction_at, None)
+            .where(doc.id == self.doc_id)
+            .where(doc.body_rev == doc.head_rev)
+            .run()
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
     def failure_count(self) -> int:
         """Load how many attempts in a row have failed, 0 when the control row is gone."""
-        doc_table = self.table("doc")
-        control_rows = frappe.db.sql(
-            f"SELECT `compaction_failures` FROM `{doc_table}` WHERE `id` = %s", self.doc_id
-        )
+        doc = Table(self.table("doc"))
+        control_rows = frappe.qb.from_(doc).select(doc.compaction_failures).where(doc.id == self.doc_id).run()
         if not control_rows:
             return 0
 
@@ -368,15 +377,13 @@ class Compaction:
     def defer(self, seconds: int) -> None:
         """Hold the next compaction off for `seconds`, unless one is already held off longer."""
         retry_at = now_datetime() + timedelta(seconds=seconds)
-        values = {
-            "at": retry_at,
-            "doc": self.doc_id,
-        }
-        doc_table = self.table("doc")
-        frappe.db.sql(
-            f"""UPDATE `{doc_table}` SET `next_compaction_at` = %(at)s
-            WHERE `id` = %(doc)s AND (`next_compaction_at` IS NULL OR `next_compaction_at` < %(at)s)""",
-            values,
+        doc = Table(self.table("doc"))
+        (
+            frappe.qb.update(doc)
+            .set(doc.next_compaction_at, retry_at)
+            .where(doc.id == self.doc_id)
+            .where(doc.next_compaction_at.isnull() | (doc.next_compaction_at < retry_at))
+            .run()
         )
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
@@ -394,20 +401,26 @@ def write_compressed(checkpoint_table: str, doc_id: str, through: int, sha: byte
     """Write `state` gzipped into the checkpoint row's blob, refused as too large when the server drops it."""
     # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
     compressed = gzip.compress(state)
-    [[raw_max_packet]] = frappe.db.sql("SELECT @@max_allowed_packet")
-    chunk_size = int(raw_max_packet) // 4
+    checkpoint = Table(checkpoint_table)
+    chunk_size = int(db.load_system_variable("max_allowed_packet")) // 4
     for start in range(0, len(compressed), chunk_size):
         chunk = compressed[start : start + chunk_size]
-        frappe.db.sql(
-            f"""UPDATE `{checkpoint_table}` SET `gz` = CONCAT(`gz`, UNHEX(%s))
-            WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = UNHEX(%s)""",
-            (chunk.hex(), doc_id, through, sha.hex()),
+        (
+            frappe.qb.update(checkpoint)
+            .set(checkpoint.gz, Concat(checkpoint.gz, Unhex(chunk.hex())))
+            .where(checkpoint.doc_id == doc_id)
+            .where(checkpoint.through_rev == through)
+            .where(checkpoint.sha256 == Unhex(sha.hex()))
+            .run()
         )
 
     # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
-    [[stored_length]] = frappe.db.sql(
-        f"SELECT LENGTH(`gz`) FROM `{checkpoint_table}` WHERE `doc_id` = %s AND `through_rev` = %s",
-        (doc_id, through),
+    [[stored_length]] = (
+        frappe.qb.from_(checkpoint)
+        .select(Length(checkpoint.gz))
+        .where(checkpoint.doc_id == doc_id)
+        .where(checkpoint.through_rev == through)
+        .run()
     )
     if stored_length != len(compressed):
         raise compaction.CompactionFailed("too_large")
@@ -425,58 +438,55 @@ def insert_checkpoint(
 ) -> None:
     """Write a checkpoint row for `state`, unreferenced, in the caller's transaction."""
     checkpoint_table = table(app, "checkpoint")
-    frappe.db.sql(
-        f"""INSERT INTO `{checkpoint_table}`
-        (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `crdt_version`, `report`, `created`)
-        VALUES (%s, %s, UNHEX(%s), UNHEX(%s), %s, '', %s, %s, %s, %s)""",
-        (
-            doc_id,
-            through,
-            chain.hex(),
-            sha.hex(),
-            len(state),
-            int(integrated),
-            compaction.CRDT_VERSION,
-            json.dumps(report),
-            now_datetime(),
-        ),
-    )
+    insert_into(
+        checkpoint_table,
+        {
+            "doc_id": doc_id,
+            "through_rev": through,
+            "chain": Unhex(chain.hex()),
+            "sha256": Unhex(sha.hex()),
+            "nbytes": len(state),
+            "gz": "",
+            "integrated": int(integrated),
+            "crdt_version": compaction.CRDT_VERSION,
+            "report": json.dumps(report),
+            "created": now_datetime(),
+        },
+    ).run()
     write_compressed(checkpoint_table, doc_id, through, sha, state)
 
 
 def check_start_unused(app: str, doc_id: str, control_row: frappe._dict) -> None:
     """Refuse to replace a start a tab may hold: one with a session or a row after rev 1."""
-    session_table = table(app, "session")
-    any_session = frappe.db.sql(f"SELECT 1 FROM `{session_table}` WHERE `doc_id` = %s LIMIT 1", doc_id)
+    session = Table(table(app, "session"))
+    any_session = frappe.qb.from_(session).select(1).where(session.doc_id == doc_id).limit(1).run()
     if int(control_row.head_rev) > 1 or any_session or rows_after(app, doc_id, 0):
         raise ValueError("this log's start is already in use")
 
 
 def stamp_start(app: str, doc_id: str, state: bytes, chain: bytes, state_sha: bytes, schema: int) -> None:
     """Point the control row's head and body at the new start as rev 1."""
-    doc_table = table(app, "doc")
-    values = {
-        "chain": chain.hex(),
-        "sha": state_sha.hex(),
-        "crdt_version": compaction.CRDT_VERSION,
-        "size": len(state),
-        "clocks": json.dumps(ingest.next_clocks([state])),
-        "steps": json.dumps([[1, schema]]),
-        "doc": doc_id,
-    }
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `head_rev` = 1, `head_chain` = UNHEX(%(chain)s),
-        `body_rev` = 1, `body_chain` = UNHEX(%(chain)s), `body_sha` = UNHEX(%(sha)s),
-        `crdt_version` = %(crdt_version)s, `state_bytes` = %(size)s, `start_clocks` = %(clocks)s,
-        `schema_steps` = %(steps)s WHERE `id` = %(doc)s""",
-        values,
+    doc = Table(table(app, "doc"))
+    (
+        frappe.qb.update(doc)
+        .set(doc.head_rev, 1)
+        .set(doc.head_chain, Unhex(chain.hex()))
+        .set(doc.body_rev, 1)
+        .set(doc.body_chain, Unhex(chain.hex()))
+        .set(doc.body_sha, Unhex(state_sha.hex()))
+        .set(doc.crdt_version, compaction.CRDT_VERSION)
+        .set(doc.state_bytes, len(state))
+        .set(doc.start_clocks, json.dumps(ingest.next_clocks([state])))
+        .set(doc.schema_steps, json.dumps([[1, schema]]))
+        .where(doc.id == doc_id)
+        .run()
     )
 
 
 def replace_start(app: str, doc_id: str, state: bytes, schema: int) -> None:
     """Make the checked `state` the body a fresh log starts from at rev 1, in the caller's transaction."""
-    doc_table = table(app, "doc")
-    checkpoint_table = table(app, "checkpoint")
+    doc = Table(table(app, "doc"))
+    checkpoint = Table(table(app, "checkpoint"))
     node = node_of(app, doc_id)
     if node is None:
         raise ValueError("this log's document has no row")
@@ -485,10 +495,12 @@ def replace_start(app: str, doc_id: str, state: bytes, schema: int) -> None:
     if app_row is None:
         raise ValueError("this log's document has no row")
 
-    control_rows = frappe.db.sql(
-        f"SELECT `lineage`, `head_rev` FROM `{doc_table}` WHERE `id` = %s FOR UPDATE",
-        doc_id,
-        as_dict=True,
+    control_rows = (
+        frappe.qb.from_(doc)
+        .select(doc.lineage, doc.head_rev)
+        .where(doc.id == doc_id)
+        .for_update()
+        .run(as_dict=True)
     )
     control_row = control_rows[0]
 
@@ -496,7 +508,7 @@ def replace_start(app: str, doc_id: str, state: bytes, schema: int) -> None:
     state_sha = hashlib.sha256(state).digest()
     seed = chain_seed(control_row.lineage)
     chain = chain_next(seed, 1, state_sha)
-    frappe.db.sql(f"DELETE FROM `{checkpoint_table}` WHERE `doc_id` = %s", doc_id)
+    frappe.qb.from_(checkpoint).delete().where(checkpoint.doc_id == doc_id).run()
     write_body(app, app_row.name, state)
     stamp_start(app, doc_id, state, chain, state_sha, schema)
     forget_cached(app, app_row.name)
