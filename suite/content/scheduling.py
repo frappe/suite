@@ -9,14 +9,22 @@ near the cap waits for a real tail instead of compacting after every push.
 """
 
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import frappe
+from frappe.query_builder import Table
+from frappe.query_builder.functions import Coalesce, Max
+from frappe.query_builder.terms import SubQuery
 from frappe.utils import now_datetime
 from frappe.utils.background_jobs import is_job_enqueued
+from pypika.queries import QueryBuilder, Selectable
+from pypika.terms import Criterion, Term
 
 from suite.content import capacity, stage
 from suite.content.admission import TIMEOUT
+from suite.content.db import Greatest
 from suite.content.tables import table
 
 TAIL_MIN = 256 * 2**10
@@ -25,36 +33,62 @@ TAIL_AGE = timedelta(minutes=10)
 QUIET_SPAN = timedelta(seconds=30)
 SWEEP_AGE = timedelta(minutes=30)
 QUEUE_PAUSE = timedelta(minutes=1)
-SWEEP_CANDIDATES = (
-    "`doc`.`head_rev` > `doc`.`body_rev` AND `doc`.`mode` != 'purged' AND `doc`.`suspect` IS NULL"
-)
 
 paused_until = 0.0
 
 
-def docs_with_base(app: str, *, where: str) -> str:
-    """Select the control rows `where` matches with `base`, the newer of the body's rev and any fallback's."""
-    checkpoint_table = table(app, "checkpoint")
-    doc_table = table(app, "doc")
-    return f"""(SELECT `doc`.*, GREATEST(`doc`.`body_rev`, COALESCE((SELECT MAX(`c`.`through_rev`)
-        FROM `{checkpoint_table}` `c` WHERE `c`.`doc_id` = `doc`.`id`), 0)) AS `base`
-        FROM `{doc_table}` `doc` WHERE {where})"""
+@dataclass(frozen=True)
+class DocsWithBase:
+    """A query of control rows as `docs`, each with its `base`, joined to `next_row`, the first row after it."""
+
+    query: QueryBuilder
+    docs: Selectable
+    next_row: Table
+
+    def due_columns(self) -> list[Term]:
+        """Answer the columns `compaction_due` reads."""
+        docs = self.docs
+        return [
+            docs.head_rev,
+            docs.base,
+            docs.state_bytes,
+            docs.tail_rows,
+            docs.tail_bytes,
+            docs.tail_bound,
+            docs.next_compaction_at,
+            docs.suspect,
+            self.next_row.created.as_("oldest"),
+        ]
+
+
+def docs_with_base(app: str, where: Callable[[Table], Criterion]) -> DocsWithBase:
+    """Query the control rows `where` matches; `base` is the newer of the body's rev and any fallback's."""
+    doc = Table(table(app, "doc")).as_("doc")
+    checkpoint = Table(table(app, "checkpoint")).as_("c")
+    fallback = (
+        frappe.qb.from_(checkpoint).select(Max(checkpoint.through_rev)).where(checkpoint.doc_id == doc.id)
+    )
+    base = Greatest(doc.body_rev, Coalesce(SubQuery(fallback), 0)).as_("base")
+    docs = frappe.qb.from_(doc).select(doc.star, base).where(where(doc)).as_("d")
+    update = Table(table(app, "update")).as_("u")
+    query = (
+        frappe.qb.from_(docs).left_join(update).on((update.doc_id == docs.id) & (update.rev == docs.base + 1))
+    )
+    return DocsWithBase(query, docs, update)
+
+
+def sweep_candidate(doc: Table) -> Criterion:
+    """Match a document with rows after its body that is neither purged nor suspect."""
+    return (doc.head_rev > doc.body_rev) & (doc.mode != "purged") & doc.suspect.isnull()
 
 
 def request_if_due(
     app: str, doc_id: str, compact_method: str, *, final_from: str | None = None, refused: bool = False
 ) -> None:
     """Request a compaction if due; `final_from` is a hiding tab's session, `refused` a push short of room."""
-    doc_with_base = docs_with_base(app, where="`doc`.`id` = %s")
-    update_table = table(app, "update")
-    due_rows = frappe.db.sql(
-        f"""SELECT `d`.`head_rev`, `d`.`base`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`, `d`.`tail_bound`,
-        `d`.`next_compaction_at`, `d`.`suspect`, `u`.`created` AS `oldest`
-        FROM {doc_with_base} `d` LEFT JOIN `{update_table}` `u`
-        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1""",
-        doc_id,
-        as_dict=True,
-    )
+    based = docs_with_base(app, lambda doc: doc.id == doc_id)
+    due_columns = based.due_columns()
+    due_rows = based.query.select(*due_columns).run(as_dict=True)
     if due_rows:
         request_on(app, doc_id, due_rows[0], compact_method, final_from=final_from, refused=refused)
 
@@ -71,11 +105,15 @@ def request_on(
     """Request a compaction if the doc row, read with its base and oldest tail row, says one is due."""
     closing = refused
     if final_from and not closing:
-        session_table = table(app, "session")
-        closing = not frappe.db.sql(
-            f"""SELECT 1 FROM `{session_table}` WHERE `doc_id` = %s AND `sid` != %s
-            AND `last_push_at` > %s LIMIT 1""",
-            (doc_id, final_from, now_datetime() - QUIET_SPAN),
+        session = Table(table(app, "session"))
+        closing = not (
+            frappe.qb.from_(session)
+            .select(1)
+            .where(session.doc_id == doc_id)
+            .where(session.sid != final_from)
+            .where(session.last_push_at > now_datetime() - QUIET_SPAN)
+            .limit(1)
+            .run()
         )
 
     if compaction_due(doc, now_datetime(), closing=closing):
@@ -102,16 +140,18 @@ def compaction_due(doc: frappe._dict, now: datetime, *, closing: bool = False) -
 def request_overdue(app: str, method: str, limit: int) -> None:
     """Request compactions for documents whose tail has waited past `SWEEP_AGE`, whatever their traffic."""
     now = now_datetime()
-    candidates = docs_with_base(app, where=SWEEP_CANDIDATES)
-    update_table = table(app, "update")
-    for (doc_id,) in frappe.db.sql(
-        f"""SELECT `d`.`id` FROM {candidates} `d` JOIN `{update_table}` `u`
-        ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1
-        WHERE `d`.`head_rev` > `d`.`base` AND `u`.`created` <= %s
-        AND (`d`.`next_compaction_at` IS NULL OR `d`.`next_compaction_at` <= %s)
-        ORDER BY `u`.`created` LIMIT %s""",
-        (now - SWEEP_AGE, now, limit),
-    ):
+    based = docs_with_base(app, sweep_candidate)
+    docs = based.docs
+    next_row = based.next_row
+    overdue = (
+        based.query.select(docs.id)
+        .where(docs.head_rev > docs.base)
+        .where(next_row.created <= now - SWEEP_AGE)
+        .where(docs.next_compaction_at.isnull() | (docs.next_compaction_at <= now))
+        .orderby(next_row.created)
+        .limit(limit)
+    )
+    for (doc_id,) in overdue.run():
         request_compaction(app, doc_id, method)
 
 
@@ -126,18 +166,20 @@ def sweep(
     """Drop expired pieces and request purges, unfinished judgings and compactions of tails left too long."""
     stage.expire_pieces(app, now_datetime())
 
-    doc_table = table(app, "doc")
+    doc = Table(table(app, "doc"))
     if purge_method:
-        for (doc_id,) in frappe.db.sql(
-            f"SELECT `id` FROM `{doc_table}` WHERE `mode` = 'purged' LIMIT %s", limit
-        ):
+        for (doc_id,) in frappe.qb.from_(doc).select(doc.id).where(doc.mode == "purged").limit(limit).run():
             enqueue(purge_method, f"suite-collab-purge-{app}-{doc_id}", app=app, doc_id=doc_id)
 
     if judge_method:
-        for (doc_id,) in frappe.db.sql(
-            f"""SELECT `id` FROM `{doc_table}` WHERE `suspect` IS NOT NULL AND `suspect_held` IS NULL
-            AND `mode` != 'purged' LIMIT %s""",
-            limit,
+        for (doc_id,) in (
+            frappe.qb.from_(doc)
+            .select(doc.id)
+            .where(doc.suspect.isnotnull())
+            .where(doc.suspect_held.isnull())
+            .where(doc.mode != "purged")
+            .limit(limit)
+            .run()
         ):
             enqueue(judge_method, f"suite-collab-judge-{app}-{doc_id}", app=app, doc_id=doc_id)
 
