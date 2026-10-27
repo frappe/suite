@@ -65,7 +65,12 @@ const limitedByStorage = computed(() => options.value.video_enabled && currentPr
 			<Switch v-model="options.video_enabled" label="Record video" :disabled="starting" />
 			<Switch v-model="options.transcription_enabled" label="Transcribe speech" :disabled="starting" />
 			<p class="text-p-base text-ink-gray-7">Everyone will be notified. Your recording and transcript will be saved to the room owner's Drive.</p>
-			<Alert v-if="!selected" theme="amber" title="Select at least one output" />
+			<Alert
+				v-if="!selected"
+				theme="amber"
+				title="Choose what to save"
+				description="Turn on video recording or transcription to continue."
+			/>
 			<Alert v-else-if="checkError" theme="red" :title="checkError" />
 			<Alert v-else-if="unavailable && !checking" theme="red" :title="unavailable.title" :description="unavailable.message" />
 			<Alert v-else-if="limitedByStorage && !checking" theme="amber" title="Storage may end capture early" description="Capture will stop when its available storage budget is reached." />
