@@ -17,6 +17,8 @@ import json
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import frappe
 import pycrdt
@@ -50,6 +52,9 @@ from suite.drive.patches.build.slide_journal import SlideBody, SlidePreimageJour
 from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.state import BuildState, GrantConversion, TreeConversion
 from suite.drive.patches.build.tests import legacy_schema
+from suite.drive.patches.cleanup.ports import SiteContentRows
+from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_4, phase_content_history
+from suite.drive.patches.cleanup.tests.fakes import FakeSchema, cleanup_environment
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
@@ -238,9 +243,8 @@ class BuildContentCase(IntegrationTestCase):
         self.minted += 1
         return f"{self.prefix}g{self.minted:03d}"
 
-    def fixture_user(self) -> str:
-        """One isolated enabled User, inserted without hooks or queue work."""
-        email = f"{self.prefix}@example.invalid"
+    def fixture_user(self, suffix: str = "") -> str:
+        email = f"{self.prefix}{suffix}@example.invalid"
         user = frappe.new_doc("User")
         user.update({"email": email, "first_name": "Drive Build Content", "enabled": 1})
         user.db_insert()
@@ -400,7 +404,7 @@ class BuildContentCase(IntegrationTestCase):
 
     # -- one deck, one writer document, one sheet
 
-    def writer_fixture(self, *, comments=None, versions=()) -> str:
+    def writer_fixture(self, *, comments=None, versions=(), collab=1) -> str:
         """A file-backed Writer document, its versions, and its comments."""
         docname = self.prefix + "wdoc"
         node = self.content_pair(docname, "Writer Document", title="Notes")
@@ -409,7 +413,7 @@ class BuildContentCase(IntegrationTestCase):
             docname,
             content="AAA=",
             html=f"<p>{self.prefix}</p>",
-            collab=1,
+            collab=collab,
             ycomments=comments,
         )
         for suffix, snapshot, title, manual, creation in versions:
@@ -814,6 +818,8 @@ class TestMigratedComments(BuildContentCase):
     def test_writer_comment_authors_mentions_and_stamps_survive(self):
         thread = self.prefix + "th"
         reply = self.prefix + "rp"
+        self.fixture_user("a")
+        self.fixture_user("b")
         node = self.writer_fixture(
             comments=writer_comments(
                 {
@@ -822,7 +828,7 @@ class TestMigratedComments(BuildContentCase):
                         "text": "First",
                         "owner": "deleted@example.invalid",
                         "creation": 1_000,
-                        "mentions": [{"id": "a@example.invalid"}],
+                        "mentions": [{"id": f"{self.prefix}a@example.invalid"}],
                         "resolved": True,
                         "replies": [
                             {
@@ -830,7 +836,7 @@ class TestMigratedComments(BuildContentCase):
                                 "text": "Later",
                                 "owner": "",
                                 "creation": 2_000,
-                                "mentions": ["b@example.invalid"],
+                                "mentions": [f"{self.prefix}b@example.invalid"],
                             }
                         ],
                     }
@@ -865,7 +871,7 @@ class TestMigratedComments(BuildContentCase):
         self.assertEqual(first.content, "First")
         self.assertEqual(first.author, "deleted@example.invalid")
         self.assertIsNone(first.author_name)
-        self.assertEqual(json.loads(first.mentions), ["a@example.invalid"])
+        self.assertEqual(json.loads(first.mentions), [f"{self.prefix}a@example.invalid"])
         self.assertEqual(first.creation, get_datetime(epoch_millis(1_000, timezone)))
         self.assertEqual(first.idx, 1)
 
@@ -873,13 +879,14 @@ class TestMigratedComments(BuildContentCase):
             "Drive Comment", reply, ["author", "mentions", "creation", "idx"], as_dict=True
         )
         self.assertEqual(second.author, "Guest")
-        self.assertEqual(json.loads(second.mentions), ["b@example.invalid"])
+        self.assertEqual(json.loads(second.mentions), [f"{self.prefix}b@example.invalid"])
         self.assertEqual(second.creation, get_datetime(epoch_millis(2_000, timezone)))
         self.assertEqual(second.idx, 2)
         self.assertEqual(report.comments_seen, 2)
 
     def test_sheet_comment_anchor_display_name_and_ids_survive(self):
         docname = self.prefix + "sheet"
+        self.fixture_user("m")
         workbook = {
             "comments": {
                 "Résumé": {
@@ -891,7 +898,7 @@ class TestMigratedComments(BuildContentCase):
                                 "author": self.owner,
                                 "name": "Cell User",
                                 "ts": 3_000,
-                                "mentions": [{"id": "m@example.invalid"}],
+                                "mentions": [{"id": f"{self.prefix}m@example.invalid"}],
                             }
                         ],
                     }
@@ -928,8 +935,103 @@ class TestMigratedComments(BuildContentCase):
         self.assertEqual(comment.content, "Cell note")
         self.assertEqual(comment.author, self.owner)
         self.assertEqual(comment.author_name, "Cell User")
-        self.assertEqual(json.loads(comment.mentions), ["m@example.invalid"])
+        self.assertEqual(json.loads(comment.mentions), [f"{self.prefix}m@example.invalid"])
         self.assertEqual(comment.creation, get_datetime(epoch_millis(3_000, timezone)))
+
+
+class WriterRowsOnly(SiteContentRows):
+    """The real Writer side, with the scans over every Sheet and DocShare on the test site recorded instead."""
+
+    def __init__(self):
+        self.files = None
+        self.slides_media: dict[str, str] = {}
+        self.strip_calls = 0
+
+    def governed_docshares_remaining(self) -> frozenset[str]:
+        return frozenset()
+
+    def strip_sheet_comments(self, *, batch_size: int) -> int:
+        self.strip_calls += 1
+        return 0
+
+
+class TestCleanupKeepsComments(BuildContentCase):
+    """Writer's conversion places old comments from `ycomments`, so Cleanup leaves it."""
+
+    def test_old_comment_places_survive_cleanup(self):
+        self.assert_comments_survive_cleanup(collab=1)
+
+    def test_old_comment_places_of_an_html_document_survive_cleanup(self):
+        self.assert_comments_survive_cleanup(collab=0)
+
+    def assert_comments_survive_cleanup(self, *, collab):
+        thread = self.prefix + "th"
+        comments = writer_comments(
+            {
+                thread: {
+                    "id": thread,
+                    "text": "First",
+                    "owner": self.owner,
+                    "creation": 1_000,
+                    "mentions": [],
+                    "replies": [],
+                }
+            }
+        )
+        self.writer_fixture(comments=comments, collab=collab)
+        convert_history_and_comments(self.environment())
+        content = WriterRowsOnly()
+
+        with TemporaryDirectory() as tmp:
+            phase_content_history(
+                cleanup_environment(
+                    Path(tmp), content=content, schema=FakeSchema(doctypes=set(RETAINED_DOCTYPES_STEP_4))
+                )
+            )
+
+        self.assertEqual(frappe.db.get_value("Writer Document", self.prefix + "wdoc", "ycomments"), comments)
+        self.assertTrue(frappe.db.exists("Drive Comment Thread", thread))
+        self.assertEqual(content.strip_calls, 1)
+
+    def test_the_sheet_comment_strip_leaves_writer_comments(self):
+        thread = self.prefix + "th"
+        comments = writer_comments(
+            {
+                thread: {
+                    "id": thread,
+                    "text": "First",
+                    "owner": self.owner,
+                    "creation": 1_000,
+                    "mentions": [],
+                    "replies": [],
+                }
+            }
+        )
+        self.writer_fixture(comments=comments)
+        self.sheet_fixture(
+            workbook={"comments": {"Sheet1": {"A1": {"resolved": False, "thread": []}}}, "cells": []}
+        )
+        sheet = self.prefix + "sheet"
+        real_get_all = frappe.get_all
+
+        def only_this_sheet(doctype, *args, **kwargs):
+            if doctype == "Sheet":
+                kwargs["filters"] = [["name", *kwargs["filters"]["name"]], ["name", "=", sheet]]
+
+            return real_get_all(doctype, *args, **kwargs)
+
+        with patch("frappe.get_all", side_effect=only_this_sheet):
+            stripped = SiteContentRows().strip_sheet_comments(batch_size=10)
+
+        self.assertEqual(stripped, 1)
+        writer = frappe.db.get_value(
+            "Writer Document", self.prefix + "wdoc", ["ycomments", "html", "content", "collab"], as_dict=True
+        )
+        self.assertEqual(
+            writer, {"ycomments": comments, "html": f"<p>{self.prefix}</p>", "content": "AAA=", "collab": 1}
+        )
+        self.assertNotIn("comments", json.loads(frappe.db.get_value("Sheet", sheet, "sheets_data")))
+        self.assertEqual(frappe.db.get_value("Sheet", sheet, "modified"), get_datetime(STAMP))
 
 
 class TestContentLinksAndSources(BuildContentCase):

@@ -58,7 +58,7 @@ from suite.drive._core.versions import restore_version
 from suite.drive.framework import satellite_has_permission, satellite_query_conditions
 from suite.sheets import drive as sheets
 from suite.sheets.doctype.sheet.storage import decode_sheets_data, encode_sheets_data
-from suite.tests.utils import ensure_user
+from suite.tests.utils import delete_error_logs, ensure_user
 
 USER = "sheets-adoption-user@example.com"
 OTHER = "sheets-adoption-other@example.com"
@@ -1211,6 +1211,11 @@ class TestTheGateProbes(IntegrationTestCase):
             added = tuple(set(frappe.get_all(doctype, pluck="name")) - self.census[doctype])
             if not added:
                 continue
+
+            if doctype == "Error Log":
+                delete_error_logs({"name": ("in", added)})
+                continue
+
             frappe.db.delete(doctype, {"name": ("in", added)})
             if doctype == "Email Queue":
                 frappe.db.delete("Email Queue Recipient", {"parent": ("in", added)})

@@ -2,14 +2,28 @@ import { computed, readonly, ref, type Ref } from 'vue'
 
 import { api, client } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
-import { TransportError, type RequestContext, type RequestScope } from '@/platform/transport'
+import { getCookieSessionUser } from '@/platform/session'
+import {
+  isTransientStatus,
+  MIN_SERVER_ERROR_STATUS,
+  TransportError,
+  type RequestContext,
+  type RequestScope,
+} from '@/platform/transport'
 
 import { onAccessChange } from './accessChanges'
+import type {
+  NodeThreadsOutput,
+  NodeThreadsOutputThreadShape,
+  NodeVersionsOutput,
+  NodeVersionsOutputVersionShape,
+} from './generated'
 import { driveLinks } from './links'
 import { canManage, type DriveAccess, type DriveNode } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
+const MIN_CLIENT_ERROR_STATUS = 400
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
 export type MediaStatus = 'loading' | 'ready' | 'refused'
 export interface MediaHandle {
@@ -31,6 +45,9 @@ export interface CredentialGroup {
   nodeIds: string[]
   fetch: CredentialFetch
 }
+
+export type DocumentThread = NodeThreadsOutputThreadShape
+export type DocumentVersion = NodeVersionsOutputVersionShape
 
 /**
  * Share-link credentials for requests a product sends itself. Each one
@@ -68,15 +85,23 @@ export interface DocumentSession {
   share(): Promise<void>
   copy(parent: string, title?: string): Promise<DriveNode>
   comments: {
-    list(resolved?: boolean): Promise<unknown>
-    create(anchor: string, text: string, authorName?: string): Promise<unknown>
-    reply(thread: string, text: string, authorName?: string): Promise<unknown>
+    list(resolved?: boolean): Promise<NodeThreadsOutput>
+    /** `clientId`, made by the caller, makes a resend return the first post instead of posting twice. */
+    create(
+      anchor: string,
+      text: string,
+      authorName?: string,
+      clientId?: string,
+    ): Promise<{ name: string }>
+    reply(thread: string, text: string, authorName?: string, clientId?: string): Promise<unknown>
     resolve(thread: string, resolved: boolean): Promise<unknown>
     edit(comment: string, text: string): Promise<unknown>
     remove(comment: string): Promise<unknown>
+    /** Moves threads, by name, to new anchors; only their anchors change. */
+    reanchor(anchors: Record<string, string>): Promise<unknown>
   }
   versions: {
-    list(cursor?: string): Promise<unknown>
+    list(cursor?: string): Promise<NodeVersionsOutput>
     create(kind?: 'auto' | 'named' | 'milestone', label?: string): Promise<unknown>
     update(
       seq: string,
@@ -107,6 +132,7 @@ interface SessionDependencies {
   node?: DriveNode
   share?: ShareOpener
   window?: Window
+  signedIn?: () => string | null
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
 }
@@ -115,6 +141,7 @@ export async function openDriveDocumentSession(
   dependencies: SessionDependencies = {},
 ): Promise<DocumentSession> {
   const requester = dependencies.client ?? client
+  const signedIn = dependencies.signedIn ?? getCookieSessionUser
   const controller = new AbortController()
   const node =
     dependencies.node ??
@@ -170,7 +197,18 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
-    } catch {
+    } catch (error) {
+      let status = 0
+      if (error instanceof TransportError) {
+        status = error.status
+      }
+
+      const isRefusal = status >= MIN_CLIENT_ERROR_STATUS && status < MIN_SERVER_ERROR_STATUS
+      if (!isRefusal || isTransientStatus(status)) return
+
+      // A guest is refused everything; that says nothing about this person's access
+      if (!signedIn()) return
+
       state.value = 'Refused'
       access.value = {}
     }
@@ -297,7 +335,7 @@ export async function openDriveDocumentSession(
             signal: controller.signal,
           },
         ),
-      create: (anchor, text, authorName) =>
+      create: (anchor, text, authorName, clientId) =>
         requester.mutation(
           api.drive.threads.create,
           {
@@ -305,13 +343,14 @@ export async function openDriveDocumentSession(
             anchor,
             text,
             author_name: authorName,
+            client_id: clientId,
           },
           {
             signal: controller.signal,
             silent: true,
           },
         ),
-      reply: (thread, text, authorName) =>
+      reply: (thread, text, authorName, clientId) =>
         requester.mutation(
           api.drive.comments.create,
           {
@@ -319,6 +358,7 @@ export async function openDriveDocumentSession(
             thread,
             text,
             author_name: authorName,
+            client_id: clientId,
           },
           {
             signal: controller.signal,
@@ -357,6 +397,18 @@ export async function openDriveDocumentSession(
           {
             node: nodeId,
             comment,
+          },
+          {
+            signal: controller.signal,
+            silent: true,
+          },
+        ),
+      reanchor: (anchors) =>
+        requester.mutation(
+          api.drive.threads.reanchor,
+          {
+            node: nodeId,
+            anchors,
           },
           {
             signal: controller.signal,

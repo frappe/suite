@@ -212,6 +212,13 @@ class TestContentContract(UnitTestCase):
             with self.assertRaises(DriveConflict):
                 spec_for(CONTENT_DOCTYPE)
 
+    def test_the_node_field_is_answered_for_a_registered_doctype_only(self):
+        with registered(spec(node_field="linked_node")):
+            self.assertEqual(drive.node_field(CONTENT_DOCTYPE), "linked_node")
+
+        with registered(), self.assertRaises(DriveConflict):
+            drive.node_field(CONTENT_DOCTYPE)
+
     def test_a_declaration_that_is_not_a_content_type_spec_is_refused(self):
         loose = type("Spec", (), {"doctype": CONTENT_DOCTYPE, "on_purge": lambda name: None})()
         with registered(loose), self.assertRaises(DriveConflict):

@@ -126,6 +126,17 @@ export interface TransportOptions {
   headers?: HeadersInit
 }
 
+export interface BytesOptions extends TransportOptions {
+  body?: Uint8Array<ArrayBuffer>
+  keepalive?: boolean
+}
+
+export interface BytesResponse {
+  status: number
+  headers: Headers
+  bytes: Uint8Array
+}
+
 export interface Transport {
   request<Input, Output, ErrorType extends string = string>(
     operation: Operation<Input, Output, ErrorType>,
@@ -151,134 +162,344 @@ type ErrorEnvelope = {
 }
 
 const DEFAULT_RETRIES = 2
+const DEFAULT_RETRY_BASE_MS = 100
+const RETRY_BACKOFF_FACTOR = 2
+const REQUEST_TIMEOUT_STATUS = 408
+const TOO_MANY_REQUESTS_STATUS = 429
+export const MIN_SERVER_ERROR_STATUS = 500
 
-export function createTransport(options: CreateTransportOptions = {}): Transport {
+export interface BytesTransport extends Transport {
+  // Answers every status as it came: the caller reads its own verdicts. Only a
+  // network failure throws, and nothing is retried
+  requestBytes(
+    operation: Operation,
+    input: Record<string, unknown>,
+    options?: BytesOptions,
+  ): Promise<BytesResponse>
+}
+
+interface TransportSettings extends Pick<CreateTransportOptions, 'onFailure' | 'onSessionExpired'> {
+  fetcher: typeof fetch
+  maxRetries: number
+  retryBaseMs: number
+}
+
+interface PreparedRequest {
+  operation: Operation
+  url: string
+  init: RequestInit
+  scope: RequestScope | undefined
+  validators: Validators<unknown, unknown> | undefined
+  signal: AbortSignal | undefined
+}
+
+export function isTransientStatus(status: number): boolean {
+  return status === REQUEST_TIMEOUT_STATUS || status === TOO_MANY_REQUESTS_STATUS
+}
+
+export function createTransport(options: CreateTransportOptions = {}): BytesTransport {
   const fetcher = options.fetch ?? globalThis.fetch
-  const maxRetries = options.maxRetries ?? DEFAULT_RETRIES
-  const retryBaseMs = options.retryBaseMs ?? 100
+  if (!fetcher) {
+    throw new Error('A fetch implementation is required')
+  }
 
-  if (!fetcher) throw new Error('A fetch implementation is required')
+  const settings: TransportSettings = {
+    fetcher,
+    maxRetries: options.maxRetries ?? DEFAULT_RETRIES,
+    retryBaseMs: options.retryBaseMs ?? DEFAULT_RETRY_BASE_MS,
+    onFailure: options.onFailure,
+    onSessionExpired: options.onSessionExpired,
+  }
 
   return {
-    async request(operation, input, requestOptions = {}) {
-      validateOperation(operation)
-      const validators: Validators<typeof input, unknown> | undefined =
-        await operation.loadValidators?.()
-      try {
-        validators?.validateInput(input)
-        operation.validateInput?.(input)
-      } catch (error) {
-        // A caller bug, never a refusal: logged even when the caller shows its own message.
-        console.error(
-          `${operation.owner}.${operation.publicName ?? operation.id} was not sent: its input does not match the contract.`,
-          error,
-        )
-        throw error
-      }
-      requestOptions.signal?.throwIfAborted()
-
-      const pathInput = asRecord(input)
-      const rawBody = operation.body ? pathInput[operation.body] : undefined
-      if (operation.body && !(rawBody instanceof Blob)) {
-        throw new TypeError(`Operation input field ${operation.body} must be a Blob`)
-      }
-      const url = buildUrl(operation, pathInput)
-      const scope = requestOptions.context?.scope() ?? operation.scope?.(input)
-      const headers = new Headers(scope?.headers)
-      new Headers(requestOptions.headers).forEach((value, name) => headers.set(name, value))
-      headers.set('Accept', 'application/json')
-      const csrf = readCsrfToken()
-      if (csrf) headers.set('X-Frappe-CSRF-Token', csrf)
-
-      const init: RequestInit = {
-        method: operation.method,
-        headers,
-        credentials: 'same-origin',
-        signal: requestOptions.signal,
-        keepalive: requestOptions.keepalive,
-      }
-      if (rawBody instanceof Blob) {
-        headers.set('Content-Type', 'application/octet-stream')
-        init.body = rawBody
-      } else if (operation.method !== 'GET' && operation.method !== 'DELETE') {
-        headers.set('Content-Type', 'application/json; charset=utf-8')
-        init.body = JSON.stringify(
-          withoutPathParams(pathInput, [
-            ...(operation.pathParams ?? []),
-            ...(operation.localParams ?? []),
-          ]),
-        )
-      }
-
-      const failed = (error: TransportError): TransportError => {
-        scope?.settled?.({ ok: false, error })
-        options.onFailure?.(error)
-        return error
-      }
-
-      let attempt = 0
-      while (true) {
-        let response: Response
-        try {
-          response = await fetcher(url, init)
-        } catch (cause) {
-          if (isAbort(cause)) throw cause
-          if (
-            !(
-              operation.kind === 'query' ||
-              (operation.kind === undefined && operation.method === 'GET')
-            ) ||
-            attempt >= maxRetries
-          ) {
-            throw failed(
-              new TransportError({
-                type: 'NetworkError',
-                message: networkMessage(cause),
-                status: 0,
-              }),
-            )
-          }
-          await delay(retryBaseMs * 2 ** attempt, requestOptions.signal)
-          attempt += 1
-          continue
-        }
-
-        requestOptions.signal?.throwIfAborted()
-        const body =
-          response.ok && operation.bytes ? await response.blob() : await readBody(response)
-        requestOptions.signal?.throwIfAborted()
-        if (response.ok) {
-          const output =
-            operation.empty &&
-            isRecord(body) &&
-            Object.keys(body).every((key) => ['docs', '_server_messages', 'messages'].includes(key))
-              ? null
-              : decodeSuccess(body, operation.envelope)
-          validators?.validateOutput(output)
-          operation.validateOutput?.(output)
-          scope?.settled?.({ ok: true, output: output as never })
-          return output as never
-        }
-
-        const error = decodeError(body, response.status, response.statusText)
-        const retryAfter =
-          response.status === 429 ? parseRetryAfter(response.headers.get('Retry-After')) : null
-        if (retryAfter !== null) error.retryAfterMs = retryAfter
-        if (error.type === 'SessionExpired') {
-          options.onSessionExpired?.(error as PlatformError<'SessionExpired'>)
-        }
-
-        const retryable =
-          (operation.kind === 'query' ||
-            (operation.kind === undefined && operation.method === 'GET')) &&
-          attempt < maxRetries &&
-          (response.status >= 500 || response.status === 429)
-        if (!retryable) throw failed(new TransportError(error))
-
-        await delay(retryAfter ?? retryBaseMs * 2 ** attempt, requestOptions.signal)
-        attempt += 1
-      }
+    request(operation, input, requestOptions = {}) {
+      return sendRequest(settings, operation, input, requestOptions)
     },
+
+    requestBytes(operation, input, requestOptions = {}) {
+      return sendBytes(fetcher, operation, input, requestOptions)
+    },
+  }
+}
+
+async function sendRequest<Input, Output, ErrorType extends string>(
+  settings: TransportSettings,
+  operation: Operation<Input, Output, ErrorType>,
+  input: NoInfer<Input>,
+  requestOptions: TransportOptions,
+): Promise<Output> {
+  const { signal } = requestOptions
+  validateOperation(operation)
+  const validators: Validators<typeof input, unknown> | undefined =
+    await operation.loadValidators?.()
+  try {
+    validators?.validateInput(input)
+    operation.validateInput?.(input)
+  } catch (error) {
+    // A caller bug, never a refusal: logged even when the caller shows its own message.
+    console.error(
+      `${operation.owner}.${operation.publicName ?? operation.id} was not sent: its input does not match the contract.`,
+      error,
+    )
+    throw error
+  }
+  signal?.throwIfAborted()
+
+  const pathInput = asRecord(input)
+  const rawBody = readRawBody(operation, pathInput)
+  const url = buildUrl(operation, pathInput)
+  const scope = requestOptions.context?.scope() ?? operation.scope?.(input)
+  const headers = buildRequestHeaders(scope, requestOptions)
+  const init = buildRequestInit(operation, pathInput, rawBody, headers, requestOptions)
+  const prepared: PreparedRequest = { operation, url, init, scope, validators, signal }
+  const output = await sendWithRetries(settings, prepared)
+  return output as Output
+}
+
+function readRawBody(operation: Operation, pathInput: Record<string, unknown>): Blob | undefined {
+  if (!operation.body) {
+    return undefined
+  }
+
+  const rawBody = pathInput[operation.body]
+  if (!(rawBody instanceof Blob)) {
+    throw new TypeError(`Operation input field ${operation.body} must be a Blob`)
+  }
+
+  return rawBody
+}
+
+function buildRequestHeaders(
+  scope: RequestScope | undefined,
+  requestOptions: TransportOptions,
+): Headers {
+  const headers = new Headers(scope?.headers)
+  for (const [name, value] of new Headers(requestOptions.headers)) {
+    headers.set(name, value)
+  }
+
+  headers.set('Accept', 'application/json')
+  setCsrfHeader(headers)
+  return headers
+}
+
+function buildRequestInit(
+  operation: Operation,
+  pathInput: Record<string, unknown>,
+  rawBody: Blob | undefined,
+  headers: Headers,
+  requestOptions: TransportOptions,
+): RequestInit {
+  const init: RequestInit = {
+    method: operation.method,
+    headers,
+    credentials: 'same-origin',
+    signal: requestOptions.signal,
+    keepalive: requestOptions.keepalive,
+  }
+  if (rawBody) {
+    headers.set('Content-Type', 'application/octet-stream')
+    init.body = rawBody
+  } else if (operation.method !== 'GET' && operation.method !== 'DELETE') {
+    headers.set('Content-Type', 'application/json; charset=utf-8')
+    const omittedParams = (operation.pathParams ?? []).concat(operation.localParams ?? [])
+    const bodyInput = withoutPathParams(pathInput, omittedParams)
+    init.body = JSON.stringify(bodyInput)
+  }
+
+  return init
+}
+
+async function sendWithRetries(
+  settings: TransportSettings,
+  prepared: PreparedRequest,
+): Promise<unknown> {
+  for (let attempt = 0; ; attempt += 1) {
+    const canRetry = isQuery(prepared.operation) && attempt < settings.maxRetries
+    const backoffMs = settings.retryBaseMs * RETRY_BACKOFF_FACTOR ** attempt
+    const response = await fetchAttempt(settings, prepared, canRetry)
+    if (response === null) {
+      await delay(backoffMs, prepared.signal)
+      continue
+    }
+
+    const body = await readAnsweredBody(prepared, response)
+    if (response.ok) {
+      return acceptOutput(prepared, body)
+    }
+
+    const retryAfter = readRetryAfter(response)
+    const error = decodeFailure(settings, response, body, retryAfter)
+    if (!canRetry || !isRetryableStatus(response.status)) {
+      throw recordFailure(settings, prepared.scope, new TransportError(error))
+    }
+
+    await delay(retryAfter ?? backoffMs, prepared.signal)
+  }
+}
+
+async function fetchAttempt(
+  settings: TransportSettings,
+  prepared: PreparedRequest,
+  canRetry: boolean,
+): Promise<Response | null> {
+  const { fetcher } = settings
+  try {
+    return await fetcher(prepared.url, prepared.init)
+  } catch (cause) {
+    if (isAbort(cause)) {
+      throw cause
+    }
+
+    if (!canRetry) {
+      throw recordFailure(settings, prepared.scope, toNetworkError(cause))
+    }
+
+    return null
+  }
+}
+
+async function readAnsweredBody(prepared: PreparedRequest, response: Response): Promise<unknown> {
+  prepared.signal?.throwIfAborted()
+  const body = await readResponseBody(prepared.operation, response)
+  prepared.signal?.throwIfAborted()
+  return body
+}
+
+function readResponseBody(operation: Operation, response: Response): Promise<unknown> {
+  if (response.ok && operation.bytes) {
+    return response.blob()
+  }
+
+  return readBody(response)
+}
+
+function acceptOutput(prepared: PreparedRequest, body: unknown): unknown {
+  const output = decodeOutput(prepared.operation, body)
+  prepared.validators?.validateOutput(output)
+  prepared.operation.validateOutput?.(output)
+  prepared.scope?.settled?.({ ok: true, output })
+  return output
+}
+
+function decodeOutput(operation: Operation, body: unknown): unknown {
+  const isEmpty =
+    operation.empty &&
+    isRecord(body) &&
+    Object.keys(body).every((key) => ['docs', '_server_messages', 'messages'].includes(key))
+  if (isEmpty) {
+    return null
+  }
+
+  return decodeSuccess(body, operation.envelope)
+}
+
+function readRetryAfter(response: Response): number | null {
+  if (response.status !== TOO_MANY_REQUESTS_STATUS) {
+    return null
+  }
+
+  return parseRetryAfter(response.headers.get('Retry-After'))
+}
+
+function decodeFailure(
+  settings: TransportSettings,
+  response: Response,
+  body: unknown,
+  retryAfter: number | null,
+): PlatformError {
+  const error = decodeError(body, response.status, response.statusText)
+  if (retryAfter !== null) {
+    error.retryAfterMs = retryAfter
+  }
+
+  if (error.type === 'SessionExpired') {
+    settings.onSessionExpired?.(error as PlatformError<'SessionExpired'>)
+  }
+
+  return error
+}
+
+function isQuery(operation: Operation): boolean {
+  return operation.kind === 'query' || (operation.kind === undefined && operation.method === 'GET')
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status >= MIN_SERVER_ERROR_STATUS || status === TOO_MANY_REQUESTS_STATUS
+}
+
+function recordFailure(
+  settings: TransportSettings,
+  scope: RequestScope | undefined,
+  error: TransportError,
+): TransportError {
+  scope?.settled?.({ ok: false, error })
+  settings.onFailure?.(error)
+  return error
+}
+
+function toNetworkError(cause: unknown): TransportError {
+  const failure = {
+    type: 'NetworkError',
+    message: networkMessage(cause),
+    status: 0,
+  }
+  return new TransportError(failure)
+}
+
+async function sendBytes(
+  fetcher: typeof fetch,
+  operation: Operation,
+  input: Record<string, unknown>,
+  requestOptions: BytesOptions,
+): Promise<BytesResponse> {
+  validateOperation(operation)
+  const url = buildUrl(operation, input)
+  const init = buildBytesInit(operation, requestOptions)
+
+  let response: Response
+  try {
+    response = await fetcher(url, init)
+  } catch (cause) {
+    if (isAbort(cause)) {
+      throw cause
+    }
+
+    throw toNetworkError(cause)
+  }
+
+  const body = await response.arrayBuffer()
+  return {
+    status: response.status,
+    headers: response.headers,
+    bytes: new Uint8Array(body),
+  }
+}
+
+function buildBytesInit(operation: Operation, requestOptions: BytesOptions): RequestInit {
+  const headers = new Headers(requestOptions.headers)
+  headers.set('Accept', 'application/octet-stream, application/json')
+  setCsrfHeader(headers)
+
+  const init: RequestInit = {
+    method: operation.method,
+    headers,
+    credentials: 'same-origin',
+    signal: requestOptions.signal,
+    keepalive: requestOptions.keepalive,
+  }
+  if (requestOptions.body) {
+    headers.set('Content-Type', 'application/octet-stream')
+    init.body = requestOptions.body
+  }
+
+  return init
+}
+
+function setCsrfHeader(headers: Headers): void {
+  const csrf = readCsrfToken()
+  if (csrf) {
+    headers.set('X-Frappe-CSRF-Token', csrf)
   }
 }
 

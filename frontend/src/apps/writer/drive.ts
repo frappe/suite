@@ -6,10 +6,12 @@
  * Every call goes to `/api/suite/drive/` or `/api/suite/`, never to a legacy
  * Drive method.
  */
+import type { MentionSuggestionItem } from 'frappe-ui/editor'
+
 import { api, client } from '@/api'
 
 /** A person on this site, in the shape the mention menu reads. */
-export interface WriterUser {
+export interface WriterUser extends MentionSuggestionItem {
   name: string
   email: string
   full_name: string

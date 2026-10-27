@@ -473,8 +473,8 @@ are fixed in production code and tests, on this branch, commits `ba2b2476a`
 11. New `test_full_run.py` runs a complete `run_cleanup` chain against one
     fixture and asserts final state directly: rows gone, custom
     fields/property setters/doctypes gone, permission-hook removal planned,
-    `Writer Document.versions` dropped first, docshares/ycomments/comments
-    cleared, all ten disk-settings fields gone, only forwarder-labeled API
+    `Writer Document.versions` dropped first, docshares/comments cleared,
+    ycomments kept, all ten disk-settings fields gone, only forwarder-labeled API
     names and the wildcard prefix removed, only Drive-owned sidecars gone,
     referenced S3 objects untouched. New `test_site_ports.py` exercises the
     real `Site*` classes directly (not fakes) for every port whose

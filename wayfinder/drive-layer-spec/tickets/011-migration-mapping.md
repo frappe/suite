@@ -316,8 +316,8 @@ framework GC. Then:
 - Drops `Drive Permission`, `Drive Entity Activity Log`, `Drive Token`,
   and the old notification columns.
 - Deletes Sheet `DocShare` rows; drops `Writer Version` and
-  `Sheet Snapshot`; clears `ycomments`; strips cell comments from
-  `sheets_data`.
+  `Sheet Snapshot`; keeps `ycomments` for Writer's conversion; strips cell
+  comments from `sheets_data`.
 - Drops title and trashed columns on content doctypes; `user_folder` and
   `quota` on Drive Settings; `quota` and the S3 fields on Drive Disk
   Settings; `storage_owner` on Drive Storage Reservation.

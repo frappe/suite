@@ -77,7 +77,7 @@ def _full_environment(tmp_path):
     )
     # Build deleted the governed `DocShare` rows, so Cleanup only verifies
     # they are gone. A site that still had one never ran that Build.
-    content = FakeContent(docshares=(), ycomments=1, sheets_with_comments=3)
+    content = FakeContent(docshares=(), sheets_with_comments=3)
     thumbnails = FakeThumbnails(existing={"a", "trash", "unrelated-home-file"})
     return cleanup_environment(
         tmp_path,
@@ -114,12 +114,11 @@ class TestFullOrderedRun(unittest.TestCase):
         self.assertEqual(env.schema.columns["Drive Notification"], {"activity", "to_user", "read"})
 
         # Step 4: history doctypes gone, no governed share left,
-        # ycomments/sheet-comments cleared.
+        # sheet comments stripped
         for doctype in RETAINED_DOCTYPES_STEP_4:
             self.assertNotIn(doctype, env.schema.doctypes)
         self.assertEqual(env.schema.doctypes, set())
         self.assertEqual(env.content.docshares, frozenset())
-        self.assertEqual(env.content.ycomments, 0)
         self.assertEqual(env.content.sheets_with_comments, 0)
 
         # Step 5: title/trashed/settings columns gone, all ten §3.13 fields

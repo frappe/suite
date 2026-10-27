@@ -377,14 +377,15 @@ class TestPhaseContentHistory(unittest.TestCase):
     def _step_four_schema(self):
         return FakeSchema(doctypes=set(RETAINED_DOCTYPES_STEP_4))
 
-    def test_ycomments_and_sheet_comments_are_cleared(self):
-        content = FakeContent(ycomments=2, sheets_with_comments=5)
+    def test_sheet_comments_are_stripped_and_ycomments_left(self):
+        content = FakeContent(sheets_with_comments=5)
         schema = self._step_four_schema()
+        schema.columns["Writer Document"] = {"ycomments"}
         result = phase_content_history(cleanup_environment(self.path, content=content, schema=schema))
-        self.assertEqual(result.ycomments_cleared, 2)
         self.assertEqual(result.sheet_comments_stripped, 5)
         self.assertEqual(result.doctypes_dropped, 4)
         self.assertEqual(schema.doctypes, set())
+        self.assertEqual(schema.columns["Writer Document"], {"ycomments"})
         self.assertEqual(content.strip_calls, 1)
 
     def test_a_governed_docshare_that_survived_build_refuses_the_phase(self):
@@ -427,6 +428,7 @@ class TestPhaseContentFields(unittest.TestCase):
                 "Drive Storage Reservation": {"storage_owner", "reserved_bytes"},
                 "Drive Favourite": {"user", "node", "entity"},
                 "Drive Root": {"node", "used_bytes", "acl_generation"},
+                "Writer Document": {"content", "ycomments"},
             },
             singles={
                 "Drive Disk Settings": {
@@ -451,6 +453,7 @@ class TestPhaseContentFields(unittest.TestCase):
         self.assertEqual(schema.columns["Drive Storage Reservation"], {"reserved_bytes"})
         self.assertEqual(schema.columns["Drive Favourite"], {"user", "node"})
         self.assertEqual(schema.columns["Drive Root"], {"node", "used_bytes"})
+        self.assertEqual(schema.columns["Writer Document"], {"content", "ycomments"})
         # All ten §3.13 fields drop as tabSingles rows, never as DDL; nothing
         # outside that list, and no `columns["Drive Disk Settings"]` entry at
         # all, is touched.

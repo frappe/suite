@@ -3,16 +3,14 @@ import type { Validators } from '@/platform/transport'
 import { assertSchema } from '@/platform/transport/schema'
 
 import type {
+  ConvertVersionInput,
+  ConvertVersionOutput,
   DocumentInput,
   DocumentOutput,
-  SaveCommentsInput,
-  SaveCommentsOutput,
-  SaveDocInput,
-  SaveDocOutput,
-  SaveHtmlInput,
-  SaveHtmlOutput,
-  UpdateSettingsInput,
-  UpdateSettingsOutput,
+  DocumentSettingsInput,
+  DocumentSettingsOutput,
+  OldBodyInput,
+  OldBodyOutput,
 } from './generated'
 
 export const operationDocument: Validators<DocumentInput, DocumentOutput> = {
@@ -33,6 +31,29 @@ export const operationDocument: Validators<DocumentInput, DocumentOutput> = {
     assertSchema(
       value,
       {
+        $defs: {
+          ConversionStatus: {
+            properties: {
+              state: { title: 'State', type: 'string' },
+              reason: { title: 'Reason', type: 'string' },
+              rooms: { $ref: '#/$defs/Rooms' },
+            },
+            required: ['state'],
+            title: 'ConversionStatus',
+            type: 'object',
+          },
+          Rooms: {
+            properties: {
+              epoch: { title: 'Epoch', type: 'integer' },
+              keys: { items: { type: 'string' }, title: 'Keys', type: 'array' },
+              epoch_seconds: { title: 'Epoch Seconds', type: 'integer' },
+              server_time: { title: 'Server Time', type: 'number' },
+            },
+            required: ['epoch', 'keys', 'epoch_seconds', 'server_time'],
+            title: 'Rooms',
+            type: 'object',
+          },
+        },
         properties: {
           name: { title: 'Name', type: 'string' },
           collab: { title: 'Collab', type: 'integer' },
@@ -47,6 +68,8 @@ export const operationDocument: Validators<DocumentInput, DocumentOutput> = {
             ],
             title: 'Settings',
           },
+          conversion: { $ref: '#/$defs/ConversionStatus' },
+          content_modified: { title: 'Content Modified', type: 'string' },
         },
         required: ['name'],
         title: 'WriterRow',
@@ -57,85 +80,83 @@ export const operationDocument: Validators<DocumentInput, DocumentOutput> = {
   },
 }
 
-export const operationSaveDoc: Validators<SaveDocInput, SaveDocOutput> = {
-  validateInput(value: unknown): asserts value is SaveDocInput {
+export const operationDocumentSettings: Validators<DocumentSettingsInput, DocumentSettingsOutput> =
+  {
+    validateInput(value: unknown): asserts value is DocumentSettingsInput {
+      assertSchema(
+        value,
+        {
+          type: 'object',
+          properties: { data: { title: 'Data', type: 'string' }, name: { type: 'string' } },
+          required: ['data', 'name'],
+          additionalProperties: false,
+          $defs: {},
+        },
+        'document_settings input',
+      )
+    },
+    validateOutput(value: unknown): asserts value is DocumentSettingsOutput {
+      assertSchema(value, { type: 'null' }, 'document_settings output')
+    },
+  }
+
+export const operationOldBody: Validators<OldBodyInput, OldBodyOutput> = {
+  validateInput(value: unknown): asserts value is OldBodyInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { node: { title: 'Node', type: 'string' } },
+        required: ['node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'old_body input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is OldBodyOutput {
+    assertSchema(
+      value,
+      {
+        properties: { content: { title: 'Content', type: 'string' } },
+        title: 'OldBody',
+        type: 'object',
+      },
+      'old_body output',
+    )
+  },
+}
+
+export const operationConvertVersion: Validators<ConvertVersionInput, ConvertVersionOutput> = {
+  validateInput(value: unknown): asserts value is ConvertVersionInput {
     assertSchema(
       value,
       {
         type: 'object',
         properties: {
-          data: { title: 'Data', type: 'string' },
-          html: { title: 'Html', type: 'string' },
-          name: { type: 'string' },
+          node: { title: 'Node', type: 'string' },
+          seq: { title: 'Seq', type: 'integer' },
         },
-        required: ['data', 'name'],
+        required: ['node', 'seq'],
         additionalProperties: false,
         $defs: {},
       },
-      'save_doc input',
+      'convert_version input',
     )
   },
-  validateOutput(value: unknown): asserts value is SaveDocOutput {
-    assertSchema(value, { type: 'null' }, 'save_doc output')
-  },
-}
-
-export const operationSaveHtml: Validators<SaveHtmlInput, SaveHtmlOutput> = {
-  validateInput(value: unknown): asserts value is SaveHtmlInput {
+  validateOutput(value: unknown): asserts value is ConvertVersionOutput {
     assertSchema(
       value,
       {
-        type: 'object',
-        properties: { html: { title: 'Html', type: 'string' }, name: { type: 'string' } },
-        required: ['html', 'name'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'save_html input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is SaveHtmlOutput {
-    assertSchema(value, { type: 'null' }, 'save_html output')
-  },
-}
-
-export const operationUpdateSettings: Validators<UpdateSettingsInput, UpdateSettingsOutput> = {
-  validateInput(value: unknown): asserts value is UpdateSettingsInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { data: { title: 'Data', type: 'string' }, name: { type: 'string' } },
-        required: ['data', 'name'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'update_settings input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is UpdateSettingsOutput {
-    assertSchema(value, { type: 'null' }, 'update_settings output')
-  },
-}
-
-export const operationSaveComments: Validators<SaveCommentsInput, SaveCommentsOutput> = {
-  validateInput(value: unknown): asserts value is SaveCommentsInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
         properties: {
-          doc: { title: 'Doc', type: 'string' },
-          data: { title: 'Data', type: 'string' },
+          state: { title: 'State', type: 'string' },
+          reason: { title: 'Reason', type: 'string' },
+          pending: { title: 'Pending', type: 'boolean' },
         },
-        required: ['doc', 'data'],
-        additionalProperties: false,
-        $defs: {},
+        title: 'VersionConversion',
+        type: 'object',
       },
-      'save_comments input',
+      'convert_version output',
     )
-  },
-  validateOutput(value: unknown): asserts value is SaveCommentsOutput {
-    assertSchema(value, { type: 'null' }, 'save_comments output')
   },
 }

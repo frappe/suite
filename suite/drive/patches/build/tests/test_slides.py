@@ -12,6 +12,7 @@ from pathlib import Path
 from PIL import Image
 
 from suite.drive.patches.build.ports import REMOVED, ContentRow, MediaFileRow, SlideRow, TreeRow
+from suite.drive.patches.build.report import build_report
 from suite.drive.patches.build.slide_journal import SlideBody
 from suite.drive.patches.build.slides import SLIDE_FIELDS, BuildSlidesError, convert_slides_and_templates
 from suite.drive.patches.build.state import ContentConversion
@@ -83,6 +84,21 @@ def png_declaring(width, height):
     return bytes(data)
 
 
+def png_with_broken_chunk(width=64, height=48):
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    pixels = zlib.compress((b"\x00" + b"\xff\x00\x00" * width) * height)
+    half = len(pixels) // 2
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", pixels[:half])
+        + chunk(b"ID\x00T", pixels[half:])
+        + chunk(b"IEND", b"")
+    )
+
+
 def preview_size(target):
     with Image.open(io.BytesIO(target.blob_bytes[target.preview_rows["deck-node"]["blob"]])) as image:
         return image.size
@@ -150,6 +166,33 @@ class SlidesTest(unittest.TestCase):
 
     def media_children(self, target, node):
         return [row for row in target.child_nodes(node) if row.get("kind") == "file"]
+
+    def beside_a_sound_deck(self, thumbnail, rows):
+        sound = media(
+            "sound", deck_name="deck-2", blob="sound-blob", url="/files/sound.webp", field="thumbnail"
+        )
+        source = FakeContent(
+            documents=[
+                deck(thumbnail=thumbnail),
+                deck("deck-2", node="deck-2-node", thumbnail=sound.file_url),
+            ],
+            media=[*rows, sound],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, "deck-2-node", "deck-2", "Deck 2")
+        target.add_blob("sound-blob", webp_bytes(), mime_type="image/webp")
+        return env, target
+
+    def assert_preview_skipped(self, env, target, result, reason):
+        self.assertTrue(result.slides_completed)
+        self.assertEqual((result.deck_previews_created, result.deck_previews_skipped), (1, 1))
+        self.assertEqual(list(target.preview_rows), ["deck-2-node"])
+        self.assertTrue(
+            any(issue.source == "Presentation:deck-1" and reason in issue.reason for issue in result.issues),
+            result.issues,
+        )
+        self.assertEqual(build_report(env)["deck_previews_skipped"], 1)
 
     def test_a_second_slides_phase_keeps_one_shot_repairs(self):
         result = ContentConversion(slide_elements_repaired=1)
@@ -1264,31 +1307,23 @@ class SlidesTest(unittest.TestCase):
 
     # -- defect 8: a decompression bomb reaches neither handler
 
-    def test_a_decompression_bomb_thumbnail_refuses_the_deck(self):
+    def test_a_decompression_bomb_thumbnail_is_reported_and_the_next_deck_converts(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")
-        source = FakeContent(
-            documents=[deck(thumbnail=row.file_url)],
-            media=[row],
-            users={"Administrator": True},
-        )
-        env, target = self.environment(source)
+        env, target = self.beside_a_sound_deck(row.file_url, [row])
         target.add_blob("thumb-blob", png_declaring(100_000, 100_000), mime_type="image/png")
 
-        with self.assertRaisesRegex(BuildSlidesError, "unreadable"):
-            convert_slides_and_templates(env)
+        result = convert_slides_and_templates(env)
 
-    def test_a_thumbnail_above_the_pixel_ceiling_refuses_the_deck(self):
+        self.assert_preview_skipped(env, target, result, "thumbnail is unreadable (DecompressionBombError)")
+
+    def test_a_thumbnail_above_the_pixel_ceiling_is_reported_and_the_next_deck_converts(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")
-        source = FakeContent(
-            documents=[deck(thumbnail=row.file_url)],
-            media=[row],
-            users={"Administrator": True},
-        )
-        env, target = self.environment(source)
+        env, target = self.beside_a_sound_deck(row.file_url, [row])
         target.add_blob("thumb-blob", png_declaring(6000, 5000), mime_type="image/png")
 
-        with self.assertRaisesRegex(BuildSlidesError, "oversized"):
-            convert_slides_and_templates(env)
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(env, target, result, "oversized")
 
     # -- defect 9: a journal conflict is a RuntimeError, not a ValueError
 
@@ -1431,34 +1466,90 @@ class SlidesTest(unittest.TestCase):
                 self.assertEqual(preview_size(target), (64, 48))
                 self.assertEqual(target.blob_bytes["thumb-blob"], image_bytes(fmt, (64, 48)))
 
-    def test_a_truncated_thumbnail_refuses_the_deck(self):
+    def test_a_truncated_thumbnail_is_reported_and_the_next_deck_converts(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")
-        source = FakeContent(
-            documents=[deck(thumbnail=row.file_url)],
-            media=[row],
-            users={"Administrator": True},
-        )
-        env, target = self.environment(source)
+        env, target = self.beside_a_sound_deck(row.file_url, [row])
         # A whole header and half the pixels: the probe passes, the decode does not.
         target.add_blob("thumb-blob", image_bytes("PNG", (256, 256))[:-120], mime_type="image/png")
 
-        with self.assertRaisesRegex(BuildSlidesError, "unreadable"):
-            convert_slides_and_templates(env)
-        self.assertFalse(target.preview_rows)
+        result = convert_slides_and_templates(env)
 
-    def test_a_corrupt_thumbnail_refuses_the_deck(self):
+        self.assert_preview_skipped(env, target, result, "thumbnail is unreadable (OSError)")
+
+    def test_a_corrupt_thumbnail_is_reported_and_the_next_deck_converts(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")
+        env, target = self.beside_a_sound_deck(row.file_url, [row])
+        target.add_blob("thumb-blob", b"not an image at all", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(env, target, result, "thumbnail is unreadable (UnidentifiedImageError)")
+
+    def test_a_thumbnail_with_a_broken_chunk_is_reported_and_the_next_deck_converts(self):
+        row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")
+        env, target = self.beside_a_sound_deck(row.file_url, [row])
+        target.add_blob("thumb-blob", png_with_broken_chunk(), mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(env, target, result, "thumbnail is unreadable (SyntaxError)")
+
+    def test_a_thumbnail_whose_blob_is_not_ready_is_reported_and_the_next_deck_converts(self):
+        row = media("thumb", blob="thumb-blob", url="/files/thumb.webp", field="thumbnail")
+        env, target = self.beside_a_sound_deck(row.file_url, [row])
+        target.add_blob("thumb-blob", webp_bytes(), mime_type="image/webp", status="Pending")
+
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(env, target, result, "not Ready")
+
+    def test_a_thumbnail_with_no_blob_is_reported_and_the_next_deck_converts(self):
+        # The backfill links no blob to a local row whose file is gone from
+        # disk. Both rows here name the same missing thumbnail
+        url = "/private/files/thumb.png"
+        rows = [
+            media("thumb", url=url, field="thumbnail"),
+            media("thumb-copy", url=url, field="thumbnail"),
+            media("media-a", blob="blob-a"),
+        ]
+        env, target = self.beside_a_sound_deck(url, rows)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(env, target, result, "has no bytes")
+        self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["media-a"])
+        self.assertEqual(result.blobless_nodes, 0)
+
+    def test_a_rerun_reports_a_thumbnail_with_no_blob_once(self):
+        url = "/private/files/thumb.png"
+        env, target = self.beside_a_sound_deck(url, [media("thumb", url=url, field="thumbnail")])
+        convert_slides_and_templates(env)
+
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(env, target, result, "has no bytes")
+        self.assertEqual(len([issue for issue in result.issues if issue.source == "Presentation:deck-1"]), 1)
+
+    def test_a_blobless_twin_does_not_block_the_thumbnail_it_copies(self):
+        url = "/private/files/thumb.webp"
         source = FakeContent(
-            documents=[deck(thumbnail=row.file_url)],
-            media=[row],
+            documents=[deck(thumbnail=url)],
+            media=[
+                media("thumb", blob="thumb-blob", url=url, field="thumbnail"),
+                media("thumb-copy", url=url, field="thumbnail"),
+            ],
             users={"Administrator": True},
         )
         env, target = self.environment(source)
-        target.add_blob("thumb-blob", b"not an image at all", mime_type="image/png")
+        target.add_blob("thumb-blob", webp_bytes(), mime_type="image/webp")
 
-        with self.assertRaisesRegex(BuildSlidesError, "unreadable"):
-            convert_slides_and_templates(env)
-        self.assertFalse(target.preview_rows)
+        result = convert_slides_and_templates(env)
+
+        self.assertEqual((result.deck_previews_created, result.deck_previews_skipped), (1, 0))
+        self.assertEqual(target.preview_rows["deck-node"]["name"], "thumb")
+        self.assertEqual(self.media_children(target, "deck-node"), [])
+        self.assertEqual(result.issues, [])
 
     # -- thumbnail classification
 
@@ -1477,22 +1568,22 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(result.deck_previews_created, 1)
         self.assertEqual(target.preview_rows["deck-node"]["name"], "thumb")
 
-    def test_two_blobs_in_the_winning_thumbnail_tier_refuse_the_deck(self):
+    def test_two_blobs_in_the_winning_thumbnail_tier_are_reported_and_the_next_deck_converts(self):
         url = "/files/cover.webp"
-        source = FakeContent(
-            documents=[deck(thumbnail=url)],
-            media=[
-                media("thumb-a", blob="blob-a", url=url),
-                media("thumb-b", blob="blob-b", url=url),
-            ],
-            users={"Administrator": True},
-        )
-        env, target = self.environment(source)
+        rows = [
+            media("thumb-a", blob="blob-a", url=url),
+            media("thumb-b", blob="blob-b", url=url),
+        ]
+        env, target = self.beside_a_sound_deck(url, rows)
         target.add_blob("blob-a", webp_bytes(), mime_type="image/webp")
         target.add_blob("blob-b", webp_bytes((16, 16)), mime_type="image/webp")
 
-        with self.assertRaisesRegex(BuildSlidesError, "ambiguous"):
-            convert_slides_and_templates(env)
+        result = convert_slides_and_templates(env)
+
+        self.assert_preview_skipped(
+            env, target, result, "matches 2 different blobs; its 2 File rows get no media node"
+        )
+        self.assertEqual(self.media_children(target, "deck-node"), [])
 
     def test_a_stale_thumbnail_marker_stays_ordinary_media(self):
         chosen = media("thumb", blob="thumb-blob", url="/files/cover.webp")
@@ -1526,7 +1617,7 @@ class SlidesTest(unittest.TestCase):
         # A preview is derived data. Refusing the deck, its media, and every
         # deck after it over one missing File row costs more than the preview.
         self.assertTrue(result.slides_completed)
-        self.assertEqual(result.deck_previews_created, 0)
+        self.assertEqual((result.deck_previews_created, result.deck_previews_skipped), (0, 1))
         self.assertEqual(target.preview_rows, {})
         self.assertEqual([row["name"] for row in self.media_children(target, "deck-node")], ["media-a"])
         self.assertEqual(

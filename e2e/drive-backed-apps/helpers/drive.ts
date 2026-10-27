@@ -11,6 +11,7 @@ import type {
 	NodeCreateCreateFolderInput,
 	NodeDeleteGrantOutput,
 	NodeGetOutput,
+	NodeMediaOutput,
 	NodePatchMoveInput,
 	NodePatchRenameInput,
 	NodePatchRestoreInput,
@@ -166,6 +167,18 @@ export async function getNode(
 	return driveRequest<DriveNode>(request, "get", `nodes/${node}?expand=${expand}`);
 }
 
+/** The ids of `node`'s pictures and videos that are not in the bin. */
+export async function mediaNodes(request: APIRequestContext, node: string): Promise<string[]> {
+	const answer = await driveRequest<NodeMediaOutput>(request, "get", `nodes/${node}/media`);
+	return answer.media.map((entry) => entry.node);
+}
+
+/** Whether the caller may read `node`. */
+export async function canReadNode(request: APIRequestContext, node: string): Promise<boolean> {
+	const response = await request.get(`${DRIVE}/nodes/${node}`);
+	return response.ok();
+}
+
 /** The caller's role on `node`, `ROLE.NONE` when it is withheld. */
 export async function roleOn(request: APIRequestContext, node: string): Promise<number> {
 	const response = await request.get(`${DRIVE}/nodes/${node}?expand=access`);
@@ -213,7 +226,7 @@ export async function restoreNode(request: APIRequestContext, node: string): Pro
 }
 
 /** Permanent removal of a trashed node (§8.8). */
-async function purgeNode(request: APIRequestContext, node: string): Promise<number> {
+export async function purgeNode(request: APIRequestContext, node: string): Promise<number> {
 	const answer = await driveRequest<NodePurgeOutput>(request, "delete", `nodes/${node}`);
 	return answer.count;
 }

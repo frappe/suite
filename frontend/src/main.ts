@@ -6,6 +6,7 @@ import { createApp, type App as VueApp } from 'vue'
 import App from '@/App.vue'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
+import { watchBuild } from '@/platform/build'
 import { initializeCursor } from '@/platform/cursor'
 import { installApiErrorHandler } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
@@ -16,6 +17,7 @@ import router from '@/router'
 
 initializeCursor()
 installUserTimeZone()
+watchBuild()
 
 const app = createApp(App)
 

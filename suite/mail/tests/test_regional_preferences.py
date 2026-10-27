@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.mail import account_lifecycle
 from suite.mail.api.account import create_account
 from suite.mail.http.preferences import regional_preferences, update_regional_preferences
 
@@ -167,8 +168,8 @@ class TestRegionalPreferences(IntegrationTestCase):
             patch(module + "is_jmap_server_configured"),
             patch("suite.suite_core.account_state.read", return_value={"status": "Setup failed"}),
             patch("suite.suite_core.account_state.write"),
-            patch("suite.mail.account_lifecycle.provision"),
-            patch("suite.mail.account_lifecycle.invalidate_measurements"),
+            patch.object(account_lifecycle, "provision"),
+            patch.object(account_lifecycle, "invalidate_measurements"),
             patch("suite.mail.directory.update_password"),
             patch("suite.mail.directory.set_account_enabled"),
             patch("frappe.utils.get_url", return_value="http://suite.test"),

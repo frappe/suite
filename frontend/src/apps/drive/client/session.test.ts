@@ -4,7 +4,7 @@ import { createTransport, TransportError, type Transport } from '@/platform/tran
 
 import { announceAccessChange } from './accessChanges'
 import { driveLinks } from './links'
-import { MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
+import { ACCESS_REFRESH_MS, MEDIA_REFRESH_MS, openDriveDocumentSession } from './session'
 import { testClient } from './testClient'
 
 const documentNode = (name: string) => ({
@@ -121,6 +121,54 @@ describe('document session credentials', () => {
   })
 })
 
+describe('document session comments', () => {
+  it('sends the id the caller made with a new thread and with a reply', async () => {
+    const posted: unknown[] = []
+    const requester = transport((id, input) => {
+      if (id === 'node_get') {
+        return documentNode(input.node)
+      }
+
+      if (id === 'node_thread_create' || id === 'thread_comment_create') {
+        posted.push([id, input.client_id])
+      }
+
+      return {}
+    })
+    const session = await openDriveDocumentSession('doc', { client: testClient(requester) })
+
+    await session.comments.create('document', 'Hi', undefined, 'thread-made-here')
+    await session.comments.reply('thread-1', 'Yes', undefined, 'reply-made-here')
+
+    expect(posted).toEqual([
+      ['node_thread_create', 'thread-made-here'],
+      ['thread_comment_create', 'reply-made-here'],
+    ])
+    session.dispose()
+  })
+
+  it('moves threads of its own document to new anchors', async () => {
+    const moved: unknown[] = []
+    const requester = transport((id, input) => {
+      if (id === 'node_get') {
+        return documentNode(input.node)
+      }
+
+      if (id === 'node_threads_reanchor') {
+        moved.push(input)
+      }
+
+      return { threads: [] }
+    })
+    const session = await openDriveDocumentSession('doc', { client: testClient(requester) })
+
+    await session.comments.reanchor({ 'thread-1': 'anchor-1' })
+
+    expect(moved).toEqual([{ node: 'doc', anchors: { 'thread-1': 'anchor-1' } }])
+    session.dispose()
+  })
+})
+
 describe('document session visits', () => {
   it("records a visit for the caller's own access, and none when a share link decides it", async () => {
     const visits: string[] = []
@@ -169,6 +217,92 @@ describe('document session media', () => {
     await vi.advanceTimersByTimeAsync(MEDIA_REFRESH_MS)
     expect(mediaCalls).toBeGreaterThanOrEqual(2)
     expect(handle.cacheKey.value).not.toContain('?')
+    session.dispose()
+  })
+})
+
+describe('document session access refresh', () => {
+  function transportError(type: string, status: number) {
+    return new TransportError({ type, message: type, status })
+  }
+
+  it('keeps access through network and server errors and refuses on a real answer', async () => {
+    vi.useFakeTimers()
+    let nextFailure: TransportError | null = null
+    const requester: Transport = {
+      request: (operation, input) => {
+        if (operation.id === 'node_get' && nextFailure) {
+          return Promise.reject(nextFailure)
+        }
+
+        return Promise.resolve(documentNode((input as { node: string }).node) as never)
+      },
+    }
+    const dependencies = {
+      client: testClient(requester),
+      signedIn: () => 'Administrator',
+    }
+    const session = await openDriveDocumentSession('root', dependencies)
+
+    const passingFailures = [
+      transportError('NetworkError', 0),
+      transportError('ServerError', 500),
+      transportError('Timeout', 408),
+    ]
+    for (const error of passingFailures) {
+      nextFailure = error
+      await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
+      expect(session.state.value).toBe('Active')
+      expect(session.access.value.role).toBe(40)
+    }
+
+    nextFailure = transportError('DriveNotFound', 404)
+    await vi.advanceTimersByTimeAsync(ACCESS_REFRESH_MS)
+    expect(session.state.value).toBe('Refused')
+    expect(session.access.value).toEqual({})
+    session.dispose()
+  })
+
+  it('keeps access when signed out elsewhere, so the editor can say so', async () => {
+    let nextFailure: TransportError | null = null
+    let user: string | null = 'Administrator'
+    let refusedCount = 0
+    const fakeWindow = new EventTarget()
+    const requester: Transport = {
+      request: (operation, input) => {
+        if (operation.id !== 'node_get' || !nextFailure) {
+          return Promise.resolve(documentNode((input as { node: string }).node) as never)
+        }
+
+        refusedCount += 1
+        return Promise.reject(nextFailure)
+      },
+    }
+    const dependencies = {
+      client: testClient(requester),
+      window: fakeWindow as Window,
+      signedIn: () => user,
+    }
+    const session = await openDriveDocumentSession('root', dependencies)
+    user = null
+    const refusals = [
+      transportError('DriveNotFound', 404),
+      transportError('SessionExpired', 401),
+      transportError('PermissionError', 403),
+    ]
+    for (const error of refusals) {
+      nextFailure = error
+      const refusedBefore = refusedCount
+      fakeWindow.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(refusedCount).toBe(refusedBefore + 1))
+      await Promise.resolve()
+      expect(session.state.value).toBe('Active')
+      expect(session.access.value.role).toBe(40)
+    }
+
+    user = 'Administrator'
+    fakeWindow.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(session.state.value).toBe('Refused'))
     session.dispose()
   })
 })

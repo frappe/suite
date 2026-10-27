@@ -171,6 +171,13 @@ jobs:
           COVERAGE_RCFILE: ${{ github.workspace }}/.coveragerc
           TYPE: server
 
+      - name: Compare Collab Compaction With Yjs
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          ./env/bin/python apps/suite/suite/content/tests/differential/compact.py "$RUNNER_TEMP/compacted.json"
+          node apps/suite/suite/content/tests/differential/judge.cjs "$RUNNER_TEMP/compacted.json"
+
       - name: Check Background Worker
         if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
         working-directory: /home/runner/frappe-bench
@@ -186,6 +193,20 @@ jobs:
           kill "$worker_pid" 2>/dev/null || true
           wait "$worker_pid" 2>/dev/null || true
           trap - EXIT
+
+      # Last, since it swaps Node for the oldest one the converter supports (suite/content/convert.py NODE_MIN)
+      - name: Setup Node 22.13
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Run Converter Tests On Node 22.13
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          test "$(node --version)" = v22.13.0
+          bench --site test_site run-tests --module suite.writer.content.tests.test_converter
 
       - name: Collect Backend Evidence
         if: always() && steps.backend-changes.outputs.run == '1'

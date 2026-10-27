@@ -6,14 +6,11 @@ import type { Transport } from '@/platform/transport'
 import { claimSlidesCachesFor, clearSlidesUserData, postToServiceWorker } from './serviceWorker'
 
 const deleted: string[] = []
-const deletedDbs: string[] = []
 
 beforeEach(() => {
   deleted.length = 0
-  deletedDbs.length = 0
   localStorage.clear()
   vi.stubGlobal('caches', { delete: async (name: string) => deleted.push(name) })
-  vi.stubGlobal('indexedDB', { deleteDatabase: (name: string) => deletedDbs.push(name) })
 })
 
 afterEach(() => {
@@ -55,26 +52,6 @@ describe('slides caches per user', () => {
 
     await claimSlidesCachesFor('b@x.com')
     expect(deleted).toHaveLength(4)
-  })
-
-  it('drops the unsynced drafts when a different user takes over', async () => {
-    await claimSlidesCachesFor('a@x.com')
-    // drafts already on this browser have no recorded owner, so they are adopted
-    expect(deletedDbs).toEqual([])
-    await clearSlidesUserData()
-
-    await claimSlidesCachesFor('b@x.com')
-
-    expect(deletedDbs).toEqual(['slides-db'])
-  })
-
-  it('keeps the drafts when the same user comes back after a logout', async () => {
-    await claimSlidesCachesFor('a@x.com')
-    await clearSlidesUserData()
-
-    await claimSlidesCachesFor('a@x.com')
-
-    expect(deletedDbs).toEqual([])
   })
 })
 

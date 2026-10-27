@@ -1,6 +1,7 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 
+import { RECOVERY_COPIES_TITLE } from '@/apps/drive'
 import type { PhoneChromeOwner, ShellFrame } from '@/platform/contracts'
 
 const RouteLoading = defineComponent({
@@ -67,6 +68,11 @@ export const canonicalRoutes: RouteRecordRaw[] = [
     areaMeta('files', 'Shared with me'),
   ),
   placeholder('/drive/trash', 'area-placeholder-files-trash', areaMeta('files', 'Trash')),
+  placeholder(
+    '/drive/recovery',
+    'area-placeholder-files-recovery',
+    areaMeta('files', RECOVERY_COPIES_TITLE),
+  ),
   // Mail owns its phone chrome by default: an open thread and the composer are
   // full screen. Its list pages ask the shell for its chrome through
   // `useShellPhoneChrome`. The area group copies this metadata, so every Mail

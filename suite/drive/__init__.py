@@ -16,9 +16,9 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The ten calls an app makes are `check`, `touch`, `take_version`,
+The twelve calls an app makes are `check`, `touch`, `take_version`,
 `create_document`, `import_document`, `copy`, `adopt_media`, `read_file`,
-`push_preview`, and `record_comment`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
+`push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
 imports its workflow inside the call, so importing `suite.drive` for byte
 accounting alone does not load the node, preview, and imaging modules.
@@ -103,6 +103,14 @@ Ordering, which callers must respect to stay deadlock-free:
 A caller that takes its own locks in the same transaction takes them in that
 order: `User`, then its own tables, then Drive.
 
+Conversion locks its row, then the node, then the tree, against rule 2 and
+against Drive→app callbacks; a Drive write that takes the tree lock and then
+that node (a trash, a purge, a version restore) can deadlock with it, and
+InnoDB rolls one back, pinned by
+`test_a_conversion_rolled_back_by_a_purge_deadlock_loses_nothing_and_the_run_goes_on`
+and `test_a_purge_rolled_back_by_a_conversion_deadlock_writes_nothing_and_goes_through_again`.
+A comment or a preview locks the node alone (rule 2), so it only waits.
+
 Drive's HTTP and WebDAV write requests run at READ COMMITTED
 (`framework.begin_drive_write`). Under REPEATABLE READ the range reads and
 range updates of a tree write also lock the gaps beside the rows they touch,
@@ -133,7 +141,7 @@ parent document a shared child row points at.
 
 The content workflows do check. `check`, `create_document`,
 `import_document`, `copy`, `adopt_media`, `read_file`, `touch`, `take_version`,
-and `push_preview` build the caller's
+`push_preview`, `comment_threads`, and `install_threads` build the caller's
 principals from the current Frappe session and this request's `X-Drive-Links`
 header, then run the same point check every other Drive workflow runs. A caller never constructs
 principals itself and never composes partial steps.
@@ -155,6 +163,7 @@ which is what an offboarded user looks like.
 | `bind_legacy_storage_reservation` | the same, plus one read to detect an already-bound row |
 | `legacy_node` | one primary-key read of `Drive Legacy Route` |
 | `node_url` | one primary-key read of the node's kind |
+| `node_owner` | one primary-key read of the node's owner |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
 
@@ -214,7 +223,6 @@ def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confir
     return transfer(user, destination, fingerprint, _principals(), confirm_access=confirm_access)
 
 
-from collections.abc import Iterable
 from datetime import datetime
 from typing import IO
 
@@ -251,14 +259,8 @@ from suite.drive._core.roots import (
 )
 
 
-def check(node: str, role: int) -> None:
-    """Raise unless the current caller holds `role` at `node`.
-
-    A role above READ also requires an Active node. §8.8 opens a trashed
-    document read-only, and this is an app-facing call, so it refuses one the
-    same way `DriveContent.drive_check` does. Drive's own restore and purge
-    workflows act on a trashed node through `_core` and are unaffected.
-    """
+def check(node: str, role: int) -> str | None:
+    """Raise unless the caller holds `role` at `node`, Active above READ; answer the node's content doctype."""
     from suite.drive._core.access import require
     from suite.drive._core.content import _refuse_trashed_write
     from suite.drive._core.nodes import _node
@@ -266,6 +268,7 @@ def check(node: str, role: int) -> None:
     row = _node(node)
     require(row, role, _principals())
     _refuse_trashed_write(row, role)
+    return row.content_doctype
 
 
 def create_document(
@@ -331,6 +334,13 @@ def list_versions(node: str, *, cursor: str | None = None, limit: int | None = N
     )
 
 
+def read_version(node: str, seq: int) -> IO[bytes]:
+    """Answer one readable node's version `seq` as its stored bytes."""
+    from suite.drive._core.versions import read_version as _read_version
+
+    return _read_version(_principals(), node, seq)
+
+
 def copy(node: str, parent: str, *, title: str | None = None) -> str:
     """Copy one readable tree, sharing blobs but no authority and no history."""
     from suite.drive._core.nodes import copy as _copy
@@ -379,6 +389,13 @@ def node_url(node: str) -> str:
     from suite.drive._core.nodes import node_url as _node_url
 
     return _node_url(node)
+
+
+def node_owner(node: str) -> str:
+    """Answer the user who owns one node. No role is checked; an unknown node raises `DriveNotFound`."""
+    from suite.drive._core.nodes import node_owner as _node_owner
+
+    return _node_owner(node)
 
 
 def legacy_node(old_id: str) -> str:
@@ -435,6 +452,13 @@ def refuse_shared_child_rows(
     _refuse_shared_child_rows(doctype, parent_doctype, parent_field, node_field, user)
 
 
+def node_field(doctype: str) -> str:
+    """Name the field of a registered content doctype that links each document to its node."""
+    from suite.drive._core.content import spec_for
+
+    return spec_for(doctype).node_field
+
+
 def touch(doctype: str, docname: str) -> None:
     """Record that one content document's body changed now."""
     from suite.drive._core.content import touch as _touch
@@ -442,18 +466,25 @@ def touch(doctype: str, docname: str) -> None:
     _touch(_principals(), doctype, docname)
 
 
-def record_comment(node: str, *, thread: str, comment: str, resolved: bool, mentions: Iterable[str]) -> None:
-    """Record a comment an app keeps in its own body and notify the people it mentions.
+def comment_threads(node: str) -> list[dict]:
+    """Answer one document's threads in order as `{name, anchor, comments}`, comment ids only; needs READ."""
+    from suite.drive._core.comments import comment_threads as _comment_threads
 
-    Writer's inline comments are anchored Yjs data only Writer can read, so
-    Writer stores them and reports each one here. Drive writes the same
-    `comment` activity a Drive thread writes, with the app's own `thread` and
-    `comment` ids in its detail, and each mentioned user gets the same
-    notification. Needs COMMENT on an Active document node.
-    """
-    from suite.drive._core.comments import record_comment as _record_comment
+    return _comment_threads(_principals(), node)
 
-    _record_comment(_principals(), node, thread=thread, comment=comment, resolved=resolved, mentions=mentions)
+
+def has_blank_old_comment(new_threads: list[dict]) -> bool:
+    """Answer whether any old comment in `new_threads` stores as blank text."""
+    from suite.drive._core.comments import has_blank_old_comment as _has_blank_old_comment
+
+    return _has_blank_old_comment(new_threads)
+
+
+def install_threads(node: str, anchors: dict[str, str], new_threads: list[dict]) -> list[str]:
+    """Move threads and add old ones under the node's owner at their own times, telling no one; needs EDIT."""
+    from suite.drive._core.comments import install_threads as _install_threads
+
+    return _install_threads(_principals(), node, anchors, new_threads)
 
 
 def take_version(node: str, *, kind: str = "auto", label: str | None = None) -> int:
@@ -538,6 +569,7 @@ __all__ = (
     "adopt_media",
     "bind_legacy_storage_reservation",
     "check",
+    "comment_threads",
     "copy",
     "create_document",
     "create_file",
@@ -547,15 +579,19 @@ __all__ = (
     "get_storage_reservation",
     "get_storage_usage",
     "grow_storage_reservation",
+    "has_blank_old_comment",
     "import_document",
+    "install_threads",
     "legacy_node",
     "list_versions",
+    "node_field",
+    "node_owner",
     "node_url",
     "personal_root_for",
     "preview_user_transfer",
     "push_preview",
     "read_file",
-    "record_comment",
+    "read_version",
     "reduce_storage_reservation",
     "refuse_shared_child_rows",
     "refuse_shared_linked_rows",

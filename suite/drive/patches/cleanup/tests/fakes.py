@@ -261,7 +261,6 @@ class FakeContent:
     def __init__(
         self,
         docshares=(),
-        ycomments: int = 0,
         sheets_with_comments: int = 0,
         *,
         slides_media: dict[str, str] | None = None,
@@ -273,7 +272,6 @@ class FakeContent:
         # deletes them, so on a site that ran it this is empty and Cleanup
         # only verifies that.
         self.docshares = frozenset(docshares)
-        self.ycomments = ycomments
         self.sheets_with_comments = sheets_with_comments
         self.strip_calls = 0
         # `File` name to `file_url`, for the deck pictures a node of their
@@ -287,10 +285,6 @@ class FakeContent:
 
     def governed_docshares_remaining(self) -> frozenset[str]:
         return self.docshares
-
-    def clear_writer_ycomments(self) -> int:
-        cleared, self.ycomments = self.ycomments, 0
-        return cleared
 
     def strip_sheet_comments(self, *, batch_size: int) -> int:
         self.strip_calls += 1

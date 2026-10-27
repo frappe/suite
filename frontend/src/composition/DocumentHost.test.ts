@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { installPageMeta, openingTitleState } from '@/platform/page-meta'
+import { translationPlugin } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import DocumentHost, { selectDocumentSurface } from './DocumentHost.vue'
@@ -75,7 +76,7 @@ async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) 
   document.body.append(root)
   const app = createApp(defineComponent({ setup: () => () => h(DocumentHost) }))
   provide?.(app)
-  app.use(router)
+  app.use(router).use(translationPlugin)
   app.mount(root)
   return { root, app }
 }
@@ -128,7 +129,7 @@ describe('DocumentHost', () => {
     const root = document.createElement('div')
     document.body.append(root)
     const app = createApp(DocumentHost)
-    app.use(router)
+    app.use(router).use(translationPlugin)
     app.mount(root)
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/d/node-1/quarterly-plan'))
     expect(router.options.history.state.back).toBeFalsy()
@@ -154,7 +155,7 @@ describe('DocumentHost', () => {
     const root = document.createElement('div')
     document.body.append(root)
     const app = createApp(DocumentHost)
-    app.use(router)
+    app.use(router).use(translationPlugin)
     app.mount(root)
     expect(root.querySelector('[data-skeleton]')?.textContent).toBe('Q3 plan')
 
@@ -191,7 +192,7 @@ describe('DocumentHost', () => {
     const root = document.createElement('div')
     document.body.append(root)
     const app = createApp(DocumentHost)
-    app.use(router)
+    app.use(router).use(translationPlugin)
     app.mount(root)
     await vi.waitFor(() =>
       expect(root.querySelector('[data-preview]')?.textContent).toBe('Quarterly plan'),
@@ -285,6 +286,36 @@ describe('DocumentHost', () => {
 
     await vi.waitFor(() => expect(requireSignIn).toHaveBeenCalledOnce())
     expect(root.textContent).not.toMatch(/not found|could not open/i)
+    app.unmount()
+  })
+
+  it("says why a document didn't open and opens it on retry", async () => {
+    const serverError = new TransportError({
+      type: 'ServerError',
+      message: 'Internal Server Error',
+      status: 500,
+    })
+    testState.open.mockRejectedValueOnce(serverError).mockResolvedValueOnce(session())
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+    })
+    await router.push('/d/node-1/quarterly-plan')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(DocumentHost)
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain(
+        'The server had a problem opening this document. Try again in a moment.',
+      ),
+    )
+    root.querySelector<HTMLButtonElement>("button[label='Try again']")!.click()
+    await vi.waitFor(() => expect(root.textContent).not.toContain('Could not open this document'))
+    expect(testState.open).toHaveBeenCalledTimes(2)
+    expect(root.querySelector("[aria-label='Opening document']")).toBeNull()
     app.unmount()
   })
 })

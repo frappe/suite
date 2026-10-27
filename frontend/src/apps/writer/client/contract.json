@@ -9,13 +9,66 @@
       "page": null,
       "envelope": "data",
       "method": "GET",
-      "path": "/api/v2/document/Writer Document/{name}",
+      "path": "documents/{name}",
       "pathParams": [
         "name"
       ],
       "query": null,
       "body": null,
       "output": {
+        "$defs": {
+          "ConversionStatus": {
+            "properties": {
+              "state": {
+                "title": "State",
+                "type": "string"
+              },
+              "reason": {
+                "title": "Reason",
+                "type": "string"
+              },
+              "rooms": {
+                "$ref": "#/$defs/Rooms"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "title": "ConversionStatus",
+            "type": "object"
+          },
+          "Rooms": {
+            "properties": {
+              "epoch": {
+                "title": "Epoch",
+                "type": "integer"
+              },
+              "keys": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Keys",
+                "type": "array"
+              },
+              "epoch_seconds": {
+                "title": "Epoch Seconds",
+                "type": "integer"
+              },
+              "server_time": {
+                "title": "Server Time",
+                "type": "number"
+              }
+            },
+            "required": [
+              "epoch",
+              "keys",
+              "epoch_seconds",
+              "server_time"
+            ],
+            "title": "Rooms",
+            "type": "object"
+          }
+        },
         "properties": {
           "name": {
             "title": "Name",
@@ -72,6 +125,13 @@
               }
             ],
             "title": "Settings"
+          },
+          "conversion": {
+            "$ref": "#/$defs/ConversionStatus"
+          },
+          "content_modified": {
+            "title": "Content Modified",
+            "type": "string"
           }
         },
         "required": [
@@ -80,92 +140,23 @@
         "title": "WriterRow",
         "type": "object"
       },
-      "errors": [],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "save_doc",
-      "kind": "mutation",
-      "publicName": "documents.save",
-      "page": null,
-      "envelope": "data",
-      "method": "POST",
-      "path": "/api/v2/document/Writer Document/{name}/method/save_doc",
-      "pathParams": [
-        "name"
+      "errors": [
+        "DoesNotExistError",
+        "PermissionError"
       ],
-      "query": null,
-      "body": {
-        "properties": {
-          "data": {
-            "title": "Data",
-            "type": "string"
-          },
-          "html": {
-            "title": "Html",
-            "type": "string"
-          }
-        },
-        "required": [
-          "data"
-        ],
-        "title": "SaveBody",
-        "type": "object"
-      },
-      "output": {
-        "type": "null"
-      },
-      "errors": [],
       "entity": null,
       "nodeParams": [],
       "stream": false,
       "bytes": false
     },
     {
-      "id": "save_html",
-      "kind": "mutation",
-      "publicName": "documents.saveHTML",
-      "page": null,
-      "envelope": "data",
-      "method": "POST",
-      "path": "/api/v2/document/Writer Document/{name}/method/save_html",
-      "pathParams": [
-        "name"
-      ],
-      "query": null,
-      "body": {
-        "properties": {
-          "html": {
-            "title": "Html",
-            "type": "string"
-          }
-        },
-        "required": [
-          "html"
-        ],
-        "title": "SaveHTML",
-        "type": "object"
-      },
-      "output": {
-        "type": "null"
-      },
-      "errors": [],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "update_settings",
+      "id": "document_settings",
       "kind": "mutation",
       "publicName": "documents.updateSettings",
       "page": null,
       "envelope": "data",
       "method": "POST",
-      "path": "/api/v2/document/Writer Document/{name}/method/update_settings",
+      "path": "documents/{name}/settings",
       "pathParams": [
         "name"
       ],
@@ -186,6 +177,50 @@
       "output": {
         "type": "null"
       },
+      "errors": [
+        "DoesNotExistError",
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "old_body",
+      "kind": "query",
+      "publicName": "documents.oldBody",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "/api/v2/method/suite.writer.api.docs.old_body",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node"
+        ],
+        "title": "OldBodyQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "title": "OldBody",
+        "type": "object"
+      },
       "errors": [],
       "entity": null,
       "nodeParams": [],
@@ -193,35 +228,50 @@
       "bytes": false
     },
     {
-      "id": "save_comments",
+      "id": "convert_version",
       "kind": "mutation",
-      "publicName": "comments.save",
+      "publicName": "versions.convert",
       "page": null,
       "envelope": "data",
       "method": "POST",
-      "path": "/api/v2/method/suite.writer.api.docs.save_comments",
+      "path": "/api/v2/method/suite.writer.api.docs.convert_version",
       "pathParams": [],
       "query": null,
       "body": {
         "properties": {
-          "doc": {
-            "title": "Doc",
+          "node": {
+            "title": "Node",
             "type": "string"
           },
-          "data": {
-            "title": "Data",
-            "type": "string"
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
           }
         },
         "required": [
-          "doc",
-          "data"
+          "node",
+          "seq"
         ],
-        "title": "SaveComments",
+        "title": "ConvertVersion",
         "type": "object"
       },
       "output": {
-        "type": "null"
+        "properties": {
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          }
+        },
+        "title": "VersionConversion",
+        "type": "object"
       },
       "errors": [],
       "entity": null,

@@ -9,6 +9,7 @@ const protocols = new Set([
   'platform/session/index.ts',
   'platform/translation/index.ts',
   'platform/pwa/frappe-push-notification.ts',
+  'platform/collab/index.ts',
   'apps/drive/client/links.ts',
   'apps/drive/client/uploads.ts',
   'apps/drive/client/session.ts',

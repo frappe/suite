@@ -10,6 +10,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SUITE_ROOT = REPOSITORY_ROOT / "suite"
 PRODUCTS = frozenset({"calendar", "draw", "drive", "mail", "meet", "sheets", "slides", "writer"})
 CONTENT_PRODUCTS = frozenset({"draw", "sheets", "slides", "writer"})
+MIN_SUITE_MODULE_PARTS = 2
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,14 @@ BASELINE_DEBT = {
         ),
     ),
     **_debt(
+        "Suite content layer",
+        "Remove when `suite.drive` can register a content type for one test.",
+        (
+            "suite/content/tests/test_editors.py|import|suite.drive._core.content",
+            "suite/content/tests/test_note.py|import|suite.drive._core.content",
+        ),
+    ),
+    **_debt(
         "Suite Drive",
         "Remove when `suite.drive` exposes a grant workflow and a shipped-templates folder for "
         "Administrator (the seed in `suite/slides/install.py` then needs nothing below the facade).",
@@ -85,11 +94,49 @@ BASELINE_DEBT = {
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive.framework",
-            # The comment fixture grants on and purges nodes directly; Drive
-            # exposes neither as a public call yet.
-            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.access",
-            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.nodes",
-            "suite/writer/api/tests/test_docs.py|import|suite.drive._core.principals",
+            # The collab reader case needs a READ grant, which has no public call yet
+            "suite/writer/content/tests/test_collab_access.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_collab_access.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_collab_rooms.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_collab_rooms.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_collab_stage.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_collab_stage.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_suspect.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_suspect.py|import|suite.drive._core.principals",
+            # The checkpoint cases trash and purge each document they make; neither is a public call yet
+            "suite/writer/content/tests/support.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/support.py|import|suite.drive._core.principals",
+            # The trimming case reads every version back as its writer; reading one is not a public call yet
+            "suite/writer/content/tests/test_trimming.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_trimming.py|import|suite.drive._core.versions",
+            # The callback cases run Drive's media sweep on one document, and
+            # trash, purge and restore a version as its writer; none of these
+            # is a public call yet
+            "suite/writer/content/tests/drive_callback_case.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_document_row.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.versions",
+            "suite/writer/content/tests/test_media_sweep.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_purges.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/test_purges.py|import|suite.drive._core.principals",
+            # The lock-order case trashes a document and races its purge; neither is a public call yet
+            "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_touches.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_touches.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_touches.py|import|suite.drive._core.versions",
+            "suite/writer/content/tests/test_restores.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_restores.py|import|suite.drive._core.versions",
+            # The conversion reads back the version it took before the first write
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.versions",
+            # The conversion cases grant EDIT by link and READ to a reader, hold a tree's
+            # lock and open a Drive write in a race; none of these is a public call yet
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.roots",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive.framework",
             # An embedded picture is a media node below the document (§9.4),
             # so the fixture builds roots and nodes and reads Drive's own
             # upload path; there is no upload fixture above it yet.
@@ -109,6 +156,46 @@ BASELINE_DEBT = {
         # bytes, so proving that a migrated version restores means writing the
         # row the way Build wrote it.
         ("suite/writer/tests/test_drive_adoption.py|drive-table-write|Drive Node Version",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Drive's media sweep takes the time it measures the grace period from.",
+        # The sweep spares media younger than its grace period, so the case
+        # backdates one media node's `creation` to make it eligible
+        ("suite/writer/content/tests/drive_callback_case.py|drive-table-write|Drive Node",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Build's comment port is gone, with the conversion of what it ported.",
+        # The conversion finds each old comment on the Drive thread Build ported
+        # under its id, or renamed as Build renames it; no Drive call names a thread
+        (
+            "suite/writer/content/tests/test_conversion.py|drive-table-write|Drive Comment",
+            "suite/writer/content/tests/test_conversion.py|drive-table-write|Drive Comment Thread",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive.patches.build.content_mapping",
+        ),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Drive can drop a version's bytes for one test.",
+        # The old-body case points one version at bytes that don't exist; no Drive call breaks a version
+        ("suite/writer/content/tests/test_drive_versions.py|drive-table-write|Drive Node Version",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when `suite.composition.lifecycle` can run one product's hooks for one test.",
+        # The migrate cases stub every other step, which would alter the schema, seed
+        # templates or check the whole site's content; the install cases stub the
+        # hooks that insert rate limits the site already holds
+        (
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.drive.framework.validate_content_registry",
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.drive.install.index_group_membership",
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.mail.install.after_migrate",
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.slides.install.seed_system_templates",
+            "suite/writer/content/tests/test_switch.py|dotted-string|suite.calendar.install.after_install",
+            "suite/writer/content/tests/test_switch.py|dotted-string|suite.mail.install.after_install",
+            "suite/writer/content/tests/test_switch.py|dotted-string|suite.meet.install.after_install",
+        ),
     ),
     **_debt(
         "Suite Slides",
@@ -245,6 +332,7 @@ BASELINE_DEBT = {
         (
             "suite/api/account.py|import|suite.mail.utils.user",
             "suite/tests/ci_smoke.py|dotted-string|suite.meet.api.recording.reconcile_pending_recordings",
+            "suite/tests/test_composition.py|dotted-string|suite.mail.email_suggestions.clear_directory_addresses",
             "suite/www/event_rsvp.py|import|suite.calendar.api.rsvp",
         ),
     ),
@@ -302,6 +390,7 @@ def _owner(path):
         in PRODUCTS
         | {
             "composition",
+            "content",
             "suite_core",
         }
     ):
@@ -309,33 +398,56 @@ def _owner(path):
     return None
 
 
-def _classify(path, module):
-    parts = module.split(".")
-    if len(parts) < 2 or parts[0] != "suite" or parts[1] not in PRODUCTS | {"suite_core"}:
-        return None
-
-    source = _owner(path)
-    target = parts[1]
-    if source == "composition":
-        return None
+def layer_violation(source, target):
     if source == "drive" and target in CONTENT_PRODUCTS:
         return "Drive imports a concrete content-product implementation"
+
     if source == "suite_core" and target in PRODUCTS:
         return "suite_core imports a product implementation"
+
+    if source == "content" and target in PRODUCTS - {"drive"}:
+        return "the content layer imports a product implementation"
+
+    if source == "drive" and target == "content":
+        return "Drive imports the content layer"
+
+    return None
+
+
+def interface_violation(path, module, source, target):
     if source in PRODUCTS and target in PRODUCTS and source != target:
         if module == f"suite.{target}":
             return None
         return "a product imports another product below its package-root interface"
+
     if target == "drive" and source != "drive":
         if module == "suite.drive":
             return None
         if path == "suite/hooks.py" and module.startswith(("suite.drive.framework.", "suite.drive.jobs.")):
             return None
         return "code outside Drive imports a private Drive module"
+
     if source is None and path != "suite/hooks.py" and target in PRODUCTS:
         if module != f"suite.{target}":
             return "Suite-level code imports a product below its package-root interface"
+
     return None
+
+
+def classify(path, module):
+    parts = module.split(".")
+    if len(parts) < MIN_SUITE_MODULE_PARTS or parts[0] != "suite":
+        return None
+
+    if parts[1] not in PRODUCTS | {"content", "suite_core"}:
+        return None
+
+    source = _owner(path)
+    target = parts[1]
+    if source == "composition":
+        return None
+
+    return layer_violation(source, target) or interface_violation(path, module, source, target)
 
 
 DRIVE_TABLE_WRITE_CALLS = frozenset(
@@ -407,6 +519,27 @@ def table_write_violations(path, tree):
     return violations
 
 
+APP_ROW = "suite.content.app_row"
+APP_ROW_REASON = "code outside the content layer reaches the app's row past it"
+
+
+def app_row_violations(path, tree):
+    if PurePosixPath(path).parts[:2] == ("suite", "content"):
+        return []
+
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        kind, modules = _modules(node)
+        if isinstance(node, ast.ImportFrom) and node.module == "suite.content":
+            modules = [f"{node.module}.{alias.name}" for alias in node.names]
+
+        matched = [module for module in modules if module == APP_ROW or module.startswith(f"{APP_ROW}.")]
+        for module in matched:
+            violations.append(Violation(path, node.lineno, kind, module, APP_ROW_REASON))
+
+    return violations
+
+
 def _modules(node):
     if isinstance(node, ast.Import):
         return ("import", [alias.name for alias in node.names])
@@ -424,10 +557,11 @@ def violations_in_tree(path, tree):
     for node in ast.walk(tree):
         kind, modules = _modules(node)
         for module in modules:
-            reason = _classify(path, module)
+            reason = classify(path, module)
             if reason:
                 violations.append(Violation(path, node.lineno, kind, module, reason))
     violations.extend(table_write_violations(path, tree))
+    violations.extend(app_row_violations(path, tree))
     return sorted(
         violations, key=lambda violation: (violation.path, violation.line, violation.kind, violation.module)
     )
@@ -505,6 +639,34 @@ class TestArchitecture(unittest.TestCase):
         write = "frappe.db.delete('Drive Grant', {'node': node})\n"
         self.assertEqual(violations_in_tree("suite/drive/_core/roots.py", ast.parse(write)), [])
 
+    def test_the_app_row_is_reached_only_inside_the_content_layer(self):
+        source = (
+            "from suite.content import app_row, jobs\n"
+            "from suite.content.app_row import write_body\n"
+            "target = 'suite.content.app_row.write_copy'\n"
+        )
+        violations = violations_in_tree("suite/writer/new_caller.py", ast.parse(source))
+        self.assertEqual([violation.reason for violation in violations], [APP_ROW_REASON] * 3)
+        self.assertEqual(violations_in_tree("suite/content/copies.py", ast.parse(source)), [])
+
+    def test_the_content_layer_sits_above_drive_and_below_the_products(self):
+        source = "from suite import drive, writer\nfrom suite.slides import drive as slides_drive\n"
+        violations = violations_in_tree("suite/content/new_caller.py", ast.parse(source))
+        self.assertEqual(
+            [(violation.module, violation.reason) for violation in violations],
+            [
+                ("suite.writer", "the content layer imports a product implementation"),
+                ("suite.slides", "the content layer imports a product implementation"),
+            ],
+        )
+        drive_source = "from suite import content\n"
+        drive_violations = violations_in_tree("suite/drive/new_caller.py", ast.parse(drive_source))
+        self.assertEqual(
+            [violation.reason for violation in drive_violations], ["Drive imports the content layer"]
+        )
+        product_source = "from suite.content import log\n"
+        self.assertEqual(violations_in_tree("suite/writer/new_caller.py", ast.parse(product_source)), [])
+
     def test_package_root_import_is_allowed(self):
         tree = ast.parse("from suite import drive\n")
         self.assertEqual(violations_in_tree("suite/writer/new_caller.py", tree), [])
@@ -533,6 +695,7 @@ class TestArchitecture(unittest.TestCase):
                 "adopt_media",
                 "bind_legacy_storage_reservation",
                 "check",
+                "comment_threads",
                 "copy",
                 "create_document",
                 "create_file",
@@ -542,15 +705,19 @@ class TestArchitecture(unittest.TestCase):
                 "get_storage_reservation",
                 "get_storage_usage",
                 "grow_storage_reservation",
+                "has_blank_old_comment",
                 "import_document",
+                "install_threads",
                 "legacy_node",
                 "list_versions",
+                "node_field",
+                "node_owner",
                 "node_url",
                 "personal_root_for",
                 "preview_user_transfer",
                 "push_preview",
                 "read_file",
-                "record_comment",
+                "read_version",
                 "reduce_storage_reservation",
                 "refuse_shared_child_rows",
                 "refuse_shared_linked_rows",

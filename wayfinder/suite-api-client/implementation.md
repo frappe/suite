@@ -14,7 +14,7 @@ Drive owns selected share links, unlock tickets, final request outcomes, access 
 
 ## Catalog and caller inventory
 
-The [operation inventory](operation-inventory.json) records all 336 generated HTTP operations and the Drive transfer workflow: owner, stable ID, public name, kind, method, path, direct consumers, scope, error behavior, paging, byte capability, effects, and adapter removal status. Computed policy fields include their owner implementation. A consumer list can be empty when an endpoint has no current frontend caller. Named workflows can call a reference through a shared helper; their caller groups are listed below.
+The [operation inventory](operation-inventory.json) records all 348 generated HTTP operations and the Drive transfer workflow: owner, stable ID, public name, kind, method, path, direct consumers, scope, error behavior, paging, byte capability, effects, and adapter removal status. Computed policy fields include their owner implementation. A consumer list can be empty when an endpoint has no current frontend caller. Named workflows can call a reference through a shared helper; their caller groups are listed below.
 
 | Owner | Queries | Mutations | Paged reads | Byte reads | Converted caller groups |
 | --- | ---: | ---: | ---: | ---: | --- |

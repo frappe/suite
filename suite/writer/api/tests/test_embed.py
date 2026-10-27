@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from io import BytesIO
 
 import frappe
+from frappe.handler import execute_cmd
 from frappe.tests import IntegrationTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
@@ -198,6 +199,31 @@ class TestWriterEmbed(IntegrationTestCase):
         frappe.set_user(OWNER)
         with self.assertRaises(ValueError):
             embed.get(deck)
+
+    def test_an_old_writer_image_url_still_reads_the_picture(self):
+        _, node = self.add(self.document.name)["file_url"].rsplit("=", 1)
+
+        response = self.dispatch("writer.api.embed.get", node)
+
+        self.assertEqual(b"".join(response.response), PNG)
+
+    def test_an_old_writer_image_url_refuses_a_stranger(self):
+        _, node = self.add(self.document.name)["file_url"].rsplit("=", 1)
+        frappe.db.commit()
+
+        frappe.set_user(OTHER)
+        with self.assertRaises(DriveNotFound):
+            self.dispatch("writer.api.embed.get", node)
+
+    @staticmethod
+    def dispatch(cmd: str, node: str):
+        frappe.local.request = Request(EnvironBuilder(path=f"/api/method/{cmd}", method="GET").get_environ())
+        frappe.form_dict.update({"id": node})
+        try:
+            return execute_cmd(cmd)
+        finally:
+            frappe.form_dict.pop("id", None)
+            del frappe.local.request
 
     def _children(self, node: str) -> list[str]:
         return frappe.get_all("Drive Node", filters={"parent_node": node, "state": "Active"}, pluck="name")

@@ -124,6 +124,10 @@ suite/
 │   ├── doctype/                     # persistence implementation
 │   ├── patches/                     # Build, then Cleanup, in one migrate
 │   └── tests/                       # interface and adapter behavior
+├── content/                         # the content layer: keeps Drive-backed collaborative documents
+│   ├── __init__.py                  # public interface for apps
+│   ├── http/                        # HTTP adapter for /api/suite/content/
+│   └── doctype/                     # Suite Collab Settings, Suite Collab App
 ├── writer/
 │   └── drive.py                     # Writer content adapter
 ├── sheets/
@@ -175,9 +179,15 @@ Meet ───┘                         │
 Every product ──▶ suite_core
 suite_core ──X──▶ product implementations
 Drive implementation ──X──▶ Writer / Sheets / Slides implementations
+
+Writer / Sheets / Slides ──▶ content layer ──▶ Drive interface
+content layer ──X──▶ product implementations
+Drive ──X──▶ content layer
 ```
 
 The Content Type interface is a real seam because Writer, Sheets, and Slides provide different adapters. The Frappe database does not need a Drive-owned repository interface: there is one in-process implementation and the Frappe test site is the local substitute.
+
+The content layer sits above Drive because it can't keep a document without a node. Writer uses it today, and at least two more apps will.
 
 ## Drive interface
 
@@ -266,6 +276,8 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 4. Drive MUST NOT import Writer, Sheets, or Slides implementations. Suite composition registers their adapters through the Drive-owned Content Type interface.
 5. `suite_core` MUST NOT import product implementations.
 6. Dynamic imports and Frappe hook strings MUST follow the same dependency rules as static imports.
+7. The content layer MAY import the Drive interface. It MUST NOT import a product implementation; a product registers its editor through `suite_content_editors`. Drive MUST NOT import the content layer.
+8. A product MAY import the content layer's package root or one of its named modules, such as `from suite.content import log`, but never `suite.content.app_row`, which stays inside the content layer.
 
 ### 3. Interfaces and depth
 
@@ -294,7 +306,7 @@ and retries.
 
 1. Each fact MUST have one source of truth.
 2. Drive owns node title, location, grants, lifecycle, versions, comments, and Drive usage.
-3. A content product owns its document body and editor-specific live state.
+3. A content product owns its document body and editor-specific live state. It MAY keep them through the content layer.
 4. A state-changing public operation MUST leave permissions, quota, activity, references, and related records consistent in one transaction or a documented resumable process.
 5. Transport adapters and callers MUST NOT write Drive tables directly.
 6. DocType controllers SHOULD enforce persistence-local validation; multi-record product workflows belong in Drive's implementation.
@@ -344,7 +356,7 @@ meeting creation, and emits `scheduled` so each caller can refresh its own list.
 ### 9. Ownership and review
 
 1. Product owners own files under their product.
-2. The Suite architecture owner owns `suite/composition`, `suite_core`, the frontend shell/platform, and architecture enforcement.
+2. The Suite architecture owner owns `suite/composition`, `suite_core`, `suite/content`, the frontend shell/platform, and architecture enforcement.
 3. A public interface change requires review from the provider owner and at least one affected consumer owner.
 4. A cross-product data ownership change requires an update to `CONTEXT-MAP.md` before implementation.
 5. Intentional dependency exceptions MUST be recorded with an owner, reason, and removal or review condition.
@@ -370,6 +382,7 @@ Add `suite/tests/test_architecture.py` using Python's AST. It should reject:
 - imports from one product's internal packages by another product;
 - product imports from `suite_core`;
 - concrete content-product imports from Drive;
+- content-layer imports of any product except `suite.drive`; Drive imports of the content layer;
 - unapproved cross-product imports not targeting a declared public interface;
 - writes to a `Drive *` table from outside `suite/drive/` (rule 5.5): `frappe.db.set_value`, `set_single_value`, `delete`, `bulk_insert`, `frappe.delete_doc`, `frappe.new_doc`, `frappe.rename_doc`, a `frappe.get_doc`/`new_doc` dict naming a Drive `doctype`, and a writing `frappe.db.sql` naming a `tabDrive ` table. Reads are allowed.
 

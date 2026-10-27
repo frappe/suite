@@ -378,7 +378,7 @@ def _count_file_bytes(env, census: Census, row) -> None:
     elif S3_URL_PREFIX in handled_prefixes(env) and url.startswith(S3_URL_PREFIX):
         census.file_bytes[BYTES_S3] += 1
         census.file_s3_shapes[key_shape(storage_key(url), census.root_folder)] += 1
-    elif url.startswith(LOCAL_PREFIXES):
+    elif url.startswith(LOCAL_PREFIXES) and env.storage.has_local_file(url):
         census.file_bytes[BYTES_LOCAL] += 1
     elif names_no_bytes(row):
         census.file_bytes[BYTES_NONE] += 1
