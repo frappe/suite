@@ -61,9 +61,8 @@ switching a queue to this worker. An incompatible claim receives a terminal
 `unsupported_model_configuration` callback. Operators must not change a job's
 stored model to reuse its earlier checkpoints.
 
-[Public benchmark results](../docs/transcription-public-benchmark-results.md)
-passed the provisional English numerical check on a small Indian-English subset;
-they do not close source-fidelity, meeting-domain or sustained-capacity gates.
+The [current validation record](../docs/transcription-speech-hints-validation.json)
+records the bounded browser pilot and remaining production gates.
 
 ## Deployment
 
@@ -175,60 +174,6 @@ local HTTP fixture queue, readiness, protected metrics, and graceful shutdown:
 docker compose run --rm --no-deps -v "$PWD/../tests:/app/tests:ro" \
   transcription python /app/tests/gpu_service_smoke.py --cache /models/huggingface
 ```
-
-Historical Granite-only validation (2026-10-20; not Trelis acceptance): the earlier deployment image was built and validated on a T4.
-21 protocol tests passed; the eight-word speech reference had zero word errors;
-digital silence produced zero words; peak Torch allocation was approximately
-922 MiB. The full service became ready in 6.8 seconds and shut down cleanly in
-1.4 seconds. Runtime versions were Python 3.11.13, Torch/TorchAudio 2.8.0+cu128,
-and Transformers 5.19.0. Tests used an unprivileged user, a read-only root,
-one CPU, 6 GiB RAM, and an offline model cache. See the
-[validation record](../docs/transcription-worker-image-validation.json) for the
-image identity, source hashes, resource observations, and recovered network
-interruption during initial build setup.
-
-The temporary runtime was stopped afterwards; production ASR health and its
-original image/start time were verified. No production feature was enabled.
-Real-Meet quality acceptance and sustained throughput/concurrent-caption latency
-measurements remain rollout gates; these short smokes do not establish capacity.
-
-## Provisional Trelis integration validation (2026-10-21)
-
-[The integration record](../docs/transcription-trelis-integration-validation.json)
-records69 passing automated worker/backend/SFU/recorder checks. Real GPU inference
-processed87 fixture sources with an injected download failure:86 successful
-checkpoints survived and only the missing source was processed on retry. All70
-public-clip outputs and15 continuous-passage windows exactly matched the earlier
-frozen same-configuration drafts. A30s boundary source completed, digital silence
-stayed empty, injected missingEOS failed explicitly, and missing offline weights
-prevented startup. The authenticated HTTP fixture-queue/metrics/shutdown smoke
-also passed. These are regression and lifecycle checks, not new semantic ground
-truth. Backend tests read the actual delivered UTF-8 file and verify Hindi marks,
-English text, private access, stable publication identity and coordinated cleanup.
-
-Validation used a code-overlay image on the previously built pinned worker
-runtime, with unchanged requirements. The initial87-source run mounted the
-existing pilot extras; a subsequent12-call batch ran without that mount and
-exactly matched the frozen30s output. A clean rebuild of all dependency layers
-and a fresh integrated browser pilot remain deployment checks.
-
-An isolated replica of the production caption image replayed the same8 public
-clips alone and during12 active30s batch calls. Both phases had zero failed
-clips; p95 first-text latency was1.413s alone and2.049s during batch. P95 final
-after-audio latency was0.145s and0.205s respectively. With only8 observations,
-these are diagnostics, not a production latency/capacity acceptance. Keep
-same-GPU rollout unapproved pending representative sustained measurements.
-Minimum observed free GPU memory during coexistence was5217MiB. Production
-received health probes only and retained its image/start time. All test
-containers/processes were removed and baseline GPU memory restored. Four setup
-failures before any replay are retained in the record; none produced quality or
-latency results. Caption-replica temporary unpacking and runtime caches used
-writable ephemeral storage, while its production model mount remained read-only.
-
-The site feature flag remains disabled. Source-fidelity acceptance and sustained
-capacity remain open; no additional owner transcription task is required for the
-engineering/regression work.
-
 
 ## Shared-hint browser validation (2026-10-21)
 

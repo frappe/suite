@@ -32,4 +32,4 @@ For recognition, concatenate completed segments chronologically per known partic
 
 The provisional gate is **at most 10% aggregate normalized WER**. Report Indian English separately. Independently review names/numbers, missing speech, speaker attribution, and silence, including coverage gaps. Passing a small replay corpus does not establish production acceptance, sustained capacity, or live-caption latency safety.
 
-The [2026-10-20 aggregate results](../../../suite/meet/docs/transcription-meet-pilot-results.json) record the initial run, its partial-video result, and remaining deployment gates.
+The [current validation record](../../../suite/meet/docs/transcription-speech-hints-validation.json) records the bounded browser pilot, retained failures, and remaining deployment gates.

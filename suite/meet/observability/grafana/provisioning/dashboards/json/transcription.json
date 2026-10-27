@@ -4,749 +4,241 @@
   "schemaVersion": 41,
   "version": 1,
   "refresh": "15s",
-  "tags": [
-    "frappe-meet",
-    "transcription"
-  ],
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
+  "tags": ["frappe-meet", "transcription"],
+  "time": {"from": "now-6h", "to": "now"},
   "panels": [
     {
       "id": 1,
       "type": "stat",
       "title": "Healthy workers",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum(meet_transcription_healthy)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(meet_transcription_healthy)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "area"}
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Active jobs",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum(meet_transcription_active_jobs)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 0},
+      "targets": [{"expr": "sum(meet_transcription_active_jobs)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "area"}
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Queued jobs",
       "description": "Workers in this pool observe the same full site set; max prevents double counting replicas.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_queued_jobs)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 0},
+      "targets": [{"expr": "max(meet_transcription_queued_jobs)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "area"}
     },
     {
       "id": 4,
       "type": "timeseries",
       "title": "Queued speaker audio",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 7
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_queued_audio_seconds)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 7},
+      "targets": [{"expr": "max(meet_transcription_queued_audio_seconds)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 5,
       "type": "timeseries",
       "title": "Oldest queue age",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 7
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_oldest_queued_age_seconds)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 7},
+      "targets": [{"expr": "max(meet_transcription_oldest_queued_age_seconds)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Queue observation age",
       "description": "Stale or incomplete observations can understate workload. Compare observed and configured sites.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 7
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_queue_observation_age_seconds)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 7},
+      "targets": [{"expr": "max(meet_transcription_queue_observation_age_seconds)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 7,
       "type": "timeseries",
       "title": "Incoming audio / wall second",
       "description": "Fixed-window arrival rate reported by sites across separate speaker sources.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 14
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_incoming_audio_seconds_per_second)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 14},
+      "targets": [{"expr": "max(meet_transcription_incoming_audio_seconds_per_second)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 8,
       "type": "timeseries",
       "title": "Completed audio / wall second",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 14
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_completed_audio_seconds_per_second)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 14},
+      "targets": [{"expr": "max(meet_transcription_completed_audio_seconds_per_second)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 9,
       "type": "timeseries",
       "title": "Actual processing throughput",
       "description": "Includes retrieval/protocol overhead and retry work; not a delivery guarantee.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 14
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(meet_transcription_processed_audio_seconds_total[5m])) / clamp_min(sum(rate(meet_transcription_processing_seconds_total[5m])), 0.001)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 14},
+      "targets": [{"expr": "sum(rate(meet_transcription_processed_audio_seconds_total[5m])) / clamp_min(sum(rate(meet_transcription_processing_seconds_total[5m])), 0.001)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 10,
       "type": "timeseries",
       "title": "Queue wait p95",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 21
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(meet_transcription_queue_wait_seconds_bucket[15m])))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 21},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by(le) (rate(meet_transcription_queue_wait_seconds_bucket[15m])))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 11,
       "type": "timeseries",
       "title": "Capture end to ready p95",
       "description": "One hour is an internal operating target; this observed percentile is not an SLA.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 21
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(meet_transcription_capture_end_to_ready_seconds_bucket[15m])))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 21},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by(le) (rate(meet_transcription_capture_end_to_ready_seconds_bucket[15m])))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 12,
       "type": "timeseries",
       "title": "Processing duration p95",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 21
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by(le) (rate(meet_transcription_job_processing_duration_seconds_bucket[15m])))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 21},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by(le) (rate(meet_transcription_job_processing_duration_seconds_bucket[15m])))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 13,
       "type": "timeseries",
       "title": "Retry rate",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 28
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(meet_transcription_retries_scheduled_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 28},
+      "targets": [{"expr": "sum(rate(meet_transcription_retries_scheduled_total[5m]))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 14,
       "type": "timeseries",
       "title": "Terminal failure rate",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 28
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(meet_transcription_jobs_terminal_failed_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 28},
+      "targets": [{"expr": "sum(rate(meet_transcription_jobs_terminal_failed_total[5m]))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 15,
       "type": "timeseries",
       "title": "Stalled jobs",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 28
-      },
-      "targets": [
-        {
-          "expr": "max(meet_transcription_stalled_jobs)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 28},
+      "targets": [{"expr": "max(meet_transcription_stalled_jobs)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 16,
       "type": "timeseries",
       "title": "GPU allocated",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 35
-      },
-      "targets": [
-        {
-          "expr": "sum(meet_transcription_gpu_allocated_bytes)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 35},
+      "targets": [{"expr": "sum(meet_transcription_gpu_allocated_bytes)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 17,
       "type": "timeseries",
       "title": "GPU reserved",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 35
-      },
-      "targets": [
-        {
-          "expr": "sum(meet_transcription_gpu_reserved_bytes)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 35},
+      "targets": [{"expr": "sum(meet_transcription_gpu_reserved_bytes)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 18,
       "type": "timeseries",
       "title": "Worker peak RAM",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 35
-      },
-      "targets": [
-        {
-          "expr": "sum(meet_transcription_resident_memory_peak_bytes)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 35},
+      "targets": [{"expr": "sum(meet_transcription_resident_memory_peak_bytes)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 19,
       "type": "timeseries",
       "title": "Queue poll failures",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 42
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(meet_transcription_queue_poll_failures_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 42},
+      "targets": [{"expr": "sum(rate(meet_transcription_queue_poll_failures_total[5m]))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 20,
       "type": "timeseries",
       "title": "Observed / configured sites",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 42
-      },
-      "targets": [
-        {
-          "expr": "min(meet_transcription_observed_sites / clamp_min(meet_transcription_configured_sites, 1))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 42},
+      "targets": [{"expr": "min(meet_transcription_observed_sites / clamp_min(meet_transcription_configured_sites, 1))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     },
     {
       "id": 21,
       "type": "timeseries",
       "title": "Partial output rate",
       "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 42
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(meet_transcription_jobs_partial_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 42},
+      "targets": [{"expr": "sum(rate(meet_transcription_jobs_partial_total[5m]))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
     }
   ],
-  "annotations": {
-    "list": []
-  },
-  "templating": {
-    "list": []
-  }
+  "annotations": {"list": []},
+  "templating": {"list": []}
 }

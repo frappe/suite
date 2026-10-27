@@ -34,15 +34,9 @@ The owner deferred English translation on 2026-10-21 after the recognition and r
 - Recording Artifacts are saved in the Room Owner's Drive home under Meet Recordings and completion emails link directly to the artifact. Drive supports text files and existing sharing controls. Drive authorization can include administrative access and inherited folder grants, so private blob storage alone does not establish owner-only access.
 - Existing video recording caps include four hours per Recording Session and at most one starting or active Recording Session per room. The transcription design adopts a four-hour maximum and one active Transcription Capture per room; exact per-site limits remain undecided.
 
-## Candidate model findings
+## Model validation
 
-The earlier English pilots and Granite efficiency preference are historical evidence. Granite TurboCTC supports English only; Cohere's listed languages exclude Hindi. The owner confirmed substantial Hindi in the authorized stand-up after finding its Granite draft unusable. Those historical worker defaults did not satisfy v1; the current provisional worker now uses Trelis.
-
-The base Qwen/Whisper [configuration trial](transcription-script-configuration-validation.json) did not solve source-script preservation or clear substantive errors. The trained [Srota trial](transcription-srota-validation.json) also failed, including under an FP32 control. These are rejected tested configurations, not proof that future training cannot improve recognition.
-
-The [Trelis trial](transcription-trelis-validation.json) uses automatic dominant-language detection and its mixedcode marker without human language labels. It substantially improves Hindi-English script readability and preserves the checked travel question and pricing/model-choice wording. It still mishears signup responsibility on the English control. References are partly unclear and incomplete, and these short mixed-video clips do not validate the actual per-participant capture path or sustained capacity. Trelis remains a candidate, not an accepted deployment choice.
-
-The unchanged English renderer still loses the travel question even when Trelis recognizes it. The owner therefore deferred translation and the separate English artifact. Historical [rendering](transcription-english-rendering-validation.json), [stronger-candidate](transcription-stronger-candidates-validation.json) and other pilot reports retain their measured results; their two-artifact release assumptions are superseded by the current specs. Original-language quality is still required before release. Do not reuse an English-only normalizer for Hindi/mixed-script acceptance.
+Trelis remains provisional. The [current validation record](transcription-speech-hints-validation.json) records English and mixed-language replay results, failures and remaining quality/capacity gates. Translation is deferred; original-language source fidelity is still required before release. Do not apply the English normalizer to Hindi/mixed-script acceptance.
 
 ## Observability
 

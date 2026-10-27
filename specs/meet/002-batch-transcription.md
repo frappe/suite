@@ -99,9 +99,9 @@ Dashboards must let an operator distinguish growing demand from unhealthy or sta
 ## Pilot candidates and evidence
 
 - The earlier Granite candidate and public English pilots remain evidence for English recognition efficiency only. Granite TurboCTC is English-only; Cohere Transcribe does not list Hindi support. Neither is selected for the revised mixed-language requirement.
-- Trelis Whisper Hinglish Preview in automatically detected mixedcode mode is the leading source-recognition candidate. Its checked signup-responsibility error and incomplete source references remain unresolved. See [the bounded trial](../../suite/meet/docs/transcription-trelis-validation.json). Earlier Qwen, Whisper and Srota configurations remain historical diagnostics, not accepted alternatives.
+- Trelis Whisper Hinglish Preview in automatically detected mixedcode mode is the leading source-recognition candidate. Its checked signup-responsibility error and incomplete source references remain unresolved. See [the current validation record](../../suite/meet/docs/transcription-speech-hints-validation.json).
 - No recognition configuration is production-accepted. Pin and evaluate source-script handling, substantive fidelity and English regressions before selection. The earlier translation failures support deferral; translation quality no longer gates v1.
-- See [the language diagnosis](../../suite/meet/docs/transcription-quality-diagnosis.json) and prior pilot reports. Readable drafts and public short-clip scores do not establish source fidelity, code-switching quality or sustained capacity.
+- See [the current validation record](../../suite/meet/docs/transcription-speech-hints-validation.json). Readable drafts and public short-clip scores do not establish source fidelity, code-switching quality or sustained capacity.
 
 ## Deployment gates
 
