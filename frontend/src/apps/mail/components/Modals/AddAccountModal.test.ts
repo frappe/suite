@@ -193,7 +193,8 @@ describe('Add user', () => {
     await nextTick()
     click(root, 'Send invitation')
 
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+    // The first request loads the Mail client and its validators, which is slow on a busy runner
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce(), { timeout: 5000 })
     expect(sentBody()).toEqual({
       username: 'lena',
       domain: 'northwind.test',
