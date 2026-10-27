@@ -72,18 +72,17 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
-          echo "$HOME/pilot/bin" >> "$GITHUB_PATH"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          ln -s "$HOME/pilot/benches/frappe-bench" ~/frappe-bench
           pilot -b frappe-bench init
-          redis-server ~/frappe-bench/config/redis_cache.conf --daemonize yes
-          redis-server ~/frappe-bench/config/redis_queue.conf --daemonize yes
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
 
       - name: Install Suite
         if: steps.backend-changes.outputs.run == '1'
         id: install-suite
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           uv pip install --python env/bin/python -e "apps/frappe[test]"
           pilot get-app "$GITHUB_WORKSPACE"
@@ -93,7 +92,7 @@ jobs:
 
       - name: Run Backend Tests
         if: steps.backend-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
           printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
@@ -111,25 +110,28 @@ jobs:
 
       - name: Check Background Worker
         if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          marker=/home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready
           rm -f "$marker"
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
-          pilot frappe worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
-          worker_pid=$!
-          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
           pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
-          timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
-          kill "$worker_pid" 2>/dev/null || true
-          wait "$worker_pid" 2>/dev/null || true
-          trap - EXIT
+          timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+
+      - name: Stop Pilot
+        if: always() && steps.backend-changes.outputs.run == '1'
+        run: |
+          if [ -f "$HOME/pilot/benches/frappe-bench/pids/pilot.pid" ]; then
+            pilot -b frappe-bench stop
+          fi
+          mkdir -p test-results/backend
+          cp "$RUNNER_TEMP/pilot.log" test-results/backend/pilot.log
 
       - name: Collect Backend Evidence
         if: always() && steps.backend-changes.outputs.run == '1'
         run: |
-          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
-            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
+          if [ -f /home/runner/pilot/benches/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/pilot/benches/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
           fi
 
       - name: Upload Backend Evidence
@@ -236,17 +238,16 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
-          echo "$HOME/pilot/bin" >> "$GITHUB_PATH"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          ln -s "$HOME/pilot/benches/frappe-bench" ~/frappe-bench
           pilot -b frappe-bench init
-          redis-server ~/frappe-bench/config/redis_cache.conf --daemonize yes
-          redis-server ~/frappe-bench/config/redis_queue.conf --daemonize yes
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
 
       - name: Install Suite
         if: steps.mail-calendar-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           uv pip install --python env/bin/python -e "apps/frappe[test]"
           pilot get-app "$GITHUB_WORKSPACE"
@@ -256,7 +257,7 @@ jobs:
 
       - name: Run ${{ matrix.name }} Tests
         if: steps.mail-calendar-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/${{ matrix.module }}"
           pilot frappe --site test_site set-config allow_tests true
@@ -287,6 +288,15 @@ jobs:
           exit "$status"
         env:
           TYPE: server
+
+      - name: Stop Pilot
+        if: always() && steps.mail-calendar-changes.outputs.run == '1'
+        run: |
+          if [ -f "$HOME/pilot/benches/frappe-bench/pids/pilot.pid" ]; then
+            pilot -b frappe-bench stop
+          fi
+          mkdir -p "test-results/${{ matrix.module }}"
+          cp "$RUNNER_TEMP/pilot.log" "test-results/${{ matrix.module }}/pilot.log"
 
       - name: Upload ${{ matrix.name }} Evidence
         if: always() && steps.mail-calendar-changes.outputs.run == '1'
