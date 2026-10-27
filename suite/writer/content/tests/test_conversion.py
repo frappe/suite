@@ -776,7 +776,7 @@ class TestConversion(DriveCallbackCase):
             if (
                 not release.is_set()
                 and "INSERT INTO `__writer_content_conversion`" in str(query)
-                and args[0][0] == other
+                and other in args[0].values()
             ):
                 snapshot()
 
