@@ -1,3 +1,4 @@
+import posixpath
 import shutil
 from pathlib import Path
 
@@ -45,6 +46,14 @@ class File(FrappeFile):
         self._validate_content_link()
         if self.is_new() and not self.flags.file_created:
             return super().validate()
+        # file_url names the blob this row owns. Pointed at another blob, serving
+        # or deleting the row would serve or delete someone else's file.
+        if (
+            not self.is_new()
+            and self.has_value_changed("file_url")
+            and not (self.flags.file_created or self.flags.drive_disk_rename)
+        ):
+            frappe.throw("Only Drive can change the URL of a file.", frappe.ValidationError)
         if (
             not self.is_new()
             and not self.flags.file_created
@@ -69,6 +78,24 @@ class File(FrappeFile):
                 "Rename Drive files from the Drive interface, not the File form.",
                 frappe.ValidationError,
             )
+
+    def validate_private_file_access(self):
+        """Run by the framework before a new File takes an existing file_url: the
+        user must already be able to read a private file at that url. The framework's
+        version asks its own File permission, which `ignore_file_permissions` turns
+        into a yes for everyone, so this asks Drive's. The url is normalised first,
+        because `/private/files/./x` reads the same blob as `/private/files/x`, and
+        Drive stores its own urls without the leading slash."""
+        if not self.file_url:
+            return
+
+        key = posixpath.normpath(storage_key(self.file_url))
+        filters = {"file_url": ("in", [key, "/" + key]), "is_private": 1}
+        if not self.is_new():
+            filters["name"] = ("!=", self.name)
+        holders = frappe.get_all("File", filters=filters, pluck="name")
+        if holders and not any(user_has_permission(name, "read") for name in holders):
+            frappe.throw("You do not have permission to access this file", frappe.PermissionError)
 
     def _validate_content_link(self):
         """`content_doctype`/`content_docname` are the sole permission delegation
@@ -408,6 +435,12 @@ class File(FrappeFile):
             self._delete_blob_after_commit(blob_is_trashed)
 
     def _delete_blob_after_commit(self, blob_is_trashed: bool):
+        # frappe stores identical uploads once, so other rows can hold this blob; a
+        # trashed blob sits at a trash path named after this row alone
+        if not blob_is_trashed and frappe.db.exists(
+            "File", {"file_url": self.file_url, "name": ("!=", self.name)}
+        ):
+            return
         entity = frappe._dict(name=self.name, file_url=self.file_url)
 
         def delete_blob():
@@ -457,6 +490,7 @@ class File(FrappeFile):
             # only where a restore would put it back, so repoint it and move nothing
             if manager.s3_enabled and child.status != STATUS_TRASHED:
                 manager.move(child, new_child_url)
+            child.flags.drive_disk_rename = True
             child.recursive_path_move(child.file_url, new_child_url)
         self.save()
 
