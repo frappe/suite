@@ -21,11 +21,13 @@ from typing import cast
 
 import frappe
 import pycrdt
+from frappe.query_builder import Table
 from frappe.utils import now_datetime
 from frappe.utils.background_jobs import get_redis_conn
 from redis.exceptions import RedisError
 
 from suite.content import admission, capacity, ingest, live, restores, stage, updates
+from suite.content.db import Unhex, insert_into
 from suite.content.editors import EditorSpec, spec_of
 from suite.content.log import Refusal, chain_next
 from suite.content.sessions import load_session, session_for
@@ -43,12 +45,16 @@ def stored_seqs_through(
     app: str, doc_id: str, header: PushHeader, last_seq: int
 ) -> dict[int, tuple[bytes, frappe._dict]]:
     """Load each committed seq of the push through `last_seq` with its sha and the row that holds it."""
-    update_table = table(app, "update")
-    rows = frappe.db.sql(
-        f"""SELECT `rev`, `seq_from`, `seq_to`, `seq_shas`, `chain` FROM `{update_table}`
-        WHERE `doc_id` = %s AND `sid` = %s AND `seq_to` >= %s AND `seq_from` <= %s ORDER BY `rev`""",
-        (doc_id, header.sid, header.seq_from, last_seq),
-        as_dict=True,
+    update = Table(table(app, "update"))
+    rows = (
+        frappe.qb.from_(update)
+        .select(update.rev, update.seq_from, update.seq_to, update.seq_shas, update.chain)
+        .where(update.doc_id == doc_id)
+        .where(update.sid == header.sid)
+        .where(update.seq_to >= header.seq_from)
+        .where(update.seq_from <= last_seq)
+        .orderby(update.rev)
+        .run(as_dict=True)
     )
 
     stored_seqs: dict[int, tuple[bytes, frappe._dict]] = {}
@@ -169,6 +175,7 @@ def locked_doc(app: str, doc_id: str, is_final: bool) -> frappe._dict:
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     with lock_clause(app, doc_id, is_final) as lock:
         try:
+            # Raw SQL: qb has no FOR UPDATE WAIT
             locked_rows = frappe.db.sql(
                 f"""SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps`, `suspect_held`,
                 `state_bytes`, `tail_rows`, `tail_bound`, `next_compaction_at`, `last_compaction_ms`,
@@ -263,12 +270,17 @@ def move_head(
     if header.schema > schema_steps[-1][1]:
         schema_steps.append([rev, header.schema])
 
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `head_rev` = %s, `head_chain` = UNHEX(%s),
-        `tail_rows` = `tail_rows` + 1, `tail_bytes` = `tail_bytes` + %s, `tail_bound` = `tail_bound` + %s,
-        `schema_steps` = %s WHERE `id` = %s""",
-        (rev, chain.hex(), payload_len, row_bound, json.dumps(schema_steps), doc_id),
+    doc_table = Table(table(app, "doc"))
+    (
+        frappe.qb.update(doc_table)
+        .set(doc_table.head_rev, rev)
+        .set(doc_table.head_chain, Unhex(chain.hex()))
+        .set(doc_table.tail_rows, doc_table.tail_rows + 1)
+        .set(doc_table.tail_bytes, doc_table.tail_bytes + payload_len)
+        .set(doc_table.tail_bound, doc_table.tail_bound + row_bound)
+        .set(doc_table.schema_steps, json.dumps(schema_steps))
+        .where(doc_table.id == doc_id)
+        .run()
     )
 
 
@@ -285,27 +297,24 @@ def insert_row(
     """Write the row as `rev` and move the head to it; answers the new chain."""
     payload_sha = hashlib.sha256(payload).digest()
     chain = chain_next(bytes(doc.head_chain), rev, payload_sha)
-    update_table = table(app, "update")
-    frappe.db.sql(
-        f"""INSERT INTO `{update_table}`
-        (`doc_id`, `rev`, `sid`, `seq_from`, `seq_to`, `client_id`, `schema`, `payload`, `bound`, `sha256`, `seq_shas`, `chain`, `created`)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, UNHEX(%s), %s, UNHEX(%s), UNHEX(%s), UNHEX(%s), %s)""",
-        (
-            doc_id,
-            rev,
-            header.sid,
-            header.seq_from,
-            header.seq_to,
-            header.client_id,
-            header.schema,
-            payload.hex(),
-            row_bound,
-            payload_sha.hex(),
-            b"".join(header.shas).hex(),
-            chain.hex(),
-            now,
-        ),
-    )
+    insert_into(
+        table(app, "update"),
+        {
+            "doc_id": doc_id,
+            "rev": rev,
+            "sid": header.sid,
+            "seq_from": header.seq_from,
+            "seq_to": header.seq_to,
+            "client_id": header.client_id,
+            "schema": header.schema,
+            "payload": Unhex(payload.hex()),
+            "bound": row_bound,
+            "sha256": Unhex(payload_sha.hex()),
+            "seq_shas": Unhex(b"".join(header.shas).hex()),
+            "chain": Unhex(chain.hex()),
+            "created": now,
+        },
+    ).run()
     move_head(app, doc_id, doc, header, rev, chain, len(payload), row_bound)
     return chain
 
@@ -318,17 +327,15 @@ def advance_session(
     if row.update.structs:
         next_clock = row.clock_to
 
-    session_table = table(app, "session")
-    frappe.db.sql(
-        f"""UPDATE `{session_table}` SET `acked_seq` = %s, `next_clock` = %s, `last_push_at` = %s
-        WHERE `doc_id` = %s AND `sid` = %s""",
-        (
-            header.seq_to,
-            next_clock,
-            now,
-            doc_id,
-            header.sid,
-        ),
+    session_table = Table(table(app, "session"))
+    (
+        frappe.qb.update(session_table)
+        .set(session_table.acked_seq, header.seq_to)
+        .set(session_table.next_clock, next_clock)
+        .set(session_table.last_push_at, now)
+        .where(session_table.doc_id == doc_id)
+        .where(session_table.sid == header.sid)
+        .run()
     )
 
 
@@ -422,9 +429,12 @@ def commit_row(
 
 def put_piece(app: str, doc_id: str, stage_id: str, piece: stage.Piece, user: str) -> dict:
     """Stage one piece of a big change for the user's session; one of a committed change is a duplicate."""
-    doc_table = table(app, "doc")
-    [doc] = frappe.db.sql(
-        f"SELECT `lineage`, `mode` FROM `{doc_table}` WHERE `id` = %s", doc_id, as_dict=True
+    doc_table = Table(table(app, "doc"))
+    [doc] = (
+        frappe.qb.from_(doc_table)
+        .select(doc_table.lineage, doc_table.mode)
+        .where(doc_table.id == doc_id)
+        .run(as_dict=True)
     )
     if doc.mode == "purged":
         raise Refusal(404, "not_found")
