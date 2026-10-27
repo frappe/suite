@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import frappe
+from frappe.query_builder import Table
 
 from suite.content import updates
 from suite.content.tables import table
@@ -145,11 +146,13 @@ def committed_clocks(
 ) -> dict[int, int]:
     """Load the next clock of each of `clients`: from its session, or the start a copy began with."""
     clocks = {client: start_clocks.get(client, 0) for client in clients}
-    session_table = table(app, "session")
-    sessions = frappe.db.sql(
-        f"""SELECT `client_id`, `next_clock` FROM `{session_table}`
-        WHERE `doc_id` = %s AND `client_id` IN %s""",
-        (doc_id, tuple(clients)),
+    session = Table(table(app, "session"))
+    sessions = (
+        frappe.qb.from_(session)
+        .select(session.client_id, session.next_clock)
+        .where(session.doc_id == doc_id)
+        .where(session.client_id.isin(list(clients)))
+        .run()
     )
     for client, clock in sessions:
         clocks[int(client)] = max(clocks[int(client)], int(clock or 0))
