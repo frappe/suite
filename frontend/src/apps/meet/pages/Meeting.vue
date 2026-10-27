@@ -281,9 +281,7 @@
 
 		<RecordingPreflightDialog
 			v-model:open="recordingDialogOpen"
-			:preflight="recordingPreflight"
-			:confirm="confirmRecordingStart"
-			:refresh="recording.getPreflight"
+			:confirm="recording.start"
 		/>
 		<RecordingStopDialog
 			v-model="recordingStopDialogOpen"
@@ -357,8 +355,6 @@ import { useParticipantStore } from "../composables/useParticipantStore";
 import { useRaiseHand } from "../composables/useRaiseHand";
 import { useRaiseHandStore } from "../composables/useRaiseHandStore";
 import {
-	type RecordingPreflight,
-	type CaptureOptions,
 	useRecording,
 } from "../composables/useRecording";
 import { useReactionStore } from "../composables/useReactionStore";
@@ -484,7 +480,6 @@ const isCurrentUserCohost = computed(
 const recording = useRecording(meetingId.value);
 const recordingDialogOpen = ref(false);
 const recordingStopDialogOpen = ref(false);
-const recordingPreflight = ref<RecordingPreflight | null>(null);
 
 async function handleRecordingAction() {
 	try {
@@ -494,7 +489,6 @@ async function handleRecordingAction() {
 			if (recording.state.value?.status !== "Stopping") recordingStopDialogOpen.value = true;
 			return;
 		}
-		recordingPreflight.value = await recording.getPreflight();
 		recordingDialogOpen.value = true;
 	} catch (error) {
 		toast.error(error instanceof Error ? error.message : "Could not manage capture");
@@ -510,14 +504,6 @@ async function confirmRecordingStop() {
 	}
 }
 
-async function confirmRecordingStart(options: CaptureOptions) {
-	try {
-		await recording.start(options);
-	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not start capture");
-		throw error;
-	}
-}
 const previewDetails = useCall<{ title?: string }, { meeting_id: string }>({
 	url: "/api/v2/method/suite.meet.api.meeting.get_public_meeting_preview",
 	params: { meeting_id: meetingId.value },

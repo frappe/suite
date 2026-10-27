@@ -40,7 +40,6 @@ vi.mock("frappe-ui", () => ({
 				mocks.stopped = true;
 				return { name: "recording", status: "Stopping", state_revision: 3 };
 			}
-			if (options.url.endsWith(".get_preflight")) return { eligible: true };
 			if (options.url.endsWith(".get_state")) {
 				mocks.getStateCount += 1;
 				if (mocks.getStateResults.length) {

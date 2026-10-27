@@ -1,6 +1,6 @@
 import { createApp, defineComponent, h, nextTick } from "vue";
 import { describe, expect, it, vi } from "vitest";
-import type { RecordingPreflight } from "../composables/useRecording";
+import type { CaptureOptions } from "../utils/capturePresentation";
 
 vi.mock("frappe-ui", () => ({
 	toast: {}, useCall: vi.fn(),
@@ -14,46 +14,66 @@ vi.mock("frappe-ui", () => ({
 }));
 import RecordingPreflightDialog from "./RecordingPreflightDialog.vue";
 
-const eligible: RecordingPreflight = { eligible: true, global_enabled: true, e2ee_conflict: false, storage_available: true, recorder_available: true, estimated_seconds: 100, estimated_bytes: 100, free_bytes: 100, budget_bytes: 100, budget_seconds: 100, maximum_seconds: 14400 };
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
-function setup(refresh = vi.fn(async () => eligible)) {
-	const confirm = vi.fn(async () => undefined);
+function setup(confirm: (options: CaptureOptions) => Promise<unknown> = vi.fn(async () => undefined)) {
 	const root = document.createElement("div");
-	const app = createApp(RecordingPreflightDialog, { open: true, preflight: eligible, refresh, confirm });
+	const app = createApp(RecordingPreflightDialog, { open: true, confirm });
 	app.mount(root);
 	const switches = root.querySelectorAll("input");
 	const toggle = async (index: number) => { switches[index].checked = !switches[index].checked; switches[index].dispatchEvent(new Event("change", { bubbles: true })); await settle(); };
-	return { root, confirm, refresh, toggle, unmount: () => app.unmount() };
+	return { root, confirm, toggle, unmount: () => app.unmount() };
 }
 
 describe("capture output selection", () => {
-	it("checks combined capture and blocks a server rejection", async () => {
-		const view = setup(vi.fn(async () => ({ ...eligible, eligible: false, e2ee_conflict: true })));
-		await view.toggle(1);
-		expect(view.refresh).toHaveBeenCalledWith({ video_enabled: true, transcription_enabled: true, language: "en" });
-		expect(view.root.textContent).toContain("Capture is unavailable in encrypted meetings");
-		expect(view.root.querySelector("button")?.disabled).toBe(true);
-		view.root.querySelector("button")?.click();
-		expect(view.confirm).not.toHaveBeenCalled();
-		view.unmount();
-	});
-	it("does not enable start while a newer availability check is pending", async () => {
-		let finishFirst!: (value: RecordingPreflight) => void;
-		let finishSecond!: (value: RecordingPreflight) => void;
-		const first = new Promise<RecordingPreflight>((resolve) => { finishFirst = resolve; });
-		const second = new Promise<RecordingPreflight>((resolve) => { finishSecond = resolve; });
-		const refresh = vi.fn(async () => eligible).mockImplementationOnce(() => first).mockImplementationOnce(() => second);
-		const view = setup(refresh);
+	it("makes no start request while editing, and disables Start with neither selected", async () => {
+		const view = setup();
 		await view.toggle(1);
 		await view.toggle(0);
-		finishFirst(eligible);
-		await settle();
+		await view.toggle(1);
+		expect(view.confirm).not.toHaveBeenCalled();
 		expect(view.root.querySelector("button")?.disabled).toBe(true);
-		finishSecond({ ...eligible, eligible: false, transcription_enabled: true, transcription_available: false });
+		expect(view.root.textContent).not.toContain("Select video recording or transcription");
+		view.root.querySelector("button")?.click();
+		expect(view.confirm).not.toHaveBeenCalled();
+		await view.toggle(1);
+		view.root.querySelector("button")?.click();
 		await settle();
-		expect(view.root.querySelector("button")?.disabled).toBe(true);
-		expect(view.root.textContent).toContain("Transcription is unavailable");
+		expect(view.confirm).toHaveBeenCalledExactlyOnceWith({ video_enabled: false, transcription_enabled: true, language: "en" });
 		view.unmount();
 	});
 
+	it("shows a start rejection and lets the host change selection and retry", async () => {
+		const confirm = vi.fn(async () => undefined).mockRejectedValueOnce(new Error("Transcription capacity is currently unavailable"));
+		const view = setup(confirm);
+		await view.toggle(1);
+		await view.toggle(0);
+		view.root.querySelector("button")?.click();
+		await settle();
+		expect(view.root.textContent).toContain("Transcription capacity is currently unavailable");
+		expect(view.root.querySelector("button")?.disabled).toBe(false);
+		await view.toggle(0);
+		await view.toggle(1);
+		expect(view.root.textContent).not.toContain("Transcription capacity is currently unavailable");
+		expect(view.confirm).toHaveBeenCalledTimes(1);
+		view.root.querySelector("button")?.click();
+		await settle();
+		expect(view.confirm).toHaveBeenLastCalledWith({ video_enabled: true, transcription_enabled: false, language: "en" });
+		view.unmount();
+	});
+
+	it("does not submit another start or change selection while a start is pending", async () => {
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => { finish = resolve; });
+		const confirm = vi.fn(() => pending);
+		const view = setup(confirm);
+		view.root.querySelector("button")?.click();
+		await settle();
+		expect(view.root.querySelector("button")?.disabled).toBe(true);
+		expect([...view.root.querySelectorAll("input")].every((input) => input.disabled)).toBe(true);
+		view.root.querySelector("button")?.click();
+		expect(confirm).toHaveBeenCalledTimes(1);
+		finish();
+		await settle();
+		view.unmount();
+	});
 });

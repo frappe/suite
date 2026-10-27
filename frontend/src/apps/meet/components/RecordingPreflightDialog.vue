@@ -1,62 +1,47 @@
 <script setup lang="ts">
 import { Alert, Dialog, Switch } from "frappe-ui";
 import { computed, ref, watch } from "vue";
-import type { RecordingPreflight } from "../composables/useRecording";
 import { captureLabel, defaultCaptureOptions, type CaptureOptions } from "../utils/capturePresentation";
-import { getRecordingUnavailableReason } from "../utils/recordingPresentation";
 
 const props = defineProps<{
-	preflight: RecordingPreflight | null;
-	refresh: (options: CaptureOptions) => Promise<RecordingPreflight>;
 	confirm: (options: CaptureOptions) => Promise<unknown>;
 }>();
 const open = defineModel<boolean>("open", { default: false });
 const options = ref(defaultCaptureOptions());
-const checking = ref(false);
 const starting = ref(false);
-const checkError = ref("");
-const currentPreflight = ref(props.preflight);
-let checkVersion = 0;
-watch(() => props.preflight, (value) => { currentPreflight.value = value; });
+const startError = ref("");
 watch(open, (value) => {
 	if (value) {
 		options.value = defaultCaptureOptions();
-		checkError.value = "";
+		startError.value = "";
 	}
 });
-watch(options, async (value) => {
-	if (!open.value) return;
-	const version = ++checkVersion;
-	checking.value = true;
-	checkError.value = "";
-	try {
-		const result = await props.refresh({ ...value });
-		if (version === checkVersion) currentPreflight.value = result;
-	} catch (error) {
-		if (version === checkVersion) checkError.value = error instanceof Error ? error.message : "Could not check capture availability";
-	} finally {
-		if (version === checkVersion) checking.value = false;
-	}
-}, { deep: true });
+watch(options, () => { startError.value = ""; }, { deep: true });
 const selected = computed(() => options.value.video_enabled || options.value.transcription_enabled);
-const canStart = computed(() => selected.value && currentPreflight.value?.eligible && !checking.value && !checkError.value && !starting.value);
+const canStart = computed(() => selected.value && !starting.value);
 const actions = computed(() => [
 	{
 		label: `Start ${captureLabel(options.value).toLowerCase()}`,
 		variant: "solid" as const,
 		disabled: !canStart.value,
-		loading: starting.value || checking.value,
+		loading: starting.value,
 		onClick: async ({ close }: { close: () => void }) => {
 			if (!canStart.value) return;
 			starting.value = true;
-			try { await props.confirm({ ...options.value }); close(); }
-			finally { starting.value = false; }
+			startError.value = "";
+			try {
+				const result = await props.confirm({ ...options.value });
+				if (result && typeof result === "object" && "status" in result && result.status === "Rejected") return;
+				close();
+			} catch (error) {
+				startError.value = error instanceof Error ? error.message : "Could not start capture";
+			} finally {
+				starting.value = false;
+			}
 		},
 	},
 	{ label: "Cancel", disabled: starting.value, onClick: ({ close }: { close: () => void }) => close() },
 ]);
-const unavailable = computed(() => currentPreflight.value && !currentPreflight.value.eligible ? getRecordingUnavailableReason(currentPreflight.value) : null);
-const limitedByStorage = computed(() => options.value.video_enabled && currentPreflight.value && currentPreflight.value.budget_seconds < currentPreflight.value.estimated_seconds);
 </script>
 
 <template>
@@ -65,9 +50,7 @@ const limitedByStorage = computed(() => options.value.video_enabled && currentPr
 			<Switch v-model="options.video_enabled" label="Record video" :disabled="starting" />
 			<Switch v-model="options.transcription_enabled" label="Transcribe speech" :disabled="starting" />
 			<p class="text-p-base text-ink-gray-7">Everyone will be notified. Your recording and transcript will be saved to the room owner's Drive.</p>
-			<Alert v-if="selected && checkError" theme="red" :title="checkError" />
-			<Alert v-else-if="selected && unavailable && !checking" theme="red" :title="unavailable.title" :description="unavailable.message" />
-			<Alert v-else-if="limitedByStorage && !checking" theme="amber" title="Storage may end capture early" description="Capture will stop when its available storage budget is reached." />
+			<Alert v-if="startError" theme="red" :title="startError" />
 		</div>
 	</Dialog>
 </template>

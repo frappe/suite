@@ -35,23 +35,6 @@ type RecordingCommandResult = Pick<RecordingState, "name" | "status"> &
 	Partial<RecordingState>;
 type RecordingStartResult = RecordingCommandResult | { status: "Rejected" };
 
-export interface RecordingPreflight {
-	eligible: boolean;
-	transcription_available?: boolean;
-	video_enabled?: boolean;
-	transcription_enabled?: boolean;
-	global_enabled: boolean;
-	e2ee_conflict: boolean;
-	storage_available: boolean;
-	recorder_available: boolean;
-	estimated_seconds: number;
-	estimated_bytes: number;
-	free_bytes: number;
-	budget_bytes: number;
-	budget_seconds: number;
-	maximum_seconds: number;
-}
-
 type RecordingEvent = {
 	meeting_id: string;
 	recording: RecordingState | null;
@@ -75,10 +58,6 @@ export function useRecording(meetingId: string) {
 
 	const stateCall = useCall<RecordingState | null, { meeting_id: string }>({
 		url: "/api/v2/method/suite.meet.api.recording.get_state",
-		immediate: false,
-	});
-	const preflightCall = useCall<RecordingPreflight, { meeting_id: string } & CaptureOptions>({
-		url: "/api/v2/method/suite.meet.api.recording.get_preflight",
 		immediate: false,
 	});
 	const startCall = useCall<
@@ -124,10 +103,6 @@ export function useRecording(meetingId: string) {
 		} catch {
 			// Guests may receive state through the room-scoped realtime channel instead.
 		}
-	}
-
-	async function getPreflight(options = defaultCaptureOptions()) {
-		return submit(preflightCall, { meeting_id: meetingId, ...options });
 	}
 
 	async function start(options = defaultCaptureOptions()) {
@@ -246,10 +221,8 @@ export function useRecording(meetingId: string) {
 		isCapturing,
 		syncTranscriptionCapture,
 		isStarting,
-		preflightLoading: computed(() => preflightCall.loading),
 		startLoading: computed(() => startCall.loading),
 		stopLoading: computed(() => stopCall.loading),
-		getPreflight,
 		setGlobalEnabled,
 		syncState,
 		start,

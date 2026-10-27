@@ -54,7 +54,7 @@ Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Related contracts 
 
 1. With transcription selected and video disabled, a host can capture speech without any video output being produced. A participant who enables or disables live captions does not change the capture lifetime.
 2. With both selected, a co-host starts capture and another host stops it. Result ownership remains with the Room Owner, and both selections stay fixed during capture.
-3. With neither selected, capture cannot start. An ordinary participant cannot bypass host-only control by directly calling the server.
+3. Opening the capture dialog and changing selections make no availability requests. With neither selected, Start is disabled without an alert. The server validates permissions, selected outputs, storage and admission when Start is pressed. An ordinary participant cannot bypass host-only control by directly calling the server.
 4. A late joiner sees the active transcription notice and indicator. A transcript-only capture does not claim that video is being recorded.
 5. An E2EE room rejects transcription. An attempt to enable E2EE during capture requires stopping capture first.
 6. Capture stops when the final participant leaves or after four hours. A subsequent start produces a distinct capture rather than appending to the previous Transcript.
