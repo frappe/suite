@@ -1,6 +1,4 @@
-import { type APIRequestContext, type Page } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
 import {
 	DRIVE,
@@ -46,15 +44,18 @@ function watchLegacyDriveCalls(page: Page): string[] {
 test("From template copies a template and lands on its /d/ route", async ({ page }) => {
 	const templateTitle = runTag("tpl-sheet");
 	const response = await api.post(`${DRIVE}/nodes`, {
-		data: { parent: home.name, title: templateTitle, kind: "document", content_doctype: "Sheet", is_template: true },
+		data: { parent_node: home.name, title: templateTitle, kind: "document", content_doctype: "Sheet", is_template: true },
 	});
 	expect(response.ok(), await response.text()).toBe(true);
 
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	const entries = page.getByRole("menuitem");
-	await expect(entries.last()).toHaveText(/From template/);
-	await entries.last().click();
+	// From template closes the Create group, just before the Upload group's Files.
+	const fromTemplate = page.getByRole("menuitem", { name: "From template" });
+	await expect(fromTemplate).toBeVisible();
+	const labels = (await page.getByRole("menuitem").allInnerTexts()).map((label) => label.trim());
+	expect(labels.indexOf("From template")).toBe(labels.indexOf("Files") - 1);
+	await fromTemplate.click();
 
 	const dialog = page.getByRole("dialog", { name: "New from template" });
 	await dialog.getByRole("radio", { name: "Spreadsheet" }).click();
@@ -74,16 +75,18 @@ test("Recent filters by document type and the filter clears", async ({ page }) =
 	await visit(api, writer.name);
 	await visit(api, sheet.name);
 
-	await page.goto("/drive/recent?type=sheets&view=list");
-	// Button names itself from its label; the x icon and the tooltip say it clears.
-	const filter = page.getByRole("button", { name: "Type: Spreadsheet" });
+	await page.goto("/drive/recent?type=spreadsheet&view=list");
+	// The trigger names the chosen type; its menu's Clear drops the filter.
+	const filter = page.getByRole("button", { name: "Filter by type: Spreadsheets" });
 	await expect(filter).toBeVisible();
 	await expect(page.getByText(sheet.title, { exact: true })).toBeVisible();
 	await expect(page.getByText(writer.title, { exact: true })).toHaveCount(0);
 
 	await filter.click();
+	await page.getByRole("button", { name: "Clear", exact: true }).click();
 	await expect(page).not.toHaveURL(/type=/);
 	await expect(filter).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Filter by Type" })).toBeVisible();
 	await expect(page.getByText(sheet.title, { exact: true })).toBeVisible();
 	await expect(page.getByText(writer.title, { exact: true })).toBeVisible();
 });
@@ -91,7 +94,7 @@ test("Recent filters by document type and the filter clears", async ({ page }) =
 test("an unknown Recent type drops out of the URL", async ({ page }) => {
 	await page.goto("/drive/recent?type=nope&view=list");
 	await expect(page).not.toHaveURL(/type=/);
-	await expect(page.getByRole("button", { name: /^Type: / })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: /^Filter by type: / })).toHaveCount(0);
 });
 
 test("Download on a file preview links to the node content", async ({ page }) => {

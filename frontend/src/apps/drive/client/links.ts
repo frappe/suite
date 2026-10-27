@@ -1,5 +1,6 @@
 import { shallowRef } from 'vue'
 
+import { randomId } from '@/platform/random-id'
 import { useSession, type Session } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import {
@@ -153,9 +154,9 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
   let memory: State = emptyState()
   let lastText: string | null = null
   let generation = 0
-  const accessPartition = shallowRef(crypto.randomUUID())
+  const accessPartition = shallowRef(randomId())
   let lastAccess = ''
-  let accessEpoch = crypto.randomUUID()
+  let accessEpoch = randomId()
   const selections = new Map<string, { signature: string; token: string }>()
   function syncAccess(state: State): void {
     const access = JSON.stringify([
@@ -164,7 +165,7 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
     ])
     if (access !== lastAccess) {
       lastAccess = access
-      accessPartition.value = crypto.randomUUID()
+      accessPartition.value = randomId()
     }
   }
 
@@ -212,9 +213,9 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
     memory = emptyState()
     lastText = null
     generation += 1
-    accessEpoch = crypto.randomUUID()
+    accessEpoch = randomId()
     selections.clear()
-    accessPartition.value = crypto.randomUUID()
+    accessPartition.value = randomId()
   }
 
   options.events?.addEventListener('storage', (event) => {
@@ -337,15 +338,15 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
       ])
       let selected = selections.get(signature)
       if (!selected) {
-        selected = { signature, token: crypto.randomUUID() }
+        selected = { signature, token: randomId() }
         selections.set(signature, selected)
       }
       return selected.token
     },
     invalidateAccess() {
-      accessEpoch = crypto.randomUUID()
+      accessEpoch = randomId()
       selections.clear()
-      accessPartition.value = crypto.randomUUID()
+      accessPartition.value = randomId()
     },
     seed(code, target) {
       if (!TOKEN.test(code) || !target) return

@@ -136,6 +136,64 @@ const operationExchangeList: PageRef<
   loadValidators: async () => (await import('./validators')).operationExchangeList,
 }
 
+export type RegionalPreferencesOutputOption = { value: string; label: string }
+
+export type RegionalPreferencesInput = Record<string, never>
+
+export type RegionalPreferencesOutput = {
+  locale: string
+  time_zone: string
+  locales: Array<RegionalPreferencesOutputOption>
+  time_zones: Array<RegionalPreferencesOutputOption>
+}
+
+export type RegionalPreferencesError = never
+
+const operationRegionalPreferences: QueryRef<
+  RegionalPreferencesInput,
+  RegionalPreferencesOutput,
+  RegionalPreferencesError
+> = {
+  id: 'regional_preferences',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'settings.regional',
+  method: 'GET',
+  path: 'settings/regional',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationRegionalPreferences,
+}
+
+export type UpdateRegionalPreferencesInput = { locale: string; time_zone: string }
+
+export type UpdateRegionalPreferencesOutput = null
+
+export type UpdateRegionalPreferencesError = never
+
+const operationUpdateRegionalPreferences: MutationRef<
+  UpdateRegionalPreferencesInput,
+  UpdateRegionalPreferencesOutput,
+  UpdateRegionalPreferencesError
+> = {
+  id: 'update_regional_preferences',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'settings.updateRegional',
+  empty: true,
+  method: 'PATCH',
+  path: 'settings/regional',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationUpdateRegionalPreferences,
+}
+
 export type CredentialsInput = Record<string, never>
 
 export type CredentialsOutput = {
@@ -475,6 +533,7 @@ export type InviteOutput = {
   invited_by: string | null
   expires_at: string | null
   quota_gb: number | null
+  combined_cap_bytes: number | null
   send_invite: 0 | 1
   disable_receiving: 0 | 1
   is_verified: 0 | 1
@@ -499,7 +558,13 @@ const operationInvite: QueryRef<InviteInput, InviteOutput, InviteError> = {
   loadValidators: async () => (await import('./validators')).operationInvite,
 }
 
-export type UpdateInviteInput = { name: string; expires_at: string | null; quota_gb: number | null }
+export type UpdateInviteInput = {
+  name: string
+  expires_at: string | null
+  combined_cap_bytes: number | null
+  account?: string
+  is_admin?: boolean
+}
 
 export type UpdateInviteOutput = null
 
@@ -847,7 +912,7 @@ export type GetUnifiedFoldersOutputUnifiedFolder = {
   unread_threads: number
   accounts: Array<string>
   icon: string | null
-  color: ('Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
+  color: ('Gray' | 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
 }
 
 export type GetUnifiedFoldersInput = Record<string, never>
@@ -895,7 +960,7 @@ export type GetMailboxesOutputMailbox = {
   slug: string | null
   subscribed: boolean
   icon?: string | null
-  color?: ('Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
+  color?: ('Gray' | 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null
   disable_push_notification?: 0 | 1
   automation_rules?: GetMailboxesOutputAutomationRules | null
 }
@@ -1612,39 +1677,39 @@ const operationGetCalendarClientConfig: QueryRef<
   loadValidators: async () => (await import('./validators')).operationGetCalendarClientConfig,
 }
 
-export type GetRecentThreadsWithOutputRecentThread = {
+export type GetRecentThreadsFromOutputRecentThread = {
   thread_id: string
   subject: string | null
   received_at: string
-  mailboxes: Array<GetRecentThreadsWithOutputRecentThreadMailbox>
+  mailboxes: Array<GetRecentThreadsFromOutputRecentThreadMailbox>
 }
 
-export type GetRecentThreadsWithOutputRecentThreadMailbox = { mailbox_id: string }
+export type GetRecentThreadsFromOutputRecentThreadMailbox = { mailbox_id: string }
 
-export type GetRecentThreadsWithInput = { account: string; email: string; limit?: number }
+export type GetRecentThreadsFromInput = { account: string; email: string; limit?: number }
 
-export type GetRecentThreadsWithOutput = Array<GetRecentThreadsWithOutputRecentThread>
+export type GetRecentThreadsFromOutput = Array<GetRecentThreadsFromOutputRecentThread>
 
-export type GetRecentThreadsWithError = 'PermissionError'
+export type GetRecentThreadsFromError = 'PermissionError'
 
-const operationGetRecentThreadsWith: QueryRef<
-  GetRecentThreadsWithInput,
-  GetRecentThreadsWithOutput,
-  GetRecentThreadsWithError
+const operationGetRecentThreadsFrom: QueryRef<
+  GetRecentThreadsFromInput,
+  GetRecentThreadsFromOutput,
+  GetRecentThreadsFromError
 > = {
-  id: 'get_recent_threads_with',
+  id: 'get_recent_threads_from',
   owner: 'mail',
   kind: 'query',
-  publicName: 'messages.recentWith',
+  publicName: 'messages.recentFrom',
   envelope: 'message',
   method: 'POST',
-  path: '/api/method/suite.mail.api.mail.get_recent_threads_with',
+  path: '/api/method/suite.mail.api.mail.get_recent_threads_from',
   prefix: '/api/suite/mail/',
   pathParams: [],
   nodeParams: [],
   entity: null,
   errors: ['PermissionError'],
-  loadValidators: async () => (await import('./validators')).operationGetRecentThreadsWith,
+  loadValidators: async () => (await import('./validators')).operationGetRecentThreadsFrom,
 }
 
 export type GetEmailSuggestionsOutputEmailSuggestion = {
@@ -3106,7 +3171,14 @@ export type AddMemberInput = {
   disable_receiving?: boolean
 }
 
-export type AddMemberOutput = null
+export type AddMemberOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
 
 export type AddMemberError = 'PermissionError' | 'ValidationError'
 
@@ -3115,7 +3187,6 @@ const operationAddMember: MutationRef<AddMemberInput, AddMemberOutput, AddMember
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.create',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.add_member',
@@ -3337,9 +3408,16 @@ const operationDeleteMailingLists: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDeleteMailingLists,
 }
 
-export type DeleteMembersInput = { names: Array<string> }
+export type DeleteMembersInput = { names: Array<string>; confirmation?: string }
 
-export type DeleteMembersOutput = null
+export type DeleteMembersOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
 
 export type DeleteMembersError = 'PermissionError' | 'ValidationError'
 
@@ -3352,7 +3430,6 @@ const operationDeleteMembers: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.delete',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.delete_members',
@@ -3364,9 +3441,15 @@ const operationDeleteMembers: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDeleteMembers,
 }
 
+export type DisableMembersOutputMemberOutcome = {
+  user: string
+  success: boolean
+  error: string | null
+}
+
 export type DisableMembersInput = { names: Array<string> }
 
-export type DisableMembersOutput = null
+export type DisableMembersOutput = Array<DisableMembersOutputMemberOutcome>
 
 export type DisableMembersError = 'PermissionError' | 'ValidationError'
 
@@ -3379,7 +3462,6 @@ const operationDisableMembers: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.disable',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.disable_members',
@@ -3391,9 +3473,15 @@ const operationDisableMembers: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDisableMembers,
 }
 
+export type EnableMembersOutputMemberOutcome = {
+  user: string
+  success: boolean
+  error: string | null
+}
+
 export type EnableMembersInput = { names: Array<string> }
 
-export type EnableMembersOutput = null
+export type EnableMembersOutput = Array<EnableMembersOutputMemberOutcome>
 
 export type EnableMembersError = 'PermissionError' | 'ValidationError'
 
@@ -3406,7 +3494,6 @@ const operationEnableMembers: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'admin.members.enable',
-  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.admin.enable_members',
@@ -5812,6 +5899,67 @@ const operationGetMimeMessage: QueryRef<
   loadValidators: async () => (await import('./validators')).operationGetMimeMessage,
 }
 
+export type GetUnsubscribeOptionsOutputUnsubscribeOption = {
+  one_click: string | null
+  mailto: string | null
+  link: string | null
+  unsubscribed: boolean
+}
+
+export type GetUnsubscribeOptionsInput = { account: string; ids: Array<string> }
+
+export type GetUnsubscribeOptionsOutput = {
+  [key: string]: GetUnsubscribeOptionsOutputUnsubscribeOption
+}
+
+export type GetUnsubscribeOptionsError = 'PermissionError' | 'ValidationError'
+
+const operationGetUnsubscribeOptions: QueryRef<
+  GetUnsubscribeOptionsInput,
+  GetUnsubscribeOptionsOutput,
+  GetUnsubscribeOptionsError
+> = {
+  id: 'get_unsubscribe_options',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'messages.unsubscribeOptions',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.get_unsubscribe_options',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationGetUnsubscribeOptions,
+}
+
+export type UnsubscribeMailInput = { account: string; id: string }
+
+export type UnsubscribeMailOutput = 'one_click' | 'mailto' | 'already'
+
+export type UnsubscribeMailError = 'PermissionError' | 'ValidationError'
+
+const operationUnsubscribeMail: MutationRef<
+  UnsubscribeMailInput,
+  UnsubscribeMailOutput,
+  UnsubscribeMailError
+> = {
+  id: 'unsubscribe_mail',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.unsubscribe',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.unsubscribe_mail',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationUnsubscribeMail,
+}
+
 export type GetDeliveryStatusOutputDeliveryRecipient = {
   email: string
   action: string
@@ -6887,6 +7035,8 @@ export const api = {
     ongoing: operationOngoingExchange,
   },
   settings: {
+    regional: operationRegionalPreferences,
+    updateRegional: operationUpdateRegionalPreferences,
     credentials: operationCredentials,
     updateCredentials: operationUpdateCredentials,
     updatePreferences: operationUpdatePreferences,
@@ -7057,10 +7207,12 @@ export const api = {
     ongoingExchange: operationOngoingCalendarExchange,
   },
   messages: {
-    recentWith: operationGetRecentThreadsWith,
+    recentFrom: operationGetRecentThreadsFrom,
     clearList: operationClearList,
     search: operationSearchMails,
     mime: operationGetMimeMessage,
+    unsubscribeOptions: operationGetUnsubscribeOptions,
+    unsubscribe: operationUnsubscribeMail,
     deliveryStatus: operationGetDeliveryStatus,
     create: operationCreateMail,
     updateDraft: operationUpdateDraftMail,

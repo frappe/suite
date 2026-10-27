@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { type APIRequestContext, type Page } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
 import {
 	adminApi,
@@ -16,6 +14,7 @@ import {
 	runTag,
 	type DriveNode,
 } from "../../helpers/drive";
+import { xlsxCellText } from "../../helpers/xlsx";
 
 /** Stage 11: the Sheets document on `/d/<id>`, through Drive and Suite routes only. */
 
@@ -98,11 +97,15 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	expect(order[0]).toContain("save_sheet");
 	expect(order.at(-1)).toContain("/versions");
 
+	// Autosave may already have kept automatic versions; restore adds one more.
+	const automatic = versions.getByRole("listitem").filter({ hasText: "Automatic version" });
+	const automaticBefore = await automatic.count();
 	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "Restore" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 	// Restore keeps the state it replaced as a new automatic version first.
-	await expect(versions.getByText("Automatic version")).toBeVisible();
+	await expect(automatic).toHaveCount(automaticBefore + 1);
+	await expect(versions.getByRole("listitem").first()).toContainText("Automatic version");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).
@@ -127,25 +130,83 @@ test("losing edit access freezes the sheet, cancels the pending save and offers 
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
-	await expect(page.getByText("View only", { exact: true })).toBeVisible();
+	// A trashed document shows Trashed in place of View only; the frozen toolbar shows the lock.
+	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Bold" })).toBeDisabled();
 	await page.waitForTimeout(3_000);
 
 	const saves = seen.requests.slice(trashedAt).filter((line) => line.includes("suite.sheets.api.save_sheet"));
 	expect(saves).toEqual([]);
 	const recovery = () =>
 		page.evaluate((node) => localStorage.getItem(`suite:sheets-recovery:${node}`), sheet.name);
-	expect(await recovery()).toContain("4242");
+	// The committed cell lives in the engine snapshot (binary), the cell editor's
+	// text in the draft. Both must come out in the downloaded file below.
 	expect(await recovery()).toContain("5150");
 
 	const download = page.waitForEvent("download");
 	await page.locator(".sheets-header").getByRole("button", { name: "Download my changes" }).click();
 	const file = await download;
 	expect(file.suggestedFilename()).toBe("Sheets journey (recovered).xlsx");
-	// An .xlsx file is a zip archive. Its cells are checked in `recovery.test.ts`.
-	expect(readFileSync((await file.path())!).subarray(0, 2).toString()).toBe("PK");
+	// An .xlsx file is a zip archive.
+	const bytes = readFileSync((await file.path())!);
+	expect(bytes.subarray(0, 2).toString()).toBe("PK");
+	const cells = xlsxCellText(bytes);
+	expect(cells, "the recovered file keeps the committed cell").toMatch(/>4242</);
+	expect(cells, "the recovered file keeps the cell still in the editor").toMatch(/>5150</);
 	await expect(page.locator(".sheets-header").getByRole("button", { name: "Download my changes" })).toHaveCount(0);
 	expect(await recovery()).toBeNull();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
+});
+
+// An IME, the Windows symbol picker or a phone keyboard insert text with no
+// keydown. The grid used to drop it, or the first character (`₹250` → `250`).
+test("text typed without a keydown starts the edit, and grid keys still work", async ({ page, context }) => {
+	await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+	const seen = watchPage(page);
+	await openSheet(page);
+	const nameBox = page.getByRole("textbox", { name: "Name box" });
+	const formulaBar = page.getByRole("textbox", { name: "Cell value or formula" });
+	const goTo = async (cell: string) => {
+		await nameBox.fill(cell);
+		await nameBox.press("Enter");
+	};
+
+	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
+	await page.keyboard.insertText("₹250");
+	await page.keyboard.press("Enter");
+	await goTo("A1");
+	await expect(formulaBar).toHaveValue("250");
+	await expect(page.getByRole("button", { name: "Number format: Currency · INR" })).toBeVisible();
+
+	// An IME composition (Hindi): nothing is committed until it ends.
+	await goTo("A2");
+	const cdp = await context.newCDPSession(page);
+	await cdp.send("Input.imeSetComposition", { text: "नम", selectionStart: 2, selectionEnd: 2 });
+	await cdp.send("Input.imeSetComposition", { text: "नमस्", selectionStart: 4, selectionEnd: 4 });
+	await cdp.send("Input.insertText", { text: "नमस्ते" });
+	await page.keyboard.press("Enter");
+	await goTo("A2");
+	await expect(formulaBar).toHaveValue("नमस्ते");
+
+	// Keys still reach the grid and the app's shortcuts.
+	await page.keyboard.press("ArrowUp");
+	await page.keyboard.press("Control+c");
+	await page.keyboard.press("ArrowRight");
+	await page.keyboard.press("Control+v");
+	await expect(formulaBar).toHaveValue("250");
+	await page.keyboard.press("Control+b");
+	await expect(page.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
+	await page.keyboard.press("Delete");
+	await expect(formulaBar).toHaveValue("");
+	await page.keyboard.press("Control+z");
+	// Undo points the formula bar at A1 (it holds 250 too), so look at B1 itself.
+	await goTo("B1");
+	await expect(formulaBar).toHaveValue("250");
+	await page.keyboard.press("F2");
+	await page.keyboard.type("0");
+	await page.keyboard.press("Escape");
+	await expect(formulaBar).toHaveValue("250");
+	expect(seen.errors).toEqual([]);
 });
 
 /** A signed-in person with no grant of their own. The spec makes them on first use. */
@@ -170,8 +231,9 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	await ensureLinkOnlyUser();
 	const response = await api.put(`${DRIVE}/nodes/${sheet.name}/grants/$LINK`, { data: { role: 40 } });
 	expect(response.ok()).toBe(true);
-	const body = (await response.json()) as { data?: { grant: { principal: string } }; message?: { grant: { principal: string } } };
-	const code = (body.data ?? body.message)!.grant.principal.replace("$LINK:", "");
+	// The answer is the grant row itself.
+	const body = (await response.json()) as { data?: { principal: string }; message?: { principal: string } };
+	const code = (body.data ?? body.message)!.principal.replace("$LINK:", "");
 
 	const visitor = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
 	const login = await visitor.request.post("/api/method/login", { form: { usr: LINK_ONLY.email, pwd: LINK_ONLY.password } });

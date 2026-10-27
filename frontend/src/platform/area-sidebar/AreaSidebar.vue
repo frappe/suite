@@ -45,8 +45,17 @@
     </Sidebar>
   </Teleport>
 
-  <BottomSheet v-else v-model:open="sheetOpen" :title="title">
-    <div :data-area-sidebar="area" class="px-2 pb-8">
+  <!-- The sheet's rows are sized for a thumb (see the style below). A steady sheet keeps one
+       height, so a section opening or folding scrolls inside it instead of moving its top edge. -->
+  <BottomSheet v-else v-model:open="sheetOpen" :title="sheetTitle ? title : undefined">
+    <div
+      :data-area-sidebar="area"
+      class="area-sidebar-sheet px-3"
+      :class="[
+        sheetFlush ? 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]' : 'pb-8',
+        { 'h-[70dvh]': steadySheet, 'pt-3': !sheetTitle && !sheetFlush },
+      ]"
+    >
       <div v-if="loading" v-bind="skeletonAttrs">
         <Skeleton v-for="row in SKELETON_ROWS" :key="row" class="h-7 rounded-4" />
       </div>
@@ -89,8 +98,14 @@ const props = withDefaults(
     title: string
     /** Shows the fixed-size skeleton in place of the body. */
     loading?: boolean
+    /** Whether the phone's sheet shows the title above the body. */
+    sheetTitle?: boolean
+    /** The phone's sheet keeps one height, whatever its sections show. */
+    steadySheet?: boolean
+    /** The phone's sheet leaves the body's top to the body, as a row of tiles spaces its own. */
+    sheetFlush?: boolean
   }>(),
-  { loading: false },
+  { loading: false, sheetTitle: true, steadySheet: false, sheetFlush: false },
 )
 
 defineSlots<{ default?: () => unknown; actions?: () => unknown }>()
@@ -175,3 +190,38 @@ watch(
 )
 onBeforeUnmount(() => bindViewport(null))
 </script>
+
+<style scoped>
+/* On a phone the sidebar's rows are a sheet's, sized as develop's folders sheet was (measured
+   against it): 38px rows (10px above and below a body-size label), the icon 24px in from the
+   sheet's edge, the label 12px after it, and 18px icons. The sheet is white, so the open row is
+   the gray of a pressed one, in bold, not the sidebar's raised white card, which read as nothing
+   selected. */
+.area-sidebar-sheet :deep([data-slot='sidebar-item']) {
+  @apply h-auto rounded-6 py-2.5 pr-1;
+}
+/* Headings start where the icons do. */
+.area-sidebar-sheet :deep([data-slot='sidebar-section'] > .px-2) {
+  @apply px-3;
+}
+.area-sidebar-sheet :deep([data-slot='sidebar-item'] > :is(a, button)) {
+  @apply pl-3;
+}
+.area-sidebar-sheet :deep([data-slot='sidebar-item'] .ml-2) {
+  @apply ml-3;
+}
+.area-sidebar-sheet :deep([data-slot='sidebar-item'] svg),
+.area-sidebar-sheet :deep([data-slot='sidebar-item'] [class*='lucide-']) {
+  @apply size-[18px];
+}
+.area-sidebar-sheet :deep([data-slot='sidebar-item'] .text-sm) {
+  @apply text-base;
+}
+.area-sidebar-sheet :deep([data-slot='sidebar-item'][data-state='active']) {
+  @apply bg-surface-gray-2 shadow-none;
+}
+/* The label's text style sets its own weight, so the bold goes on the label itself. */
+.area-sidebar-sheet :deep([data-slot='sidebar-item'][data-state='active'] .text-sm) {
+  @apply font-semibold;
+}
+</style>

@@ -179,11 +179,15 @@
   justify-content: center;
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  cursor: default;
-  user-select: none;
+  width: 88px;
+  outline: none;
   transition:
     border-color 0.12s,
     background-color 0.12s;
+}
+.sn-cell-ref:focus {
+  border-color: var(--outline-gray-4);
+  background: var(--surface-base);
 }
 .sn-cell-ref:hover {
   border-color: var(--outline-gray-3);

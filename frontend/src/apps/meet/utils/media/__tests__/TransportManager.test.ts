@@ -850,3 +850,35 @@ describe('getNetworkStats', () => {
     expect(stats.isValid).toBe(true)
   })
 })
+
+describe('consumer creation disposal', () => {
+  it.each([false, true])(
+    'closes server resources after failed or stale consume (stale: %s)',
+    async (stale) => {
+      const manager = createManager()
+      const closeConsumer = vi.fn().mockResolvedValue(undefined)
+      const localClose = vi.fn()
+      manager.sfuClient = {
+        ...mockSfuClient(),
+        createConsumer: vi
+          .fn()
+          .mockResolvedValue({ id: 'server-consumer', kind: 'video', producerId: 'camera' }),
+        closeConsumer,
+      } as never
+      manager.device = { rtpCapabilities: {} } as never
+      manager.recvTransport = {
+        id: 'recv',
+        consume: vi.fn(async () => {
+          if (!stale) throw new Error('consume failed')
+          manager.recvTransport = null
+          return { id: 'server-consumer', close: localClose }
+        }),
+      } as never
+      await expect(manager.createConsumer('camera')).rejects.toThrow(
+        stale ? 'replaced' : 'consume failed',
+      )
+      expect(closeConsumer).toHaveBeenCalledWith('server-consumer')
+      expect(localClose).toHaveBeenCalledTimes(stale ? 1 : 0)
+    },
+  )
+})

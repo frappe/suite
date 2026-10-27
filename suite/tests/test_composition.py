@@ -10,11 +10,13 @@ class TestSuiteComposition(unittest.TestCase):
         self.assertEqual(hooks.after_install, "suite.composition.lifecycle.after_install")
         self.assertEqual(hooks.after_migrate, "suite.composition.lifecycle.after_migrate")
         self.assertEqual(hooks.after_app_install, "suite.composition.lifecycle.after_app_install")
-        self.assertEqual(hooks.extend_bootinfo, "suite.composition.lifecycle.extend_bootinfo")
 
-    def test_user_hooks_are_single_composition_dispatchers(self):
+    def test_user_hooks_dispatch_lifecycle_and_invalidate_mail_directory(self):
         self.assertEqual(hooks.doc_events["User"]["after_insert"], ["suite.composition.users.after_insert"])
-        self.assertEqual(hooks.doc_events["User"]["on_trash"], ["suite.composition.users.on_trash"])
+        self.assertEqual(
+            hooks.doc_events["User"]["on_trash"],
+            ["suite.composition.users.on_trash", "suite.mail.email_suggestions.clear_directory_addresses"],
+        )
 
     def test_the_suite_core_lifecycle_shim_is_gone(self):
         """Lifecycle orchestration lives in composition, with no compatibility shim.

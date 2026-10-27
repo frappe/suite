@@ -27,6 +27,7 @@ from suite.tests.utils import ensure_user
 
 OWNER = "sheets-link-owner@example.com"
 STRANGER = "sheets-link-stranger@example.com"
+EDITOR = "sheets-link-editor@example.com"
 DRIVE = "/api/suite/drive"
 BODY = json.dumps({"sheets": [{"name": "Sheet1", "cells": {"A1": {"v": "4242"}}}]})
 REFUSED = (frappe.PermissionError, drive.DriveError)
@@ -50,7 +51,7 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        for user in (OWNER, STRANGER):
+        for user in (OWNER, STRANGER, EDITOR):
             ensure_user(user)
         frappe.db.commit()
 
@@ -165,6 +166,22 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
                 api.yjs_relay(self.name, "yjs_update", "{}")
         relayed = [call.args[0] for call in self.published.call_args_list if call.args[0].startswith("yjs_")]
         self.assertEqual(relayed, ["yjs_awareness"])
+
+    def test_a_named_reader_cannot_save_and_a_named_editor_can(self):
+        self._drive("PUT", f"nodes/{self.node}/grants/{STRANGER}", {"role": drive.READ})
+        self._drive("PUT", f"nodes/{self.node}/grants/{EDITOR}", {"role": drive.EDIT})
+
+        frappe.set_user(STRANGER)
+        self.assertFalse(api.get_sheet(self.name)["can_write"])
+        with self.assertRaises(REFUSED):
+            api.save_sheet("Ignored", BODY, name=self.name)
+        frappe.set_user(OWNER)
+        self.assertNotIn("4242", json.dumps(api.get_sheet(self.name)["sheets_data"]))
+
+        frappe.set_user(EDITOR)
+        api.save_sheet("Ignored", BODY, name=self.name)
+        frappe.set_user(OWNER)
+        self.assertIn("4242", json.dumps(api.get_sheet(self.name)["sheets_data"]))
 
     def test_a_trashed_sheet_opens_read_only_and_refuses_a_save(self):
         self._trash()

@@ -94,6 +94,12 @@ export function useShortcuts(actions) {
     return ae?.tagName === 'INPUT' && ae !== formulaInputEl?.()
   }
 
+  function openFind() {
+    document.activeElement?.blur?.()
+    if (openFindReplace) openFindReplace()
+    else if (showFindReplace) showFindReplace.value = true
+  }
+
   // ── Registry (source of truth for the modal) ─────────────────────────────────
   // Shortcuts frappe-ui can match on `e.key`, registered with handler + label.
   useKeyboardShortcut([
@@ -104,11 +110,15 @@ export function useShortcuts(actions) {
       description: 'Find & replace',
       group: 'View',
       allowInInput: true,
-      handler: () => {
-        document.activeElement?.blur?.()
-        if (openFindReplace) openFindReplace()
-        else if (showFindReplace) showFindReplace.value = true
-      },
+      handler: openFind,
+    },
+    // Google's replace shortcut opens the same panel (ISSUES #68).
+    {
+      combo: 'Mod+H',
+      description: 'Find & replace',
+      group: 'View',
+      allowInInput: true,
+      handler: openFind,
     },
     {
       combo: 'Mod+Backtick',
@@ -407,8 +417,12 @@ export function useShortcuts(actions) {
         return
       }
       if (clipboard.hasData()) {
-        clipboard.clear()
-        clipboardHas.value = false
+        // Like Google: Esc hides a copy's marching ants but the copy still
+        // pastes (with formulas; ISSUES #64). It cancels a cut.
+        if (clipboard.getMode?.() !== 'copy') {
+          clipboard.clear()
+          clipboardHas.value = false
+        }
         setMarchingAnts(null)
         return
       }

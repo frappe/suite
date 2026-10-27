@@ -62,6 +62,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const scope of scopes.splice(0)) scope.stop()
   engine.dispose()
+  vi.restoreAllMocks()
 })
 function observe<T>(create: () => T): T {
   const scope = effectScope()
@@ -391,6 +392,25 @@ describe('Suite API references and shared client', () => {
     expect(feedback).not.toHaveBeenCalled()
   })
 
+  it('settles once every write has landed, a write called while waiting included', async () => {
+    const pending = deferred<Response>()
+    fetcher.mockImplementation(async (_url, init) => {
+      const { title } = JSON.parse(String(init?.body)) as { title: string }
+      return title === 'First' ? pending.promise : answer(node(title))
+    })
+    const landed: string[] = []
+    void engine.client
+      .mutation(api.drive.nodes.rename, { node: 'budget', title: 'First' })
+      .then(() => landed.push('First'))
+    const settled = engine.writesSettled().then(() => landed.push('settled'))
+    void engine.client
+      .mutation(api.drive.nodes.rename, { node: 'budget', title: 'Second' })
+      .then(() => landed.push('Second'))
+    pending.resolve(answer(node('First')))
+    await settled
+    expect(landed).toEqual(['First', 'Second', 'settled'])
+  })
+
   it('isolates identity and Drive links and scopes named and covered-node calls', async () => {
     const pending = deferred<Response>()
     const code = 'L000000000000000000001'
@@ -532,6 +552,45 @@ describe('Suite API references and shared client', () => {
     expect(transfer.error).toBeNull()
     expect(transfer.isPending).toBe(false)
     expect(feedback).not.toHaveBeenCalled()
+  })
+
+  it('fetches reads again on coming back after a while away, not on focus or a glance away', async () => {
+    fetcher.mockImplementation(async () =>
+      answer({
+        globally_enabled: true,
+        is_admin: true,
+        server_url: 'https://suite.test/webdav',
+        username: 'alice',
+        enabled_for_user: false,
+        two_factor_blocked: false,
+        api_key: null,
+      }),
+    )
+    const webdav = observe(() => engine.useQuery(api.drive.webdav.get, {}))
+    await vi.waitFor(() => expect(webdav.data).toBeTruthy())
+    const fetches = () => fetcher.mock.calls.length
+    const before = fetches()
+
+    let state: DocumentVisibilityState = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => state)
+    const now = vi.spyOn(Date, 'now')
+    const leaveFor = async (ms: number) => {
+      now.mockReturnValue(1_000_000)
+      state = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      now.mockReturnValue(1_000_000 + ms)
+      state = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flush()
+    }
+
+    // Clicking back out of a mail's frame gives the window focus.
+    window.dispatchEvent(new Event('focus'))
+    await leaveFor(5_000)
+    expect(fetches()).toBe(before)
+
+    await leaveFor(60_000)
+    await vi.waitFor(() => expect(fetches()).toBe(before + 1))
   })
 
   it('refreshes Recent after a visit and settings readers after settings writes', async () => {

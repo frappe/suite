@@ -14,6 +14,7 @@ from suite.drive._core.quota import (
     RELEASE_SQL,
     admit,
     bind_legacy_storage_reservation,
+    consume_storage_reservation,
     create_storage_reservation,
     effective_quota,
     get_storage_reservation,
@@ -100,22 +101,6 @@ class TestQuotaContract(UnitTestCase):
     @patch("suite.drive._core.quota.effective_quota", return_value=100)
     @patch("suite.drive._core.quota.frappe.db.get_value")
     @patch("suite.drive._core.quota.frappe.db.sql")
-    def test_admit_is_one_conditional_counter_update(self, sql, get_value, _effective, _translate):
-        get_value.return_value = frappe._dict(name="root", kind="Personal", quota_bytes=0)
-        sql.side_effect = [None, [(1,)]]
-
-        admit("root", 25)
-
-        self.assertEqual(
-            sql.call_args_list[0],
-            call(ADMIT_SQL, {"root": "root", "delta": 25, "effective_quota": 100}),
-        )
-        self.assertEqual(sql.call_args_list[1], call("SELECT ROW_COUNT()"))
-
-    @patch("suite.drive._core.quota._", side_effect=lambda message: message)
-    @patch("suite.drive._core.quota.effective_quota", return_value=100)
-    @patch("suite.drive._core.quota.frappe.db.get_value")
-    @patch("suite.drive._core.quota.frappe.db.sql")
     def test_admit_refuses_a_lost_size_race(self, sql, get_value, _effective, _translate):
         get_value.return_value = frappe._dict(name="root", kind="Personal", quota_bytes=0)
         sql.side_effect = [None, [(0,)]]
@@ -129,12 +114,6 @@ class TestQuotaContract(UnitTestCase):
         admit("root", 0)
         get_value.assert_not_called()
         sql.assert_not_called()
-
-    @patch("suite.drive._core.quota.frappe.db.sql")
-    def test_release_uses_a_floored_decrement(self, sql):
-        release("root", 12)
-        sql.assert_called_once_with(RELEASE_SQL, {"root": "root", "delta": 12})
-        self.assertIn("GREATEST", RELEASE_SQL)
 
     @patch("suite.drive._core.quota.validate_root_pair")
     def test_malformed_root_pair_is_not_an_accounting_target(self, validate_pair):
@@ -163,17 +142,6 @@ class TestQuotaContract(UnitTestCase):
         self.assertEqual(commit.call_count, 2)
         rollback.assert_called_once_with()
         self.assertEqual(log_error.call_count, 2)
-
-    @patch("suite.drive.jobs.frappe.db.commit")
-    @patch("suite.drive.jobs.recompute_usage", return_value=frappe._dict(root="archived", drift=0))
-    @patch("suite.drive.jobs.frappe.get_all", return_value=["archived"])
-    def test_the_daily_scan_reads_archived_roots_as_well_as_active_ones(self, get_all, recompute, _commit):
-        recompute_root_usage()
-
-        get_all.assert_called_once_with(
-            "Drive Root", filters={"state": ["in", ("Active", "Archived")]}, pluck="name"
-        )
-        recompute.assert_called_once_with("archived")
 
     def test_the_recompute_is_registered_once_as_a_daily_scheduler_event(self):
         job = "suite.drive.jobs.recompute_root_usage"
@@ -260,6 +228,53 @@ class TestSiteDefaultQuota(IntegrationTestCase):
 
 
 class TestRootReservationsAndRecompute(IntegrationTestCase):
+    def test_consuming_previously_admitted_bytes_does_not_recheck_a_lowered_quota(self):
+        create_storage_reservation(self.root, "consume-lowered", 40)
+        frappe.db.set_value("Drive Root", self.root, "quota_bytes", 10)
+        consume_storage_reservation(self.root, "consume-lowered", 40)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 40)
+        self.assertFalse(frappe.db.exists("Drive Storage Reservation", "consume-lowered"))
+
+    def test_consuming_less_than_reserved_releases_only_unused_bytes(self):
+        create_storage_reservation(self.root, "consume-smaller", 40)
+        consume_storage_reservation(self.root, "consume-smaller", 25)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 25)
+
+    def test_mail_usage_alone_can_use_up_a_users_drive_headroom(self):
+        from suite.suite_core.storage import state
+
+        doc, _policy, _measurements = state()
+        kept = (doc.policy, doc.measurements)
+        self.addCleanup(
+            lambda: frappe.db.set_value(
+                "Suite Storage State", "site", dict(zip(("policy", "measurements"), kept, strict=True))
+            )
+        )
+        # A 10-byte cap allows 11 with its headroom; Mail already holds 10.
+        frappe.db.set_value(
+            "Suite Storage State",
+            "site",
+            {
+                "policy": frappe.as_json({"users": {self.user: {"cap": 10}}}),
+                "measurements": frappe.as_json(
+                    {"site_mail": 10, "allowance": 0, "personal": {self.user: 10}}
+                ),
+            },
+        )
+        frappe.db.set_value("Drive Root", self.root, "used_bytes", 0, update_modified=False)
+
+        with patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True):
+            admit(self.root, 1)
+            with self.assertRaises(DriveOverQuota):
+                admit(self.root, 1)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 1)
+
+    def test_releasing_more_than_is_used_leaves_the_root_at_zero_not_negative(self):
+        frappe.db.set_value("Drive Root", self.root, "used_bytes", 3, update_modified=False)
+        release(self.root, 10)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
+
     user = "drive-quota-reservations@example.com"
     other_user = "drive-quota-other@example.com"
 

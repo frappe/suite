@@ -1,5 +1,43 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!report.data">
+    <template #loading>
+      <DashboardDetailHeaderSkeleton />
+      <TlsStatTiles />
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <DashboardCard :title="__('Failures')" class="lg:col-span-2">
+          <div class="flex flex-col">
+            <div
+              v-for="n in 3"
+              :key="n"
+              class="flex flex-col gap-2 border-b px-5 py-3 text-sm last:border-b-0"
+            >
+              <DashboardSkeletonText width="45%" />
+              <DashboardSkeletonText class="text-xs" width="70%" />
+            </div>
+          </div>
+        </DashboardCard>
+        <div class="flex flex-col gap-5">
+          <DashboardCard :title="__('Policies Applied')">
+            <div class="flex flex-col gap-1.5 px-5 py-3 text-sm">
+              <DashboardSkeletonText width="50%" />
+              <DashboardSkeletonText class="text-xs" width="35%" />
+            </div>
+          </DashboardCard>
+          <DashboardCard :title="__('Report')">
+            <div class="flex flex-col">
+              <div
+                v-for="row in reportRows"
+                :key="row.label"
+                class="flex min-h-12 items-center gap-3 border-b px-5 py-2 text-sm last:border-b-0"
+              >
+                <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
+                <DashboardSkeletonText width="40%" />
+              </div>
+            </div>
+          </DashboardCard>
+        </div>
+      </div>
+    </template>
     <template #default>
       <template v-if="report.data">
         <DashboardDetailHeader
@@ -133,6 +171,7 @@ import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
+import DashboardDetailHeaderSkeleton from '@/apps/mail/components/DashboardDetailHeaderSkeleton.vue'
 import TlsStatTiles from '@/apps/mail/components/TlsStatTiles.vue'
 import { raiseError } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
@@ -144,7 +183,7 @@ import {
   type TlsPolicy,
   type TlsReportRow,
 } from '@/apps/mail/utils/tls'
-import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { DashboardCard, DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 type ReportData = TlsReportRow & { policies: TlsPolicy[]; failures: TlsFailure[] }
@@ -174,7 +213,7 @@ usePageMeta(() =>
 )
 
 const BREADCRUMBS = computed(() => [
-  { label: __('TLS Reports'), route: '/mail/dashboard/tls' },
+  { label: __('TLS Reports'), route: '/admin/mail/tls' },
   { label: data.value ? `${data.value.domain} · ${data.value.reporter}` : reportId },
 ])
 

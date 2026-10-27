@@ -376,6 +376,18 @@ describe('VideoElementManager role-aware attachments', () => {
     expect(track.stop).toHaveBeenCalledOnce()
   })
 
+  it('forgets a hidden camera stream when its element is remounted', async () => {
+    manager.registerRemoteVideoElement('p1', makeVideoElement())
+    await manager.attachStream('p1', makeStream([makeTrack('hidden-camera')]))
+    manager.detachVideoStream('p1')
+    const remounted = makeVideoElement()
+    remounted.srcObject = null
+    manager.registerRemoteVideoElement('p1', remounted)
+    expect(remounted.srcObject).toBeNull()
+    await manager.attachStream('p1', makeStream([makeTrack('shown-camera')]))
+    expect(remounted.srcObject).not.toBeNull()
+  })
+
   it('stops only replaced owned remote tracks', async () => {
     const retained = makeTrack('retained')
     const replaced = makeTrack('replaced')

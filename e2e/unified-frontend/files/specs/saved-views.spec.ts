@@ -1,11 +1,10 @@
-import { type APIRequestContext } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 import {
 	adminApi,
 	createDocument,
 	createFolder,
+	grantRole,
 	patchNode,
 	purge,
 	roots,
@@ -14,6 +13,7 @@ import {
 	visit,
 	type DriveNode,
 } from "../../helpers/drive";
+import { PERSON, ensurePerson, personContext } from "../../helpers/person";
 
 /** Ticket 006: the saved views and the presentation keys they refuse. */
 
@@ -56,10 +56,25 @@ test("Trash lists the trashed node under My files", async ({ page }) => {
 	await expect(page.getByText(trashed.title, { exact: true })).toBeVisible();
 });
 
-test("Shared with me renders its own empty or listed state", async ({ page }) => {
+test("a reader of a shared folder sees it in Shared with me and opens it read-only", async ({ browser, baseURL }) => {
+	const shared = await createFolder(api, home.name, runTag("w4-shared"));
+	const inside = await createDocument(api, shared.name, runTag("w4-inside"), "Writer Document");
+	ensurePerson();
+	await grantRole(api, shared.name, PERSON, 10);
+	const context = await personContext(browser, baseURL!);
+	const page = await context.newPage();
+
 	await page.goto("/drive/shared-with-me");
-	await expect(page).toHaveTitle("Shared with me");
-	await expect(page.getByRole("searchbox", { name: "Search files" })).toBeVisible();
+	await page.getByText(shared.title, { exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${shared.name}`));
+	const row = page.getByText(inside.title, { exact: true });
+	await expect(row).toBeVisible();
+	await expect(page.getByRole("button", { name: "New", exact: true })).toHaveCount(0);
+
+	await row.click({ modifiers: ["ControlOrMeta"] });
+	await expect(page.getByRole("button", { name: "Move", exact: true })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Move to trash" })).toBeDisabled();
+	await context.close();
 });
 
 test("a saved view drops sort and group keys it cannot honor", async ({ page }) => {

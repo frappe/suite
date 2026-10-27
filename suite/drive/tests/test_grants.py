@@ -233,6 +233,20 @@ class TestGrantWorkflows(_GrantFixture):
             with self.subTest(label=label):
                 self._assert_no_mutation(operation, exception)
 
+    def test_a_public_folder_publishes_its_descendants_until_a_nearer_public_deny(self):
+        child = self._child(self.folder.name, "Child")
+        grand = self._child(child.name, "Grand")
+        sibling = self._child(self.folder.name, "Sibling")
+        grant(self.folder.name, "$PUBLIC", READ, self.admin)
+        grant(child.name, "$PUBLIC", NONE, self.admin)
+        guest = Principals("Guest", (), ("$PUBLIC",))
+
+        require(self.folder, READ, guest)
+        require(sibling, READ, guest)
+        for hidden in (child, grand):
+            with self.subTest(node=hidden.title), self.assertRaises(DriveNotFound):
+                require(hidden, READ, guest)
+
     def test_missing_group_is_a_validation_error(self):
         self._assert_no_mutation(
             lambda: grant(self.folder.name, "$GROUP:missing-grant-group", READ, self.admin),
@@ -429,6 +443,26 @@ class TestGrantWorkflows(_GrantFixture):
             explain(self.folder, self.admin),
             {"role": MANAGE, "source": "site admin", "rows": []},
         )
+
+    def test_public_deny_without_expiry_still_blocks_inherited_read_after_the_old_expiry(self):
+        child = self._child(self.folder.name, "Published child")
+        manager = Principals(TARGET, (TARGET,), ("$PUBLIC",))
+        guest = Principals("Guest", (), ("$PUBLIC",))
+        expiry = add_to_date(now_datetime(), days=1)
+        grant(self.folder.name, "$PUBLIC", READ, manager)
+        grant(child.name, "$PUBLIC", READ, manager, expires_on=expiry)
+        self.assertEqual(effective_role(child, guest), READ)
+
+        grant(child.name, "$PUBLIC", NONE, manager, expires_on=None)
+
+        stored = frappe.db.get_value(
+            "Drive Grant", {"node": child.name, "principal": "$PUBLIC"}, ["role", "expires_on"]
+        )
+        self.assertEqual(stored, (NONE, None))
+        self.assertEqual(effective_role(child, guest), NONE)
+        with patch("suite.drive._core.access.now", return_value=add_to_date(expiry, seconds=1)):
+            self.assertEqual(effective_role(self.folder, guest), READ)
+            self.assertEqual(effective_role(child, guest), NONE)
 
     def test_expired_positive_deny_and_link_rows_are_retained_but_inert(self):
         principals = (MANAGER, "$GENERAL", "$PUBLIC", "$LINK:AbCdEfGhIjKlMnOpQrSt12")
@@ -1114,6 +1148,35 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
             ),
             2,
         )
+
+    def test_suite_cloud_sends_the_share_mail_by_type(self):
+        from suite.drive._core import activity
+
+        _, jobs = self._committed(lambda: grant(self.folder.name, SHARED_WITH, READ, self.admin, notify=True))
+        with self.change_settings(
+            "Suite Settings",
+            suite_cloud_url="https://cloud.example.test",
+            suite_cloud_tenant="tenant",
+            suite_cloud_secret="secret",
+        ):
+            frappe.local.request_cache.clear()
+            with patch("frappe.enqueue") as enqueue:
+                activity.send_share_email(**jobs[0])
+            frappe.local.request_cache.clear()
+
+        kwargs = enqueue.call_args.kwargs
+        self.assertEqual(enqueue.call_args.args[0], "suite.suite_core.suite_email.send_in_background")
+        self.assertEqual((kwargs["email_type"], kwargs["recipient"]), ("drive-share", SHARED_WITH))
+        self.assertEqual(
+            kwargs["params"],
+            {
+                "sharer": frappe.utils.get_fullname(self.admin.user),
+                "item_type": "folder",
+                "item_name": frappe.db.get_value("Drive Node", self.folder.name, "title"),
+                "link": frappe.utils.get_url(node_url(self.folder.name)),
+            },
+        )
+        self.assertEqual(self._mail_to(SHARED_WITH), [])
 
     def test_notify_on_a_principal_that_is_not_a_user_is_refused(self):
         self._assert_no_mutation(

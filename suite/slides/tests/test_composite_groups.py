@@ -441,6 +441,22 @@ class TestCompositeGroups(IntegrationTestCase):
             self.assertEqual(set(row), {"reference", "index", "presentation", "node"})
         self.assertEqual([row["node"] for row in answered["references"]], references)
 
+    def test_the_whole_deck_answer_names_each_reference_like_the_manifest(self):
+        decks = [self._deck(title=f"Whole {index}") for index in range(2)]
+        composite = self._composite(decks)
+        from suite.slides.doctype.presentation.presentation import get_composite_presentation
+
+        answered = get_composite_presentation(self._docname(composite))["references"]
+
+        self.assertEqual(
+            [(row["reference"], row["index"]) for row in answered],
+            [(reference, index) for index, reference in enumerate(self._ids(composite), start=1)],
+        )
+        self.assertEqual([row["node"] for row in answered], decks)
+        for row in answered:
+            self.assertIsNone(row["composite"])
+            self.assertIsNone(row["slides"])
+
     def test_a_reference_id_is_the_row_and_never_the_deck_or_the_node(self):
         reference = self._deck(title="Ref")
         composite = self._composite([reference])

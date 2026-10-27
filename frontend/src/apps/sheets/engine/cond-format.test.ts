@@ -58,3 +58,44 @@ describe('CondFormatEngine ids', () => {
     expect(copies[0]!.range).toEqual(saved.S[0]!.range)
   })
 })
+
+// The painter hands rules the display string. IronCalc shows a typed 1,000
+// as `1,000`, which parseFloat read as 1, so "greater than 100" missed it.
+describe('CondFormatEngine on formatted numbers', () => {
+  it('compares the number a cell shows', async () => {
+    const cf = await freshEngine()
+    cf.addRule(
+      {
+        range: { r0: 0, c0: 0, r1: 3, c1: 0 },
+        condition: { type: 'gt', value: '100' },
+        format: { backgroundColor: '#fde68a' },
+      },
+      'S',
+    )
+    expect(cf.getFormatOverride('A1', '1,000', 'S', () => '')).toMatchObject({
+      backgroundColor: '#fde68a',
+    })
+    expect(cf.getFormatOverride('A2', '$250', 'S', () => '')).toMatchObject({
+      backgroundColor: '#fde68a',
+    })
+    expect(cf.getFormatOverride('A3', '99', 'S', () => '')).toBeFalsy()
+  })
+
+  it('scales colours over formatted numbers', async () => {
+    const cf = await freshEngine()
+    const shown: Record<string, string> = { A1: '1,000', A2: '$0', A3: '50%' }
+    cf.addRule(
+      {
+        kind: 'color-scale',
+        range: { r0: 0, c0: 0, r1: 2, c1: 0 },
+        scale: { variant: '2color' },
+      } as never,
+      'S',
+    )
+    const get = (id: string) => shown[id] ?? ''
+    const top = cf.getFormatOverride('A1', '1,000', 'S', get)
+    const bottom = cf.getFormatOverride('A2', '$0', 'S', get)
+    expect(top?.backgroundColor).toBe('#0e7490')
+    expect(bottom?.backgroundColor).toBe('#ffffff')
+  })
+})

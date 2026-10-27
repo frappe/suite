@@ -138,6 +138,8 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { selectStem } from '@/apps/drive/files/internal/filename'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { canRename } from '../nodeActions'
 import {
@@ -256,7 +258,19 @@ async function rename(): Promise<string | null> {
     await props.session.rename(title)
     return null
   } catch (error) {
-    return error instanceof Error ? error.message : 'Could not rename this file.'
+    if (!(error instanceof TransportError)) {
+      return error instanceof Error ? error.message : __('Could not rename this file.')
+    }
+    // Drive names a free title only when the title is taken. Its own message
+    // for that is written for developers.
+    const free = error.details.free_title
+    if (error.type === 'DriveConflict' && typeof free === 'string') {
+      return __('That name is taken in this folder. Try “{0}”.', [free])
+    }
+    // Offline or a server failure: the message is the browser's or the server's, not ours.
+    if (error.status === 0 || error.status >= 500)
+      return __('Could not rename this file. Try again.')
+    return error.message
   }
 }
 

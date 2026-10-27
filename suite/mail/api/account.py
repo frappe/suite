@@ -25,6 +25,7 @@ from suite.mail.utils.user import (
     can_use_mail,
     has_user_settings,
 )
+from suite.suite_core import suite_email
 from suite.suite_core.utils import is_suite_cloud_configured
 from suite.utils import user_context
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -164,6 +165,15 @@ def create_account(
     """Create a new mail account"""
 
     account_request = frappe.get_last_doc("Mail Account Request", {"request_key": request_key})
+    from suite.suite_core.storage import state
+
+    state(lock=True)
+    frappe.db.get_value("Mail Account Request", account_request.name, "name", for_update=True)
+    account_request.reload()
+    if account_request.request_key != request_key:
+        frappe.throw(_("This invitation link has been replaced"))
+    if account_request.is_verified:
+        frappe.throw(_("This invitation has already been accepted"))
     account_request.validate_expired()
     account_request.is_verified = 1
     account_request.save(ignore_permissions=True)
@@ -172,6 +182,14 @@ def create_account(
         # Account setup (JMAP account sync, archive mailbox, sieve) resolves ownership
         # against the session user, which is Guest on this endpoint — run it elevated,
         # same as signup().
+        from suite.mail.directory import get_account_metadata
+
+        options = get_account_metadata()
+        locales = {option["value"] for option in options["locales"]}
+        zones = {option["value"] for option in options["time_zones"]}
+        locale = locale if locale in locales else "en-US"
+        site_zone = get_system_timezone()
+        time_zone = time_zone if time_zone in zones else site_zone if site_zone in zones else "UTC"
         with user_context("Administrator"):
             account_request.create_account(first_name, last_name, password, locale, time_zone)
 
@@ -435,12 +453,12 @@ def send_reset_password_link(user: str) -> str:
     email = get_backup_email(user)
     key = set_reset_password_key(user)
 
-    frappe.sendmail(
-        recipients=email,
-        subject=_("Reset Password"),
-        template="reset_password",
-        args={"link": get_url("/mail/reset-password/" + key)},
-        now=True,
+    link = get_url("/mail/reset-password/" + key)
+    suite_email.send(
+        "password-reset",
+        email,
+        {"link": link},
+        local={"subject": _("Reset Password"), "template": "reset_password", "args": {"link": link}},
     )
 
     if email == user:

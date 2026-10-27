@@ -146,3 +146,50 @@ describe('RecorderStageProjection', () => {
     ).toThrow('absent')
   })
 })
+
+describe('canonical shared ranking projection', () => {
+  it('reconciles the same versioned ranking from late snapshots and ordered events', () => {
+    const state = {
+      epoch: 'room',
+      protocolVersion: 1 as const,
+      version: 7,
+      participantIds: ['d', 'a'],
+      activeSpeakerIds: [],
+    }
+    const participants = ['a', 'd'].map((id) => ({
+      participant_id: id,
+      name: id,
+      audio_enabled: true,
+      video_enabled: true,
+    }))
+    const first = new RecorderStageProjection()
+    first.initialize({
+      ...snapshot(),
+      participants,
+      shared_stage: { ...state, version: 6, participantIds: ['a', 'd'] },
+    })
+    first.applyEvent(event(1, { type: 'shared_stage', state }))
+    const late = new RecorderStageProjection()
+    late.initialize({ ...snapshot(1), participants, shared_stage: state })
+    expect(first.sharedStage).toEqual(state)
+    expect(late.sharedStage).toEqual(state)
+    expect(() =>
+      first.applyEvent(event(2, { type: 'shared_stage', state: { ...state, version: 6 } })),
+    ).toThrow('version regressed')
+  })
+  it('rejects a canonical snapshot that references a departed participant', () => {
+    const projection = new RecorderStageProjection()
+    expect(() =>
+      projection.initialize({
+        ...snapshot(),
+        shared_stage: {
+          epoch: 'room',
+          protocolVersion: 1,
+          version: 1,
+          participantIds: ['gone'],
+          activeSpeakerIds: [],
+        },
+      }),
+    ).toThrow('inventory mismatch')
+  })
+})

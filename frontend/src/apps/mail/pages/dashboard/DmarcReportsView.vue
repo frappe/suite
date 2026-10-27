@@ -4,7 +4,7 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
       <FormControl v-model="search" :placeholder="__('Search reporter or domain')" class="w-80">
         <template #prefix>
-          <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
+          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
       <div class="flex items-center gap-3">
@@ -13,10 +13,7 @@
       </div>
     </div>
 
-    <DmarcStatTiles v-if="summary.data" :totals="summary.data.totals" />
-    <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-      <div v-for="n in 5" :key="n" class="bg-surface-gray-1 h-24 animate-pulse rounded-4 border" />
-    </div>
+    <DmarcStatTiles :totals="summary.data?.totals" />
 
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <!-- The sources worth a look are the big senders that fail: sorted by volume, rate beside. -->
@@ -37,66 +34,46 @@
     </div>
 
     <div class="flex min-h-0 flex-1 flex-col">
-      <ListView
-        v-if="list.status === 'success'"
-        class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
+      <DashboardList
         :columns="LIST_COLUMNS"
         :rows="list.rows"
-        :options="listOptions"
         row-key="id"
+        :loading="list.status !== 'success'"
+        :row-route="listOptions.getRowRoute"
+        :empty-state="listOptions.emptyState"
       >
-        <ListHeader />
-        <ListRows>
-          <template v-if="list.rows.length">
-            <ListRow
-              v-for="row in list.rows"
-              :key="row.id"
-              v-slot="{ column, item }"
-              :row="row"
-              class="hover:!bg-surface-gray-1"
-            >
-              <!-- Plain cells rather than the list's own cell component, which wraps each cell
-							     in a Tooltip: a page of 500 rows would mount thousands and stall the page. -->
-              <template v-if="column.key === 'pass_rate'">
-                <Badge
-                  v-if="row.messages && item != null"
-                  :theme="rateTheme(item)"
-                  :label="formatRate(item)"
-                />
-              </template>
-              <span
-                v-else-if="column.key === 'date_range_end'"
-                class="text-ink-gray-5 truncate text-sm"
-              >
-                {{ formatPeriod(row) }}
-              </span>
-              <span
-                v-else-if="column.key === 'received_at'"
-                class="text-ink-gray-5 truncate text-sm"
-              >
-                {{ fromNow(item) || '—' }}
-              </span>
-              <span
-                v-else-if="column.key === 'messages' || column.key === 'failed'"
-                class="text-base tabular-nums"
-              >
-                {{ item ? Number(item).toLocaleString() : '' }}
-              </span>
-              <span v-else class="truncate text-base">{{ item }}</span>
-            </ListRow>
+        <template #cell="{ column, row, item }">
+          <template v-if="column.key === 'pass_rate'">
+            <Badge
+              v-if="row.messages && item != null"
+              :theme="rateTheme(item as number)"
+              :label="formatRate(item as number)"
+            />
           </template>
-          <ListEmptyState v-else />
-        </ListRows>
-      </ListView>
-      <DashboardListSkeleton v-else />
+          <span
+            v-else-if="column.key === 'date_range_end'"
+            class="text-ink-gray-5 truncate text-sm"
+          >
+            {{ formatPeriod(row) }}
+          </span>
+          <span v-else-if="column.key === 'received_at'" class="text-ink-gray-5 truncate text-sm">
+            {{ fromNow(item as string) || '—' }}
+          </span>
+          <span
+            v-else-if="column.key === 'messages' || column.key === 'failed'"
+            class="text-base tabular-nums"
+          >
+            {{ item ? Number(item).toLocaleString() : '' }}
+          </span>
+          <span v-else class="truncate text-base">{{ item }}</span>
+        </template>
+      </DashboardList>
       <DashboardPager
         v-if="list.status === 'success' && list.total"
         :count="list.rows.length"
         :total="list.total ?? 0"
-        :page-length="pageLength"
         :has-more="list.hasNext"
         :loading="list.isFetching"
-        @update:page-length="(value) => (pageLength = value)"
         @load-more="list.fetchNext().catch(() => {})"
       />
     </div>
@@ -106,14 +83,6 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
 import { Badge, FormControl, usePageMeta } from 'frappe-ui'
-import {
-  Icon as FeatherIcon,
-  ListEmptyState,
-  ListHeader,
-  ListRow,
-  ListRows,
-  ListView,
-} from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery, useQuery } from '@/api'
@@ -122,9 +91,9 @@ import BreakdownRows from '@/apps/mail/components/DmarcBreakdownRows.vue'
 import DmarcStatTiles from '@/apps/mail/components/DmarcStatTiles.vue'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import type { DmarcReportRow } from '@/apps/mail/utils/dmarc'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
-import { DashboardCard, DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('DMARC Reports'), 'Mail'))
@@ -154,13 +123,12 @@ const summary = useQuery(api.mail.admin.dmarc.summary, () => ({
 // The list and the summary take the same domain and period, so the page never shows a
 // period's totals beside reports from outside it.
 const debouncedSearch = refDebounced(search, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const list = useInfiniteQuery(api.mail.admin.dmarc.list, () => ({
   txt: debouncedSearch.value,
   domain_id: domain.value || undefined,
   days: Number(period.value),
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const LIST_COLUMNS = [
   {

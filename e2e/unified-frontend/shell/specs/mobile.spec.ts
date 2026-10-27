@@ -1,4 +1,4 @@
-import { expect, test } from "../../helpers/flips";
+import { expect, test } from "@playwright/test";
 
 import { MOBILE_VIEWPORT } from "../../helpers/shell";
 

@@ -1816,8 +1816,10 @@ Home lives in `composition/home/` because it composes product seams
 
 - Source: Calendar events only, through `GET /api/suite/calendar/events`.
   Meet has no list route [T012].
-- The window runs from now to the end of tomorrow, grouped as **Today** and
-  **Tomorrow** [T012].
+- Home and Meet Upcoming cover local today through the end of the next weekday.
+  Friday, Saturday and Sunday extend through Monday; intervening weekend events
+  remain eligible. This uses the browser timezone and no holiday calendar.
+  Ended events are omitted; existing row limits still apply.
 - The endpoint expands recurring events across the range [T012].
 - The query covers every account the caller owns. The request omits
   `account` (ask C2) [T012].

@@ -75,6 +75,15 @@ export function canInsertRef(value: string, caret: number): boolean {
   return /[=(,;+\-*/^&<>{]$/.test(before)
 }
 
+/**
+ * F2 while editing a formula switches the arrows between moving the caret and
+ * picking references, as in Sheets. Shift+F2 is the notes shortcut, so only a
+ * bare F2 counts.
+ */
+export function isPickToggle(e: KeyboardEvent): boolean {
+  return e.key === 'F2' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+}
+
 /** `Sheet2!` for a plain name, `'My Sheet'!` (quotes doubled) otherwise. */
 export function sheetPrefix(name: string | null): string {
   if (!name) return ''

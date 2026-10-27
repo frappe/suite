@@ -13,6 +13,7 @@
   .file-icon-doc,
   .file-icon-sheet,
   .file-icon-slides,
+  .file-icon-draw,
   .file-icon-pdf,
   .file-icon-image,
   .file-icon-video,
@@ -75,4 +76,8 @@
 }
 :where(.file-icon-link) {
   mask-image: url('./file-icons/link.svg');
+}
+
+:where(.file-icon-draw) {
+  mask-image: url('./file-icons/draw.svg');
 }

@@ -1,5 +1,24 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!domain.data">
+    <template #loading>
+      <DashboardDetailHeaderSkeleton :actions="4" />
+      <div class="rounded-4 border">
+        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
+        <div v-for="n in 2" :key="n" class="space-y-4 border-t p-4">
+          <div class="space-y-2">
+            <DashboardSkeletonText width="6rem" />
+            <DashboardSkeletonText class="text-sm" width="60%" />
+          </div>
+          <DashboardList
+            :columns="DNS_SKELETON_COLUMNS"
+            :rows="[]"
+            row-key="key"
+            loading
+            :skeleton-rows="2"
+          />
+        </div>
+      </div>
+    </template>
     <template v-if="domain.data" #default>
       <DashboardDetailHeader
         :title="domain.data.name"
@@ -73,12 +92,13 @@ import { useRouter } from 'vue-router'
 
 import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
+import DashboardDetailHeaderSkeleton from '@/apps/mail/components/DashboardDetailHeaderSkeleton.vue'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
 import EditDomainModal from '@/apps/mail/components/Modals/EditDomainModal.vue'
 import { downloadUrlAsFile, raiseError, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { domainStatusBadge, type DomainStatus } from '@/apps/mail/utils/domainStatus'
-import { DashboardLayout } from '@/platform/dashboard'
+import { DashboardLayout, DashboardList, DashboardSkeletonText } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 type DNSRecord = Record<string, string | number | boolean | null | undefined>
@@ -195,10 +215,17 @@ async function downloadDNSJsonSubmit() {
   })
   downloadFile(content, 'json', 'application/json;charset=utf-8')
 }
+const DNS_SKELETON_COLUMNS = [
+  { label: __('Type'), key: 'type', width: '8%' },
+  { label: __('Host'), key: 'host', width: '18%' },
+  { label: __('Value'), key: 'value' },
+  { label: __('TTL'), key: 'ttl', width: '8%' },
+  { label: __('Status'), key: 'is_verified', width: '12%' },
+]
 const BREADCRUMBS = computed(() => [
   {
     label: __('Domains'),
-    route: '/mail/dashboard/domains',
+    route: '/admin/mail/domains',
   },
   {
     label: domain.data?.name || domainId,

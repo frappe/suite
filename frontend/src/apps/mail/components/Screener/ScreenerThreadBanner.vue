@@ -3,11 +3,19 @@
 	     works as usual, and acting on the thread decides it too. Every sender it waits on is asked
 	     about at once, and Yes / No answer for all of them; the arrow beside Yes can single one out,
 	     or trust a domain they share. Yes lets their images in for good; until then each message offers
-	     its own (see HiddenImagesBanner). A banner on desktop; on a phone, a full-bleed row. -->
-  <div class="sm:space-y-2" role="region" :aria-label="__('Unknown sender')">
-    <div class="bg-surface-gray-1 flex items-center gap-3 px-3 py-2 max-sm:border-b sm:rounded-6">
-      <UserRoundSearch class="text-ink-gray-5 size-4 shrink-0" />
-      <div class="text-p-sm text-ink-gray-8 min-w-0 flex-1 truncate" :title="emails">
+	     its own (see HiddenImagesBanner). It sits in the message from the sender it asks about,
+	     under their name (MailThread). -->
+  <div role="region" :aria-label="__('Unknown sender')">
+    <div class="bg-surface-gray-1 flex items-center gap-3 rounded-6 px-3 py-2">
+      <!-- On the first line, however many the question takes: mt-0.5 centres the 16px icon on
+           text-p-sm's 19.5px line. The buttons stay centred, on the question as a whole. -->
+      <UserRoundSearch class="text-ink-gray-5 mt-0.5 size-4 shrink-0 self-start" />
+      <!-- Wraps rather than truncates: the address is what the question is about, and an
+           address breaks anywhere rather than run past the buttons. -->
+      <div
+        class="text-p-sm text-ink-gray-8 min-w-0 flex-1 [overflow-wrap:anywhere]"
+        :title="emails"
+      >
         {{ __('Do you want mail from') }}
         <template v-if="senders.length === 1">
           <span class="!font-medium">{{ senders[0].email }}</span

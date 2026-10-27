@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 
-import { COL_HEADER_H, DEFAULT_ROW_H } from '../../canvas/constants'
+import { COL_HEADER_H, DEFAULT_COL_W, DEFAULT_ROW_H, ROW_HEADER_W } from '../../canvas/constants'
 import { DEFAULT_CHART_SIZE } from '../../engine/charts.js'
 import { parseCellId } from '../../utils/cells.js'
 
@@ -119,25 +119,44 @@ export function useChartIntegration({
     isDirty.value = true
   }
 
-  // Default chart placement. When the source range lives on the SAME sheet
-  // the chart is being inserted into (the common pivot-output case), drop
-  // the chart below the source's last row so it doesn't cover the data
-  // that fed it. Otherwise keep the legacy top-left stagger.
+  // Default chart placement. When the source range is on the sheet the
+  // chart goes on, put the chart beside it, level with its first row, as
+  // Google does; below it when there is no room to the right. It covered
+  // the data and the column headers before (ISSUES #65: the row was read
+  // as `.r` of a `{row, col}`, so y was NaN and painted at 0). Otherwise
+  // keep the top-left stagger.
   function _defaultPosition(config, offset) {
-    let x = 40 + offset
-    let y = 40 + offset
+    const fallback = { x: 40 + offset, y: COL_HEADER_H + 16 + offset }
     const sourceSheet = config.sourceSheet || currentSheet.value
-    if (sourceSheet === currentSheet.value && config.sourceRange) {
-      const endRef = String(config.sourceRange).split(':').pop().trim()
-      const parsed = parseCellId(endRef)
-      if (parsed) {
-        // rows are 0-indexed; +1 to reach BOTTOM of that row, *DEFAULT_ROW_H
-        // is a heuristic (custom row heights aren't read here — that would
-        // require canvas geometry access) and good enough for a default.
-        y = COL_HEADER_H + (parsed.r + 1) * DEFAULT_ROW_H + 16 + offset
+    if (sourceSheet !== currentSheet.value || !config.sourceRange) return fallback
+    const [start, end = start] = String(config.sourceRange).split(':')
+    const a = parseCellId(start.trim().replace(/\$/g, ''))
+    const b = parseCellId(end.trim().replace(/\$/g, ''))
+    if (!a || !b) return fallback
+    const r0 = Math.min(a.row, b.row),
+      r1 = Math.max(a.row, b.row)
+    const c0 = Math.min(a.col, b.col),
+      c1 = Math.max(a.col, b.col)
+    // Where the cells are on screen now (widths, heights, scroll, zoom);
+    // the default sizes when the grid isn't there to ask.
+    const grid = getGrid?.()
+    const rect = (r, c) =>
+      grid?.getCellRect?.(r, c) ?? {
+        x: ROW_HEADER_W + c * DEFAULT_COL_W,
+        y: COL_HEADER_H + r * DEFAULT_ROW_H,
+        width: DEFAULT_COL_W,
+        height: DEFAULT_ROW_H,
       }
+    const viewW = grid?.getViewportSize?.()?.w ?? Infinity
+    const topRight = rect(r0, c1)
+    const right = topRight.x + topRight.width + 16
+    if (right + DEFAULT_CHART_SIZE.width <= viewW)
+      return { x: right + offset, y: Math.max(COL_HEADER_H, topRight.y) + offset }
+    const bottomLeft = rect(r1, c0)
+    return {
+      x: Math.max(ROW_HEADER_W, bottomLeft.x) + offset,
+      y: Math.max(COL_HEADER_H, bottomLeft.y + bottomLeft.height + 16) + offset,
     }
-    return { x, y }
   }
 
   function onChartDelete(id) {

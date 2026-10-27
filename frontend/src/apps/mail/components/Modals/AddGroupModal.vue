@@ -19,7 +19,7 @@
         <FormControl
           v-model="name"
           :label="__('Name')"
-          placeholder="team"
+          :placeholder="__('e.g. support')"
           autocomplete="off"
           :description="__('Together with the domain, this forms the group\'s email address.')"
         />
@@ -30,23 +30,14 @@
           :options="domainOptions"
         />
         <FormControl v-model="description" :label="__('Description')" />
-        <FormControl
-          v-model="quotaGb"
-          type="number"
-          :min="0"
-          :label="__('Quota (GB)')"
-          :description="__('Leave blank or 0 for no limit.')"
+        <MultiSelect
+          v-model="memberIds"
+          v-model:query="picker.query"
+          :label="__('Members')"
+          :options="picker.options"
+          :filterable="false"
+          :placeholder="__('Search accounts')"
         />
-        <div class="space-y-1.5">
-          <label class="text-ink-gray-5 block text-xs">{{ __('Members') }}</label>
-          <MultiSelect
-            v-model="memberIds"
-            v-model:query="picker.query"
-            :options="picker.options"
-            :filterable="false"
-            :placeholder="__('Search accounts')"
-          />
-        </div>
         <hr />
 
         <Switch
@@ -55,7 +46,6 @@
           :description="
             __('The group cannot receive emails. Mail addressed to it bounces back to the sender.')
           "
-          class="hover:!bg-surface-base !cursor-default !p-0"
         />
         <ErrorMessage
           :message="
@@ -86,7 +76,6 @@ const emit = defineEmits(['reload'])
 const name = ref('')
 const domain = ref('')
 const description = ref('')
-const quotaGb = ref<string | number>('')
 const memberIds = ref<string[]>([])
 const disableReceiving = ref(false)
 
@@ -102,7 +91,6 @@ watch(show, () => {
     name.value = ''
     domain.value = ''
     description.value = ''
-    quotaGb.value = ''
     memberIds.value = []
     disableReceiving.value = false
     picker.reset()
@@ -117,7 +105,7 @@ async function addGroupSubmit() {
     domain: domain.value,
     description: description.value?.trim() || undefined,
     members: memberIds.value,
-    quota_gb: quotaGb.value === '' ? null : Number(quotaGb.value),
+    quota_gb: 0,
     disable_receiving: disableReceiving.value,
   }
 

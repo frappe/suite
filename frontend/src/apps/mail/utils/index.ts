@@ -160,6 +160,7 @@ export const commitAfterUndo = ({
   removal,
   restore,
   onSent,
+  onFailed = raiseError,
   undoSlot,
 }: {
   message: string
@@ -167,6 +168,8 @@ export const commitAfterUndo = ({
   restore: () => void
   /** After the server has carried it out: refresh whatever lists or counts it touched. */
   onSent?: () => void
+  /** Says the server refused, where the refusal has more to offer than its message. */
+  onFailed?: (error: unknown) => void
   /** The app's Cmd/Ctrl+Z, offered the same Undo for as long as the toast is: `useUndo`'s slot. */
   undoSlot?: { set: (action: () => void) => void; retire: (action: () => void) => void }
 }) => {
@@ -184,7 +187,7 @@ export const commitAfterUndo = ({
     void sendRemoval(removal)
       .then(onSent, (error) => {
         restore()
-        raiseError(error)
+        onFailed(error)
       })
       .finally(() => forgetRemoval(remembered))
   }

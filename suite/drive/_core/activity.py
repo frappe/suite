@@ -17,6 +17,7 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
+from suite.suite_core import suite_email
 
 ACTIVITY_ACTIONS = (
     "create",
@@ -399,6 +400,8 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
 # What a share email tells the recipient they may do. A deny shares nothing,
 # so role 0 has no entry and sends no email.
 SHARE_VERBS = {READ: "view", COMMENT: "comment on", UPLOAD: "upload to", EDIT: "edit", MANAGE: "manage"}
+# What a share email calls the shared node. Any other kind is a file.
+SHARE_ITEM_TYPES = {"folder": "folder", "document": "document"}
 
 
 def queue_share_email(node: str, recipient: str, role: int, path: str, sharer: str) -> None:
@@ -427,17 +430,25 @@ def _push_share_email(job: dict) -> None:
 
 def send_share_email(node: str, recipient: str, role: int, path: str, sharer: str) -> None:
     """Background job: mail one share with the sharer, the title, the role, and the link."""
-    title = frappe.db.get_value("Drive Node", node, "title")
-    if title is None:
+    row = frappe.db.get_value("Drive Node", node, ["title", "kind"], as_dict=True)
+    if row is None:
         # Purged between the grant and the job: there is nothing to open.
         return
-    name = get_fullname(sharer)
+    name, link = get_fullname(sharer), get_url(path)
     message = _('<p>{0} shared <b>{1}</b> with you. You can {2} it.</p><p><a href="{3}">Open {1}</a></p>')
-    frappe.sendmail(
-        recipients=[recipient],
-        subject=_("{0} shared {1} with you").format(name, title),
-        message=message.format(escape_html(name), escape_html(title), SHARE_VERBS[role], get_url(path)),
-        now=False,
+    suite_email.enqueue(
+        "drive-share",
+        recipient,
+        {
+            "sharer": name,
+            "item_type": SHARE_ITEM_TYPES.get(row.kind, "file"),
+            "item_name": row.title,
+            "link": link,
+        },
+        local={
+            "subject": _("{0} shared {1} with you").format(name, row.title),
+            "message": message.format(escape_html(name), escape_html(row.title), SHARE_VERBS[role], link),
+        },
     )
 
 

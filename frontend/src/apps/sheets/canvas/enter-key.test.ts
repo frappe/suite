@@ -31,12 +31,15 @@ function mount(host = {}) {
 // The tests below dispatch keys straight at the canvas, which works even when
 // a real browser could never focus it. Regression: the split dropped the
 // tabindex, so clicks didn't focus the grid and typing/Delete did nothing.
+// Focusing the canvas now lands on its hidden textarea (input/text-sink.ts).
 describe('grid focus', () => {
   it('lets the canvas take keyboard focus', () => {
     document.body.innerHTML = ''
     const { canvas } = mount()
     canvas.focus()
-    expect(document.activeElement).toBe(canvas)
+    expect(canvas.tabIndex).toBe(0)
+    expect(document.activeElement?.tagName).toBe('TEXTAREA')
+    expect(canvas.parentElement!.contains(document.activeElement)).toBe(true)
   })
 })
 

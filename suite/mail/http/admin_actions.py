@@ -25,6 +25,12 @@ class AddDomainInput(TypedDict):
     description: NotRequired[str | None]
 
 
+class MemberOutcome(TypedDict):
+    user: str
+    success: bool
+    error: str | None
+
+
 class AddGroupInput(TypedDict):
     name: str
     domain: str
@@ -82,6 +88,15 @@ class AddMemberInput(TypedDict):
     disable_receiving: NotRequired[bool]
 
 
+class CreationResult(TypedDict):
+    success: bool
+    user: str
+    status: str
+    error: str | None
+    temporary_password: str | None
+    expires_at: str | None
+
+
 class AddMemberEmailInput(TypedDict):
     member_id: str
     email: str
@@ -121,6 +136,7 @@ class DeleteMailingListsInput(TypedDict):
 
 class DeleteMembersInput(TypedDict):
     names: list[str]
+    confirmation: NotRequired[str]
 
 
 class DisableMembersInput(TypedDict):
@@ -291,7 +307,7 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         AddMailingListRecipientsInput,
         type(None),
     ),
-    (admin.add_member, "mutation", "admin.members.create", AddMemberInput, type(None)),
+    (admin.add_member, "mutation", "admin.members.create", AddMemberInput, CreationResult),
     (admin.add_member_email, "mutation", "admin.members.addEmail", AddMemberEmailInput, type(None)),
     (
         admin.add_member_to_groups,
@@ -330,9 +346,9 @@ _OPERATIONS: tuple[tuple[Callable[..., object], RouteKind, str, object, object],
         DeleteMailingListsInput,
         type(None),
     ),
-    (admin.delete_members, "mutation", "admin.members.delete", DeleteMembersInput, type(None)),
-    (admin.disable_members, "mutation", "admin.members.disable", DisableMembersInput, type(None)),
-    (admin.enable_members, "mutation", "admin.members.enable", EnableMembersInput, type(None)),
+    (admin.delete_members, "mutation", "admin.members.delete", DeleteMembersInput, CreationResult),
+    (admin.disable_members, "mutation", "admin.members.disable", DisableMembersInput, list[MemberOutcome]),
+    (admin.enable_members, "mutation", "admin.members.enable", EnableMembersInput, list[MemberOutcome]),
     (admin.get_account_options, "query", "admin.members.options", None, AccountOptions),
     (admin.get_accounts, "query", "admin.members.accounts", GetAccountsInput, list[AddressRef]),
     (admin.get_domain, "query", "admin.domains.get", GetDomainInput, Domain),

@@ -1,8 +1,6 @@
-import { type APIRequestContext } from "@playwright/test";
+import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
-import { expect, test } from "../../helpers/flips";
-
-import { adminApi, children, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
+import { adminApi, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
 /** Ticket 006: 60-row windows, opaque cursors and infinite loading. */
 
@@ -32,92 +30,79 @@ test.afterAll(async () => {
 	await api.dispose();
 });
 
-test("the server answers a 60-row window with a cursor", async () => {
-	const first = await children(api, folder.name, "?order_by=title&ascending=true");
-	expect(first.rows).toHaveLength(60);
-	expect(first.next_cursor).toBeTruthy();
-
-	const second = await children(
-		api,
-		folder.name,
-		`?order_by=title&ascending=true&cursor=${encodeURIComponent(first.next_cursor!)}`,
-	);
-	expect(second.rows).toHaveLength(TOTAL - 60);
-	expect(second.next_cursor).toBeNull();
-});
+/** Hold the first cursor response so the 60-row window is observable even on a fast load. */
+async function openFirstWindow(page: Page): Promise<() => void> {
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => { release = resolve; });
+	await page.route(/\/children\?.*cursor=/, async (route) => {
+		await held;
+		await route.continue();
+	}, { times: 1 });
+	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
+	await expect(page.locator("[data-node]")).toHaveCount(60, { timeout: 20_000 });
+	return release;
+}
 
 test("the listing loads the next window when the sentinel becomes visible", async ({ page }) => {
-	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
+	const release = await openFirstWindow(page);
 	const rows = page.locator("[data-node]");
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-
+	const nextWindow = page.waitForResponse((response) => /\/children\?.*cursor=/.test(response.url()) && response.ok());
 	await rows.last().scrollIntoViewIfNeeded();
+	release();
+	await nextWindow;
 	await expect(rows).toHaveCount(TOTAL, { timeout: 20_000 });
 	await expect(page.getByText("row-065", { exact: true })).toBeVisible();
 });
 
 test("changing the sort restarts the listing without a cursor", async ({ page }) => {
-	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
+	const release = await openFirstWindow(page);
 	const rows = page.locator("[data-node]");
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 	await rows.last().scrollIntoViewIfNeeded();
+	release();
 	await expect(rows).toHaveCount(TOTAL, { timeout: 20_000 });
 
-	const requests: string[] = [];
-	page.on("request", (request) => {
-		if (/\/children\?/.test(request.url())) requests.push(request.url());
+	const restarted = page.waitForRequest((request) => {
+		const url = new URL(request.url());
+		return url.pathname.endsWith("/children") && url.searchParams.get("ascending") === "false";
 	});
-
 	await page.getByRole("button", { name: "Name" }).click();
+	const request = await restarted;
+	expect(new URL(request.url()).searchParams.has("cursor")).toBe(false);
 	await expect(page).toHaveURL(/dir=desc/);
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-	await expect(page.getByText("row-065", { exact: true })).toBeVisible();
-	expect(requests.length).toBeGreaterThan(0);
-	expect(requests.filter((url) => url.includes("cursor="))).toEqual([]);
-});
-
-test("changing the group restarts the listing without a cursor", async ({ page }) => {
-	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
-	const rows = page.locator("[data-node]");
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-	await rows.last().scrollIntoViewIfNeeded();
-	await expect(rows).toHaveCount(TOTAL, { timeout: 20_000 });
-
-	const requests: string[] = [];
-	page.on("request", (request) => {
-		if (/\/children\?/.test(request.url())) requests.push(request.url());
-	});
-
-	await page.getByRole("button", { name: "View settings" }).click();
-	await page.getByRole("combobox", { name: "Group by" }).click();
-	await page.getByRole("option", { name: "Owner" }).click();
-	await expect(page).toHaveURL(/group=owner/);
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-	expect(requests.filter((url) => url.includes("cursor="))).toEqual([]);
-	expect(requests.some((url) => url.includes("group_by=owner"))).toBe(true);
+	await expect(rows.first()).toContainText("row-065");
 });
 
 // The walk stops at the first failed window (fixed here). Before the fix it
 // retried the same cursor at 46 requests per 5 seconds.
 test("a failed next window keeps the loaded rows and offers a retry", async ({ page }) => {
-	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
 	const rows = page.locator("[data-node]");
-	await expect(rows).toHaveCount(60, { timeout: 20_000 });
-
-	await page.route(/\/children\?.*cursor=/, (route) =>
-		route.fulfill({
+	let failed = 0;
+	let failing = true;
+	await page.route(/\/children\?.*cursor=/, (route) => {
+		if (!failing) return route.continue();
+		failed += 1;
+		return route.fulfill({
 			status: 500,
 			contentType: "application/json",
 			body: JSON.stringify({ errors: [{ type: "InternalServerError", message: "Injected failure" }] }),
-		}),
-	);
+		});
+	});
+	await page.goto(`/drive/f/${folder.name}?view=list&sort=title&dir=asc`);
+	await expect(rows).toHaveCount(60, { timeout: 20_000 });
 	await rows.last().scrollIntoViewIfNeeded();
+	await expect.poll(() => failed, { message: "a next-window request was sent and failed" }).toBeGreaterThan(0);
 
 	await expect(page.getByRole("button", { name: "Retry loading more" })).toBeVisible();
 	await expect(rows).toHaveCount(60);
-	await expect(page.getByText("Could not refresh files")).toBeVisible();
+	await expect(page.getByText("Could not refresh files"), `failed next-window requests so far: ${failed}`).toBeVisible();
 
-	await page.unroute(/\/children\?.*cursor=/);
-	await page.getByRole("button", { name: "Retry loading more" }).click();
+	// Bring the explicit retry into view while requests still fail.
+	const retry = page.getByRole("button", { name: "Retry loading more" });
+	await retry.scrollIntoViewIfNeeded();
+	await expect(retry).toBeInViewport();
+	failing = false;
+	const nextWindow = page.waitForResponse((response) => /\/children\?.*cursor=/.test(response.url()) && response.ok());
+	await retry.click();
+	await nextWindow;
 	await expect(rows).toHaveCount(TOTAL, { timeout: 20_000 });
 });

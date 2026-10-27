@@ -33,6 +33,8 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
   users may add to, and stay there.
 - **Calendar → Meet**: a scheduled event's remaining time sets the Recording
   Estimate shown before a Recording Session starts.
+- **Suite Core → Mail**: Core routes first-party notifications through Mail's Suite Cloud provider
+  when configured, and otherwise sends them through the site's Email Account.
 
 Every product above uses Drive for storage and sharing through the public
 `suite.drive` interface. Drive imports none of their implementations. The

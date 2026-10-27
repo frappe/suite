@@ -89,6 +89,9 @@ def _dispatch(request: Request) -> None:
         if not settings.user_webdav_enabled(user):
             raise errors.Forbidden("WebDAV is disabled for your account. Enable it in Drive settings.")
         frappe.set_user(user)
+        from suite.composition.access import require_access
+
+        require_access(user)
         allowed = settings.allowed_webdav_methods()
         if request.method not in allowed:
             raise errors.MethodNotAllowed(

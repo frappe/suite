@@ -29,7 +29,7 @@ class TestHandlers(UnitTestCase):
             "is_jmap_configured": True,
         }
         result = routes.account_get()
-        self.assertEqual(result["roles"], {"system_manager": True})
+        self.assertEqual(result["roles"], {"system_manager": True, "suite_admin": False})
         self.assertTrue(result["is_jmap_configured"])
 
     @patch.object(

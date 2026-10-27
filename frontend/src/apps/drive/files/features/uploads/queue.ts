@@ -125,6 +125,7 @@ interface Batch {
 }
 
 interface Job {
+  signal: AbortSignal
   entry: UploadEntry
   file: File | null
   handle?: FileSystemFileHandle
@@ -180,6 +181,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   let run = 0
   let doneTimer: ReturnType<typeof setTimeout> | null = null
   let restored: Promise<void> | null = null
+  let lifetime = new AbortController()
+  let clearing: Promise<void> = Promise.resolve()
 
   const entries = computed(() => [...jobs.values()].map((job) => job.entry))
   const active = computed(() => entries.value.filter((entry) => ACTIVE.includes(entry.state)))
@@ -231,9 +234,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   /** One dialog at a time: parallel files that collide wait their turn. */
   function ask<T>(question: (prompts: UploadPrompts) => Promise<T>): Promise<T> {
-    const answer = promptTail.then(() => {
+    const signal = lifetime.signal
+    const answer = promptTail.then(async () => {
+      signal.throwIfAborted()
       if (!prompts) throw new Error('No upload prompts are mounted')
-      return question(prompts)
+      const result = await question(prompts)
+      signal.throwIfAborted()
+      return result
     })
     promptTail = answer.catch(() => undefined)
     return answer
@@ -260,6 +267,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       node: null,
     }) as UploadEntry
     jobs.set(entry.id, {
+      signal: lifetime.signal,
       entry,
       file: picked.file,
       handle: picked.handle,
@@ -278,11 +286,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   /** Files into one folder. Returns after the quota check; the uploads go on. */
   async function uploadFiles(picked: readonly PickedFile[], target: UploadTarget): Promise<void> {
+    const signal = lifetime.signal
     const fitting = await preflight(
       picked.map((item) => item.file.size),
       target.root,
+      signal,
     )
-    if (!fitting) return
+    if (!fitting || signal.aborted) return
     const batch: Batch = { size: fitting.length, applied: null }
     for (const index of fitting) addJob(picked[index]!, target.parent, batch)
     reveal()
@@ -294,9 +304,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     folders: readonly FolderUpload[],
     target: UploadTarget,
   ): Promise<void> {
+    const signal = lifetime.signal
     const sizes = folders.flatMap((folder) => folder.files.map((item) => item.file.size))
-    const fitting = await preflight(sizes, target.root)
-    if (!fitting) return
+    const fitting = await preflight(sizes, target.root, signal)
+    if (!fitting || signal.aborted) return
     const keep = new Set(fitting)
     let index = 0
     const trimmed = folders.map((folder) => ({
@@ -307,21 +318,31 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     state.preparing += 1
     reveal()
     try {
-      for (const folder of trimmed) await createTree(folder, target.parent, batch)
+      for (const folder of trimmed) await createTree(folder, target.parent, batch, signal)
+    } catch (error) {
+      if (!signal.aborted) throw error
     } finally {
-      state.preparing -= 1
+      if (!signal.aborted) state.preparing -= 1
     }
     pump()
   }
 
-  async function createTree(folder: FolderUpload, parent: string, batch: Batch) {
-    const top = await createTopFolder(parent, folder.title)
+  async function createTree(
+    folder: FolderUpload,
+    parent: string,
+    batch: Batch,
+    signal: AbortSignal,
+  ) {
+    signal.throwIfAborted()
+    const top = await createTopFolder(parent, folder.title, signal)
+    signal.throwIfAborted()
     if (!top) return
     const ids = new Map<string, string | null>([['', top]])
     for (const path of folder.folders) {
       const at = path.lastIndexOf('/')
       const above = ids.get(at < 0 ? '' : path.slice(0, at)) ?? null
-      const created = above ? await createFolder(above, path.slice(at + 1)) : null
+      const created = above ? await createFolder(above, path.slice(at + 1), signal) : null
+      signal.throwIfAborted()
       ids.set(path, created && !('error' in created) ? created.name : null)
     }
     for (const item of folder.files) {
@@ -332,10 +353,16 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     pump()
   }
 
-  async function createTopFolder(parent: string, title: string): Promise<string | null> {
+  async function createTopFolder(
+    parent: string,
+    title: string,
+    signal: AbortSignal,
+  ): Promise<string | null> {
     let next = title
     while (true) {
-      const created = await createFolder(parent, next)
+      signal.throwIfAborted()
+      const created = await createFolder(parent, next, signal)
+      signal.throwIfAborted()
       if (!('error' in created)) return created.name
       const freeTitle = created.error.free_title
       if (created.error.type !== 'DriveConflict' || typeof freeTitle !== 'string') {
@@ -352,12 +379,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   async function createFolder(
     parent: string,
     title: string,
+    signal: AbortSignal,
   ): Promise<DriveNode | { error: PlatformError }> {
     try {
       return await client.mutation(
         api.drive.nodes.createFolder,
         { parent_node: parent, title, kind: 'folder' },
-        { silent: true },
+        { signal, silent: true },
       )
     } catch (cause) {
       return { error: platformError(cause) }
@@ -385,10 +413,17 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
    * the usage is unknown, the ones that fit when the user says so, or `null`.
    * Advisory only: `create_upload` stays the gate (spec §6.5).
    */
-  async function preflight(sizes: readonly number[], root: string): Promise<number[] | null> {
+  async function preflight(
+    sizes: readonly number[],
+    root: string,
+    signal: AbortSignal,
+  ): Promise<number[] | null> {
+    await clearing
+    if (signal.aborted) return null
     const all = sizes.map((_size, index) => index)
     const total = sizes.reduce((sum, size) => sum + size, 0)
     const usage = await readRootUsage(root).catch(() => null)
+    if (signal.aborted) return null
     if (!usage?.effective_quota) return all
     const free = Math.max(usage.effective_quota - usage.used_bytes, 0)
     if (total <= free) return all
@@ -400,7 +435,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     })
     const choice = await ask((p) =>
       p.quota({ total, free, fitting: fitting.length, count: sizes.length }),
-    )
+    ).catch((error) => {
+      if (!signal.aborted) throw error
+      return 'cancel' as const
+    })
     return choice === 'fit' && fitting.length ? fitting : null
   }
 
@@ -419,8 +457,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   async function execute(job: Job) {
     try {
+      await clearing
+      job.signal.throwIfAborted()
       if (job.session && !(await continueSession(job))) return
       if (!job.session && !(await open(job))) return
+      job.signal.throwIfAborted()
       await transfer(job)
     } catch (cause) {
       fail(job, platformError(cause).message)
@@ -439,7 +480,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       return true
     }
     try {
-      job.entry.sent = await probeUpload(session.upload_id, job.entry.parent)
+      job.entry.sent = await probeUpload(session.upload_id, job.entry.parent, job.signal)
       return true
     } catch (cause) {
       const error = platformError(cause)
@@ -475,13 +516,18 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     }
     while (true) {
       try {
-        job.session = await openUpload({
-          parent_node: entry.parent,
-          filename: entry.title,
-          size: entry.size,
-          ...(file?.type ? { mime: file.type } : {}),
-          ...(entry.replaces ? { replaces: entry.replaces } : {}),
-        })
+        job.signal.throwIfAborted()
+        job.session = await openUpload(
+          {
+            parent_node: entry.parent,
+            filename: entry.title,
+            size: entry.size,
+            ...(file?.type ? { mime: file.type } : {}),
+            ...(entry.replaces ? { replaces: entry.replaces } : {}),
+          },
+          job.signal,
+        )
+        job.signal.throwIfAborted()
         entry.sent = 0
         if (job.staleRecord) await records.remove(job.staleRecord)
         job.staleRecord = null
@@ -504,10 +550,14 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       entry.state = 'checking'
       checksum = await sha256(job.file)
     }
+    job.signal.throwIfAborted()
     entry.state = 'uploading'
     entry.error = null
     while (true) {
+      job.signal.throwIfAborted()
       const upload = useUpload(api.drive.uploads.transfer, { silent: true })
+      const cancel = () => upload.cancel()
+      job.signal.addEventListener('abort', cancel, { once: true })
       const stop = watch(
         () => upload.progress,
         (progress) => {
@@ -529,6 +579,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       } catch (cause) {
         if (!(await settleRefusal(job, platformError(cause)))) return
       } finally {
+        job.signal.removeEventListener('abort', cancel)
         stop()
       }
       entry.state = 'uploading'
@@ -549,15 +600,23 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     entry.state = 'uploading'
     entry.error = null
     if (!job.directSent) {
-      await sendDirect(session, file, (sent) => {
-        entry.sent = sent
-      })
+      job.signal.throwIfAborted()
+      await sendDirect(
+        session,
+        file,
+        (sent) => {
+          entry.sent = sent
+        },
+        job.signal,
+      )
+      job.signal.throwIfAborted()
       job.directSent = true
       entry.sent = entry.size
       await persist(job)
     }
     while (true) {
       try {
+        job.signal.throwIfAborted()
         const node = await client.mutation(
           api.drive.uploads.finish,
           {
@@ -567,7 +626,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
               ? { replaces: entry.replaces }
               : { parent_node: entry.parent, title: entry.title }),
           },
-          { silent: true },
+          { signal: job.signal, silent: true },
         )
         return complete(job, node)
       } catch (cause) {
@@ -578,6 +637,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   async function complete(job: Job, node: DriveNode) {
+    if (job.signal.aborted) return
     job.entry.state = 'done'
     job.entry.sent = job.entry.size
     job.entry.note = null
@@ -590,6 +650,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
    * entry as the user changed it.
    */
   async function settleRefusal(job: Job, error: PlatformError): Promise<boolean> {
+    if (job.signal.aborted) return false
     const { entry } = job
     // One file over the site's limit: only it fails, and Retry cannot help it.
     if (error.type === 'DriveFileTooLarge') {
@@ -627,6 +688,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     const { entry, batch } = job
     return ask(async (p) => {
       const existing = await findChild(entry.parent, entry.title).catch(() => null)
+      job.signal.throwIfAborted()
       const canReplace =
         !!existing && existing.kind === 'file' && hasRole(existing, DRIVE_ROLES.edit)
       const remembered = batch.applied
@@ -645,6 +707,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   function fail(job: Job, message: string, retryable = true) {
+    if (job.signal.aborted) return
     job.entry.state = 'failed'
     job.entry.error = message
     job.entry.retryable = retryable && !!job.file
@@ -653,7 +716,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   async function persist(job: Job) {
-    if (!job.session) return
+    if (!job.session || job.signal.aborted) return
     const record: Omit<UploadRecord, 'owner'> = {
       upload_id: job.session.upload_id,
       mode: job.session.mode,
@@ -710,9 +773,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     const job = jobs.get(id)
     if (!job || job.entry.state !== 'interrupted') return
     let file = await readHandle(job.handle)
+    if (job.signal.aborted) return
     if (!file) {
-      const picked = await ask((p) => p.pickFile({ name: job.fileName }))
-      if (!picked) return
+      const picked = await ask((p) => p.pickFile({ name: job.fileName })).catch((error) => {
+        if (!job.signal.aborted) throw error
+        return null
+      })
+      if (!picked || job.signal.aborted) return
       const same =
         picked.name === job.fileName &&
         picked.size === job.entry.size &&
@@ -735,8 +802,12 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   /** Interrupted uploads from an earlier page load. Runs once; later calls wait for it. */
   function restore(): Promise<void> {
+    const signal = lifetime.signal
     restored ??= (async () => {
+      await clearing
+      if (signal.aborted) return
       const found = await records.load().catch(() => [] as UploadRecord[])
+      if (signal.aborted) return
       for (const record of found) {
         if (
           [...jobs.values()].some(
@@ -760,6 +831,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         }) as UploadEntry
         const direct = record.mode === 'direct'
         jobs.set(entry.id, {
+          signal,
           entry,
           file: null,
           handle: record.handle,
@@ -811,13 +883,19 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   /** Drops every entry and record. The next user of this tab starts clean. */
   async function forget() {
+    lifetime.abort()
+    lifetime = new AbortController()
+    promptTail = Promise.resolve()
+    running.clear()
     jobs.clear()
+    state.preparing = 0
     state.halted = null
     state.seen = true
     state.trackerOpen = false
     state.showDone = false
     restored = null
-    await records.clear().catch(() => undefined)
+    clearing = records.clear().catch(() => undefined)
+    await clearing
   }
 
   function closeTracker() {
@@ -895,12 +973,20 @@ let queue: UploadQueue | null = null
 
 /**
  * The tab's one queue. Interrupted uploads of the current user appear on
- * first use. Sign out forgets them, so the next user never sees them.
+ * first use. Identity changes stop and forget them, including session expiry.
  */
 export function uploadQueue(): UploadQueue {
   if (!queue) {
     const created = createUploadQueue()
-    useSession().onLogout(() => created.forget())
+    const session = useSession()
+    session.onLogout(() => created.forget())
+    watch(
+      () => session.user.value?.id ?? null,
+      () => {
+        void created.forget()
+      },
+      { flush: 'sync' },
+    )
     queue = created
   }
   void queue.restore()

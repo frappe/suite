@@ -8,7 +8,7 @@ export interface DriveNode {
 	name: string;
 	title: string;
 	kind: string;
-	parent: string | null;
+	parent_node: string | null;
 	content_doctype: string | null;
 	content_docname: string | null;
 }
@@ -58,7 +58,7 @@ export function roots(api: APIRequestContext): Promise<DriveRoots> {
 }
 
 export function createFolder(api: APIRequestContext, parent: string, title: string): Promise<DriveNode> {
-	return data<DriveNode>(api, "post", `${DRIVE}/nodes`, { parent, title, kind: "folder" });
+	return data<DriveNode>(api, "post", `${DRIVE}/nodes`, { parent_node: parent, title, kind: "folder" });
 }
 
 export function createDocument(
@@ -68,7 +68,7 @@ export function createDocument(
 	contentDoctype: string,
 ): Promise<DriveNode> {
 	return data<DriveNode>(api, "post", `${DRIVE}/nodes`, {
-		parent,
+		parent_node: parent,
 		title,
 		kind: "document",
 		content_doctype: contentDoctype,
@@ -76,7 +76,7 @@ export function createDocument(
 }
 
 export function createLink(api: APIRequestContext, parent: string, title: string, url: string): Promise<DriveNode> {
-	return data<DriveNode>(api, "post", `${DRIVE}/nodes`, { parent, title, kind: "link", url });
+	return data<DriveNode>(api, "post", `${DRIVE}/nodes`, { parent_node: parent, title, kind: "link", url });
 }
 
 /** Upload one small file through the three upload routes. */
@@ -88,7 +88,7 @@ export async function uploadFile(
 	mime = "application/octet-stream",
 ): Promise<DriveNode> {
 	const session = await data<{ upload_id: string }>(api, "post", `${DRIVE}/uploads`, {
-		parent,
+		parent_node: parent,
 		filename: title,
 		size: bytes.length,
 		mime,
@@ -98,7 +98,7 @@ export async function uploadFile(
 		headers: { "Content-Type": "application/octet-stream" },
 	});
 	if (!chunk.ok()) throw new Error(`upload chunk failed with ${chunk.status()}`);
-	return data<DriveNode>(api, "post", `${DRIVE}/uploads/${session.upload_id}/finish`, { parent, title });
+	return data<DriveNode>(api, "post", `${DRIVE}/uploads/${session.upload_id}/finish`, { parent_node: parent, title });
 }
 
 export function getNode(api: APIRequestContext, node: string, expand?: string): Promise<DriveNode & Record<string, unknown>> {
@@ -126,6 +126,11 @@ export async function patchNode(api: APIRequestContext, node: string, patch: Rec
 	await data(api, "patch", `${DRIVE}/nodes/${node}`, patch);
 }
 
+/** Gives `principal` `role` on `node` (10 is Read). */
+export async function grantRole(api: APIRequestContext, node: string, principal: string, role: number): Promise<void> {
+	await data(api, "put", `${DRIVE}/nodes/${node}/grants/${encodeURIComponent(principal)}`, { role });
+}
+
 export function listView(
 	api: APIRequestContext,
 	view: string,
@@ -134,8 +139,16 @@ export function listView(
 	return data(api, "get", `${DRIVE}/views/${view}${query}`);
 }
 
-/** Permanent removal. The UI gates this behind ticket 007, the route does not. */
+/**
+ * Permanent removal. The server deletes only a trash root, so the node is
+ * trashed first; a node already gone or already trashed is fine.
+ */
 export async function purge(api: APIRequestContext, node: string): Promise<void> {
+	const trash = await send(api, "patch", `${DRIVE}/nodes/${node}`, { state: "Trashed" });
+	if (trash.status() === 404) return;
+	if (!trash.ok() && trash.status() !== 409) {
+		throw new Error(`trashing ${node} failed with ${trash.status()}: ${await trash.text()}`);
+	}
 	const response = await send(api, "delete", `${DRIVE}/nodes/${node}`);
 	if (!response.ok() && response.status() !== 404) {
 		throw new Error(`purge ${node} failed with ${response.status()}: ${await response.text()}`);

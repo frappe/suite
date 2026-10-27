@@ -167,20 +167,34 @@ function _formatWith(map: DateTimeFormatters, variant: string | undefined, d: Da
   return _dtFmt(cfg[0], cfg[1]).format(d)
 }
 
+// A day serial (IronCalc, Excel and Google Sheets all count dates this way:
+// days since 1899-12-30, the fraction is the time of day) as a local Date.
+// Built from calendar parts, not milliseconds, so a DST change or the
+// runner's timezone can't shift it. Rounded to the second, like Sheets, so
+// float noise (14:29:59.9999) shows as 14:30:00.
+function _serialToDate(serial: number): Date | null {
+  if (!isFinite(serial)) return null
+  const days = Math.floor(serial)
+  const secs = Math.round((serial - days) * 86400)
+  return new Date(1899, 11, 30 + days, 0, 0, secs)
+}
+
 // Coerce a cell value into a Date for date/time/datetime formatting, or null
 // if it isn't a date. Handles three shapes:
 //   • a Date instance
-//   • a number / bare numeric string → epoch milliseconds (the serial model)
+//   • a number / bare numeric string → a day serial (what IronCalc's date
+//     functions return; reading it as epoch ms painted 1970, ISSUES #39)
 //   • a date string like "2026-03-15 14:50:30.789345" or "2026-03-15"
 // For strings we normalise "YYYY-MM-DD HH:mm:ss.ffffff": space→T and trim
 // sub-millisecond digits (JS Date only takes 3), and pin a bare date to local
 // midnight so an ISO date-only value isn't parsed as UTC and shifted a day.
 function _toDate(value: unknown): Date | null {
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value
-  if (typeof value === 'number') return isNaN(value) ? null : new Date(value)
+  if (typeof value === 'number') return _serialToDate(value)
   const s = String(value).trim()
   if (s === '') return null
-  if (/^-?\d+(\.\d+)?$/.test(s)) return new Date(parseFloat(s))
+  const n = displayNumber(s)
+  if (!isNaN(n)) return _serialToDate(n)
   let norm = s.replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1')
   if (/^\d{4}-\d{2}-\d{2}$/.test(norm)) norm += 'T00:00:00'
   let d = new Date(norm)
@@ -188,12 +202,53 @@ function _toDate(value: unknown): Date | null {
   return isNaN(d.getTime()) ? null : d
 }
 
+// A number written the way IronCalc displays a typed one: an optional sign
+// and currency symbol, digits with grouping commas, an optional exponent,
+// then an optional % or trailing symbol. `1,000`, `50%`, `$1.50`, `-$3`,
+// `₹1,50,000`, `5$`, `1.5E+11`. Anything else (`12 apples`) isn't one.
+const DISPLAY_NUMBER =
+  /^([-+]?)\s*(?:[A-Z]{0,2}[$€£¥₹])?\s*(\d[\d,]*(?:\.\d*)?|\.\d+)(?:[eE]([-+]?\d+))?\s*([$€£¥₹]?)\s*(%?)$/
+
+// The number a cell shows, or NaN. The grid formats IronCalc's display
+// string, and IronCalc has already formatted a typed `1,000` or `50%`;
+// parseFloat read those as 1 and 50 (so the $ button showed $1.00, the %
+// button 5000.00%, and a sort put 12 above 1,000).
+export function displayNumber(value: unknown): number {
+  if (typeof value === 'number') return value
+  const m = DISPLAY_NUMBER.exec(String(value ?? '').trim())
+  if (!m) return NaN
+  const [, sign, digits = '', exp, , percent] = m
+  const n = parseFloat(digits.replace(/,/g, '') + (exp ? `e${exp}` : ''))
+  return (sign === '-' ? -n : n) / (percent ? 100 : 1)
+}
+
+// The day serial of a date IronCalc displays with an Excel-style date code
+// (`12/9/2025` under m/d/yyyy, `09/12/2025` under dd/mm/yyyy, `2025-12-09`,
+// with an optional `h:mm[:ss] [AM/PM]`), or NaN. The code gives the order of
+// day, month and year; the worker exposes no raw value, so sort reads dates
+// back this way.
+export function dateSerialFromShown(shown: unknown, code: string | null | undefined): number {
+  const c = String(code ?? '').replace(/"[^"]*"/g, '')
+  if (!/[dy]/i.test(c) || /general/i.test(c)) return NaN
+  const m =
+    /^(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?)?$/i.exec(
+      String(shown ?? '').trim(),
+    )
+  if (!m) return NaN
+  const [a, b, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const lead = c.trim()[0]?.toLowerCase()
+  const [y, mo, day] = lead === 'y' ? [a, b, d] : lead === 'd' ? [d, b, a] : [d, a, b]
+  let h = Number(m[4] ?? 0)
+  if (m[7]) h = (h % 12) + (/p/i.test(m[7]) ? 12 : 0)
+  const secs = h * 3600 + Number(m[5] ?? 0) * 60 + Number(m[6] ?? 0)
+  return Date.UTC(y, mo - 1, day) / 86400000 + 25569 + secs / 86400
+}
+
 // Types whose value is a date, not a plain number to round/group.
 const DATE_LIKE = new Set(['date', 'time', 'datetime'])
 
 // Returns the formatted string, or the value untouched when the format
-// doesn't apply to it. (`parseFloat` coerces its argument to a string itself,
-// so cell values of any type go straight in.)
+// doesn't apply to it.
 export function applyNumberFmt<T>(value: T, format: unknown): T | string {
   if (!format) return value
   if (String(format).startsWith('custom:')) return applyCustomFmt(value, String(format).slice(7))
@@ -202,7 +257,7 @@ export function applyNumberFmt<T>(value: T, format: unknown): T | string {
   // Cells flagged 'text' should also be treated as text in formulas; that's
   // handled by the engine's strict-arithmetic — see toNumStrict.
   if (type === 'text') return value == null ? '' : String(value)
-  const n = parseFloat(value as string)
+  const n = displayNumber(value)
   if (isNaN(n) && !DATE_LIKE.has(type)) return value
   if (type === 'number') {
     const loc = NUMBER_LOCALES[variant] !== undefined ? NUMBER_LOCALES[variant] : undefined
@@ -250,7 +305,7 @@ export function applyNumberFmt<T>(value: T, format: unknown): T | string {
 // so `"$"#,##0.00`, `0.0%`, `#,##0 "kg"` all work. Negatives get a leading '-'
 // (Excel's `positive;negative` sections are a later follow-up).
 function applyCustomFmt<T>(value: T, pattern: string): T | string {
-  const n = parseFloat(value as string)
+  const n = displayNumber(value)
   if (isNaN(n)) return value == null ? '' : String(value)
   const { prefix, numSpec, suffix, percent } = _parseCustomPattern(pattern)
   if (!numSpec) return prefix + suffix

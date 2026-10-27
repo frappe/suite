@@ -108,7 +108,7 @@ from suite.mail.api.mail import (
     get_global_screened_addresses,
     get_mailboxes,
     get_mime_message,
-    get_recent_threads_with,
+    get_recent_threads_from,
     get_screened_addresses,
     get_tab_counts,
     get_thread,
@@ -116,6 +116,7 @@ from suite.mail.api.mail import (
     get_unified_folders,
     get_unified_tab_counts,
     get_unified_threads,
+    get_unsubscribe_options,
     junk_senders_inbox_mail,
     move_mails,
     remove_mails_from_mailbox,
@@ -129,6 +130,7 @@ from suite.mail.api.mail import (
     set_mails_spam_status,
     undo_screening_verdict,
     unscreen_email_addresses,
+    unsubscribe_mail,
     update_draft_mail,
     update_mailbox,
 )
@@ -212,10 +214,12 @@ from suite.mail.http.preferences import ROUTES as PREFERENCE_ROUTES
 from suite.mail.http.preferences import (
     account_preferences,
     credentials,
+    regional_preferences,
     subscribe_mailbox,
     update_account_preferences,
     update_credentials,
     update_preferences,
+    update_regional_preferences,
 )
 from suite.mail.http.push import CONTRACT_ROUTES as PUSH_CONTRACT_ROUTES
 from suite.mail.http.push import (
@@ -469,10 +473,10 @@ CONTRACT_ROUTES += (
     ),
     Route(
         "POST",
-        "/api/method/suite.mail.api.mail.get_recent_threads_with",
-        "get_recent_threads_with",
+        "/api/method/suite.mail.api.mail.get_recent_threads_from",
+        "get_recent_threads_from",
         kind="query",
-        public_name="messages.recentWith",
+        public_name="messages.recentFrom",
         body=RecentThreadsInput,
         output=list[RecentThread],
         envelope="message",

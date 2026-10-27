@@ -171,8 +171,19 @@
 
       <!-- Bar 3 · Formula bar -->
       <div class="sn-formula-bar">
-        <Tooltip :text="`Active cell ${activeCell}`">
-          <span class="sn-cell-ref">{{ activeCell }}</span>
+        <Tooltip :text="__('Type a cell or range, then Enter')">
+          <input
+            class="sn-cell-ref"
+            name="name-box"
+            :aria-label="__('Name box')"
+            :value="nameBox"
+            spellcheck="false"
+            autocomplete="off"
+            @focus="$event.target.select()"
+            @keydown.enter.prevent="onNameBoxEnter"
+            @keydown.esc.prevent="onNameBoxDone($event)"
+            @blur="$event.target.value = nameBox"
+          />
         </Tooltip>
         <span class="sn-fx-label" aria-hidden="true">fx</span>
         <div class="sn-formula-wrap">
@@ -205,6 +216,13 @@
           </div>
         </div>
       </div>
+
+      <SheetUpgradeBanner
+        v-if="legacyUpgrade && !upgradeBannerClosed"
+        :upgrade="legacyUpgrade"
+        :read-only="readOnly"
+        @close="upgradeBannerClosed = true"
+      />
 
       <!-- Canvas grid + filter overlay -->
       <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
@@ -428,7 +446,12 @@
       />
 
       <!-- Rename sheet dialog -->
-      <Dialog v-model:open="showRenameDialog" title="Rename sheet" size="sm">
+      <Dialog
+        v-model:open="showRenameDialog"
+        title="Rename sheet"
+        size="sm"
+        @after-leave="_refocusGridAfterDialog"
+      >
         <template #default>
           <FormControl
             ref="renameInputRef"
@@ -542,7 +565,9 @@
       <FindReplace
         v-if="showFindReplace"
         ref="findReplaceRef"
+        :sheet="currentSheet"
         :find="_findCells"
+        :read="_readIds"
         :write="_replaceCells"
         :is-protected="(id) => _cellSilentlyProtected(id)"
         @close="closeFindReplace"
@@ -569,6 +594,7 @@
         v-model:open="showInsertManyDialog"
         :title="insertMany.kind === 'row' ? 'Insert rows' : 'Insert columns'"
         size="sm"
+        @after-leave="_refocusGridAfterDialog"
       >
         <template #default>
           <FormControl
@@ -589,7 +615,12 @@
       </Dialog>
 
       <!-- Custom number-format dialog -->
-      <Dialog v-model:open="customFormatDialog.open" title="Custom number format" size="sm">
+      <Dialog
+        v-model:open="customFormatDialog.open"
+        title="Custom number format"
+        size="sm"
+        @after-leave="_refocusGridAfterDialog"
+      >
         <template #default>
           <div class="sn-form-stack">
             <FormControl
@@ -818,11 +849,14 @@ import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
 import { createValidationEngine } from '../../engine/validation.js'
+import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
+import { FONT_FAMILY_STACK } from '../../utils/font-stacks.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
 import { AC_FUN_KEYS } from '../../utils/formula-ac.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
+import { nameBoxLabel, parseNameBox } from '../../utils/name-box.js'
 import { userInitials } from '../../utils/session.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import AISettingsDialog from './AISettingsDialog.vue'
@@ -844,6 +878,7 @@ import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
 import SheetTopbar from './SheetTopbar.vue'
 import SheetTopbarActions from './SheetTopbarActions.vue'
+import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
 import { buildAlignOptions, buildBorderOptions, buildMoreToolbarOptions } from './toolbar.config.js'
@@ -908,8 +943,8 @@ const props = defineProps({
     default: undefined,
   },
 })
-// `access-refused`: the server refused a save, or the collaboration server
-// refused the connection. `notes-opened`: the notes panel took the right edge.
+// `access-refused`: the server refused a save, or the collaboration relay
+// refused a write. `notes-opened`: the notes panel took the right edge.
 const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.
@@ -974,10 +1009,12 @@ const {
   readIds: _readIds,
   readInput: _readInput,
   displayValue: _displayValue,
+  isNumberAt: _isNumberAt,
   refreshUsedCells: _refreshUsedCells,
   usedCellIds: _usedCellIds,
   usedExtent: _usedExtent,
   readWholeSheet: _readWholeSheet,
+  sheetExtent: _sheetExtent,
   readDisplays: _readDisplays,
   readSourceRange: _readSourceRange,
   clearRect: _clearRect,
@@ -997,7 +1034,8 @@ const {
 const formats = createFormatsEngine()
 const merge = createMergeEngine()
 const sortFilter = createSortFilter({
-  read: (sn, rect) => _readRect(sn, rect),
+  // opts carries { numFmts }: sort and filter read dates by their format.
+  read: (sn, rect, opts) => _readRect(sn, rect, opts),
   write: (sn, map) => _writeInputs(sn, map),
 })
 const slicers = createSlicerEngine()
@@ -1006,7 +1044,10 @@ const validation = createValidationEngine()
 const protection = createProtectionEngine()
 const condFormat = createCondFormatEngine()
 const clipboard = createClipboard({
-  cells: { read: (sn, rect) => _readRect(sn, rect), write: (sn, map) => _writeInputs(sn, map) },
+  cells: {
+    read: (sn, rect, opts) => _readRect(sn, rect, opts),
+    write: (sn, map) => _writeInputs(sn, map),
+  },
   getCurrentSheet: () => currentSheet.value,
   formats,
   condFormat,
@@ -1112,7 +1153,7 @@ const {
     isDirty.value = true
   },
   afterStructural: (sn) => _afterStructural(sn),
-  afterNavigate: () => _afterHistoryNavigate(),
+  afterNavigate: (id) => _afterHistoryNavigate(id),
 })
 
 // Forward-declaration: `useCollaboration` (further down the script) sets
@@ -1132,6 +1173,8 @@ const formulaInputRef = ref(null)
 const csvInputRef = ref(null)
 const xlsxInputRef = ref(null)
 const activeCell = ref('A1')
+// What the name box shows: the active cell, or the selected range.
+const nameBox = ref('A1')
 const formulaValue = ref('')
 const canUndo = ref(false)
 const canRedo = ref(false)
@@ -1226,7 +1269,8 @@ const freezeCols = ref(0)
 const justSaved = ref(false)
 
 // Short keys keep the select narrow; the full CSS stack lives in FONT_FAMILY_STACK
-// so the persisted format value is still a complete font-family string.
+// (utils/font-stacks.ts) so the persisted format value is still a complete
+// font-family string.
 const FONT_FAMILY_OPTIONS = [
   {
     label: 'Inter',
@@ -1245,12 +1289,6 @@ const FONT_FAMILY_OPTIONS = [
     value: 'system',
   },
 ]
-const FONT_FAMILY_STACK = {
-  inter: 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif',
-  serif: 'ui-serif, Georgia, "Times New Roman", serif',
-  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-  system: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-}
 // `activeFontFamilyKey` is defined further down — after the useToolbar() call
 // that creates `activeFormat`. See "Composables" block.
 
@@ -1530,6 +1568,7 @@ const {
   popLastOp: _popLastOp,
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),
   flashProtected: (sn) => _flashProtected(sn),
+  refitRowsFor: _refitRowsFor,
 })
 
 // Remove the most recently queued op of a given type (used when an AI change
@@ -1541,6 +1580,41 @@ function _popLastOp(opType) {
       return
     }
   }
+}
+
+// After a write ({cellId: value}), the rows it touched fit their wrapped or
+// multi-line text unless sized by hand, like Google Sheets: they grow or
+// shrink with the new values. Returns the height change, which the write puts
+// on its history op (beforeRowH / afterRowH) so undo/redo restores it;
+// _queueOp destructures only the known keys, so server sync is unaffected.
+// Row heights live in the open sheet's canvas view, so a write to another
+// sheet doesn't refit.
+function _refitRowsFor(sn, writes) {
+  if (sn !== currentSheet.value) return null
+  return grid?.refitRowsFor?.(writes) ?? null
+}
+
+// {cellId: IronCalc num_fmt} for a rect's formatted cells: the format a
+// typed `$1.50` or `15%` got from IronCalc, which fill carries along.
+async function _readEngineFormats(rect, sn) {
+  const { numFmts } = await _readRect(sn, rect, { numFmts: true })
+  const out = {}
+  numFmts.forEach((row, i) =>
+    row.forEach((fmt, j) => {
+      if (fmt && !/^general$/i.test(fmt)) out[cellId(rect.r0 + i, rect.c0 + j)] = fmt
+    }),
+  )
+  return out
+}
+
+// Sets cells back to IronCalc's general number format (Clear formatting).
+function _resetEngineFormats(ids, sn) {
+  const commands = ids.map((id) => {
+    const p = parseCellId(id)
+    const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
+    return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
+  })
+  if (commands.length) _client()?.dispatch(_command('batch', { commands }))
 }
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
@@ -1561,6 +1635,7 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
     write: _writeInputs,
     clear: _clearSheet,
     addSheet: (name) => _client()?.dispatch(_command('addSheet', { name })),
+    extent: _sheetExtent,
     idle: () => (_client() ? _client().idle() : Promise.resolve()),
   },
   // Lazy: useSheetTabs defines sheetNames further down.
@@ -1569,8 +1644,16 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
   getCurrentTitle: () => currentTitle.value,
   getFormats: () => formats,
   getMerge: () => merge,
+  getCondFormat: () => condFormat,
+  getCharts: () => charts,
+  // The other stores keyed by sheet name, for "is this sheet blank".
+  getSheetStores: () => [comments, validation, protection, slicers],
+  // Every sheet's view; _sheetTabs is set by useSheetTabs further down.
+  getViews: () => _sheetTabs?.viewSnapshot(),
+  setViews: (views) => _sheetTabs?.viewRestore(views),
   repopulateGrid: _repopulateGrid,
   // Defined later by useSheetTabs — lazy-wrapped so they resolve at call time.
+  renameSheet: (from, to) => _renameSheet(from, to),
   syncNames: () => syncNames(),
   switchSheet: (n) => switchSheet(n),
   syncFlags,
@@ -1578,6 +1661,11 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
 })
 
 let grid = null
+// Undo, a sheet switch and the like set the active cell without a select.
+watch(activeCell, (id) => {
+  const range = grid?.getSelection?.()
+  nameBox.value = id.includes(':') || !range ? id : nameBoxLabel(range)
+})
 let ro = null
 function syncFlags() {
   canUndo.value = history.canUndo()
@@ -1645,13 +1733,17 @@ async function _computeSelectionStatsAsync(token) {
 
 // Bump decimal precision for the selection. Treats 'General' as 'number:1' on
 // first +, no-op on -. Numeric types pick a sensible default if no decimals
-// were previously set.
-function adjustDecimals(delta) {
+// were previously set. A cell with no format of ours starts from the one
+// IronCalc gave a typed `$1.50` or `50%`, so the $ or % stays.
+async function adjustDecimals(delta) {
   const ids = selectionIds()
   const sh = currentSheet.value
+  const sel = grid?.getSelection()
+  const small = sel && (sel.r1 - sel.r0 + 1) * (sel.c1 - sel.c0 + 1) <= 10000
+  const engineFmts = small ? await _readEngineFormats(sel, sh) : {}
   _recordFormatOp(ids, sh, () => {
     for (const id of ids) {
-      const cur = formats.get(id, sh).numberFormat || ''
+      const cur = formats.get(id, sh).numberFormat || numFmtFromEngine(engineFmts[id])
       let { type, variant, decimals } = parseNumberFmt(cur)
       if (!type) {
         if (delta < 0) continue
@@ -1701,6 +1793,8 @@ const {
   markDirty: () => {
     isDirty.value = true
   },
+  readEngineFormats: _readEngineFormats,
+  resetEngineFormats: _resetEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections
@@ -1913,13 +2007,19 @@ const {
   saveError,
   canWrite,
   loadError,
+  legacyUpgrade,
   loadSheet,
   autoCreate,
   saveExisting,
   retrySave,
   workbookJson,
 } = usePersistence({
-  engine: { start: _startEngine, toBytes: _engineBytes },
+  engine: {
+    start: _startEngine,
+    toBytes: _engineBytes,
+    client: _client,
+    syncDefinedNames: _syncDefinedNames,
+  },
   formats,
   merge,
   comments,
@@ -2187,7 +2287,7 @@ const {
   getGridWrap: () => gridWrapRef.value,
   contextMenu,
   currentSheet,
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   blockProtected: (rect, sn) => _rectBlocked(rect, sn),
 })
 
@@ -2337,12 +2437,16 @@ const {
   getGrid: () => grid,
   readRect: _readRect,
   rectBlocked: (rect, sn) => _rectBlocked(rect, sn),
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   repopulateGrid: () => _repopulateGrid(),
   applyHiddenRows: () => _applyHiddenRows(),
   markDirty: () => {
     isDirty.value = true
   },
+  formats,
+  captureFormatsRange: _captureFormatsRange,
+  readEngineFormats: _readEngineFormats,
+  resetEngineFormats: _resetEngineFormats,
 })
 
 // Per-sub-sheet peer dots — small colored circles next to each tab label
@@ -2441,6 +2545,8 @@ function _setupGridInstance() {
       // cold-path scans (Cmd+A extent, autofit) that used to walk the grid's
       // own `data` keys.
       getCellIds: () => _usedCellIds(),
+      // Formulas shown as text: let the painter guess from what it shows.
+      isNumber: (id) => (showFormulas.value ? undefined : _isNumberAt(id)),
       getMergeInfo: (id) => merge.getMasterInfo(id, currentSheet.value),
       isSlave: (id) => merge.isSlave(id, currentSheet.value),
       getMasterId: (id) => merge.getMasterId(id, currentSheet.value),
@@ -2465,6 +2571,10 @@ function _setupGridInstance() {
     host: {
       onSelect(id) {
         activeCell.value = id
+        // Row and column picks arrive labelled (3:3, B:B); a range shows both
+        // corners.
+        const range = grid?.getSelection?.()
+        nameBox.value = id.includes(':') || !range ? id : nameBoxLabel(range)
         _typedCell = null
         _showInputInFormulaBar(id)
         refreshActiveFormat()
@@ -2566,23 +2676,11 @@ function _setupGridInstance() {
               [id]: value,
             },
           }
-          // A row fits its wrapped or multi-line text (Cmd+Enter) unless it
-          // was sized by hand, like Google Sheets: it grows or shrinks with
-          // the edit. The height diff rides the history op so undo/redo
-          // restores it; _queueOp destructures only the known keys, so server
-          // sync is unaffected. Row heights live in the current sheet's
-          // canvas view, hence the writeSheet guard.
-          if (writeSheet === currentSheet.value) {
-            const p = parseCellId(id)
-            const grow = p && grid?.refitRowFor?.(p.row, p.col, value)
-            if (grow) {
-              op.beforeRowH = {
-                [p.row]: grow.before,
-              }
-              op.afterRowH = {
-                [p.row]: grow.after,
-              }
-            }
+          // The row refits to the edit (wrapped text, Cmd+Enter lines).
+          const rowH = _refitRowsFor(writeSheet, { [id]: value })
+          if (rowH) {
+            op.beforeRowH = rowH.before
+            op.afterRowH = rowH.after
           }
           _queueOp(op)
           history.pushOp(op)
@@ -2674,6 +2772,12 @@ function _setupGridInstance() {
             before,
             after,
             summary: refs.length > 1 ? `Edited ${refs.length} cells` : '',
+          }
+          // Delete clears wrapped text: its rows shrink back.
+          const rowH = _refitRowsFor(currentSheet.value, after)
+          if (rowH) {
+            op.beforeRowH = rowH.before
+            op.afterRowH = rowH.after
           }
           _queueOp(op)
           history.pushOp(op)
@@ -2810,8 +2914,9 @@ async function _loadInitialData() {
     // so a saved filter still shows its hidden rows on first load.
     _applyHiddenRows()
     syncNames()
-    // Reopen the tab this browser had open last.
-    const last = _lastTab()
+    // Reopen the tab this browser had open last (a converted develop sheet:
+    // the one that editor had open).
+    const last = _lastTab() ?? legacyUpgrade.value?.current
     if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
     _rememberTab = true
     activeCell.value = 'A1'
@@ -2824,6 +2929,8 @@ async function _loadInitialData() {
     // blank the sheet on the first snapshot-based undo (e.g. insert column).
     history.reset()
     syncFlags()
+    // A develop sheet converted on open is saved in the IronCalc format.
+    if (legacyUpgrade.value?.save && !readOnly.value) isDirty.value = true
   } else {
     // A new sheet starts as an empty workbook.
     await _startEngine()
@@ -2844,6 +2951,8 @@ async function _loadInitialData() {
 // surfaced a load error — flipped in a finally so a thrown exception
 // never strands the editor with a permanent spinner.
 const isInitialLoad = ref(true)
+// The develop-sheet upgrade banner, closed by its ×.
+const upgradeBannerClosed = ref(false)
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
@@ -3378,6 +3487,12 @@ function _commitFormulaBar() {
       after: { [targetId]: value },
       summary: 'Edit cell',
     }
+    // The row refits to the edit, as a commit in the cell does.
+    const rowH = _refitRowsFor(targetSheet, { [targetId]: value })
+    if (rowH) {
+      op.beforeRowH = rowH.before
+      op.afterRowH = rowH.after
+    }
     _queueOp(op)
     history.pushOp(op)
     broadcastCellChange(targetSheet, targetId, value)
@@ -3439,6 +3554,8 @@ const {
   diffRefs: _diffRefs,
   queueOp: _queueOp,
   rectBlocked: _rectBlocked,
+  refitRowsFor: _refitRowsFor,
+  readEngineFormats: _readEngineFormats,
 })
 
 // Mirrors `clipboard.hasData()` reactively so the context menu can show /
@@ -3541,6 +3658,7 @@ const {
   captureFormatsRange: _captureFormatsRange,
   captureValidationRange: _captureValidationRange,
   diffRefs: _diffRefs,
+  refitRowsFor: _refitRowsFor,
 })
 
 // ── History ───────────────────────────────────────────────────────────────────
@@ -3559,7 +3677,7 @@ function _syncViewMirrors() {
   manualHiddenCols.clear()
   for (const c of v.hiddenCols || []) manualHiddenCols.add(c)
 }
-function _afterHistoryNavigate() {
+function _afterHistoryNavigate(id) {
   _repopulateGrid()
   _applyHiddenRows() // filter state restored → re-apply to grid
   _syncViewMirrors()
@@ -3567,10 +3685,10 @@ function _afterHistoryNavigate() {
   // The comment panel holds a reference into the (now-replaced) engine thread —
   // close it so a stale index can't delete the wrong reply after undo/redo.
   commentPanel.open = false
-  activeCell.value = 'A1'
-  _showInputInFormulaBar('A1')
+  activeCell.value = id
+  _showInputInFormulaBar(id)
   refreshActiveFormat()
-  _syncNumberFormat('A1')
+  _syncNumberFormat(id)
   syncFlags()
   grid?.setMarchingAnts(null)
   clipboard.clear()
@@ -3581,9 +3699,23 @@ function _afterHistoryNavigate() {
 
 // ── Number format ─────────────────────────────────────────────────────────────
 
+// The active cell's number format for the toolbar label and the $ / %
+// buttons: ours, else the one IronCalc gave a typed `$1.50`, `50%` or date
+// (ISSUES #49: the label said General for those). IronCalc's is read in the
+// background; a newer selection wins.
+let _numFmtSeq = 0
 function _syncNumberFormat(id) {
-  const fmt = formats.get(id, currentSheet.value)
-  activeNumberFormat.value = fmt.numberFormat || ''
+  const sn = currentSheet.value
+  const ours = formats.get(id, sn).numberFormat || ''
+  activeNumberFormat.value = ours
+  const seq = ++_numFmtSeq
+  const p = parseCellId(id)
+  if (ours || !p) return
+  _readEngineFormats({ r0: p.row, c0: p.col, r1: p.row, c1: p.col }, sn)
+    .then((fmts) => {
+      if (seq === _numFmtSeq) activeNumberFormat.value = numFmtFromEngine(fmts[id], { dates: true })
+    })
+    .catch(() => {})
 }
 function toggleNumberFmt(type) {
   onNumberFormatChange(activeNumberFormatType.value === type ? '' : type)
@@ -3613,9 +3745,24 @@ function _applyPaintedFormat() {
   _copiedFormat = null
   refreshActiveFormat()
 }
-function onNumberFormatChange(value) {
+async function onNumberFormatChange(value) {
   const sn = currentSheet.value
   const ids = selectionIds()
+  // General (or a pressed $ / % turned off) also drops the format IronCalc
+  // gave a typed value, or it would still show. Like Clear formatting, it
+  // goes into our store first, so undo brings it back.
+  let engineIds = []
+  if (!value) {
+    const sel = grid?.getSelection()
+    const small = sel && (sel.r1 - sel.r0 + 1) * (sel.c1 - sel.c0 + 1) <= 10000
+    const engineFmts = small ? await _readEngineFormats(sel, sn) : {}
+    engineIds = Object.keys(engineFmts)
+    for (const id of engineIds) {
+      const ours = numFmtFromEngine(engineFmts[id], { dates: true })
+      if (ours && !formats.get(id, sn).numberFormat)
+        formats.applyToRange([id], { numberFormat: ours }, sn)
+    }
+  }
   _recordFormatOp(ids, sn, () =>
     formats.applyToRange(
       ids,
@@ -3625,6 +3772,7 @@ function onNumberFormatChange(value) {
       sn,
     ),
   )
+  if (engineIds.length) _resetEngineFormats(engineIds, sn)
   grid?.render?.() // the grid applies number formats as it paints
   _syncNumberFormat(activeCell.value)
   syncFlags()
@@ -3936,14 +4084,14 @@ async function openCellHistory() {
 // ── Find & Replace ────────────────────────────────────────────────────────────
 
 // Cells on the open sheet whose input contains `query`, as [{ id, input }].
-async function _findCells(query) {
+async function _findCells(query, sheet) {
   if (!_client()) return []
-  const { cells } = await _client().findCells({ sheet: currentSheet.value, query })
+  const { cells } = await _client().findCells({ sheet, query })
   return cells.map(({ row, col, input }) => ({ id: cellId(row - 1, col - 1), input }))
 }
 // Replacements as one write and one undo step.
-function _replaceCells(before, after) {
-  const sn = currentSheet.value
+function _replaceCells(before, after, sn) {
+  if (sn !== currentSheet.value) return
   _writeInputs(sn, after)
   _pushEditOp(sn, before, after, 'Replace')
 }
@@ -3987,6 +4135,31 @@ const {
 })
 
 // ── Context menu ──────────────────────────────────────────────────────────────
+
+// A closing dialog hands focus back to what had it before it opened (a tab
+// menu item, gone by then), so it lands on <body>: keys typed into the grid
+// right after a rename were lost (ISSUES #63). Once it has gone, the grid
+// takes focus back unless something else (a click, an editor) has it.
+function _refocusGridAfterDialog() {
+  setTimeout(_refocusGridIfIdle)
+}
+
+// The name box takes a typed cell or range (k40, A1:B5, 3:5, B:D) and
+// jumps there, as in Excel and Google (ISSUES #66). Anything else is
+// dropped and the box shows the selection again.
+function onNameBoxEnter(e) {
+  const range = grid && parseNameBox(e.target.value, grid.getTotalRows(), grid.getTotalCols())
+  if (range) {
+    grid.moveTo(range.r0, range.c0)
+    if (range.r0 !== range.r1 || range.c0 !== range.c1 || range.mode !== 'cell')
+      grid.setSelection(range)
+  }
+  onNameBoxDone(e)
+}
+function onNameBoxDone(e) {
+  e.target.value = nameBox.value
+  canvasRef.value?.focus()
+}
 
 const showRenameDialog = ref(false)
 const renameValue = ref('')
@@ -4335,7 +4508,7 @@ const {
   cellBlocked: (id, sn) => _cellBlocked(id, sn),
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),
   recordFormatOp: (ids, sn, mutate) => _recordFormatOp(ids, sn, mutate),
-  pushEditOp: (sn, before, after, summary) => _pushEditOp(sn, before, after, summary),
+  pushEditOp: (sn, before, after, summary, extra) => _pushEditOp(sn, before, after, summary, extra),
   refreshActiveFormat: () => refreshActiveFormat(),
   syncFlags: () => syncFlags(),
   markDirty: () => {
@@ -4692,6 +4865,7 @@ const { pushEditOp: _pushEditOp } = useEditOps({
   broadcastBatchChange: (sn, cells) => broadcastBatchChange(sn, cells),
   syncFlags,
   isDirty,
+  refitRowsFor: _refitRowsFor,
 })
 
 // ── Repopulate ────────────────────────────────────────────────────────────────
@@ -4722,7 +4896,10 @@ function _onEngineVersion() {
   // cache their source matrix: both are stale after any edit.
   condFormat?.invalidate()
   chartDataVersion.value++
-  _refreshUsedCells()
+  // After the grid's own read: the worker answers in order, and this
+  // whole-sheet scan would hold back the repaint that shows the edit
+  // (ISSUES #84). A task, not a microtask, so the repaint's read is sent first.
+  setTimeout(_refreshUsedCells)
   computeSelectionStats() // the selected cells' values may have changed
   _refreshFormulaBar() // an import, pivot or undo may have changed the active cell
   // Edits change the values a filter's lists show.

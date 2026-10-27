@@ -1,6 +1,11 @@
 import type { Page } from "@playwright/test";
 
-/** Replace fields of the `/api/suite/account` answer for one page. */
+/**
+ * Replace fields of the `/api/suite/account` answer for one page. The client
+ * validates the answer, so a patched field keeps its schema shape (`roles` is
+ * `{ system_manager, suite_admin }`); an invalid answer leaves the session
+ * with no capabilities at all.
+ */
 export async function patchAccount(page: Page, patch: Record<string, unknown>): Promise<void> {
 	await page.route("**/api/suite/account", async (route) => {
 		const response = await route.fetch();

@@ -261,6 +261,8 @@ export async function openDriveDocumentSession(
         },
         {
           signal: controller.signal,
+          // The header shows the refusal beside the title, so no toast too.
+          silent: true,
         },
       )
       title.value = updated.title

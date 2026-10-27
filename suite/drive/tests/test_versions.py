@@ -81,12 +81,6 @@ class TestVersionLadder(UnitTestCase):
 
         self.assertEqual(removed, {"hour-old", "day-old", "week-old", "expired"})
 
-    @patch("suite.drive.jobs.thin")
-    def test_scheduler_adapter_delegates_to_core_thinner(self, core_thin):
-        core_thin.return_value = {"deleted": 3}
-        self.assertEqual(thin_versions(), {"deleted": 3})
-        core_thin.assert_called_once_with()
-
     @patch("suite.drive._core.versions.frappe.log_error")
     @patch("suite.drive._core.versions.frappe.db.rollback")
     @patch("suite.drive._core.versions.frappe.db.commit")

@@ -7,10 +7,14 @@ import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
 
 let cleanup: (() => void) | undefined
+let intersect: IntersectionObserverCallback
 beforeEach(() => {
   vi.stubGlobal(
     'IntersectionObserver',
     class {
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = callback
+      }
       observe() {}
       disconnect() {}
     },
@@ -58,6 +62,7 @@ function mount(options: {
     rows: options.rows,
     error: null,
     hasNext: false,
+    isFetching: false,
     isFetchingNext: false,
     refetch() {},
     fetchNext() {},
@@ -100,6 +105,40 @@ function mount(options: {
 }
 
 const rows = [file('a', 'Alpha.png'), file('b', 'Beta.png')]
+
+describe('FilesListing paging', () => {
+  it('waits for a refresh to finish before loading a visible next window', async () => {
+    const { query } = mount({ rows })
+    query.hasNext = true
+    query.isFetching = true
+    const fetchNext = vi.spyOn(query, 'fetchNext').mockImplementation(() => {
+      query.hasNext = false
+    })
+
+    intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await nextTick()
+    expect(fetchNext).not.toHaveBeenCalled()
+
+    query.isFetching = false
+    await nextTick()
+    expect(fetchNext).toHaveBeenCalledOnce()
+  })
+
+  it('waits for an explicit retry after a next window fails', async () => {
+    const { root, query } = mount({ rows })
+    Object.assign(query, { hasNext: true, error: new Error('Window failed') })
+    const fetchNext = vi.spyOn(query, 'fetchNext').mockImplementation(() => {
+      query.hasNext = false
+    })
+    await nextTick()
+
+    intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    expect(fetchNext).not.toHaveBeenCalled()
+    ;(root.querySelector('[label="Retry loading more"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(fetchNext).toHaveBeenCalledOnce()
+  })
+})
 
 describe('FilesListing selection', () => {
   it('names each row checkbox and derives the header checkbox from the selection', async () => {

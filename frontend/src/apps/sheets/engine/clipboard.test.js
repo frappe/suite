@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { colLabel } from '../utils/cells.js'
 import { createClipboard } from './clipboard.js'
@@ -348,5 +348,73 @@ describe('clipboard — reading the source', () => {
     await cb.copy({ r0: 0, c0: 0, r1: 0, c1: 0 })
     await cb.paste('B1', null, 'values')
     expect(written).toEqual({ B1: '2' })
+  })
+})
+
+// A typed `$1.50` or `15%` is formatted by IronCalc, not the side store,
+// and its input is the bare number. The copy reads IronCalc's format with
+// the cells and carries it like a side-store format, so the pasted cell
+// still shows `$1.50`, not `1.5`.
+describe('clipboard — carries the format IronCalc gave a typed value', () => {
+  function setup(numFmts) {
+    const sheet = makeSheet({ A1: '1.5', B1: '0.15', C1: '7' })
+    const fmtStore = { C1: { numberFormat: 'number:2' } }
+    let asked = null
+    const cells = {
+      ...sheet,
+      read: async (sn, rect, opts) => {
+        asked = opts
+        return { ...(await sheet.read(sn, rect)), numFmts }
+      },
+    }
+    const formats = {
+      get: (id) => fmtStore[id] ?? {},
+      set: (id, f) => (fmtStore[id] = f),
+      clear: (id) => delete fmtStore[id],
+    }
+    const cb = createClipboard({ cells, getCurrentSheet: () => 'Sheet1', formats })
+    return { cb, fmtStore, sheet, asked: () => asked }
+  }
+
+  it('pastes the value with its IronCalc format', async () => {
+    const t = setup([['$#,##0.00', '#,##0%', '#,##0']])
+    await t.cb.copy({ r0: 0, c0: 0, r1: 0, c1: 2 })
+    expect(t.asked()).toEqual({ numFmts: true })
+    await t.cb.paste('A3', null, 'all')
+    expect(t.sheet.getCell('A3')).toBe('1.5')
+    expect(t.fmtStore.A3).toEqual({ numberFormat: 'currency:USD:2' })
+    expect(t.fmtStore.B3).toEqual({ numberFormat: 'percentage:0' })
+    // A side-store format wins over IronCalc's.
+    expect(t.fmtStore.C3).toEqual({ numberFormat: 'number:2' })
+  })
+
+  it('adds nothing for general cells', async () => {
+    const t = setup([['general', 'general', 'general']])
+    await t.cb.copy({ r0: 0, c0: 0, r1: 0, c1: 1 })
+    await t.cb.paste('A3', null, 'all')
+    expect(t.fmtStore.A3?.numberFormat).toBeUndefined()
+  })
+})
+
+// ISSUES #64: a copy outlives Esc, so a paste must know whether the system
+// clipboard still holds what the copy wrote, or something copied since.
+describe('clipboard — is the system clipboard still ours', () => {
+  it('matches the text the copy wrote, and nothing else', async () => {
+    const written = []
+    vi.stubGlobal('navigator', { clipboard: { writeText: async (t) => written.push(t) } })
+    try {
+      const sheet = makeSheet({ A1: '=D2*2', B1: 'x', A2: '3' })
+      const cb = createClipboard({ cells: sheet, getCurrentSheet: () => 'Sheet1' })
+      expect(cb.isStale('anything')).toBe(false) // nothing copied
+      await cb.copy({ r0: 0, c0: 0, r1: 1, c1: 1 })
+      await Promise.resolve()
+      expect(written).toEqual(['=D2*2\tx\n3\t'])
+      expect(cb.isStale('=D2*2\tx\n3\t')).toBe(false)
+      expect(cb.isStale('=D2*2\tx\r\n3\t\r\n')).toBe(false) // Windows line ends
+      expect(cb.isStale('copied elsewhere')).toBe(true)
+      expect(cb.isStale('')).toBe(false) // no text flavor to compare
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

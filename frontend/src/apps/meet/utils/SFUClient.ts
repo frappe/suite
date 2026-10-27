@@ -800,6 +800,8 @@ export class SFUClient {
       'chat:pin_updated': () => {},
       existing_pinned_message: () => {},
       active_speaker: () => {},
+      shared_stage: () => {},
+      shared_stage_snapshot: () => {},
       hand_raised: () => {},
       existing_raised_hands: () => {},
     }

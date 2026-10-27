@@ -90,6 +90,29 @@ describe('Mail and Calendar read contracts', () => {
     ).rejects.toThrow(/subscribed/)
   })
 
+  it('accepts every colour a folder can be given, gray included', async () => {
+    const mailbox = {
+      name: 'account|inbox',
+      id: 'inbox',
+      _name: 'Inbox',
+      role: 'inbox',
+      total_emails: 3,
+      total_threads: 2,
+      unread_threads: 1,
+      slug: 'inbox',
+      subscribed: true,
+    }
+    // The colours Mailbox Settings offers.
+    const rows = ['Gray', 'Blue', 'Green', 'Amber', 'Red', 'Purple'].map((color) => ({
+      ...mailbox,
+      id: color,
+      color,
+    }))
+    await expect(
+      respond(rows).request(mail.mailboxes.list, { account: 'account' }),
+    ).resolves.toEqual(rows)
+  })
+
   it('accepts absent scheduling metadata in event participants and rejects malformed metadata', async () => {
     const input = {
       account: 'account',

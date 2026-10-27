@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days, now_datetime
 
 from suite.drive._core.access import grant, revoke
 from suite.drive._core.activity import (
@@ -385,6 +386,34 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Grant", {"node": self.node, "principal": OTHER}))
         set_favourite(self.owner, self.node, False)
         self.assertFalse(frappe.db.exists("Drive Favourite", {"node": self.node}))
+
+    def test_lowering_a_grant_on_a_trashed_node_cannot_widen_it_another_way(self):
+        expiry = add_days(now_datetime(), 10).replace(microsecond=0)
+        grant(self.node, OTHER, EDIT, self.owner, expires_on=expiry)
+        grant(self.node, "$LINK", EDIT, self.owner)
+        update(self.owner, self.node, state="Trashed")
+
+        widening = {
+            "link lowered": lambda: grant(self.node, "$LINK", READ, self.owner),
+            "later expiry": lambda: grant(self.node, OTHER, READ, self.owner, expires_on=add_days(expiry, 5)),
+            "no expiry": lambda: grant(self.node, OTHER, READ, self.owner, expires_on=None),
+            "share email": lambda: grant(self.node, OTHER, READ, self.owner, expires_on=expiry, notify=True),
+        }
+        for name, write in widening.items():
+            with self.subTest(write=name), self.assertRaises(DriveForbidden):
+                write()
+        link_roles = frappe.get_all(
+            "Drive Grant", filters={"node": self.node, "principal": ["like", "$LINK%"]}, pluck="role"
+        )
+        self.assertEqual(link_roles, [EDIT])
+        self.assertEqual(self.role_of(OTHER), EDIT)
+
+        sooner = add_days(expiry, -5)
+        grant(self.node, OTHER, READ, self.owner, expires_on=sooner)
+        row = frappe.db.get_value(
+            "Drive Grant", {"node": self.node, "principal": OTHER}, ["role", "expires_on"], as_dict=True
+        )
+        self.assertEqual((row.role, row.expires_on), (READ, sooner))
 
     def role_of(self, principal: str) -> int:
         return frappe.db.get_value("Drive Grant", {"node": self.node, "principal": principal}, "role")

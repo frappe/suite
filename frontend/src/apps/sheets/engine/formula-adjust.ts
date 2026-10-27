@@ -68,3 +68,28 @@ export function renameSheetInFormula<T>(
       .replace(new RegExp(`(?<![A-Za-z0-9_'])${esc}!`, 'g'), replacement)
   )
 }
+
+// Rename several sheets at once ({ old: new }, names matched without regard
+// to case, as Excel does). One pass, so `Rates` → `Rates (2)` and
+// `Rates (2)` → `Rates (2) (2)` can't apply twice. Text in double quotes is
+// left alone. An xlsx import uses it when a tab gets a new name (#61).
+export function renameSheetsInFormula<T>(formula: T, renames: Record<string, string>): T | string {
+  if (typeof formula !== 'string' || !formula.startsWith('=')) return formula
+  const to = new Map(
+    Object.entries(renames)
+      .filter(([from, name]) => from !== name)
+      .map(([from, name]) => [from.toLowerCase(), name]),
+  )
+  if (!to.size) return formula
+  const bare = [...to.keys()].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const ref = new RegExp(`'((?:[^']|'')+)'!|(?<![A-Za-z0-9_.'])(${bare})!`, 'gi')
+  const rename = (match: string, quoted?: string, plain?: string) => {
+    const name = to.get((quoted?.replace(/''/g, "'") ?? plain ?? '').toLowerCase())
+    if (name == null) return match
+    return /^[A-Za-z_][A-Za-z0-9_.]*$/.test(name) ? `${name}!` : `'${name.replace(/'/g, "''")}'!`
+  }
+  return formula
+    .split(/("(?:[^"]|"")*")/)
+    .map((part, i) => (i % 2 ? part : part.replace(ref, rename)))
+    .join('')
+}

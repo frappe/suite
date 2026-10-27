@@ -1,6 +1,4 @@
-import { type APIRequestContext } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 import { adminApi, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 import { MOBILE_VIEWPORT } from "../../helpers/shell";
@@ -26,13 +24,21 @@ test.afterAll(async () => {
 	await api.dispose();
 });
 
+/**
+ * Holds a finger on the item. The listing selects on a touch press only (a
+ * mouse selects with a drag or a modifier click), and Playwright's mouse sends
+ * `pointerType: "mouse"`, so the press goes through Chromium's touch input.
+ */
 async function longPress(locator: import("@playwright/test").Locator) {
 	const box = await locator.boundingBox();
 	if (!box) throw new Error("the row has no box");
-	await locator.page().mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-	await locator.page().mouse.down();
-	await locator.page().waitForTimeout(700);
-	await locator.page().mouse.up();
+	const page = locator.page();
+	const session = await page.context().newCDPSession(page);
+	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [point] });
+	await page.waitForTimeout(700);
+	await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	await session.detach();
 }
 
 test("the bottom-nav item and the header button open the same sheet", async ({ page }) => {

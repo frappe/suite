@@ -237,6 +237,7 @@ import {
   ESPRESSO_PALETTE,
 } from '../../engine/charts.js'
 import { parseCellId } from '../../utils/cells.js'
+import { displayNumber } from '../../utils/format-number.js'
 
 // Lazy-load — same rationale as in ChartOverlay.
 const ChartView = defineAsyncComponent(() => import('./ChartView.vue'))
@@ -391,7 +392,7 @@ async function detect() {
       const v = data[r]?.[i]
       if (v === '' || v == null) continue
       total++
-      if (!isNaN(Number(v))) numHits++
+      if (!isNaN(displayNumber(v))) numHits++
     }
     columns.value.push({
       idx: i,

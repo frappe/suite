@@ -65,6 +65,8 @@ and no Suite Cloud is fully usable by anyone who has an account. The Admin Dashb
 creation and signup need Suite Cloud: without it the dashboard is hidden from admins, its routes
 lead back to the mailbox, and every endpoint in `suite/mail/api/admin.py` refuses.
 
+Suite's own emails, such as invites, password resets and share notices, go through `suite/suite_core/suite_email.py`. On a site connected to Suite Cloud, Suite names the email and its parameters, and Suite Cloud sends it from its own template. A site without Suite Cloud renders it from the templates in `suite/templates/emails/` and sends it through its own Email Account. Any other mail of the site, such as Frappe's own notifications, always goes through an Email Account the site owner sets up.
+
 The client lives in `suite/mail/suite_cloud/`, the facade the rest of Mail uses in
 `suite/mail/directory.py`, and the Admin Dashboard's endpoints in `suite/mail/api/admin.py`.
 
@@ -76,7 +78,6 @@ Sites that deployed servers through Suite before this split keep their data: upd
 - [**Frappe Framework**](https://github.com/frappe/frappe): Provides the database, authentication, permissions, realtime events, and APIs shared by Drive, Writer, Sheets, Slides, Meet, Mail, and Calendar.
 - [**Frappe UI**](https://github.com/frappe/frappe-ui): Power the interface and reusable components across every Suite product.
 - [**Yjs**](https://github.com/yjs/yjs): Keeps documents in Writer and spreadsheets in Sheets synchronized during realtime collaboration.
-- [**Hocuspocus**](https://github.com/ueberdosis/hocuspocus): Runs the collaboration server used for realtime spreadsheet editing in Sheets.
 - [**mediasoup**](https://github.com/versatica/mediasoup): Powers Meet's WebRTC selective forwarding unit for group video calls.
 
 ## Migrating from the Standalone Apps
@@ -159,6 +160,26 @@ bench build --app suite
 #### Meet SFU
 
 Meet requires a separate mediasoup SFU server for video calls. Follow the [Frappe Meet SFU setup guide](suite/meet/sfu-server/README.md) to configure and run it.
+
+### Code coverage
+
+From the repo root, run `pnpm test:ci` to test both Vitest projects and write combined
+coverage to `frontend/test-results/coverage/` (Cobertura XML, LCOV and JSON summary), plus
+`frontend/test-results/junit.xml`. The exact legacy failure manifest is still enforced.
+Coverage includes unexecuted source files, excludes test fixtures and declarations,
+and has no percentage threshold. CI fails if any eligible production JS, TS or Vue
+source is missing from the report. `pnpm test:coverage-reporting` also checks that
+representative untested TS and Vue files retain executable lines at zero coverage
+through the real package and icon resolvers.
+
+From the bench directory, run
+`COVERAGE_RCFILE="$PWD/apps/suite/.coveragerc" bench --site <test-site> run-tests --app suite --coverage`.
+Frappe writes `sites/coverage.xml`; Suite's config enables branch coverage and
+excludes test code from the report. CI uploads both reports and the trusted
+`coverage-report.yml` workflow updates the PR description. Missing reports remain
+unavailable; deltas use the latest successful scheduled run on the base branch.
+Exclusion changes also change the denominator, so old baseline percentages may
+not be comparable until a new baseline is collected.
 
 ## Contributing
 

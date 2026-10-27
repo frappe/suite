@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { type APIRequestContext, type Browser, type Page } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, type Browser, type Page, expect, test } from "@playwright/test";
 
 import {
 	adminApi,
@@ -118,8 +116,9 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	await patchNode(api, deck.name, { state: "Trashed" });
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
+	// A trashed item is read-only; its Trashed badge takes the place of View only.
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
-	await expect(page.getByText("View only", { exact: true })).toBeVisible();
+	await expect(page.getByText("Editing access changed. Your unsaved changes are kept on this device.")).toBeVisible();
 	const frozenAt = seen.requests.length;
 	await page.waitForTimeout(3_000);
 	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
@@ -164,11 +163,9 @@ async function ensureLinkOnlyUser(): Promise<void> {
 async function shareByLink(node: string, role: number): Promise<string> {
 	const response = await api.put(`${DRIVE}/nodes/${node}/grants/$LINK`, { data: { role } });
 	expect(response.ok()).toBe(true);
-	const body = (await response.json()) as {
-		data?: { grant: { principal: string } };
-		message?: { grant: { principal: string } };
-	};
-	return (body.data ?? body.message)!.grant.principal.replace("$LINK:", "");
+	// The answer is the grant row itself.
+	const body = (await response.json()) as { data?: { principal: string }; message?: { principal: string } };
+	return (body.data ?? body.message)!.principal.replace("$LINK:", "");
 }
 
 /** A browser signed in as the link-only person, holding these links. */
@@ -232,6 +229,8 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	const manifest = page.waitForResponse((answer) => answer.url().includes("composite.composite_manifest"));
 	const group = page.waitForResponse((answer) => answer.url().includes("composite.composite_group"));
 	await openDeck(page);
+	// A response the typed client refuses ends the load before the manifest is asked for.
+	await expect(page.getByText(/^get_composite_presentation /), "the composite answer passes its contract").toHaveCount(0);
 
 	// The manifest carries every held code, and names only the decks they open.
 	const listed = await manifest;

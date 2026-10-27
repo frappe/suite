@@ -1,5 +1,7 @@
 import { cellId, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { displayNumber } from '../utils/format-number.js'
+import { newItemId } from './item-id.js'
 import { remapRangeString } from './ref-remap.js'
 import type { IndexMap, Rect } from './types.js'
 
@@ -46,7 +48,8 @@ export interface PivotConfig extends PivotSpec {
 
 export interface PivotSnapshot {
   pivots: Record<string, Omit<PivotConfig, '_extent'>>
-  nextId: number
+  /** From when ids were counted; ignored. */
+  nextId?: number
 }
 
 /** A pivot output cell: a label or an aggregate ('' when there is nothing to aggregate). */
@@ -291,7 +294,7 @@ function _accumulate(acc: Accumulator, row: unknown[], plan: PivotPlan) {
     }
     const raw = row[(valCols[vi] as ValCol).idx]
     if (raw !== null && raw !== undefined && raw !== '') {
-      const n = Number(raw)
+      const n = displayNumber(raw)
       arr.push(isNaN(n) ? raw : n)
     }
   }
@@ -472,11 +475,11 @@ export function writePivotToSheet(
 
 export function createPivotEngine() {
   let _pivots: Record<string, PivotConfig> = {} // id → PivotConfig
-  let _nextId = 1
   let _onChange: (() => void) | null = null
 
+  // Random, so two tabs adding a pivot at once never share an id (item-id.ts).
   function _newId() {
-    return `pivot_${_nextId++}`
+    return `pivot_${newItemId()}`
   }
   function _notify() {
     _onChange?.()
@@ -597,7 +600,7 @@ export function createPivotEngine() {
       const { _extent, ...rest } = p
       pivots[id] = deepClone(rest)
     }
-    return { pivots, nextId: _nextId }
+    return { pivots }
   }
 
   function restore(data: PivotSnapshot | null | undefined) {
@@ -609,16 +612,6 @@ export function createPivotEngine() {
     for (const p of Object.values(_pivots)) {
       if (p.anchorRow == null) p.anchorRow = 0
       if (p.anchorCol == null) p.anchorCol = 0
-    }
-    _nextId = data.nextId || 1
-    // Defensive, as in charts: keep nextId ahead of any restored id, so a new
-    // pivot can't take an existing one's id and replace it.
-    for (const id of Object.keys(_pivots)) {
-      const m = /^pivot_(\d+)$/.exec(id)
-      if (m) {
-        const n = parseInt(m[1] ?? '', 10)
-        if (n >= _nextId) _nextId = n + 1
-      }
     }
     _notify()
   }

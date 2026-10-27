@@ -1,5 +1,5 @@
 <template>
-  <div class="fr-panel" ref="panelRef">
+  <div ref="panelRef" class="fr-panel">
     <div class="fr-header">
       <span class="fr-title">Find &amp; Replace</span>
       <Button
@@ -11,18 +11,18 @@
       />
     </div>
     <FormControl
+      v-model="findQuery"
       type="text"
       size="sm"
-      v-model="findQuery"
       placeholder="Find"
       autocomplete="off"
       @keydown.enter="findNext"
       @keydown.escape="emit('close')"
     />
     <FormControl
+      v-model="replaceQuery"
       type="text"
       size="sm"
-      v-model="replaceQuery"
       placeholder="Replace with"
       autocomplete="off"
     />
@@ -37,12 +37,15 @@
 
 <script setup>
 import { Button, FormControl } from 'frappe-ui'
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
-  // (query) => Promise<{ id, input }[]> — cells whose input contains query.
+  sheet: { type: String, required: true },
+  // (query, sheet) => Promise<{ id, input }[]> — cells whose input contains query.
   find: { type: Function, required: true },
-  // (before, after) — write {cellId: input} replacements as one edit.
+  // (ids, sheet) => Promise<{cellId: input}> — fresh inputs for replacement and undo.
+  read: { type: Function, required: true },
+  // (before, after, sheet) — write {cellId: input} replacements as one edit.
   write: { type: Function, required: true },
   // (id) => boolean — true when a cell is protected and must not be rewritten.
   isProtected: { type: Function, default: null },
@@ -79,13 +82,15 @@ defineExpose({
   focusInput,
 })
 
-// Only the newest search may set the results; typing fires one per key.
+// Results and pending replacements belong to one sheet and query.
 let _search = 0
+onBeforeUnmount(() => _search++)
 
 async function _buildMatches() {
   const q = findQuery.value
+  const sheet = props.sheet
   const mine = ++_search
-  const found = q ? await props.find(q) : []
+  const found = q ? await props.find(q, sheet) : []
   if (mine !== _search) return false
   matches.value = found
   matchIndex.value = found.length ? 0 : -1
@@ -93,13 +98,20 @@ async function _buildMatches() {
   return true
 }
 
-watch(findQuery, async () => {
-  if ((await _buildMatches()) && matches.value.length) emit('navigateTo', matches.value[0].id)
-})
+watch(
+  [findQuery, () => props.sheet],
+  async () => {
+    matches.value = []
+    matchIndex.value = -1
+    status.value = ''
+    if ((await _buildMatches()) && matches.value.length) emit('navigateTo', matches.value[0].id)
+  },
+  { flush: 'sync' },
+)
 
 async function findNext() {
   if (!matches.value.length) {
-    await _buildMatches()
+    if (!(await _buildMatches())) return
     if (!matches.value.length) return
   }
   matchIndex.value = (matchIndex.value + 1) % matches.value.length
@@ -116,31 +128,50 @@ function _replaced(input) {
 async function replaceCurrent() {
   const m = matches.value[matchIndex.value]
   if (!m) return
+  const sheet = props.sheet
+  const mine = _search
+  const inputs = await props.read([m.id], sheet)
+  if (mine !== _search || sheet !== props.sheet) return
+  const input = inputs[m.id] ?? ''
+  if (!input.toLowerCase().includes(findQuery.value.toLowerCase())) {
+    await _buildMatches()
+    return
+  }
   if (props.isProtected?.(m.id)) {
     status.value = 'Cell is protected'
     return
   }
-  props.write({ [m.id]: m.input }, { [m.id]: _replaced(m.input) })
+  props.write({ [m.id]: input }, { [m.id]: _replaced(input) }, sheet)
   await _buildMatches()
 }
 
 async function replaceAll() {
   if (!findQuery.value) return
-  await _buildMatches()
+  if (!(await _buildMatches())) return
+  const sheet = props.sheet
+  const mine = _search
+  const found = matches.value
+  const inputs = await props.read(
+    found.map((m) => m.id),
+    sheet,
+  )
+  if (mine !== _search || sheet !== props.sheet) return
   const before = {}
   const after = {}
   let skipped = 0
-  for (const m of matches.value) {
+  for (const m of found) {
+    const input = inputs[m.id] ?? ''
+    if (!input.toLowerCase().includes(findQuery.value.toLowerCase())) continue
     if (props.isProtected?.(m.id)) {
       skipped++ // leave protected cells untouched
       continue
     }
-    before[m.id] = m.input
-    after[m.id] = _replaced(m.input)
+    before[m.id] = input
+    after[m.id] = _replaced(input)
   }
   const count = Object.keys(after).length
-  if (count) props.write(before, after)
-  await _buildMatches()
+  if (count) props.write(before, after, sheet)
+  if (!(await _buildMatches())) return
   status.value = skipped
     ? `Replaced ${count} cell(s), skipped ${skipped} protected`
     : `Replaced ${count} cell(s)`

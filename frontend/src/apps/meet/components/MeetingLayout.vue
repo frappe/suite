@@ -46,12 +46,12 @@
         v-if="showLocalTile"
         :key="`local-${localParticipant.user_id}`"
         :participant="localParticipant"
-        :isLocal="true"
-        :isVideoEnabled="isCameraOn"
-        :isAudioEnabled="isMicOn"
-        :isActiveSpeaker="activeSpeakerIds.includes(localParticipant.user_id)"
-        :videoRef="setLocalVideoRef"
-        :showReaction="pinnedTiles.length === 0"
+        :is-local="true"
+        :is-video-enabled="isCameraOn"
+        :is-audio-enabled="isMicOn"
+        :is-active-speaker="activeSpeakerIds.includes(localParticipant.user_id)"
+        :video-ref="setLocalVideoRef"
+        :show-reaction="pinnedTiles.length === 0"
         :style="tileStyle"
       />
 
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, watch, type ComputedRef } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 import { useLayout } from '../composables/useLayout'
 import { useMeetingContext } from '../composables/useMeetingContext'
@@ -98,6 +98,7 @@ import { useResponsiveGrid } from '../composables/useResponsiveGrid'
 import { useScreenShareTiles, type ScreenShareTile } from '../composables/useScreenShareTiles'
 import { useTileAdaptiveStreaming } from '../composables/useTileAdaptiveStreaming'
 import type { Participant } from '../utils/media/ParticipantManager'
+import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
 import { getInitials } from '../utils/text'
 import FloatingReactions from './FloatingReactions.vue'
 import GroupTile from './GroupTile.vue'
@@ -121,6 +122,7 @@ const showLocalTile = computed(() => props.showLocalTile)
 const interactive = computed(() => props.interactive)
 
 const meetingCtx = useMeetingContext()!
+const sfuManager = inject<Ref<SFUMeetingManager | null>>('sfuManager')
 const setLocalVideoRef = inject<(el: unknown) => void>('setLocalVideoRef') || (() => {})
 const setRemoteVideoRef =
   inject<(participantId: string, el: HTMLVideoElement | null) => void>('setRemoteVideoRef') ||
@@ -297,11 +299,37 @@ const {
   {
     raisedHands: computed(() => meetingCtx.raiseHandStore.raisedHands),
     activeSpeakerIds: computed(() => meetingCtx.participantStore.activeSpeakerIds),
+    sharedStageParticipantIds: computed(
+      () => meetingCtx.participantStore.sharedStage?.participantIds ?? [],
+    ),
     stableSpeakerIds: computed(() => meetingCtx.participantStore.stableSpeakerIds),
   },
   extraTileCount,
   { localTileCount: props.showLocalTile ? 1 : 0 },
 )
+
+watch(
+  [
+    () => sfuManager?.value ?? null,
+    () =>
+      allParticipants.value
+        .filter((participant) => participant.isVisible || isPinnedParticipant(participant.user_id))
+        .map((participant) => participant.user_id),
+  ],
+  ([manager, participantIds]) => {
+    if (!manager) return
+    void manager
+      .setVisibleRemoteVideoParticipants(participantIds)
+      .catch((error) => console.warn('Failed to update visible video subscriptions:', error))
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  void sfuManager?.value
+    ?.setVisibleRemoteVideoParticipants([])
+    .catch((error) => console.warn('Failed to release camera subscriptions:', error))
+})
 
 const tileStyle = computed(() => {
   if (mode.value === 'sidebar') {

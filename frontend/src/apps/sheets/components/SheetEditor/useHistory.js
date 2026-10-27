@@ -9,8 +9,8 @@
 // Two kinds of step (see engine/history.js): a snapshot step holds IronCalc's
 // bytes plus every side engine and the grid's view state; an op step holds a
 // diff (cells, formats, validation, merges, row heights) or a row/column op.
-// What the editor does after a step lands (repaint, reset the selection)
-// comes in as afterStructural and afterNavigate.
+// What the editor does after a step lands (repaint, sync the formula bar to
+// the active cell) comes in as afterStructural and afterNavigate(id).
 
 import { createHistory } from '../../engine/history.js'
 
@@ -183,8 +183,10 @@ export function useHistory({
     if (!map) return
     const sn = sheetName || currentSheet.value
     for (const [id, fmt] of Object.entries(map)) {
+      // Replace, not merge: formats.set merges, which kept a bold the step
+      // had added after its undo.
+      formats.clear(id, sn)
       if (fmt && Object.keys(fmt).length) formats.set(id, fmt, sn)
-      else formats.clear(id, sn)
     }
     getGrid()?.render?.() // the grid applies number formats as it paints
   }
@@ -309,13 +311,15 @@ export function useHistory({
     )
   }
 
+  // The grid keeps its selection across a step; the editor's formula bar
+  // and toolbar follow it (ISSUES #78).
   function undo() {
     if (!history.undo()) return
-    afterNavigate()
+    afterNavigate(getGrid()?.getActiveCell?.() || 'A1')
   }
   function redo() {
     if (!history.redo()) return
-    afterNavigate()
+    afterNavigate(getGrid()?.getActiveCell?.() || 'A1')
   }
 
   return { history, undo, redo, structural }

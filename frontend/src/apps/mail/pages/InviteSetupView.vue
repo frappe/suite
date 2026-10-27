@@ -31,18 +31,6 @@
       autocomplete="current-password"
       required
     />
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">{{ __('Locale') }}</label>
-      <Combobox v-model="locale" :options="localeOptions" :placeholder="__('Select a locale')" />
-    </div>
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">{{ __('Time Zone') }}</label>
-      <Combobox
-        v-model="timeZone"
-        :options="timeZoneOptions"
-        :placeholder="__('Select a time zone')"
-      />
-    </div>
     <ErrorMessage :message="errorMessage" />
     <Button
       variant="solid"
@@ -58,12 +46,13 @@
   </div>
 </template>
 <script setup lang="ts">
-import { Button, Combobox, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery } from '@/api'
 import { sessionStore } from '@/apps/mail/stores/session'
+import { accountDefaults } from '@/apps/mail/utils/accountDefaults'
 
 const { requestKey } = defineProps<{ requestKey: string }>()
 
@@ -71,14 +60,10 @@ const router = useRouter()
 const session = sessionStore()
 const { login } = session
 
-type Option = { value: string; label: string }
-
 const email = ref('')
 const firstName = ref('')
 const lastName = ref('')
 const password = ref('')
-const locale = ref('')
-const timeZone = ref('')
 const completingSetup = ref(false)
 const getAccountRequest = useQuery(api.mail.public.accountRequest, () =>
   requestKey.length === 32 ? { request_key: requestKey } : false,
@@ -109,11 +94,6 @@ watch(pendingRequest, (data) => {
 const accountOptions = useQuery(api.mail.public.accountOptions, () =>
   pendingRequest.value ? { request_key: requestKey } : false,
 )
-const localeOptions = computed<Option[]>(() => accountOptions.data?.locales ?? [])
-const timeZoneOptions = computed<Option[]>(() => [
-  { value: '', label: __('Not set') },
-  ...(accountOptions.data?.time_zones ?? []),
-])
 const createAccount = useMutation(api.mail.public.createAccount, { silent: true })
 const errorMessage = computed(
   () =>
@@ -130,8 +110,7 @@ async function submit() {
       first_name: firstName.value,
       last_name: lastName.value,
       password: password.value,
-      locale: locale.value || null,
-      time_zone: timeZone.value || null,
+      ...accountDefaults(accountOptions.data),
     })
     await login(email.value, password.value)
   } finally {

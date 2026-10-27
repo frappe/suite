@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
-import { areaDefinitions, deriveAreaBadges, useAppRegistry } from '@/composition/appRegistry'
+import {
+  areaDefinitions,
+  deriveAreaBadges,
+  findArea,
+  useAppRegistry,
+} from '@/composition/appRegistry'
 import type { Session } from '@/platform/session'
 
 const registryState = vi.hoisted(() => ({
@@ -73,15 +78,20 @@ describe('app registry', () => {
       'calendar',
       'meet',
       'people',
+      'admin',
     ])
   })
 
-  it('lists every area even when the session lacks a capability', () => {
-    const session = {
-      capabilities: ref({ jmap: false, systemManager: false }),
-    } as unknown as Session
+  it('lists only areas whose capabilities are present and updates when they change', () => {
+    const capabilities = ref({ jmap: false, systemManager: false, suiteAdmin: false })
+    const session = { capabilities } as unknown as Session
+    const registry = useAppRegistry(session)
 
-    expect(useAppRegistry(session).areas.map((area) => area.id)).toEqual([
+    expect(findArea('mail')?.to).toBe('/mail')
+    expect(findArea('calendar')?.to).toBe('/calendar')
+    expect(registry.areas.map((area) => area.id)).toEqual(['home', 'files', 'meet'])
+    capabilities.value.jmap = true
+    expect(registry.areas.map((area) => area.id)).toEqual([
       'home',
       'files',
       'mail',
@@ -89,6 +99,19 @@ describe('app registry', () => {
       'meet',
       'people',
     ])
+    capabilities.value.jmap = false
+    expect(registry.areas.map((area) => area.id)).toEqual(['home', 'files', 'meet'])
+  })
+
+  it('shows Admin only to a Suite Admin, not a System Manager alone', () => {
+    const capabilities = ref({ jmap: false, systemManager: true, suiteAdmin: false })
+    const session = {
+      capabilities,
+    } as unknown as Session
+    const registry = useAppRegistry(session)
+    expect(registry.areas.some((area) => area.id === 'admin')).toBe(false)
+    capabilities.value = { jmap: false, systemManager: false, suiteAdmin: true }
+    expect(registry.areas.some((area) => area.id === 'admin')).toBe(true)
   })
 
   it('derives the Mail badge from the inbox unread summary', () => {

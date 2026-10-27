@@ -26,7 +26,6 @@
   "frontend/src/apps/mail/components/Modals/AddAccountModal.vue": 5,
   "frontend/src/apps/mail/components/Modals/AddDomainModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/AddGroupEmailModal.vue": 2,
-  "frontend/src/apps/mail/components/Modals/AddGroupModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/AddMailingListEmailModal.vue": 2,
   "frontend/src/apps/mail/components/Modals/AddMailingListModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/AddMailingListRecipientsModal.vue": 1,

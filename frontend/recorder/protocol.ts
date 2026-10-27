@@ -8,6 +8,7 @@ import type {
   RecordingProofChallenge,
   RecordingProofResponse,
 } from '../../suite/meet/types'
+import { parseSharedStage } from '../src/apps/meet/utils/sharedStage'
 
 interface RecorderParticipantUserData {
   name?: string
@@ -199,6 +200,10 @@ const parseProjectionPayload = (value: unknown): RecorderStageProjectionPayload 
             action: value.action,
           }
         : null
+    case 'shared_stage': {
+      const state = parseSharedStage(value.state)
+      return exactKeys(value, ['type', 'state']) && state ? { type: 'shared_stage', state } : null
+    }
     case 'active_speaker':
       return exactKeys(value, ['type', 'participant_ids']) && stringArray(value.participant_ids)
         ? { type: value.type, participant_ids: value.participant_ids }
@@ -245,16 +250,20 @@ const parseProjectionPayload = (value: unknown): RecorderStageProjectionPayload 
 export const parseRecorderStageSnapshot = (value: unknown): RecorderStageSnapshot | null => {
   if (
     !record(value) ||
-    !exactKeys(value, [
-      'protocol_version',
-      'room_id',
-      'cursor',
-      'observed_at',
-      'participants',
-      'producers',
-      'raised_hands',
-      'active_speaker_ids',
-    ]) ||
+    !exactKeys(
+      value,
+      [
+        'protocol_version',
+        'room_id',
+        'cursor',
+        'observed_at',
+        'participants',
+        'producers',
+        'raised_hands',
+        'active_speaker_ids',
+      ],
+      ['shared_stage'],
+    ) ||
     value.protocol_version !== 1 ||
     !nonemptyString(value.room_id) ||
     !Number.isSafeInteger(value.cursor) ||
@@ -263,7 +272,8 @@ export const parseRecorderStageSnapshot = (value: unknown): RecorderStageSnapsho
     !Array.isArray(value.participants) ||
     !Array.isArray(value.producers) ||
     !record(value.raised_hands) ||
-    !stringArray(value.active_speaker_ids)
+    !stringArray(value.active_speaker_ids) ||
+    (value.shared_stage !== undefined && !parseSharedStage(value.shared_stage))
   )
     return null
   const participants: RecorderStageParticipant[] = []
@@ -314,6 +324,9 @@ export const parseRecorderStageSnapshot = (value: unknown): RecorderStageSnapsho
       ]),
     ),
     active_speaker_ids: value.active_speaker_ids,
+    ...(value.shared_stage === undefined
+      ? {}
+      : { shared_stage: parseSharedStage(value.shared_stage)! }),
   }
 }
 

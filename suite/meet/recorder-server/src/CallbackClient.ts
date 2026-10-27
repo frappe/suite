@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import jwt from 'jsonwebtoken';
+import { logger } from './logger.js';
 import { safeJobDirectory } from './ManifestStore.js';
 import type { JobRecord } from './types.js';
 
@@ -12,6 +13,35 @@ const FINALIZATION_AUDIENCE = 'meet-recording-finalization';
 const FINALIZATION_TYPE = 'meet-recording-finalization+jwt';
 const FINALIZATION_PROTOCOL_VERSION = 1;
 const CHUNK_SIZE = 8 * 1024 * 1024;
+const PROGRESS_ATTEMPTS = 3;
+const PROGRESS_ATTEMPT_TIMEOUT_MS = 10_000;
+
+class CallbackRequestError extends Error {
+	constructor(
+		message: string,
+		readonly reason: string,
+		readonly retryable: boolean,
+		cause?: unknown,
+	) {
+		super(message, { cause });
+	}
+}
+
+function transportReason(error: unknown): string {
+	if (!(error instanceof Error)) return 'transport_error';
+	if (error.name === 'TimeoutError' || error.name === 'AbortError')
+		return 'timeout';
+	const cause = error.cause;
+	if (
+		cause &&
+		typeof cause === 'object' &&
+		'code' in cause &&
+		typeof cause.code === 'string' &&
+		/^[A-Z][A-Z0-9_]{0,63}$/.test(cause.code)
+	)
+		return cause.code;
+	return 'transport_error';
+}
 const FRAPPE_RECORDING_STATES = new Set([
 	'Pending',
 	'Starting',
@@ -316,20 +346,43 @@ export class CallbackClient {
 	): Promise<number> {
 		if (!Number.isSafeInteger(capturedBytes) || capturedBytes < 0)
 			throw new Error('invalid captured byte count');
-		const response = await this.json(
-			'recorder_segment_progress',
-			job,
-			'segment_progress',
-			String(capturedBytes),
-			{
-				protocol_version: PROTOCOL_VERSION,
-				recording_id: job.recording,
-				job: job.job,
-				captured_bytes: capturedBytes,
-			},
-			parseSegmentProgressResponse,
-		);
-		return response.budget_bytes;
+		// Progress is cumulative and idempotent. Each retry signs a fresh JWT,
+		// including when Frappe committed progress before the response was lost.
+		for (let attempt = 1; ; attempt++) {
+			try {
+				const response = await this.json(
+					'recorder_segment_progress',
+					job,
+					'segment_progress',
+					String(capturedBytes),
+					{
+						protocol_version: PROTOCOL_VERSION,
+						recording_id: job.recording,
+						job: job.job,
+						captured_bytes: capturedBytes,
+					},
+					parseSegmentProgressResponse,
+					Math.min(this.timeoutMs, PROGRESS_ATTEMPT_TIMEOUT_MS),
+				);
+				return response.budget_bytes;
+			} catch (error) {
+				const retryable =
+					error instanceof CallbackRequestError && error.retryable;
+				const retry = retryable && attempt < PROGRESS_ATTEMPTS;
+				logger.error({
+					event: 'segment_progress_callback_failed',
+					job: job.job,
+					attempt,
+					status: retry ? 'retrying' : retryable ? 'exhausted' : 'rejected',
+					reason:
+						error instanceof CallbackRequestError
+							? error.reason
+							: 'invalid_response',
+				});
+				if (!retry) throw error;
+				await this.sleep(250 * 2 ** (attempt - 1));
+			}
+		}
 	}
 
 	async upload(
@@ -583,6 +636,7 @@ export class CallbackClient {
 		operationId: string,
 		body: CallbackRequest,
 		parseResponse: (value: unknown) => T,
+		timeoutMs = this.timeoutMs,
 	): Promise<T> {
 		const url = new URL(
 			`/api/method/suite.meet.api.recording.${method}`,
@@ -599,6 +653,8 @@ export class CallbackClient {
 				body: JSON.stringify(body),
 			},
 			parseResponse,
+			false,
+			timeoutMs,
 		);
 	}
 
@@ -610,25 +666,55 @@ export class CallbackClient {
 		init: RequestInit,
 		parseResponse: (value: unknown) => T,
 		finalization = false,
+		timeoutMs = this.timeoutMs,
 	): Promise<T> {
-		const response = await fetch(url, {
-			...init,
-			headers: {
-				...init.headers,
-				'X-Meet-Recorder-Authorization': `Bearer ${this.token(
-					job,
-					operation,
-					operationId,
-					init.body,
-					finalization,
-				)}`,
-			},
-			signal: AbortSignal.timeout(this.timeoutMs),
-		});
-		const text = await response.text();
-		if (!response.ok || text.length > 64 * 1024)
-			throw new Error(`Frappe callback failed with HTTP ${response.status}`);
-		const parsed: unknown = JSON.parse(text);
+		let text: string;
+		try {
+			const response = await fetch(url, {
+				...init,
+				headers: {
+					...init.headers,
+					'X-Meet-Recorder-Authorization': `Bearer ${this.token(
+						job,
+						operation,
+						operationId,
+						init.body,
+						finalization,
+					)}`,
+				},
+				signal: AbortSignal.timeout(timeoutMs),
+			});
+			if (!response.ok) {
+				// A refusal remains authoritative even if its body cannot be read.
+				void response.body?.cancel().catch(() => undefined);
+				throw new CallbackRequestError(
+					`Frappe callback failed with HTTP ${response.status}`,
+					`HTTP_${response.status}`,
+					response.status === 408 ||
+						response.status === 429 ||
+						response.status >= 500,
+				);
+			}
+			text = await response.text();
+		} catch (error) {
+			if (error instanceof CallbackRequestError) throw error;
+			const reason = transportReason(error);
+			throw new CallbackRequestError(
+				`Frappe callback transport failed: ${reason}`,
+				reason,
+				true,
+				error,
+			);
+		}
+		if (text.length > 64 * 1024)
+			throw new Error('invalid Frappe callback response');
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(text);
+		} catch {
+			// SyntaxError messages can echo response bytes into the capture logs.
+			throw new Error('invalid Frappe callback response');
+		}
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
 			throw new Error('invalid Frappe callback response');
 		}

@@ -6,3 +6,4 @@ Meet
 Mail
 Calendar
 Suite Core
+Draw

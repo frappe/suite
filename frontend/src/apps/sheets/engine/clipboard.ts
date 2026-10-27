@@ -1,7 +1,7 @@
 // Clipboard engine — internal copy/cut/paste + system clipboard TSV interchange.
 //
 // Cells are read and written through `cells`:
-//   read(sheetName, rect)  → Promise<{ inputs: string[][], displays: string[][] }>
+//   read(sheetName, rect, { numFmts }) → Promise<{ inputs, displays, numFmts? }>
 //   write(sheetName, map)  → writes a {cellId: input} map as one edit ('' clears)
 // A copy reads the source once; the paste then works from that capture.
 
@@ -13,6 +13,7 @@ import { detectHyperlink } from './links.js'
 import type { ProtectionEngine } from './protection.js'
 import type { CellPort, CellPos, Rect } from './types.js'
 import type { ValidationEngine, ValidationRule } from './validation.js'
+import { numFmtFromEngine } from './xlsx-io.js'
 
 /** 'all' = values + formulas + formats; see paste(). */
 export type PasteKind = 'all' | 'values' | 'formulas' | 'formats'
@@ -62,13 +63,14 @@ export function createClipboard({
   let _srcSheet: string | null = null // the sheet the source is on
   let _pivot: unknown = null // portable pivot config when the source overlaps a pivot
   let _ready: Promise<void> | null = null // the source read; paste waits for it
+  let _systemText: string | null = null // what this copy wrote to the system clipboard
 
   // ── Capture ───────────────────────────────────────────────────────────────
 
   function _capture(sel: Rect, mode: 'copy' | 'cut') {
     const { r0, c0, r1, c1 } = sel
     const sn = getCurrentSheet()
-    _data = _shown = null
+    _data = _shown = _systemText = null
     const fmts: Record<string, Format> = {}
     const vals: Record<string, ValidationRule | null> = {}
     _fmts = fmts
@@ -87,8 +89,8 @@ export function createClipboard({
         vals[key] = validation ? validation.get(id, sn) : null
       }
     }
-    const ready: Promise<void> = cells.read(sn, sel).then(
-      ({ inputs, displays }) => {
+    const ready: Promise<void> = cells.read(sn, sel, { numFmts: true }).then(
+      ({ inputs, displays, numFmts }) => {
         // A newer copy or a clear() replaced this one while it was reading.
         if (_ready !== ready) return
         const data: Record<string, string> = {}
@@ -100,6 +102,11 @@ export function createClipboard({
             const key = `${r - r0},${c - c0}`
             data[key] = inputs[r - r0]?.[c - c0] ?? ''
             shown[key] = displays[r - r0]?.[c - c0] ?? ''
+            // A typed `$1.50` is formatted by IronCalc and its input is 1.5:
+            // carry IronCalc's format unless the side store has one.
+            const engineFmt = numFmtFromEngine(numFmts?.[r - r0]?.[c - c0])
+            const fmt = fmts[key]
+            if (engineFmt && fmt && !fmt.numberFormat) fmt.numberFormat = engineFmt
           }
         }
       },
@@ -128,8 +135,29 @@ export function createClipboard({
     // doesn't expose it, and optional-chaining only on `.clipboard` still
     // throws ReferenceError when `navigator` itself is undefined.
     if (typeof navigator !== 'undefined') {
-      navigator.clipboard?.writeText(rows.join('\n')).catch(() => {})
+      const text = rows.join('\n')
+      const ready = _ready
+      navigator.clipboard
+        ?.writeText(text)
+        .then(() => {
+          if (_ready === ready) _systemText = text
+        })
+        .catch(() => {})
     }
+  }
+
+  // Line ends as Windows hands them back, and no trailing newline.
+  function _normText(s: string) {
+    return s.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
+  }
+
+  // True when the system clipboard holds something other than what the last
+  // copy wrote there: the user has copied elsewhere since, so a paste should
+  // take that, not this buffer. A copy now outlives Esc (ISSUES #64), so
+  // this is what retires it. False when there is nothing to compare.
+  function isStale(systemText: string | null | undefined) {
+    if (!_mode || _systemText == null || !systemText) return false
+    return _normText(systemText) !== _normText(_systemText)
   }
 
   // ── Public ────────────────────────────────────────────────────────────────
@@ -540,11 +568,13 @@ export function createClipboard({
   }
   function clear() {
     _data = _shown = _fmts = _vals = _mode = _srcSel = _srcSheet = _pivot = _ready = null
+    _systemText = null
   }
 
   return {
     copy,
     cut,
+    isStale,
     paste,
     pasteFromText,
     pasteFromHTML,

@@ -26,6 +26,7 @@ import {
 import fileSaver from 'file-saver'
 
 import { pxToTwips, toDocxLine } from '@/apps/writer/utils/typography'
+import { randomId } from '@/platform/random-id'
 
 const CELL_PADDING = 240
 const TABLE_SPACE_BEFORE = 200
@@ -457,20 +458,7 @@ function uniqueListRef(kind) {
   return `${kind}-${randomId()}`
 }
 
-export function randomId() {
-  // `typeof crypto` (not `crypto?.x`) is required here: optional chaining
-  // only guards a null/undefined *value*, not a wholly undeclared global —
-  // referencing the bare `crypto` identifier still throws a ReferenceError
-  // if it doesn't exist at all.
-  if (typeof crypto !== 'undefined') {
-    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-    if (typeof crypto.getRandomValues === 'function') {
-      const bytes = crypto.getRandomValues(new Uint8Array(16))
-      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-    }
-  }
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
-}
+export { randomId }
 
 /**
  * Each top-level <ul>/<ol> gets its own numbering reference (two separate

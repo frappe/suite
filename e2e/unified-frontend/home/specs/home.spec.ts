@@ -12,7 +12,6 @@ import {
 	type DriveNode,
 } from "../../helpers/drive";
 import { failRequest } from "../../helpers/shell";
-import { test as withFlips } from "../../helpers/flips";
 
 /** Tickets 004 and 005: the Home surface, its two sections and the bell. */
 
@@ -29,24 +28,65 @@ let recent: DriveNode;
  * each journey checks the rendering against a known answer.
  */
 const EVENT_FIXTURE = [
-	{
+	calendarEvent({
 		id: "w4-event-1",
-		uid: "w4-event-1",
 		title: "W4 standup",
 		start: isoIn(2),
 		duration: "PT30M",
-		status: "confirmed",
 		conferencing: { meeting_id: "w4meetcode", url: "https://example.invalid/w4meetcode" },
-	},
-	{
+	}),
+	calendarEvent({
 		id: "w4-event-2",
-		uid: "w4-event-2",
 		title: "W4 review",
-		start: isoIn(26),
+		start: tomorrowAtNoon(),
 		duration: "PT60M",
-		status: "confirmed",
-	},
+	}),
 ];
+
+/** A whole `events_get` row: the client validates every field the server sends. */
+function calendarEvent(fields: { id: string; title: string; start: string; duration: string; conferencing?: unknown }) {
+	const now = new Date().toISOString();
+	return {
+		name: fields.id,
+		account: "administrator@suite.test",
+		uid: fields.id,
+		time_zone: "UTC",
+		status: "confirmed",
+		description: "",
+		show_without_time: 0,
+		recurrence_id: null,
+		recurrence_rule: null,
+		organizer: "administrator@suite.test",
+		calendars: [],
+		created: null,
+		draft: 0,
+		recurrence_id_time_zone: "",
+		privacy: "public",
+		free_busy_status: "busy",
+		locations: [],
+		alerts: [],
+		use_default_alerts: 0,
+		created_utc: now,
+		updated_utc: now,
+		origin: true,
+		may_invite_self: 0,
+		may_invite_others: 0,
+		hide_attendees: 0,
+		creation: now,
+		modified: now,
+		sequence: 0,
+		links: [],
+		participants: [],
+		conferencing: null,
+		...fields,
+	};
+}
+
+/** Tomorrow at noon local time: Upcoming covers today and tomorrow only, so `now + 26h` can fall past it. */
+function tomorrowAtNoon(): string {
+	const now = new Date();
+	return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12).toISOString().replace(/\.\d+Z$/, "Z");
+}
 
 function isoIn(hours: number): string {
 	return new Date(Date.now() + hours * 3_600_000).toISOString().replace(/\.\d+Z$/, "Z");
@@ -81,38 +121,25 @@ test("Recent lists the documents the account opened", async ({ page }) => {
 	await expect(page).toHaveURL(new RegExp(`/d/${recent.name}/home-recent-doc`));
 });
 
-withFlips.describe("Recent's View all", () => {
-	// The old Drive pages have no `/drive/recent`, so View all shows only with the files flip on.
-	withFlips("opens the Recent view with the files flip on", async ({ page }) => {
-		await page.goto("/home");
-		await page.locator('section[aria-labelledby="home-recent-heading"]').getByText("View all").click();
-		await expect(page).toHaveURL(/\/drive\/recent$/);
-	});
-
-	withFlips.describe("with the files flip off", () => {
-		withFlips.use({ flips: { suite_flip_shell: false, suite_flip_files: false } });
-
-		withFlips("is hidden, and Upcoming keeps its own", async ({ page }) => {
-			await page.goto("/home");
-			await expect(page.getByTestId("recent-rows").getByText("home-recent-doc")).toBeVisible();
-			const recent = page.locator('section[aria-labelledby="home-recent-heading"]');
-			await expect(recent.getByText("View all")).toHaveCount(0);
-			const upcoming = page.locator('section[aria-labelledby="home-upcoming-heading"]');
-			await expect(upcoming.getByText("View all")).toHaveCount(1);
-		});
-	});
+test("Recent's View all opens the Recent view", async ({ page }) => {
+	await page.goto("/home");
+	await page.locator('section[aria-labelledby="home-recent-heading"]').getByText("View all").click();
+	await expect(page).toHaveURL(/\/drive\/recent$/);
 });
 
-test("Upcoming groups the events and offers Join for a conferencing one", async ({ page }) => {
+test("Upcoming lists today's and tomorrow's events and offers Join for a conferencing one", async ({ page }) => {
 	await stubEvents(page);
 	await page.goto("/home");
 	await expect(page.getByRole("heading", { name: "Upcoming" })).toBeVisible();
 
 	const rows = page.getByTestId("upcoming-rows");
-	await expect(rows.getByText("W4 standup")).toBeVisible();
-	await expect(rows.getByText("W4 review")).toBeVisible();
-	await expect(rows.getByText("Today")).toBeVisible();
-	await expect(rows.getByRole("link", { name: "Join" })).toHaveAttribute("href", "/meet/w4meetcode");
+	const standup = rows.getByRole("link", { name: "Join W4 standup" });
+	const review = rows.getByRole("link", { name: "Open W4 review" });
+	await expect(standup).toHaveAttribute("href", "/meet/w4meetcode");
+	await expect(review).toHaveAttribute("href", "/calendar");
+	const tomorrow = new Date();
+	tomorrow.setDate(tomorrow.getDate() + 1);
+	await expect(review).toContainText(String(tomorrow.getDate()));
 });
 
 test("Upcoming reports an empty calendar when the account has no events", async ({ page }) => {
@@ -150,7 +177,7 @@ test("New Document creates a Writer node in the Personal Root and opens it", asy
 	const node = page.url().split("/d/")[1]!.split("/")[0]!;
 	const created = await getNode(api, node);
 	expect(created.content_doctype).toBe("Writer Document");
-	expect(created.parent).toBe((await roots(api)).personal.node);
+	expect(created.parent_node).toBe((await roots(api)).personal.node);
 	await purge(api, node);
 });
 

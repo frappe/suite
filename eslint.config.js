@@ -51,6 +51,21 @@ const config = defineConfigWithVueTs(
       ],
     },
   },
+  {
+    files: ['frontend/src/**/*.{js,ts,vue}'],
+    ignores: ['frontend/src/platform/random-id/index.ts', 'frontend/src/**/*.test.{js,ts}'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'crypto',
+          property: 'randomUUID',
+          message:
+            'Use randomId() from @/platform/random-id: crypto.randomUUID is missing on sites served over plain HTTP.',
+        },
+      ],
+    },
+  },
   prettier,
 )
 

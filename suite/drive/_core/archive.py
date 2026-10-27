@@ -18,6 +18,11 @@ from suite.drive._core.principals import Principals
 
 ARCHIVE_TTL_SECONDS = 60 * 60
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+ARCHIVE_NODES = f"""
+    SELECT {node_core.NODE_FIELDS}
+    FROM `tabDrive Node` n
+    WHERE n.name IN %(nodes)s AND n.state = 'Active'
+"""
 
 
 def start(principals: Principals, node: str) -> dict:
@@ -43,6 +48,7 @@ def start(principals: Principals, node: str) -> dict:
         "file_name": f"{_segment(folder.title)}.zip",
         "size": size,
         "blob": blob,
+        "nodes": [row.name for row in rows],
     }
     frappe.cache().set_value(key, answer, expires_in_sec=ARCHIVE_TTL_SECONDS)
     return _public_status(answer)
@@ -58,11 +64,19 @@ def status(principals: Principals, node: str) -> dict:
 
 
 def download(principals: Principals, node: str) -> tuple[frappe.model.document.Document, str]:
-    """Return the ready private blob and filename after a fresh folder check."""
+    """Return the ready private blob after rechecking every archived node."""
     folder = _folder(principals, node)
     entry = frappe.cache().get_value(_cache_key(principals.user, folder.name))
     if not isinstance(entry, dict) or entry.get("status") != "ready" or not entry.get("blob"):
         raise DriveNotFound(_("The Drive archive is not ready"))
+    # Check the original members: a move can take bytes out of this subtree
+    # without taking them out of the cached ZIP (Drive spec §11.2).
+    members = entry.get("nodes")
+    if not members:
+        raise DriveNotFound(_("Rebuild this Drive archive before downloading it"))
+    rows = frappe.db.sql(ARCHIVE_NODES, {"nodes": tuple(members)}, as_dict=True)
+    if len(node_core._readable_rows(rows, principals)) != len(members):
+        raise DriveNotFound(_("A node in this Drive archive cannot be read"))
     try:
         blob = frappe.get_doc("File Blob", entry["blob"])
     except frappe.DoesNotExistError:

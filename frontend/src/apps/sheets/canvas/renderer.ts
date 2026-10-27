@@ -180,11 +180,12 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     ctx.rect(clipX, clipY, clipW, clipH)
     ctx.clip()
     if (!editing) selPainter.drawSelFill(fillRange || range)
+    if (pickerRect) selPainter.drawPickerFill(pickerRect)
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
     cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, cells, getDiffFor)
     cellPainter.drawRegionBorders(r0, c0, r1, c1, cells)
     if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
-    if (pickerRect) selPainter.drawPickerRect(pickerRect)
+    if (pickerRect) selPainter.drawPickerBorder(pickerRect)
     ctx.restore()
   }
 

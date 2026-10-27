@@ -61,6 +61,7 @@ export const isMailRoute = (route: Pick<RouteLocationNormalized, 'name'>): boole
 export const mailGuard = async (to: RouteLocationNormalized) => {
   // Only act on mail routes; let the suite handle everything else.
   if (!isMailRoute(to)) return
+  if (to.meta.area === 'admin' && !to.meta.isDashboard) return
 
   handleSetupWizardEscape()
 
@@ -70,9 +71,20 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   const { isLoggedIn } = useSessionStore()
   if (!isLoggedIn) return
 
-  // Wait for user data.
+  if (to.meta.isDashboard) {
+    const { useSession } = await import('@/platform/session')
+    const session = useSession()
+    if (!session.capabilities.value.suiteAdmin) return '/home'
+    const { userResource, loadUser } = userStore()
+    await loadUser()
+    return userResource.data?.is_suite_cloud_configured ? undefined : '/admin'
+  }
+
+  // Wait for user data — the first time only. Every navigation passes here, opening a thread
+  // included, and fetching it afresh each time held every one of them up behind a round trip; once
+  // loaded, its own query keeps it current.
   const { userResource, mailboxes, resolveAccount, loadUser } = userStore()
-  await loadUser()
+  if (!userResource.data) await loadUser()
   const user = userResource.data
 
   // The Admin Dashboard is Suite Cloud's face on the site: it is for admins, and only on a
@@ -84,7 +96,7 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   // root does, and the dashboard, which carries no rail context, sends them there.
   if (!user?.is_jmap_configured) {
     if (to.name === 'mail-mime-message') return
-    if (canAdminister) return to.meta.isDashboard ? undefined : { name: 'mail-overview' }
+    if (canAdminister) return '/admin'
     if (to.meta.isDashboard) return { name: 'mail-root-shortcut' }
     return
   }
@@ -97,10 +109,13 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   resolveAccount(user?.accounts, routeAccountId)
   const accountId = userStore().accountId
 
-  // Wait for mailbox list. The fetch rejects when the mail server is temporarily down;
-  // swallow that so navigation still completes — otherwise the initial navigation aborts,
-  // the app never mounts and the user gets a blank page instead of the unavailable banner.
-  await mailboxes.refetch().catch(() => {})
+  // Wait for the account's mailbox list, when it isn't loaded yet: on the first page, or on
+  // switching to an account not opened before (the query follows the account at once). Refetched on
+  // every navigation, it held each one up and, landing as new data, set the tab and All Inboxes
+  // counts fetching too. The fetch rejects when the mail server is temporarily down; swallow that
+  // so navigation still completes — otherwise the initial navigation aborts, the app never mounts
+  // and the user gets a blank page instead of the unavailable banner.
+  if (!mailboxes.data) await mailboxes.refetch().catch(() => {})
   const defaultRoute = buildDefaultRoute(accountId, mailboxes)
 
   if (to.meta.isDashboard && !canAdminister) return defaultRoute

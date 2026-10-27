@@ -5,6 +5,7 @@
 // Per sheet. Columns are 0-indexed.
 
 import { deepClone } from '../utils/deep-clone.js'
+import { newItemNumber } from './item-id.js'
 import type { IndexMap } from './types.js'
 
 export interface Slicer {
@@ -18,8 +19,6 @@ export interface Slicer {
 export type SlicersSnapshot = Record<string, Slicer[]>
 
 export type SlicerEngine = ReturnType<typeof createSlicerEngine>
-
-let _nextId = 1
 
 export function createSlicerEngine() {
   // store[sheet] = [ { id, col, x, y } ]
@@ -41,7 +40,8 @@ export function createSlicerEngine() {
     const s = _ensure(sheet)
     const existing = s.find((sl) => sl.col === col)
     if (existing) return existing.id
-    const id = _nextId++
+    // Random, so two tabs adding a slicer at once never share an id (item-id.ts).
+    const id = newItemNumber()
     s.push({ id, col, x, y })
     return id
   }
@@ -93,7 +93,7 @@ export function createSlicerEngine() {
   function duplicateSheet(src: string, dst: string) {
     // The copies get new ids: a slicer id names one slicer across the workbook.
     if (store[src] && !store[dst])
-      store[dst] = deepClone(store[src]).map((sl) => ({ ...sl, id: _nextId++ }))
+      store[dst] = deepClone(store[src]).map((sl) => ({ ...sl, id: newItemNumber() }))
   }
   function deleteSheet(name: string) {
     delete store[name]
@@ -104,15 +104,7 @@ export function createSlicerEngine() {
   }
   function restore(snap: SlicersSnapshot | null | undefined) {
     for (const k of Object.keys(store)) delete store[k]
-    // Advance the id counter past every restored slicer — a reload resets the
-    // module counter, so a new add() would otherwise reuse an id and remove()
-    // would drop the wrong slicer.
-    let maxId = 0
-    for (const [k, v] of Object.entries(snap || {})) {
-      store[k] = deepClone(v)
-      for (const sl of v) if (sl.id > maxId) maxId = sl.id
-    }
-    if (maxId >= _nextId) _nextId = maxId + 1
+    for (const [k, v] of Object.entries(snap || {})) store[k] = deepClone(v)
   }
 
   return {

@@ -52,8 +52,9 @@ test("the badge counts unread notifications and Mark all read clears them", asyn
 	await expect(popover).toBeVisible();
 	// The feed paints one plain button per notification, read ones included, so
 	// it carries no list semantics and no count to compare against the badge.
-	const rows = popover.locator("button[type='button']");
-	expect(await rows.count()).toBeGreaterThanOrEqual(seeded.length);
+	// The feed loads once the popover opens, so wait for its rows.
+	const rows = popover.locator("button[type='button']").filter({ hasNotText: "Mark all read" });
+	await expect.poll(() => rows.count()).toBeGreaterThanOrEqual(seeded.length);
 
 	const readCall = page.waitForResponse(
 		(response) => response.url().includes("/notifications/read") && response.request().method() === "POST",

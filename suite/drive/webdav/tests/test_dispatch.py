@@ -13,11 +13,13 @@ from suite.drive.webdav import dispatch as dispatch_module
 from suite.drive.webdav import get as get_module
 from suite.drive.webdav.dispatch import handle_before_request
 from suite.drive.webdav.tests.utils import (
+    delete_error_logs,
     dispatch,
     drop_dav_root,
     drop_nodes,
     enable_user_webdav,
     ensure_user_with_password,
+    error_logs,
     personal_dav_root,
     reset_dav_request,
     set_dav_request,
@@ -274,7 +276,7 @@ class TestWebDAVDispatch(IntegrationTestCase):
         from suite.drive.webdav import dispatch as dispatch_module
 
         log_filter = {"method": "WebDAV PROPFIND /dav/"}
-        frappe.db.delete("Error Log", log_filter)
+        delete_error_logs(log_filter)
         try:
             with patch.dict(dispatch_module._HANDLERS, {"PROPFIND": ("missing_module", "handle")}):
                 response = dispatch("PROPFIND", "/dav/", user=USER, password=PASSWORD)
@@ -285,10 +287,9 @@ class TestWebDAVDispatch(IntegrationTestCase):
             # frappe/app.py rolls back after the response carrier is raised;
             # the Error Log row must survive that or production 500s vanish
             frappe.db.rollback()
-            self.assertTrue(frappe.db.exists("Error Log", log_filter))
+            self.assertTrue(error_logs(log_filter))
         finally:
-            frappe.db.delete("Error Log", log_filter)
-            frappe.db.commit()
+            delete_error_logs(log_filter)
 
 
 class TestSendableHeaders(UnitTestCase):

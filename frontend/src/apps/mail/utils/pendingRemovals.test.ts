@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const calls: { reference: string; input: unknown }[] = []
 vi.mock('@/api', () => ({
   api: {
-    mail: { messages: { delete: 'delete', deleteDraft: 'deleteDraft' } },
+    mail: {
+      messages: { delete: 'delete', deleteDraft: 'deleteDraft', unsubscribe: 'unsubscribe' },
+    },
   },
   client: {
     mutation: vi.fn((reference: string, input: unknown) => {
@@ -44,6 +46,15 @@ describe('pending removals', () => {
     calls.length = 0
     await resumeRemovals()
     expect(calls).toEqual([])
+  })
+
+  it('sends an unsubscribe a closed page left, as it does a removal', async () => {
+    const { rememberRemoval, resumeRemovals } = await load()
+    rememberRemoval({ kind: 'unsubscribe', account: 'a', id: 'm1' })
+    vi.advanceTimersByTime(60_000)
+
+    await resumeRemovals()
+    expect(calls).toEqual([{ reference: 'unsubscribe', input: { account: 'a', id: 'm1' } }])
   })
 
   it('leaves a removal another tab may still undo, and sends it once it is abandoned', async () => {

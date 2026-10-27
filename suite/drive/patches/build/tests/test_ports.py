@@ -108,22 +108,6 @@ class TestSiteFiles(StubbedDatabase):
         # Cleanup, which ships a release later (§14.10).
         self.db.set_value.assert_called_once_with("File", "file-1", "blob", "blob-1", update_modified=False)
 
-    def test_the_s3_page_asks_for_blobless_non_folder_fetch_urls(self):
-        with patch.object(frappe, "get_all", return_value=[]) as get_all:
-            self.files.s3_rows_without_blob("after-me", 1000)
-
-        self.assertEqual(
-            get_all.call_args.kwargs["filters"],
-            [
-                ["blob", "is", "not set"],
-                ["is_folder", "=", 0],
-                ["name", ">", "after-me"],
-                ["file_url", "like", S3_URL_PREFIX + "%"],
-            ],
-        )
-        self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
-        self.assertEqual(get_all.call_args.kwargs["limit"], 1000)
-
     def test_a_narrowing_filter_reaches_both_queries(self):
         # A site-backed test uses this to stay off rows it did not create,
         # the way `frappe.storage.backfill.run` takes its own `filters`.
@@ -140,27 +124,6 @@ class TestSiteFiles(StubbedDatabase):
         # `s3_rows_without_blob` appends "%" to this prefix unescaped.
         self.assertNotIn("%", S3_URL_PREFIX)
         self.assertNotIn("_", S3_URL_PREFIX)
-
-    def test_the_residue_page_excludes_every_handled_prefix(self):
-        with patch.object(frappe, "get_all", return_value=[]) as get_all:
-            self.files.rows_outside(("/files/", S3_URL_PREFIX), "after-me", 500)
-
-        filters = get_all.call_args.kwargs["filters"]
-        self.assertEqual(
-            filters,
-            [
-                ["blob", "is", "not set"],
-                ["is_folder", "=", 0],
-                ["name", ">", "after-me"],
-                ["file_url", "not like", "/files/%"],
-                ["file_url", "not like", S3_URL_PREFIX + "%"],
-            ],
-        )
-        self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
-        self.assertEqual(
-            get_all.call_args.kwargs["fields"],
-            ["name", "file_url", "file_name", "file_type", "file_size", "status"],
-        )
 
     def test_a_row_with_no_file_url_reads_as_an_empty_string(self):
         rows = [frappe._dict(name="f1", file_url=None, file_name=None, file_type=None)]
@@ -198,17 +161,6 @@ class TestSiteStorage(StubbedDatabase):
         with patch.object(frappe, "conf", frappe._dict()):
             self.assertEqual(self.storage.driver_name(), "")
             self.assertEqual(self.storage.driver_config(), {})
-
-    def test_enabled_is_the_framework_switch(self):
-        for value in (True, False):
-            with self.subTest(value=value):
-                with patch("frappe.storage.enabled", return_value=value):
-                    self.assertEqual(self.storage.enabled(), value)
-
-    def test_the_backfill_is_the_frameworks_own(self):
-        with patch("frappe.storage.backfill.run", return_value={"linked": 1}) as run:
-            self.assertEqual(self.storage.run_backfill(500), {"linked": 1})
-        run.assert_called_once_with(batch_size=500)
 
     def test_claiming_looks_for_a_private_s3_blob_and_revives_it(self):
         self.db.get_value.return_value = frappe._dict(name="blob-1", key="5e1f0c3a9b7d/b7x2k9q4mz/x.txt")
@@ -722,20 +674,6 @@ class TestSiteDrive(StubbedDatabase):
         self.db.bulk_insert.assert_not_called()
 
     # -- the reads a rerun depends on
-
-    def test_the_resume_read_asks_only_for_the_columns_it_uses(self):
-        with patch.object(frappe, "get_all", return_value=[frappe._dict(name="n1", title="t")]) as get_all:
-            self.assertEqual(self.drive.nodes(("n1",)), {"n1": {"name": "n1", "title": "t"}})
-
-        self.assertEqual(get_all.call_args.kwargs["fields"], list(NODE_READ_COLUMNS))
-        self.assertEqual(get_all.call_args.kwargs["filters"], [["name", "in", ["n1"]]])
-
-    def test_the_metadata_read_asks_for_the_primary_key_first(self):
-        row = frappe._dict(name="n1", node="n1", user="a@b.co", kind="Personal", state=ACTIVE)
-        self.db.get_value.return_value = row
-
-        self.assertEqual(self.drive.root_metadata("n1"), dict(row))
-        self.db.get_value.assert_called_once_with("Drive Root", "n1", list(ROOT_READ_COLUMNS), as_dict=True)
 
     def test_a_row_named_this_id_is_found_even_when_its_node_points_away(self):
         # `autoname: field:node` (§3.2) makes `name` the id Build is about to

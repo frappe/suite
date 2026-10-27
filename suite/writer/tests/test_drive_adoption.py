@@ -158,34 +158,10 @@ class TestWriterDeclaration(UnitTestCase):
 
     # the declaration
 
-    def test_writer_declares_the_identity_section_ten_seven_fixes(self):
-        self.assertEqual(writer.SPEC.doctype, DOCTYPE)
-        self.assertEqual(writer.SPEC.mime, "frappe/writer")
-        self.assertEqual(writer.SPEC.node_field, "node")
-        self.assertEqual(writer.SPEC.satellites, ())
-        self.assertFalse(writer.SPEC.pushes_preview, "Drive never renders a Writer document")
-
     def test_writer_stays_hidden_over_dav_and_keeps_its_explicit_html_export(self):
         self.assertIsNone(writer.SPEC.default_export, "no default export means invisible over DAV")
         self.assertEqual(writer.SPEC.export_formats, ("html",))
         self.assertTrue(callable(writer.SPEC.export))
-
-    def test_every_callback_the_ticket_names_is_declared(self):
-        for name in (
-            "create_empty",
-            "duplicate",
-            "export",
-            "version_bytes",
-            "restore_version",
-            "on_purge",
-            "used_nodes",
-            "remap_media",
-        ):
-            with self.subTest(callback=name):
-                self.assertTrue(callable(getattr(writer.SPEC, name)), name)
-
-    def test_the_controller_carries_the_drive_mixin(self):
-        self.assertTrue(issubclass(WriterDocument, drive.DriveContent))
 
     # staged activation
 

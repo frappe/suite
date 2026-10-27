@@ -185,7 +185,10 @@ export function createCellPainter(
     if (vtype === 'list' || vtype === 'checkbox') return
     const s = String(val)
     const baseFmt: CellFormat = condFmt ? { ...fmt, ...condFmt } : fmt
-    const efmt: CellFormat = { ...baseFmt, align: baseFmt.align || _autoAlign(s) }
+    const efmt: CellFormat = {
+      ...baseFmt,
+      align: baseFmt.align || _autoAlign(s, cells.isNumber?.(id)),
+    }
     const rightInset = cells.getRightInset?.(id) || 0
     const iconInset = condFmt?.icon ? ICON_INSET : 0
     setCellFont(ctx, efmt)
@@ -327,7 +330,10 @@ export function createCellPainter(
     }
   }
 
-  function _autoAlign(s: string): string {
+  // Numbers right, text left, as in Google Sheets. The cell's type decides
+  // (`1,000` and `50%` are numbers); until it is known, guess from the text.
+  function _autoAlign(s: string, isNumber: boolean | undefined): string {
+    if (isNumber !== undefined) return isNumber ? 'right' : 'left'
     return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
   }
 
@@ -434,7 +440,13 @@ export function createCellPainter(
     ctx.beginPath()
     ctx.rect(x + 1, y + 1, Math.max(0, w - 2 - rightInset), h - 2)
     ctx.clip()
-    lines.forEach((line, i) => ctx.fillText(line, textX, startY + i * lineH))
+    // Each line gets its own underline / strike, as wide as that line.
+    const decorate = fmt.underline || fmt.strikethrough || fmt.hyperlink
+    lines.forEach((line, i) => {
+      const lineY = startY + i * lineH
+      ctx.fillText(line, textX, lineY)
+      if (decorate) _drawTextDecorations(fmt, line, textX, lineY)
+    })
     ctx.restore()
   }
 

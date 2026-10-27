@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import {
   createRouter,
   createWebHistory,
@@ -6,13 +7,13 @@ import {
   type RouteRecordNormalized,
 } from 'vue-router'
 
-import { api, client } from '@/api'
+import { api, client, writesSettled } from '@/api'
 import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
 import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
-import { installPwa } from '@/platform/pwa'
+import { installPwa, pageLoadNeededFor } from '@/platform/pwa'
 import { installScrollRestoration } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 
@@ -133,12 +134,23 @@ router.beforeEach(async (to, from) => {
     return false
   }
 
+  if (to.path.startsWith('/admin') && !session.capabilities.value.suiteAdmin) return '/home'
+  if (session.user.value?.must_change_password === true) {
+    return to.path === '/suite/change-password' ? true : '/suite/change-password'
+  }
+  if (session.user.value?.setup_required === true && !session.capabilities.value.suiteAdmin) {
+    return to.path === '/suite/account-unavailable' ? true : '/suite/account-unavailable'
+  }
+  if (to.path === '/suite/change-password' || to.path === '/suite/account-unavailable')
+    return '/home'
+
   // A shared item opens on a site that is not set up yet. Area routes still
   // go to setup (spec §10.10, ask S3).
   if (!to.meta.allowGuest) {
     const onboarding = await ensureOnboardingState()
     const onSetupPage = to.path === '/suite/setup'
     if (onboarding.canOnboard && !onboarding.isOnboarded) {
+      if (session.user.value?.id === 'Administrator' && to.path.startsWith('/admin')) return true
       if (!onSetupPage) return '/suite/setup'
     } else if (onSetupPage) {
       return startPath
@@ -158,7 +170,26 @@ router.beforeEach(async (to, from) => {
 
 installPageMeta(router)
 installScrollRestoration(router)
-installPwa(session)
+installPwa(session, {
+  // Until the first navigation the router stands at `/`, so the page's own URL names the app:
+  // Safari keeps the manifest a page links first, and would install the Suite from `/mail`.
+  path: () =>
+    router.currentRoute.value === START_LOCATION
+      ? window.location.pathname
+      : router.currentRoute.value.path,
+  apps: areaDefinitions
+    .filter((area) => area.installable)
+    .map((area) => ({ id: area.id, scope: area.to })),
+})
+// Moving into another app on an iPhone loads the page afresh, so the browser installs that app.
+// It loads once the page left has unmounted and its last saves (a draft, say) have landed, and
+// not for a move that was cancelled (Stay, on leaving a call).
+router.afterEach(async (to, from, failure) => {
+  if (failure || from === START_LOCATION || !pageLoadNeededFor(to.path)) return
+  await nextTick()
+  await writesSettled()
+  window.location.reload()
+})
 
 function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
   const matched = to.matched.find((record) =>
@@ -178,7 +209,7 @@ function isMailGuestPath(path: string): boolean {
 // Mail pages that need no mail account: the public MIME view and the Admin
 // Dashboard. They load without the Mail capability; Mail's guard decides.
 function isMailPathWithoutAccount(path: string): boolean {
-  return /^\/mail\/(?:mime-message\/|dashboard(?:\/|$))/.test(path)
+  return /^\/mail\/mime-message\//.test(path)
 }
 
 /** @deprecated Page metadata is installed through @/platform/page-meta. */

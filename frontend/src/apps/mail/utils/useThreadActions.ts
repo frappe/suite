@@ -873,6 +873,9 @@ export function useThreadActions(deps: {
         return filed
       },
       (error) => {
+        // The server may have filed some messages before refusing the rest: they are put back as
+        // they were, or they would stay filed with no Undo left to take them back.
+        void setMailsMailboxesSubmit({ mails: snapshot }).catch(() => {})
         restoreThreadsToList(removed)
         setUndoAction(undefined)
         throw error

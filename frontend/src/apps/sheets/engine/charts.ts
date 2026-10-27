@@ -23,6 +23,7 @@
 // Pure store — no rendering, no data fetching, no ECharts.
 
 import { deepClone } from '../utils/deep-clone.js'
+import { newItemId } from './item-id.js'
 import { parseA1Range, remapRangeString } from './ref-remap.js'
 import type { IndexMap } from './types.js'
 
@@ -78,18 +79,19 @@ export interface ChartConfig extends ChartSpec {
 
 export interface ChartSnapshot {
   charts: Record<string, ChartConfig>
-  nextId: number
+  /** From when ids were counted; ignored. */
+  nextId?: number
 }
 
 export type ChartEngine = ReturnType<typeof createChartEngine>
 
 export function createChartEngine() {
   let _charts: Record<string, ChartConfig> = {} // id → ChartConfig
-  let _nextId = 1
   let _onChange: (() => void) | null = null
 
+  // Random, so two tabs adding a chart at once never share an id (item-id.ts).
   function _newId() {
-    return `chart_${_nextId++}`
+    return `chart_${newItemId()}`
   }
   function _notify() {
     _onChange?.()
@@ -137,22 +139,12 @@ export function createChartEngine() {
   }
 
   function snapshot(): ChartSnapshot {
-    return { charts: deepClone(_charts), nextId: _nextId }
+    return { charts: deepClone(_charts) }
   }
 
   function restore(data: ChartSnapshot | null | undefined) {
     if (!data) return
     _charts = deepClone(data.charts || {})
-    _nextId = data.nextId || 1
-    // Defensive: keep nextId ahead of any restored id so future _newId()
-    // can't collide with one that's already there.
-    for (const id of Object.keys(_charts)) {
-      const m = /^chart_(\d+)$/.exec(id)
-      if (m) {
-        const n = parseInt(m[1] ?? '', 10)
-        if (n >= _nextId) _nextId = n + 1
-      }
-    }
     _notify()
   }
 

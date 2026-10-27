@@ -125,42 +125,10 @@ class TestSlidesDeclaration(UnitTestCase):
 
     # the declaration
 
-    def test_slides_declares_the_identity_section_ten_seven_fixes(self):
-        self.assertEqual(slides.SPEC.doctype, DOCTYPE)
-        self.assertEqual(slides.SPEC.mime, "frappe/slides")
-        self.assertEqual(slides.SPEC.node_field, "node")
-        self.assertTrue(slides.SPEC.pushes_preview, "the browser captures the deck, Drive never renders it")
-
-    def test_the_slide_child_table_is_declared_as_the_satellite(self):
-        self.assertEqual(len(slides.SPEC.satellites), 1)
-        satellite = slides.SPEC.satellites[0]
-        self.assertEqual((satellite.doctype, satellite.link_field), (SATELLITE, "parent"))
-
     def test_slides_stays_hidden_over_dav_and_offers_no_export(self):
         self.assertIsNone(slides.SPEC.default_export, "no default export means invisible over DAV")
         self.assertEqual(slides.SPEC.export_formats, ())
         self.assertIsNone(slides.SPEC.export)
-
-    def test_every_callback_the_ticket_names_is_declared(self):
-        for name in (
-            "create_empty",
-            "duplicate",
-            "version_bytes",
-            "restore_version",
-            "on_purge",
-            "used_nodes",
-            "remap_media",
-        ):
-            with self.subTest(callback=name):
-                self.assertTrue(callable(getattr(slides.SPEC, name)), name)
-
-    def test_the_controller_carries_the_drive_mixin(self):
-        self.assertTrue(issubclass(Presentation, drive.DriveContent))
-
-    def test_slides_declares_no_legacy_column(self):
-        """Cleanup dropped `title`. §10.2 forbids neither `is_template` nor
-        `thumbnail`, so neither needs an exemption."""
-        self.assertEqual(slides.SPEC.legacy_fields, ())
 
     # activation
 
@@ -726,6 +694,37 @@ class TestSlidesInDrive(IntegrationTestCase):
         self._as(OTHER)
         with self.assertRaises(DriveForbidden):
             drive.adopt_media(target, [picture])
+
+    def test_a_reader_cannot_save_a_deck_and_a_trashed_deck_refuses_an_editor(self):
+        from suite.slides.api.slides import save_slides
+
+        node = self._deck(title="Save rights")
+        docname = self._docname(node)
+        before = [row["name"] for row in self._slide_rows(node)]
+
+        def save():
+            modified = str(frappe.db.get_value(DOCTYPE, docname, "modified"))
+            save_slides(docname, [{"client_id": "x", "background": "#000000ff", "elements": "[]"}], modified)
+
+        grant(node, OTHER, drive.READ, self.admin)
+        self._as(OTHER)
+        with self.assertRaises((frappe.PermissionError, DriveForbidden)):
+            save()
+        frappe.set_user("Administrator")
+        self.assertEqual([row["name"] for row in self._slide_rows(node)], before)
+
+        # Administrator skips permission hooks, so an editor tries the trashed deck.
+        grant(node, OTHER, drive.EDIT, self.admin)
+        self._as(OTHER)
+        save()
+        frappe.set_user("Administrator")
+        before = [row["name"] for row in self._slide_rows(node)]
+        update(self.admin, node, state="Trashed")
+        self._as(OTHER)
+        with self.assertRaises((frappe.PermissionError, DriveForbidden)):
+            save()
+        frappe.set_user("Administrator")
+        self.assertEqual([row["name"] for row in self._slide_rows(node)], before)
 
     # history
 

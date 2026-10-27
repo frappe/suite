@@ -1,5 +1,49 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="BREADCRUMBS" :loading="!report.data">
+    <template #loading>
+      <DashboardDetailHeaderSkeleton />
+      <DmarcStatTiles />
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <DashboardCard :title="__('Sources')" class="lg:col-span-2">
+          <div class="flex flex-col">
+            <div
+              v-for="n in 3"
+              :key="n"
+              class="flex flex-col gap-2 border-b px-5 py-3 text-sm last:border-b-0"
+            >
+              <DashboardSkeletonText width="45%" />
+              <DashboardSkeletonText class="text-xs" width="70%" />
+            </div>
+          </div>
+        </DashboardCard>
+        <div class="flex flex-col gap-5">
+          <DashboardCard :title="__('Policy Applied')">
+            <div class="flex flex-col">
+              <div
+                v-for="row in policyRows"
+                :key="row.label"
+                class="flex h-12 items-center gap-3 border-b px-5 text-sm last:border-b-0"
+              >
+                <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
+                <DashboardSkeletonText width="40%" />
+              </div>
+            </div>
+          </DashboardCard>
+          <DashboardCard :title="__('Report')">
+            <div class="flex flex-col">
+              <div
+                v-for="row in reportRows"
+                :key="row.label"
+                class="flex min-h-12 items-center gap-3 border-b px-5 py-2 text-sm last:border-b-0"
+              >
+                <span class="text-ink-gray-5 w-32 shrink-0">{{ row.label }}</span>
+                <DashboardSkeletonText width="40%" />
+              </div>
+            </div>
+          </DashboardCard>
+        </div>
+      </div>
+    </template>
     <template #default>
       <template v-if="report.data">
         <DashboardDetailHeader
@@ -118,6 +162,7 @@ import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
+import DashboardDetailHeaderSkeleton from '@/apps/mail/components/DashboardDetailHeaderSkeleton.vue'
 import DmarcStatTiles from '@/apps/mail/components/DmarcStatTiles.vue'
 import { raiseError } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
@@ -128,7 +173,7 @@ import {
   type DmarcReportRow,
 } from '@/apps/mail/utils/dmarc'
 import { formatRate, rateTheme } from '@/apps/mail/utils/reports'
-import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { DashboardCard, DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 type ReportData = DmarcReportRow & { records: DmarcRecord[] }
@@ -158,7 +203,7 @@ usePageMeta(() =>
 )
 
 const BREADCRUMBS = computed(() => [
-  { label: __('DMARC Reports'), route: '/mail/dashboard/dmarc' },
+  { label: __('DMARC Reports'), route: '/admin/mail/dmarc' },
   { label: data.value ? `${data.value.domain} · ${data.value.reporter}` : reportId },
 ])
 

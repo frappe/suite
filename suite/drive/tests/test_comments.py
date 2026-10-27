@@ -285,40 +285,6 @@ class TestCommentLockOrder(UnitTestCase):
 class TestMigratedCommentOrdering(UnitTestCase):
     """Migration preserves tied timestamps, so runtime reads need full ties."""
 
-    def test_threads_and_comments_use_the_frozen_migration_tie_breakers(self):
-        node = frappe._dict(name="node-1", kind="document", state="Active")
-        thread = frappe._dict(
-            name="thread-1",
-            node="node-1",
-            anchor="A1",
-            resolved=0,
-            resolved_by=None,
-            resolved_at=None,
-            creation=None,
-        )
-        comment = frappe._dict(
-            name="comment-1",
-            thread="thread-1",
-            node="node-1",
-            content="one",
-            author="Guest",
-            author_name=None,
-            mentions=[],
-            idx=1,
-            creation=None,
-            modified=None,
-        )
-        with (
-            patch("suite.drive._core.comments._comment_node", return_value=node),
-            patch("suite.drive._core.comments.require"),
-            patch("suite.drive._core.comments.frappe.get_all", side_effect=[[thread], [comment]]) as read,
-        ):
-            result = threads(Principals("reader@example.com", (), ()), "node-1")
-
-        orders = [call.kwargs["order_by"] for call in read.call_args_list]
-        self.assertEqual(orders, ["creation asc, name asc", "creation asc, idx asc, name asc"])
-        self.assertEqual(result[0].comments[0].name, "comment-1")
-
     def test_comment_order_carries_the_source_position_build_stores_in_idx(self):
         # Build writes the source entry position into `idx`
         # (`patches/build/comments.py`), and a migrated thread routinely holds

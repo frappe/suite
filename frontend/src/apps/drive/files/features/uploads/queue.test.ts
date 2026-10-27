@@ -1,7 +1,16 @@
 import { createHash } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createUploadQueue, uploadTargetOf, type UploadPrompts, type UploadQueue } from './queue'
+import { useSession } from '@/platform/session'
+import { transport } from '@/platform/transport'
+
+import {
+  createUploadQueue,
+  uploadQueue,
+  uploadTargetOf,
+  type UploadPrompts,
+  type UploadQueue,
+} from './queue'
 import {
   createUploadRecords,
   RECORD_LIFETIME_MS,
@@ -325,8 +334,107 @@ const settled = (queue: UploadQueue) =>
   )
 
 beforeEach(() => drive.reset())
+afterEach(() => {
+  vi.restoreAllMocks()
+  useSession().expire()
+  document.cookie = 'user_id=Guest; path=/'
+})
 
 describe('Drive upload queue', () => {
+  it('forgets restored uploads when the signed-in identity changes without logout', async () => {
+    const session = useSession()
+    document.cookie = 'user_id=alice%40example.com; path=/'
+    const request = vi
+      .spyOn(transport, 'request')
+      .mockResolvedValue({ name: 'alice@example.com', roles: [] })
+    await session.refresh()
+    const records = createUploadRecords()
+    await records.clear()
+    await records.save(stored('alice-direct', 4, { mode: 'direct' }))
+    const queue = uploadQueue()
+    await queue.restore()
+    expect(queue.entries.value.map((entry) => entry.title)).toEqual(['draft.bin'])
+    const id = queue.entries.value[0]!.id
+
+    session.expire()
+    document.cookie = 'user_id=bob%40example.com; path=/'
+    request.mockResolvedValue({ name: 'bob@example.com', roles: [] })
+    await session.refresh()
+    expect(queue.entries.value).toEqual([])
+    await queue.resume(id)
+
+    expect(queue.entries.value).toEqual([])
+    expect(drive.state.creates).toBe(0)
+    session.expire()
+    await queue.forget()
+    request.mockRestore()
+    document.cookie = 'user_id=Guest; path=/'
+  })
+
+  it('does not recreate entries from a record load that finishes after forgetting', async () => {
+    const records = memoryRecords()
+    let release!: (records: UploadRecord[]) => void
+    records.load = () =>
+      new Promise((resolve) => {
+        release = resolve
+      })
+    const queue = createUploadQueue({ records })
+    const restoring = queue.restore()
+    await until(() => typeof release === 'function')
+    await queue.forget()
+    release([{ ...stored('stale', 4), owner: ME }])
+    await restoring
+    expect(queue.entries.value).toEqual([])
+  })
+
+  it('does not transfer or persist an upload whose session opens after forgetting', async () => {
+    const records = memoryRecords()
+    const queue = createUploadQueue({ records })
+    let release!: () => void
+    let opened = false
+    drive.state.before = (method, path) => {
+      if (method === 'POST' && path === 'uploads') {
+        opened = true
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      }
+    }
+    await queue.uploadFiles([{ file: file('private.txt', 4) }], target)
+    await until(() => opened)
+    await queue.forget()
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(drive.state.finished).toEqual([])
+    expect(records.all.size).toBe(0)
+    expect(queue.entries.value).toEqual([])
+    drive.state.before = null
+    await queue.uploadFiles([{ file: file('new-account.txt', 4) }], target)
+    await settled(queue)
+    expect(drive.titlesIn('folder')).toEqual(['new-account.txt'])
+  })
+
+  it('cancels the current transfer before it can finish after forgetting', async () => {
+    const queue = createUploadQueue({ records: memoryRecords() })
+    let release!: () => void
+    let sending = false
+    drive.state.before = (method, path) => {
+      if (method === 'PUT' && path.includes('/chunk')) {
+        sending = true
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      }
+    }
+    await queue.uploadFiles([{ file: file('in-flight.txt', 4) }], target)
+    await until(() => sending)
+    await queue.forget()
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(drive.state.finished).toEqual([])
+    expect(queue.entries.value).toEqual([])
+  })
+
   it('uploads a batch, asks about a taken title, and keeps both', async () => {
     drive.add({ title: 'report.pdf', kind: 'file', parent: 'folder', size: 3 })
     const queue = createUploadQueue({ records: memoryRecords() })

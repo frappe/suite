@@ -1,7 +1,9 @@
-import { watch } from 'vue'
+import { computed, readonly, ref, shallowRef, watch } from 'vue'
 
 import type { Session } from '@/platform/session'
+import { translate } from '@/platform/translation'
 
+import { onIos, standalone, startInstallOffer } from './install'
 import { pushNotification } from './notification'
 import SPLASH_DEVICES from './splash-devices.json'
 
@@ -16,9 +18,12 @@ declare global {
 }
 
 /**
- * The one Suite PWA [T010, T018].
+ * The Suite PWA, and the apps installed from their own pages [T010, T018, ticket 047].
  *
- * - The manifest and the iOS install tags sit on every route, in every area.
+ * - The manifest and the iOS install tags sit on every route, and follow it:
+ *   a page of an installable app (Mail's, under `/mail`) links that app's, so
+ *   installing from there installs the app; every other page links the
+ *   Suite's, which stays at its address so installs of the Suite keep it.
  * - The push service worker registers once a user signs in, in every area and
  *   whether or not Mail, Calendar and Meet are in the shell. It is Mail's FCM
  *   worker (`src/apps/mail/sw.ts`, built to `sw.js`); its push handlers stay
@@ -29,25 +34,178 @@ declare global {
  *   logout that did not go through the platform session) drops it in the
  *   browser, so the next user never receives the last user's mail.
  */
-export function installPwa(session: Pick<Session, 'status' | 'user' | 'onLogout'>): void {
-  setPwaTags()
-  let client: Promise<PushClient | null> | null = null
+export function installPwa(
+  session: Pick<Session, 'status' | 'user' | 'onLogout'>,
+  routes: PwaRoutes,
+): void {
+  installableApps = routes.apps
+  signedInUser = () => session.user.value?.id ?? null
+  startInstallOffer(currentApp)
+  watch(
+    () => pwaAppAt(routes.path(), routes.apps),
+    (app) => {
+      loadedApp ??= app
+      currentApp.value = app
+      setPwaTags(app)
+    },
+    { immediate: true },
+  )
   watch(
     session.status,
     (status) => {
-      if (client || status !== 'authenticated') return
-      client = registerPushServiceWorker(session.user.value?.id ?? null)
+      if (pushClient || status !== 'authenticated') return
+      pushClient = registerPushServiceWorker(session.user.value?.id ?? null, pushApps())
     },
     { immediate: true },
   )
   session.onLogout(
     async () => {
-      const push = await client
+      const push = await pushClient
       await push?.disableNotification()
+      pushEnabled.value = false
       localStorage.removeItem(PUSH_OWNER_KEY)
     },
     { whileSignedIn: true },
   )
+}
+
+let pushClient: Promise<PushClient | null> | null = null
+let signedInUser: () => string | null = () => null
+const pushEnabled = ref(false)
+
+/**
+ * The apps this device is notified for: an installed app, its own; a browser tab, or the one
+ * Suite app, every app (see suite.suite_core.push).
+ */
+function pushApps(): string[] {
+  const app = launchedApp()
+  if (standalone() && app !== 'suite') return [app]
+  return installableApps.map((app) => app.id)
+}
+
+const LAUNCHED_KEY = 'suite_launched_app'
+
+/**
+ * The app this installed app is: the one it launched as, kept for the session. The page is not
+ * enough: the one Suite app covers every page, and reloaded on Calendar's it is still the Suite.
+ */
+function launchedApp(): string {
+  const loaded = loadedApp ?? currentApp.value
+  try {
+    const launched = sessionStorage.getItem(LAUNCHED_KEY)
+    if (launched) return launched
+    sessionStorage.setItem(LAUNCHED_KEY, loaded)
+  } catch {
+    // Storage can be unavailable (private mode); the page it loaded on stands in.
+  }
+  return loaded
+}
+
+const NOTIFY_ASKED_KEY = 'suite_notify_asked'
+
+/**
+ * Turning this device's notifications on and off, from an app's Profile, and the ask an installed
+ * app makes once, the first time it opens: an iPhone lets a page ask only from a tap, so the ask is
+ * a button rather than the browser's prompt on load.
+ */
+export function useDevicePush() {
+  const available = computed(
+    () => !!pushRelayURL() && 'Notification' in window && 'serviceWorker' in navigator,
+  )
+  const askOpen = computed(
+    () =>
+      available.value &&
+      standalone() &&
+      currentApp.value !== 'suite' &&
+      !pushEnabled.value &&
+      Notification.permission === 'default' &&
+      !asked.value.includes(currentApp.value),
+  )
+  /**
+   * Turns this device's notifications on: true, or false when the browser refuses. Throws when
+   * this device could not be set up for them, which is not the browser's settings at fault.
+   */
+  const enable = async (): Promise<boolean> => {
+    // Asked from the tap itself, before anything is awaited: an iPhone lets a page ask only while
+    // the tap is fresh, and setting up the worker can take longer than that.
+    const permission = await Notification.requestPermission()
+    if (permission !== 'granted') {
+      dismissAsk()
+      return false
+    }
+    const push = await pushClient
+    if (!push) throw new Error(translate('Notifications could not be set up on this device.'))
+    const { permission_granted } = await push.enableNotification()
+    pushEnabled.value = permission_granted
+    // The token is this user's: a sign-in by someone else drops it (see claimPushToken).
+    const user = signedInUser()
+    if (permission_granted && user) localStorage.setItem(PUSH_OWNER_KEY, user)
+    dismissAsk()
+    return permission_granted
+  }
+  const disable = async () => {
+    await (await pushClient)?.disableNotification()
+    pushEnabled.value = false
+  }
+  const dismissAsk = () => {
+    if (asked.value.includes(currentApp.value)) return
+    asked.value = [...asked.value, currentApp.value]
+    try {
+      localStorage.setItem(NOTIFY_ASKED_KEY, JSON.stringify(asked.value))
+    } catch {
+      // Storage can be unavailable (private mode); the ask comes back with the next visit.
+    }
+  }
+  return { available, enabled: readonly(pushEnabled), askOpen, enable, disable, dismissAsk }
+}
+
+const asked = ref<string[]>(readAsked())
+function readAsked(): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(NOTIFY_ASKED_KEY) ?? '[]') as unknown
+    return Array.isArray(list) ? list.filter((app): app is string => typeof app === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * An app installed from its own pages: they are the pages under `scope`, and
+ * its manifest and artwork sit in `public/pwa/<id>/`.
+ */
+export interface InstallableApp {
+  id: string
+  scope: string
+}
+
+export interface PwaRoutes {
+  /** The current route's path. Reactive. */
+  path: () => string
+  apps: readonly InstallableApp[]
+}
+
+const currentApp = shallowRef('suite')
+let installableApps: readonly InstallableApp[] = []
+// The app whose manifest the page linked when it loaded.
+let loadedApp: string | null = null
+
+export { useInstallOffer, type InstallOffer } from './install'
+
+/** The app a page installs as: the installable app it belongs to, or the Suite. */
+export function pwaAppAt(path: string, apps: readonly InstallableApp[]): string {
+  const app = apps.find(({ scope }) => path === scope || path.startsWith(`${scope}/`))
+  return app?.id ?? 'suite'
+}
+
+/**
+ * Whether opening `path` takes a fresh page load for the browser to install the right app. On an
+ * iPhone or iPad the browser reads a page's manifest once, when the page loads, and keeps it
+ * however the page changes its link: moved from Home to Mail in place, it would install the Suite
+ * under Mail's icon. Every other browser follows the link, and an installed app installs nothing.
+ */
+export function pageLoadNeededFor(path: string): boolean {
+  if (!loadedApp || !onIos() || standalone()) return false
+  return pwaAppAt(path, installableApps) !== loadedApp
 }
 
 /**
@@ -80,13 +238,16 @@ function pushRelayURL(): string | null {
  * relay. Fail-safe: a failure logs and leaves the page as it is. `firebase`
  * loads on demand, outside the shell chunk.
  */
-async function registerPushServiceWorker(user: string | null): Promise<PushClient | null> {
+async function registerPushServiceWorker(
+  user: string | null,
+  apps: string[],
+): Promise<PushClient | null> {
   try {
     const relayURL = pushRelayURL()
     if (!relayURL || !('serviceWorker' in navigator)) return null
 
     const { default: FrappePushNotification } = await import('./frappe-push-notification')
-    const client = new FrappePushNotification(PUSH_PROJECT, relayURL)
+    const client = new FrappePushNotification(PUSH_PROJECT, relayURL, apps)
 
     let url = PUSH_SERVICE_WORKER_URL
     let config: unknown = ''
@@ -103,6 +264,10 @@ async function registerPushServiceWorker(user: string | null): Promise<PushClien
     client.onMessage((payload) => void registration.showNotification(...pushNotification(payload)))
     await client.initialize(registration)
     await claimPushToken(client, user)
+    // A device already notified is subscribed for this page's apps too: one installed since, or a
+    // token from before subscriptions were per app.
+    if (client.isNotificationEnabled()) await client.syncApps()
+    pushEnabled.value = client.isNotificationEnabled()
     return client
   } catch (error) {
     console.error('Failed to register service worker', error)
@@ -133,29 +298,29 @@ const PWA_METAS: Array<[name: string, content: string]> = [
 ]
 
 /**
- * Attaches the Suite manifest, the Apple touch icon, the standalone metas and
- * the iOS splash images to the document head, once. They do not depend on
- * the route.
+ * Attaches `app`'s manifest, Apple touch icon and iOS splash images to the
+ * document head, with the standalone metas, in place of another app's.
  */
-export function setPwaTags(): void {
-  if (document.head.querySelector('[data-pwa-scope="suite"]')) return
+export function setPwaTags(app = 'suite'): void {
+  if (document.head.querySelector(`[data-pwa-app="${app}"]`)) return
+  for (const tag of document.head.querySelectorAll('[data-pwa-app]')) tag.remove()
 
-  const assets = `${import.meta.env.BASE_URL}pwa/suite/`
-  appendPwaTag('link', { rel: 'manifest', href: `${assets}manifest.webmanifest` })
-  appendPwaTag('link', { rel: 'apple-touch-icon', href: `${assets}apple-icon-180.png` })
-  for (const [name, content] of PWA_METAS) appendPwaTag('meta', { name, content })
+  const assets = `${import.meta.env.BASE_URL}pwa/${app}/`
+  appendPwaTag(app, 'link', { rel: 'manifest', href: `${assets}manifest.webmanifest` })
+  appendPwaTag(app, 'link', { rel: 'apple-touch-icon', href: `${assets}apple-icon-180.png` })
+  for (const [name, content] of PWA_METAS) appendPwaTag(app, 'meta', { name, content })
 
   for (const { width: cssWidth, height: cssHeight, dpr } of SPLASH_DEVICES) {
     const device =
       `(device-width: ${cssWidth}px) and (device-height: ${cssHeight}px) and ` +
       `(-webkit-device-pixel-ratio: ${dpr})`
     const [width, height] = [cssWidth * dpr, cssHeight * dpr]
-    appendPwaTag('link', {
+    appendPwaTag(app, 'link', {
       rel: 'apple-touch-startup-image',
       href: `${assets}splash/apple-splash-${width}-${height}.png`,
       media: `${device} and (orientation: portrait)`,
     })
-    appendPwaTag('link', {
+    appendPwaTag(app, 'link', {
       rel: 'apple-touch-startup-image',
       href: `${assets}splash/apple-splash-${height}-${width}.png`,
       media: `${device} and (orientation: landscape)`,
@@ -163,9 +328,9 @@ export function setPwaTags(): void {
   }
 }
 
-function appendPwaTag(tag: 'link' | 'meta', attrs: Record<string, string>): void {
+function appendPwaTag(app: string, tag: 'link' | 'meta', attrs: Record<string, string>): void {
   const element = document.createElement(tag)
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value)
-  element.dataset.pwaScope = 'suite'
+  element.dataset.pwaApp = app
   document.head.appendChild(element)
 }

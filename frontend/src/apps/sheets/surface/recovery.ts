@@ -6,7 +6,7 @@
  * access, because it is then stale.
  */
 import { toXlsxCell } from '@/apps/sheets/engine/xlsx-io.js'
-import { colLabel, parseCellId } from '@/apps/sheets/utils/cells.js'
+import { cellId, colLabel, parseCellId } from '@/apps/sheets/utils/cells.js'
 import { unpackSheet } from '@/apps/sheets/utils/sheet-codec.js'
 
 export interface RecoveryCopy {
@@ -50,7 +50,7 @@ export async function recoveryFile(copy: RecoveryCopy, title: string): Promise<F
   const { utils, write } = await import('xlsx')
   const book = utils.book_new()
   const used = new Set<string>()
-  for (const [name, cells] of Object.entries(sheetsOf(copy.workbook))) {
+  for (const [name, cells] of Object.entries(await sheetsOf(copy.workbook))) {
     utils.book_append_sheet(book, worksheet(cells), sheetName(name, used))
   }
   if (!book.SheetNames.length) utils.book_append_sheet(book, {}, 'Sheet1')
@@ -76,15 +76,12 @@ export async function downloadRecovery(node: string, title: string): Promise<boo
   return true
 }
 
-function sheetsOf(workbook: string): Record<string, Cells> {
-  try {
-    const saved = JSON.parse(workbook) as { sheet?: unknown }
-    const unpacked = unpackSheet(saved.sheet) as
-      { sheets?: Record<string, Cells> } | null | undefined
-    return unpacked?.sheets ?? {}
-  } catch {
-    return {}
-  }
+async function sheetsOf(workbook: string): Promise<Record<string, Cells>> {
+  // Let decoding errors reach the caller so downloadRecovery keeps the local copy.
+  const saved = JSON.parse(workbook) as { sheet?: unknown; engine?: unknown; draft?: unknown }
+  if (typeof saved.engine === 'string') return engineSheets(saved.engine, saved.draft)
+  const unpacked = unpackSheet(saved.sheet) as { sheets?: Record<string, Cells> } | null | undefined
+  return unpacked?.sheets ?? {}
 }
 
 /** One sheet's cells as a SheetJS worksheet. A formula has no cached value: the opening app computes it. */
@@ -118,4 +115,36 @@ function sheetName(name: string, used: Set<string>): string {
   }
   used.add(candidate.toLowerCase())
   return candidate
+}
+
+/** The cells of a copy kept as engine bytes, with the cell edit that was still being typed. */
+async function engineSheets(engine: string, draft: unknown): Promise<Record<string, Cells>> {
+  const [{ default: init }, { createWorkbook }, { base64ToBytes }] = await Promise.all([
+    import('@ironcalc/wasm'),
+    import('@/apps/sheets/core/workbook'),
+    import('@/apps/sheets/core/snapshot-codec'),
+  ])
+  await init()
+  const book = createWorkbook({ loadBytes: base64ToBytes(engine) })
+  const sheets: Record<string, Cells> = {}
+  for (const name of book.getSheets()) {
+    const cells: Cells = {}
+    const used = book.usedCells(name)
+    // `usedCells` answers flat 1-based (row, col) pairs.
+    for (let i = 0; i < used.length; i += 2) {
+      const row = used[i]!
+      const col = used[i + 1]!
+      cells[cellId(row - 1, col - 1)] = book.getInput(name, row, col)
+    }
+    sheets[name] = cells
+  }
+  const typed = draft as { sheet?: unknown; cell?: unknown; value?: unknown } | null | undefined
+  if (
+    typeof typed?.sheet === 'string' &&
+    typeof typed.cell === 'string' &&
+    typeof typed.value === 'string'
+  ) {
+    ;(sheets[typed.sheet] ??= {})[typed.cell] = typed.value
+  }
+  return sheets
 }

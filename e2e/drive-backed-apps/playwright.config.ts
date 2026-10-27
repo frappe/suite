@@ -67,9 +67,11 @@ export default defineConfig({
 			name: "chromium",
 			use: {
 				...devices["Desktop Chrome"],
-				...(chromeExecutable
-					? { launchOptions: { executablePath: chromeExecutable } }
-					: { channel: "chrome" }),
+				...(chromeExecutable ? {} : { channel: "chrome" }),
+				launchOptions: {
+					args: ["--unsafely-treat-insecure-origin-as-secure=" + baseURL],
+					...(chromeExecutable ? { executablePath: chromeExecutable } : {}),
+				},
 			},
 		},
 	],

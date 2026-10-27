@@ -66,9 +66,10 @@ to a baseline.
     follow the same rule. The baseline shrinks; a new violation fails the
     check, and so does a fix that leaves its entry behind (run the check with
     `--update-baseline`).
-11. **Commit subjects** read `<area>: <Sentence>`, where the area is a product
-    or layer name: `drive: Keep a file's extension when renaming`,
-    `shell: Mount the command palette`.
+11. **Commit subjects** follow Conventional Commits: `<type>(<scope>): <description>`.
+    Use a type such as `feat`, `fix`, `docs`, or `chore`, and a product or layer
+    as the scope. For example: `fix(drive): Keep a file's extension when renaming`
+    or `feat(shell): Mount the command palette`. Merge commits follow the same format.
 
 ## Python backend (`suite/`)
 

@@ -6,7 +6,7 @@
 // painter uses, so a fitted size matches what's drawn. This module only
 // measures; the grid applies the size and decides which rows may change.
 
-import { cellId, colLabel, parseCellId } from '../utils/cells.js'
+import { colLabel, parseCellId } from '../utils/cells.js'
 import { getTextWrap, isWrapText, lineHeightFor, wrapLines } from '../utils/text-wrap.js'
 import { chipFont } from './chip-geometry.js'
 import type { CellFormat, CellValue } from './types.js'
@@ -26,24 +26,23 @@ export interface AutofitOptions {
   formatAt(id: string): CellFormat
 }
 
-/** A value being committed to column `c`, measured before the grid shows it. */
-export interface PendingEdit {
-  c: number
-  value: CellValue
-}
+/** Values being written, by cell id, measured before the grid shows them. */
+export type PendingWrites = Readonly<{ [id: string]: CellValue }>
 
 export interface Autofit {
   /** Width that fits the column's header and every unwrapped value. */
   fitColWidth(c: number): number
-  /** Height that fits every value in the row, with `edit` in place. */
-  fitRowHeight(r: number, edit?: PendingEdit): number
-  /** Whether the row holds wrapped or multi-line text, with `edit` in place. */
-  hasTallText(r: number, edit?: PendingEdit): boolean
+  /** Height that fits every value in the row. */
+  fitRowHeight(r: number): number
   /**
    * Every non-empty matching row's fitted height and whether it holds tall
-   * text, in one pass over the cells (a whole-column wrap refits many rows).
+   * text, in one pass over the cells (a whole-column wrap refits many rows),
+   * with `writes` in place of what their cells show.
    */
-  measureRows(match: (row: number) => boolean): Map<number, { height: number; tall: boolean }>
+  measureRows(
+    match: (row: number) => boolean,
+    writes?: PendingWrites,
+  ): Map<number, { height: number; tall: boolean }>
   /** Rows with a wrapped cell in one of `cols`: their height follows the width. */
   wrappedRows(cols: ReadonlySet<number>): number[]
 }
@@ -105,27 +104,6 @@ export function createAutofit(o: AutofitOptions, minRowH: number): Autofit {
     return clamp(Math.ceil(widest), MIN_COL_W, MAX_COL_W)
   }
 
-  // The row's non-empty cells, with a pending edit in place of what its cell
-  // shows now. A formula's result isn't known yet, so a formula edit keeps
-  // the shown value.
-  function rowCells(r: number, edit?: PendingEdit): RowCell[] {
-    const typed =
-      edit && !(typeof edit.value === 'string' && edit.value.startsWith('=')) ? edit : undefined
-    const blank = (v: CellValue) => v == null || v === ''
-    const out: RowCell[] = []
-    let seen = false
-    for (const cell of cellsWhere((row) => row === r)) {
-      if (typed && cell.col === typed.c) {
-        seen = true
-        if (!blank(typed.value)) out.push({ ...cell, value: typed.value })
-      } else out.push(cell)
-    }
-    if (typed && !seen && !blank(typed.value)) {
-      out.push({ id: cellId(r, typed.c), row: r, col: typed.c, value: typed.value })
-    }
-    return out
-  }
-
   function heightOf(cells: readonly RowCell[]): number {
     let tallest = minRowH
     for (const cell of cells) {
@@ -144,15 +122,28 @@ export function createAutofit(o: AutofitOptions, minRowH: number): Autofit {
     )
   }
 
-  const fitRowHeight = (r: number, edit?: PendingEdit) => heightOf(rowCells(r, edit))
-  const hasTallText = (r: number, edit?: PendingEdit) => tallIn(rowCells(r, edit))
+  const fitRowHeight = (r: number) => heightOf([...cellsWhere((row) => row === r)])
 
-  function measureRows(match: (row: number) => boolean) {
+  // A formula's result isn't known yet, so a formula write keeps the shown
+  // value; any other write replaces it, and an empty one clears the cell.
+  const isFormula = (v: CellValue) => typeof v === 'string' && v.startsWith('=')
+  const blank = (v: CellValue) => v == null || v === ''
+
+  function measureRows(match: (row: number) => boolean, writes: PendingWrites = {}) {
     const byRow = new Map<number, RowCell[]>()
-    for (const cell of cellsWhere((row) => match(row))) {
+    const add = (cell: RowCell) => {
       const list = byRow.get(cell.row)
       if (list) list.push(cell)
       else byRow.set(cell.row, [cell])
+    }
+    const written = new Map<string, CellValue>()
+    for (const [id, value] of Object.entries(writes)) if (!isFormula(value)) written.set(id, value)
+    for (const cell of cellsWhere((row) => match(row))) {
+      if (!written.has(cell.id)) add(cell)
+    }
+    for (const [id, value] of written) {
+      const p = parseCellId(id)
+      if (p && match(p.row) && !blank(value)) add({ id, row: p.row, col: p.col, value })
     }
     const out = new Map<number, { height: number; tall: boolean }>()
     for (const [row, cells] of byRow) out.set(row, { height: heightOf(cells), tall: tallIn(cells) })
@@ -168,5 +159,5 @@ export function createAutofit(o: AutofitOptions, minRowH: number): Autofit {
     return [...rows]
   }
 
-  return { fitColWidth, fitRowHeight, hasTallText, measureRows, wrappedRows }
+  return { fitColWidth, fitRowHeight, measureRows, wrappedRows }
 }

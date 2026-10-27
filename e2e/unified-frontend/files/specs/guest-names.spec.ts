@@ -1,13 +1,11 @@
-import { type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-import { expect, requireSiteFilesFlip, test } from "../../helpers/flips";
 import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
 /**
  * Stage 11 follow-up: guests sign their comments (spec §10.5, ticket 011).
  *
- * A guest opens each document through a comment link. The server picks the
- * `/d/` address from `suite_flip_files`, so run these with the key on.
+ * A guest opens each document through a comment link.
  */
 
 const SIGNED_OUT = { cookies: [], origins: [] };
@@ -67,7 +65,6 @@ async function openComments(page: Page): Promise<Locator> {
 
 test.describe("a guest with a comment link", () => {
 	test.use({ storageState: SIGNED_OUT });
-	test.beforeEach(() => requireSiteFilesFlip(true));
 
 	for (const product of PRODUCTS) {
 		test(`${product.label}: the guest signs a comment, and the name is there after a reload`, async ({ page }) => {

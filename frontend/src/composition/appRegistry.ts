@@ -6,16 +6,15 @@ import { driveUploadProgress, filesArea } from '@/apps/drive'
 import { mailArea, useInboxSummary } from '@/apps/mail'
 import { meetArea } from '@/apps/meet'
 import { peopleArea } from '@/apps/people'
+import { adminArea } from '@/composition/admin'
 import { homeArea } from '@/composition/home'
 import type { AreaDefinition } from '@/platform/contracts'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
 import type { AreaProgressSource } from '@/shell/areaProgress'
 
 /**
- * Every area, in rail order. The rail, the phone nav and the palette's `>`
- * switcher list all of them: an area whose capability the site lacks (Mail
- * and Calendar without a mail account) still has a place, and opening it
- * shows what it needs (`UnavailableSurface`) instead of hiding the product.
+ * Every area, in rail order. Launch surfaces list only available areas
+ * (spec §3.2); direct URLs still resolve here to show what an area needs.
  */
 export const areaDefinitions: readonly AreaDefinition[] = [
   homeArea,
@@ -24,6 +23,7 @@ export const areaDefinitions: readonly AreaDefinition[] = [
   calendarArea,
   meetArea,
   peopleArea,
+  adminArea,
 ]
 
 export function findArea(id: string): AreaDefinition | undefined {
@@ -40,7 +40,9 @@ export function useAppRegistry(session: Session = useSession()): AppRegistry {
   const upcoming = useUpcomingSummary(() => session.capabilities.value.jmap)
 
   return {
-    areas: areaDefinitions,
+    get areas() {
+      return areaDefinitions.filter((area) => areaIsAvailable(area, session))
+    },
     badges: computed(() => deriveAreaBadges(inbox.data, upcoming.data)),
   }
 }

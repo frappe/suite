@@ -36,7 +36,15 @@
     // (not written for these flags) into this check.
     "frontend/src/apps/sheets/canvas/*.ts",
     "frontend/src/apps/sheets/canvas/input/*.ts",
-    "frontend/src/apps/sheets/canvas/painters/*.ts"
+    "frontend/src/apps/sheets/canvas/painters/*.ts",
+    // collab/: the new Yjs schema and glue (the older .js files there predate them).
+    "frontend/src/apps/sheets/collab/schema*.ts",
+    "frontend/src/apps/sheets/collab/glue*.ts",
+    "frontend/src/apps/sheets/collab/stores*.ts",
+    "frontend/src/apps/sheets/collab/load.ts",
+    "frontend/src/apps/sheets/collab/undo*.ts",
+    "frontend/src/apps/sheets/collab/test-tabs.ts",
+    "frontend/src/apps/sheets/collab/test-fuzz.ts"
   ],
   // Canvas, utils and engine tests predate the strict config; the policy covers source.
   "exclude": [

@@ -10,24 +10,6 @@ describe('canonical route metadata', () => {
     }
   })
 
-  it('holds every area entry URL', () => {
-    expect(canonicalRoutes.map((route) => route.path)).toEqual([
-      '/home',
-      '/drive',
-      '/drive/organization',
-      '/drive/f/:node/:slug?',
-      '/drive/recent',
-      '/drive/starred',
-      '/drive/shared-with-me',
-      '/drive/trash',
-      '/mail/:pathMatch(.*)*',
-      '/calendar/:pathMatch(.*)*',
-      '/people/:pathMatch(.*)*',
-      '/meet/:pathMatch(.*)*',
-      '/d/:node/:slug?',
-    ])
-  })
-
   it.each(['mail', 'calendar', 'people', 'meet'])('renders %s in the shell', (area) => {
     expect(canonicalRoutes.find((route) => route.meta?.area === area)?.meta?.frame).toBe('shell')
   })

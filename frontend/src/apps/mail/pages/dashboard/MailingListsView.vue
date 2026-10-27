@@ -8,43 +8,33 @@
     <div class="flex items-center space-x-3">
       <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
         <template #prefix>
-          <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
+          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
     </div>
-    <ListView
-      v-if="list.status === 'success'"
-      class="min-h-0 flex-1 !overflow-y-auto [&>div:first-child]:sticky [&>div:first-child]:top-0 [&>div:first-child]:z-10"
+    <DashboardList
       :columns="LIST_COLUMNS"
       :rows="list.rows"
-      :options="listOptions"
       row-key="id"
+      :loading="list.status !== 'success'"
+      :row-route="listOptions.getRowRoute"
+      :empty-state="listOptions.emptyState"
     >
-      <ListHeader />
-      <ListRows>
-        <template v-if="list.rows.length">
-          <ListRow
-            v-for="row in list.rows"
-            :key="row.id"
-            v-slot="{ item }"
-            :row="row"
-            class="hover:!bg-surface-gray-1"
-          >
-            <ListRowItem :item="item" />
-          </ListRow>
-        </template>
-        <ListEmptyState v-else />
-      </ListRows>
-    </ListView>
-    <DashboardListSkeleton v-else :columns="3" />
+      <template #cell="{ column, item }">
+        <span
+          class="truncate text-base"
+          :class="column.key === LIST_COLUMNS[0].key ? 'text-ink-gray-8' : 'text-ink-gray-7'"
+        >
+          {{ item ?? '—' }}
+        </span>
+      </template>
+    </DashboardList>
     <DashboardPager
       v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
       :total="list.total ?? 0"
-      :page-length="pageLength"
       :has-more="list.hasNext"
       :loading="list.isFetching"
-      @update:page-length="(value) => (pageLength = value)"
       @load-more="list.fetchNext().catch(() => {})"
     />
   </DashboardLayout>
@@ -53,23 +43,14 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
 import { FormControl, usePageMeta } from 'frappe-ui'
-import {
-  Icon as FeatherIcon,
-  ListEmptyState,
-  ListHeader,
-  ListRow,
-  ListRowItem,
-  ListRows,
-  ListView,
-} from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListModal.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
+import { DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 usePageMeta(() => appPageMeta(__('Mailing Lists'), 'Mail'))
@@ -77,18 +58,11 @@ const showAdd = ref(false)
 useAddOnArrival(showAdd)
 const search = ref('')
 const debouncedSearch = refDebounced(search, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const list = useInfiniteQuery(api.mail.admin.mailingLists.list, () => ({
   search: debouncedSearch.value,
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
-type ListRowType = {
-  id: string
-  email?: string
-  description?: string
-  recipient_count?: number
-}
 const LIST_COLUMNS = [
   {
     label: __('Email'),
@@ -121,7 +95,7 @@ const listOptions = computed(() => ({
           onClick: () => (showAdd.value = true),
         },
       },
-  getRowRoute: (row: ListRowType) => ({
+  getRowRoute: (row: { id: string }) => ({
     name: 'mail-mailing-list',
     params: {
       listId: row.id,

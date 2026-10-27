@@ -6,11 +6,14 @@
 //   const { filterPanel, showSortFilter, openFilterPanel, applyFilter, ... } =
 //     useSortFilter({ sortFilter, currentSheet, activeCell, renderVersion,
 //       gridWrapRef, history, getGrid, readRect, rectBlocked, pushEditOp,
-//       repopulateGrid, applyHiddenRows, markDirty })
+//       repopulateGrid, applyHiddenRows, markDirty, formats,
+//       captureFormatsRange, readEngineFormats, resetEngineFormats })
 
 import { computed, nextTick, reactive, watch } from 'vue'
 
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
+import { formatsAfterSort } from '../../engine/sortFilter.js'
+import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { parseCellId } from '../../utils/cells.js'
 import { overlayRectStyle } from '../../utils/overlay-rect.js'
 
@@ -39,6 +42,10 @@ export function useSortFilter({
   repopulateGrid,
   applyHiddenRows,
   markDirty,
+  formats,
+  captureFormatsRange,
+  readEngineFormats,
+  resetEngineFormats,
 }) {
   // Filter panel state. The form itself (mode, operator, checked values) lives
   // in FilterPanel.vue, which is re-created on every open (`seq` is its key).
@@ -332,9 +339,43 @@ export function useSortFilter({
     const range = sortFilter.getRange(sn)
     if (range && rectBlocked(range, sn)) return
     filterPanel.open = false
+    const moveFormats = range && formats && captureFormatsRange && _sortCells(range) <= 50000
+    let beforeFmt = null
+    let engineIds = []
+    if (moveFormats) {
+      // Formats travel with their rows (ISSUES #48). A typed $1.50 or date
+      // is formatted by IronCalc itself; copy that into the side store first
+      // so one map moves (and undoes) every row's look, then reset
+      // IronCalc's own format, which would otherwise stay with the position.
+      const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
+      const engineFmts = (await readEngineFormats?.(rect, sn)) ?? {}
+      engineIds = Object.keys(engineFmts)
+      for (const id of engineIds) {
+        const ours = numFmtFromEngine(engineFmts[id], { dates: true })
+        if (ours && !formats.get(id, sn).numberFormat)
+          formats.applyToRange([id], { numberFormat: ours }, sn)
+      }
+      beforeFmt = captureFormatsRange(rect, sn)
+    }
     const sorted = await sortFilter.sort(colIdx, dir, sn)
-    if (sorted) pushEditOp(sn, sorted.before, sorted.after, 'Sort')
+    if (sorted) {
+      let extra = {}
+      if (beforeFmt) {
+        const moved = formatsAfterSort(sorted.order, sorted.rect, beforeFmt)
+        for (const [id, fmt] of Object.entries(moved)) {
+          formats.clear(id, sn) // set merges; a moved row replaces the look
+          if (fmt) formats.set(id, fmt, sn)
+        }
+        if (engineIds.length) resetEngineFormats?.(engineIds, sn)
+        extra = { beforeFormats: beforeFmt, afterFormats: captureFormatsRange(sorted.rect, sn) }
+      }
+      pushEditOp(sn, sorted.before, sorted.after, 'Sort', extra)
+    }
     applyHiddenRows()
+  }
+  // Data cells a sort of the filter range touches (the header row stays).
+  function _sortCells(range) {
+    return (range.r1 - range.r0) * (range.c1 - range.c0 + 1)
   }
 
   return {

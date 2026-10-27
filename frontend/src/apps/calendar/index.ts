@@ -1,4 +1,5 @@
 import { useNow } from '@vueuse/core'
+import { defineAsyncComponent } from 'vue'
 
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
@@ -12,6 +13,7 @@ export { default as calendarDayjs } from './utils/dayjs'
 export { adjustScheduleEndTime, adjustScheduleStartTime } from './utils/scheduleTime'
 
 export type { CalendarEvent } from '@/apps/calendar/client/events'
+export { upcomingEventWindow } from './upcomingWindow'
 export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
 /** Shared upcoming-event presentation; callers supply their own event window and actions. */
 export { default as UpcomingEventList } from '@/apps/calendar/components/UpcomingEventList.vue'
@@ -24,6 +26,10 @@ export const calendarArea: AreaDefinition = {
   to: '/calendar',
   requires: ['jmap'],
   badgeNoun: () => __('upcoming'),
+  installable: true,
+  phoneNav: defineAsyncComponent(
+    () => import('@/apps/calendar/components/mobile/CalendarTabBar.vue'),
+  ),
   // Ticket 010 owns shell adoption. The existing CalendarLayout keeps its full frame for now.
   loadRoutes: () => import('@/apps/calendar/routes'),
 }

@@ -59,11 +59,21 @@
       </ContentPane>
       <AccountSheet v-model:open="accountSheetOpen" />
       <template v-if="!pageOwnsPhoneChrome" #nav>
-        <MobileNav
-          :areas="areas"
-          :active-area="activeArea?.id"
-          @open-account="accountSheetOpen = true"
-        />
+        <!-- Everything under the page, measured: what floats over the page (a compose button)
+             stands on it through --suite-phone-nav-height, whatever it holds. -->
+        <div ref="phoneNav">
+          <!-- The offer to install, just above the bottom bar: in the flow, so it covers nothing,
+               and only where the bar is. -->
+          <InstallPrompt :app="activeArea?.installable ? activeArea : undefined" />
+          <!-- An unavailable area's own tabs lead only back to its unavailable page. -->
+          <component :is="activeArea.phoneNav" v-if="activeArea?.phoneNav && !unavailable" />
+          <MobileNav
+            v-else
+            :areas="areas"
+            :active-area="activeArea?.id"
+            @open-account="accountSheetOpen = true"
+          />
+        </div>
       </template>
     </MobileShell>
   </template>
@@ -81,14 +91,12 @@
        with the suite's theme shortcut. Signed in only: every search it runs
        needs a session. -->
   <SuiteCommandPalette v-if="session.status.value === 'authenticated'" :areas="areas" />
-  <!-- The suite is one PWA, so the offer to install it is the shell's, not an
-       area's; it decides for itself when to show. -->
-  <InstallPrompt v-if="isMobile" />
 </template>
 
 <script setup lang="ts">
+import { useResizeObserver } from '@vueuse/core'
 import { Button, DesktopShell, MobileShell } from 'frappe-ui'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { AreaSidebarTarget } from '@/platform/area-sidebar'
@@ -115,6 +123,7 @@ import { isMobile } from '@/shell/useIsMobile'
 
 const props = defineProps<{
   areas: readonly AreaDefinition[]
+  activeArea?: AreaDefinition
   badges: Readonly<Record<string, number>>
 }>()
 
@@ -126,7 +135,7 @@ const SuiteSettingsDialog = defineAsyncComponent(
 )
 const SuiteCommandPalette = defineAsyncComponent(() => import('@/shell/SuiteCommandPalette.vue'))
 const session = useSession()
-const activeArea = computed(() => props.areas.find((area) => area.id === route.meta.area))
+const activeArea = computed(() => props.activeArea)
 const unavailable = computed(() => {
   const area = activeArea.value
   if (!area || session.status.value !== 'authenticated') return null
@@ -167,6 +176,21 @@ const scrollOwner = computed<ScrollOwner>(() =>
 // inset from the shell, so the inset applies once. The unavailable surface
 // replaces that page and its chrome, so the shell draws its own again; so does
 // a page that asks for it.
+// The height of what sits under the page on a phone: the bottom bar, and the offer to install over
+// it. A button floating over the page stands on it (see the compose buttons).
+const phoneNav = useTemplateRef<HTMLElement>('phoneNav')
+const setPhoneNavHeight = (height: number | null) =>
+  height === null
+    ? document.documentElement.style.removeProperty('--suite-phone-nav-height')
+    : document.documentElement.style.setProperty('--suite-phone-nav-height', `${height}px`)
+useResizeObserver(phoneNav, ([entry]) =>
+  setPhoneNavHeight(entry ? (entry.target as HTMLElement).offsetHeight : null),
+)
+watch(phoneNav, (element) => {
+  if (!element) setPhoneNavHeight(null)
+})
+onUnmounted(() => setPhoneNavHeight(null))
+
 const pageOwnsPhoneChrome = computed(
   () =>
     route.meta.phoneChrome === 'page' &&

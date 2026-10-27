@@ -3,10 +3,13 @@ import { api, client } from '@/api'
 /**
  * A permanent removal waiting out its Undo (see commitAfterUndo), written down so it outlives the
  * page. A page closed inside the window cannot send it — the request is a few awaits away from the
- * network, and the page is gone first — so the next start sends what was left.
+ * network, and the page is gone first — so the next start sends what was left. An unsubscribe waits
+ * the same way: once it reaches the sender it can't be taken back either.
  */
 export type PendingRemoval =
-  { kind: 'messages'; names: string[] } | { kind: 'draft'; account: string; id: string }
+  | { kind: 'messages'; names: string[] }
+  | { kind: 'draft'; account: string; id: string }
+  | { kind: 'unsubscribe'; account: string; id: string }
 
 const KEY = 'suite.mail.pendingRemovals'
 
@@ -64,6 +67,11 @@ const write = (stored: Stored) => {
 }
 
 export const sendRemoval = (removal: PendingRemoval): Promise<unknown> => {
+  if (removal.kind === 'unsubscribe')
+    return client.mutation(api.mail.messages.unsubscribe, {
+      account: removal.account,
+      id: removal.id,
+    })
   if (removal.kind === 'draft')
     return client.mutation(api.mail.messages.deleteDraft, {
       account: removal.account,

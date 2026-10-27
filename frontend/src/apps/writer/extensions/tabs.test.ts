@@ -2,15 +2,29 @@ import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { orderedTabs, TabsExtension, tabsIn } from './tabs'
+
+const editors: Editor[] = []
+
+beforeEach(() => vi.useFakeTimers())
+
+afterEach(async () => {
+  try {
+    await vi.runAllTimersAsync()
+  } finally {
+    editors.splice(0).forEach((editor) => editor.destroy())
+    vi.useRealTimers()
+  }
+})
 
 const makeEditor = (labels: string[]) => {
   const editor = new Editor({
     extensions: [Document, Paragraph, Text, TabsExtension],
     content: '<p>first</p>',
   })
+  editors.push(editor)
   editor.commands.wrapInTab({ label: labels[0] })
   labels.slice(1).forEach((label) => editor.commands.createTab({ label }))
   return editor
@@ -97,6 +111,7 @@ describe('ordered serialisation', () => {
       extensions: [Document, Paragraph, Text, TabsExtension],
       content: '<p>plain</p>',
     })
+    editors.push(editor)
     expect(editor.getHTML()).toBe('<p>plain</p>')
   })
 })

@@ -20,6 +20,7 @@ function createManager({ e2eeRequired = false } = {}) {
   }
   const mediaManager = {
     cancelPendingSubscriptions: vi.fn(),
+    unsubscribeFromRemoteProducer: vi.fn().mockResolvedValue(undefined),
     cleanup: vi.fn(),
     rebuildSendSide: vi.fn().mockResolvedValue({}),
     repairLocalPublication: vi.fn().mockResolvedValue(undefined),
@@ -73,6 +74,115 @@ function createManager({ e2eeRequired = false } = {}) {
 describe('ParticipantConnection', () => {
   afterEach(() => {
     E2EEMeeting.instance.wipeMeetingContext()
+  })
+
+  it('buffers producers during rejoin until the replacement receive side is synchronized', async () => {
+    const { handlers, manager, mediaManager, participantManager, sfuClient } = createManager()
+    participantManager.addParticipant({
+      participantId: 'remote-1',
+      userData: { name: 'Remote', video_enabled: true },
+    })
+    await manager.connect('token')
+    await manager.setVisibleCameraParticipants(['remote-1'])
+    sfuClient.getRoomParticipants.mockResolvedValueOnce([
+      { participantId: 'remote-1', userData: { name: 'Remote', video_enabled: true } },
+    ] as never)
+    sfuClient.joinRoom.mockImplementationOnce(async () => {
+      // Rejoin removes the old server transports before its acknowledgement.
+      await handlers.get('producer_created')?.({
+        participantId: 'remote-1',
+        producerId: 'encrypted-video',
+        kind: 'video',
+      })
+    })
+
+    await manager.joinRoom(
+      { userId: 'me', name: 'Me' },
+      { audio_enabled: true, video_enabled: true },
+    )
+
+    expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
+    await manager.setupExistingParticipants()
+    expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+      participantId: 'remote-1',
+      producerId: 'encrypted-video',
+      isScreen: false,
+    })
+  })
+
+  it.each([false, true])(
+    'restores prior buffering (%s) after a failed rejoin',
+    async (buffering) => {
+      const { handlers, manager, mediaManager, participantManager, sfuClient } = createManager()
+      participantManager.addParticipant({
+        participantId: 'remote-1',
+        userData: { name: 'Remote', audio_enabled: true },
+      })
+      await manager.connect('token')
+      manager.initialSyncInProgress = buffering
+      const rejected = new Error('Rejoin rejected')
+      sfuClient.joinRoom.mockImplementationOnce(async () => {
+        await handlers.get('producer_created')?.({
+          participantId: 'remote-1',
+          producerId: 'during-rejoin',
+          kind: 'audio',
+        })
+        throw rejected
+      })
+
+      await expect(
+        manager.joinRoom(
+          { userId: 'me', name: 'Me' },
+          { audio_enabled: true, video_enabled: true },
+        ),
+      ).rejects.toBe(rejected)
+      await handlers.get('producer_created')?.({
+        participantId: 'remote-1',
+        producerId: 'after-rejoin',
+        kind: 'audio',
+      })
+
+      if (buffering) {
+        expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
+      } else {
+        expect(
+          mediaManager.subscribeToRemoteProducer.mock.calls.map(([producer]) => producer),
+        ).toEqual([
+          { participantId: 'remote-1', producerId: 'during-rejoin', isScreen: false },
+          { participantId: 'remote-1', producerId: 'after-rejoin', isScreen: false },
+        ])
+      }
+    },
+  )
+
+  it('keeps hidden camera discovery, subscribes on demand, and releases it without changing media state', async () => {
+    const { handlers, manager, mediaManager, participantManager } = createManager()
+    participantManager.addParticipant({
+      participantId: 'remote-1',
+      userData: { name: 'Remote' },
+    })
+    await manager.connect('token')
+    await handlers.get('producer_created')?.({
+      participantId: 'remote-1',
+      producerId: 'camera-1',
+      kind: 'video',
+    })
+    expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
+    expect(participantManager.getParticipant('remote-1')?.video_enabled).toBe(true)
+    await manager.setVisibleCameraParticipants(['remote-1'])
+    expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+      participantId: 'remote-1',
+      producerId: 'camera-1',
+      isScreen: false,
+    })
+    await manager.setVisibleCameraParticipants([])
+    expect(mediaManager.unsubscribeFromRemoteProducer).toHaveBeenCalledWith(
+      expect.objectContaining({ producerId: 'camera-1' }),
+    )
+    expect(participantManager.getParticipant('remote-1')?.video_enabled).toBe(true)
+    mediaManager.subscribeToRemoteProducer.mockClear()
+    await manager.reconcileExpectedMedia()
+    expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
   })
 
   it('subscribes to remote audio producers', async () => {
@@ -388,6 +498,7 @@ describe('ParticipantConnection', () => {
       e2eeRequired: true,
     })
 
+    await manager.setVisibleCameraParticipants(['remote-1'])
     await manager.connect('token')
     const producerPromise = handlers.get('producer_created')?.({
       participantId: 'remote-1',
@@ -778,4 +889,23 @@ describe('ParticipantConnection', () => {
 
     expect(transportManager.createReceiveTransport).not.toHaveBeenCalled()
   })
+})
+
+it('delivers canonical join snapshots and updates through the connection, rejecting malformed state', async () => {
+  const { manager, handlers } = createManager()
+  const onSharedStageChanged = vi.fn()
+  manager.eventHandlers.onSharedStageChanged = onSharedStageChanged
+  await manager.connect('token')
+  const state = {
+    epoch: 'room',
+    protocolVersion: 1,
+    version: 4,
+    participantIds: ['me', 'other'],
+    activeSpeakerIds: ['other'],
+  }
+  handlers.get('shared_stage_snapshot')?.(state)
+  handlers.get('shared_stage')?.({ ...state, version: 5 })
+  handlers.get('shared_stage')?.({ ...state, participantIds: ['me', 'me'] })
+  expect(onSharedStageChanged.mock.calls).toEqual([[state, true], [{ ...state, version: 5 }]])
+  await manager.disconnect()
 })

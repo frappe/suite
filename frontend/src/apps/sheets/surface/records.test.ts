@@ -19,6 +19,18 @@ describe('Sheets comment anchors', () => {
     expect(readAnchor(42)).toBeNull()
   })
 
+  it('reads the anchor the Drive migration wrote for develop-editor comments', () => {
+    // suite/drive/patches/build/content_mapping.py `sheet_anchor`: [sheet, cell] as JSON.
+    expect(readAnchor('["Sheet1","G2"]')).toEqual({ sheet: 'Sheet1', cell: 'G2' })
+    // The upgrade renames sheets IronCalc refuses; the anchor follows the same rule.
+    expect(readAnchor('["Q1/Q2","AA120"]')).toEqual({ sheet: 'Q1_Q2', cell: 'AA120' })
+    expect(readAnchor('["Sales: 2026","B2"]')).toEqual({ sheet: 'Sales_ 2026', cell: 'B2' })
+    expect(readAnchor(`["${'a'.repeat(40)}","A1"]`)).toEqual({ sheet: 'a'.repeat(31), cell: 'A1' })
+    expect(readAnchor('["Sheet1","not-a-cell"]')).toBeNull()
+    expect(readAnchor('["Sheet1"]')).toBeNull()
+    expect(readAnchor('[oops')).toBeNull()
+  })
+
   it("falls back to the workbook when a sheet name would pass Drive's anchor limit", () => {
     expect(cellAnchor({ sheet: 'x'.repeat(260), cell: 'A1' })).toBe(WORKBOOK_ANCHOR)
   })

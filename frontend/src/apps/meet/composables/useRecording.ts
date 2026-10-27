@@ -2,6 +2,7 @@ import { toast } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { api, client, useMutation } from '@/api'
+import { randomId } from '@/platform/random-id'
 
 import type { RecordingPreflightOutput, RecordingStateOutput } from '../client/generated'
 import { useSocket } from '../socket'
@@ -63,7 +64,7 @@ export function useRecording(meetingId: string) {
   }
 
   async function start() {
-    requestId.value ||= crypto.randomUUID()
+    requestId.value ||= randomId()
     const result = await startCall.run({
       meeting_id: meetingId,
       request_id: requestId.value,

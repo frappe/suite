@@ -59,6 +59,34 @@ export function definedNameFormula({ sheet, range }: Pick<NamedRange, 'sheet' | 
   return `${quoted}!${abs}`
 }
 
+export type DefinedNameChange =
+  | { type: 'setDefinedName'; payload: { name: string; formula: string } }
+  | { type: 'deleteDefinedName'; payload: { name: string } }
+
+/**
+ * The commands that bring IronCalc's defined names from `sent` (name →
+ * formula last sent, '' for a name dropped) to the store's entries, and the
+ * new `sent`. IronCalc only holds a name that is a reference, so a name whose
+ * cells were all deleted (range #REF!) is dropped and `=Name` reads #NAME?
+ * (Excel: #REF!); sending it would fail the batch with every other name in it.
+ */
+export function definedNameChanges(sent: ReadonlyMap<string, string>, entries: NamedRange[]) {
+  const want = new Map(
+    entries.map((e) => [e.name, e.range.includes('#REF!') ? '' : definedNameFormula(e)]),
+  )
+  const changes: DefinedNameChange[] = []
+  for (const name of sent.keys())
+    if (!want.has(name)) changes.push({ type: 'deleteDefinedName', payload: { name } })
+  for (const [name, formula] of want) {
+    if (sent.get(name) === formula) continue
+    // A dropped name may not be in IronCalc (never sent, or sent and failed);
+    // deleting one it lacks is a no-op.
+    if (formula) changes.push({ type: 'setDefinedName', payload: { name, formula } })
+    else changes.push({ type: 'deleteDefinedName', payload: { name } })
+  }
+  return { sent: want, changes }
+}
+
 /**
  * @param opts.isBuiltinFunction Optional hook to detect collisions with
  *   built-in formula functions (so names like "SUM" or "VLOOKUP" can't be

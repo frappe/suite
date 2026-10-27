@@ -247,6 +247,78 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     url: '/l/abcdefghijklmnopqrstuv',
   })
 
+  it('disables public access permanently even when the local grant had an expiry', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+    try {
+      const expiry = endOfDay(2026, 12, 31)
+      let local = grant('$PUBLIC', 10, { expires_on: expiry })
+      const server = fakeServer((call) => {
+        if (call.id === 'node_get') return node('document')
+        if (call.id === 'node_put_grant') {
+          const { role, expires_on } = call.input
+          if (typeof role !== 'number') throw new Error('Missing role')
+          local = grant('$PUBLIC', role, {
+            expires_on: typeof expires_on === 'string' ? expires_on : null,
+          })
+          return local
+        }
+        return {
+          grants: [local],
+          inherited: [
+            {
+              grant: grant('$PUBLIC', 10, { node: 'folder' }),
+              redacted: false,
+              source_node: 'folder',
+              source_title: 'Launch',
+            },
+          ],
+        }
+      })
+      const share = useShare('doc', { client: testClient(server.transport) })
+      await share.load()
+      expect(share.sections.value?.public?.state).toBe('local')
+
+      await share.setPublic(false)
+      expect(share.sections.value?.public?.state).toBe('denied')
+
+      vi.setSystemTime(new Date('2027-01-02T12:00:00Z'))
+      await share.load()
+      expect(share.sections.value?.public?.state).toBe('denied')
+      expect(server.calls.find((call) => call.id === 'node_put_grant')?.input).toEqual({
+        node: 'doc',
+        principal: '$PUBLIC',
+        role: 0,
+        expires_on: null,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps an existing expiry when enabling local public access', async () => {
+    const expiry = endOfDay(2099, 12, 31)
+    const local = grant('$PUBLIC', 0, { expires_on: expiry })
+    const server = fakeServer((call) =>
+      call.id === 'node_get'
+        ? node('document')
+        : call.id === 'node_grants'
+          ? { grants: [local], inherited: [] }
+          : local,
+    )
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+
+    await share.setPublic(true)
+
+    expect(server.calls.find((call) => call.id === 'node_put_grant')?.input).toEqual({
+      node: 'doc',
+      principal: '$PUBLIC',
+      role: 10,
+      expires_on: expiry,
+    })
+  })
+
   it('changes a link by its grant id: an expiry without sending the password, and a role keeping the expiry', async () => {
     const server = fakeServer((call) =>
       call.id === 'node_get'

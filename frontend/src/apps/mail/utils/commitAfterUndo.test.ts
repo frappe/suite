@@ -115,4 +115,13 @@ describe('commitAfterUndo', () => {
     shown[0].onAutoClose()
     expect(slot).toBeUndefined()
   })
+
+  it('hands a refusal to the caller, where it has more to say than the message', async () => {
+    const commitAfterUndo = await load()
+    refuse = true
+    const onFailed = vi.fn()
+    commitAfterUndo({ message: 'Unsubscribed.', removal, restore: vi.fn(), onFailed })
+    shown[0].onDismiss()
+    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce())
+  })
 })

@@ -1,6 +1,4 @@
-import { type APIRequestContext } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 import { adminApi, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
@@ -61,7 +59,8 @@ test("a stale slug is corrected to the current title", async ({ page }) => {
 test("breadcrumbs describe the open folder and navigate back", async ({ page }) => {
 	await page.goto(`/drive/f/${child.name}`);
 	const crumbs = page.locator("header").first();
-	await expect(crumbs.getByText("Administrator", { exact: true })).toBeVisible();
+	// The caller's own root shows by its place, not its stored title.
+	await expect(crumbs.getByText("My files", { exact: true })).toBeVisible();
 	await expect(crumbs.getByText(parent.title, { exact: true })).toBeVisible();
 	await expect(crumbs.getByText(CHILD_TITLE, { exact: true })).toBeVisible();
 

@@ -133,6 +133,44 @@ describe('shared paging and access contexts', () => {
     await list.refetch()
   })
 
+  it('keeps a failed next window available for explicit retry across background refreshes', async () => {
+    let failing = true
+    let firstReads = 0
+    let nextReads = 0
+    const engine = client(
+      vi.fn(async (url) => {
+        const start = Number(new URL(String(url), 'http://test').searchParams.get('start') || 0)
+        if (start) {
+          nextReads += 1
+          return failing
+            ? json({ type: 'PermissionError', message: 'Window unavailable' }, 403)
+            : json({ rows: [{ id: 'b', read: false }], more: false })
+        }
+        firstReads += 1
+        return json({ rows: [{ id: 'a', read: false }], more: true })
+      }),
+    )
+    const input = ref({ filter: 'all' })
+    const list = observer(() => engine.useInfiniteQuery(page, input))
+    await vi.waitFor(() => expect(list.rows).toHaveLength(1))
+    await expect(list.fetchNext()).rejects.toMatchObject({ type: 'PermissionError' })
+    expect(list.error?.message).toBe('Window unavailable')
+
+    engine.invalidate(() => true)
+    await vi.waitFor(() => expect(firstReads).toBe(2))
+    await vi.waitFor(() => expect(list.isFetching).toBe(false))
+    expect(list.error?.message).toBe('Window unavailable')
+    expect(list.rows.map((row) => row.id)).toEqual(['a'])
+    expect(nextReads).toBe(1)
+
+    failing = false
+    await list.fetchNext()
+    expect(list.error).toBeNull()
+    expect(list.rows.map((row) => row.id)).toEqual(['a', 'b'])
+    input.value = { filter: 'other' }
+    expect(list.error).toBeNull()
+  })
+
   it('separates credential contexts, rejects a reply after access changes, and sends write keepalive', async () => {
     const held: Array<(response: Response) => void> = []
     const fetch = vi.fn<typeof globalThis.fetch>(() => new Promise((resolve) => held.push(resolve)))

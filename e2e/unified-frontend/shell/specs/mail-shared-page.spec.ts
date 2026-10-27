@@ -1,6 +1,4 @@
-import { type Locator, type Page } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 
 /**
  * Spec §9.5, stage 3: Mail leaves the shared page as it found it.
@@ -123,6 +121,7 @@ async function openMail(page: Page) {
 }
 
 test("Mail, then the Drive area, then Mail again leaves the page as it was", async ({ page }) => {
+	test.skip(!process.env.E2E_MAIL, "needs a mail server");
 	const sockets = trackSockets(page);
 
 	// The Drive area before Mail ever loads: the reference for every check.

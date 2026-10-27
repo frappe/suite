@@ -71,9 +71,9 @@ in progress keeps its initial roster. The shared decoder is configured once,
 and per-utterance name models are released on finalize, clear or close.
 If a room-name phrase model cannot be built, streaming continues with the
 low-weight shared terminology hints rather than dropping speech.
-Name hints use weight 1.5 and shared terminology uses a gentler 0.35 to avoid
-inserting unrelated Frappe terms into ordinary speech. The offline name pilot
-recovered 2/6 difficult names at that weight without the wrong-person
-substitution seen at weight 2. This is not a guarantee against substitutions
-in real speech; monitor false names and first-caption latency before increasing
-the weight or glossary.
+Name hints and shared terminology both use weight 0.35. Participant names remain
+available as hints, with a lower weight to reduce unrelated name insertions in
+uncertain speech. Display names are split into independent parts: `Pratham Sharma`
+hints `Pratham` and `Sharma`, without boosting the full-name phrase.
+This is not confidence gating or a guarantee against false
+names; monitor false insertions and missed spoken names before changing the weight.

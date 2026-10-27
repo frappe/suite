@@ -14,6 +14,7 @@ export type FileType =
   | 'doc'
   | 'sheet'
   | 'slides'
+  | 'draw'
   | 'pdf'
   | 'image'
   | 'video'
@@ -43,6 +44,7 @@ const CONTENT_TYPES: Record<string, FileType> = {
   Sheet: 'sheet',
   Spreadsheet: 'sheet',
   Presentation: 'slides',
+  Drawing: 'draw',
 }
 
 /** Drive's own documents, PDFs and media each have a colour; everything else is gray. */
@@ -51,6 +53,7 @@ const TINTS: Record<FileType, string> = {
   doc: 'text-ink-blue-6',
   sheet: 'text-ink-green-6',
   slides: 'text-ink-orange-6',
+  draw: 'text-ink-pink-6',
   pdf: 'text-ink-red-6',
   image: 'text-ink-violet-6',
   video: 'text-ink-pink-6',

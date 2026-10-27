@@ -1,5 +1,47 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="breadcrumbs" :loading="!member.data">
+    <template #loading>
+      <DashboardDetailHeaderSkeleton :actions="2" />
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <DashboardCard :title="__('General Information')">
+          <div>
+            <InformationField :label="__('Description')"
+              ><DashboardSkeletonText width="40%"
+            /></InformationField>
+            <InformationField :label="__('Receiving')"
+              ><DashboardSkeletonText width="40%"
+            /></InformationField>
+            <InformationField :label="__('Created At')"
+              ><DashboardSkeletonText width="40%"
+            /></InformationField>
+          </div>
+        </DashboardCard>
+        <DashboardCard :title="__('Mail storage usage')">
+          <div class="space-y-2 p-5 text-base">
+            <DashboardSkeletonText width="30%" />
+          </div>
+        </DashboardCard>
+        <DashboardCard :title="__('Email Addresses')">
+          <div class="flex flex-col">
+            <div
+              class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
+            >
+              <span class="flex-1">{{ __('Email Address') }}</span>
+              <span class="flex-1">{{ __('Description') }}</span>
+              <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
+              <span class="w-8 shrink-0" />
+            </div>
+            <DashboardRowsSkeleton :rows="1" />
+          </div>
+        </DashboardCard>
+        <DashboardCard :title="__('Members')">
+          <div class="flex flex-col">
+            <div class="px-5 py-2.5"><Skeleton class="h-7 w-full rounded-4" /></div>
+            <DashboardRowsSkeleton :rows="3" />
+          </div>
+        </DashboardCard>
+      </div>
+    </template>
     <template v-if="member.data">
       <DashboardDetailHeader
         :title="member.data.email || member.data.name || groupId"
@@ -29,12 +71,16 @@
         </DashboardCard>
 
         <!-- Quota Usage -->
-        <DashboardCard
-          :title="__('Quota Usage')"
-          :button-label="__('Edit')"
-          @action="showEditQuota = true"
-        >
-          <QuotaDonut :quota="member.data.quota" />
+        <DashboardCard :title="__('Mail storage usage')">
+          <p class="p-5 text-base text-ink-gray-7">
+            {{
+              member.data.used_bytes == null
+                ? __('Mail usage unavailable')
+                : __('{0} GB · Mail has no storage limit', [
+                    (member.data.used_bytes / 1_000_000_000).toLocaleString(),
+                  ])
+            }}
+          </p>
         </DashboardCard>
 
         <!-- Email Addresses -->
@@ -144,12 +190,6 @@
     :group="member.data"
     @reload="member.refetch().catch(() => {})"
   />
-  <EditGroupQuotaModal
-    v-if="member.data"
-    v-model="showEditQuota"
-    :group="member.data"
-    @reload="member.refetch().catch(() => {})"
-  />
   <AddGroupEmailModal
     v-model="showAddEmail"
     :group-id="groupId"
@@ -166,22 +206,36 @@
 </template>
 <script setup lang="ts">
 import Users from '~icons/lucide/users'
-import { Button, Dialog, Dropdown, FormControl, Switch, Tooltip, usePageMeta } from 'frappe-ui'
+import {
+  Button,
+  Dialog,
+  Dropdown,
+  FormControl,
+  Skeleton,
+  Switch,
+  Tooltip,
+  usePageMeta,
+} from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
+import DashboardDetailHeaderSkeleton from '@/apps/mail/components/DashboardDetailHeaderSkeleton.vue'
 import AddGroupEmailModal from '@/apps/mail/components/Modals/AddGroupEmailModal.vue'
 import AddGroupMembersModal from '@/apps/mail/components/Modals/AddGroupMembersModal.vue'
 import EditGroupModal from '@/apps/mail/components/Modals/EditGroupModal.vue'
-import EditGroupQuotaModal from '@/apps/mail/components/Modals/EditGroupQuotaModal.vue'
-import QuotaDonut from '@/apps/mail/components/QuotaDonut.vue'
 import type { QuotaUsage } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
-import { DashboardCard, DashboardLayout, InformationField } from '@/platform/dashboard'
+import {
+  DashboardCard,
+  DashboardLayout,
+  DashboardRowsSkeleton,
+  DashboardSkeletonText,
+  InformationField,
+} from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 type GroupData = {
@@ -210,7 +264,6 @@ const { groupId } = defineProps<{
 const router = useRouter()
 usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || groupId, 'Mail'))
 const showEdit = ref(false)
-const showEditQuota = ref(false)
 const showAddEmail = ref(false)
 const showAddMembers = ref(false)
 const showToggleReceiving = ref(false)
@@ -246,7 +299,7 @@ const memberCountLabel = computed(() => {
 const breadcrumbs = computed(() => [
   {
     label: __('Groups'),
-    route: '/mail/dashboard/groups',
+    route: '/admin/mail/groups',
   },
   {
     label: data.value?.email || groupId,

@@ -1,6 +1,6 @@
 <template>
   <FeedbackProvider>
-    <ShellLayout :areas="registry.areas" :badges="registry.badges.value">
+    <ShellLayout :areas="registry.areas" :active-area="activeArea" :badges="registry.badges.value">
       <router-view />
       <template #bell>
         <NotificationsBell />
@@ -11,10 +11,11 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, provide } from 'vue'
+import { computed, defineAsyncComponent, provide } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { DriveUploadTracker } from '@/apps/drive'
-import { useAppRegistry, useAreaWork } from '@/composition/appRegistry'
+import { findArea, useAppRegistry, useAreaWork } from '@/composition/appRegistry'
 import { documentTypes } from '@/composition/documentRegistry'
 import { settingsGroups } from '@/composition/settings'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
@@ -29,6 +30,8 @@ const NotificationsBell = defineAsyncComponent(
   () => import('@/composition/notifications/NotificationsBell.vue'),
 )
 const registry = useAppRegistry()
+const route = useRoute()
+const activeArea = computed(() => findArea(String(route.meta.area ?? '')))
 provide(DOCUMENT_TYPES_KEY, documentTypes)
 provide(SETTINGS_GROUPS_KEY, settingsGroups)
 const areaWork = useAreaWork()

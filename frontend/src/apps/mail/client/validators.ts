@@ -215,8 +215,8 @@ import type {
   GetParticipantIdentitiesOutput,
   GetQuotaInput,
   GetQuotaOutput,
-  GetRecentThreadsWithInput,
-  GetRecentThreadsWithOutput,
+  GetRecentThreadsFromInput,
+  GetRecentThreadsFromOutput,
   GetScheduledMailInput,
   GetScheduledMailOutput,
   GetScreenedAddressesInput,
@@ -247,6 +247,8 @@ import type {
   GetUnifiedTabCountsOutput,
   GetUnifiedThreadsInput,
   GetUnifiedThreadsOutput,
+  GetUnsubscribeOptionsInput,
+  GetUnsubscribeOptionsOutput,
   GetUserForResetPasswordKeyInput,
   GetUserForResetPasswordKeyOutput,
   GetUserInfoInput,
@@ -267,6 +269,8 @@ import type {
   OngoingExchangeOutput,
   RebuildAutomationScriptForAccountInput,
   RebuildAutomationScriptForAccountOutput,
+  RegionalPreferencesInput,
+  RegionalPreferencesOutput,
   RemoveGroupEmailInput,
   RemoveGroupEmailOutput,
   RemoveGroupMemberInput,
@@ -339,6 +343,8 @@ import type {
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
   UnscreenEmailAddressesOutput,
+  UnsubscribeMailInput,
+  UnsubscribeMailOutput,
   UpdateAccountPreferencesInput,
   UpdateAccountPreferencesOutput,
   UpdateBookInput,
@@ -365,6 +371,8 @@ import type {
   UpdateParticipantIdentityOutput,
   UpdatePreferencesInput,
   UpdatePreferencesOutput,
+  UpdateRegionalPreferencesInput,
+  UpdateRegionalPreferencesOutput,
   UpdateSieveScriptInput,
   UpdateSieveScriptOutput,
   UpdateSignatureInput,
@@ -585,6 +593,72 @@ export const operationExchangeList: Validators<ExchangeListInput, ExchangeListOu
       },
       'exchange_list output',
     )
+  },
+}
+
+export const operationRegionalPreferences: Validators<
+  RegionalPreferencesInput,
+  RegionalPreferencesOutput
+> = {
+  validateInput(value: unknown): asserts value is RegionalPreferencesInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'regional_preferences input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RegionalPreferencesOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          Option: {
+            properties: {
+              value: { title: 'Value', type: 'string' },
+              label: { title: 'Label', type: 'string' },
+            },
+            required: ['value', 'label'],
+            title: 'Option',
+            type: 'object',
+          },
+        },
+        properties: {
+          locale: { title: 'Locale', type: 'string' },
+          time_zone: { title: 'Time Zone', type: 'string' },
+          locales: { items: { $ref: '#/$defs/Option' }, title: 'Locales', type: 'array' },
+          time_zones: { items: { $ref: '#/$defs/Option' }, title: 'Time Zones', type: 'array' },
+        },
+        required: ['locale', 'time_zone', 'locales', 'time_zones'],
+        title: 'RegionalPreferences',
+        type: 'object',
+      },
+      'regional_preferences output',
+    )
+  },
+}
+
+export const operationUpdateRegionalPreferences: Validators<
+  UpdateRegionalPreferencesInput,
+  UpdateRegionalPreferencesOutput
+> = {
+  validateInput(value: unknown): asserts value is UpdateRegionalPreferencesInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          locale: { title: 'Locale', type: 'string' },
+          time_zone: { title: 'Time Zone', type: 'string' },
+        },
+        required: ['locale', 'time_zone'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'update_regional_preferences input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UpdateRegionalPreferencesOutput {
+    assertSchema(value, { type: 'null' }, 'update_regional_preferences output')
   },
 }
 
@@ -1003,6 +1077,10 @@ export const operationInvite: Validators<InviteInput, InviteOutput> = {
           invited_by: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Invited By' },
           expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
           quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
+          combined_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Cap Bytes',
+          },
           send_invite: { enum: [0, 1], title: 'Send Invite', type: 'integer' },
           disable_receiving: { enum: [0, 1], title: 'Disable Receiving', type: 'integer' },
           is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
@@ -1018,6 +1096,7 @@ export const operationInvite: Validators<InviteInput, InviteOutput> = {
           'invited_by',
           'expires_at',
           'quota_gb',
+          'combined_cap_bytes',
           'send_invite',
           'disable_receiving',
           'is_verified',
@@ -1041,9 +1120,14 @@ export const operationUpdateInvite: Validators<UpdateInviteInput, UpdateInviteOu
         properties: {
           name: { title: 'Name', type: 'string' },
           expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
-          quota_gb: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Quota Gb' },
+          combined_cap_bytes: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Combined Cap Bytes',
+          },
+          account: { title: 'Account', type: 'string' },
+          is_admin: { title: 'Is Admin', type: 'boolean' },
         },
-        required: ['name', 'expires_at', 'quota_gb'],
+        required: ['name', 'expires_at', 'combined_cap_bytes'],
         additionalProperties: false,
         $defs: {},
       },
@@ -1564,7 +1648,7 @@ export const operationGetUnifiedFolders: Validators<
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
                 anyOf: [
-                  { enum: ['Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
+                  { enum: ['Gray', 'Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
                   { type: 'null' },
                 ],
                 title: 'Color',
@@ -1637,7 +1721,7 @@ export const operationGetMailboxes: Validators<GetMailboxesInput, GetMailboxesOu
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
                 anyOf: [
-                  { enum: ['Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
+                  { enum: ['Gray', 'Blue', 'Green', 'Amber', 'Red', 'Purple'], type: 'string' },
                   { type: 'null' },
                 ],
                 title: 'Color',
@@ -2642,11 +2726,11 @@ export const operationGetCalendarClientConfig: Validators<
   },
 }
 
-export const operationGetRecentThreadsWith: Validators<
-  GetRecentThreadsWithInput,
-  GetRecentThreadsWithOutput
+export const operationGetRecentThreadsFrom: Validators<
+  GetRecentThreadsFromInput,
+  GetRecentThreadsFromOutput
 > = {
-  validateInput(value: unknown): asserts value is GetRecentThreadsWithInput {
+  validateInput(value: unknown): asserts value is GetRecentThreadsFromInput {
     assertSchema(
       value,
       {
@@ -2660,10 +2744,10 @@ export const operationGetRecentThreadsWith: Validators<
         additionalProperties: false,
         $defs: {},
       },
-      'get_recent_threads_with input',
+      'get_recent_threads_from input',
     )
   },
-  validateOutput(value: unknown): asserts value is GetRecentThreadsWithOutput {
+  validateOutput(value: unknown): asserts value is GetRecentThreadsFromOutput {
     assertSchema(
       value,
       {
@@ -2693,7 +2777,7 @@ export const operationGetRecentThreadsWith: Validators<
         items: { $ref: '#/$defs/RecentThread' },
         type: 'array',
       },
-      'get_recent_threads_with output',
+      'get_recent_threads_from output',
     )
   },
 }
@@ -4203,7 +4287,26 @@ export const operationAddMember: Validators<AddMemberInput, AddMemberOutput> = {
     )
   },
   validateOutput(value: unknown): asserts value is AddMemberOutput {
-    assertSchema(value, { type: 'null' }, 'add_member output')
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'add_member output',
+    )
   },
 }
 
@@ -4393,7 +4496,10 @@ export const operationDeleteMembers: Validators<DeleteMembersInput, DeleteMember
       value,
       {
         type: 'object',
-        properties: { names: { items: { type: 'string' }, title: 'Names', type: 'array' } },
+        properties: {
+          names: { items: { type: 'string' }, title: 'Names', type: 'array' },
+          confirmation: { title: 'Confirmation', type: 'string' },
+        },
         required: ['names'],
         additionalProperties: false,
         $defs: {},
@@ -4402,7 +4508,26 @@ export const operationDeleteMembers: Validators<DeleteMembersInput, DeleteMember
     )
   },
   validateOutput(value: unknown): asserts value is DeleteMembersOutput {
-    assertSchema(value, { type: 'null' }, 'delete_members output')
+    assertSchema(
+      value,
+      {
+        properties: {
+          success: { title: 'Success', type: 'boolean' },
+          user: { title: 'User', type: 'string' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          temporary_password: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Temporary Password',
+          },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+        },
+        required: ['success', 'user', 'status', 'error', 'temporary_password', 'expires_at'],
+        title: 'CreationResult',
+        type: 'object',
+      },
+      'delete_members output',
+    )
   },
 }
 
@@ -4421,7 +4546,26 @@ export const operationDisableMembers: Validators<DisableMembersInput, DisableMem
     )
   },
   validateOutput(value: unknown): asserts value is DisableMembersOutput {
-    assertSchema(value, { type: 'null' }, 'disable_members output')
+    assertSchema(
+      value,
+      {
+        $defs: {
+          MemberOutcome: {
+            properties: {
+              user: { title: 'User', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['user', 'success', 'error'],
+            title: 'MemberOutcome',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/MemberOutcome' },
+        type: 'array',
+      },
+      'disable_members output',
+    )
   },
 }
 
@@ -4440,7 +4584,26 @@ export const operationEnableMembers: Validators<EnableMembersInput, EnableMember
     )
   },
   validateOutput(value: unknown): asserts value is EnableMembersOutput {
-    assertSchema(value, { type: 'null' }, 'enable_members output')
+    assertSchema(
+      value,
+      {
+        $defs: {
+          MemberOutcome: {
+            properties: {
+              user: { title: 'User', type: 'string' },
+              success: { title: 'Success', type: 'boolean' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+            },
+            required: ['user', 'success', 'error'],
+            title: 'MemberOutcome',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/MemberOutcome' },
+        type: 'array',
+      },
+      'enable_members output',
+    )
   },
 }
 
@@ -8072,6 +8235,77 @@ export const operationGetMimeMessage: Validators<GetMimeMessageInput, GetMimeMes
         type: 'object',
       },
       'get_mime_message output',
+    )
+  },
+}
+
+export const operationGetUnsubscribeOptions: Validators<
+  GetUnsubscribeOptionsInput,
+  GetUnsubscribeOptionsOutput
+> = {
+  validateInput(value: unknown): asserts value is GetUnsubscribeOptionsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+        },
+        required: ['account', 'ids'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'get_unsubscribe_options input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is GetUnsubscribeOptionsOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          UnsubscribeOption: {
+            properties: {
+              one_click: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'One Click' },
+              mailto: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mailto' },
+              link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Link' },
+              unsubscribed: { title: 'Unsubscribed', type: 'boolean' },
+            },
+            required: ['one_click', 'mailto', 'link', 'unsubscribed'],
+            title: 'UnsubscribeOption',
+            type: 'object',
+          },
+        },
+        additionalProperties: { $ref: '#/$defs/UnsubscribeOption' },
+        type: 'object',
+      },
+      'get_unsubscribe_options output',
+    )
+  },
+}
+
+export const operationUnsubscribeMail: Validators<UnsubscribeMailInput, UnsubscribeMailOutput> = {
+  validateInput(value: unknown): asserts value is UnsubscribeMailInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          id: { title: 'Id', type: 'string' },
+        },
+        required: ['account', 'id'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'unsubscribe_mail input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UnsubscribeMailOutput {
+    assertSchema(
+      value,
+      { enum: ['one_click', 'mailto', 'already'], type: 'string' },
+      'unsubscribe_mail output',
     )
   },
 }

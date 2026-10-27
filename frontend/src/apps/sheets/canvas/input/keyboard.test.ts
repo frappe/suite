@@ -232,11 +232,80 @@ describe('afterEdit', () => {
 })
 
 describe('formula bar picking', () => {
-  it('an arrow in a `=` formula bar starts a pick, the next moves it', () => {
+  // A formula bar holding `=SUM(`, where a reference could go.
+  function withBar() {
     const h = setup()
     const bar = document.createElement('input')
+    bar.value = '=SUM('
     document.body.appendChild(bar)
     h.picker.target.mockReturnValue(bar)
+    return { ...h, bar }
+  }
+
+  it('arrows move the caret, not pick (#85)', () => {
+    const h = withBar()
+    for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
+      const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      h.bar.dispatchEvent(ev)
+      expect(ev.defaultPrevented).toBe(false)
+    }
+    expect(h.picker.keyStart).not.toHaveBeenCalled()
+  })
+
+  it('F2 switches the arrows to picking, F2 again back to the caret', () => {
+    const h = withBar()
+    h.press('F2', {}, h.bar)
+    h.press('ArrowDown', {}, h.bar)
+    expect(h.picker.keyStart).toHaveBeenCalledWith(h.bar, 1, 0, false)
+    h.press('F2', {}, h.bar)
+    expect(h.picker.keyCommit).toHaveBeenCalled()
+    h.press('ArrowDown', {}, h.bar)
+    expect(h.picker.keyStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('Shift+F2, F2 outside a formula and F2 in a read-only bar do not switch', () => {
+    const h = withBar()
+    h.press('F2', { shiftKey: true }, h.bar)
+    h.press('ArrowDown', {}, h.bar)
+    h.bar.value = 'text'
+    // dispatchEvent returns false when the key was swallowed.
+    expect(h.press('F2', {}, h.bar)).toBe(true)
+    h.bar.value = '=SUM('
+    h.press('ArrowDown', {}, h.bar)
+    h.bar.readOnly = true
+    h.press('F2', {}, h.bar)
+    h.press('ArrowDown', {}, h.bar)
+    expect(h.picker.keyStart).not.toHaveBeenCalled()
+  })
+
+  it('a click in the bar or leaving it goes back to the caret', () => {
+    const h = withBar()
+    h.press('F2', {}, h.bar)
+    h.bar.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    h.press('ArrowDown', {}, h.bar)
+    h.press('F2', {}, h.bar)
+    h.bar.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    h.press('ArrowDown', {}, h.bar)
+    expect(h.picker.keyStart).not.toHaveBeenCalled()
+  })
+
+  it('a click in the bar mid-pick keeps the reference and ends the pick', () => {
+    const h = withBar()
+    h.press('F2', {}, h.bar)
+    h.press('ArrowDown', {}, h.bar)
+    h.bar.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(h.picker.keyCommit).toHaveBeenCalled()
+    h.press('ArrowDown', {}, h.bar)
+    expect(h.picker.keyMove).not.toHaveBeenCalled()
+  })
+
+  it('in pick mode an arrow starts a pick, the next moves it', () => {
+    const h = setup()
+    const bar = document.createElement('input')
+    bar.value = '=SUM('
+    document.body.appendChild(bar)
+    h.picker.target.mockReturnValue(bar)
+    h.press('F2', {}, bar)
     h.press('ArrowDown', {}, bar)
     expect(h.picker.keyStart).toHaveBeenCalledWith(bar, 1, 0, false)
     h.press('ArrowRight', { shiftKey: true }, bar)

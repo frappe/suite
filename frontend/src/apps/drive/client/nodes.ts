@@ -27,7 +27,9 @@ export async function createDocument(input: {
       ? 'Untitled spreadsheet'
       : input.content_doctype === 'Presentation'
         ? 'Untitled presentation'
-        : 'Untitled document'
+        : input.content_doctype === 'Drawing'
+          ? 'Untitled drawing'
+          : 'Untitled document'
   const create = (name: string, silent: boolean) =>
     client.mutation(
       api.drive.nodes.createDocument,

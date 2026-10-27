@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { buildOption } from './chart-data.js'
 
@@ -45,5 +45,50 @@ describe('buildOption — aggregation', () => {
     expect(agg({ options: { aggregate: 'min' } }).series[0].data).toEqual([10, 5])
     expect(agg({ options: { aggregate: 'max' } }).series[0].data).toEqual([20, 15])
     expect(agg({ options: { aggregate: 'count' } }).series[0].data).toEqual([2, 2])
+  })
+})
+
+// Charts read the cells' display strings. IronCalc shows a typed $1.50 or
+// 1,000 formatted, and Number() made those NaN, so the bars vanished.
+describe('buildOption — formatted numbers', () => {
+  it('plots and sums numbers shown as $1.50, 1,000 or 50%', () => {
+    const rows = [
+      ['Fruit', 'Price'],
+      ['Apple', '$1.50'],
+      ['Apple', '1,000'],
+      ['Banana', '50%'],
+    ]
+    const opt = buildOption(cfg({ options: { aggregate: 'sum' } }), rows)
+    expect(opt.series[0].data).toEqual([1001.5, 0.5])
+    expect(buildOption(cfg(), rows).series[0].data).toEqual([1.5, 1000, 0.5])
+  })
+})
+
+describe('buildOption — rendering', () => {
+  it('renders every chart kind without an ECharts console notice', async () => {
+    const { BarChart, LineChart, PieChart, ScatterChart } = await import('echarts/charts')
+    const { GridComponent, LegendComponent, TitleComponent, TooltipComponent } =
+      await import('echarts/components')
+    const { init, use } = await import('echarts/core')
+    const { SVGRenderer } = await import('echarts/renderers')
+    use([BarChart, LineChart, PieChart, ScatterChart, GridComponent, LegendComponent])
+    use([TitleComponent, TooltipComponent, SVGRenderer])
+
+    const rows = [
+      ['Month', 'Sales'],
+      ['Jan', 10],
+      ['Feb', 20],
+    ]
+    const notices = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const chartType of ['bar', 'line', 'area', 'scatter', 'pie']) {
+      const chart = init(null, null, { renderer: 'svg', ssr: true, width: 480, height: 320 })
+      chart.setOption(buildOption(cfg({ chartType }), rows))
+      chart.dispose()
+    }
+    expect(notices.mock.calls).toEqual([])
+    expect(warnings.mock.calls).toEqual([])
+    notices.mockRestore()
+    warnings.mockRestore()
   })
 })

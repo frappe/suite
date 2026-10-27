@@ -1,6 +1,4 @@
-import { type Locator, type Page } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 
 import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/drive";
 
@@ -17,6 +15,8 @@ async function box(locator: Locator) {
 }
 
 const rail = (page: Page) => page.getByRole("navigation", { name: "Areas" });
+// The Areas list sits inside the rail's padding, so edges are measured on the rail itself.
+const railFrame = (page: Page) => page.locator(".suite-rail");
 const sidebar = (page: Page) => page.locator("[data-area-sidebar]");
 const contentPane = (page: Page) => page.locator("[data-shell-content-pane]");
 
@@ -24,7 +24,7 @@ test("Home draws no sidebar, and an area switch keeps the rail in place", async 
 	await page.goto("/home");
 	await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
 	await expect(sidebar(page)).toHaveCount(0);
-	const homeRail = await box(rail(page));
+	const homeRail = await box(railFrame(page));
 	const homeContent = await box(contentPane(page));
 	// The content box starts at the rail's edge and takes the rest of the width.
 	expect(homeContent.x).toBeLessThanOrEqual(homeRail.x + homeRail.width + 1);
@@ -33,7 +33,7 @@ test("Home draws no sidebar, and an area switch keeps the rail in place", async 
 	await expect(page).toHaveURL(/\/drive$/);
 	await expect(sidebar(page)).toHaveAttribute("data-area-sidebar", "files");
 
-	expect(await box(rail(page))).toEqual(homeRail);
+	expect(await box(railFrame(page))).toEqual(homeRail);
 	const driveSidebar = await box(sidebar(page));
 	expect(driveSidebar.width).toBe(224);
 	expect((await box(contentPane(page))).x).toBeGreaterThanOrEqual(driveSidebar.x + driveSidebar.width);
@@ -42,7 +42,7 @@ test("Home draws no sidebar, and an area switch keeps the rail in place", async 
 test("the area sidebar is a named landmark beside the page header", async ({ page }) => {
 	await page.goto("/drive");
 	const landmark = page.getByRole("complementary", { name: "Drive" });
-	await expect(landmark.getByRole("navigation", { name: "File locations" })).toBeVisible();
+	await expect(landmark.getByRole("group", { name: "Locations" })).toBeVisible();
 	// The sidebar sits beside the header, not under it.
 	const sidebarBox = await box(landmark);
 	const paneBox = await box(contentPane(page));

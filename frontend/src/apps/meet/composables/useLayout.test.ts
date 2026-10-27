@@ -115,26 +115,53 @@ describe('participant promotion', () => {
     const { deps, visibleIds } = setupLayout()
     expect(visibleIds()).toEqual(['a', 'b'])
     deps.raisedHands.value = { b: '2026-10-01T10:00:02Z' }
-    expect(visibleIds()).toEqual(['a', 'b'])
+    expect(visibleIds()).toEqual(['b', 'a'])
     deps.raisedHands.value = { ...deps.raisedHands.value, e: '2026-10-01T10:00:03Z' }
-    expect(visibleIds()).toEqual(['e', 'b'])
+    expect(visibleIds()).toEqual(['b', 'e'])
     deps.raisedHands.value = { ...deps.raisedHands.value, d: '2026-10-01T10:00:01Z' }
     expect(visibleIds()).toEqual(['d', 'b'])
   })
 
-  it('uses different slots for successive promotions when incumbents have equal rank', () => {
-    const { deps, visibleIds } = setupLayout()
-    expect(visibleIds()).toEqual(['a', 'b'])
-    deps.activeSpeakerIds.value = ['d']
-    expect(visibleIds()).toEqual(['a', 'd'])
-    deps.activeSpeakerIds.value = ['e']
-    expect(visibleIds()).toEqual(['e', 'd'])
-    deps.activeSpeakerIds.value = ['c']
-    expect(visibleIds()).toEqual(['e', 'c'])
-    // Speaking again refreshes a retained tile before the next promotion.
-    deps.activeSpeakerIds.value = ['e']
-    expect(visibleIds()).toEqual(['e', 'c'])
-    deps.activeSpeakerIds.value = ['d']
-    expect(visibleIds()).toEqual(['e', 'd'])
+  it('projects the same shared order despite different inventory insertion and previous views', () => {
+    const first = setupLayout(),
+      second = setupLayout()
+    const ranking = ref(['d', 'c', 'b', 'a', 'e'])
+    const left = useLayout(
+      first.participants,
+      ref([]),
+      { ...first.deps, sharedStageParticipantIds: ranking },
+      ref(0),
+    )
+    const rightParticipants = ref(
+      Object.fromEntries(Object.entries(second.participants.value).reverse()),
+    )
+    const pins = ref<PinnedTile[]>([{ type: 'participant', id: 'e' }])
+    const right = useLayout(
+      rightParticipants,
+      pins,
+      { ...second.deps, sharedStageParticipantIds: ranking },
+      ref(0),
+    )
+    const ids = (layout: ReturnType<typeof useLayout>) =>
+      layout.displayParticipants.value.list.map((p) => p.user_id)
+    expect(ids(left)).toEqual(['d', 'c'])
+    expect(ids(right)).toContain('e')
+    pins.value = []
+    expect(ids(right)).toEqual(['d', 'c'])
+    ranking.value = ['b', 'd', 'c', 'a', 'e']
+    expect(ids(left)).toEqual(['b', 'd'])
+    expect(ids(right)).toEqual(['b', 'd'])
+    const larger = useLayout(
+      rightParticipants,
+      ref([]),
+      { ...second.deps, sharedStageParticipantIds: ranking },
+      ref(0),
+      { localTileCount: 0 },
+    )
+    expect(ids(larger)).toEqual(['b', 'd', 'c'])
+    // Self is removed from remote inventory before projection; it keeps its local tile.
+    delete rightParticipants.value.b
+    expect(ids(right)).toEqual(['d', 'c'])
+    expect(ids(right)).not.toContain('b')
   })
 })

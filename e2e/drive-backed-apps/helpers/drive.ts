@@ -11,7 +11,6 @@ import type {
 	NodeCreateCreateFolderInput,
 	NodeDeleteGrantOutput,
 	NodeGetOutput,
-	NodeGrantsOutput,
 	NodePatchMoveInput,
 	NodePatchRenameInput,
 	NodePatchRestoreInput,
@@ -167,12 +166,6 @@ export async function getNode(
 	return driveRequest<DriveNode>(request, "get", `nodes/${node}?expand=${expand}`);
 }
 
-/** Whether the caller may read `node`. */
-export async function canReadNode(request: APIRequestContext, node: string): Promise<boolean> {
-	const response = await request.get(`${DRIVE}/nodes/${node}`);
-	return response.ok();
-}
-
 /** The caller's role on `node`, `ROLE.NONE` when it is withheld. */
 export async function roleOn(request: APIRequestContext, node: string): Promise<number> {
 	const response = await request.get(`${DRIVE}/nodes/${node}?expand=access`);
@@ -204,17 +197,6 @@ export async function waitForChild(
 	return found as DriveNode;
 }
 
-/** Poll until no child titled `title` is listed in `parent`. */
-export async function expectChildAbsent(
-	request: APIRequestContext,
-	title: string,
-	parent?: string,
-): Promise<void> {
-	await expect
-		.poll(async () => (await children(request, parent)).some((row) => row.title === title))
-		.toBe(false);
-}
-
 export async function moveNode(request: APIRequestContext, node: string, parent: string): Promise<void> {
 	const body: Body<NodePatchMoveInput, "node"> = { parent_node: parent };
 	await driveRequest(request, "patch", `nodes/${node}`, body);
@@ -231,7 +213,7 @@ export async function restoreNode(request: APIRequestContext, node: string): Pro
 }
 
 /** Permanent removal of a trashed node (§8.8). */
-export async function purgeNode(request: APIRequestContext, node: string): Promise<number> {
+async function purgeNode(request: APIRequestContext, node: string): Promise<number> {
 	const answer = await driveRequest<NodePurgeOutput>(request, "delete", `nodes/${node}`);
 	return answer.count;
 }
@@ -299,15 +281,6 @@ export async function revokeAccess(
 		`nodes/${node}/grants/${encodeURIComponent(principal)}`,
 	);
 	return answer.count;
-}
-
-/** The local grants on `node`, as the share dialog lists them. */
-export async function listGrants(
-	request: APIRequestContext,
-	node: string,
-): Promise<NodeGrantsOutput["grants"]> {
-	const answer = await driveRequest<NodeGrantsOutput>(request, "get", `nodes/${node}/grants`);
-	return answer.grants;
 }
 
 /** Publish `node` for reading (`$PUBLIC` caps at Read, §5.9). */

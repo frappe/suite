@@ -1123,6 +1123,7 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       meetingId: 'meeting-1',
       currentUser: { user_id: 'me' },
     })
+    await manager.setVisibleRemoteVideoParticipants(['remote-1'])
     const video = mediaTrack('video', 'video')
     manager.mediaHandler.setProducers({
       videoProducer: { id: 'old-video', close: vi.fn() } as never,

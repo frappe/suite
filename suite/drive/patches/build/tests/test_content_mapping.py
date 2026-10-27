@@ -106,12 +106,18 @@ class ContentMappingTest(unittest.TestCase):
         # pass here and shift every migrated comment on a differently
         # configured runner.
         host = datetime.now().astimezone().utcoffset()
-        for timezone, expected in (
-            ("UTC", "1970-01-01 00:00:00.000000"),
-            ("America/New_York", "1969-12-31 19:00:00.000000"),
-        ):
+        zones = [
+            (timezone, expected)
+            for timezone, expected in (
+                ("UTC", "1970-01-01 00:00:00.000000"),
+                ("America/New_York", "1969-12-31 19:00:00.000000"),
+                ("Asia/Kolkata", "1970-01-01 05:30:00.000000"),
+            )
+            if ZoneInfo(timezone).utcoffset(datetime(1970, 1, 1)) != host
+        ]
+        self.assertGreaterEqual(len(zones), 2)
+        for timezone, expected in zones:
             with self.subTest(timezone=timezone):
-                self.assertNotEqual(host, ZoneInfo(timezone).utcoffset(datetime(1970, 1, 1)))
                 self.assertEqual(epoch_millis(0, timezone), expected)
         with self.assertRaises(InvalidLegacyContent):
             epoch_millis(True, "UTC")

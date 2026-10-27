@@ -14,6 +14,24 @@
   <AppSettingsBody>
     <template v-if="draft">
       <div class="flex flex-col gap-5">
+        <template v-if="hasProvider && regionalDraft">
+          <SettingsRow :title="__('Locale')">
+            <Combobox
+              v-model="regionalDraft.locale"
+              trigger="button"
+              align="end"
+              :options="regional.data?.locales ?? []"
+            />
+          </SettingsRow>
+          <SettingsRow :title="__('Time zone')">
+            <Combobox
+              v-model="regionalDraft.time_zone"
+              trigger="button"
+              align="end"
+              :options="regional.data?.time_zones ?? []"
+            />
+          </SettingsRow>
+        </template>
         <h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
         <SettingsRow
           class="!py-0"
@@ -86,7 +104,11 @@
         <h2 class="text-base-semibold text-ink-gray-8">{{ __('Storage') }}</h2>
         <StorageMeter :used-percentage :label :limited="isLimited" />
 
-        <ErrorMessage :message="savePreferences.error?.message" />
+        <ErrorMessage
+          :message="
+            saveRegional.error?.message || regional.error?.message || savePreferences.error?.message
+          "
+        />
       </div>
     </template>
   </AppSettingsBody>
@@ -121,6 +143,23 @@ const preferences = useQuery(api.mail.settings.account, () =>
         account: store.accountId,
       }
     : false,
+)
+const hasProvider = computed(() => !!store.userResource.data?.is_suite_cloud_configured)
+const regional = useQuery(api.mail.settings.regional, () => (hasProvider.value ? {} : false))
+const regionalDraft = ref<{ locale: string; time_zone: string }>()
+watch(
+  () => regional.data,
+  (data) => {
+    regionalDraft.value = data ? { locale: data.locale, time_zone: data.time_zone } : undefined
+  },
+  { immediate: true },
+)
+const saveRegional = useMutation(api.mail.settings.updateRegional)
+const regionalDirty = computed(
+  () =>
+    !!regionalDraft.value &&
+    (regionalDraft.value.locale !== regional.data?.locale ||
+      regionalDraft.value.time_zone !== regional.data?.time_zone),
 )
 const draft = ref<OutputOf<typeof api.mail.settings.account>>()
 watch(
@@ -170,11 +209,13 @@ const ON_BLOCK_OLD_MAIL_OPTIONS = [
 const accountDirty = computed(
   () => JSON.stringify(draft.value) !== JSON.stringify(preferences.data),
 )
-const isDirty = computed(() => accountDirty.value)
+const isDirty = computed(() => accountDirty.value || regionalDirty.value)
 const loading = computed(() => preferences.isFetching)
-const saving = computed(() => savePreferences.isPending)
+const saving = computed(() => savePreferences.isPending || saveRegional.isPending)
 const save = async () => {
   if (!draft.value) return
+  if (hasProvider.value && regionalDirty.value && regionalDraft.value)
+    await saveRegional.run({ ...regionalDraft.value })
   await savePreferences.run({
     account: store.accountId,
     changes: {

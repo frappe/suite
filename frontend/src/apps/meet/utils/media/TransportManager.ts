@@ -535,7 +535,6 @@ export class TransportManager {
     const e2eeWanted = this.e2eePolicy.transformsEnabled
 
     let consumer: Consumer | null = null
-    let firstError: unknown = null
     try {
       const consumeArgs: ConsumerOptions = {
         id: rawConsumerParams.id,
@@ -554,11 +553,18 @@ export class TransportManager {
       }
       consumer = await recvTransport.consume(consumeArgs)
     } catch (err) {
-      firstError = err
+      await client.closeConsumer(rawConsumerParams.id).catch((error: unknown) => {
+        console.warn('Failed to dispose server consumer after consume failure:', error)
+      })
       throw err
     }
 
-    if (!consumer && firstError) throw firstError
+    if (this.recvTransport !== recvTransport || recvTransport.closed) {
+      consumer?.close()
+      await client.closeConsumer(rawConsumerParams.id)
+      throw new DOMException('Receive transport was replaced', 'AbortError')
+    }
+
     if (isScreen && consumer)
       console.info('Screen share consumer created', {
         consumerId: consumer.id,

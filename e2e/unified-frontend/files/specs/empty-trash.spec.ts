@@ -1,4 +1,4 @@
-import { expect, test } from "../../helpers/flips";
+import { expect, test } from "@playwright/test";
 
 import { DRIVE, adminApi, createFolder, patchNode, roots, runTag, uploadFile } from "../../helpers/drive";
 
@@ -27,7 +27,7 @@ test("Empty trash deletes everything in the root's Trash", async ({ page, baseUR
 		await expect(confirm.getByText("Delete everything in Trash forever?")).toBeVisible();
 		await confirm.getByRole("button", { name: "Empty trash" }).click();
 
-		await expect(page.getByText(/items? deleted forever/)).toBeVisible();
+		await expect(page.getByText(/^Deleted \d+ items? forever$/)).toBeVisible();
 		await expect(page.getByText("Trash is empty")).toBeVisible();
 		await expect(page.getByRole("button", { name: "Empty trash" })).toBeDisabled();
 		for (const node of [folder.name, file.name]) {

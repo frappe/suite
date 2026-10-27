@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { documentTypes, findDocumentType } from './documentRegistry'
 
 describe('document registry', () => {
-  it('keeps Writer, Sheets and Slides in product order', () => {
+  it('keeps Writer, Sheets, Slides and Draw in product order', () => {
     expect(documentTypes.map((definition) => definition.contentDoctype)).toEqual([
       'Writer Document',
       'Sheet',
       'Presentation',
+      'Drawing',
     ])
   })
 

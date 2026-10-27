@@ -3109,7 +3109,7 @@ page (§11.4).
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent_node` | `{parent_node, title?}` | node shape | 403, 409, 413 |
 | POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
 | GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
-| GET | `/nodes/<id>/archive/download` | READ on folder | none | streamed ZIP when ready | none |
+| GET | `/nodes/<id>/archive/download` | READ on folder and every archived node | none | streamed ZIP when ready | none |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
 | POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
@@ -3150,7 +3150,11 @@ Folder archives build synchronously. The server caps total uncompressed file
 and document bytes at 512 MiB, spools the ZIP, and stores it as a private blob
 for one hour. The build checks READ on the folder and on every included active
 node before writing bytes. One unreadable descendant refuses the whole build.
-The download route streams the ready blob through the active storage driver.
+The download route rechecks READ on every node recorded in the build before
+streaming the ready blob through the active storage driver. It checks those
+original members even if they have moved out of the folder. A missing,
+trashed, or unreadable member refuses the download; rebuild the archive to
+update its contents. Cached builds without a member list must be rebuilt.
 The legacy `_build_zip` helper is coupled to legacy `File` rows and
 `FileManager.iter_blocks()`. The workflow does not import that layer. It keeps
 the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.

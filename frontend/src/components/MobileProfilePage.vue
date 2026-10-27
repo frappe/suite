@@ -31,10 +31,12 @@
         <ChevronRight class="text-ink-gray-4 size-4 shrink-0" />
       </button>
 
-      <!-- Accounts: tap to switch, as the sidebar's account submenu does on desktop. -->
+      <!-- Accounts: tap to switch, as the sidebar's account submenu does on desktop, in its
+			     order: the reader's own account first, the rest as they come, then every account at
+			     once where the app offers it. -->
       <MobileSettingsCard v-if="accounts.length > 1 || alwaysShowAccounts" :label="__('Accounts')">
         <MobileSettingsRow
-          v-for="account in accounts"
+          v-for="account in orderedAccounts"
           :key="account.id"
           :label="account._name"
           :chevron="false"
@@ -44,7 +46,27 @@
             <Avatar :label="account._name" size="md" />
           </template>
           <template #trailing>
-            <Check v-if="account.id === accountId" class="text-ink-gray-6 size-4 shrink-0" />
+            <Check
+              v-if="!allAccounts?.active && account.id === accountId"
+              class="text-ink-gray-6 size-4 shrink-0"
+            />
+          </template>
+        </MobileSettingsRow>
+        <MobileSettingsRow
+          v-if="allAccounts && accounts.length > 1"
+          :label="__('All accounts')"
+          :chevron="false"
+          @click="emit('switchToAll')"
+        >
+          <template #leading>
+            <span
+              class="bg-surface-gray-2 text-ink-gray-6 flex size-6 shrink-0 items-center justify-center rounded-full"
+            >
+              <span class="lucide-users size-3.5" aria-hidden="true" />
+            </span>
+          </template>
+          <template #trailing>
+            <Check v-if="allAccounts.active" class="text-ink-gray-6 size-4 shrink-0" />
           </template>
         </MobileSettingsRow>
       </MobileSettingsCard>
@@ -52,12 +74,31 @@
       <!-- The Suite settings list, as the Settings drill-in shows it. A row opens
 			     its tab in Settings. -->
       <SettingsList
-        :groups="settings.groups.value"
+        :groups="ownGroups"
         :failed="settings.failed.value"
         :retry="settings.load"
         :exclude="['account.profile']"
         @open="(tab) => openSettings(tab.id as SettingsTabId)"
       />
+
+      <!-- This device's notifications. -->
+      <MobileSettingsCard v-if="push.available.value">
+        <MobileSettingsRow
+          :icon="Bell"
+          :label="__('Notifications on this device')"
+          :chevron="false"
+          @click="toggleNotifications"
+        >
+          <template #trailing>
+            <Switch
+              :model-value="push.enabled.value"
+              :disabled="switching"
+              @click.stop
+              @update:model-value="toggleNotifications"
+            />
+          </template>
+        </MobileSettingsRow>
+      </MobileSettingsCard>
 
       <!-- Its own card: the destructive row is kept apart from the rest. -->
       <MobileSettingsCard>
@@ -87,26 +128,47 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Dialog } from 'frappe-ui'
-import { Check, ChevronRight, LogOut } from 'lucide-vue-next'
+import { Avatar, Dialog, Switch } from 'frappe-ui'
+import { Bell, Check, ChevronRight, LogOut } from 'lucide-vue-next'
 import { computed, inject, onMounted, ref } from 'vue'
 
 // The two shells are mail's: a settings card and its rows. They carry no mail in them.
 import MobileSettingsCard from '@/apps/mail/components/mobile/MobileSettingsCard.vue'
 import MobileSettingsRow from '@/apps/mail/components/mobile/MobileSettingsRow.vue'
+import { toast } from '@/platform/feedback'
+import { useDevicePush } from '@/platform/pwa'
 import type { SettingsTabId } from '@/shell/settings/settings'
 import SettingsList from '@/shell/settings/SettingsList.vue'
 import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDialog'
 
-defineProps<{
+const props = defineProps<{
   accounts: any[]
   accountId?: string
   /** Mail lists the one account too; the calendar only lists a choice. */
   alwaysShowAccounts?: boolean
+  /** Offers every account at once above the accounts, and whether that is what is showing. */
+  allAccounts?: { active: boolean }
   logout: { submit: () => void }
+  /**
+   * The app this page is the Profile of. Its settings are listed with the account's and the
+   * workspace's, not every app's: on a phone each app is one of its own (ticket 047).
+   */
+  app?: string
 }>()
 
-const emit = defineEmits<{ switchAccount: [accountId: string] }>()
+const emit = defineEmits<{ switchAccount: [accountId: string]; switchToAll: [] }>()
+
+const orderedAccounts = computed(() =>
+  [...props.accounts].sort((a, b) => Number(!!b.is_personal) - Number(!!a.is_personal)),
+)
+
+// A group's tabs share its app's prefix (`mail.screener`, `account.profile`).
+const ownGroups = computed(() => {
+  const groups = settings.groups.value
+  if (!groups || !props.app) return groups
+  const kept = ['account', 'workspace', props.app]
+  return groups.filter((group) => kept.includes(group.tabs[0]?.id.split('.')[0] ?? ''))
+})
 
 const user = inject('$user') as { data?: Record<string, any> } | undefined
 
@@ -115,6 +177,22 @@ const settings = useSettingsGroups()
 onMounted(() => void settings.load())
 
 const showLogoutConfirm = ref(false)
+
+const push = useDevicePush()
+const switching = ref(false)
+const toggleNotifications = async () => {
+  if (switching.value) return
+  switching.value = true
+  try {
+    if (push.enabled.value) await push.disable()
+    else if (!(await push.enable()))
+      toast.error(__('Notifications are blocked for this site in the browser settings.'))
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error))
+  } finally {
+    switching.value = false
+  }
+}
 
 const fullName = computed(() => user?.data?.full_name ?? '')
 // The login id, not the active account: the card is who you are signed in as, and the

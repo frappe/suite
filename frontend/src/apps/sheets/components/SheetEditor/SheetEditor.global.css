@@ -25,21 +25,17 @@ body:has(.sn-slicer) .menu-content.menu-content {
 }
 
 /* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
-   The filter-range outline, pivot-output highlight, floating charts, and
-   other canvas overlays sit above canvas content. Hide/suppress those
-   decorations whenever a dialog is up. `.dialog-overlay` portals to
-   <body>, so `:has` from body catches every open dialog modal. */
+   The filter-range outline, pivot-output highlight and other canvas
+   decorations sit above canvas content. Hide those whenever a dialog is up.
+   `.dialog-overlay` portals to <body>, so `:has` from body catches every
+   open dialog modal. Floating charts stay: they are content, and the
+   scrim (z-50) already sits above their layer (z-25). */
 body:has(.dialog-overlay) .sn-filter-range,
 body:has(.dialog-overlay) .sn-pivot-highlight,
 body:has(.dialog-overlay) .sn-pivot-fab,
 body:has(.dialog-overlay) .sn-remote-cursor,
 body:has(.dialog-overlay) .sn-filter-overlay {
   display: none;
-}
-
-body:has(.dialog-overlay) .co-layer {
-  visibility: hidden !important;
-  pointer-events: none !important;
 }
 
 /* Overlay scrollbars for the canvas grid. The elements are created imperatively

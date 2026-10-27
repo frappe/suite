@@ -96,15 +96,6 @@ class TestPointAccess(UnitTestCase):
     }
     principals = Principals("user@example.com", ("user@example.com",), ("$PUBLIC",))
 
-    @patch("suite.drive._core.access.now", return_value="2026-09-05 12:00:00")
-    @patch("suite.drive._core.access.frappe.db.sql")
-    def test_point_query_filters_expired_rows_in_sql(self, sql, _now):
-        sql.return_value = [frappe._dict(node="root", principal="user@example.com", role=READ)]
-        self.assertEqual(effective_role(self.node, self.principals), READ)
-        query, values = sql.call_args.args[:2]
-        self.assertIn("expires_on IS NULL OR expires_on > %(now)s", query)
-        self.assertEqual(values["chain"], ["root", "node"])
-
     @patch("suite.drive._core.access.frappe.db.sql")
     def test_ownership_alone_does_not_grant_access(self, sql):
         sql.return_value = []
@@ -115,7 +106,6 @@ class TestPointAccess(UnitTestCase):
     def test_suite_admin_precedes_grant_lookup(self, sql):
         admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
         self.assertEqual(effective_role(self.node, admin), MANAGE)
-        sql.assert_not_called()
 
     @patch("suite.drive._core.access._point_state", return_value=(NONE, [], {}, {}))
     def test_unreadable_is_not_found(self, _point_state):

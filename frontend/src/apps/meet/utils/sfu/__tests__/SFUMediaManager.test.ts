@@ -231,7 +231,7 @@ describe('SFUMediaManager.subscribeToRemoteProducer', () => {
     })
 
     await rejected
-    expect(consumerManager.removeConsumer).toHaveBeenCalledWith('stale-c1')
+    expect(consumerManager.addConsumer).not.toHaveBeenCalled()
   })
 
   it('discards a subscription that finishes after receive teardown', async () => {

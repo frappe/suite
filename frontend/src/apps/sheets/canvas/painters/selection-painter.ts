@@ -18,7 +18,8 @@ export interface SelectionPainter {
     getMergeInfo: CellProvider['getMergeInfo'],
   ): void
   drawMarchingAnts(rect: CellBlock, phase: number): void
-  drawPickerRect(rect: CellBlock): void
+  drawPickerFill(rect: CellBlock): void
+  drawPickerBorder(rect: CellBlock): void
 }
 
 export function createSelectionPainter(
@@ -109,14 +110,24 @@ export function createSelectionPainter(
     ctx.restore()
   }
 
-  function drawPickerRect({ r0, c0, r1, c1 }: CellBlock): void {
+  // The formula range highlight comes in two passes, like the selection: the
+  // fill is a solid theme grey, so it goes under the cells or it hides the
+  // values it frames (ISSUES #83); the dashed border goes on top.
+  function drawPickerFill({ r0, c0, r1, c1 }: CellBlock): void {
+    const x = colX(c0),
+      y = rowY(r0)
+    const w = colX(c1) + cw(c1) - x
+    const h = rowY(r1) + rh(r1) - y
+    ctx.fillStyle = COLORS.pickerFill
+    ctx.fillRect(x, y, w, h)
+  }
+
+  function drawPickerBorder({ r0, c0, r1, c1 }: CellBlock): void {
     const x = colX(c0),
       y = rowY(r0)
     const w = colX(c1) + cw(c1) - x
     const h = rowY(r1) + rh(r1) - y
     ctx.save()
-    ctx.fillStyle = COLORS.pickerFill
-    ctx.fillRect(x, y, w, h)
     ctx.strokeStyle = COLORS.pickerBorder
     ctx.lineWidth = 1.5
     ctx.setLineDash([6, 4])
@@ -124,5 +135,5 @@ export function createSelectionPainter(
     ctx.restore()
   }
 
-  return { drawSelFill, drawSelectionBorder, drawMarchingAnts, drawPickerRect }
+  return { drawSelFill, drawSelectionBorder, drawMarchingAnts, drawPickerFill, drawPickerBorder }
 }

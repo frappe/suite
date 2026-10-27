@@ -17,6 +17,7 @@ on:
       - "pnpm-workspace.yaml"
       - "knip.json"
       - "pyproject.toml"
+      - ".coveragerc"
       - ".github/scripts/**"
       - ".github/workflows/suite-linter.yml"
   workflow_dispatch:
@@ -70,8 +71,8 @@ jobs:
             ${{ runner.os }}-pip-
             ${{ runner.os }}-
 
-      - name: Install Ruff
-        run: pip install ruff==0.12.3
+      - name: Install Python check tools
+        run: pip install ruff==0.12.3 "coverage~=7.14.1"
 
       - name: Test CI scripts
         run: python -m unittest discover .github/scripts -p 'test_*.py'
@@ -126,10 +127,6 @@ jobs:
       - name: Check SFU dead code
         continue-on-error: true
         run: pnpm knip:sfu-server
-
-      - name: Check Sheets collaboration dead code
-        continue-on-error: true
-        run: pnpm knip:sheets-collab
 
       - name: Audit production dependencies
         continue-on-error: true

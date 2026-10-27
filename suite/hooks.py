@@ -143,12 +143,14 @@ drive_content_types = [
     "suite.writer.drive.SPEC",
     "suite.slides.drive.SPEC",
     "suite.sheets.drive.SPEC",
+    "suite.draw.drive.SPEC",
 ]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
+    "Drawing": "suite.drive.framework.doc_query_conditions",
     # slides — governed by Drive (§10.4). `Slide` is the deck's satellite and
     # takes its rights from the deck's node.
     "Presentation": "suite.drive.framework.doc_query_conditions",
@@ -175,6 +177,7 @@ permission_query_conditions = {
 # Permissions — has_permission (deep-merged union; no key clashes)
 # ============================================================================
 has_permission = {
+    "Drawing": "suite.drive.framework.doc_has_permission",
     # slides — governed by Drive (§10.4).
     "Presentation": "suite.drive.framework.doc_has_permission",
     "Slide": "suite.drive.framework.satellite_has_permission",
@@ -240,12 +243,14 @@ doc_events = {
         "validate": ["suite.drive.framework.refuse_governed_share"],
     },
     "User": {
+        "before_save": ["suite.composition.users.before_save"],
         # Roles are assigned before insert so they are present when Frappe's
         # User.validate runs — assigning them after insert triggers a spurious
         # "No Roles Specified" warning.
         "before_insert": [
             "suite.utils.user.assign_suite_role",
         ],
+        "before_validate": ["suite.mail.events.keep_new_password"],
         "after_insert": [
             "suite.composition.users.after_insert",
         ],
@@ -257,25 +262,42 @@ doc_events = {
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
+            "suite.mail.email_suggestions.clear_directory_addresses",
         ],
         "on_trash": [
             "suite.composition.users.on_trash",
+            "suite.mail.email_suggestions.clear_directory_addresses",
         ],
+        "after_rename": ["suite.mail.email_suggestions.clear_directory_addresses"],
+    },
+    # Recipient suggestions list every account by its address; inserts fire on_update too.
+    "JMAP Account": {
+        "on_update": ["suite.mail.email_suggestions.clear_directory_addresses"],
+        "on_trash": ["suite.mail.email_suggestions.clear_directory_addresses"],
     },
 }
 
 user_invitation = {
     "allowed_roles": {
+        "Suite Admin": ["Suite User"],
         "System Manager": ["Suite User"],
     },
 }
+
+# Suite Core owns notification routing; Mail provides configured Suite Cloud delivery.
+suite_email_provider = "suite.mail"
 
 # Suite's onboarding replaces the built-in desk setup wizard
 setup_wizard_url = "/suite/setup"
 
 # Heal the user's JMAP push subscription on login (enqueued; a lost subscription silently
 # ends webhooks — realtime events and mailbox-count invalidation both ride on them)
-on_login = ["suite.mail.doctype.push_subscription.push_subscription.on_login"]
+on_login = [
+    "suite.composition.access.on_login",
+    "suite.mail.doctype.push_subscription.push_subscription.on_login",
+]
+auth_hooks = ["suite.composition.access.authenticated_request"]
+before_login = ["suite.composition.access.before_login"]
 
 # ============================================================================
 # Scheduled Tasks (per-frequency lists combined; cron keys de-duplicated)
@@ -300,6 +322,7 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
     "hourly": [
+        "suite.composition.admin_jobs.refresh_storage",
         # drive
         "suite.drive.webdav.locks.purge_expired_locks",
         # mail
@@ -327,7 +350,6 @@ before_install = "suite.composition.lifecycle.before_install"
 after_install = "suite.composition.lifecycle.after_install"
 after_migrate = "suite.composition.lifecycle.after_migrate"
 after_app_install = "suite.composition.lifecycle.after_app_install"
-extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — lets the listed sites frame Drive pages and API answers
 after_request = [

@@ -17,12 +17,17 @@ import hmac
 import secrets
 
 import frappe
-from frappe.auth import MAX_PASSWORD_SIZE, LoginAttemptTracker
+from frappe.auth import LoginAttemptTracker
 from frappe.utils import cint
 from frappe.utils.password import check_password, get_decrypted_password, passlibctx
 from werkzeug.wrappers import Request
 
 from suite.drive.webdav.errors import AuthRequired, Forbidden
+
+try:
+    from frappe.utils.password import MAX_PASSWORD_SIZE
+except ImportError:  # Frappe before frappe/frappe#44376
+    from frappe.auth import MAX_PASSWORD_SIZE
 
 REALM = "Frappe Drive"
 CRED_CACHE_TTL = 600
@@ -65,6 +70,10 @@ def authenticate(request: Request) -> str:
 
     if frappe.get_system_settings("disable_user_pass_login"):
         raise Forbidden("Password login is disabled on this site, so WebDAV is unavailable.")
+
+    from suite import mail
+
+    user = mail.resolve_business_user(user) or user
 
     canonical = _verify_cached(user, password)
     verified_now = False

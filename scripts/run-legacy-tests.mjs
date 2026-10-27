@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -8,24 +7,39 @@ import { fileURLToPath } from 'node:url'
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const frontendRoot = path.join(appRoot, 'frontend')
 const manifestPath = path.join(frontendRoot, 'test-manifest', 'legacy-failures.json')
-const reportPath = path.join(os.tmpdir(), `suite-legacy-vitest-${process.pid}.json`)
+const reportPath = path.join(frontendRoot, 'test-results', 'legacy-vitest.json')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+fs.mkdirSync(path.dirname(reportPath), { recursive: true })
+fs.rmSync(reportPath, { force: true })
 
 const result = spawnSync(
   'pnpm',
-  ['exec', 'vitest', 'run', '--project', 'legacy', '--reporter=json', `--outputFile=${reportPath}`],
-  { cwd: appRoot, encoding: 'utf8' },
+  [
+    'exec',
+    'vitest',
+    'run',
+    '--project',
+    'legacy',
+    '--reporter=default',
+    '--reporter=json',
+    `--outputFile.json=${reportPath}`,
+    // CI adds the unified project here so both projects share one coverage
+    // run; sequential coverage runs would overwrite each other's totals.
+    ...process.argv.slice(2),
+  ],
+  // Stream diagnostics: JSON omits runtime errors, and buffering the full
+  // suite's output can exhaust spawnSync's default output limit.
+  { cwd: appRoot, stdio: 'inherit' },
 )
 
-if (result.stdout) process.stdout.write(result.stdout)
-if (result.stderr) process.stderr.write(result.stderr)
+if (result.error) console.error(result.error)
+if (result.signal) console.error(`Legacy Vitest terminated with signal ${result.signal}.`)
 if (!fs.existsSync(reportPath)) {
   console.error('Legacy Vitest did not produce its JSON report.')
   process.exit(result.status || 1)
 }
 
 const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'))
-fs.rmSync(reportPath, { force: true })
 
 function relativeFile(filename) {
   return path.relative(frontendRoot, filename).split(path.sep).join('/')

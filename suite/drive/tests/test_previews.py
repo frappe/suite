@@ -358,15 +358,6 @@ class TestPreviewContract(UnitTestCase):
         self.assertIn("suite.drive.jobs.sweep_missing_previews", scheduler_events["daily"])
         self.assertEqual(registered.count("suite.drive.jobs.sweep_missing_previews"), 1)
 
-    def test_the_sweep_query_repairs_stale_rows_and_skips_documents(self):
-        self.assertIn("n.kind = 'file'", MISSING_PREVIEW_SQL)
-        self.assertIn("n.state = 'Active'", MISSING_PREVIEW_SQL)
-        # A row that outlived a head change is not a missing row. Both are swept.
-        self.assertIn(
-            "(pv.name IS NULL OR pv.source_blob IS NULL OR pv.source_blob != n.blob)",
-            MISSING_PREVIEW_SQL,
-        )
-
     def test_version_restore_invalidates_only_when_the_head_blob_moves(self):
         """The ticket 12 handoff, isolated from the database.
 

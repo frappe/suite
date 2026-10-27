@@ -1,4 +1,4 @@
-import { expect, test } from "../../helpers/flips";
+import { expect, test } from "@playwright/test";
 
 test("the rail's Settings opens and closes settings in the unified shell", async ({ page }) => {
 	await page.goto("/drive");

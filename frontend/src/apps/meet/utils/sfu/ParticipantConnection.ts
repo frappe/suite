@@ -1,5 +1,7 @@
 /** Owns one browser endpoint's SFU lifecycle from setup through cleanup. */
 
+import { randomId } from '@/platform/random-id'
+
 import type { User } from '../../composables/useCurrentUser'
 import { isUnknownRecord, type JoinRoomMediaState, type JoinUserData } from '../../types'
 import type { ConsumerEntry } from '../media/ConsumerManager'
@@ -14,6 +16,7 @@ import {
 import type { TransportIceRestartResult, TransportManager } from '../media/TransportManager'
 import type { VideoElementManager } from '../media/VideoElementManager'
 import type { ConnectionDetails, SFUClient, SFUExistingProducer } from '../SFUClient'
+import { parseSharedStage, type SharedStageState } from '../sharedStage'
 import { ExpectedMediaReconciler } from './ExpectedMediaReconciler'
 import {
   applyMeetingReconciliationEvent,
@@ -113,6 +116,7 @@ export interface SFUEventHandlers {
   ) => void
   onScreenShareStarted?: (data: ScreenShareEvent) => void
   onScreenShareStopped?: (data: ScreenShareEvent) => void
+  onSharedStageChanged?: (state: SharedStageState, snapshot?: boolean) => void
   onActiveSpeakerChanged?: (participantIds: string[]) => void
   onNetworkQualityUpdated?: (participantId: string, quality: string) => void
   onHostMutedYou?: () => void
@@ -188,7 +192,8 @@ export class ParticipantConnection {
   >()
   private reconciliation: MeetingReconciliationState<ReconciledParticipant> =
     createMeetingReconciliationState()
-  private producerClaims = new Set<string>()
+  private producerClaims = new Map<string, Promise<void>>()
+  private visibleCameraParticipantIds = new Set<string>()
   eventHandlers: SFUEventHandlers = {}
   private lastJoinUserData: JoinUserData | null = null
   private lastJoinMediaState: JoinRoomMediaState = {
@@ -203,7 +208,7 @@ export class ParticipantConnection {
   private e2eeReadyForLifecycle = false
   private lastAuthToken: string | null = null
   private activeEscalation: Promise<boolean> | null = null
-  private readonly connectionId = crypto.randomUUID()
+  private readonly connectionId = randomId()
   private localProducerBytes = new Map<string, number>()
   private _state: ParticipantConnectionState = 'stopped'
   private static readonly INITIAL_RETRY_DELAY_MS = 1000
@@ -218,6 +223,10 @@ export class ParticipantConnection {
     this.mediaManager = options.mediaManager
     this.recoveryManager = options.recoveryManager
     this.expectedMedia = options.expectedMedia ?? new ExpectedMediaReconciler()
+    this.mediaManager.setRemoteSubscriptionPolicy?.((info) => {
+      const producer = this.reconciliation.producers.get(info.producerId)
+      return !!producer && this.shouldSubscribeToProducer(producer)
+    })
     this.participantRecovery = new ParticipantConnectionRecovery({
       rebuild: (trigger, attempt, signal) =>
         this.serializeLifecycle(() =>
@@ -230,6 +239,28 @@ export class ParticipantConnection {
 
   get state(): ParticipantConnectionState {
     return this._state
+  }
+
+  setVisibleCameraParticipants(participantIds: Iterable<string>): Promise<void> {
+    this.visibleCameraParticipantIds = new Set(participantIds)
+    if (this.lifecycleAbortController.signal.aborted) return Promise.resolve()
+    return Promise.all(
+      Array.from(this.reconciliation.producers.values())
+        .filter((producer) => producer.kind === 'video' && !producer.isScreen)
+        .map((producer) =>
+          this.shouldSubscribeToProducer(producer)
+            ? this.subscribeToReconciledProducer(producer)
+            : this.mediaManager.unsubscribeFromRemoteProducer(producer),
+        ),
+    ).then(() => undefined)
+  }
+
+  private shouldSubscribeToProducer(producer: SFUProducerEvent): boolean {
+    return (
+      producer.isScreen ||
+      producer.kind === 'audio' ||
+      this.visibleCameraParticipantIds.has(producer.participantId)
+    )
   }
 
   start(options: ParticipantConnectionStartOptions): Promise<ParticipantConnectionState> {
@@ -476,6 +507,10 @@ export class ParticipantConnection {
     conflictId?: string,
   ): Promise<boolean> {
     const generation = this.lifecycleGeneration
+    const wasBuffering = this.initialSyncInProgress
+    // Rejoin removes the server's old transports. Buffer producer events until
+    // the replacement media side is ready and setupExistingParticipants syncs it.
+    this.initialSyncInProgress = true
     try {
       await this.sfuClient.joinRoom(this.meetingId ?? '', userData, mediaState, {
         connectionId: this.connectionId,
@@ -490,6 +525,18 @@ export class ParticipantConnection {
       console.log('Successfully joined room:', this.meetingId)
       return true
     } catch (error) {
+      if (generation === this.lifecycleGeneration) {
+        this.initialSyncInProgress = wasBuffering
+        if (!wasBuffering) {
+          for (const event of this.bufferedReconciliationEvents.splice(0)) {
+            this.applyReconciliationEvent(event)
+          }
+          this.flushBufferedMediaStateUpdates()
+          await this.flushBufferedProducers().catch((flushError) => {
+            console.warn('Failed to resume subscriptions after rejected rejoin:', flushError)
+          })
+        }
+      }
       console.error('Failed to join room:', error)
       throw error
     }
@@ -600,6 +647,8 @@ export class ParticipantConnection {
             producerId: producer.id,
             participantId: producer.participantId,
             isScreen: producer.isScreen === true,
+            kind:
+              producer.kind === 'audio' || producer.kind === 'video' ? producer.kind : undefined,
           })),
         },
         [],
@@ -995,6 +1044,7 @@ export class ParticipantConnection {
   }
 
   private isRemoteProducerDesired(producer: SFUProducerEvent): boolean {
+    if (!this.shouldSubscribeToProducer(producer)) return false
     const consumer = this.mediaManager.consumerManager
       .getConsumersByParticipant(producer.participantId)
       .find(
@@ -1024,31 +1074,49 @@ export class ParticipantConnection {
     signal.throwIfAborted()
     if (
       this.reconciliation.producers.get(event.producerId) !== event ||
-      this.producerClaims.has(event.producerId) ||
-      this.hasConsumerForProducer(event.participantId, event.producerId) ||
+      !this.shouldSubscribeToProducer(event) ||
       !this.transportManager?.isDeviceLoaded?.()
     )
       return
 
-    this.producerClaims.add(event.producerId)
+    const claimed = this.producerClaims.get(event.producerId)
+    if (claimed) {
+      await claimed.catch(() => undefined)
+      return this.subscribeToReconciledProducer(event, signal)
+    }
+    const subscription = this.performProducerSubscription(event, signal)
+    this.producerClaims.set(event.producerId, subscription)
     try {
-      if (!(await this.waitForE2EEContextIfRequired(signal))) return
-      signal.throwIfAborted()
-      if (this.reconciliation.producers.get(event.producerId) !== event) return
-      await this.awaitAbortable(
-        this.mediaManager.subscribeToRemoteProducer({
-          producerId: event.producerId,
-          participantId: event.participantId,
-          isScreen: event.isScreen,
-        }),
-        signal,
-      )
-      signal.throwIfAborted()
-      if (this.reconciliation.producers.get(event.producerId) !== event) {
-        this.removeProducerConsumers(event)
-      }
+      await subscription
     } finally {
-      this.producerClaims.delete(event.producerId)
+      if (this.producerClaims.get(event.producerId) === subscription) {
+        this.producerClaims.delete(event.producerId)
+      }
+    }
+  }
+
+  private async performProducerSubscription(
+    event: SFUProducerEvent,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!(await this.waitForE2EEContextIfRequired(signal))) return
+    signal.throwIfAborted()
+    if (
+      this.reconciliation.producers.get(event.producerId) !== event ||
+      !this.shouldSubscribeToProducer(event)
+    )
+      return
+    await this.awaitAbortable(
+      this.mediaManager.subscribeToRemoteProducer({
+        producerId: event.producerId,
+        participantId: event.participantId,
+        isScreen: event.isScreen,
+      }),
+      signal,
+    )
+    signal.throwIfAborted()
+    if (this.reconciliation.producers.get(event.producerId) !== event) {
+      this.removeProducerConsumers(event)
     }
   }
 
@@ -1087,6 +1155,11 @@ export class ParticipantConnection {
         this.participantManager.addParticipant(event.value)
       }
     } else if (event.type === 'participant-left') {
+      this.visibleCameraParticipantIds.delete(event.value.participantId)
+      for (const producer of previous.producers.values()) {
+        if (producer.participantId === event.value.participantId)
+          this.removeProducerConsumers(producer)
+      }
       if (!previous.departedParticipantIds.has(event.value.participantId)) {
         this.participantManager.removeParticipant(event.value.participantId)
       }
@@ -1585,6 +1658,15 @@ export class ParticipantConnection {
       this.mediaManager.isScreenShareActive = screenConsumers.some(
         (consumer) => consumer.producerId !== d.producerId,
       )
+    })
+
+    this.sfuClient.on('shared_stage_snapshot', (value: unknown) => {
+      const state = parseSharedStage(value)
+      if (state) this.eventHandlers.onSharedStageChanged?.(state, true)
+    })
+    this.sfuClient.on('shared_stage', (value: unknown) => {
+      const state = parseSharedStage(value)
+      if (state) this.eventHandlers.onSharedStageChanged?.(state)
     })
 
     this.sfuClient.on('active_speaker', (value: unknown) => {

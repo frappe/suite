@@ -422,7 +422,8 @@ def composite_references(docname: str) -> list[dict]:
     placeholder. Ticket 20 owns the grouped load that batches these checks.
     """
     answered = []
-    for name in _reference_names(docname):
+    for row in composite_reference_rows(docname):
+        name = row["presentation"]
         # A blank reference row names nothing, so it is unreadable and never
         # asked about. `get_value` answers `None` for a falsy name rather than
         # another deck's node, so this is a saved query, not a closed hole; the
@@ -432,6 +433,10 @@ def composite_references(docname: str) -> list[dict]:
         readable = bool(node) and node_is_readable(node)
         answered.append(
             {
+                # The whole-deck answer carries the same row id and position as
+                # the grouped manifest; the typed contract requires both.
+                "reference": row["reference"],
+                "index": row["index"],
                 "presentation": name,
                 # Marked, never dropped (§6.6) — and never named. The node id is
                 # the handle every Drive route takes, so handing it out for a
@@ -440,6 +445,8 @@ def composite_references(docname: str) -> list[dict]:
                 # guest-reachable.
                 "node": node if readable else None,
                 "readable": readable,
+                "composite": None,
+                "slides": None,
             }
         )
     return answered

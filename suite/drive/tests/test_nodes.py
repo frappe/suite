@@ -504,6 +504,27 @@ class TestNodeLifecycle(IntegrationTestCase):
         rows = frappe.get_all("Drive Node", filters={"name": ["in", (source, file_node)]}, fields=["root"])
         self.assertEqual({row.root for row in rows}, {self.other_root.name})
 
+    def test_a_copy_charges_the_destination_for_the_head_only_not_the_source_versions(self):
+        source = create_folder(self.admin, self.root.name, "Source")
+        file_node = self._file(source, content=b"12345")
+        frappe.get_doc(
+            {
+                "doctype": "Drive Node Version",
+                "node": file_node,
+                "seq": 1,
+                "kind": "auto",
+                "actor": "Administrator",
+                "size": 5,
+                "blob": frappe.db.get_value("Drive Node", file_node, "blob"),
+            }
+        ).insert(ignore_permissions=True)
+        frappe.db.set_value("Drive Root", self.root.name, "used_bytes", 10)
+
+        copy(self.admin, source, self.other_root.name)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.other_root.name, "used_bytes"), 5)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root.name, "used_bytes"), 10)
+
     def test_nested_trash_restore_preserves_earlier_independent_stamp(self):
         outer = create_folder(self.admin, self.root.name, "Outer")
         inner = create_folder(self.admin, outer, "Inner")
@@ -630,6 +651,19 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         self.assertIn(f"/{destination}/{child}/", frappe.db.get_value("Drive Node", descendant, "path"))
         self.assertEqual(frappe.db.get_value("Drive Node", parent, "state"), "Trashed")
+
+    def test_restoring_in_place_beside_a_newer_namesake_gives_the_restored_node_a_free_title(self):
+        folder = create_folder(self.admin, self.root.name, "Folder")
+        old = create_folder(self.admin, folder, "Plan")
+        update(self.admin, old, state="Trashed")
+        newer = create_folder(self.admin, folder, "Plan")
+
+        restored = update(self.admin, old, state="Active")
+
+        self.assertEqual(
+            (restored.parent_node, restored.title, restored.state), (folder, "Plan (2)", "Active")
+        )
+        self.assertEqual(frappe.db.get_value("Drive Node", newer, ["title", "state"]), ("Plan", "Active"))
 
     def test_restore_rejects_cross_root_destination_and_move_cannot_bypass_restore(self):
         parent = create_folder(self.admin, self.root.name, "Parent")

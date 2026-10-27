@@ -9,9 +9,7 @@
 //   f  a formula WITHOUT the leading '=' (Excel convention)
 //   z  a number-format code (Excel's grammar, e.g. '#,##0.00', '0.00%')
 
-import { CURRENCIES, parseNumberFmt, type Currency } from '../utils/format-number.js'
-import type { MergeInfo } from './merge.js'
-import type { Rect } from './types.js'
+import { CURRENCIES, displayNumber, parseNumberFmt, type Currency } from '../utils/format-number.js'
 
 /** A SheetJS cell as this module writes it (see the field list above). */
 export interface XlsxCell {
@@ -27,12 +25,6 @@ export interface XlsxCellIn {
   v?: unknown
   f?: string | null | undefined
   z?: string | undefined
-}
-
-/** A SheetJS merge: start and end cells, 0-based and inclusive. */
-export interface XlsxMerge {
-  s: { r: number; c: number }
-  e: { r: number; c: number }
 }
 
 // ── Number-format mapping ────────────────────────────────────────────────────
@@ -139,6 +131,34 @@ export function zToNumFmt(z: string | null | undefined): string {
   return 'custom:' + z // preserve verbatim
 }
 
+/**
+ * IronCalc's own number format for a cell (what typing `$1.50`, `15%` or
+ * `1,000` sets; Excel-style codes) as one of ours, or '' when there is
+ * nothing to carry. Copy and fill use it, since a cell's input is its bare
+ * number (`1.5`) and would otherwise lose the format. Dates are left out
+ * unless asked for (`dates: true`): their input is the typed text, which
+ * re-parses to the same date.
+ */
+export function numFmtFromEngine(
+  code: string | null | undefined,
+  { dates = false }: { dates?: boolean } = {},
+): string {
+  if (!code || /^general$/i.test(code) || code === '@') return ''
+  // IronCalc writes `$#,##0.00` unquoted; as our USD currency (not a custom
+  // pattern) the decimal buttons can change it.
+  const fmt = zToNumFmt(/^\$#,##0(\.0+)?$/.test(code) ? `"$"${code.slice(1)}` : code)
+  if (DATE_TYPES.has(parseNumberFmt(fmt).type)) return dates ? fmt : ''
+  if (dates && /[dy]/i.test(code.replace(/"[^"]*"/g, ''))) {
+    // A date code ours has no exact variant for (IronCalc's m/d/yyyy).
+    if (/h/i.test(code)) return 'datetime'
+    return /^\s*y/i.test(code) ? 'date:ymd' : /^\s*d/i.test(code) ? 'date:dmy' : 'date:mdy'
+  }
+  // A code zToNumFmt doesn't know stays custom; only a numeric pattern
+  // renders (a date code like m/d/yyyy would paint as literal text).
+  if (fmt.startsWith('custom:') && !/[0#]/.test(code.replace(/"[^"]*"/g, ''))) return ''
+  return fmt
+}
+
 // Reattach a decimals suffix only when non-zero, so `number`/`percentage`
 // (whose defaults differ) stay minimal and round-trip.
 function _withDec(type: 'number' | 'percentage', dec: number) {
@@ -158,28 +178,45 @@ function _isNumeric(v: unknown) {
   return isFinite(Number(v)) && !/^[+0]\d/.test(v.trim())
 }
 
-// Parse loosely into a Date for date-typed export. Anchored to UTC so the
-// serial SheetJS writes and reads back (with cellDates:true) doesn't drift by a
-// timezone offset — a local-midnight Date would lose up to a full day on
-// round-trip in any non-UTC zone.
-function _toDate(v: unknown): Date | null {
-  if (v instanceof Date) return isNaN(v.getTime()) ? null : v
+// The day serial (days since 1899-12-30, the fraction the time of day) of a
+// calendar date and time. From the parts, not a Date's milliseconds:
+// SheetJS converts Date objects in the runner's local time, so a UTC
+// midnight went out as 05:30:10 in India (ISSUES #59).
+function _serial(y: number, mo: number, d: number, h = 0, mi = 0, s = 0): number {
+  return Date.UTC(y, mo, d) / 86400000 + 25569 + (h * 3600 + mi * 60 + s) / 86400
+}
+
+// Parse loosely into a day serial for date-typed export, or null.
+function _toSerial(v: unknown): number | null {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null
+    return _serial(
+      v.getUTCFullYear(),
+      v.getUTCMonth(),
+      v.getUTCDate(),
+      v.getUTCHours(),
+      v.getUTCMinutes(),
+      v.getUTCSeconds(),
+    )
+  }
   const s = String(v).trim()
   if (!s) return null
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/)
-  if (m)
-    return new Date(
-      Date.UTC(
-        Number(m[1]),
-        Number(m[2]) - 1,
-        Number(m[3]),
-        Number(m[4] || 0),
-        Number(m[5] || 0),
-        Number(m[6] || 0),
-      ),
-    )
+  if (m) {
+    const [y, mo, d, h, mi, sec] = m.slice(1).map((x) => Number(x || 0)) as number[]
+    return _serial(y!, mo! - 1, d!, h, mi, sec)
+  }
+  // Any other text a Date can read ("1 Apr 2026") is local time.
   const d = new Date(s)
-  return isNaN(d.getTime()) ? null : d
+  if (isNaN(d.getTime())) return null
+  return _serial(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate(),
+    d.getHours(),
+    d.getMinutes(),
+    d.getSeconds(),
+  )
 }
 
 function _iso(d: Date) {
@@ -199,8 +236,11 @@ function _iso(d: Date) {
  */
 export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxCell | null {
   const isFormula = typeof raw === 'string' && raw.startsWith('=')
-  const src = isFormula ? computed : raw
+  let src = isFormula ? computed : raw
   if (!isFormula && (src === '' || src == null)) return null
+  // A formula's computed value is IronCalc's display, which it may have
+  // formatted ($4.50, 1,000, 50%): the number in it, not the text.
+  if (isFormula && !_isNumeric(src) && !isNaN(displayNumber(src))) src = displayNumber(src)
 
   const z = numFmtToZ(fmt)
   // Filled field by field to keep SheetJS's key order (f, t, v, z); every
@@ -209,9 +249,12 @@ export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxC
   if (isFormula) cell.f = (raw as string).slice(1)
 
   const { type } = parseNumberFmt(fmt || '')
-  const asDate = DATE_TYPES.has(type) ? _toDate(src) : null
-  if (asDate) {
-    cell.t = 'd'
+  // A number under a date format is a day serial, the same number Excel
+  // stores, so it falls through to the number branch with its date code.
+  // A date written as text goes out as its serial too.
+  const asDate = DATE_TYPES.has(type) && !_isNumeric(src) ? _toSerial(src) : null
+  if (asDate != null) {
+    cell.t = 'n'
     cell.v = asDate
   } else if (src === true || src === false || src === 'TRUE' || src === 'FALSE') {
     cell.t = 'b'
@@ -237,27 +280,21 @@ export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxC
  */
 export function fromXlsxCell(cell: XlsxCellIn | null | undefined): { value: string; fmt: string } {
   if (!cell) return { value: '', fmt: '' }
-  const fmt = cell.z ? zToNumFmt(cell.z) : ''
+  let fmt = cell.z ? zToNumFmt(cell.z) : ''
+  // A date code ours has no exact variant for (m/d/yyyy) would paint as
+  // literal text under custom:, so take the nearest date format.
+  if (fmt.startsWith('custom:')) fmt = numFmtFromEngine(cell.z, { dates: true }) || fmt
+  const isDate = parseNumberFmt(fmt).type === 'date'
   let value: string
   if (cell.f != null && cell.f !== '') value = '=' + cell.f
   else if (cell.t === 'd' && cell.v instanceof Date) value = _iso(cell.v)
+  // A whole day serial under a date code is typed as the date, which
+  // IronCalc reads as a date (ISSUES #58: SheetJS's cellDates turned it into
+  // the day before at 18:29:50, as text). A time of day stays the serial.
+  else if (isDate && typeof cell.v === 'number' && Number.isInteger(cell.v))
+    value = _iso(new Date((cell.v - 25569) * 86400000))
   else if (cell.t === 'b') value = cell.v ? 'TRUE' : 'FALSE'
   else if (cell.v == null) value = ''
   else value = String(cell.v)
   return { value, fmt }
-}
-
-// ── Merge mapping ────────────────────────────────────────────────────────────
-
-// engine masterMap ({ id: { r, c, rowSpan, colSpan } }) → SheetJS !merges.
-export function mergesToXlsx(masterMap: Record<string, MergeInfo> | null | undefined): XlsxMerge[] {
-  return Object.values(masterMap || {}).map(({ r, c, rowSpan, colSpan }) => ({
-    s: { r, c },
-    e: { r: r + rowSpan - 1, c: c + colSpan - 1 },
-  }))
-}
-
-// SheetJS !merges → [{ r0, c0, r1, c1 }] for the merge engine's merge().
-export function mergesFromXlsx(merges: XlsxMerge[] | null | undefined): Rect[] {
-  return (merges || []).map(({ s, e }) => ({ r0: s.r, c0: s.c, r1: e.r, c1: e.c }))
 }

@@ -47,6 +47,11 @@ export interface CellProvider {
    * the value an edit replaces.
    */
   peekInput(sheet: string, row: number, col: number): string | undefined
+  /**
+   * Whether the cell holds a number, stale or fresh, or undefined until its
+   * area has been read and while typed text waits for its apply.
+   */
+  isNumber(sheet: string, row: number, col: number): boolean | undefined
   dispose(): void
 }
 
@@ -124,7 +129,11 @@ export function createCellProvider({
     inFlight = true
     const version = client.getVersion()
     try {
-      const result = await client.readViewport({ ...box, includeInputs: true })
+      const result = await client.readViewport({
+        ...box,
+        includeInputs: true,
+        includeNumbers: true,
+      })
       if (disposed) return
       // false: the version moved while the read was in flight. The
       // clear() that came with it already asked for a repaint, which
@@ -157,6 +166,11 @@ export function createCellProvider({
     getDisplay,
     getInput,
     peekInput: (sheet, row, col) => cache.get(sheet, row, col)?.input,
+    isNumber(sheet, row, col) {
+      const hit = cache.get(sheet, row, col)
+      if (!hit) noteMiss(sheet, row, col)
+      return hit && !hit.provisional ? !!hit.number : undefined
+    },
     dispose() {
       disposed = true
       offVersion()

@@ -1,11 +1,10 @@
-import { type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 
 import { adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
-import { expect, requireSiteFilesFlip, serverURL, test } from "../../helpers/flips";
+import { serverURL } from "../../helpers/server";
 
 /**
- * Stage 12 (spec §14.3): old page URLs land on the flip-2 routes while
- * `suite_flip_files` is on, and stay where they are while it is off.
+ * Stage 12 (spec §14.3): old page URLs land on the new routes.
  *
  * A full page load goes to the bench web server, which runs the redirect
  * table in `before_request`. An in-app navigation goes through the client
@@ -64,84 +63,56 @@ async function landing(page: Page, path: string): Promise<string> {
 	return url.pathname + url.search;
 }
 
-test.describe("with the files flip on", () => {
-	test.beforeEach(() => requireSiteFilesFlip(true));
+test("an old link clicked in the app lands on the new page", async ({ page }) => {
+	await page.goto("/home");
+	await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
 
-	test("an old link clicked in the app lands on the new page", async ({ page }) => {
-		await page.goto("/home");
-		await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
+	await openInApp(page, "/drive/recents");
+	await expect(page).toHaveURL(/\/drive\/recent$/);
 
-		await openInApp(page, "/drive/recents");
-		await expect(page).toHaveURL(/\/drive\/recent$/);
+	await openInApp(page, "/drive/favourites");
+	await expect(page).toHaveURL(/\/drive\/starred$/);
 
-		await openInApp(page, "/drive/favourites");
-		await expect(page).toHaveURL(/\/drive\/starred$/);
+	await openInApp(page, `/drive/d/${folder.name}/old-slug?view=grid`);
+	await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}(/[^?]*)?\\?view=grid$`));
 
-		await openInApp(page, `/drive/d/${folder.name}/old-slug?view=grid`);
-		await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}(/[^?]*)?\\?view=grid$`));
+	await openInApp(page, "/writer?sort=title");
+	await expect(page).toHaveURL(/\/drive\/recent\?type=document&sort=title$/);
 
-		await openInApp(page, "/writer?sort=title");
-		await expect(page).toHaveURL(/\/drive\/recent\?type=writer&sort=title$/);
-
-		await openInApp(page, "/suite");
-		await expect(page).toHaveURL(/\/home$/);
-	});
-
-	test("an old link the server must read loads the page from the server", async ({ page }) => {
-		for (const old of [`/drive/g/${doc.name}`, "/sheets/new"]) {
-			// Only the request matters, so no page waits for its `load` event.
-			await page.goto("/home", { waitUntil: "domcontentloaded" });
-			await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
-			const load = page.waitForRequest((request) => request.isNavigationRequest() && new URL(request.url()).pathname === old);
-			// The full page load can end the evaluate's context before it returns.
-			await openInApp(page, old).catch(() => undefined);
-			await load;
-		}
-	});
-
-	test("a full page load of an old address lands on the new page", async ({ browser }) => {
-		const page = await signedInPage(browser);
-		for (const [old, expected] of [
-			["/drive/recents", "/drive/recent"],
-			["/sheets?x=1", "/drive/recent?type=sheets&x=1"],
-			["/sheets/new", "/home"],
-			["/slides/presentation/new", "/home"],
-			[`/drive/w/${doc.name}/old-slug`, `/d/${doc.name}`],
-			[`/drive/g/${doc.name}`, `/d/${doc.name}`],
-			[`/drive/g/${folder.name}`, `/drive/f/${folder.name}`],
-		] as const) {
-			expect(await landing(page, old), old).toBe(expected);
-		}
-		await page.context().close();
-	});
-
-	test("an old address with no node stays where it is", async ({ browser }) => {
-		const page = await signedInPage(browser);
-		expect(await landing(page, "/drive/g/no-such-node")).toBe("/drive/g/no-such-node");
-		await page.context().close();
-	});
+	await openInApp(page, "/suite");
+	await expect(page).toHaveURL(/\/home$/);
 });
 
-test.describe("with the files flip off", () => {
-	test.use({ flips: { suite_flip_shell: false, suite_flip_files: false } });
-	test.beforeEach(() => requireSiteFilesFlip(false));
-
-	test("an old link clicked in the app stays on the old page", async ({ page }) => {
-		await page.goto("/home");
+test("an old link the server must read loads the page from the server", async ({ page }) => {
+	for (const old of [`/drive/g/${doc.name}`, "/sheets/new"]) {
+		// Only the request matters, so no page waits for its `load` event.
+		await page.goto("/home", { waitUntil: "domcontentloaded" });
 		await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
+		const load = page.waitForRequest((request) => request.isNavigationRequest() && new URL(request.url()).pathname === old);
+		// The full page load can end the evaluate's context before it returns.
+		await openInApp(page, old).catch(() => undefined);
+		await load;
+	}
+});
 
-		await openInApp(page, "/drive/recents");
-		await expect(page).toHaveURL(/\/drive\/recents$/);
+test("a full page load of an old address lands on the new page", async ({ browser }) => {
+	const page = await signedInPage(browser);
+	for (const [old, expected] of [
+		["/drive/recents", "/drive/recent"],
+		["/sheets?x=1", "/drive/recent?type=spreadsheet&x=1"],
+		["/sheets/new", "/home"],
+		["/slides/presentation/new", "/home"],
+		[`/drive/w/${doc.name}/old-slug`, `/d/${doc.name}`],
+		[`/drive/g/${doc.name}`, `/d/${doc.name}`],
+		[`/drive/g/${folder.name}`, `/drive/f/${folder.name}`],
+	] as const) {
+		expect(await landing(page, old), old).toBe(expected);
+	}
+	await page.context().close();
+});
 
-		await openInApp(page, "/suite");
-		await expect(page).toHaveURL(/\/suite$/);
-	});
-
-	test("a full page load of an old address stays where it is", async ({ browser }) => {
-		const page = await signedInPage(browser);
-		for (const old of ["/drive/recents", "/sheets/new", `/drive/w/${doc.name}`]) {
-			expect(await landing(page, old), old).toBe(old);
-		}
-		await page.context().close();
-	});
+test("an old address with no node stays where it is", async ({ browser }) => {
+	const page = await signedInPage(browser);
+	expect(await landing(page, "/drive/g/no-such-node")).toBe("/drive/g/no-such-node");
+	await page.context().close();
 });

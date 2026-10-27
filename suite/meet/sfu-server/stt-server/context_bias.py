@@ -62,10 +62,23 @@ def validate_names(names):
     return result
 
 
+def name_hint_phrases(names):
+    """Hint each name part independently, without encouraging surname completion."""
+    phrases = []
+    seen = set()
+    for name in names:
+        for part in name.split():
+            key = part.casefold()
+            if key not in seen:
+                seen.add(key)
+                phrases.append(part)
+    return phrases
+
+
 class UtteranceBias:
     """One hypothesis and GPU model id per utterance; never reconfigure the shared decoder."""
 
-    def __init__(self, model, names, alpha=1.5):
+    def __init__(self, model, names, alpha=0.35):
         self.model = model
         self.names = tuple(validate_names(names))
         self.alpha = alpha
@@ -78,12 +91,8 @@ class UtteranceBias:
         from nemo.collections.asr.parts.context_biasing.biasing_multi_model import BiasingRequestItemConfig
         from nemo.collections.asr.parts.utils.rnnt_utils import Hypothesis
 
-        # Speakers often address a participant by given name rather than the
-        # full display name shown in the Meet Room.
-        spoken_names = [part for name in self.names for part in (name, name.split()[0])]
-        phrases = list(dict.fromkeys(spoken_names))
         request = BiasingRequestItemConfig(
-            boosting_model_cfg=BoostingTreeModelConfig(key_phrases_list=phrases),
+            boosting_model_cfg=BoostingTreeModelConfig(key_phrases_list=name_hint_phrases(self.names)),
             boosting_model_alpha=self.alpha,
             auto_manage_multi_model=False,
         )

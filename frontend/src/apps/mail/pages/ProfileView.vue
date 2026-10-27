@@ -11,9 +11,12 @@
   <MobileProfilePage
     :accounts
     :account-id="store.accountId"
+    app="mail"
     always-show-accounts
+    :all-accounts="{ active: showingAll }"
     :logout
-    @switch-account="switchAccount"
+    @switch-account="onSwitchAccount"
+    @switch-to-all="switchToAll"
   >
     <!-- Same title row AND the same header box as the other tab destinations — this is
 		     one of the four, not a pushed page. The wrapper's paddings are copied verbatim
@@ -31,12 +34,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
 import { useAccountSwitch } from '@/apps/mail/utils/composables'
+import { prefersUnified } from '@/apps/mail/utils/unifiedFolders'
 import MobileProfilePage from '@/components/MobileProfilePage.vue'
 
 const store = userStore()
@@ -46,5 +50,12 @@ const accounts = computed(() => store.userResource?.data?.accounts ?? [])
 
 // Shared with the sidebar's account submenu. This route carries an accountId, so
 // switching stays on Profile with the new account (see useAccountSwitch).
-const { switchAccount } = useAccountSwitch()
+const { switchAccount, switchToAll } = useAccountSwitch()
+// Whether the reader has every account showing at once: the lists open that way until an account
+// is picked. "All accounts" opens the merged Inbox.
+const showingAll = ref(prefersUnified())
+const onSwitchAccount = (accountId: string) => {
+  showingAll.value = false
+  void switchAccount(accountId)
+}
 </script>

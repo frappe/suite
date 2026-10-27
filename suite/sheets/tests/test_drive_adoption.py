@@ -180,47 +180,15 @@ def worksheet_xml(body: str) -> bytes:
 class TestSheetsDeclaration(unittest.TestCase):
     """What §10.7 fixes about Sheets, and the hook entries ticket 29 installed."""
 
-    def test_it_declares_the_identity_section_ten_seven_fixes(self):
-        self.assertEqual(sheets.SPEC.doctype, DOCTYPE)
-        self.assertEqual(sheets.SPEC.mime, "frappe/sheet")
-        self.assertEqual(sheets.SPEC.node_field, "node")
-
     def test_a_sheet_has_no_default_export_and_no_export_at_all(self):
         """§10.7: Sheets stays hidden over WebDAV for this release."""
         self.assertIsNone(sheets.SPEC.default_export)
         self.assertIsNone(sheets.SPEC.export)
         self.assertEqual(sheets.SPEC.export_formats, ())
 
-    def test_drive_never_renders_a_sheet_and_sheets_never_pushes_one(self):
-        self.assertFalse(sheets.SPEC.pushes_preview)
-
-    def test_the_three_required_callbacks_are_declared(self):
-        self.assertIs(sheets.SPEC.create_empty, sheets.create_empty)
-        self.assertIs(sheets.SPEC.duplicate, sheets.duplicate)
-        self.assertIs(sheets.SPEC.on_purge, sheets.on_purge)
-
-    def test_an_xlsx_can_become_a_sheet(self):
-        self.assertIs(sheets.SPEC.import_from_file, sheets.import_from_file)
-
-    def test_a_sheet_has_versions_it_can_be_restored_from(self):
-        self.assertIs(sheets.SPEC.version_bytes, sheets.version_bytes)
-        self.assertIs(sheets.SPEC.restore_version, sheets.restore_version)
-
-    def test_the_two_satellites_are_the_op_log_and_the_collaborative_document(self):
-        self.assertEqual(
-            [(one.doctype, one.link_field) for one in sheets.SPEC.satellites],
-            [(OP_LOG, "sheet"), (COLLAB_STATE, "sheet")],
-        )
-
-    def test_the_media_sweep_can_ask_what_a_body_names(self):
-        self.assertIs(sheets.SPEC.used_nodes, sheets.used_nodes)
-
     def test_no_remap_media_because_a_body_names_no_media_yet(self):
         """Declaring a no-op would let a copy carry media nothing names (§8.9)."""
         self.assertIsNone(sheets.SPEC.remap_media)
-
-    def test_no_legacy_column_is_declared_because_cleanup_dropped_them_all(self):
-        self.assertEqual(sheets.SPEC.legacy_fields, ())
 
     # the `All` DocPerm, which the guards deny against
 

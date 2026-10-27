@@ -17,7 +17,7 @@
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import type { Cell } from '../selection.js'
 import type { Autocomplete } from './autocomplete.js'
-import { canInsertRef, type RangePicker } from './range-picker.js'
+import { canInsertRef, isPickToggle, type RangePicker } from './range-picker.js'
 
 export type EditMode = 'enter' | 'edit'
 
@@ -182,9 +182,7 @@ export function createEditor(o: EditorOptions): Editor {
       setText(closed.value, closed.caret)
       return
     }
-    // F2 switches between picking references and moving the caret, as in
-    // Sheets. Shift+F2 is the notes shortcut, so only a bare F2 counts.
-    if (e.key === 'F2' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (isPickToggle(e)) {
       e.preventDefault()
       setMode(mode === 'enter' ? 'edit' : 'enter')
       return

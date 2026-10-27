@@ -1,5 +1,29 @@
 <template>
   <DashboardLayout area="mail" :breadcrumbs="breadcrumbs" :loading="!list.data">
+    <template #loading>
+      <DashboardDetailHeaderSkeleton :actions="2" />
+      <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <DashboardCard :title="__('Email Addresses')">
+          <div class="flex flex-col">
+            <div
+              class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
+            >
+              <span class="flex-1">{{ __('Email Address') }}</span>
+              <span class="flex-1">{{ __('Description') }}</span>
+              <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
+              <span class="w-8 shrink-0" />
+            </div>
+            <DashboardRowsSkeleton :rows="1" />
+          </div>
+        </DashboardCard>
+        <DashboardCard :title="__('Recipients')">
+          <div class="flex flex-col">
+            <div class="px-5 py-2.5"><Skeleton class="h-7 w-full rounded-4" /></div>
+            <DashboardRowsSkeleton :rows="3" />
+          </div>
+        </DashboardCard>
+      </div>
+    </template>
     <template v-if="list.data">
       <DashboardDetailHeader
         :title="list.data.email || list.data.name || listId"
@@ -113,11 +137,9 @@
               v-if="recipients.status === 'success' && recipients.total"
               :count="recipients.rows.length"
               :total="recipients.total ?? 0"
-              :page-length="pageLength"
               :has-more="recipients.hasNext"
               :loading="recipients.isFetching"
               :flush="false"
-              @update:page-length="(value) => (pageLength = value)"
               @load-more="recipients.fetchNext().catch(() => {})"
             />
           </div>
@@ -142,20 +164,30 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
 import Megaphone from '~icons/lucide/megaphone'
-import { Button, Dialog, Dropdown, FormControl, Switch, Tooltip, usePageMeta } from 'frappe-ui'
+import {
+  Button,
+  Dialog,
+  Dropdown,
+  FormControl,
+  Skeleton,
+  Switch,
+  Tooltip,
+  usePageMeta,
+} from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, useQuery, type InputOf } from '@/api'
 import DashboardDetailHeader from '@/apps/mail/components/DashboardDetailHeader.vue'
+import DashboardDetailHeaderSkeleton from '@/apps/mail/components/DashboardDetailHeaderSkeleton.vue'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddMailingListEmailModal from '@/apps/mail/components/Modals/AddMailingListEmailModal.vue'
 import AddMailingListRecipientsModal from '@/apps/mail/components/Modals/AddMailingListRecipientsModal.vue'
 import EditMailingListModal from '@/apps/mail/components/Modals/EditMailingListModal.vue'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
-import { DashboardCard, DashboardLayout } from '@/platform/dashboard'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
+import { DashboardCard, DashboardLayout, DashboardRowsSkeleton } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
 type ListData = {
@@ -199,12 +231,11 @@ const data = computed(() => list.data as ListData | undefined)
 // Recipients are searched and paged on Suite Cloud: a list can hold thousands, and the detail
 // call only carries the total, which the header shows.
 const debouncedSearch = refDebounced(recipientSearch, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const recipients = useInfiniteQuery(api.mail.admin.recipients.list, () => ({
   list_id: listId,
   search: debouncedSearch.value,
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const reloadAll = () => {
   list.refetch().catch(() => {})
@@ -217,7 +248,7 @@ const recipientCountLabel = computed(() => {
 const breadcrumbs = computed(() => [
   {
     label: __('Mailing Lists'),
-    route: '/mail/dashboard/mailing-lists',
+    route: '/admin/mail/mailing-lists',
   },
   {
     label: data.value?.email || listId,

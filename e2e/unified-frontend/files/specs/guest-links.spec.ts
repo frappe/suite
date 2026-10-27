@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
 
-import { request, type APIRequestContext } from "@playwright/test";
+import { expect, request, test, type APIRequestContext } from "@playwright/test";
 
 import { loginViaApi } from "../../../shared/auth";
-import { expect, requireSiteFilesFlip, test } from "../../helpers/flips";
 import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
 
 /**
@@ -13,11 +12,6 @@ import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, ty
  * proxies `/l/`, so the browser cases go through `BASE_URL`. The cases that
  * read status codes and headers talk to the bench web server itself:
  * `BENCH_WEB_URL`, default the dev site's port.
- *
- * The server picks the node's address from `suite_flip_files` in the site
- * config, and the client reads the same flip from the boot. Each case that
- * depends on the server's answer skips unless the site's key matches, so a full
- * run with the key at 1 and another with it at 0 cover every case.
  */
 
 const BENCH = process.env.BENCH_PATH ?? "/home/faris/benches/suite-bench";
@@ -59,17 +53,10 @@ async function shareLink(node: string, body: Record<string, unknown> = { role: 1
 
 /** A context on the bench web server, signed in or not. No redirect is followed. */
 async function server(signedIn: boolean): Promise<APIRequestContext> {
-	const context = await request.newContext({ baseURL: SERVER, extraHTTPHeaders: { Host: SITE } });
+	// The runner applies `use.storageState` (the admin login) to request contexts too.
+	const context = await request.newContext({ baseURL: SERVER, extraHTTPHeaders: { Host: SITE }, storageState: SIGNED_OUT });
 	if (signedIn) await loginViaApi(context);
 	return context;
-}
-
-/** Checks that the server runs with `suite_flip_files` off: the link goes to the old `/drive/g/` address. */
-async function expectOldAddress(token: string, node: string): Promise<void> {
-	const guest = await server(false);
-	const response = await guest.get(`/l/${token}`, { maxRedirects: 0 });
-	expect(response.headers().location).toBe(`/drive/g/${node}#link=${token}`);
-	await guest.dispose();
 }
 
 /** Moves a link's expiry into the past. The grant route refuses a past expiry. */
@@ -105,12 +92,12 @@ test.describe("the server resolves a share link", () => {
 			expect(response.status()).toBe(302);
 			const location = response.headers().location ?? "";
 			if (location === `/l/${token}`) {
-				// `suite_flip_files` on: the redirect table sends the old address to `/l/<token>` first.
+				// The redirect table sends the old address to `/l/<token>` first.
 				expect(path).toBe(`/drive/l/${token}`);
 				continue;
 			}
-			// `suite_flip_files` off: `/drive/g/`. On: `/drive/f/` for a folder, `/d/` for a document.
-			expect(location).toMatch(new RegExp(`^/(drive/g|drive/f|d)/${node}#link=${token}$`));
+			// `/drive/f/` for a folder, `/d/` for a document.
+			expect(location).toMatch(new RegExp(`^/(drive/f|d)/${node}#link=${token}$`));
 			expect(location.split("#")[0]).not.toContain(token);
 		}
 		await guest.dispose();
@@ -131,8 +118,12 @@ test.describe("the server resolves a share link", () => {
 		expect(missing.headers()["cache-control"]).toContain("no-cache");
 		expect(missingPage).toContain(NOT_FOUND_COPY);
 		expect(gonePage).toContain(EXPIRED_COPY);
-		for (const page of [missingPage, gonePage]) {
-			expect(page).not.toContain("Go to Home");
+		for (const [label, response, page] of [
+			["missing (404)", missing, missingPage],
+			["gone (410)", gone, gonePage],
+		] as const) {
+			const sent = response.headers()["set-cookie"];
+			expect(page, `${label}: status ${response.status()}, set-cookie ${sent ?? "none"}, guest cookies ${JSON.stringify((await guest.storageState()).cookies.map((c) => c.name))}`).not.toContain("Go to Home");
 			expect(page).not.toContain("Sign in");
 			expect(page).not.toContain(doc.title);
 		}
@@ -147,7 +138,7 @@ test.describe("the server resolves a share link", () => {
 		let retryAfter = "";
 
 		for (let attempt = 0; attempt < 5; attempt++) {
-			const response = await guest.post(`${DRIVE}/links/${token}/unlock`, { data: { password: "guess" } });
+			const response = await guest.post(`${DRIVE}/links/unlock`, { data: { token, password: "guess" } });
 			statuses.push(response.status());
 			retryAfter = response.headers()["retry-after"] ?? "";
 		}
@@ -177,6 +168,11 @@ test.describe("a visitor without a session", () => {
 		await expect(page).toHaveURL(/\/login\?redirect-to=%2Fd%2Fx{10}/);
 	});
 
+	test("/home sends a guest to sign in", async ({ page }) => {
+		await page.goto("/home");
+		await expect(page).toHaveURL(/\/login\?redirect-to=%2Fhome$/);
+	});
+
 	test("the guest frame on a phone has one slim header and no bottom nav", async ({ page }) => {
 		await page.setViewportSize(PHONE);
 		await page.goto(`/d/${doc.name}`);
@@ -186,7 +182,6 @@ test.describe("a visitor without a session", () => {
 	});
 
 	test("/l/<token> opens a shared folder at /drive/f/<id> and a document at /d/<id>, with no token in the URL", async ({ page }) => {
-		await requireSiteFilesFlip(true);
 		const folderToken = await shareLink(folder.name);
 		await page.goto(`/l/${folderToken}`);
 		await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}(/shared-plans)?$`));
@@ -200,7 +195,6 @@ test.describe("a visitor without a session", () => {
 	});
 
 	test("unlock shows Wrong password, and the right password opens the folder", async ({ page }) => {
-		await requireSiteFilesFlip(true);
 		const token = await shareLink(folder.name, { role: 10, password: "open sesame" });
 		await page.goto(`/l/${token}`);
 		await expect(page.getByRole("heading", { name: "Password required" })).toBeVisible();
@@ -220,7 +214,6 @@ test.describe("a visitor without a session", () => {
 	});
 
 	test("unlock disables the form and counts down after the lockout", async ({ page }) => {
-		await requireSiteFilesFlip(true);
 		const token = await shareLink(folder.name, { role: 10, password: "open sesame" });
 		await page.goto(`/l/${token}`);
 		const password = page.getByPlaceholder("Password");
@@ -239,19 +232,17 @@ test.describe("a visitor without a session", () => {
 	});
 
 	test("a shared folder in the guest frame shows no sidebar and no search", async ({ page }) => {
-		await requireSiteFilesFlip(true);
 		const token = await shareLink(folder.name);
 		await page.goto(`/l/${token}`);
 		await expect(page.getByTestId("guest-frame")).toBeVisible();
 		await expect(page.getByText("Shared plans").first()).toBeVisible();
-		await expect(page.getByRole("searchbox", { name: "Search files" })).toHaveCount(0);
+		await expect(page.getByRole("searchbox", { name: "Search all files" })).toHaveCount(0);
 		await expect(page.getByText("My files")).toHaveCount(0);
 	});
 });
 
 test.describe("a signed-in user", () => {
 	test("/l/<token> opens the folder and the document in the full shell, and the URL keeps no token", async ({ page }) => {
-		await requireSiteFilesFlip(true);
 		const token = await shareLink(folder.name);
 		await page.goto(`/l/${token}`);
 		await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}(/shared-plans)?$`));
@@ -265,80 +256,11 @@ test.describe("a signed-in user", () => {
 		expect(page.url()).not.toContain(docToken);
 		await expect(page.getByTestId("guest-frame")).toHaveCount(0);
 	});
-});
-
-test.describe("with the files flip off", () => {
-	test.use({ storageState: SIGNED_OUT, flips: { suite_flip_shell: false, suite_flip_files: false } });
-	test.beforeEach(() => requireSiteFilesFlip(false));
-
-	test("a guest opening a link keeps no token in the URL", async ({ page }) => {
-		const token = await shareLink(doc.name);
-		await expectOldAddress(token, doc.name);
-		await page.goto(`/l/${token}`);
-		await page.waitForLoadState("networkidle");
-		expect(page.url()).not.toContain(token);
-		expect(page.url()).not.toContain("link=");
-	});
-
-	test("a copied /d/ URL without the link still shows the Sign-in screen", async ({ page }) => {
-		await page.goto(`/d/${doc.name}`);
-		await expect(page.getByRole("heading", { name: "Sign in to open this" })).toBeVisible();
-		await expect(page.getByText(doc.title)).toHaveCount(0);
-	});
-
-	test("/home sends a guest to sign in", async ({ page }) => {
-		await page.goto("/home");
-		await expect(page).toHaveURL(/\/login\?redirect-to=%2Fhome$/);
-	});
-});
-
-test.describe("a signed-in user with the files flip off", () => {
-	test.use({ flips: { suite_flip_shell: false, suite_flip_files: false } });
-	test.beforeEach(() => requireSiteFilesFlip(false));
-
-	// The old Drive pages never read `#link=` and never send link codes, so the token gives
-	// them nothing. Taking it out of the URL must leave the page exactly as the same address
-	// without the link shows it.
-	test("/l/<token> lands on the old address with no token, and the page matches the address without the link", async ({ page }) => {
-		const token = await shareLink(folder.name);
-		await expectOldAddress(token, folder.name);
-		await page.goto(`/l/${token}`);
-		await expect(page).toHaveURL(new RegExp(`/drive/d/${folder.name}`));
-		await expect(page.getByText("Shared plans").first()).toBeVisible();
-		expect(page.url()).not.toContain(token);
-		// The old sidebar loads its storage figure after the folder. Compare settled pages.
-		await page.waitForLoadState("networkidle");
-		const withLink = await page.locator("#app").innerText();
-
-		await page.goto(`/drive/g/${folder.name}`);
-		await expect(page.getByText("Shared plans").first()).toBeVisible();
-		await page.waitForLoadState("networkidle");
-		expect(await page.locator("#app").innerText()).toBe(withLink);
-		await expect(page.getByTestId("guest-frame")).toHaveCount(0);
-	});
 
 	test("Go to Home on a dead link opens Home", async ({ page }) => {
 		await page.goto(`/l/${"A".repeat(22)}`);
 		await page.getByRole("link", { name: "Go to Home" }).click();
 		await expect(page).toHaveURL(/\/home$/);
 		await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
-	});
-
-	// `node_url` writes `/drive/g/<id>` for every kind while the key is off, and Desk's File
-	// form opens it too. The old route table must open the node, not Not Found.
-	test("/drive/g/<id> opens a folder on the old folder page and a document on its old page", async ({ page }) => {
-		await page.goto(`/drive/g/${folder.name}`);
-		await expect(page).toHaveURL(new RegExp(`/drive/d/${folder.name}`));
-		await expect(page.getByText("Shared plans").first()).toBeVisible();
-
-		await page.goto(`/drive/g/${doc.name}`);
-		await expect(page).not.toHaveURL(/\/drive\/g\//);
-		await expect(page.getByText(doc.title).first()).toBeVisible();
-		await expect(page.getByText(/not found/i)).toHaveCount(0);
-
-		// A failed read guesses no page: the old error page shows at the same address.
-		await page.goto("/drive/g/no-such-node");
-		await expect(page.getByRole("heading", { name: "Uh oh!" })).toBeVisible();
-		await expect(page).toHaveURL(/\/drive\/g\/no-such-node\/?$/);
 	});
 });

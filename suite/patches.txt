@@ -57,7 +57,7 @@ suite.mail.patches.sync_jmap_accounts_for_configured_users
 suite.mail.patches.copy_sync_history_account_id_to_account
 suite.mail.patches.destroy_data_store
 suite.mail.patches.backfill_screened_email_address_account
-suite.mail.patches.rebuild_email_address_indexes #3
+suite.mail.patches.rebuild_email_address_indexes #5
 suite.mail.patches.enable_screening_for_personal_accounts
 suite.mail.patches.create_suite_user_role
 suite.mail.patches.rename_mail_admin_to_suite_admin
@@ -85,6 +85,8 @@ suite.mail.patches.group_by_date
 # (no patches)
 # --- suite_core ---
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
+suite.suite_core.patches.grant_suite_admin_to_system_managers
+suite.composition.patches.initialize_account_states
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
@@ -92,6 +94,7 @@ suite.suite_core.patches.remove_desk_access_from_suite_roles
 # Frappe's 25 MB per-file default is too small for Drive. Leaves a site's own value alone.
 suite.suite_core.patches.set_default_max_file_size
 suite.suite_core.patches.rename_suite_cloud_credentials
+suite.suite_core.patches.drop_notification_email_account
 suite.drive.patches.webdav_property_index
 # §9.2 redefined `preview_size` from a megabyte cutoff to pixels; resets any
 # value outside the pixel range to 512, idempotent, ahead of Build so its
@@ -101,11 +104,13 @@ suite.drive.patches.migrate_preview_size_unit #2026-10-06
 # --- drive (the Drive migration, spec §14) ---
 # Last in the file, in this order. Build reads the legacy Drive tables after
 # every patch above has finished reshaping them and writes only new rows.
-# Cleanup then drops the legacy tables, columns and files in the same
+# Draw adoption links the app's existing bodies and converts its shares.
+# Cleanup then drops the legacy Drive tables, columns and files in the same
 # `bench migrate`: model sync never drops a column and orphan doctypes are
 # removed only after the patches, so everything Build read is still there
 # when Cleanup starts. Cleanup refuses until the operator has recorded the
 # backup taken before this migrate (`drive_cleanup_backup` in site config);
 # restoring that backup is the only rollback (§14.11).
 suite.drive.patches.build
+suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup

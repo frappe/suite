@@ -1,4 +1,4 @@
-import { expect, test } from "../../helpers/flips";
+import { expect, test } from "@playwright/test";
 
 import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/drive";
 
@@ -7,7 +7,8 @@ import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/dr
  * logo on every route, so a journey asserts it stays that way.
  */
 
-const SUITE_FAVICON = "/src/platform/brand/suite.svg";
+// The source file under Vite's dev server, the hashed asset in a production build.
+const SUITE_FAVICON = /^\/(src\/platform\/brand\/suite|assets\/suite\/frontend\/assets\/suite-[\w-]+)\.svg$/;
 
 function favicon(page: import("@playwright/test").Page) {
 	return page.locator("link[rel='icon']").first();
@@ -33,7 +34,7 @@ test("each area route sets its title and keeps the Suite favicon", async ({ page
 test("client-side navigation updates the title", async ({ page }) => {
 	await page.goto("/drive");
 	await expect(page).toHaveTitle("My files");
-	await page.getByRole("navigation", { name: "File views" }).getByRole("link", { name: "Recent" }).click();
+	await page.getByRole("group", { name: "Views" }).getByRole("link", { name: "Recent" }).click();
 	await expect(page).toHaveURL(/\/drive\/recent$/);
 	await expect(page).toHaveTitle("Recent");
 });

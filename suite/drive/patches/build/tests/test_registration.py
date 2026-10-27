@@ -1,8 +1,8 @@
 """How Build is registered, and what the repository no longer carries.
 
-One `bench migrate` runs Build and then Cleanup, both after model sync:
-`suite/patches.txt` names this package and then `suite.drive.patches.cleanup`
-directly after it. Frappe's model sync never drops a column and only drops
+One `bench migrate` runs Build, Draw adoption, and Cleanup after model sync.
+Draw adoption links existing drawings before Cleanup validates the registry.
+Frappe's model sync never drops a column and only drops
 orphan doctypes after the patches have run, so the legacy tables and columns
 Build reads are still there when it runs, and Cleanup drops them in the same
 migrate. That ordering is what these checks hold.
@@ -30,6 +30,7 @@ SUITE_ROOT = REPOSITORY_ROOT / "suite"
 
 PATCH_NAME = "suite.drive.patches.build"
 CLEANUP_NAME = "suite.drive.patches.cleanup"
+DRAW_ADOPTION_NAME = "suite.drive.patches.adopt_drawings"
 
 # SQL that removes data, as this codebase spells it.
 DESTRUCTIVE_SQL = re.compile(r"\b(DROP\s+(TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)\b")
@@ -55,18 +56,19 @@ class TestBuildThenCleanupAreRegistered(unittest.TestCase):
         lines = patch_lines()
         self.assertEqual(lines.count(PATCH_NAME), 1)
         self.assertEqual(lines.count(CLEANUP_NAME), 1)
+        self.assertEqual(lines.count(DRAW_ADOPTION_NAME), 1)
 
     def test_both_run_after_model_sync(self):
         lines = patch_lines()
         self.assertGreater(lines.index(PATCH_NAME), lines.index("[post_model_sync]"))
         self.assertGreater(lines.index(CLEANUP_NAME), lines.index("[post_model_sync]"))
 
-    def test_cleanup_runs_directly_after_build_and_nothing_runs_after_cleanup(self):
+    def test_draw_adoption_runs_between_build_and_cleanup_and_cleanup_runs_last(self):
         # Build reads the legacy tables and Cleanup drops them. Every patch
-        # that reshapes those tables has to have finished before Build, and
-        # nothing may expect them after Cleanup, so the two close the file.
+        # that reshapes those tables must finish before Build. Draw adoption
+        # must link its bodies before Cleanup validates the registry.
         lines = patch_lines()
-        self.assertEqual(lines[-2:], [PATCH_NAME, CLEANUP_NAME])
+        self.assertEqual(lines[-3:], [PATCH_NAME, DRAW_ADOPTION_NAME, CLEANUP_NAME])
 
     def test_both_packages_export_an_entry_point(self):
         self.assertTrue(callable(build.execute))

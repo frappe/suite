@@ -95,10 +95,7 @@
                 :model-value="publicEnabled(row.access)"
                 :aria-label="__('Everyone on the web')"
                 :disabled="state.isPending(PUBLIC)"
-                @update:model-value="
-                  (enabled) =>
-                    enabled ? state.setGeneral(PUBLIC, DRIVE_ROLES.read) : state.deny(PUBLIC)
-                "
+                @update:model-value="(enabled) => state.setPublic(enabled)"
               />
               <Select
                 v-else-if="
@@ -203,7 +200,7 @@ import {
   rolesFor,
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
-import { DRIVE_ROLES, type DrivePerson } from '@/apps/drive/client/types'
+import type { DrivePerson } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 

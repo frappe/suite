@@ -468,7 +468,7 @@ exports[`IronCalc upgrade gate (seeded, always on) > gives the recorded answers 
 =100+0.5*(-5)  →  num 97.5000000000
 =IF(C1>2.5,-2.5,2)  →  num 2.00000000000
 =CHOOSE(1,0.5,5,3,3)  →  num 0.500000000000
-=CEILING(1,5)-(2.5)^ROUNDDOWN(100,2)^B1  →  err #NUM!
+=CEILING(1,5)-(2.5)^ROUNDDOWN(100,2)^B1  →  err #DIV/0!
 =IF(B1>0,2,1)  →  num 2.00000000000
 =LEFT(E5,2)  →  text ch
 =COUNT(A1:C3,2)  →  num 8.00000000000
@@ -1854,7 +1854,7 @@ exports[`IronCalc upgrade gate (seeded, always on) > gives the recorded answers 
 =RIGHT(E1,4)  →  text pple
 =A3-INT(-2.5)-TRUNC(10,2)*AVERAGE(A4,-5)  →  num 11.0000000000
 =C1+2*SQRT(1.001)*-2  →  num -5.00199950025
-=0^D3^C1  →  num 0.00000000000
+=0^D3^C1  →  err #DIV/0!
 =COUNT(2.5,-2,C3)  →  num 3.00000000000
 =SUM(A3,5)  →  num 8.00000000000
 =AND(B1>10,D1<-2.5)  →  bool false
@@ -1976,7 +1976,7 @@ exports[`IronCalc upgrade gate (seeded, always on) > gives the recorded answers 
 =SUMIF(B1:B10,">3")  →  num 410.000000000
 =-1-0.001  →  num -1.00100000000
 =-5^10+B5  →  num 9765675.00000
-=0^D5*-1*(B1)  →  err #NUM!
+=0^D5*-1*(B1)  →  err #DIV/0!
 =2^-ABS(0)/A4  →  num 0.250000000000
 =CONCATENATE("xyz123","xyz123")  →  text xyz123xyz123
 =CONCATENATE("apple",E5)  →  text applecherry

@@ -34,9 +34,28 @@ describe('marching ants', () => {
     expect(ants.rect).toEqual({ r0: 0, c0: 0, r1: 2, c1: 1 })
     f.tick()
     f.tick()
-    expect(ants.phase).toBe(1)
+    expect(ants.phase).toBe(3)
     expect(render).toHaveBeenCalledTimes(2)
     expect(f.pending()).toBe(1)
+  })
+
+  // A repaint draws the whole grid, so the ants step on a timer, not on
+  // every display frame (ISSUES #87: 138 paints/s on a fast screen).
+  it('repaints 20 times a second and moves 30 px a second, whatever the screen', () => {
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+    })
+    try {
+      const render = vi.fn()
+      const ants = createMarchingAnts(render)
+      ants.set({ r0: 0, c0: 0, r1: 0, c1: 0 })
+      vi.advanceTimersByTime(1000)
+      expect(render).toHaveBeenCalledTimes(20)
+      expect(ants.phase).toBe(30)
+      ants.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('clearing stops the animation and repaints once', () => {

@@ -1,3 +1,4 @@
+import { toast } from 'frappe-ui'
 import { computed, effectScope, reactive, ref, watch } from 'vue'
 
 import { api, client, type InputOf } from '@/api'
@@ -139,19 +140,26 @@ const createShared = () => {
     }: { account?: string; destination?: Destination; message?: string } = {},
   ) => {
     decide(account, emails)
+    const landed = client.mutation(api.mail.screener.allow, {
+      account,
+      from_emails: emails,
+      destination,
+    })
+    // Said on the click, as the bar goes on it; Undo takes it back once it has landed, and a refusal
+    // takes the toast down.
+    const shown = raiseToast(message, 'success', {
+      label: __('Undo'),
+      onClick: () =>
+        void landed.then(
+          (allowed) => reverseVerdict(account, emails, Object.values(allowed).flat()),
+          () => {},
+        ),
+    })
     try {
-      const allowed = await client.mutation(api.mail.screener.allow, {
-        account,
-        from_emails: emails,
-        destination,
-      })
-      raiseToast(message, 'success', {
-        label: __('Undo'),
-        onClick: () => reverseVerdict(account, emails, Object.values(allowed).flat()),
-      })
-      return allowed
+      return await landed
     } catch (error) {
       undecide(account, emails)
+      toast.dismiss(shown)
       failed(error)
     } finally {
       settled()
@@ -203,30 +211,44 @@ const createShared = () => {
       .catch(failed)
 
   /**
-   * What every block does after it lands — Block Sender, No on the new-sender bar, Junk on a screened
-   * thread: the toast says the senders are blocked, with `revert` as its Undo. When they have
-   * `oldMail` left in the Inbox, the account's setting says what becomes of it: moved to Junk, kept,
-   * or — by default — asked about.
+   * What every block says — Block Sender, No on the new-sender bar, Junk on a screened thread: the
+   * toast says the senders are blocked, with `revert` as its Undo. Said on the click, as the mail
+   * leaves on the click; `landed` is the block on its way, answering with how much of their old mail
+   * is left in the Inbox. Undo waits for it to land before taking it back, and a block that fails
+   * takes the toast down (the caller says why). Once it lands with old mail left, the account's
+   * setting says what becomes of it: moved to Junk, kept, or — by default — asked about.
    */
   const raiseBlocked = (
     emails: string[],
     revert: () => void,
-    oldMail: number,
+    landed: Promise<number>,
     account = store.accountId,
   ) => {
-    setUndoAction(revert)
-    raiseToast(
+    // Undone before it landed, the block is taken back once it does, and what would follow it — the
+    // old mail moved or asked about — doesn't.
+    let undone = false
+    const takeBack = () => {
+      undone = true
+      void landed.then(revert, () => {})
+    }
+    setUndoAction(takeBack)
+    const shown = raiseToast(
       emails.length === 1
         ? __('Sender blocked. Future mail will go to Junk.')
         : __('Senders blocked. Future mail will go to Junk.'),
       'success',
       { label: __('Undo'), onClick: undo },
     )
-    if (!oldMail) return
-    const setting = accountOf(account)?.on_block_old_mail
-    // Done without asking, it is part of the block: one Undo takes back both.
-    if (setting === 'Move to Junk') void junkOldMail(emails, account, revert)
-    else if (setting !== 'Keep') oldMailPrompt.value = { account, emails, count: oldMail }
+    void landed.then(
+      (oldMail) => {
+        if (!oldMail || undone) return
+        const setting = accountOf(account)?.on_block_old_mail
+        // Done without asking, it is part of the block: one Undo takes back both.
+        if (setting === 'Move to Junk') void junkOldMail(emails, account, revert)
+        else if (setting !== 'Keep') oldMailPrompt.value = { account, emails, count: oldMail }
+      },
+      () => toast.dismiss(shown),
+    )
   }
 
   /**
@@ -239,13 +261,15 @@ const createShared = () => {
     { account = store.accountId, mails = [] }: { account?: string; mails?: SavedMail[] } = {},
   ) => {
     decide(account, emails)
-    try {
+    // Puts back all of it once it has landed: the senders' rule and waiting mail, and the rest as it
+    // was saved.
+    let putBack = (): Promise<unknown> => Promise.resolve()
+    const landed = (async () => {
       const junked = Object.values(
         await client.mutation(api.mail.screener.reject, { account, from_emails: emails }),
       ).flat()
       const rest = mails.filter((mail) => !junked.includes(mail.id))
-      // Puts back all of it: the senders' rule and waiting mail, and the rest as it was saved.
-      const putBack = () =>
+      putBack = () =>
         Promise.all([
           reverseVerdict(account, emails, junked),
           rest.length && client.mutation(api.mail.messages.setFolders, { account, mails: rest }),
@@ -253,19 +277,21 @@ const createShared = () => {
       // The rule is in place already, so this only junks the rest of what is being junked, and
       // counts what else of theirs is in the Inbox — mail from before screening, say. Should it fail,
       // the Junk did only half its work: it is taken back whole, and fails as a whole.
-      let inbox: number
       try {
         const blocked = await client.mutation(api.mail.screening.block, {
           account,
           from_emails: emails,
           ids: rest.map((mail) => mail.id),
         })
-        inbox = blocked.inbox
+        return blocked.inbox
       } catch (error) {
         await putBack().catch(() => {})
         throw error
       }
-      raiseBlocked(emails, () => void putBack().catch(failed), inbox, account)
+    })()
+    raiseBlocked(emails, () => void putBack().catch(failed), landed, account)
+    try {
+      await landed
       return true
     } catch (error) {
       undecide(account, emails)

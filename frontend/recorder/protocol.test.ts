@@ -147,3 +147,23 @@ describe('recorder stage projection protocol', () => {
     expect(parseRecordingProjectionSnapshotResponse(value)).toBeNull()
   })
 })
+
+it('parses canonical shared ranking snapshots and projection events without relaxing the protocol', () => {
+  const state = {
+    epoch: 'room',
+    protocolVersion: 1,
+    version: 3,
+    participantIds: ['alice'],
+    activeSpeakerIds: [],
+  }
+  expect(
+    parseRecorderStageSnapshot({ ...stageSnapshot, shared_stage: state })?.shared_stage,
+  ).toEqual(state)
+  expect(
+    parseRecorderStageProjectionEvent({ ...stageEvent, payload: { type: 'shared_stage', state } })
+      ?.payload,
+  ).toEqual({ type: 'shared_stage', state })
+  expect(
+    parseRecorderStageSnapshot({ ...stageSnapshot, shared_stage: { ...state, surprise: true } }),
+  ).toBeNull()
+})

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
+import { TransportError } from '@/platform/transport'
 
 import DocumentHeader from './DocumentHeader.vue'
 import type { DocumentPanel, DocumentSaveState } from './header'
@@ -117,6 +118,47 @@ describe('DocumentHeader', () => {
     await nextTick()
     expect(title.value).toBe('Budget 2027')
     expect(doc.rename).toHaveBeenCalledOnce()
+  })
+
+  it('says a taken name in plain words and offers the free one', async () => {
+    const doc = session(40)
+    doc.rename.mockRejectedValueOnce(
+      new TransportError({
+        type: 'DriveConflict',
+        status: 409,
+        message: 'An active Drive node with this title already exists',
+        free_title: 'Rates (2)',
+      }),
+    )
+    const { root, title } = mount(doc)
+
+    title.value = 'Rates'
+    title.dispatchEvent(new Event('input'))
+    title.dispatchEvent(new FocusEvent('blur'))
+    await vi.waitFor(() => expect(root.querySelector('[role="alert"]')).not.toBeNull())
+
+    const alert = root.querySelector('[role="alert"]')!.textContent!.trim()
+    expect(alert).toBe('That name is taken in this folder. Try “Rates (2)”.')
+    expect(title.value).toBe('Budget')
+  })
+
+  it.each([
+    ['another conflict', 409, 'DriveConflict', 'The Drive file bytes are unavailable'],
+    ['a refusal written for people', 417, 'ValidationError', 'Keep the .pdf extension.'],
+    ['no connection', 0, 'TransportError', 'Could not rename this file. Try again.'],
+    ['a server failure', 500, 'InternalServerError', 'Could not rename this file. Try again.'],
+  ])('shows %s as the refusal', async (_case, status, type, expected) => {
+    const doc = session(40)
+    const message = status === 0 ? 'Failed to fetch' : status === 500 ? 'Traceback …' : expected
+    doc.rename.mockRejectedValueOnce(new TransportError({ type, status, message }))
+    const { root, title } = mount(doc)
+
+    title.value = 'Rates'
+    title.dispatchEvent(new Event('input'))
+    title.dispatchEvent(new FocusEvent('blur'))
+    await vi.waitFor(() => expect(root.querySelector('[role="alert"]')).not.toBeNull())
+
+    expect(root.querySelector('[role="alert"]')!.textContent!.trim()).toBe(expected)
   })
 
   it('does not let a viewer rename, and says the document is view only', () => {

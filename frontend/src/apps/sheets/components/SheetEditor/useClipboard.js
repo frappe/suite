@@ -32,6 +32,7 @@ export function useClipboard({
   captureFormatsRange: _captureFormatsRange,
   captureValidationRange: _captureValidationRange,
   diffRefs: _diffRefs,
+  refitRowsFor,
 }) {
   function _canvasActive() {
     return isCanvasClipboardTarget({
@@ -83,6 +84,14 @@ export function useClipboard({
     e.preventDefault()
     const destSel = getGrid().getSelection()
     const sn = currentSheet.value
+
+    // Copied something else since (in another app, or a cell editor's
+    // text)? Paste that, not the old copy.
+    if (clipboard.isStale(e.clipboardData?.getData('text/plain'))) {
+      clipboard.clear()
+      clipboardHas.value = false
+      getGrid().setMarchingAnts(null)
+    }
 
     // Pasting a copied pivot mints a new live pivot at the anchor rather than
     // writing cells, so the op-based cell-diff undo below can't capture it (it
@@ -185,6 +194,9 @@ export function useClipboard({
       const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
       const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
       const refs = _diffRefs(before, after)
+      // Rows with wrapped text refit to the pasted values and formats (a cut's
+      // vacated rows shrink back); the height change undoes with the paste.
+      const rowH = refitRowsFor?.(sn, after)
       if (refs.length || cfBefore !== cfAfter) {
         _queueOp({
           opType: 'paste',
@@ -207,6 +219,7 @@ export function useClipboard({
           afterValidation: afterVal,
           cfChanged: cfBefore !== cfAfter,
           ...(source && { source }),
+          ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
         })
         syncFlags()
       }
@@ -246,6 +259,7 @@ export function useClipboard({
     const afterVal = Object.assign({}, ...rects.map((r) => _captureValidationRange(r, sn)))
     const cfAfter = condFormat?.getRules?.(sn)?.length ?? 0
     const refs = _diffRefs(before, after)
+    const rowH = refitRowsFor?.(sn, after) // as in onDocPaste
     if (refs.length || cfBefore !== cfAfter) {
       _queueOp({
         opType: 'paste',
@@ -268,6 +282,7 @@ export function useClipboard({
         afterValidation: afterVal,
         cfChanged: cfBefore !== cfAfter,
         ...(source && { source }),
+        ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
       })
       syncFlags()
     }

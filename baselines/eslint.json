@@ -52,7 +52,7 @@
   "frontend/src/apps/meet/utils/__tests__/chatMessageTokens.test.ts|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/utils/media/TransportManager.ts|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/utils/media/__tests__/LocalCaptureSession.test.ts|prefer-const": 2,
-  "frontend/src/apps/meet/utils/sfu/SFUMediaManager.ts|prefer-const": 2,
+  "frontend/src/apps/meet/utils/sfu/SFUMediaManager.ts|prefer-const": 1,
   "frontend/src/apps/meet/utils/webglShaders.ts|prefer-const": 2,
   "frontend/src/apps/sheets/canvas/cell-ink.test.ts|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/sheets/components/SheetEditor/AISettingsDialog.vue|vue/block-lang": 1,

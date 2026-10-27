@@ -16,7 +16,7 @@ import { createCellProvider } from '../../core/cell-provider'
 import { createWorkbookClient } from '../../core/client'
 import { createDisplayCache } from '../../core/display-cache'
 import { MAX_VIEWPORT_CELLS } from '../../core/limits'
-import { definedNameFormula } from '../../engine/named-ranges.js'
+import { definedNameChanges } from '../../engine/named-ranges.js'
 import { parseSparkline } from '../../engine/sparkline.js'
 import { cellId, parseCellId } from '../../utils/cells.js'
 
@@ -49,7 +49,8 @@ export function useWorkbook({
     const offVersion = client.onVersion(() => onVersion())
     const offCrash = client.onCrash((reason) => onCrash(reason))
     engine = { client, provider, offSheets, offVersion, offCrash }
-    // The saved bytes may predate names being sent to IronCalc: send them all.
+    // Nothing is sent yet: the next sync sends every name. A load restores
+    // the names after this and syncs then (usePersistence).
     namesInEngine = new Map()
     syncDefinedNames()
     syncNames()
@@ -110,21 +111,12 @@ export function useWorkbook({
   // IronCalc whatever differs from what it was last sent, so calling it after
   // anything that may change the store (dialog, undo, load, sheet rename,
   // row/column ops) is cheap.
-  let namesInEngine = new Map() // name → formula
+  let namesInEngine = new Map() // name → formula ('' when dropped)
   function syncDefinedNames() {
     if (!engine) return
-    const want = new Map(
-      namedRanges()
-        .list()
-        .map((e) => [e.name, definedNameFormula(e)]),
-    )
-    const commands = []
-    for (const name of namesInEngine.keys())
-      if (!want.has(name)) commands.push(command('deleteDefinedName', { name }))
-    for (const [name, formula] of want)
-      if (namesInEngine.get(name) !== formula)
-        commands.push(command('setDefinedName', { name, formula }))
-    namesInEngine = want
+    const { sent, changes } = definedNameChanges(namesInEngine, namedRanges().list())
+    const commands = changes.map((c) => command(c.type, c.payload))
+    namesInEngine = sent
     if (commands.length === 1) engine.client.dispatch(commands[0])
     else if (commands.length > 1) engine.client.dispatch(command('batch', { commands }))
   }
@@ -144,11 +136,14 @@ export function useWorkbook({
   }
 
   // A rect's inputs and display strings (0-based rect), read from the worker in
-  // chunks of rows that fit one readViewport.
-  async function readRect(sn, rect) {
+  // chunks of rows that fit one readViewport. `numFmts: true` also returns
+  // IronCalc's own number format per cell (what typing `$1.50` sets), for
+  // copy and fill to carry.
+  async function readRect(sn, rect, { numFmts: wantFmts = false } = {}) {
     const inputs = []
     const displays = []
-    if (!engine) return { inputs, displays }
+    const numFmts = []
+    if (!engine) return wantFmts ? { inputs, displays, numFmts } : { inputs, displays }
     const cols = rect.c1 - rect.c0 + 1
     const step = Math.max(1, Math.floor(MAX_VIEWPORT_CELLS / cols))
     for (let r = rect.r0; r <= rect.r1; r += step) {
@@ -159,9 +154,12 @@ export function useWorkbook({
         r2: Math.min(r + step - 1, rect.r1) + 1,
         c2: rect.c1 + 1,
         includeInputs: true,
+        includeStyles: wantFmts,
       })
       inputs.push(...(res.inputs ?? []))
       displays.push(...res.values)
+      if (wantFmts)
+        numFmts.push(...(res.styles ?? []).map((row) => row.map((s) => s.style.num_fmt)))
     }
     // A sparkline shows a chart, not IronCalc's #NAME?, to every reader
     // (charts, copied text, filter lists), as it does in the grid.
@@ -170,7 +168,7 @@ export function useWorkbook({
         if (parseSparkline(input)) displays[i][j] = ''
       }),
     )
-    return { inputs, displays }
+    return wantFmts ? { inputs, displays, numFmts } : { inputs, displays }
   }
 
   // {cellId: input} for a rect: an edit op's before or after.
@@ -212,6 +210,12 @@ export function useWorkbook({
   function displayValue(id, sn = currentSheet.value) {
     const p = parseCellId(id)
     return p && engine ? engine.provider.getDisplay(sn, p.row + 1, p.col + 1) : ''
+  }
+
+  // Whether the cell holds a number (it aligns right), or undefined until read.
+  function isNumberAt(id, sn = currentSheet.value) {
+    const p = parseCellId(id)
+    return p && engine ? engine.provider.isNumber(sn, p.row + 1, p.col + 1) : undefined
   }
 
   // The open sheet's non-empty cells, from the worker: the grid's scroll extent,
@@ -283,10 +287,10 @@ export function useWorkbook({
   }
 
   // A whole sheet's inputs and displays, A1 to its last used cell.
-  async function readWholeSheet(sn) {
+  async function readWholeSheet(sn, opts = {}) {
     const ext = await sheetExtent(sn)
-    if (!ext) return { inputs: [], displays: [] }
-    return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol })
+    if (!ext) return { inputs: [], displays: [], numFmts: [] }
+    return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol }, opts)
   }
 
   // A rect's shown values (charts read these).
@@ -340,6 +344,7 @@ export function useWorkbook({
     readIds,
     readInput,
     displayValue,
+    isNumberAt,
     refreshUsedCells,
     usedCellIds,
     usedExtent,

@@ -1,6 +1,4 @@
-import { type APIRequestContext } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 import {
 	adminApi,
@@ -35,7 +33,8 @@ test.afterEach(async () => {
 
 async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item, exact: true }).click();
+	// The Upload group repeats "Folder"; the Create group comes first.
+	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
 }
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {
@@ -95,10 +94,12 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 test("New offers Upload files and then Upload folder", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	const items = page.getByRole("menuitem");
-	await expect(page.getByRole("menuitem", { name: "Upload files" })).toBeEnabled();
-	const labels = await items.allInnerTexts();
-	expect(labels.slice(0, 3).map((label) => label.trim())).toEqual(["Folder", "Upload files", "Upload folder"]);
+	const menu = page.getByRole("menu", { name: "New" });
+	await expect(menu.getByText("Upload", { exact: true })).toBeVisible();
+	const labels = (await menu.getByRole("menuitem").allInnerTexts()).map((label) => label.trim());
+	// Create starts with Folder; the Upload group closes the menu with Files, then Folder.
+	expect(labels[0]).toBe("Folder");
+	expect(labels.slice(-2)).toEqual(["Files", "Folder"]);
 });
 
 test("each registered document type opens its own surface", async ({ page }) => {
@@ -149,5 +150,7 @@ test("a Sheets document carries one share control, the Drive one", async ({ page
 	await expect(page.getByRole("button", { name: "File" })).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(1);
 	await page.getByRole("button", { name: /Share/ }).click();
-	await expect(page.getByRole("dialog", { name: /^Share “/ })).toBeVisible();
+	const dialog = page.getByRole("dialog", { name: "Share", exact: true });
+	await expect(dialog.getByText(sheet.title, { exact: true })).toBeVisible();
+	await expect(dialog.getByRole("region", { name: "Who has access" })).toBeVisible();
 });

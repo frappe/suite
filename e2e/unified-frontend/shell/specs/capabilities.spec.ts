@@ -1,4 +1,4 @@
-import { expect, test } from "../../helpers/flips";
+import { expect, test } from "@playwright/test";
 
 import { patchAccount } from "../../helpers/shell";
 

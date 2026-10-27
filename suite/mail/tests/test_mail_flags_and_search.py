@@ -8,11 +8,10 @@ from suite.mail.api.mail import (
     get_avatar,
     get_email_suggestions,
     get_mailboxes,
-    get_recent_threads_with,
+    get_recent_threads_from,
     get_threads,
     move_mails,
     remove_mails_from_mailbox,
-    search_email_addresses,
     search_mails,
     set_flagged,
     set_mails_mailboxes,
@@ -176,11 +175,11 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
         with self.set_user(self.receiver.email):
             self.assertEqual(search_mails(self.account, filter=None), {"rows": [], "total": 0})
 
-    def test_recent_threads_with(self):
+    def test_recent_threads_from(self):
         subject = self.thread["subject"]
 
         def subjects(limit: int = 10) -> list[str]:
-            return [r["subject"] for r in get_recent_threads_with(self.account, self.sender.email, limit)]
+            return [r["subject"] for r in get_recent_threads_from(self.account, self.sender.email, limit)]
 
         with self.set_user(self.receiver.email):
             self.wait_until(
@@ -190,12 +189,29 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
             # One row per conversation, however many of its messages match.
             self.assertEqual(subjects().count(subject), 1)
 
+        # Mail to them is not mail from them: a conversation of only your own mail to the sender is
+        # left out, once it is surely in the account to be found.
+        outgoing = f"To the sender {unique_name('subject')}"
+        assert self.send_mail(self.receiver, self.sender.email, subject=outgoing)["status"] == "Submitted"
+        with self.set_user(self.receiver.email):
+            self.wait_until(
+                lambda: any(
+                    r["subject"] == outgoing
+                    for r in search_mails(self.account, filter={"text": outgoing}, limit=5)["rows"]
+                )
+                or None,
+                timeout=60,
+                message="The mail to the sender never reached the account's Sent.",
+            )
+            self.assertNotIn(outgoing, subjects())
+            self.assertIn(subject, subjects())
+
             move_mails(self.account, [self.mail_id], self.mailboxes["trash"])
             self.wait_until(
                 lambda: subject not in subjects() or None,
                 message="A conversation only in Trash still shows in recent threads.",
             )
-            self.assertEqual(get_recent_threads_with(self.account, "  "), [])
+            self.assertEqual(get_recent_threads_from(self.account, "  "), [])
 
     def test_email_suggestions_and_avatar(self):
         with self.set_user(self.receiver.email):
@@ -211,8 +227,6 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
                 message="Sender did not show up in email suggestions.",
             )
             self.assertTrue(suggestions)
-            addresses = search_email_addresses(self.account, self.sender.username)
-            self.assertIn(self.sender.email, [a.get("email") for a in addresses])
 
             # Gravatar stays disabled, so the identicon branch renders a PNG.
             get_avatar(f"{unique_name('ghost')}@nowhere.example.test")

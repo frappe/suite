@@ -1,6 +1,4 @@
-import { type APIRequestContext } from "@playwright/test";
-
-import { expect, test } from "../../helpers/flips";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 
 import {
 	adminApi,
@@ -79,16 +77,6 @@ test("the view settings menu switches between list and grid", async ({ page }) =
 	await page.getByRole("radio", { name: "List" }).click();
 	await expect(page).toHaveURL(/view=list/);
 	await expect(page.getByRole("columnheader", { name: "Name" })).toBeVisible();
-});
-
-test("group by Type renders contiguous server-ordered sections", async ({ page }) => {
-	await page.goto(`/drive/f/${folder.name}?view=list&group=type`);
-	await expect(page.getByText("Folders", { exact: true })).toBeVisible();
-	await expect(page.getByText("Writer Documents", { exact: true })).toBeVisible();
-	await expect(page.getByText("Links", { exact: true })).toBeVisible();
-
-	const headings = await page.getByRole("rowgroup").allTextContents();
-	expect(headings.length).toBeGreaterThan(0);
 });
 
 test("optional columns are a saved preference, not URL state", async ({ page }) => {

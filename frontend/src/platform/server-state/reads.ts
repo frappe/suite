@@ -2,6 +2,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { reactive, shallowRef, type ShallowRef } from 'vue'
 
+import { randomId } from '@/platform/random-id'
 import type { Realtime } from '@/platform/realtime'
 import type { EntityDeclaration, Operation, RequestContext, Transport } from '@/platform/transport'
 
@@ -19,6 +20,7 @@ export interface ReadRecord {
   pages: unknown[]
   status: 'pending' | 'success' | 'error'
   error: Error | null
+  nextError: Error | null
   fetching: number
   fetchingNext: boolean
   stale: boolean
@@ -38,7 +40,7 @@ interface OptimisticRead {
 }
 
 export class Reads {
-  readonly partition: ShallowRef<string> = shallowRef(crypto.randomUUID())
+  readonly partition: ShallowRef<string> = shallowRef(randomId())
   private readonly records = new Map<string, ReadRecord>()
   private readonly flights = new Map<string, Flight>()
   private revision = 0
@@ -155,6 +157,7 @@ export class Reads {
         pages: [],
         status: 'pending',
         error: null,
+        nextError: null,
         fetching: 0,
         fetchingNext: false,
         stale: true,
@@ -217,7 +220,10 @@ export class Reads {
     flight.consumers.add(token)
     record.fetching += 1
     record.error = null
-    if (next) record.fetchingNext = true
+    if (next) {
+      record.fetchingNext = true
+      record.nextError = null
+    }
     const active = flight
     try {
       const outcome = await canceled(active.work, options.signal)
@@ -250,6 +256,7 @@ export class Reads {
     } catch (cause) {
       if (!isAbort(cause)) {
         record.error = asError(cause)
+        if (next) record.nextError = record.error
         record.status = 'error'
       }
       throw cause
@@ -387,7 +394,7 @@ export class Reads {
     this.pageRefreshes.clear()
     this.entities.clear()
     this.revision += 1
-    this.partition.value = partition ?? crypto.randomUUID()
+    this.partition.value = partition ?? randomId()
   }
 
   dispose(): void {

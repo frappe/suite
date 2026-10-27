@@ -1117,6 +1117,8 @@ describe('setupDefaultHandlers', () => {
       'ice_candidate',
       'chat:message',
       'active_speaker',
+      'shared_stage',
+      'shared_stage_snapshot',
       'hand_raised',
       'existing_raised_hands',
     ]

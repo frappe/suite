@@ -1,9 +1,39 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CalendarEvent } from '@/apps/calendar'
-import { formatEventTime, groupHomeEvents } from '@/composition/home/homeTime'
+import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
 
 describe('Home upcoming dates', () => {
+  it.each([
+    ['2026-10-29', '2026-10-30'],
+    ['2026-10-30', '2026-11-02'],
+    ['2026-10-31', '2026-11-02'],
+    ['2026-11-01', '2026-11-02'],
+    ['2027-12-31', '2028-01-03'],
+  ])('keeps all local days from %s through %s', (today, lastDay) => {
+    const now = new Date(`${today}T08:00:00`)
+    const window = homeEventWindow(now)
+    expect(new Date(window.from)).toEqual(new Date(`${today}T00:00:00`))
+    expect(new Date(window.to)).toEqual(new Date(`${lastDay}T23:59:59.999`))
+    const events = [
+      { id: 'last', start: `${lastDay}T23:59:59.999` },
+      { id: 'today', start: `${today}T12:00:00` },
+      { id: 'outside', start: new Date(new Date(window.to).getTime() + 1).toISOString() },
+    ]
+    expect(
+      groupHomeEvents(events, now).flatMap((group) => group.events.map((event) => event.id)),
+    ).toEqual(['today', 'last'])
+  })
+
+  it('retains weekend events between Friday and Monday in date order', () => {
+    const events = ['2026-11-02', '2026-11-01', '2026-10-31'].map((start) => ({
+      start: `${start}T12:00:00`,
+    }))
+    expect(
+      groupHomeEvents(events, new Date(2026, 9, 30, 8)).flatMap((group) => group.events),
+    ).toEqual([events[2], events[1], events[0]])
+  })
+
   it('filters ended events from the cached day while keeping ongoing meetings', () => {
     const now = new Date(2026, 9, 6, 14, 30)
     const events = [

@@ -1,5 +1,6 @@
 import { cellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
+import { dateSerialFromShown, displayNumber } from '../utils/format-number.js'
 import { adjustFormula } from './formula-adjust.js'
 import { remapIndexKeys, remapRect } from './ref-remap.js'
 import type { CellPort, IndexMap, Rect } from './types.js'
@@ -48,7 +49,8 @@ export type SortFilter = ReturnType<typeof createSortFilter>
 export function createSortFilter(cells: CellPort) {
   const _byShet: SortFilterSnapshot = {} // { [sheetName]: { range, byCol } }
   // { [sheetName]: { rect, rows: string[][] } } display values
-  const _shown: Record<string, { rect: Rect; rows: string[][] }> = {}
+  const _shown: Record<string, { rect: Rect; rows: string[][]; codes?: string[][] | undefined }> =
+    {}
 
   function _entry(sn: string): SheetFilter {
     if (!_byShet[sn]) _byShet[sn] = { range: null, byCol: {} }
@@ -68,7 +70,7 @@ export function createSortFilter(cells: CellPort) {
       return
     }
     const rect = { ...range }
-    const { displays } = await cells.read(sheetName, rect)
+    const { displays, numFmts } = await cells.read(sheetName, rect, { numFmts: true })
     // A newer range replaced this one while reading: its own refresh wins.
     const now = getRange(sheetName)
     if (
@@ -79,7 +81,7 @@ export function createSortFilter(cells: CellPort) {
       now.c1 !== rect.c1
     )
       return
-    _shown[sheetName] = { rect, rows: displays }
+    _shown[sheetName] = { rect, rows: displays, codes: numFmts }
   }
 
   // Displayed value at (r, c) from the last refresh, '' when unknown.
@@ -89,18 +91,46 @@ export function createSortFilter(cells: CellPort) {
     return String(s.rows[r - s.rect.r0]?.[c - s.rect.c0] ?? '')
   }
 
+  // The number at (r, c) for greater / less than, and the one typed into
+  // the filter: a date's day serial (it shows as `12/9/2025`, ISSUES #53),
+  // else the number shown. A typed date is read in the column's day order,
+  // or as 2026-01-31.
+  function _codeAt(sheetName: string, r: number, c: number) {
+    const s = _shown[sheetName]
+    return s?.codes?.[r - s.rect.r0]?.[c - s.rect.c0] ?? ''
+  }
+  function _asNumber(v: string, code: string) {
+    const n = displayNumber(v)
+    if (!isNaN(n)) return n
+    return dateSerialFromShown(v, /^\d{4}[-/.]/.test(v.trim()) ? 'yyyy-mm-dd' : code || 'm/d/yyyy')
+  }
+  function _compare(sheetName: string, r: number, c: number, spec: string) {
+    const shown = _shownAt(sheetName, r, c)
+    const code = _codeAt(sheetName, r, c)
+    const serial = dateSerialFromShown(shown, code)
+    const cell = isNaN(serial) ? displayNumber(shown) : serial
+    return cell - _asNumber(spec, isNaN(serial) ? '' : code)
+  }
+
   // Sort data rows of the active filter range (range.r0 stays as the header)
   // by their displayed values. Formulas move with their row and shift their
   // references by the distance moved. Returns the {cellId: input} maps of
-  // the rows before and after, for undo; null when nothing to sort.
+  // the rows before and after, for undo, and the order and rect it used;
+  // null when nothing to sort.
   async function sort(colIndex: number, dir: 'asc' | 'desc' = 'asc', sheetName: string) {
     const range = getRange(sheetName)
     if (!range || !_inCols(colIndex, range) || range.r1 <= range.r0) return null
     const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
-    const { inputs, displays } = await cells.read(sheetName, rect)
+    const { inputs, displays, numFmts } = await cells.read(sheetName, rect, { numFmts: true })
     const key = colIndex - rect.c0
+    // A date shows as text (12/9/2025); its format turns it back into a date.
+    const shown = (i: number) => {
+      const s = displays[i]?.[key] ?? ''
+      const serial = dateSerialFromShown(s, numFmts?.[i]?.[key])
+      return isNaN(serial) ? s : serial
+    }
     const order = inputs.map((_, i) => i)
-    order.sort((a, b) => _cmp(displays[a]?.[key] ?? '', displays[b]?.[key] ?? '', dir))
+    order.sort((a, b) => _cmp(shown(a), shown(b), dir))
     const before: Record<string, string> = {}
     const after: Record<string, string> = {}
     order.forEach((from, to) => {
@@ -111,15 +141,17 @@ export function createSortFilter(cells: CellPort) {
       }
     })
     cells.write(sheetName, after)
-    return { before, after }
+    // `order[to] = from`: the data row each sorted row came from, so the
+    // caller can move the rows' formats the same way (formatsAfterSort).
+    return { before, after, order, rect }
   }
 
-  function _cmp(av: string, bv: string, dir: 'asc' | 'desc') {
+  function _cmp(av: string | number, bv: string | number, dir: 'asc' | 'desc') {
     if (av === '' && bv === '') return 0
     if (av === '') return 1
     if (bv === '') return -1
-    const an = parseFloat(av),
-      bn = parseFloat(bv)
+    const an = displayNumber(av),
+      bn = displayNumber(bv)
     const cmp = !isNaN(an) && !isNaN(bn) ? an - bn : String(av).localeCompare(String(bv))
     return dir === 'asc' ? cmp : -cmp
   }
@@ -178,8 +210,8 @@ export function createSortFilter(cells: CellPort) {
       const op = spec.operator
       if (op === 'contains' && !cellVal.toLowerCase().includes(specVal.toLowerCase())) return true
       else if (op === 'equals' && cellVal !== specVal) return true
-      else if (op === 'gt' && !(parseFloat(cellVal) > parseFloat(specVal))) return true
-      else if (op === 'lt' && !(parseFloat(cellVal) < parseFloat(specVal))) return true
+      else if (op === 'gt' && !(_compare(sheetName, r, +colId, specVal) > 0)) return true
+      else if (op === 'lt' && !(_compare(sheetName, r, +colId, specVal) < 0)) return true
       else if (op === 'empty' && cellVal !== '') return true
       else if (op === 'notempty' && cellVal === '') return true
       // Google-Sheets-style "Filter by values": spec.values is an array of the
@@ -208,8 +240,8 @@ export function createSortFilter(cells: CellPort) {
     return [...seen].sort((a, b) => {
       if (a === '' && b !== '') return -1
       if (b === '' && a !== '') return 1
-      const an = parseFloat(a),
-        bn = parseFloat(b)
+      const an = displayNumber(a),
+        bn = displayNumber(b)
       if (!isNaN(an) && !isNaN(bn)) return an - bn
       return a.localeCompare(b)
     })
@@ -354,4 +386,25 @@ export function createSortFilter(cells: CellPort) {
     snapshot,
     restore,
   }
+}
+
+/**
+ * Each cell of a sorted rect mapped to the format of the cell its value came
+ * from (`order[to] = from`, rows relative to rect.r0), so formats travel
+ * with their rows as in Google Sheets. `before` is {cellId: format | null}
+ * over the rect; a missing or empty source maps to null (clear).
+ */
+export function formatsAfterSort<F>(
+  order: number[],
+  rect: Rect,
+  before: Record<string, F | null | undefined>,
+): Record<string, F | null> {
+  const out: Record<string, F | null> = {}
+  order.forEach((from, to) => {
+    for (let c = rect.c0; c <= rect.c1; c++) {
+      const src = before[cellId(rect.r0 + from, c)]
+      out[cellId(rect.r0 + to, c)] = src && Object.keys(src).length ? src : null
+    }
+  })
+  return out
 }

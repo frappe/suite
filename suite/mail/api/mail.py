@@ -10,15 +10,15 @@ import pydenticon
 import requests
 from frappe import _
 from frappe.model.document import bulk_insert
+from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, cint, now, random_string
 from jmap import MethodError
 from werkzeug.wrappers import Response
 
-from suite.mail import classification
+from suite.mail import classification, unsubscribe
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
     enrich_contacts_with_user_images,
-    get_contacts,
 )
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.classification import Category, tab_filter
@@ -68,6 +68,7 @@ from suite.mail.doctype.user_account.user_account import (
     get_user_personal_jmap_account,
     is_jmap_account_belongs_to_user,
 )
+from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
 from suite.mail.jmap import (
     get_account_client,
@@ -75,7 +76,6 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
-from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.delivery_status import parse_delivery_status
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
@@ -1424,6 +1424,22 @@ def empty_user_mailbox(account: str, mailbox: str) -> None:
 
 
 @frappe.whitelist()
+def get_unsubscribe_options(account: str, ids: list[str]) -> dict:
+    """How each of the given messages can be unsubscribed from (see suite.mail.unsubscribe)."""
+
+    return unsubscribe.options(account, ids)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60)
+def unsubscribe_mail(account: str, id: str) -> str:
+    """Unsubscribes from the list the message came from; returns which way went (see
+    suite.mail.unsubscribe)."""
+
+    return unsubscribe.unsubscribe(account, id)
+
+
+@frappe.whitelist()
 def search_mails(
     account: str,
     filter: dict | None = None,
@@ -1498,9 +1514,10 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
 
 
 @frappe.whitelist()
-def get_recent_threads_with(account: str, email: str, limit: int = 4) -> list[dict]:
-    """The newest conversations with one address, for the card about a person: mail from it or
-    sent to it, one message per conversation, newest first.
+def get_recent_threads_from(account: str, email: str, limit: int = 4) -> list[dict]:
+    """The newest conversations with mail from one address, for the card about its sender, one
+    message per conversation, newest first. Mail from them, not mail to them: the card is about what
+    they have been sending, and your own mail to them read there as theirs.
 
     Summaries only, in one round trip: no bodies, avatars or account tags, which a card listing a
     few subjects has no use for. Mail only in Trash or Junk is left out, as are drafts — a discarded
@@ -1514,7 +1531,7 @@ def get_recent_threads_with(account: str, email: str, limit: int = 4) -> list[di
         return []
     limit = min(max(cint(limit), 1), 10)
 
-    conditions = [with_address(email), {"notKeyword": "$draft"}]
+    conditions = [{"from": email}, {"notKeyword": "$draft"}]
     binned = [m for m in (get_mailbox_id_by_role(account, r) for r in ("trash", "junk")) if m]
     if binned:
         conditions.append({"inMailboxOtherThan": binned})
@@ -1698,89 +1715,14 @@ def get_avatar(email: str, size: int = 128, strict: bool = False) -> None:
 
 
 @frappe.whitelist()
-def search_email_addresses(account: str, text: str, limit: int = 10) -> list[dict]:
-    """Search the account's local address index for names/emails matching `text`."""
-
-    get_user_for_jmap_account(account, raise_exception=True)
-
-    return get_email_address_index(account).search_email_addresses(text, limit=cint(limit))
-
-
-@frappe.whitelist()
 def get_email_suggestions(account: str, text: str, limit: int = 10) -> list[dict]:
-    """Suggest up to `limit` {name, email, user_image} recipients matching `text`.
-
-    Sources are tried in cost order — the account's local address index (built from cached messages
-    and contacts), then a JMAP contact search, and finally the server-side email search (slowest —
-    it queries the JMAP server's messages) — falling through to the next source only when the
-    previous one returned nothing.
-    """
+    """Suggest up to `limit` {name, email, user_image} recipients matching `text`."""
 
     get_user_for_jmap_account(account, raise_exception=True)
 
-    text = (text or "").strip()
-    limit = cint(limit) or 10
-    if not text:
-        return []
-
-    suggestions = get_email_address_index(account).search_email_addresses(text, limit=limit)
-
-    if not suggestions:
-        filter = {"operator": "OR", "conditions": [{"text": text}, {"email": text}]}
-        seen = set()
-        for contact in get_contacts(account, filter, limit):
-            email = (contact.get("email") or "").strip()
-            if email and email.lower() not in seen:
-                seen.add(email.lower())
-                suggestions.append({"name": contact.get("full_name") or None, "email": email})
-
-    if not suggestions:
-        suggestions = [
-            {"name": None, "email": email} for email in _email_address_suggestions(account, text, limit)
-        ]
-
-    suggestions = suggestions[:limit]
+    suggestions = EmailSuggestions(account).get_suggestions(text, cint(limit) or 10)
     enrich_contacts_with_user_images(suggestions)
     return suggestions
-
-
-def _email_address_suggestions(account: str, text: str, limit: int = 5) -> list[str]:
-    """Returns email addresses matching ``text`` in from/to/cc/bcc of recent mails.
-
-    One request carries all four queries; the matching mails are then read once and their
-    address fields scanned for the text.
-    """
-
-    client = get_account_client(account)
-    sort = [{"property": "receivedAt", "isAscending": False}]
-
-    with client.batch() as b:
-        handles = [
-            b.mail.email.query(filter=f, position=0, limit=limit, sort=sort, calculate_total=False)
-            for f in ({"from": text}, {"to": text}, {"cc": text}, {"bcc": text})
-        ]
-
-    ids: list[str] = []
-    for handle in handles:
-        for id in handle.result.ids:
-            if id not in ids:
-                ids.append(id)
-
-    if not ids:
-        return []
-
-    with client.batch() as b:
-        h = b.mail.email.get(ids=ids, properties=["from", "to", "cc", "bcc"])
-
-    addresses: list[str] = []
-    for email in (e.to_wire() for e in h.result.items):
-        for field in ("from", "to", "cc", "bcc"):
-            for addr in email.get(field) or []:
-                email_address = addr.get("email")
-                if email_address and text.lower() in email_address.lower() and email_address not in addresses:
-                    addresses.append(email_address)
-
-    return addresses[:limit]
 
 
 @frappe.whitelist()

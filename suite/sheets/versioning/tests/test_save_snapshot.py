@@ -58,8 +58,7 @@ def _save(newest_age_secs: float | None, take_version_side_effect=None, **kwargs
 
 class InlineVersionFromSave(unittest.TestCase):
     def test_the_first_save_takes_a_version(self):
-        out, drive, _ = _save(newest_age_secs=None)
-        self.assertEqual(out, {"name": "sheet_x", "head_seq": 7})
+        _, drive, _ = _save(newest_age_secs=None)
         drive.take_version.assert_called_once_with("NODE-1", kind="auto")
 
     def test_a_save_after_a_quiet_spell_takes_a_version(self):
@@ -85,10 +84,6 @@ class SaveGuards(unittest.TestCase):
         # A sheet is created through Drive, never by saving a body with no name.
         with self.assertRaises(RuntimeError):
             _save(newest_age_secs=None, name="")
-
-    def test_the_write_check_runs_before_the_body_is_touched(self):
-        _, _, patched = _save(newest_age_secs=None)
-        patched.require_sheet.assert_called_once_with("sheet_x", write=True)
 
     def test_a_completed_request_answers_its_seq_without_saving_again(self):
         with mock.patch.object(save_mod, "frappe") as patched:

@@ -117,6 +117,17 @@ class FileInput(IdsInput):
     shows: NotRequired[dict[str, list[ShownFolder]] | None]
 
 
+class UnsubscribeOption(TypedDict):
+    one_click: str | None
+    mailto: str | None
+    link: str | None
+    unsubscribed: bool
+
+
+class UnsubscribeInput(AccountInput):
+    id: str
+
+
 class FiledResult(TypedDict):
     updated: list[str]
     left_inbox: bool
@@ -324,6 +335,22 @@ _OPERATIONS: tuple[
         {"offset": "start", "rows": "rows", "total": "total"},
     ),
     (mail.get_mime_message, "query", "messages.mime", NameInput, MimeMessage, None),
+    (
+        mail.get_unsubscribe_options,
+        "query",
+        "messages.unsubscribeOptions",
+        IdsInput,
+        dict[str, UnsubscribeOption],
+        None,
+    ),
+    (
+        mail.unsubscribe_mail,
+        "mutation",
+        "messages.unsubscribe",
+        UnsubscribeInput,
+        Literal["one_click", "mailto", "already"],
+        None,
+    ),
     (mail.get_delivery_status, "query", "messages.deliveryStatus", BlobInput, DeliveryReport, None),
     (mail.create_mail, "mutation", "messages.create", CreateInput, DraftResult, None),
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
