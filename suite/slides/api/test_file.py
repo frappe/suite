@@ -1,7 +1,9 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import os
 from contextlib import contextmanager
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -177,6 +179,66 @@ class TestMediaFileAccess(IntegrationTestCase):
         with self.set_user("Guest"):
             with self.assertRaises(Forbidden):
                 validate_media_file(file.file_url, composite.name)
+
+    def test_a_template_file_cannot_take_another_users_file_url(self):
+        # templates serve their media to guests, so a File row on one must never take
+        # the url of a private file its owner cannot already read
+        with self.set_user(OTHER_USER):
+            template = frappe.get_doc(
+                {
+                    "doctype": "Presentation",
+                    "title": "Repoint",
+                    "is_template": 1,
+                    "slides": [{"elements": "[]"}],
+                }
+            ).insert()
+            own = make_private_image(template.name)
+
+            # the same blob under another spelling, which a plain url match would miss
+            victim_urls = (self.file.file_url, self.file.file_url.replace("/files/", "/files/./"))
+            for url, file_type in [*((url, own.file_type) for url in victim_urls), (victim_urls[0], "Link")]:
+                with self.subTest("repoint", url=url, file_type=file_type):
+                    file = frappe.get_doc("File", own.name)
+                    file.file_type = file_type
+                    file.file_url = url
+                    with self.assertRaises(frappe.ValidationError):
+                        file.save()
+
+            for url in victim_urls:
+                with self.subTest("insert", url=url):
+                    with self.assertRaises(frappe.PermissionError):
+                        frappe.get_doc(
+                            {
+                                "doctype": "File",
+                                "file_url": url,
+                                "is_private": 1,
+                                "attached_to_doctype": "Presentation",
+                                "attached_to_name": template.name,
+                            }
+                        ).insert()
+
+            frappe.delete_doc("File", own.name)
+
+        with self.set_user("Guest"):
+            with self.assertRaises(Forbidden):
+                validate_media_file(self.file.file_url, template.name)
+
+        self.assertTrue(os.path.exists(frappe.get_doc("File", self.file.name).get_full_path()))
+
+    def test_deleting_a_file_keeps_a_blob_another_file_still_uses(self):
+        content = unique_bytes(PNG_1PX)
+        with self.set_user(OWNER):
+            kept = make_private_image(make_presentation("Kept").name, content=content)
+        with self.set_user(OTHER_USER):
+            deleted = make_private_image(make_presentation("Deleted").name, content=content)
+            self.assertEqual(deleted.file_url, kept.file_url)
+
+            with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+                frappe.get_doc("File", deleted.name).permanent_delete()
+            for call in after_commit.add.call_args_list:
+                call.args[0]()
+
+        self.assertTrue(os.path.exists(frappe.get_doc("File", kept.name).get_full_path()))
 
     def test_unknown_url_not_found(self):
         with self.set_user(OWNER):
