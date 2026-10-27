@@ -174,8 +174,10 @@ class TestAdminLifecycle(IntegrationTestCase):
         first = self.create()
         self.assertFalse(first["success"])
         self.assertEqual(read(self.address)["status"], "Setup failed")
+        require_access(self.address, method="suite.drive.http.routes.node_children")
+        require_access(self.address, method="suite.writer.http.routes.document")
         with self.assertRaises(AccountSetupRequired):
-            require_access(self.address)
+            require_access(self.address, method="suite.mail.http.routes.inbox_summary")
         self.provider.fail = None
         retry = self.create()
         self.assertTrue(retry["success"], retry)

@@ -73,7 +73,10 @@ The Admin can replace a temporary password but cannot retrieve it later. Provide
 
 Enforce mandatory password change across browser, API, and Mail-client paths, including IMAP/JMAP. Permit only password change/logout until complete; incoming Mail may continue. Account setup readiness and forced password change are distinct requirements.
 
-Use action progress followed by Active or Setup failed; do not expose a persistent Provisioning account status. Invitations retain Pending/Expired states. Repeated acceptance/creation/retry requests reuse the same operation and reject competing creation for an already claimed address. Failed setup is retryable and never grants mailbox-less or partial access. A failed direct creation is listed in Users as Setup failed, never as an invitation, with Retry and Remove. Remove deletes the creation request, its never-used Suite user, and only the Mail account that this creation made. The failure is written to the Error Log, and the Admin sees its reason.
+- A user without a ready Mail account can still use Drive, Writer and the other non-Mail apps. Only Mail and Calendar routes refuse them with `AccountSetupRequired`. Admins keep the Mail admin routes so they can fix setup (`suite/composition/access.py`).
+- In the browser, Mail, Calendar and People show "This area needs a configured mail account" instead of a blank page.
+
+Use action progress followed by Active or Setup failed; do not expose a persistent Provisioning account status. Invitations retain Pending/Expired states. Repeated acceptance/creation/retry requests reuse the same operation and reject competing creation for an already claimed address. Failed setup is retryable and never grants Mail access without a ready Mail account. A failed direct creation is listed in Users as Setup failed, never as an invitation, with Retry and Remove. Remove deletes the creation request, its never-used Suite user, and only the Mail account that this creation made. The failure is written to the Error Log, and the Admin sees its reason.
 
 ### 4.2 Disable and reactivate
 
