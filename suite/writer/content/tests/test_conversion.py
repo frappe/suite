@@ -61,6 +61,8 @@ from suite.writer.http import routes as writer_routes
 TIME = 1_690_000_000_000
 OLD_THREAD = {"uuid": "u1", "comments": [{"userName": "Ann", "time": TIME, "content": "Old note"}]}
 REAL_CONVERT = convert.convert
+# The conversion's lock on a node, as qb renders it
+NODE_LOCK = "SELECT `name` FROM `tabDrive Node` WHERE `name`=%(param1)s FOR UPDATE"
 PNG_SOURCE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 
@@ -728,7 +730,7 @@ class TestConversion(DriveCallbackCase):
 
         def sql(query, *args, **kwargs):
             answer = real_sql(query, *args, **kwargs)
-            if "`tabDrive Node` WHERE `name` = %s FOR UPDATE" in str(query) and purger.ident is None:
+            if NODE_LOCK in str(query) and purger.ident is None:
                 purger.start()
                 waited.append(locked.wait(10))
 
@@ -853,7 +855,7 @@ class TestConversion(DriveCallbackCase):
         real_sql = frappe.db.sql
 
         def sql(query, *args, **kwargs):
-            if "`tabDrive Node` WHERE `name` = %s FOR UPDATE" in str(query) and restorer.ident is None:
+            if NODE_LOCK in str(query) and restorer.ident is None:
                 restorer.start()
                 waited.append(locked.wait(10))
 
@@ -942,7 +944,7 @@ class TestConversion(DriveCallbackCase):
         real_sql = frappe.db.sql
 
         def sql(query, *args, **kwargs):
-            if "`tabDrive Node` WHERE `name` = %s FOR UPDATE" not in str(query) or purger.ident is not None:
+            if NODE_LOCK not in str(query) or purger.ident is not None:
                 return real_sql(query, *args, **kwargs)
 
             purger.start()
