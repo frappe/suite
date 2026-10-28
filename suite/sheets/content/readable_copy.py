@@ -52,8 +52,14 @@ def js_number(value: float) -> str:
 
 
 def shown_value(value: object) -> str:
-    """A value as the copy shows it; pycrdt reads every JSON number as a float."""
-    if isinstance(value, float | int) and not isinstance(value, bool):
+    """A value as the copy shows it, as JavaScript's String(value); pycrdt reads every JSON number as a float."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+
+    if value is None:
+        return "null"
+
+    if isinstance(value, float | int):
         return js_number(float(value))
 
     return str(value)
@@ -65,15 +71,20 @@ def shown_text(doc: pycrdt.Doc) -> list[str]:
     row_lists = doc.get("rows", type=pycrdt.Map)
     col_lists = doc.get("cols", type=pycrdt.Map)
     # As stores.ts docSheets: an id listed twice counts once, and a sheet needs its name and both lists
-    order = dict.fromkeys(doc.get("sheets", type=pycrdt.Array).to_py() or [])
+    order = dict.fromkeys(
+        sheet for sheet in doc.get("sheets", type=pycrdt.Array).to_py() or [] if isinstance(sheet, str)
+    )
     sheets = [
         sheet
         for sheet in order
-        if sheet in sheet_meta and row_lists.get(sheet) is not None and col_lists.get(sheet) is not None
+        if isinstance(sheet_meta.get(sheet), dict)
+        and sheet_meta[sheet].get("name") is not None
+        and row_lists.get(sheet) is not None
+        and col_lists.get(sheet) is not None
     ]
     rows = {sheet: listed(doc, "rows", sheet) for sheet in sheets}
     cols = {sheet: listed(doc, "cols", sheet) for sheet in sheets}
-    shown = [str(sheet_meta[sheet].get("name", "")) for sheet in sheets]
+    shown = [shown_value(sheet_meta[sheet]["name"]) for sheet in sheets]
     for key, value in doc.get("inputs", type=pycrdt.Map).to_py().items():
         sheet, _, rest = key.partition(":")
         row, _, col = rest.partition(":")

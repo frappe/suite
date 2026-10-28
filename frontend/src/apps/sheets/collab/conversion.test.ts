@@ -169,6 +169,12 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
     expect(answer.html).toContain('=SUM(B1:B2)')
   })
 
+  it('a view that is not an object is left out, since it holds no data', async () => {
+    const tab = await opened((await converted(JSON.stringify({ view: 'x' }))).state)
+    expect(tab.sheets).toEqual(['Sheet1'])
+    expect(roots(tab.doc).sheetState.size).toBe(0)
+  })
+
   it('refuses a doc bigger than the room allows', async () => {
     expect(await convertSheetsData(await currentBody(), 64)).toEqual({
       kind: 'failed',
@@ -182,6 +188,8 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
       JSON.stringify({ _z: 'gzip', data: 'H4sI' }),
       JSON.stringify({ engine: bytesToBase64(new Uint8Array([1, 2, 3])) }),
       JSON.stringify({ sheet: 'nope', formats: {} }),
+      JSON.stringify({ protection: { Sheet1: { ranges: 5 } } }),
+      JSON.stringify({ pivot: { pivots: { p: null } } }),
     ]
     for (const body of unreadable)
       expect(await convertSheetsData(body, MAX_STATE), body).toEqual({

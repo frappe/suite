@@ -218,7 +218,9 @@ class TestConvertDocument(IntegrationTestCase):
         node = self.old_sheet(CURRENT_BODY)
         before = conversion.read_fingerprint(node)
         docname = frappe.db.get_value("Drive Node", node, "content_docname")
-        frappe.db.set_value("Sheet", docname, "modified", frappe.utils.add_to_date(None, days=1))
+        frappe.db.set_value(
+            "Sheet", docname, "modified", frappe.utils.add_to_date(None, days=1), update_modified=False
+        )
 
         self.assertNotEqual(conversion.read_fingerprint(node), before)
 

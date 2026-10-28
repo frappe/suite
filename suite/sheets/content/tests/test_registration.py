@@ -44,6 +44,14 @@ class TestRegistration(IntegrationTestCase):
         frappe.db.rollback()
         self.assertEqual(log.mode("sheets"), "off")
 
+    def test_a_site_left_on_can_still_change_other_apps(self):
+        with patch.object(sheets_content, "EDITOR_READY", True):
+            log.set_mode("sheets", "on")
+
+        log.set_mode("writer", log.mode("writer"))
+        self.assertEqual(log.mode("sheets"), "on")
+        frappe.db.rollback()
+
     def test_turns_sheets_on_once_the_editor_uses_the_room(self):
         with patch.object(sheets_content, "EDITOR_READY", True):
             log.set_mode("sheets", "on")

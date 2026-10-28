@@ -94,9 +94,11 @@ EDITOR = content.EditorSpec(
 
 
 def refuse_turning_on(settings, method=None) -> None:
-    """Refuse Suite Collab Settings that turn Sheets on before its editor uses the room."""
+    """Refuse Suite Collab Settings that switch Sheets on before its editor uses the room."""
     if EDITOR_READY:
         return
 
-    if any(row.app == APP and row.mode == "on" for row in settings.apps):
+    before = settings.get_doc_before_save()
+    was_on = before is not None and any(row.app == APP and row.mode == "on" for row in before.apps)
+    if not was_on and any(row.app == APP and row.mode == "on" for row in settings.apps):
         frappe.throw(_("Sheets collaboration can be turned on once the Sheets editor uses it"))

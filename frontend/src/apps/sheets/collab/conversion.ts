@@ -96,6 +96,10 @@ function isUnreadableDevelop(sheet: unknown): boolean {
   return !snap || typeof snap !== 'object' || !snap.sheets || typeof snap.sheets !== 'object'
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 // A develop body's view is one flat view (no sheet names), for the sheet it had open.
 function isFlatView(view: Record<string, unknown>): boolean {
   return 'colW' in view || 'rowH' in view || 'freezeRows' in view
@@ -151,31 +155,38 @@ export async function convertSheetsData(
     await client.idle()
 
     const stores = sideStores()
-    const restore: [keyof typeof stores, unknown][] = [
-      ['formats', saved.formats],
-      ['merge', saved.merge],
-      // A develop sheet's comments became Drive threads when Drive adopted it.
-      ['comments', plan ? null : saved.comments],
-      ['validation', saved.validation],
-      ['protection', saved.protection],
-      ['condFormat', saved.condFormat],
-      ['slicers', saved.slicers],
-      ['pivot', saved.pivot],
-      ['charts', saved.charts],
-      ['namedRanges', saved.namedRanges],
-    ]
-    for (const [name, snap] of restore) {
-      if (snap) (stores[name].restore as (s: unknown) => void)(snap)
-    }
-    const view = (saved.view ?? {}) as Record<string, unknown>
-    stores.view.restore(
-      isFlatView(view) ? { [plan?.current ?? client.sheets[0]!]: view } : renameKeys(view, renamed),
-    )
-    stores.sortFilter.restore(renameKeys(saved.sortFilter, renamed))
-    for (const [from, to] of Object.entries(renamed)) {
-      for (const store of Object.values(stores)) {
-        if ('renameSheet' in store) store.renameSheet(from, to)
+    try {
+      const restore: [keyof typeof stores, unknown][] = [
+        ['formats', saved.formats],
+        ['merge', saved.merge],
+        // A develop sheet's comments became Drive threads when Drive adopted it.
+        ['comments', plan ? null : saved.comments],
+        ['validation', saved.validation],
+        ['protection', saved.protection],
+        ['condFormat', saved.condFormat],
+        ['slicers', saved.slicers],
+        ['pivot', saved.pivot],
+        ['charts', saved.charts],
+        ['namedRanges', saved.namedRanges],
+      ]
+      for (const [name, snap] of restore) {
+        if (snap) (stores[name].restore as (s: unknown) => void)(snap)
       }
+      const view = isPlainObject(saved.view) ? saved.view : {}
+      stores.view.restore(
+        isFlatView(view)
+          ? { [plan?.current ?? client.sheets[0]!]: view }
+          : renameKeys(view, renamed),
+      )
+      stores.sortFilter.restore(renameKeys(saved.sortFilter, renamed))
+      for (const [from, to] of Object.entries(renamed)) {
+        for (const store of Object.values(stores)) {
+          if ('renameSheet' in store) store.renameSheet(from, to)
+        }
+      }
+    } catch {
+      // A side store this editor's own load would refuse too (a bad shape in an old body).
+      return { kind: 'failed', reason: 'check' }
     }
 
     const doc = new Y.Doc()

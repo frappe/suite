@@ -81,5 +81,24 @@ class TestReadableCopy(UnitTestCase):
                 self.assertTrue(is_html_complete(state, "", f"S {shown}"))
                 self.assertFalse(is_html_complete(state, "", f"S {shown[:-1]}"))
 
+    def test_a_sheet_whose_name_is_missing_or_not_an_object_is_not_shown(self):
+        for meta in ({"title": "x"}, "x"):
+            with self.subTest(meta):
+                doc: pycrdt.Doc = pycrdt.Doc()
+                doc.apply_update(sheet_state("Budget", {("r1", "c1"): "Rent"}))
+                doc.get("sheets", type=pycrdt.Array).append("s2")
+                doc.get("sheetMeta", type=pycrdt.Map)["s2"] = meta
+                doc.get("rows", type=pycrdt.Map)["s2"] = pycrdt.Array(["r1"])
+                doc.get("cols", type=pycrdt.Map)["s2"] = pycrdt.Array(["c1"])
+                doc.get("inputs", type=pycrdt.Map)["s2:r1:c1"] = "Hidden"
+
+                self.assertTrue(is_html_complete(doc.get_update(), "", "Budget Rent"))
+
+    def test_booleans_and_null_are_shown_as_the_browser_writes_them(self):
+        state = sheet_state("S", {("r1", "c1"): True, ("r2", "c2"): None})
+
+        self.assertTrue(is_html_complete(state, "", "S true null"))
+        self.assertFalse(is_html_complete(state, "", "S True None"))
+
     def test_an_empty_doc_needs_no_copy(self):
         self.assertTrue(is_html_complete(pycrdt.Doc().get_update(), "", ""))
