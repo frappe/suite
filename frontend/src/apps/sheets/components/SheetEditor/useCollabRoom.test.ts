@@ -75,7 +75,38 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
     expect(collab.canRedo.value).toBe(true)
   })
 
-  it('commits a command whose action never said it ended, after its last command', async () => {
+  it('commits loose commands at most the bound after the first one, however many follow', async () => {
+    const server = await seeded()
+    const { collab } = editor(server, { commitSoonMs: 150 })
+    await collab.open(await newClient())
+    const start = Date.now()
+    for (let i = 0; i < 6; i++) {
+      collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 20 + i, col: 1, input: `t${i}` }))
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    await vi.waitFor(() => expect(sent(server)).toContain('t0'))
+    expect(Date.now() - start).toBeLessThan(400)
+  })
+
+  it("keeps this tab's selection on its cells when another tab inserts rows above", async () => {
+    const server = await seeded()
+    // A1 holds the seed's text, so its row and column have ids.
+    let selection = { sheet: 'Sheet1', r0: 0, c0: 0, r1: 0, c1: 0 }
+    const a = editor(server, { getSelection: () => selection })
+    const b = editor(server)
+    await a.collab.open(await newClient())
+    await b.collab.open(await newClient())
+    a.collab.shareSelection(selection)
+    expect(a.collab.followSelection()).toBeNull()
+    b.collab.dispatch(cmd('insertRows', { sheet: 'Sheet1', row: 1, count: 2 }))
+    await b.collab.commit()
+    server.deliver()
+    expect(a.collab.followSelection()).toEqual({ sheet: 'Sheet1', r0: 2, c0: 0, r1: 2, c1: 0 })
+    selection = { sheet: 'Sheet1', r0: 2, c0: 0, r1: 2, c1: 0 }
+    expect(a.collab.followSelection()).toBeNull()
+  })
+
+  it('commits a command whose action never said it ended', async () => {
     const server = await seeded()
     const { collab } = editor(server, { commitSoonMs: 50 })
     await collab.open(await newClient())

@@ -25,7 +25,12 @@ import { createPeople } from '../../collab/people'
 import { GUEST_USER, readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
 import { isLiveNow, openSheetRoom, type SheetRoom } from '../../collab/room'
-import type { Selection } from '../../collab/selection'
+import {
+  selectionFromIds,
+  selectionToIds,
+  type SavedSelection,
+  type Selection,
+} from '../../collab/selection'
 import type { GlueStores } from '../../collab/stores'
 import { createUndo, type Undo } from '../../collab/undo'
 import type { WorkbookClient } from '../../core/client'
@@ -52,8 +57,9 @@ export interface CollabRoomOptions {
 // While a sheet waits for its conversion, ask again this often.
 const CONVERSION_RETRY_MS = 5000
 // A command whose action never said it ended is committed this long after the
-// action's last command. Long enough that an action awaiting between its
-// commands and its end (create a pivot) stays one undo step.
+// action's first command: the glue holds others' changes until then. An
+// action that takes longer between its first command and its end (a slow
+// pivot create) becomes two undo steps; that is the cost of the bound.
 const COMMIT_SOON_MS = 2000
 
 export function useCollabRoom({
@@ -222,9 +228,27 @@ export function useCollabRoom({
   const users = computed(() => presence.value.users)
   const cursors = computed(() => presence.value.cursors)
 
+  // This tab's selection by row/col id, so it can follow rows another tab moves.
+  let selIds: SavedSelection | null = null
+
   function shareSelection(sel: Selection | null) {
     const s = sheet.value
-    if (s?.room.presence) sendSelection(s.room.presence, s.doc, sel)
+    if (!s) return
+    selIds = selectionToIds(s.doc, sel)
+    if (s.room.presence) sendSelection(s.room.presence, s.doc, sel)
+  }
+
+  /**
+   * Where this tab's selection is now, after another tab inserted, deleted or
+   * moved rows or columns; null when it hasn't moved (or its cells are gone).
+   */
+  function followSelection(): Selection | null {
+    const s = sheet.value
+    const was = getSelection()
+    const now = s && selectionFromIds(s.doc, selIds)
+    if (!now || !was || now.sheet !== was.sheet) return null
+    const same = now.r0 === was.r0 && now.c0 === was.c0 && now.r1 === was.r1 && now.c1 === was.c1
+    return same ? null : now
   }
 
   async function restore(seq: number, bytes: Uint8Array): Promise<RestoreNotice> {
@@ -287,6 +311,7 @@ export function useCollabRoom({
     users,
     cursors,
     shareSelection,
+    followSelection,
     restore,
     flush,
     loseAccess,

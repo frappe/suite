@@ -1211,6 +1211,15 @@ function _withLocalZoom(snap) {
 // IronCalc's version and sheet-list events already repaint the cells, the
 // formula bar, charts and the tabs (_onEngineVersion, syncNames).
 function _onRemoteChange(change) {
+  // Rows or columns moved under this tab's selection (and an open cell
+  // editor): it stays on its cells, as in Google Sheets.
+  const moved = change.cells ? collab.followSelection() : null
+  if (moved) {
+    const editing = grid?.isEditing?.()
+    const draft = formulaValue.value
+    grid?.setSelection?.({ r0: moved.r0, c0: moved.c0, r1: moved.r1, c1: moved.c1 })
+    if (editing) formulaValue.value = draft // the bar keeps mirroring the editor
+  }
   if (change.stores.includes('namedRanges')) _syncDefinedNames()
   if (change.stores.length) {
     _syncViewMirrors()
@@ -1234,19 +1243,18 @@ async function _recomputeAllPivots() {
   _pivotRebuild = (async () => {
     do {
       _pivotRebuildAgain = false
-      for (const sn of [...sheetNames.value]) {
-        if (!collabOn.value) return // the room closed
-        await recomputePivotsForSheet(sn)
+      try {
+        for (const sn of [...sheetNames.value]) {
+          if (!collabOn.value || _unmounted) return // the room closed
+          await recomputePivotsForSheet(sn)
+        }
+      } catch (e) {
+        console.error('[sheets] pivot rebuild failed', e)
       }
     } while (_pivotRebuildAgain)
   })()
-  try {
-    await _pivotRebuild
-  } catch (e) {
-    console.error('[sheets] pivot rebuild failed', e)
-  } finally {
-    _pivotRebuild = null
-  }
+  await _pivotRebuild
+  _pivotRebuild = null
 }
 
 // Undo/redo (see useHistory.js).
@@ -3189,7 +3197,11 @@ onMounted(async () => {
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
   _refocusGridIfIdle()
 })
+// Set first thing on unmount: work queued behind the room (pivot rebuilds)
+// stops before the room has finished closing.
+let _unmounted = false
 onBeforeUnmount(() => {
+  _unmounted = true
   clearTimeout(_autoSaveTimer)
   // CRITICAL: flush any pending debounced save before the component dies.
   // Without this, navigating away within ~2s of an edit (the autosave
