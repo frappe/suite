@@ -73,13 +73,15 @@ export function alignDoc(current: Y.Doc, version: Y.Doc): void {
   }
 }
 
-// Source strings, translated when shown.
-const REFUSALS: Record<string, string> = {
-  restoring: 'Someone else is restoring a version. Try again once it is done.',
-  behind: 'This tab is still catching up. Try again in a moment.',
-  milestone_failed:
-    "The spreadsheet as it is now couldn't be kept as a version first, so nothing was restored.",
-  paused: 'Saving is paused, so nothing was restored.',
+// Literal __() calls, so the extractor finds them; called when shown.
+const REFUSALS: Record<string, () => string> = {
+  restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
+  behind: () => __('This tab is still catching up. Try again in a moment.'),
+  milestone_failed: () =>
+    __(
+      "The spreadsheet as it is now couldn't be kept as a version first, so nothing was restored.",
+    ),
+  paused: () => __('Saving is paused, so nothing was restored.'),
 }
 
 /** Restore version `seq` (its stored bytes) into the room. */
@@ -116,7 +118,7 @@ export async function restoreVersion(
         const known = result.refusal && Object.hasOwn(REFUSALS, result.refusal)
         return {
           isRestored: false,
-          message: __(known ? REFUSALS[result.refusal!]! : 'The version was not restored.'),
+          message: known ? REFUSALS[result.refusal!]!() : __('The version was not restored.'),
         }
       }
     }

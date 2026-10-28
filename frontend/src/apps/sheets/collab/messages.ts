@@ -40,24 +40,29 @@ export function editingStateOf(status: RoomStatus): 'editing' | 'paused' | 'clos
   return 'closed'
 }
 
-// Source strings; each is translated when a banner is built.
-const STOP_MESSAGES: Record<string, string> = {
-  poison: "This spreadsheet can't hold a change made in this tab, so saving stopped.",
-  browser: "This spreadsheet can't be edited in this browser version.",
-  too_large: 'A change in this tab is too large to save. Make it in smaller parts.',
-  document_full: "This sheet is full, so a change in this tab couldn't be saved.",
-  disabled: 'Editing together was switched off for Sheets, so saving stopped in this tab.',
-  schema:
-    'This spreadsheet was edited in a newer version of Sheets, so saving stopped in this tab.',
-  restored:
-    "A version of this spreadsheet was restored, so changes made in this tab before it weren't saved.",
-  clock_gap: 'This tab fell out of step with the server, so saving stopped.',
+// Each message is a literal __() call, so the extractor finds it; called when
+// a banner is built, so it is translated in the person's language.
+const STOP_MESSAGES: Record<string, () => string> = {
+  poison: () => __("This spreadsheet can't hold a change made in this tab, so saving stopped."),
+  browser: () => __("This spreadsheet can't be edited in this browser version."),
+  too_large: () => __('A change in this tab is too large to save. Make it in smaller parts.'),
+  document_full: () => __("This sheet is full, so a change in this tab couldn't be saved."),
+  disabled: () =>
+    __('Editing together was switched off for Sheets, so saving stopped in this tab.'),
+  schema: () =>
+    __('This spreadsheet was edited in a newer version of Sheets, so saving stopped in this tab.'),
+  restored: () =>
+    __(
+      "A version of this spreadsheet was restored, so changes made in this tab before it weren't saved.",
+    ),
+  clock_gap: () => __('This tab fell out of step with the server, so saving stopped.'),
 }
 // Stops a reload would only repeat
 const LASTING_STOPS = new Set(['browser'])
 
-const PAUSE_MESSAGES: Record<string, string> = {
-  upload_refused: "Your network is refusing uploads, so your latest changes aren't saved.",
+const PAUSE_MESSAGES: Record<string, () => string> = {
+  upload_refused: () =>
+    __("Your network is refusing uploads, so your latest changes aren't saved."),
 }
 
 const isSafeOnDevice = (s: RoomStatus) => s.isKeptOnDevice && !s.hasCopyFailed
@@ -70,8 +75,14 @@ function keepOpen(s: RoomStatus): string {
   return ' ' + __('Keep this tab open.')
 }
 
-// `text` translated, then the ask to keep the tab open when unsent work is kept nowhere.
-const withKeepOpen = (text: string, s: RoomStatus): Banner => ({ text: __(text) + keepOpen(s) })
+// `text`, then the ask to keep the tab open when unsent work is kept nowhere.
+const withKeepOpen = (text: string, s: RoomStatus): Banner => ({ text: text + keepOpen(s) })
+
+// Unsent work kept nowhere: ask to keep the tab open; else offer the reload `reload` names.
+function keepOpenOrReload(text: string, reload: string, s: RoomStatus): Banner {
+  if (keepOpen(s)) return withKeepOpen(text, s)
+  return { text: `${text} ${reload}`, canReload: true }
+}
 
 function signedOut(s: RoomStatus): Banner {
   const signIn = {
@@ -91,35 +102,32 @@ function signedOut(s: RoomStatus): Banner {
   }
 }
 
-// Unsent work kept nowhere: ask to keep the tab open; else offer the reload `reload` names.
-function keepOpenOrReload(text: string, reload: string, s: RoomStatus): Banner {
-  if (keepOpen(s)) return withKeepOpen(text, s)
-  return { text: `${__(text)} ${__(reload)}`, canReload: true }
-}
-
 const BLOCKED: Record<Blocked, (s: RoomStatus) => Banner> = {
   signed_out: signedOut,
   locked: (s) =>
     withKeepOpen(
-      "This spreadsheet was locked, so changes aren't saved. Unlock it to save them.",
+      __("This spreadsheet was locked, so changes aren't saved. Unlock it to save them."),
       s,
     ),
   offline: (s) =>
-    withKeepOpen("You're offline and this browser can't keep changes, so editing is paused.", s),
+    withKeepOpen(
+      __("You're offline and this browser can't keep changes, so editing is paused."),
+      s,
+    ),
   stale_session: (s) =>
-    keepOpenOrReload('You signed in again in another tab.', 'Reload to keep saving.', s),
+    keepOpenOrReload(__('You signed in again in another tab.'), __('Reload to keep saving.'), s),
   other_user: (s) =>
-    keepOpenOrReload('Someone else is now signed in here.', 'Reload to continue.', s),
-  lost_edit: (s) => withKeepOpen('You can no longer edit this spreadsheet.', s),
-  lost_read: (s) => withKeepOpen('You can no longer open this spreadsheet.', s),
+    keepOpenOrReload(__('Someone else is now signed in here.'), __('Reload to continue.'), s),
+  lost_edit: (s) => withKeepOpen(__('You can no longer edit this spreadsheet.'), s),
+  lost_read: (s) => withKeepOpen(__('You can no longer open this spreadsheet.'), s),
 }
 
 function stopped(s: RoomStatus): Banner {
   const known = s.stopReason && Object.hasOwn(STOP_MESSAGES, s.stopReason)
-  const reason = known ? STOP_MESSAGES[s.stopReason!]! : 'Saving stopped in this tab.'
+  const reason = known ? STOP_MESSAGES[s.stopReason!]!() : __('Saving stopped in this tab.')
   if (keepOpen(s) || (s.stopReason && LASTING_STOPS.has(s.stopReason)))
     return withKeepOpen(reason, s)
-  return keepOpenOrReload(reason, 'Reload to keep editing.', s)
+  return keepOpenOrReload(reason, __('Reload to keep editing.'), s)
 }
 
 function held(s: RoomStatus): Banner {
@@ -140,8 +148,8 @@ export function bannerFor(s: RoomStatus): Banner | null {
   if (s.stopReason) return stopped(s)
   if (s.hasNewerSchema)
     return keepOpenOrReload(
-      'This spreadsheet was edited in a newer version of Sheets.',
-      'Reload to keep editing.',
+      __('This spreadsheet was edited in a newer version of Sheets.'),
+      __('Reload to keep editing.'),
       s,
     )
   if (s.holdReason) return held(s)
@@ -152,7 +160,7 @@ export function bannerFor(s: RoomStatus): Banner | null {
       ),
     }
   if (s.pauseReason && Object.hasOwn(PAUSE_MESSAGES, s.pauseReason)) {
-    const text = __(PAUSE_MESSAGES[s.pauseReason]!)
+    const text = PAUSE_MESSAGES[s.pauseReason]!()
     if (isSafeOnDevice(s)) return { text: `${text} ${__("They're kept on this device.")}` }
     return { text: text + keepOpen(s) }
   }

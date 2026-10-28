@@ -79,18 +79,22 @@ export function useCollabRoom({
   let offs: (() => void)[] = []
   let closed = false
   let retry: ReturnType<typeof setTimeout> | undefined
-  let commitSoon: ReturnType<typeof setTimeout> | undefined
+  let commitSoon: ReturnType<typeof setTimeout> | null = null
   let commitThisTask: Promise<void> | null = null
   let localDepth = 0
-  // The open in flight: close() waits for it, so a room that opens after the
-  // editor has gone is closed rather than left running.
+  // The open in flight, up to closing a room that opened after the editor had
+  // gone: close() waits for all of it, so the engine stops only after.
   let opening: Promise<unknown> | null = null
 
   /** 'live': the workbook in `client` is the room's. */
-  async function openRoom(client: WorkbookClient): Promise<'live' | 'disabled' | 'unconverted'> {
-    const pending = open({ session, client, stores: getStores() })
-    opening = pending.catch(() => {})
-    const opened = await pending
+  function openRoom(client: WorkbookClient): Promise<'live' | 'disabled' | 'unconverted'> {
+    const run = openNow(client)
+    opening = run.catch(() => {})
+    return run
+  }
+
+  async function openNow(client: WorkbookClient): Promise<'live' | 'disabled' | 'unconverted'> {
+    const opened = await open({ session, client, stores: getStores() })
     if (opened.state !== 'live') {
       if (opened.state === 'unconverted') waitForConversion()
       return opened.state
@@ -151,9 +155,15 @@ export function useCollabRoom({
     s.glue.dispatch(cmd)
     // Pivot output never reaches the doc, so it never needs a commit.
     if (localDepth) return
-    // A command whose action never says it ended still reaches the doc.
-    clearTimeout(commitSoon)
-    commitSoon = setTimeout(() => void commit(), commitSoonMs)
+    // A command whose action never says it ended still reaches the doc, at
+    // most this long after the action's first command: the glue holds others'
+    // changes while it is open.
+    commitSoon ??= setTimeout(() => void commit(), commitSoonMs)
+  }
+
+  function cancelCommitSoon() {
+    if (commitSoon) clearTimeout(commitSoon)
+    commitSoon = null
   }
 
   /**
@@ -163,7 +173,7 @@ export function useCollabRoom({
    */
   function commit(): Promise<void> {
     if (!sheet.value) return Promise.resolve()
-    clearTimeout(commitSoon)
+    cancelCommitSoon()
     commitThisTask ??= Promise.resolve().then(() => {
       commitThisTask = null
       const s = sheet.value
@@ -248,7 +258,7 @@ export function useCollabRoom({
     closed = true
     clearTimeout(retry)
     if (sheet.value) await commit()
-    clearTimeout(commitSoon)
+    cancelCommitSoon()
     await opening // a room still opening closes itself (openRoom: `closed`)
     for (const off of offs) off()
     offs = []

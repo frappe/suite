@@ -29,9 +29,11 @@ interface SheetEditorHandle {
   readonly isCollab: boolean
   /** Restores a version through the live room; rejects with the message to show. */
   restoreVersion(seq: string, bytes: Uint8Array): Promise<string>
-  /** Live room: access went or came back. */
+  /** Live room: access went or came back. `mayEdit` is read once the room has sent what it could. */
   loseAccess(lost: 'lost_edit' | 'lost_read'): Promise<void>
-  regainAccess(): Promise<void>
+  regainAccess(mayEdit: () => boolean): Promise<void>
+  /** Live room: whether unsent work outlives this tab. */
+  readonly keepsUnsentWork: boolean
 }
 const props = defineProps<{
   session: DocumentSession
@@ -47,8 +49,11 @@ const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
     // Live room: it sends what it can and keeps the rest on this device, and
-    // its strip says the sheet is now view only.
+    // its strip says the sheet is now view only. Where the browser keeps
+    // nothing, the person gets their changes as a download, as on the old path.
     if (current?.isCollab) {
+      const unsent = current.saveState !== 'clean' || current.hasDraft()
+      if (unsent && !current.keepsUnsentWork) keepForDownload()
       void current.loseAccess(access.readable.value ? 'lost_edit' : 'lost_read')
       return
     }
@@ -57,18 +62,11 @@ const access = createSheetAccess(props.session, {
       toast.warning('Editing access changed. This spreadsheet is now view only.')
       return
     }
-    retainRecovery()
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: 'Download my changes',
-        onClick: downloadChanges,
-      },
-    })
+    keepForDownload()
   },
   widened() {
     if (editor.value?.isCollab) {
-      void editor.value.regainAccess()
+      void editor.value.regainAccess(() => access.writable.value)
       toast.info(__('You can edit this spreadsheet again.'))
       return
     }
@@ -133,6 +131,17 @@ async function restoreVersion(seq: string) {
   } finally {
     restoring.value = false
   }
+}
+// Keeps the editor's workbook in this browser and offers it as a download.
+function keepForDownload() {
+  retainRecovery()
+  toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: 'Download my changes',
+      onClick: downloadChanges,
+    },
+  })
 }
 async function retainRecovery() {
   const workbook = await editor.value?.workbookJson()

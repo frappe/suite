@@ -1222,14 +1222,31 @@ function _onRemoteChange(change) {
   if (change.cells) _recomputeAllPivots()
 }
 // One after another: every pivot build shares one token, so a build started
-// while another runs cancels it (usePivotIntegration).
-let _pivotsAfterRemote = Promise.resolve()
-function _recomputeAllPivots() {
-  _pivotsAfterRemote = _pivotsAfterRemote
-    .then(async () => {
-      for (const sn of [...sheetNames.value]) await recomputePivotsForSheet(sn)
-    })
-    .catch((e) => console.error('[sheets] pivot rebuild failed', e))
+// while another runs cancels it (usePivotIntegration). Changes that arrive
+// during a rebuild make one more, not one each.
+let _pivotRebuild = null
+let _pivotRebuildAgain = false
+async function _recomputeAllPivots() {
+  if (_pivotRebuild) {
+    _pivotRebuildAgain = true
+    return
+  }
+  _pivotRebuild = (async () => {
+    do {
+      _pivotRebuildAgain = false
+      for (const sn of [...sheetNames.value]) {
+        if (!collabOn.value) return // the room closed
+        await recomputePivotsForSheet(sn)
+      }
+    } while (_pivotRebuildAgain)
+  })()
+  try {
+    await _pivotRebuild
+  } catch (e) {
+    console.error('[sheets] pivot rebuild failed', e)
+  } finally {
+    _pivotRebuild = null
+  }
 }
 
 // Undo/redo (see useHistory.js).
@@ -3186,7 +3203,9 @@ onBeforeUnmount(() => {
       : null
   // The room sends what it can and keeps the rest on the device; the glue
   // reads the workbook until then.
-  const closing = props.collabSession ? collab.close() : null
+  const closing = props.collabSession
+    ? collab.close().then(() => (collabState.value = 'closed'))
+    : null
   // That save reads the workbook from the worker, so stop it only after.
   if (lastSave) void lastSave.finally(_stopEngine)
   else if (closing) void closing.finally(_stopEngine)
@@ -4152,7 +4171,12 @@ defineExpose({
   // Collab: when access goes, the room keeps unsent work on the device; when
   // it is back, the room takes edits again.
   loseAccess: (lost) => collab.loseAccess(lost),
-  regainAccess: () => collab.regainAccess(() => props.writable),
+  regainAccess: (mayEdit) => collab.regainAccess(mayEdit),
+  /** Whether unsent work outlives this tab (the room keeps it on the device). */
+  get keepsUnsentWork() {
+    const status = collab.status.value
+    return !!status && status.isKeptOnDevice && !status.hasCopyFailed
+  },
   // The workbook for a recovery copy, with the cell edit still in progress.
   workbookJson: () => workbookJson(_draftEdit()),
   hasDraft: () => _draftEdit() !== null,

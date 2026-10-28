@@ -127,10 +127,13 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
   it('closes a room that finishes opening after the editor has gone', async () => {
     const server = await seeded()
     const { collab } = editor(server)
-    const opened = collab.open(await newClient())
+    const client = await newClient()
+    const opened = collab.open(client)
     await collab.close()
-    expect(await opened).toBe('disabled')
+    // The editor stops the engine as soon as close() resolves: the late room is already closed.
     expect(server.rooms[0]!.close).toHaveBeenCalledTimes(1)
+    client.terminate()
+    expect(await opened).toBe('disabled')
   })
 
   it('tells the room when access is lost and back', async () => {
