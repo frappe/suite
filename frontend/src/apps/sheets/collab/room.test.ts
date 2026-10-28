@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import * as Y from 'yjs'
 
 import {
   CollabOpenError,
@@ -196,5 +197,25 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
     expect(await isLiveNow(session, server.open)).toBe(true)
     expect(server.rooms[0]!.close).toHaveBeenCalledTimes(1)
     expect(await isLiveNow(session, async () => ({ state: 'unconverted' }))).toBe(false)
+  })
+
+  it('keeps the room clientID through forwarded commits and a restore made in the room', async () => {
+    // Yjs gives a doc a new clientID when an update from elsewhere carries its own
+    // client's writes; the server refuses a push written by any other client.
+    const server = fakeServer((await existingSheet()).doc)
+    const a = await openWithClient(server.open)
+    const id = a.room.doc.clientID
+    await typeIn(a, 4, 1, 'forwarded')
+    expect(a.room.doc.clientID).toBe(id)
+    server.rooms[0]!.outbox.splice(0)
+    // A restore writes into the room's doc directly (collab/restore.ts), then reaches the glue.
+    a.room.doc.transact(() => roots(a.room.doc).inputs.set('restored-key', 'x'))
+    await a.glue.settled()
+    await typeIn(a, 5, 1, 'after restore')
+    expect(a.doc.clientID).toBe(id)
+    const writers = server.rooms[0]!.outbox.flatMap((u) =>
+      Y.decodeUpdate(u).structs.map((st) => st.id.client),
+    )
+    expect(new Set(writers)).toEqual(new Set([id]))
   })
 })

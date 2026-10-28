@@ -13,7 +13,10 @@
 // updates cross over: the server's through glue.receive(), which waits for the
 // open action; the glue's own (commits, undo) into room.doc, which sends them.
 // `doc` writes with room.doc's clientID, so the server sees one tab, and undo
-// can tell this tab's edits from everyone else's.
+// can tell this tab's edits from everyone else's. Both docs are pinned to it:
+// Yjs gives a doc a new clientID when an update from elsewhere carries writes
+// of its own client (it takes that for two tabs sharing an id), which here
+// happens on purpose, and the server refuses a push written by any other client.
 
 import * as Y from 'yjs'
 
@@ -48,6 +51,11 @@ export interface OpenSheetOptions {
 
 // Origin of the glue's updates as room.doc receives them, so they don't come back.
 const FORWARDED = Symbol('sheets-forwarded')
+
+// Keep `doc` on `id`: Yjs's reassignment after a clash becomes a no-op.
+function pinClientID(doc: Y.Doc, id: number): void {
+  Object.defineProperty(doc, 'clientID', { get: () => id, set: () => {}, configurable: true })
+}
 
 export async function openSheetRoom({
   session,
@@ -94,7 +102,9 @@ async function glueRoom(
   stores: GlueStores,
 ): Promise<SheetRoom> {
   const doc = new Y.Doc()
-  doc.clientID = room.doc.clientID
+  const clientID = room.doc.clientID
+  pinClientID(room.doc, clientID)
+  pinClientID(doc, clientID)
   const glue = createGlue({ doc, client, stores })
   // The room's state so far; the glue builds IronCalc from it in load(), so it
   // reaches the doc as a remote update the glue doesn't apply yet.
