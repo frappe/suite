@@ -13,6 +13,30 @@ export const warnings: string[] = []
 export const errors: string[] = []
 export const me = { id: 'Asha Rao' }
 
+export interface AskedDialog {
+  title: string
+  actions: { label: string; onClick?: () => unknown }[]
+}
+
+// Who can't open the document, and what the list asked and shared about them
+export const access = {
+  locked: [] as string[],
+  dialogs: [] as AskedDialog[],
+  shared: [] as string[][],
+}
+
+export function fakeWriterDrive() {
+  return {
+    peopleWithoutAccess: async (_node: string, users: string[]) =>
+      users
+        .filter((user) => access.locked.includes(user))
+        .map((user) => ({ name: user, label: user.split('@')[0] })),
+    shareToView: async (_node: string, users: string[]) => {
+      access.shared.push([...users])
+    },
+  }
+}
+
 export async function fakeSession() {
   const { computed: derive } = await import('vue')
   const { vi } = await import('vitest')
@@ -71,6 +95,7 @@ export async function fakeFrappeUi() {
   }
 
   return {
+    dialog: { confirm: (args: AskedDialog) => access.dialogs.push(args) },
     Avatar: define({
       props: { image: String, label: String },
       setup: (props) => () =>

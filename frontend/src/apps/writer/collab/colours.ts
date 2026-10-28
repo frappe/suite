@@ -74,6 +74,11 @@ function hashed(key: string) {
   return hash >>> 0
 }
 
+/** A person's own colour: theirs in a room unless someone who arrived before them has it. */
+export function personColour(person: string) {
+  return PALETTE[hashed(person) % PALETTE.length]!
+}
+
 // Each person in rank order takes their own colour, or the next free one once someone ranked earlier has it
 export function assignColours(people: string[]) {
   const taken = new Set<number>()

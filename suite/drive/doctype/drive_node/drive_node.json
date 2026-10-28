@@ -25,6 +25,7 @@
   {
    "fieldname": "title",
    "fieldtype": "Data",
+   "ignore_xss_filter": 1,
    "label": "Title",
    "reqd": 1
   },

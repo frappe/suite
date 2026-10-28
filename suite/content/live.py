@@ -1,14 +1,16 @@
 """Live updates: the realtime room each document's changes are published to.
 
 A room's name is a keyed hash of the document, its lineage and a 150 s epoch,
-so only a tab that opened or pulled lately can name it, and a reader whose
-access ends drops out within two epochs. Publishing is best effort: a tab that
-misses a row finds the hole and pulls, and one that hears nothing polls.
+so only a tab that opened or pulled lately can name it. When access to a
+document changes, its rooms move, so a reader whose access ends drops out at
+once. Publishing is best effort: a tab that misses a row finds the hole and
+pulls, and one that hears nothing polls.
 """
 
 import base64
 import hashlib
 import hmac
+import secrets
 import time
 from typing import TypedDict
 
@@ -58,10 +60,34 @@ def room_key(app: str, doc_id: str, lineage: str, epoch: int) -> str:
     """Name the document's room for `epoch`, keyed by the site's secret so no tab can derive it."""
     site_key = get_encryption_key().encode()
     rooms_key = hmac.new(site_key, b"suite-collab-rooms", hashlib.sha256).digest()
-    room_label = f"suite-collab-room|1|{app}|{doc_id}|{lineage}|{epoch}".encode()
-    digest = hmac.new(rooms_key, room_label, hashlib.sha256).digest()
+    room_label = f"suite-collab-room|1|{app}|{doc_id}|{lineage}|{epoch}"
+    generation = frappe.cache.get_value(generation_key(app, doc_id))
+    if generation:
+        room_label += f"|{generation}"
+
+    digest = hmac.new(rooms_key, room_label.encode(), hashlib.sha256).digest()
     digest_text = base64.urlsafe_b64encode(digest).decode()
     return "sc:" + digest_text[:32]
+
+
+def close_rooms(app: str, doc_id: str, lineage: str) -> None:
+    """Move the document to new rooms and tell the tabs in the old one to pull.
+
+    A tab that may still read gets the new rooms from its pull. A tab that
+    may not is refused, and nothing reaches its old rooms again, whatever
+    keys it kept.
+    """
+    old_room = room_key(app, doc_id, lineage, int(time.time() // EPOCH_SECONDS))
+    frappe.cache.set_value(generation_key(app, doc_id), secrets.token_hex(8))
+    try:
+        frappe.publish_realtime("suite_collab_ctl", {"lineage": lineage, "kind": "access"}, room=old_room)
+    except Exception:
+        # The rooms moved anyway; a tab that misses this polls
+        pass
+
+
+def generation_key(app: str, doc_id: str) -> str:
+    return f"suite:collab-room-generation:{app}:{doc_id}"
 
 
 def publish_row(

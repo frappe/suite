@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Avatar, Textarea } from 'frappe-ui'
+import { Textarea } from 'frappe-ui'
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 
+import MentionPerson from '@/apps/writer/components/MentionPerson.vue'
 import { fullName, lookUp, searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
 import type { WriterUser } from '@/apps/writer/drive'
 import { isAuthenticated as isLoggedIn } from '@/platform/session'
@@ -184,10 +185,6 @@ function optionClass(index: number) {
   return `${tint} opacity-60`
 }
 
-function imageOf(person: WriterUser) {
-  return person.user_image ?? undefined
-}
-
 function setActive(index: number) {
   active.value = index
 }
@@ -257,8 +254,7 @@ defineExpose({ focus })
         @mousedown.prevent="pick(person)"
         @mouseenter="setActive(index)"
       >
-        <Avatar size="sm" :image="imageOf(person)" :label="person.label" />
-        <span class="truncate text-ink-gray-8">{{ person.label }}</span>
+        <MentionPerson :person="person" />
       </button>
       <p
         v-if="isListEmpty"

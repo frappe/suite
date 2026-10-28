@@ -1,0 +1,93 @@
+/* The editor's toolbar and bubble menu controls */
+
+.writer-tool,
+.writer-select {
+  align-items: center;
+  border-radius: 8px;
+  color: var(--ink-gray-7);
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  transition: background-color 120ms;
+}
+
+.writer-tool:hover,
+.writer-select:hover {
+  background-color: var(--surface-gray-2);
+}
+
+.writer-tool[aria-pressed='true'],
+.writer-tool[aria-expanded='true'],
+.writer-select[aria-expanded='true'] {
+  background-color: var(--surface-gray-3);
+}
+
+.writer-tool:disabled {
+  opacity: 0.4;
+}
+
+.writer-tool:disabled:hover {
+  background-color: transparent;
+}
+
+.writer-select {
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+}
+
+/* The bubble menu's smaller select */
+.writer-select-compact {
+  height: 24px;
+  padding: 0 6px 0 8px;
+}
+
+/* A divider takes its height from its bar: h-5 in the toolbar, h-4 in the bubble menu */
+.writer-divider {
+  background-color: var(--surface-gray-3);
+  flex-shrink: 0;
+  margin: 0 4px;
+  width: 1px;
+}
+
+/* One row's worth of toolbar controls, which wraps as a unit */
+.writer-toolbar-group {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  height: 36px;
+}
+
+.writer-toolbar-group > .writer-divider {
+  height: 20px;
+}
+
+.writer-toolbar-group[data-row-start] > .writer-divider {
+  display: none;
+}
+
+.writer-swatch {
+  align-items: center;
+  background-color: var(--surface-elevation-2);
+  border: 1px solid;
+  border-radius: 6px;
+  display: flex;
+  font-size: 14px;
+  height: 24px;
+  justify-content: center;
+  line-height: 1;
+  width: 24px;
+}
+
+/* A ring outside the swatch's own border, with a gap so the two read as separate lines */
+.writer-swatch:hover,
+.writer-swatch:focus-visible {
+  outline: 1px solid var(--outline-gray-3);
+  outline-offset: 1px;
+}
+
+.writer-swatch[aria-pressed='true'] {
+  outline: 1.5px solid var(--outline-gray-5);
+  outline-offset: 1px;
+}

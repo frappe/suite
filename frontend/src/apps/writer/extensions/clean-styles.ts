@@ -1,5 +1,14 @@
 import { Extension } from '@tiptap/core'
 
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    cleanStyles: {
+      /** Drops the text styles the validators and normalizers reject */
+      cleanStyles: () => ReturnType
+    }
+  }
+}
+
 type StyleValidator = (value: string) => boolean
 type StyleNormalizer = (value: string) => string | null
 

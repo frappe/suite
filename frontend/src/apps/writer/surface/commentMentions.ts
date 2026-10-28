@@ -115,6 +115,11 @@ export function toTokens(text: string, picked: PickedPerson[]) {
   })
 }
 
+/** The people a stored text mentions, each once. */
+export function mentionedIn(content: string) {
+  return [...new Set(Array.from(content.matchAll(TOKEN), ([, user = '']) => user))]
+}
+
 /** The text split around its mentions; with `mentions`, only those people count. */
 export function toParts(content: string, mentions?: string[]): CommentPart[] {
   const parts: CommentPart[] = []

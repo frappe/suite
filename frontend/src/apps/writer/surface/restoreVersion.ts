@@ -2,8 +2,11 @@ import { anchorEnds } from '@/apps/writer/collab/anchors'
 import { restoreEdit } from '@/apps/writer/collab/restore'
 import { restoredAnchors, type AnchoredThread } from '@/apps/writer/collab/restoredAnchors'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
-import type { CollabRoom, RestoreResult } from '@/platform/collab'
+import { fullName, lookUp } from '@/apps/writer/composables/useUsers'
+import type { CollabRoom, RestoreResult, VersionRestored } from '@/platform/collab'
+import { translate as __ } from '@/platform/translation'
 
+import { dayOrTime, versionTime } from './versionDates'
 import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
 
 type RestoringRoom = Pick<
@@ -124,4 +127,45 @@ function noticeFor(result: RestoreResult): RestoreNotice {
 
   const message = REFUSALS[result.refusal ?? ''] ?? 'The version was not restored.'
   return { isRestored: false, message }
+}
+
+/**
+ * Warns before a restore that changes the document under other people: who has it open now.
+ * Empty when nobody else does.
+ */
+export function othersPresentWarning(people: { id: string; name: string }[], me: string) {
+  const others = people.filter((person) => person.id !== me)
+  const names = [...new Set(others.map((person) => person.name))]
+  if (!names.length) {
+    return ''
+  }
+
+  const listed = new Intl.ListFormat(undefined, { type: 'conjunction' }).format(names)
+  if (names.length === 1) {
+    return __('{0} has this document open now and will be told you restored it.', [listed])
+  }
+
+  return __('{0} have this document open now and will be told you restored it.', [listed])
+}
+
+/** What this person is told when someone else restores a version: who did, and which version. */
+export async function restoredByOther({ by, version }: VersionRestored) {
+  if (by) {
+    await lookUp(by)
+  }
+
+  const who = by ? fullName(by) : __('Someone')
+  if (!version) {
+    return __('{0} restored an earlier version of this document.', [who])
+  }
+
+  if (version.label) {
+    return __('{0} restored the version “{1}”.', [who, version.label])
+  }
+
+  const taken = { creation: version.takenAt }
+  const day = dayOrTime(taken)
+  const time = versionTime(taken)
+  const when = day === time ? time : `${day}, ${time}`
+  return __('{0} restored the version from {1}.', [who, when])
 }

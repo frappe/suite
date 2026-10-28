@@ -1,6 +1,9 @@
 @import url('./fonts.css');
 @import url('./comment.css');
 @import url('./print.css');
+@import url('./document.css');
+@import url('./table.css');
+@import url('./chrome.css');
 
 .prose.ProseMirror {
   font-size: var(--editor-font-size, 15px);
@@ -128,6 +131,16 @@ b {
   width: auto;
 }
 
+/* Near the editor's right edge the named flag opens leftwards, so the edge does not cut the name */
+.collaboration-carets__caret--flipped:not(.collaboration-carets__caret--quiet)
+  .collaboration-carets__label,
+.collaboration-carets__caret--flipped.collaboration-carets__caret--quiet:hover
+  .collaboration-carets__label {
+  border-radius: 6px 6px 1px 6px;
+  left: auto;
+  right: 0;
+}
+
 /* Dimmed, flag and dot with it, while its person is idle */
 .collaboration-carets__caret--idle {
   opacity: 0.45;
@@ -144,23 +157,20 @@ b {
   padding: 0.2em 0;
 }
 
-/* tiptap's Selection extension injects a rule that makes ::selection
-   transparent while the editor is unfocused, then redraws it as a decoration
-   only when editable — leaving read-only docs with no visible selection.
-   Restore the browser's native selection highlight there. */
-.ProseMirror[contenteditable='false'] *::selection {
-  background: Highlight !important;
-  color: HighlightText !important;
+:root[data-theme='dark'] .selection {
+  background: var(--surface-blue-3);
 }
 
-.ProseMirror[contenteditable='false'] *::-moz-selection {
-  background: Highlight !important;
-  color: HighlightText !important;
+/* frappe-ui's dark focus ring is too faint on the page */
+:root[data-theme='dark'] .writer-surface {
+  --focus-outline-default: 3px solid var(--outline-gray-5);
 }
 
-div[data-page-break='true'] {
-  page-break-after: always;
-  break-after: always;
-  border: 2px dashed lightgray;
-  margin: 25px 0px;
+/* An editable editor hides the native selection while blurred; BlurredSelection draws it instead. */
+.ProseMirror[contenteditable='true']:not(.ProseMirror-focused) *::selection {
+  background: transparent;
+}
+
+.ProseMirror[contenteditable='true']:not(.ProseMirror-focused) *::-moz-selection {
+  background: transparent;
 }

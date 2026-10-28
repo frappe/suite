@@ -20,7 +20,7 @@ export async function selectDocumentSurface(
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { computed, inject, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -31,10 +31,14 @@ import {
   isDriveNodeLocked,
   openDocumentSession,
 } from '@/apps/drive'
-import { documentTypes } from '@/composition/documentRegistry'
+import { documentTypes, findDocumentType } from '@/composition/documentRegistry'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { describeFailure } from '@/platform/open-failure'
-import { openingTitle as historyOpeningTitle, usePageTitle } from '@/platform/page-meta'
+import {
+  openingTitle as historyOpeningTitle,
+  newDocumentType,
+  usePageTitle,
+} from '@/platform/page-meta'
 import { TransportError } from '@/platform/transport'
 
 const route = useRoute()
@@ -63,6 +67,14 @@ const nodeId = computed(() => String(route.params.node ?? ''))
 const openingTitle = computed(() =>
   nodeId.value ? historyOpeningTitle(router.options.history.state) : null,
 )
+
+// A document the opener has just created takes typing in its type's opening
+// editor while it opens; its surface takes over what was typed.
+const openingEditor = computed(() => {
+  const contentDoctype = nodeId.value && newDocumentType(router.options.history.state)
+  const load = contentDoctype && findDocumentType(contentDoctype)?.loadOpeningEditor
+  return load ? defineAsyncComponent(load) : null
+})
 
 usePageTitle(() => session.value?.title.value ?? '')
 
@@ -210,6 +222,7 @@ onBeforeUnmount(() => {
   <div class="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base text-ink-gray-8">
     <div v-if="loading" class="flex min-w-0 flex-1 flex-col">
       <DriveDocumentHeaderSkeleton :title="session?.title.value || openingTitle || undefined" />
+      <component :is="openingEditor" v-if="openingEditor" :node="nodeId" />
     </div>
 
     <DriveUnlockScreen v-else-if="locked" :node="nodeId" @unlocked="reopen += 1" />

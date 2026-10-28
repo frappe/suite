@@ -216,6 +216,26 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row).toContainText("sentence");
 	});
 
+	test("after a comment on selected text, the bubble hides and a double-click starts the next comment on the clicked word", async ({
+		owner,
+	}) => {
+		const { page } = owner;
+		await openWriterDocument(page, node);
+		const drafts = await startCommentOnLastWord(page, "first words then second");
+		await drafts.getByLabel("Add a comment on the text").fill("On the last word");
+		await drafts.getByRole("button", { name: "Comment", exact: true }).click();
+		const bubble = page.locator('[data-slot="bubble-menu"]');
+		await expect(bubble).toBeHidden();
+
+		await writerEditor(page).getByText("first words then", { exact: false }).dblclick({ position: { x: 4, y: 4 } });
+		await bubble.getByRole("button", { name: "Comment" }).click();
+
+		const panel = page.getByRole("complementary", { name: "Comments" });
+		const draft = panel.locator("form").filter({ has: page.getByLabel("Add a comment on the text") });
+		await expect(draft).toContainText("first");
+		await expect(draft).not.toContainText("second");
+	});
+
 	test("restoring a version puts a comment back on the words it brought back, for good", async ({
 		owner,
 	}) => {

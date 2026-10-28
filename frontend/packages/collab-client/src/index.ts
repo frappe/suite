@@ -18,5 +18,6 @@ export {
   type RestoreResult,
   type RoomPresence,
   type RoomStatus,
+  type VersionRestored,
 } from './types'
 export { openDeviceStore, type DeviceStore, type RecoveryRecord } from './store'

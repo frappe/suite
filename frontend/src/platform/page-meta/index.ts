@@ -39,6 +39,27 @@ export function openingTitle(state: HistoryState): string | null {
   return typeof title === 'string' && title ? title : null
 }
 
+const NEW_DOCUMENT = 'newDocument'
+const NEW_DOCUMENT_MS = 10_000
+
+/**
+ * History state for a document of `contentDoctype` the opener has just
+ * created, so its page can take typing before the document loads. The mark
+ * lapses after ten seconds, so a later reload or Back opens it as usual.
+ */
+export function newDocumentState(contentDoctype: string, now = Date.now()): HistoryState {
+  return { [NEW_DOCUMENT]: { contentDoctype, at: now } }
+}
+
+/** The content doctype `newDocumentState` gave an entry, or `null` once the mark has lapsed. */
+export function newDocumentType(state: HistoryState, now = Date.now()): string | null {
+  const mark = state[NEW_DOCUMENT]
+  if (!mark || typeof mark !== 'object' || Array.isArray(mark)) return null
+  const { contentDoctype, at } = mark
+  if (typeof contentDoctype !== 'string' || typeof at !== 'number') return null
+  return now - at < NEW_DOCUMENT_MS ? contentDoctype : null
+}
+
 /** `pageTitle | appName`, or the app name alone when the page has no title of its own. */
 export function appDocumentTitle(pageTitle: string | undefined, appName: string) {
   const title = pageTitle?.trim()

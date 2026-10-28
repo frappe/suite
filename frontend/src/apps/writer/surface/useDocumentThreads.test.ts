@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { effectScope } from 'vue'
+import { effectScope, ref } from 'vue'
 
 import type { DocumentThread } from '@/apps/drive'
 
@@ -30,10 +30,10 @@ function driveThreads() {
   return { reads, session: { comments: { list } } as never }
 }
 
-function openThreads(session: never) {
+function openThreads(session: never, seesThreads?: () => boolean) {
   const scope = effectScope()
   scopes.push(scope)
-  return scope.run(() => useDocumentThreads(session))!
+  return scope.run(() => useDocumentThreads(session, seesThreads))!
 }
 
 function settled() {
@@ -45,6 +45,23 @@ function names(threads: DocumentThread[]) {
 }
 
 describe('document threads', () => {
+  it('asks nothing while the reader may not see the discussion, and reads once they may', async () => {
+    const drive = driveThreads()
+    const sees = ref(false)
+    const { threads, refresh } = openThreads(drive.session, () => sees.value)
+
+    void refresh()
+    window.dispatchEvent(new Event('focus'))
+    await settled()
+    expect(drive.reads).toHaveLength(0)
+
+    sees.value = true
+    await vi.waitFor(() => expect(drive.reads).toHaveLength(1))
+    drive.reads[0].answer(['open'])
+    await settled()
+    expect(names(threads.value)).toEqual(['open'])
+  })
+
   it('reads once more when told of a change while a read runs, and only once', async () => {
     const drive = driveThreads()
     const { threads, refresh } = openThreads(drive.session)

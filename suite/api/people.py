@@ -7,10 +7,12 @@ word, so this module does not use it.
 
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
+
+from suite import drive
 
 PAGE_SIZE = 20
 
@@ -42,6 +44,16 @@ _PEOPLE = """
 """
 
 
+# People a node names who are not in the directory above: Administrator as a
+# document's creator. They match the same text.
+_NAMED_USERS = """
+    SELECT name, IF(IFNULL(full_name, '') = '', name, full_name) AS label
+    FROM `tabUser`
+    WHERE name IN %(users)s AND enabled = 1 AND name != 'Guest'
+        AND (full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)
+"""
+
+
 class BadCursor(frappe.ValidationError):
     http_status_code = 400
 
@@ -52,6 +64,8 @@ class PersonUser(TypedDict):
     email: str
     full_name: str | None
     user_image: str | None
+    # Only with `node`: whether they can open it.
+    has_access: NotRequired[bool]
 
 
 class PersonGroup(TypedDict):
@@ -68,13 +82,20 @@ class PeoplePage(TypedDict):
     next_cursor: str | None
 
 
-def search(query: str | None = None, cursor: str | None = None) -> PeoplePage:
+def search(query: str | None = None, cursor: str | None = None, node: str | None = None) -> PeoplePage:
     """Page the users and groups whose name or email contains `query`.
 
     Rows sort by what a picker shows: a user's full name, or else their
     email, and a group's name. The cursor is opaque to callers.
+
+    With `node`, the page is for naming someone on that node, as a mention
+    does: users only, not the caller, the ones who can open the node first,
+    each marked with `has_access`. It adds the people the node names, such as
+    its creator, and is one page with no cursor.
     """
     frappe.only_for("Suite User")
+    if node:
+        return _search_on(node, query or "")
     offset = _offset(cursor)
     found = frappe.db.sql(
         _PEOPLE,
@@ -92,6 +113,22 @@ def search(query: str | None = None, cursor: str | None = None) -> PeoplePage:
         for row in found
     ]
     return {"rows": rows, "next_cursor": str(offset + PAGE_SIZE) if more else None}
+
+
+def _search_on(node: str, query: str) -> PeoplePage:
+    pattern = _contains(query)
+    found = frappe.db.sql(_PEOPLE, {"pattern": pattern, "limit": PAGE_SIZE, "offset": 0}, as_dict=True)
+    labels = {row.name: row.label for row in found if row.kind == "user"}
+    access = drive.people_on(node, labels)
+    named = [user for user in access if user not in labels]
+    if named:
+        rows = frappe.db.sql(_NAMED_USERS, {"users": named, "pattern": pattern}, as_dict=True)
+        labels |= {row.name: row.label for row in rows}
+    labels.pop(frappe.session.user, None)
+    ranked = sorted(labels, key=lambda user: (not access[user], labels[user].casefold(), user))[:PAGE_SIZE]
+    users = _users(ranked)
+    rows_out: list[Person] = [{**users[user], "has_access": access[user]} for user in ranked if user in users]
+    return {"rows": rows_out, "next_cursor": None}
 
 
 def _offset(cursor: str | None) -> int:

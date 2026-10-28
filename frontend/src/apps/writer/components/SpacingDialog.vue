@@ -1,53 +1,40 @@
 <template>
-  <Popover>
-    <!-- MenuItems.vue renders the toolbar Button through its #default slot, but
-         that button gets no tooltip (only plain command items do), so we render
-         our own — same as DropdownMenuGroup.vue. It has to stay the direct child
-         of #trigger: PopoverTrigger wires the click onto it via as-child. -->
-    <template #trigger="{ open }">
-      <Button
-        size="xs"
-        variant="ghost"
-        :icon="icon"
-        label="Custom spacing"
-        tooltip="Custom spacing"
-        class="aria-pressed:bg-surface-gray-3"
-        :aria-pressed="open"
-      />
+  <Popover side="bottom" align="start">
+    <template #trigger>
+      <ToolbarButton :label="__('Custom spacing')">
+        <span class="lucide-align-vertical-space-around size-4" aria-hidden="true" />
+        <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
+      </ToolbarButton>
     </template>
     <template #default>
-      <div class="p-4 flex flex-col gap-4 w-64">
+      <div class="flex w-64 flex-col gap-3 p-3">
         <FormControl
           type="number"
-          class="grow"
           v-model.number="local.lineSpacing"
           autocomplete="off"
           min="0.5"
           max="10"
           step="0.05"
           @update:modelValue="applyLineSpacing"
-          label="Line spacing"
+          :label="__('Line spacing')"
         />
-        <div class="space-y-1">
-          <FormLabel label="Paragraph spacing" />
-          <div class="grid grid-cols-2 gap-2">
-            <FormControl
-              type="number"
-              autocomplete="off"
-              v-model.number="local.spacingBefore"
-              @update:modelValue="applySpacing"
-              placeholder="0"
-              description="Above"
-            />
-            <FormControl
-              type="number"
-              autocomplete="off"
-              v-model.number="local.spacingAfter"
-              @update:modelValue="applySpacing"
-              placeholder="0"
-              description="Below"
-            />
-          </div>
+        <div class="grid grid-cols-2 gap-2">
+          <FormControl
+            type="number"
+            autocomplete="off"
+            v-model.number="local.spacingBefore"
+            @update:modelValue="applySpacing"
+            placeholder="0"
+            :label="__('Space above')"
+          />
+          <FormControl
+            type="number"
+            autocomplete="off"
+            v-model.number="local.spacingAfter"
+            @update:modelValue="applySpacing"
+            placeholder="0"
+            :label="__('Space below')"
+          />
         </div>
       </div>
     </template>
@@ -55,15 +42,16 @@
 </template>
 
 <script setup>
-import { Button, FormControl, FormLabel, Popover } from 'frappe-ui'
+import { FormControl, Popover } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 
+import ToolbarButton from '@/apps/writer/components/core-editor/ToolbarButton.vue'
 import { DEFAULT_LINE_HEIGHT, toCssLineHeight, toLineSpacing } from '@/apps/writer/utils/typography'
+import { translate as __ } from '@/platform/translation'
 
 const props = defineProps({
   editor: Object,
   settings: Object,
-  icon: [Object, Function, String],
 })
 
 const current = computed(() => {

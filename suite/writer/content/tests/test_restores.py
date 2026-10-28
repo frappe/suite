@@ -2,13 +2,14 @@ import base64
 import gzip
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import frappe
 import pycrdt
-from frappe.utils import now_datetime
+from frappe.utils import get_system_timezone, now_datetime
 
 from suite import drive
 from suite.content.http import routes
@@ -47,9 +48,9 @@ class TestRestoreFence(CheckpointCase):
         rows = drive.list_versions(self.node)["rows"]
         return [row["label"] for row in rows if row["kind"] == "milestone"]
 
-    def milestone_seq(self, label: str) -> int:
+    def last_milestone_seq(self) -> int:
         rows = drive.list_versions(self.node)["rows"]
-        return next(row["seq"] for row in rows if row["label"] == label)
+        return next(row["seq"] for row in rows if row["kind"] == "milestone")
 
     # The document state a version holds, as its stored bytes give it
     def version_state(self, seq: int) -> bytes:
@@ -212,6 +213,40 @@ class TestRestoreFence(CheckpointCase):
             (control_event, control["kind"], control["restore_rev"]), ("suite_collab_ctl", "restored", 3)
         )
 
+    def test_live_tabs_are_told_who_restored_which_version(self):
+        seq = drive.take_version(self.node, kind="named", label="Draft for review")
+        taken = frappe.db.get_value("Drive Node Version", {"node": self.node, "seq": seq}, "creation")
+        restoring = self.open_tab()
+        _status, fence = self.begin(version=seq)
+        with patch("frappe.publish_realtime") as publish:
+            self.push_word(restoring, "old ", restore=fence["token"])
+
+        control = publish.call_args_list[-1].args[1]
+        taken_at = datetime.fromisoformat(control["version"]["taken_at"])
+
+        self.assertEqual(
+            (control["by"], control["version"]["seq"], control["version"]["label"]),
+            (WRITER, seq, "Draft for review"),
+        )
+        self.assertEqual(
+            taken_at.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None),
+            taken.replace(microsecond=0),
+        )
+
+    def test_the_version_kept_first_is_named_after_the_version_restored_and_credits_the_restorer(self):
+        named = drive.take_version(self.node, kind="named", label="Draft for review")
+        automatic = drive.take_version(self.node, kind="auto")
+        _status, fence = self.begin(version=named)
+        self.cancel(fence["token"])
+        self.type_into(self.node, [" three"])
+        self.begin(version=automatic)
+
+        rows = [row for row in drive.list_versions(self.node)["rows"] if row["kind"] == "milestone"]
+
+        self.assertEqual(rows[1]["label"], "Before restoring “Draft for review”")
+        self.assertRegex(rows[0]["label"], r"^Before restoring the version from \d{1,2}:\d{2}\s?[AP]M$")
+        self.assertEqual({row["actor"] for row in rows}, {WRITER})
+
     def test_opening_and_pulling_tell_the_last_restore_and_a_standing_fence(self):
         restoring = self.open_tab()
         _status, fence = self.begin()
@@ -241,7 +276,7 @@ class TestRestoreFence(CheckpointCase):
         self.set_doc(self.node, restored_at=now_datetime() - timedelta(seconds=61))
 
         undoing = self.open_tab()
-        before = self.milestone_seq("Before restoring version 1")
+        before = self.last_milestone_seq()
         _status, fence = self.begin(version=before)
         status, _landed = self.push_restore(undoing, self.version_state(before), fence["token"])
 

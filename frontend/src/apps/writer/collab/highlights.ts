@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, type EditorState, type StateField } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection, type EditorState, type StateField } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 
 import type { DocumentThread } from '@/apps/drive'
@@ -18,6 +18,8 @@ interface Highlights {
 
 interface HighlightOptions {
   threads: () => readonly DocumentThread[]
+  // The anchors of the comments being written, whose text shows as a thread's does
+  drafts: () => readonly string[]
   // Told each time the threads are placed again
   onPlaced: (places: ThreadPlaces) => void
   // The thread open in the panel, whose text shows darker
@@ -37,13 +39,14 @@ const highlightsKey = new PluginKey<Highlights>('threadHighlights')
 
 function highlightsState(
   threads: () => readonly DocumentThread[],
+  drafts: () => readonly string[],
   shown: () => Shown,
 ): StateField<Highlights> {
   return {
-    init: (_, state) => highlights(state, threads(), shown()),
+    init: (_, state) => highlights(state, threads(), drafts(), shown()),
     apply: (transaction, previous, _, state) => {
       if (transaction.getMeta(highlightsKey)) {
-        return highlights(state, threads(), shown())
+        return highlights(state, threads(), drafts(), shown())
       }
 
       if (!transaction.docChanged) {
@@ -78,6 +81,7 @@ export const ThreadHighlights = Extension.create<HighlightOptions>({
   addOptions() {
     return {
       threads: () => [],
+      drafts: () => [],
       onPlaced: () => {},
       open: () => null,
       lit: () => null,
@@ -87,6 +91,7 @@ export const ThreadHighlights = Extension.create<HighlightOptions>({
 
   addProseMirrorPlugins() {
     const threads = () => this.options.threads()
+    const drafts = () => this.options.drafts()
     const shown = () => ({ open: this.options.open(), lit: this.options.lit() })
     const opened = (name: string) => this.options.onOpened(name)
     const placed = (state: EditorState) =>
@@ -94,17 +99,21 @@ export const ThreadHighlights = Extension.create<HighlightOptions>({
     return [
       new Plugin({
         key: highlightsKey,
-        state: highlightsState(threads, shown),
+        state: highlightsState(threads, drafts, shown),
         props: {
           decorations: (state) => highlightsKey.getState(state)?.decorations,
-          // The cursor still goes where the text was clicked
-          handleClick: (_view, _position, event) => {
+          // The caret is placed before the thread opens, as opening it redraws the text
+          handleClick: (view, position, event) => {
             const name = threadAt(event.target)
-            if (name) {
-              opened(name)
+            if (!name || event.shiftKey) {
+              return false
             }
 
-            return false
+            view.dispatch(
+              view.state.tr.setSelection(TextSelection.create(view.state.doc, position)),
+            )
+            opened(name)
+            return true
           },
         },
         view: (view) => placingView(view, placed),
@@ -113,7 +122,7 @@ export const ThreadHighlights = Extension.create<HighlightOptions>({
   },
 })
 
-/** Marks the threads again, once they are read from Drive. */
+/** Marks the threads and drafts again, once either changes. */
 export function redrawThreads(view: EditorView) {
   view.dispatch(view.state.tr.setMeta(highlightsKey, true))
 }
@@ -160,6 +169,7 @@ function shownClass(name: string, shown: Shown) {
 function highlights(
   state: EditorState,
   threads: readonly DocumentThread[],
+  drafts: readonly string[],
   shown: Shown,
 ): Highlights {
   const places = new Map<string, ThreadPlace>()
@@ -173,5 +183,18 @@ function highlights(
     }
   }
 
+  decorations.push(...draftDecorations(state, drafts))
   return { places, decorations: DecorationSet.create(state.doc, decorations), isStale: false }
+}
+
+// Without data-thread, so a click on a draft's text opens no thread
+function draftDecorations(state: EditorState, drafts: readonly string[]) {
+  return drafts.flatMap((anchor) => {
+    const place = placeThread(state, anchor)
+    if (place.kind !== 'text') {
+      return []
+    }
+
+    return [Decoration.inline(place.from, place.to, { 'data-comment-draft': '' })]
+  })
 }

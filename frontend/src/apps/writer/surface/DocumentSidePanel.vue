@@ -14,6 +14,8 @@ const props = defineProps<{
   session: DocumentSession
   canComment: boolean
   canEditDocument: boolean
+  /** Whether the person can share the document, which needs Manage. */
+  canShare: boolean
   canRestoreVersion: boolean
   canSaveVersion: boolean
   isRestoringVersion: boolean
@@ -35,6 +37,7 @@ const emit = defineEmits<{
   restoreVersion: [version: DocumentVersion]
   downloadVersion: [version: DocumentVersion]
   saveVersion: []
+  commentSent: []
 }>()
 const previewedVersion = defineModel<DocumentVersion | null>('previewedVersion', {
   required: true,
@@ -155,7 +158,7 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
     <aside
       v-if="panel"
       :aria-label="title"
-      class="absolute bottom-0 right-0 top-0 z-20 w-full overflow-hidden border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl md:static md:box-content md:w-80 md:shrink-0 md:border-outline-gray-2 md:bg-surface-base md:shadow-none"
+      class="absolute bottom-0 right-0 top-0 z-20 w-full overflow-hidden border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl md:static md:box-content md:w-80 md:shrink-0 md:bg-surface-base md:shadow-none"
     >
       <div class="flex h-full w-full flex-col md:w-80 md:p-2">
         <div
@@ -197,8 +200,10 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
             :places
             :can-comment
             :can-edit-document
+            :can-share
             :actions="threadActions"
             :drafts
+            @sent="emit('commentSent')"
           />
           <p v-else-if="lists.isLoading" class="px-2 text-sm text-ink-gray-5">
             {{ __('Loading…') }}

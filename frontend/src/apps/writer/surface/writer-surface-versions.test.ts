@@ -26,6 +26,10 @@ vi.hoisted(() => {
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
 vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/platform/session', async (importOriginal) => {
+  const { fakeSession } = await import('./writer-surface-fakes')
+  return fakeSession(await importOriginal<typeof import('@/platform/session')>())
+})
 vi.mock('@/apps/writer/components/CoreEditor.vue', async () =>
   (await import('./writer-surface-fakes')).fakeCoreEditor(),
 )
@@ -297,7 +301,39 @@ describe('Writer surface', () => {
     const bar = [...root.querySelectorAll('[role="status"]')].find((status) =>
       status.textContent?.includes('Viewing Before review'),
     )!
-    expect(bar.querySelectorAll('button')).toHaveLength(0)
+    expect(buttonLabelled(bar, 'Restore this version')).toBeFalsy()
+  })
+
+  it('goes back to the current version from the version bar, or on Escape', async () => {
+    const root = await openedSurface(oneVersion)
+    const backAfter = async (leave: () => void) => {
+      root.querySelector<HTMLElement>('[data-open-versions]')!.click()
+      await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
+      versionRow(root, 'Before review').click()
+      await nextTick()
+      const isShown = root.querySelector('[data-preview]') !== null
+      leave()
+      await nextTick()
+      return [isShown, root.querySelector('[data-preview]') !== null]
+    }
+
+    const fromBar = await backAfter(() => {
+      const bar = [...root.querySelectorAll('[role="status"]')].find((status) =>
+        status.textContent?.includes('Viewing Before review'),
+      )!
+      const back = [...bar.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === 'Back to current',
+      )!
+      back.click()
+    })
+    const fromEscape = await backAfter(() =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    )
+
+    expect([fromBar, fromEscape]).toEqual([
+      [true, false],
+      [true, false],
+    ])
   })
 
   it('restores the shown version from the version bar', async () => {

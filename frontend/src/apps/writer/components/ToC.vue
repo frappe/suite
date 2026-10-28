@@ -2,17 +2,19 @@
   <div
     v-if="editor && (hasContent || editor.isEditable)"
     class="gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-300 ease-in-out"
-    :class="[show ? 'w-56 p-2' : 'w-12 p-2.5']"
+    :class="[show ? 'w-56 p-2' : 'w-12 py-2 ps-3.5']"
   >
-    <div v-if="!show" class="flex justify-center">
-      <Button
-        variant="ghost"
-        :icon="LucideTableOfContents"
-        label="Show table of contents"
-        tooltip="Show table of contents"
-        :aria-expanded="false"
-        @click="show = !show"
-      />
+    <div v-if="!show" class="flex">
+      <!-- To the side, so the tooltip does not cover the toolbar above -->
+      <Tooltip text="Show table of contents" side="right">
+        <Button
+          variant="ghost"
+          :icon="LucideTableOfContents"
+          label="Show table of contents"
+          :aria-expanded="false"
+          @click="toggle"
+        />
+      </Tooltip>
     </div>
     <div v-if="show" class="grow flex flex-col gap-0.5 w-52">
       <div v-if="hasContent" class="flex justify-between items-center ps-2 pr-1 pb-1">
@@ -25,7 +27,7 @@
           label="Hide table of contents"
           tooltip="Hide"
           :aria-expanded="true"
-          @click="show = !show"
+          @click="toggle"
         />
       </div>
       <div v-if="tabs.length > 0" class="flex flex-col gap-0.5 mb-2" @drop.prevent="onDrop">
@@ -170,7 +172,7 @@
           label="Hide table of contents"
           tooltip="Hide"
           :aria-expanded="true"
-          @click="show = !show"
+          @click="toggle"
         />
       </div>
     </div>
@@ -179,6 +181,7 @@
 
 <script setup>
 import { TextSelection } from '@tiptap/pm/state'
+import { useLocalStorage, useMediaQuery } from '@vueuse/core'
 import LucideChevronRight from '~icons/lucide/chevron-right'
 import LucideEllipsisVertical from '~icons/lucide/ellipsis-vertical'
 import LucideFileText from '~icons/lucide/file-text'
@@ -204,8 +207,17 @@ const props = defineProps({
 
 const hasContent = computed(() => tabs.value.length > 0 || props.anchors.length > 1)
 
-const show = ref(JSON.parse(localStorage.getItem('showToc') || 'false'))
-watch(show, (v) => localStorage.setItem('showToc', v))
+// Open by default only on wide screens, where it leaves the text room. A choice made on a narrow
+// screen lasts until the width changes, and is not remembered.
+const isWide = useMediaQuery('(min-width: 1100px)')
+const keepOpen = useLocalStorage('showToc', false)
+const show = ref(isWide.value && keepOpen.value)
+watch(isWide, (wide) => (show.value = wide && keepOpen.value))
+
+function toggle() {
+  show.value = !show.value
+  if (isWide.value) keepOpen.value = show.value
+}
 const showHeadings = ref(true)
 
 // Get all tabs from the document

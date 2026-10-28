@@ -17,6 +17,19 @@ export function peerName(user: string, peerId: number) {
   return fullName(user)
 }
 
+const INITIALS = 2
+
+/** The first letters of a person's first two names, as their avatar shows them. */
+export function initialsOf(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, INITIALS)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+}
+
 // Calls `named` once a signed-in person's full name has been looked up; a guest's name never changes
 export async function whenNamed(user: string, named: () => void) {
   if (user !== GUEST_USER) {

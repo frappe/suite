@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dropdown, TextInput, Tooltip, type DropdownOptions } from 'frappe-ui'
+import { Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
 import { computed, nextTick, ref } from 'vue'
 
 import type { DocumentVersion } from '@/apps/drive'
@@ -182,16 +182,14 @@ function actions(version: DocumentVersion): DropdownOptions {
         class="flex shrink-0 items-center pr-1"
         :class="currentActionsClass"
       >
-        <Tooltip text="Save version">
-          <button
-            type="button"
-            class="flex size-7 items-center justify-center text-ink-gray-5 hover:text-ink-gray-8"
-            :aria-label="__('Save version')"
-            @click="emit('saveVersion')"
-          >
-            <span class="lucide-bookmark size-4" aria-hidden="true" />
-          </button>
-        </Tooltip>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="lucide-bookmark"
+          :tooltip="__('Save version')"
+          :aria-label="__('Save version')"
+          @click="emit('saveVersion')"
+        />
       </div>
     </div>
     <section v-for="day in days" :key="day.label" class="[&:first-child>h3]:pt-0">
@@ -228,30 +226,28 @@ function actions(version: DocumentVersion): DropdownOptions {
             <p class="truncate text-xs text-ink-gray-5">{{ byline(version) }}</p>
           </button>
           <div class="flex shrink-0 items-center pr-1" :class="actionsClass(version)">
-            <Tooltip v-if="canRestore" text="Restore this version">
-              <button
-                type="button"
-                class="flex size-7 items-center justify-center text-ink-gray-5 hover:text-ink-gray-8 disabled:opacity-50"
-                :aria-label="__('Restore this version')"
-                :disabled="isRestoring"
-                @click="emit('restore', version)"
-              >
-                <span class="lucide-undo-2 size-4" aria-hidden="true" />
-              </button>
-            </Tooltip>
+            <Button
+              v-if="canRestore"
+              size="sm"
+              variant="ghost"
+              icon="lucide-undo-2"
+              :tooltip="__('Restore this version')"
+              :aria-label="__('Restore this version')"
+              :disabled="isRestoring"
+              @click="emit('restore', version)"
+            />
             <Dropdown
               :options="actions(version)"
               align="end"
               @update:open="noteMenu(version, $event)"
             >
-              <button
-                type="button"
-                class="flex size-7 items-center justify-center text-ink-gray-5 hover:text-ink-gray-8"
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="lucide-ellipsis"
                 :aria-label="__('More version actions')"
                 @focus="passFocusToNameBox"
-              >
-                <span class="lucide-ellipsis size-4" aria-hidden="true" />
-              </button>
+              />
             </Dropdown>
           </div>
         </div>

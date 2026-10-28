@@ -35,11 +35,12 @@ vi.mock('frappe-ui', async () => {
         return () => render('input', { ref: input, value: props.modelValue, onInput: write })
       },
     }),
-    Tooltip: define({
+    Button: define({
+      inheritAttrs: false,
       setup:
-        (_, { slots }) =>
+        (_, { attrs }) =>
         () =>
-          slots.default?.(),
+          render('button', { type: 'button', ...attrs }),
     }),
   }
 })

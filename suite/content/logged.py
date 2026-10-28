@@ -203,6 +203,13 @@ def threads_changed(app: str, node: str) -> None:
         live.publish_control(app, doc.id, doc.lineage, kind="threads")
 
 
+def access_changed(app: str, node: str) -> None:
+    """Move the document's open tabs to new rooms, so a tab that lost access hears no more changes."""
+    doc = log.find(app, node)
+    if doc:
+        live.close_rooms(app, doc.id, doc.lineage)
+
+
 def live_state(app: str, node: str) -> pycrdt.Doc | None:
     """Load the log as the caller's transaction sees it, on or off, so the media sweep keeps its pictures."""
     doc = log.find(app, node)
@@ -422,6 +429,10 @@ class ContentCallbacks:
         """Tell the document's open tabs its comment threads changed."""
         threads_changed(self.app(), node)
 
+    def on_access_changed(self, node: str) -> None:
+        """Move the document's open tabs to new rooms after a grant write."""
+        access_changed(self.app(), node)
+
 
 def with_content(spec: drive.ContentTypeSpec) -> drive.ContentTypeSpec:
     """`spec` with the content layer's branch for a document in a log around each row-only callback."""
@@ -438,6 +449,7 @@ def with_content(spec: drive.ContentTypeSpec) -> drive.ContentTypeSpec:
         used_nodes=callbacks.used_nodes,
         remap_media=callbacks.remap_media,
         threads_changed=callbacks.on_threads_changed,
+        access_changed=callbacks.on_access_changed,
     )
 
 

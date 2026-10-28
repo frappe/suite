@@ -353,6 +353,51 @@ describe("this tab's restore", () => {
   })
 })
 
+describe("another tab's restore", () => {
+  it('a live tab is told who restored which version', async () => {
+    fakeTime()
+    const server = await serverWith('draft')
+    const versionRestored = vi.fn()
+    await join(server.endpoints(), { socket: server.socket(), versionRestored })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const version = { seq: 2, label: null, taken_at: '2026-10-22T05:12:00+00:00' }
+    server.landRestore(restoreTo(server, 'old'), undefined, { by: 'amira@example.com', version })
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect(versionRestored.mock.calls).toEqual([
+      [
+        {
+          by: 'amira@example.com',
+          version: { seq: 2, label: null, takenAt: '2026-10-22T05:12:00+00:00' },
+        },
+      ],
+    ])
+  })
+
+  it('only the other tabs are told, not the one that restored', async () => {
+    fakeTime()
+    const server = await serverWith('draft')
+    const toldRestorer = vi.fn()
+    const toldOther = vi.fn()
+    const restorer = await join(server.endpoints(), {
+      socket: server.socket(),
+      versionRestored: toldRestorer,
+    })
+    await join(server.endpoints(), { socket: server.socket(), versionRestored: toldOther })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const result = await restorer.restoreVersion(3, becomes(restorer, 'old'))
+    await vi.advanceTimersByTimeAsync(10)
+
+    expect([result.outcome, toldRestorer.mock.calls.length, toldOther.mock.calls]).toEqual([
+      'landed',
+      0,
+      [[{ by: null, version: null }]],
+    ])
+  })
+})
+
 describe('restoring a version', () => {
   function restoreCalls(server: FakeServer) {
     return server.calls.filter((call) => call.includes('Restore'))

@@ -5,6 +5,7 @@ import { Carets } from '@/apps/writer/collab/carets'
 import { BODY_FIELD } from '@/apps/writer/collab/field'
 import { SteadyCaret } from '@/apps/writer/collab/steady-caret'
 import { UndoAfterRestore } from '@/apps/writer/collab/undo-after-restore'
+import { UndoSteps } from '@/apps/writer/collab/undo-steps'
 import type { CollabRoom } from '@/platform/collab'
 
 // Ties the editor to a room's document and draws its peers. `onFrozen` hears when the document
@@ -19,5 +20,6 @@ export function writerBinding(room: CollabRoom, onFrozen: () => void): AnyExtens
     Carets.configure({ presence: room.presence }),
     SteadyCaret,
     UndoAfterRestore.configure({ room }),
+    UndoSteps,
   ]
 }

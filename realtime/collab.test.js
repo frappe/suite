@@ -27,16 +27,27 @@ function fakeSite(collabEnabled = true) {
 		joinableAsks: 0,
 		collabEnabled,
 		to(name) {
-			function emit(event, message) {
-				for (const socket of rooms.get(name) ?? []) {
-					socket.heard.push([event, message]);
-				}
-			}
-
-			return { emit };
+			return broadcast(rooms, name, null);
 		},
 	};
 	return nsp;
+}
+
+// What socket.io's `to(room)` gives: an emit to the room, optionally `except` another room's sockets
+function broadcast(rooms, name, sender, excluded = new Set()) {
+	function emit(event, message) {
+		for (const socket of rooms.get(name) ?? []) {
+			if (socket !== sender && !excluded.has(socket)) {
+				socket.heard.push([event, message]);
+			}
+		}
+	}
+
+	function except(other) {
+		return broadcast(rooms, name, sender, new Set([...excluded, ...(rooms.get(other) ?? [])]));
+	}
+
+	return { emit, except };
 }
 
 function connect(nsp, user = "a@example.com", faults = {}) {
@@ -71,15 +82,7 @@ function connect(nsp, user = "a@example.com", faults = {}) {
 				throw new Error("to");
 			}
 
-			function emit(event, message) {
-				const members = nsp.adapter.rooms.get(name) ?? [];
-				const others = [...members].filter((other) => other !== socket);
-				for (const other of others) {
-					other.heard.push([event, message]);
-				}
-			}
-
-			return { emit };
+			return broadcast(nsp.adapter.rooms, name, socket);
 		},
 		frappe_request: async (url) => {
 			if (url.endsWith("validate_guest_session")) {
@@ -202,26 +205,46 @@ test("a join that fails leaves the socket in no room, so nothing published after
 test("presence carries the user the server verified, never one the tab names", async () => {
 	const nsp = fakeSite();
 	const writer = connect(nsp, "writer@example.com");
-	const guest = connect(nsp, "Guest");
 	const watcher = connect(nsp, "watcher@example.com");
 	await watcher.joinRooms([roomA]);
 	await writer.joinRooms([roomA]);
-	await guest.joinRooms([roomA]);
 
 	writer.sendPresence([roomA], { user: { name: "Someone else" }, cursor: { anchor: 1, head: 1 } });
-	guest.sendPresence([roomA], { user: "admin@example.com", cursor: null });
 	await waitForFlush();
 
 	const joins = watcher.heard("suite_collab_presence_join").map((join) => join.user);
 	const states = watcher.heard("suite_collab_presence").flatMap((batch) => batch.states);
-	assert.deepEqual(joins, ["writer@example.com", "Guest"]);
+	assert.deepEqual(joins, ["writer@example.com"]);
 	assert.deepEqual(
 		states.map((state) => state.user),
-		["writer@example.com", "Guest"],
+		["writer@example.com"],
 	);
-	for (const tab of [writer, guest, watcher]) {
+	for (const tab of [writer, watcher]) {
 		tab.close();
 	}
+});
+
+test("a signed-out tab hears the document's changes but no presence, and nobody sees it", async () => {
+	const nsp = fakeSite();
+	const writer = connect(nsp, "writer@example.com");
+	await writer.joinRooms([roomA]);
+	const guest = connect(nsp, "Guest");
+
+	const reply = await guest.joinRooms([roomA]);
+	guest.sendPresence([roomA], { user: "admin@example.com", cursor: { anchor: 1, head: 1 } });
+	writer.sendPresence([roomA], { cursor: { anchor: 2, head: 2 } });
+	await waitForFlush();
+	nsp.to(roomA).emit("suite_collab_row", { rev: 1 });
+	guest.close();
+
+	assert.deepEqual([reply.roster, reply.count, reply.carets], [[], 0, []]);
+	assert.deepEqual(guest.socket.heard.map(([event]) => event), ["suite_collab_row"]);
+	assert.deepEqual(writer.socket.heard.map(([event]) => event), ["suite_collab_presence", "suite_collab_row"]);
+	assert.deepEqual(
+		writer.heard("suite_collab_presence").flatMap((batch) => batch.states.map((state) => state.user)),
+		["writer@example.com"],
+	);
+	writer.close();
 });
 
 test("tabs rank by when they first asked for rooms, not when their socket connected", async () => {
@@ -415,14 +438,11 @@ test("a tab that joins late hears how long another has been idle and hidden, cou
 	late.close();
 });
 
-test("a room shows at most fifty carets, ten of them guests", async () => {
+test("a room shows at most fifty carets", async () => {
 	const nsp = fakeSite();
 	const watcher = connect(nsp, "watcher@example.com");
 	await watcher.joinRooms([roomA]);
-	const tabs = [
-		...Array.from({ length: 20 }, () => connect(nsp, "Guest")),
-		...Array.from({ length: 50 }, (_, index) => connect(nsp, `user${index}@example.com`)),
-	];
+	const tabs = Array.from({ length: 70 }, (_, index) => connect(nsp, `user${index}@example.com`));
 	for (const tab of tabs) {
 		await tab.joinRooms([roomA]);
 	}
@@ -437,7 +457,6 @@ test("a room shows at most fifty carets, ten of them guests", async () => {
 	const carets = states.filter((state) => state.state.cursor);
 	assert.equal(states.length, 70);
 	assert.equal(carets.length, 50);
-	assert.equal(carets.filter((state) => state.user === "Guest").length, 10);
 	for (const tab of [watcher, ...tabs]) {
 		tab.close();
 	}
@@ -527,7 +546,8 @@ test("presence held stays bounded over a thousand reconnects and is gone when ev
 		`${heldAfterReconnects} held after reconnects, ${heldWithWriter} before`,
 	);
 	assert.equal(held_entries(), heldWhenEmpty);
-	assert.deepEqual(writer.heard("suite_collab_presence_gone").length, 2000);
+	// Only the signed-in half was ever shown, so only it is seen leaving
+	assert.deepEqual(writer.heard("suite_collab_presence_gone").length, 1000);
 });
 
 test("a fault in every collab listener and timer leaves the process serving and Meet answering", async () => {

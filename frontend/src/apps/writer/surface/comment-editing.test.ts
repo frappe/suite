@@ -48,6 +48,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('editing and deleting a comment', () => {
   function menus(host: Element) {
     return host.querySelectorAll('button[aria-label="More comment actions"]').length
@@ -75,8 +80,10 @@ describe('editing and deleting a comment', () => {
     const block = [...host.querySelectorAll('li div')].find(
       (element) => element.querySelector(':scope > p:not(.flex)')?.textContent?.trim() === text,
     )
-    await click(labelled(block!, 'More comment actions'))
-    const option = [...block!.querySelectorAll('[role="menuitem"]')].find(
+    // A reply holds its own ⋯; the first comment's sits in the thread's header
+    const owner = labelled(block!, 'More comment actions') ? block! : block!.closest('li')!
+    await click(labelled(owner, 'More comment actions'))
+    const option = [...owner.querySelectorAll('[role="menuitem"]')].find(
       (element) => element.textContent === item,
     )
     await click(option as HTMLElement)
@@ -112,6 +119,17 @@ describe('editing and deleting a comment', () => {
       expect.stringMatching(/^Ben Ito/),
       expect.stringMatching(/^Asha Rao/),
     ])
+  })
+
+  it('shows each person by their initials, as the people in the header show them', async () => {
+    const { host } = showList({ threads: [ON_TEXT] })
+
+    await click(rowButton(host, 'Is this right?'))
+    const initials = [...host.querySelectorAll('[data-initials]')].map((avatar) =>
+      avatar.getAttribute('data-initials'),
+    )
+
+    expect(initials).toEqual(['AR', 'BI', 'AR'])
   })
 
   it('offers a guest no ⋯, even on comments made as a guest', async () => {
@@ -173,7 +191,7 @@ describe('editing and deleting a comment', () => {
     expect([whileEditing, asked, editBox(), menus(host)]).toEqual([1, [], null, 2])
   })
 
-  it('hides ⋯ again until pointed at once an edit picked from it is saved or cancelled', async () => {
+  it('hides a reply’s ⋯ again until pointed at once an edit picked from it is saved or cancelled', async () => {
     const { host } = showList({ threads: [ON_TEXT] })
     await click(rowButton(host, 'Is this right?'))
 
@@ -184,7 +202,8 @@ describe('editing and deleting a comment', () => {
     await pick(host, 'Is this right?', 'Edit')
     await click(buttonNamed(host, 'Cancel'))
 
-    expect([afterSave, alwaysShown(host)]).toEqual([0, 0])
+    // Only the open thread's header ⋯, beside Resolve, stays shown
+    expect([afterSave, alwaysShown(host)]).toEqual([1, 1])
   })
 
   it('sends nothing for an unchanged comment, and can’t save an empty one', async () => {

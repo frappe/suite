@@ -61,8 +61,6 @@ function open(state: Uint8Array, ...more: AnyExtension[]): Tab {
   yjs.applyUpdate(ydoc, state, REMOTE)
   const extensions = writerEditorExtensions({
     isCollaborative: true,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,

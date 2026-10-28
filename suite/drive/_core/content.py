@@ -207,6 +207,12 @@ class ContentTypeSpec:
     # It runs outside the write, so a failure is logged and never undoes it.
     threads_changed: Callable[[str], None] | None = None
 
+    # access. (node) -> None, after a grant write on the node or a folder
+    # above it commits. Lets the app make the document's open tabs check
+    # their access again, so a tab that lost it hears no more changes. It
+    # runs outside the write, so a failure is logged and never undoes it.
+    access_changed: Callable[[str], None] | None = None
+
 
 REQUIRED_CALLBACKS = ("create_empty", "duplicate", "on_purge")
 OPTIONAL_CALLBACKS = (
@@ -217,6 +223,7 @@ OPTIONAL_CALLBACKS = (
     "used_nodes",
     "remap_media",
     "threads_changed",
+    "access_changed",
 )
 
 

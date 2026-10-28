@@ -155,13 +155,26 @@ async function settled() {
   await nextTick()
 }
 
+// Each row's lines: the name, then the email and whether they can open the document when shown
+function rowLines(option: Element | null | undefined) {
+  if (!option) {
+    return []
+  }
+
+  const lines = [option, ...option.querySelectorAll('*')].filter(
+    (line) => !line.children.length && line.textContent?.trim(),
+  )
+  return lines.map((line) => line.textContent?.trim())
+}
+
+// The name in each row
 function listed() {
   const list = document.querySelector('[role="listbox"]')
-  return list && [...list.children].map((option) => option.textContent?.trim())
+  return list && [...list.children].map((option) => rowLines(option)[0])
 }
 
 function chosen() {
-  return document.querySelector('[aria-selected="true"]')?.textContent?.trim()
+  return rowLines(document.querySelector('[aria-selected="true"]'))[0]
 }
 
 describe('picking a person with @ in a comment box', () => {
@@ -179,6 +192,24 @@ describe('picking a person with @ in a comment box', () => {
       ['Ann Lee', 'Ben Roy'],
       ['Ann Lee', 'Ben Roy'],
       ['', 'be'],
+    ])
+  })
+
+  it("shows each person's email, and marks people who can't open the document", async () => {
+    offered.value = [
+      { ...ANN, has_access: true },
+      { ...BEN, has_access: false },
+      { ...person('Administrator', 'Administrator'), email: 'admin@x.com' },
+    ]
+    const { box } = openBox()
+
+    await type(box, '@')
+    const rows = [...document.querySelector('[role="listbox"]')!.children].map(rowLines)
+
+    expect(rows).toEqual([
+      ['Ann Lee', 'ann@x.com'],
+      ['Ben Roy', 'ben@x.com', 'No access'],
+      ['Administrator', 'admin@x.com'],
     ])
   })
 

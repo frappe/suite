@@ -180,6 +180,7 @@ export const Carets = Extension.create<{ presence: RoomPresence | null }>({
 const NAME_SHOWN_MS = 3000
 const QUIET = 'collaboration-carets__caret--quiet'
 const IDLE = 'collaboration-carets__caret--idle'
+const FLIPPED = 'collaboration-carets__caret--flipped'
 
 type Box = ReturnType<EditorView['coordsAtPos']>
 
@@ -228,6 +229,13 @@ function isOverOwnCaret(caret: HTMLElement, own: Box | null) {
   return isWithin && middle > bottom - FLAG_HEIGHT && middle < bottom
 }
 
+// Whether a caret's flag, named, would run past the editor's right edge, which clips it
+function isPastRightEdge(caret: HTMLElement, editor: HTMLElement) {
+  const right =
+    caret.getBoundingClientRect().left + nameWidth(caret.textContent ?? '') + FLAG_PADDING
+  return right > editor.getBoundingClientRect().right
+}
+
 // A caret's flag names its peer while they act and for three seconds after, then shrinks to a dot; it gives
 // way at once when it would sit over this tab's own caret, and hovering a caret brings its name back in CSS;
 // the caret of a person who is idle is dimmed
@@ -262,6 +270,7 @@ class NameFlags {
       const isNamed = this.isNamed(peerId) && !isOverOwnCaret(caret, ownCaret)
       caret.classList.toggle(QUIET, !isNamed)
       caret.classList.toggle(IDLE, this.isIdle(peerId))
+      caret.classList.toggle(FLIPPED, isPastRightEdge(caret, view.dom))
     }
   }
 

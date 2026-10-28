@@ -12,7 +12,7 @@ export type LayoutSettings = {
 const DEFAULT_FONT_SIZE_PX = 15
 
 export const EDITOR_TEXT_CLASS =
-  'grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2'
+  'grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:relative prose-th:relative'
 
 /** The editor's three columns: margin, text, and the comments margin. */
 export function editorColumns(settings?: LayoutSettings) {

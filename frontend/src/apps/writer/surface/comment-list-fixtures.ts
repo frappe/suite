@@ -5,7 +5,7 @@ import type { DocumentThread } from '@/apps/drive'
 import type { ThreadPlace } from '@/apps/writer/collab/places'
 import { translationPlugin } from '@/platform/translation'
 
-import { confirmed, errors, me, toasts, warnings } from './comment-list-fakes'
+import { access, confirmed, errors, me, toasts, warnings } from './comment-list-fakes'
 import CommentList from './CommentList.vue'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
 import type { ThreadActions } from './useDocumentPanel'
@@ -71,6 +71,9 @@ afterEach(() => {
   warnings.length = 0
   errors.length = 0
   me.id = 'Asha Rao'
+  access.locked = []
+  access.dialogs = []
+  access.shared = []
 })
 
 // Drafts as useCommentDrafts shows them, each post answered in turn by the thread Drive made or null
@@ -117,6 +120,7 @@ export function showList({
   refusedReplies = 0,
   heldReplies = Promise.resolve(),
   canEditDocument = false,
+  canShare = true,
   drafts = fakeDrafts().list,
 } = {}) {
   const asked: string[] = []
@@ -124,6 +128,7 @@ export function showList({
   let refusalsLeft = refusedReplies
   const opened: (string | null)[] = []
   const lit: (string | null)[] = []
+  const sent: string[] = []
   const shown = ref(openThread)
   const listed = ref(threads)
   function open(name: string | null) {
@@ -170,16 +175,18 @@ export function showList({
       places: PLACES,
       canComment,
       canEditDocument,
+      canShare,
       actions,
       drafts,
       openThread: shown.value,
       'onUpdate:openThread': open,
       'onUpdate:litThread': (name: string | null) => lit.push(name),
+      onSent: () => sent.push('sent'),
     }),
   )
   app.use(translationPlugin).mount(host)
   mounted = app
-  return { host, asked, opened, lit, listed, replyIds }
+  return { host, asked, opened, lit, listed, replyIds, sent }
 }
 
 // Each row's words, one piece of text after another

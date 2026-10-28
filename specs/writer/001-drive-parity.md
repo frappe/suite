@@ -127,6 +127,20 @@ The Versions panel says "No versions yet" on a document that has been edited. Ba
 
 - **Where it was:** `fe/writer/pages/Document.vue` (`inIframe`), `fe/writer/components/WriterLayout.vue`
 
+## Comment decisions
+
+- **The owner hears of each new thread.** A new comment thread notifies the document's owner, as well as the people it mentions. The owner gets one notification when the thread also mentions them, and none for their own threads. Replies notify only the people they mention. The bell says `Amira Haddad commented on "Pricing"`, or `mentioned you in` for a person the comment mentions (`suite/drive/_core/comments.py`, `create_thread`).
+- **Mentioning someone without access asks first.** Before a comment, reply or edit is posted, Writer checks the people it newly mentions. If any of them can't open the document, a dialog names them. A person with Manage can pick **Share and post**, which shares the document with them at View without the share email and then posts, **Post without sharing**, or **Cancel**. Everyone else can pick **Post anyway** or **Cancel** (`fe/writer/surface/mentionAccess.ts`).
+
+## Public web readers
+
+These decisions apply to a signed-out reader of a document shared as "Anyone on the internet can view".
+
+- **The reader sees the document only.** Comments, version history and live presence are hidden. The server enforces this: a Guest needs Comment access to read threads and Edit access to read versions (`suite/drive/_core/comments.py`, `suite/drive/_core/versions.py`). The document payload leaves out comments for such a Guest (`suite/writer/http/routes.py`).
+- **Guests get no presence.** The realtime service sends a Guest the document's changes but no roster, carets or join and leave events. Other people do not see the Guest (`realtime/collab.js`).
+- **Turning web access off stops live updates.** Any grant or link change calls the content type's `access_changed`. Writer then moves the document's rooms to new keys and tells the old room to pull again. A tab that has lost access is refused and stops (`suite/content/live.py`, `close_rooms`).
+- **The page follows the reader's system theme.** A Guest has no saved theme, so the page uses `prefers-color-scheme` and changes when the system theme changes (`suite/www/suite.py`).
+
 ## Changed on purpose
 
 These differ from the old Writer by design. They are not gaps.

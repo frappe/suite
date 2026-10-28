@@ -177,6 +177,8 @@ class CreateDocument(TypedDict):
     content_doctype: str
     from_node: NotRequired[str]
     is_template: NotRequired[bool]
+    # A title nobody typed takes §8.6's free title instead of being refused
+    deduplicate_title: NotRequired[bool]
 
 
 @with_config(extra="forbid")

@@ -1,0 +1,192 @@
+/* Tables: a rounded card ruled inside, the header row in medium weight. The frame is an outline, not a
+   border, so the cells' offsets, which the selection overlay measures from, stay the same. */
+.prose-v3.ProseMirror .tableWrapper {
+  border-radius: 12px;
+  margin: 16px 0;
+  outline: 1px solid var(--outline-gray-1);
+  outline-offset: -1px;
+}
+
+/* Body text at the document's size; prose shrinks a table's text by default */
+.prose-v3.ProseMirror table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 1em;
+  line-height: 1.5;
+  margin: 0;
+  min-width: 100%;
+}
+
+.prose-v3.ProseMirror :is(td, th) {
+  background-color: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--outline-gray-1);
+  border-right: 1px solid var(--outline-gray-1);
+  height: 40px;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose-v3.ProseMirror :is(td, th):last-child {
+  border-right: 0;
+}
+
+.prose-v3.ProseMirror tr:last-child > :is(td, th) {
+  border-bottom: 0;
+}
+
+/* The header row: body-size text in medium weight, so the headers lead the rows below them */
+.prose-v3.ProseMirror th {
+  color: var(--ink-gray-8);
+  font-weight: 500;
+}
+
+.prose-v3.ProseMirror th p {
+  color: var(--ink-gray-8);
+}
+
+/* The selection: a 1px line around the cell or the run of cells, over a light tint, so it is clear
+   which cells a merge or a colour will take. A cell's ring lies on the rules
+   around it. On the card's edge it keeps a pixel inside the frame, and in a corner it takes the
+   frame's inner radius, or the rounded card would clip it. selectionRing.ts fits the run's box the
+   same way. */
+.prose-v3.ProseMirror .selectedCell::after,
+.prose-v3.ProseMirror .table-selection-box {
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px var(--ink-blue-5);
+}
+
+/* The text selection's blue, light enough to read the cell through */
+.prose-v3.ProseMirror .selectedCell::after {
+  background-color: color-mix(in srgb, var(--ink-blue-5) 14%, transparent);
+  inset: -1px;
+}
+
+.prose-v3.ProseMirror tr > :first-child.selectedCell::after {
+  left: 1px;
+}
+
+.prose-v3.ProseMirror tr:first-child > .selectedCell::after {
+  top: 1px;
+}
+
+.prose-v3.ProseMirror tr > :last-child.selectedCell::after {
+  right: 1px;
+}
+
+.prose-v3.ProseMirror tr:last-child > .selectedCell::after {
+  bottom: 1px;
+}
+
+.prose-v3.ProseMirror tr:first-child > :first-child.selectedCell::after {
+  border-top-left-radius: 11px;
+}
+
+.prose-v3.ProseMirror tr:first-child > :last-child.selectedCell::after {
+  border-top-right-radius: 11px;
+}
+
+.prose-v3.ProseMirror tr:last-child > :first-child.selectedCell::after {
+  border-bottom-left-radius: 11px;
+}
+
+.prose-v3.ProseMirror tr:last-child > :last-child.selectedCell::after {
+  border-bottom-right-radius: 11px;
+}
+
+/* Selected cells show as the ring. The unfocused editor's text highlight would mark only part of them */
+.prose-v3.ProseMirror .selectedCell .selection {
+  background: transparent;
+}
+
+/* A run of cells draws one box, not a ring per cell */
+.prose-v3.ProseMirror.table-cell-range .selectedCell::after {
+  box-shadow: none;
+}
+
+.prose-v3.ProseMirror .column-resize-handle {
+  background-color: var(--ink-gray-6);
+  bottom: -1px;
+  pointer-events: none;
+  position: absolute;
+  right: -1px;
+  top: 0;
+  width: 1px;
+  z-index: 2;
+}
+
+/* The table controls (components/core-editor/table). A grip is a small pill with dots on the
+   table's rule, ringed in the page's ground. It darkens under the pointer or while its menu is open. */
+.writer-table-anchor {
+  pointer-events: none;
+  position: absolute;
+}
+
+.writer-table-grip {
+  align-items: center;
+  background-color: var(--surface-gray-3);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--surface-base);
+  color: var(--ink-gray-6);
+  cursor: grab;
+  display: flex;
+  justify-content: center;
+  pointer-events: auto;
+  position: absolute;
+  touch-action: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+
+/* The cell menu's button sits inside the selected cell's corner, a chevron rather than dots */
+.writer-table-grip.is-cell {
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.writer-table-grip:is(:hover, .is-open) {
+  background-color: var(--ink-gray-5);
+  color: var(--surface-base);
+}
+
+/* The strips that add a column at the right and a row beneath: the plus alone, no ground */
+.writer-table-add {
+  align-items: center;
+  border-radius: 6px;
+  color: var(--ink-gray-4);
+  display: flex;
+  justify-content: center;
+  pointer-events: auto;
+  position: absolute;
+  transition: color 120ms;
+}
+
+.writer-table-add:hover {
+  color: var(--ink-gray-7);
+}
+
+/* The edge a dragged row or column lands on */
+.writer-table-drop {
+  background-color: var(--ink-gray-7);
+  border-radius: 9999px;
+  pointer-events: none;
+  position: absolute;
+}
+
+body.writer-table-dragging,
+body.writer-table-dragging .writer-table-grip {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* No fill: a slash, so it does not read as gray */
+.writer-swatch.is-none {
+  background-image: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.75px),
+    var(--ink-gray-5) calc(50% - 0.75px) calc(50% + 0.75px),
+    transparent calc(50% + 0.75px)
+  );
+}

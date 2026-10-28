@@ -57,8 +57,6 @@ function openWriter(room: CollabRoom, onFrozen: () => void) {
   document.body.append(host)
   const writerExtensions = writerEditorExtensions({
     isCollaborative: true,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,

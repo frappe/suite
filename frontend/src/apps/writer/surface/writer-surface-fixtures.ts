@@ -8,7 +8,7 @@ import { Doc } from 'yjs'
 import type { DocumentSession } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
 
-import { downloaded, realEditors, realtime, rooms, stored } from './writer-surface-fakes'
+import { downloaded, realEditors, realtime, rooms, signedIn, stored } from './writer-surface-fakes'
 
 export type Versions = DocumentSession['versions']
 export type Comments = DocumentSession['comments']
@@ -84,6 +84,7 @@ export function resetSurface() {
   stored.reloads = 0
   realtime.socket = fakeSocket({ answers: true })
   downloaded.html = null
+  signedIn.isOn = true
   vi.restoreAllMocks()
 }
 

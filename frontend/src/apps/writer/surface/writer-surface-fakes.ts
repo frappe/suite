@@ -23,6 +23,19 @@ export const realtime = { socket: fakeSocket({ answers: true }) }
 export const realEditors = { isOn: false }
 // What the document menu's Download took, as the HTML the real menu exports
 export const downloaded = { html: null as string | null }
+// Whether a reader is signed in; read when each surface mounts, so a test sets it before opening one
+export const signedIn = { isOn: true }
+
+export function fakeSession(original: typeof import('@/platform/session')) {
+  return {
+    ...original,
+    isAuthenticated: {
+      get value() {
+        return signedIn.isOn
+      },
+    },
+  }
+}
 
 export async function fakeFrappeUi() {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
@@ -90,8 +103,12 @@ export async function fakeDrive() {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
   return {
     DriveDocumentHeader: define({
+      props: {
+        saveState: { type: String, default: null },
+        panels: { type: Array, default: () => [] },
+      },
       emits: ['update:panel'],
-      setup: (_, { emit, slots }) => {
+      setup: (props, { emit, slots }) => {
         const openVersions = {
           'data-open-versions': '',
           onClick: () => emit('update:panel', 'versions'),
@@ -101,13 +118,15 @@ export async function fakeDrive() {
           onClick: () => emit('update:panel', 'comments'),
         }
         return () => [
-          render('button', openVersions),
-          render('button', openComments),
+          props.panels.includes('versions') && render('button', openVersions),
+          props.panels.includes('comments') && render('button', openComments),
+          render('output', { 'data-save-state': '' }, props.saveState ?? ''),
           slots.actions?.(),
         ]
       },
     }),
     DriveCommentAuthor: define({ setup: () => () => null }),
+    DRIVE_ROLES: { read: 10, comment: 20, upload: 30, edit: 40, manage: 50 },
     GUEST_NAME_LIMIT: 140,
     useDriveGuestName: () => ({
       shown: state(false),

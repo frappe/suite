@@ -1126,6 +1126,10 @@
           "is_template": {
             "title": "Is Template",
             "type": "boolean"
+          },
+          "deduplicate_title": {
+            "title": "Deduplicate Title",
+            "type": "boolean"
           }
         },
         "required": [

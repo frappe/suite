@@ -7,10 +7,18 @@ import { translate } from '@/platform/translation'
 vi.mock('frappe-ui', () => ({
   Avatar: defineComponent({ setup: () => () => h('span') }),
   Dropdown: defineComponent({
+    props: { options: Array },
     setup:
-      (_, { slots }) =>
+      (props, { slots }) =>
       () =>
-        h('div', slots.default?.()),
+        h('div', [
+          slots.default?.(),
+          h(
+            'ul',
+            { class: 'menu' },
+            (props.options ?? []).map((item) => h('li', slots.item?.({ item }))),
+          ),
+        ]),
   }),
   Tooltip: defineComponent({
     props: { text: String },
@@ -18,6 +26,13 @@ vi.mock('frappe-ui', () => ({
       (props, { slots }) =>
       () =>
         h('div', { class: 'tooltip', title: props.text }, slots.default?.()),
+  }),
+}))
+
+// The people search knows Ada's email; it never returns the Administrator account
+vi.mock('@/apps/writer/composables/useUsers', () => ({
+  useUsers: () => ({
+    getUser: (user: string) => (user === 'ada@x.com' ? { email: 'ada@x.com' } : undefined),
   }),
 }))
 
@@ -73,5 +88,28 @@ describe('UsersBar', () => {
       { isDimmed: false, tooltip: 'Bo Chen' },
     ])
     expect(ada.tooltip).toBe('Ada Lovelace · Idle for 5 min')
+  })
+  it('draws a person in the list as in the row: their initials on their colour', () => {
+    const root = mount([
+      { name: 'Ada Lovelace', id: 'ada@x.com', color: '#123456', idleSince: null },
+    ])
+    const drawn = (selector: string) => {
+      const chip = root.querySelector<HTMLElement>(`${selector} .peer-initials`)!
+      return [chip.textContent?.trim(), chip.style.getPropertyValue('--peer-light')]
+    }
+
+    expect(drawn('.menu')).toEqual(drawn('.peer-slot'))
+    expect(drawn('.menu')).toEqual(['AL', '#123456'])
+  })
+  it('names a person once in the list, with their email underneath when it says more', () => {
+    const root = mount([
+      { name: 'Ada Lovelace', id: 'ada@x.com', color: '#000', idleSince: null },
+      { name: 'Administrator', id: 'Administrator', color: '#000', idleSince: null },
+    ])
+    const rows = [...root.querySelectorAll('.menu li')].map((row) =>
+      [...row.querySelectorAll('.flex-col span')].map((line) => line.textContent),
+    )
+
+    expect(rows).toEqual([['Ada Lovelace', 'ada@x.com'], ['Administrator']])
   })
 })

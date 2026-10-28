@@ -209,7 +209,7 @@ describe('FilesListing type column', () => {
       'File',
       'ZIP',
       'Image',
-      'Writer Document',
+      'Document',
     ])
     expect(icon('md')).toContain('file-icon-text')
     expect(icon('json')).toContain('file-icon-code')

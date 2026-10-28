@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
 
-import { applyRouteMeta, installPageMeta, openingTitleState, usePageTitle } from './index'
+import {
+  applyRouteMeta,
+  installPageMeta,
+  newDocumentState,
+  newDocumentType,
+  openingTitleState,
+  usePageTitle,
+} from './index'
 
 describe('page meta', () => {
   it('arbitrates title overrides and restores the route fallback', () => {
@@ -59,5 +66,14 @@ describe('page meta', () => {
     release()
     applyRouteMeta({ meta: { title: 'Opening…' } } as any, openingTitleState(''))
     expect(document.title).toBe('Opening…')
+  })
+
+  it('marks a document just created for ten seconds only', () => {
+    const state = newDocumentState('Writer Document', 1_000)
+    expect(newDocumentType(state, 1_000)).toBe('Writer Document')
+    expect(newDocumentType(state, 10_999)).toBe('Writer Document')
+    expect(newDocumentType(state, 11_000)).toBeNull()
+    expect(newDocumentType({}, 1_000)).toBeNull()
+    expect(newDocumentType({ newDocument: 'Writer Document' }, 1_000)).toBeNull()
   })
 })

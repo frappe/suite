@@ -1,14 +1,20 @@
 /**
  * Writer's calls to the Drive and Suite routes that `DocumentSession` does not
- * cover: purging the nodes a failed import uploaded, and the people list the
- * mention menu reads.
+ * cover: uploading media into a document, purging the nodes a failed import
+ * uploaded, the people list the mention menu reads, and sharing the document
+ * with someone a comment mentions.
  *
  * Every call goes to `/api/suite/drive/` or `/api/suite/`, never to a legacy
  * Drive method.
  */
-import type { MentionSuggestionItem } from 'frappe-ui/editor'
+import type { MentionSuggestionItem, UploadedMedia, UploadFunction } from 'frappe-ui/editor'
+import { watch } from 'vue'
 
-import { api, client } from '@/api'
+import { api, client, useUpload } from '@/api'
+import { randomId } from '@/platform/random-id'
+
+// Drive's View role, as `DRIVE_ROLES.read`; importing Drive's root here would load all of Drive
+const READ = 10
 
 /** A person on this site, in the shape the mention menu reads. */
 export interface WriterUser extends MentionSuggestionItem {
@@ -18,6 +24,48 @@ export interface WriterUser extends MentionSuggestionItem {
   user_image: string | null
   value: string
   label: string
+  /** Asked about a document: whether they can open it. */
+  has_access?: boolean
+}
+
+/** The URL a Writer body stores for a media node. `suite/writer/drive.py` reads it back. */
+export function embedUrl(node: string): string {
+  return `/api/method/suite.writer.api.embed.get?id=${encodeURIComponent(node)}`
+}
+
+/**
+ * Upload a picture or video into `document`, for the editor's upload function.
+ *
+ * It uses Drive's resumable transfer, which sends the file in chunks. One
+ * request is capped at 25 MB, so a single-request upload refuses most videos.
+ * The random part of the title keeps two files with the same name apart.
+ */
+export async function uploadMedia(
+  document: string,
+  file: File,
+  { signal, onProgress }: Parameters<UploadFunction>[1] = {},
+): Promise<UploadedMedia> {
+  const upload = useUpload(api.drive.uploads.transfer, { silent: true })
+  const cancel = () => upload.cancel()
+  signal?.addEventListener('abort', cancel, { once: true })
+  const stopProgress = watch(
+    () => upload.progress,
+    (percent) => {
+      if (percent === null) return
+      onProgress?.({ loaded: (file.size * percent) / 100, total: file.size, percent })
+    },
+  )
+  try {
+    const node = await upload.run({
+      parent_node: document,
+      file,
+      filename: `${document} embed ${randomId().slice(0, 8)} -${file.name}`,
+    })
+    return { file_url: embedUrl(node.name) }
+  } finally {
+    stopProgress()
+    signal?.removeEventListener('abort', cancel)
+  }
 }
 
 /**
@@ -41,10 +89,15 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
  * The first page of people who match `query`, from `GET /api/suite/people`,
  * which any Suite user may call. With no query it is the first page of
  * everyone. The route pages users and groups together, so groups are dropped.
+ * With `node`, people who can open that document come first, the caller is
+ * left out, and each person says whether they can open it.
  */
-export async function searchUsers(query: string): Promise<WriterUser[]> {
+export async function searchUsers(query: string, node?: string | null): Promise<WriterUser[]> {
   const q = query.trim()
-  const page = await client.query(api.suite.people.list, q ? { q } : {})
+  const page = await client.query(api.suite.people.list, {
+    ...(q && { q }),
+    ...(node && { node }),
+  })
   return page.rows.flatMap((row) =>
     row.kind === 'user'
       ? [
@@ -55,8 +108,38 @@ export async function searchUsers(query: string): Promise<WriterUser[]> {
             user_image: row.user_image,
             value: row.email,
             label: (row.full_name || row.email).trimEnd(),
+            ...(row.has_access !== undefined && { has_access: row.has_access }),
           },
         ]
       : [],
   )
+}
+
+/**
+ * The people among `users` who can't open `node`, as the mention menu marks
+ * them. A failed lookup counts nobody, so it never stops a comment.
+ */
+export async function peopleWithoutAccess(
+  node: string,
+  users: readonly string[],
+): Promise<WriterUser[]> {
+  const found = await Promise.all(users.map((user) => searchUsers(user, node).catch(() => [])))
+  return found.flatMap((rows, index) =>
+    rows.filter((row) => row.name === users[index] && row.has_access === false),
+  )
+}
+
+/**
+ * Share `node` with each of `users` at View, without the share email: the
+ * comment that names them notifies them. Needs Manage on the node.
+ */
+export async function shareToView(node: string, users: readonly string[]): Promise<void> {
+  for (const principal of users) {
+    await client.mutation(api.drive.grants.put, {
+      node,
+      principal,
+      role: READ,
+      notify: false,
+    })
+  }
 }

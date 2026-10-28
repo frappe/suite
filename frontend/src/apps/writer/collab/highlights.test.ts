@@ -26,7 +26,7 @@ interface Panel {
 
 function openEditor(
   doc: yjs.Doc,
-  threads: { list: DocumentThread[] },
+  threads: { list: DocumentThread[]; drafts?: string[] },
   placed: (places: ThreadPlaces) => void = () => {},
   panel: Panel = { open: null, lit: null, opened: [] },
 ) {
@@ -39,6 +39,7 @@ function openEditor(
       Collaboration.configure({ document: doc }),
       ThreadHighlights.configure({
         threads: () => threads.list,
+        drafts: () => threads.drafts ?? [],
         onPlaced: placed,
         open: () => panel.open,
         lit: () => panel.lit,
@@ -138,6 +139,35 @@ describe('thread highlights', () => {
   })
 })
 
+describe('the text of a comment being written', () => {
+  function drafted(editor: Editor) {
+    const spans = editor.view.dom.querySelectorAll('[data-comment-draft]')
+    return [...spans].map((span) => span.textContent)
+  }
+
+  it('is marked while the draft is open, opens no thread when clicked, and leaves the text as it was', () => {
+    const doc = new yjs.Doc()
+    const threads = { list: [] as DocumentThread[], drafts: [] as string[] }
+    const panel: Panel = { open: null, lit: null, opened: [] }
+    const editor = openEditor(doc, threads, () => {}, panel)
+    editor.commands.setContent('<p>hello world</p>')
+    const before = JSON.stringify(yjs.encodeStateAsUpdate(doc))
+
+    threads.drafts = [threadOn(doc, 'draft', 6, 11).anchor]
+    redrawThreads(editor.view)
+    const whileOpen = drafted(editor)
+    const world = editor.view.dom.querySelector('[data-comment-draft]')!
+    editor.view.someProp('handleClick', (click) =>
+      click(editor.view, 8, { target: world } as never),
+    )
+    threads.drafts = []
+    redrawThreads(editor.view)
+
+    expect([whileOpen, drafted(editor), panel.opened]).toEqual([['world'], [], []])
+    expect(JSON.stringify(yjs.encodeStateAsUpdate(doc))).toBe(before)
+  })
+})
+
 describe('the text of the thread the panel points at', () => {
   // An editor on "hello world" with a thread on each word
   function twoThreads() {
@@ -169,19 +199,20 @@ describe('the text of the thread the panel points at', () => {
     ])
   })
 
-  it('opens the thread whose highlighted text is clicked, and nothing for plain text', () => {
+  it('opens the thread whose highlighted text is clicked, with the caret there, and nothing for plain text', () => {
     const { editor, panel } = twoThreads()
     const world = editor.view.dom.querySelector('[data-thread="second"]')!
 
     editor.view.someProp('handleClick', (click) =>
       click(editor.view, 8, { target: world } as never),
     )
+    const caret = editor.state.selection.head
     const paragraph = editor.view.dom.querySelector('p')!
     editor.view.someProp('handleClick', (click) =>
       click(editor.view, 1, { target: paragraph } as never),
     )
 
-    expect(panel.opened).toEqual(['second'])
+    expect([panel.opened, caret]).toEqual([['second'], 8])
   })
 
   // The editor's scroll area spans 0-500px; the thread's text starts at `top`, each later part a line below

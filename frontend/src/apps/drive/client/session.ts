@@ -160,8 +160,8 @@ export async function openDriveDocumentSession(
   }
   // A node reached through a share link records no visit: Recent sends no link
   // codes, so it could never show it (spec §10.13). The same rule as
-  // `isLinkOnly` in `files/features/linkAccess.ts`.
-  if (!node.access?.via_link) {
+  // `isLinkOnly` in `files/features/linkAccess.ts`. A signed-out reader has no Recent.
+  if (!node.access?.via_link && signedIn()) {
     void requester
       .mutation(
         api.drive.nodes.visit,

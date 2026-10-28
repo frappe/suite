@@ -255,7 +255,7 @@ import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
-import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
+import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
 import { archiveDownloadUrl } from '@/apps/drive/client/archives'
 import { nodeContentUrl } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
@@ -1447,19 +1447,20 @@ async function download(row: DriveNode) {
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return
+  const definition = documentTypes.find((type) => type.contentDoctype === contentDoctype)
   createRequest.value = {
     parent: parentId.value,
     kind,
     contentDoctype,
-    typeLabel: documentTypes
-      .find((definition) => definition.contentDoctype === contentDoctype)
-      ?.newLabel(),
+    typeLabel: definition?.newLabel(),
   }
   createOpen.value = true
+  // Loaded while the name is typed, so the new document takes typing as soon as it opens.
+  void definition?.loadOpeningEditor?.()
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {
-    await openNode(created)
+    await router.push(newDocumentRoute(created))
     return
   }
   // A search hides what was just added, so the folder shows again.

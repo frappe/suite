@@ -7,7 +7,7 @@ import frappe
 from suite import drive
 from suite.content import live
 from suite.content.http import routes
-from suite.drive._core.access import grant
+from suite.drive._core.access import grant, revoke
 from suite.drive._core.principals import Principals
 from suite.writer import content as writer_content
 from suite.writer.content.tests.support import (
@@ -51,6 +51,40 @@ class TestWriterCollabRooms(CollabCase):
         self.assertEqual(len({*opened["keys"], *later["keys"], *elsewhere["keys"]}), 5)
         for key in opened["keys"]:
             self.assertRegex(key, r"^sc:[A-Za-z0-9_-]{32}$")
+
+    def test_turning_web_access_off_moves_the_rooms_so_an_open_guest_tab_hears_no_more(self):
+        self.set_mode("on")
+        node = self.new_document()
+        owner = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        grant(node, "$PUBLIC", drive.READ, owner)
+        frappe.db.commit()
+        one_epoch = Mock(time=Mock(return_value=150 * 2000 + 10))
+
+        with patch.object(live, "time", one_epoch):
+            frappe.set_user("Guest")
+            guest_rooms = self.open_document(node)[0]["rooms"]["keys"]
+            frappe.set_user(WRITER)
+            with patch("frappe.publish_realtime") as publish:
+                revoke(node, "$PUBLIC", owner)
+                frappe.db.commit()
+            writer_rooms = self.open_document(node)[0]["rooms"]["keys"]
+            frappe.set_user("Guest")
+            guest_pull = call_route(routes.updates_get, node)
+        frappe.set_user(WRITER)
+
+        lineage = self.open_document(node)[0]["lineage"]
+        controls = [
+            (event.args, event.kwargs)
+            for event in publish.call_args_list
+            if event.args[0] == "suite_collab_ctl"
+        ]
+        told_old_room = (
+            ("suite_collab_ctl", {"lineage": lineage, "kind": "access"}),
+            {"room": guest_rooms[0]},
+        )
+        self.assertEqual(controls, [told_old_room])
+        self.assertFalse({*guest_rooms} & {*writer_rooms})
+        self.assertEqual(guest_pull.status_code, 404)
 
     def test_a_document_copied_to_a_new_lineage_gets_new_rooms(self):
         self.set_mode("on")

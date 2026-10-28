@@ -480,7 +480,11 @@ export function fakeServer(state = 'live', lineage = 'L') {
 
   // Another tab's restore lands as the next row, `bytes` making the document the version;
   // `lost` drops the row's broadcast or the notice that follows it
-  function landRestore(bytes: Uint8Array, lost?: 'row' | 'notice') {
+  function landRestore(
+    bytes: Uint8Array,
+    lost?: 'row' | 'notice',
+    notice: Record<string, unknown> = {},
+  ) {
     rows.push({ rev: rows.length + 1, bytes })
     restore.rev = rows.length
     restore.until = 0
@@ -489,7 +493,7 @@ export function fakeServer(state = 'live', lineage = 'L') {
     }
 
     if (lost !== 'notice') {
-      publish('suite_collab_ctl', { kind: 'restored', restore_rev: restore.rev })
+      publish('suite_collab_ctl', { kind: 'restored', restore_rev: restore.rev, ...notice })
     }
   }
 

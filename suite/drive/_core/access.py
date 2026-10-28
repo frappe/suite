@@ -4,7 +4,7 @@ import dataclasses
 import secrets
 import string
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from enum import Enum
 from typing import Literal
@@ -24,7 +24,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive._core.principals import TICKET_TTL, Principals, make_ticket, ticket_ok
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, ROLES
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, ROLES
 from suite.drive._core.roots import lock_trees
 from suite.drive._core.times import publish
 
@@ -587,6 +587,27 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
     return {"role": answer, "source": "grant" if answer else "none", "rows": out}
 
 
+def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dict[str, bool]:
+    """Answer who can read a node, for a picker there: the users it names, and `users`.
+
+    The named users are the node's creator and the users its live grants and
+    its ancestors' name. Each named user and each of `users` maps to whether
+    they can read the node now; a deny or an expiry can leave a named user
+    out. A mention picker ranks people by this, so it needs COMMENT, the
+    right to mention anyone here. It answers who can read the node, never
+    their role or where it comes from: that stays with MANAGE and the share
+    dialog (§7.2).
+    """
+    from suite.drive.framework import principals_for
+
+    node = _node_or_not_found(node_id)
+    require(node, COMMENT, principals)
+    rows = frappe.db.sql(EXPLAIN_SQL, {"chain": chain_ids(node), "now": now()}, as_dict=True)
+    named = [row.principal for row in rows if row.role >= READ and not row.principal.startswith("$")]
+    wanted = dict.fromkeys([node.owner, *named, *users])
+    return {user: check(node, READ, principals_for(user)) for user in wanted}
+
+
 def grants_for(
     node_id: str,
     principals: Principals,
@@ -860,6 +881,7 @@ def grant(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
 
     written = _grant_result(
         frappe._dict(
@@ -943,6 +965,7 @@ def revoke(node_id: str, principal: str, principals: Principals) -> int:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
     return 1
 
 
@@ -1021,6 +1044,7 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
     return deleted
 
 
@@ -1073,6 +1097,7 @@ def rotate_link(grant_id: str, principals: Principals) -> dict:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
 
     return _grant_result(frappe._dict(locked, principal=new_principal))
 
@@ -1377,6 +1402,43 @@ def _write_activity(
     target = detail.get("principal")
     if isinstance(target, str) and target and not target.startswith("$"):
         notify_users(activity, (target,))
+
+
+def announce_access(node: Mapping) -> None:
+    """Call `access_changed` for each document at or below `node` once this write commits."""
+    from suite.drive._core.content import registry
+
+    callbacks = {doctype: spec.access_changed for doctype, spec in registry().items() if spec.access_changed}
+    if not callbacks:
+        return
+    is_root = node.get("kind") == "root"
+    documents = frappe.db.sql(
+        """
+        SELECT name, content_doctype FROM `tabDrive Node`
+        WHERE content_doctype IN %(doctypes)s
+          AND (name = %(node)s OR (root = %(root)s AND (%(is_root)s OR path LIKE %(prefix)s)))
+        """,
+        {
+            "doctypes": tuple(callbacks),
+            "node": node.get("name"),
+            "root": node.get("name") if is_root else node.get("root"),
+            "is_root": is_root,
+            "prefix": "" if is_root else f"{node.get('path') or '/'}{node.get('name')}/%",
+        },
+    )
+    if documents:
+        frappe.db.after_commit.add(lambda: _send_access_changed(callbacks, documents))
+
+
+def _send_access_changed(callbacks: Mapping[str, Callable[[str], None]], documents) -> None:
+    from suite.drive._core.content import call_app
+
+    for name, doctype in documents:
+        try:
+            call_app(callbacks[doctype], name)
+        except Exception:
+            # A file log: an Error Log row written after the request's commit would never be committed
+            frappe.logger("suite.drive").exception("Drive: could not announce the access of %s", name)
 
 
 def _single_address(value) -> bool:

@@ -223,6 +223,7 @@ def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confir
     return transfer(user, destination, fingerprint, _principals(), confirm_access=confirm_access)
 
 
+from collections.abc import Iterable
 from datetime import datetime
 from typing import IO
 
@@ -487,11 +488,36 @@ def install_threads(node: str, anchors: dict[str, str], new_threads: list[dict])
     return _install_threads(_principals(), node, anchors, new_threads)
 
 
-def take_version(node: str, *, kind: str = "auto", label: str | None = None) -> int:
-    """Store a node's current bytes as an immutable version and return its seq."""
+def people_on(node: str, users: Iterable[str] = ()) -> dict[str, bool]:
+    """Answer which users can read `node`: the ones it names, and `users`.
+
+    A picker on a node, such as a comment's mention list, ranks people with
+    this. The node names its creator and the users its grants name. Needs
+    COMMENT, and answers whether each user can read, not their role.
+    """
+    from suite.drive._core.access import people_on as _people_on
+
+    return _people_on(node, _principals(), users)
+
+
+def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
+    """Store a node's current bytes as an immutable version and return its seq.
+
+    The caller needs EDIT. `actor` names who made the changes the version
+    holds, when that is not the caller: a sweep that versions other people's
+    edits. It defaults to the caller.
+    """
     from suite.drive._core.versions import take_version as _take_version
 
-    return _take_version(_principals(), node, kind=kind, label=label)
+    return _take_version(_principals(), node, kind=kind, label=label, actor=actor)
+
+
+def get_version(node: str, seq: int) -> dict:
+    """Answer one version of a node the caller can read: its seq, kind, label, actor and creation."""
+    from suite.drive._core.versions import get_version as _get_version
+
+    row = _get_version(_principals(), node, seq)
+    return {field: row[field] for field in ("seq", "kind", "label", "actor", "creation")}
 
 
 def push_preview(node: str, image_bytes: bytes, mime: str) -> None:
@@ -578,6 +604,7 @@ __all__ = (
     "ensure_personal_root",
     "get_storage_reservation",
     "get_storage_usage",
+    "get_version",
     "grow_storage_reservation",
     "has_blank_old_comment",
     "import_document",
@@ -587,6 +614,7 @@ __all__ = (
     "node_field",
     "node_owner",
     "node_url",
+    "people_on",
     "personal_root_for",
     "preview_user_transfer",
     "push_preview",
