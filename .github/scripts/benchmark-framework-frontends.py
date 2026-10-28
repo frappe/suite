@@ -66,17 +66,26 @@ def build(mode, index):
 
 print(json.dumps({"cpus": os.cpu_count(), "memory_bytes": psutil.virtual_memory().total}), flush=True)
 _, reference = build("sequential", "warmup")
+reference_maps = {path: (app / path).read_bytes() for path in reference if path.endswith(".map")}
 for index, mode in enumerate(["sequential", "parallel", "parallel", "sequential", "sequential", "parallel"]):
     result, hashes = build(mode, index)
     changed = [path for path in reference.keys() | hashes.keys() if reference.get(path) != hashes.get(path)]
+    for path in changed:
+        directory = output / "differences" / str(index) / Path(path).parent
+        directory.mkdir(parents=True, exist_ok=True)
+        name = Path(path).name
+        if path in reference_maps:
+            (directory / f"before-{name}").write_bytes(reference_maps[path])
+        if (app / path).is_file():
+            (directory / f"after-{name}").write_bytes((app / path).read_bytes())
     result["changed_output_files"] = changed
     results.append(result)
     (output / "results.json").write_text(json.dumps(results, indent=2))
-    assert not changed, f"Output changed in {mode}: {changed[:20]}"
 
 summary = {mode: {metric: statistics.median(row[metric] for row in results if row["mode"] == mode)
                   for metric in ["seconds", "peak_summed_rss_bytes"]}
            for mode in ["sequential", "parallel"]}
-summary["all_outputs_identical"] = True
+summary["all_outputs_identical"] = not any(row["changed_output_files"] for row in results)
 (output / "summary.json").write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2), flush=True)
+assert summary["all_outputs_identical"], "Output differences captured in benchmark artifacts"
