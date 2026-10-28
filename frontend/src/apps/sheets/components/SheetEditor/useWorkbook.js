@@ -128,8 +128,10 @@ export function useWorkbook({
     const { sent, changes } = definedNameChanges(namesInEngine, namedRanges().list())
     const commands = changes.map((c) => command(c.type, c.payload))
     namesInEngine = sent
-    if (commands.length === 1) dispatch(commands[0])
-    else if (commands.length > 1) dispatch(command('batch', { commands }))
+    // Straight to IronCalc, never through the glue: IronCalc's names follow the
+    // named-ranges store, which is what the collab doc keeps.
+    if (commands.length === 1) engine.client.dispatch(commands[0])
+    else if (commands.length > 1) engine.client.dispatch(command('batch', { commands }))
   }
 
   // The cell's input (a formula, not its result) when its area is on screen,

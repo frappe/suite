@@ -7,6 +7,7 @@
 import * as Y from 'yjs'
 
 import type { CollabRoom } from '@/platform/collab'
+import { translate as __ } from '@/platform/translation'
 
 import { ROOT, roots } from './schema'
 
@@ -72,6 +73,7 @@ export function alignDoc(current: Y.Doc, version: Y.Doc): void {
   }
 }
 
+// Source strings, translated when shown.
 const REFUSALS: Record<string, string> = {
   restoring: 'Someone else is restoring a version. Try again once it is done.',
   behind: 'This tab is still catching up. Try again in a moment.',
@@ -90,7 +92,7 @@ export async function restoreVersion(
   if (!state) {
     return {
       isRestored: false,
-      message: 'This version is from before editing together and can’t be restored here.',
+      message: __("This version is from before editing together and can't be restored here."),
     }
   }
   const version = new Y.Doc()
@@ -100,20 +102,21 @@ export async function restoreVersion(
     const result = await room.restoreVersion(seq, () => alignDoc(room.doc, version))
     switch (result.outcome) {
       case 'landed':
-        return { isRestored: true, message: 'Version restored' }
+        return { isRestored: true, message: __('Version restored') }
       case 'unchanged':
-        return { isRestored: true, message: 'The spreadsheet already is this version.' }
+        return { isRestored: true, message: __('The spreadsheet already is this version.') }
       case 'unsent':
         return {
           isRestored: false,
-          message:
+          message: __(
             'Your latest changes are not saved yet. Try again when the spreadsheet is saved.',
+          ),
         }
       default: {
         const known = result.refusal && Object.hasOwn(REFUSALS, result.refusal)
         return {
           isRestored: false,
-          message: known ? REFUSALS[result.refusal!]! : 'The version was not restored.',
+          message: __(known ? REFUSALS[result.refusal!]! : 'The version was not restored.'),
         }
       }
     }

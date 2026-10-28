@@ -75,13 +75,73 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
     expect(collab.canRedo.value).toBe(true)
   })
 
-  it('commits a command whose action never said it ended', async () => {
+  it('commits a command whose action never said it ended, after its last command', async () => {
     const server = await seeded()
-    const { collab } = editor(server)
+    const { collab } = editor(server, { commitSoonMs: 50 })
     await collab.open(await newClient())
     collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 5, col: 2, input: 'loose' }))
     await new Promise((r) => setTimeout(r, 0))
+    expect(sent(server)).not.toContain('loose')
     await vi.waitFor(() => expect(sent(server)).toContain('loose'))
+  })
+
+  it('makes one commit of every end-of-action mark in one task', async () => {
+    const server = await seeded()
+    const { collab } = editor(server)
+    await collab.open(await newClient())
+    collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 7, col: 1, input: 'once' }))
+    const marks = [collab.commit(), collab.commit(), collab.commit()]
+    expect(new Set(marks).size).toBe(1)
+    await marks[0]
+    expect(sent(server)).toContain('once')
+    await collab.undo()
+    expect(sent(server)).toEqual(['start'])
+  })
+
+  it('never commits pivot output on its own', async () => {
+    const server = await seeded()
+    const { collab } = editor(server, { commitSoonMs: 10 })
+    await collab.open(await newClient())
+    collab.localOnly(() =>
+      collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 9, col: 1, input: 'pivot' })),
+    )
+    await new Promise((r) => setTimeout(r, 50))
+    expect(server.rooms[0]!.outbox).toEqual([])
+    expect(collab.canUndo.value).toBe(false)
+  })
+
+  it('sends an action still open before the room closes or flushes', async () => {
+    const server = await seeded()
+    const { collab } = editor(server)
+    await collab.open(await newClient())
+    collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 3, col: 3, input: 'flushed' }))
+    await collab.flush()
+    expect(sent(server)).toContain('flushed')
+    expect(server.rooms[0]!.flush).toHaveBeenCalled()
+    collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 4, col: 3, input: 'closing' }))
+    await collab.close()
+    expect(sent(server)).toContain('closing')
+    collab.dispatch(cmd('setInput', { sheet: 'Sheet1', row: 5, col: 3, input: 'gone' })) // no throw
+  })
+
+  it('closes a room that finishes opening after the editor has gone', async () => {
+    const server = await seeded()
+    const { collab } = editor(server)
+    const opened = collab.open(await newClient())
+    await collab.close()
+    expect(await opened).toBe('disabled')
+    expect(server.rooms[0]!.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the room when access is lost and back', async () => {
+    const server = await seeded()
+    const { collab } = editor(server)
+    await collab.open(await newClient())
+    await collab.loseAccess('lost_edit')
+    expect(server.rooms[0]!.loseAccess).toHaveBeenCalledWith('lost_edit')
+    const mayEdit = () => true
+    await collab.regainAccess(mayEdit)
+    expect(server.rooms[0]!.regainAccess).toHaveBeenCalledWith(mayEdit)
   })
 
   it("tells the person when someone else's edit is in the way of an undo", async () => {

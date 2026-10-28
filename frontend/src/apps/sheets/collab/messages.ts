@@ -8,6 +8,7 @@
 // - lost edit access turns the sheet read-only, lost read access closes it.
 
 import type { Blocked, RoomStatus } from '@/platform/collab'
+import { translate as __ } from '@/platform/translation'
 
 export interface Banner {
   text: string
@@ -39,11 +40,12 @@ export function editingStateOf(status: RoomStatus): 'editing' | 'paused' | 'clos
   return 'closed'
 }
 
+// Source strings; each is translated when a banner is built.
 const STOP_MESSAGES: Record<string, string> = {
   poison: "This spreadsheet can't hold a change made in this tab, so saving stopped.",
   browser: "This spreadsheet can't be edited in this browser version.",
   too_large: 'A change in this tab is too large to save. Make it in smaller parts.',
-  document_full: 'This sheet is full, so a change in this tab couldn’t be saved.',
+  document_full: "This sheet is full, so a change in this tab couldn't be saved.",
   disabled: 'Editing together was switched off for Sheets, so saving stopped in this tab.',
   schema:
     'This spreadsheet was edited in a newer version of Sheets, so saving stopped in this tab.',
@@ -55,7 +57,7 @@ const STOP_MESSAGES: Record<string, string> = {
 const LASTING_STOPS = new Set(['browser'])
 
 const PAUSE_MESSAGES: Record<string, string> = {
-  upload_refused: 'Your network is refusing uploads',
+  upload_refused: "Your network is refusing uploads, so your latest changes aren't saved.",
 }
 
 const isSafeOnDevice = (s: RoomStatus) => s.isKeptOnDevice && !s.hasCopyFailed
@@ -64,99 +66,108 @@ const isSafeOnDevice = (s: RoomStatus) => s.isKeptOnDevice && !s.hasCopyFailed
 function keepOpen(s: RoomStatus): string {
   if (!s.unsentCount || isSafeOnDevice(s)) return ''
   if (s.hasCopyFailed)
-    return " Unsent changes couldn't be kept on this device, so keep this tab open."
-  return ' Keep this tab open.'
+    return ' ' + __("Unsent changes couldn't be kept on this device, so keep this tab open.")
+  return ' ' + __('Keep this tab open.')
 }
+
+// `text` translated, then the ask to keep the tab open when unsent work is kept nowhere.
+const withKeepOpen = (text: string, s: RoomStatus): Banner => ({ text: __(text) + keepOpen(s) })
 
 function signedOut(s: RoomStatus): Banner {
   const signIn = {
-    label: 'Sign in',
+    label: __('Sign in'),
     href: `/login?redirect-to=${encodeURIComponent(location.pathname)}`,
   }
   if (!s.unsentCount)
-    return { text: "You're signed out. ", link: signIn, after: ' to keep editing.' }
+    return {
+      text: __("You're signed out.") + ' ',
+      link: signIn,
+      after: ' ' + __('to keep editing.'),
+    }
   return {
-    text: "You're signed out, so changes aren't saved. ",
+    text: __("You're signed out, so changes aren't saved.") + ' ',
     link: signIn,
-    after: ` to save them.${keepOpen(s)}`,
+    after: ' ' + __('to save them.') + keepOpen(s),
   }
+}
+
+// Unsent work kept nowhere: ask to keep the tab open; else offer the reload `reload` names.
+function keepOpenOrReload(text: string, reload: string, s: RoomStatus): Banner {
+  if (keepOpen(s)) return withKeepOpen(text, s)
+  return { text: `${__(text)} ${__(reload)}`, canReload: true }
 }
 
 const BLOCKED: Record<Blocked, (s: RoomStatus) => Banner> = {
   signed_out: signedOut,
-  locked: (s) => ({
-    text: `This spreadsheet was locked, so changes aren't saved. Unlock it to save them.${keepOpen(s)}`,
-  }),
-  offline: (s) => ({
-    text: `You're offline and this browser can't keep changes, so editing is paused.${keepOpen(s)}`,
-  }),
-  stale_session: (s) => ({
-    text: keepOpen(s)
-      ? `You signed in again in another tab.${keepOpen(s)}`
-      : 'You signed in again in another tab. Reload to keep saving.',
-    canReload: !keepOpen(s),
-  }),
-  other_user: (s) => ({
-    text: keepOpen(s)
-      ? `Someone else is now signed in here.${keepOpen(s)}`
-      : 'Someone else is now signed in here. Reload to continue.',
-    canReload: !keepOpen(s),
-  }),
-  lost_edit: (s) => ({ text: `You can no longer edit this spreadsheet.${keepOpen(s)}` }),
-  lost_read: (s) => ({ text: `You can no longer open this spreadsheet.${keepOpen(s)}` }),
+  locked: (s) =>
+    withKeepOpen(
+      "This spreadsheet was locked, so changes aren't saved. Unlock it to save them.",
+      s,
+    ),
+  offline: (s) =>
+    withKeepOpen("You're offline and this browser can't keep changes, so editing is paused.", s),
+  stale_session: (s) =>
+    keepOpenOrReload('You signed in again in another tab.', 'Reload to keep saving.', s),
+  other_user: (s) =>
+    keepOpenOrReload('Someone else is now signed in here.', 'Reload to continue.', s),
+  lost_edit: (s) => withKeepOpen('You can no longer edit this spreadsheet.', s),
+  lost_read: (s) => withKeepOpen('You can no longer open this spreadsheet.', s),
 }
 
 function stopped(s: RoomStatus): Banner {
-  const reason =
-    (s.stopReason && Object.hasOwn(STOP_MESSAGES, s.stopReason) && STOP_MESSAGES[s.stopReason]) ||
-    'Saving stopped in this tab.'
-  if (keepOpen(s)) return { text: `${reason}${keepOpen(s)}` }
-  if (s.stopReason && LASTING_STOPS.has(s.stopReason)) return { text: reason }
-  return { text: `${reason} Reload to keep editing.`, canReload: true }
+  const known = s.stopReason && Object.hasOwn(STOP_MESSAGES, s.stopReason)
+  const reason = known ? STOP_MESSAGES[s.stopReason!]! : 'Saving stopped in this tab.'
+  if (keepOpen(s) || (s.stopReason && LASTING_STOPS.has(s.stopReason)))
+    return withKeepOpen(reason, s)
+  return keepOpenOrReload(reason, 'Reload to keep editing.', s)
+}
+
+function held(s: RoomStatus): Banner {
+  const text = __('This spreadsheet is read-only while an admin checks it.')
+  if (!s.unsentCount) return { text }
+  if (isSafeOnDevice(s))
+    return {
+      text: `${text} ${__("Your unsent changes are saved on this device and will be added once it's editable again.")}`,
+    }
+  return {
+    text: `${text} ${__("Your unsent changes will be added once it's editable again.")}${keepOpen(s)}`,
+  }
 }
 
 /** The strip under the header, or null while saving goes on as usual. Refusals and stops outrank waits. */
 export function bannerFor(s: RoomStatus): Banner | null {
   if (s.blockReason) return BLOCKED[s.blockReason](s)
   if (s.stopReason) return stopped(s)
-  if (s.hasNewerSchema) {
-    return keepOpen(s)
-      ? { text: `This spreadsheet was edited in a newer version of Sheets.${keepOpen(s)}` }
-      : {
-          text: 'This spreadsheet was edited in a newer version of Sheets. Reload to keep editing.',
-          canReload: true,
-        }
-  }
-  if (s.holdReason) {
-    const text = 'This spreadsheet is read-only while an admin checks it.'
-    if (!s.unsentCount) return { text }
-    if (isSafeOnDevice(s))
-      return {
-        text: `${text} Your unsent changes are saved on this device and will be added once it's editable again.`,
-      }
-    return {
-      text: `${text} Your unsent changes will be added once it's editable again.${keepOpen(s)}`,
-    }
-  }
+  if (s.hasNewerSchema)
+    return keepOpenOrReload(
+      'This spreadsheet was edited in a newer version of Sheets.',
+      'Reload to keep editing.',
+      s,
+    )
+  if (s.holdReason) return held(s)
   if (s.isRestoring)
     return {
-      text: 'Someone is restoring a version of this spreadsheet. You can edit again once it is done.',
+      text: __(
+        'Someone is restoring a version of this spreadsheet. You can edit again once it is done.',
+      ),
     }
-  const pause = s.pauseReason && Object.hasOwn(PAUSE_MESSAGES, s.pauseReason)
-  if (pause) {
-    const text = `${PAUSE_MESSAGES[s.pauseReason!]}, so your latest changes aren't saved.`
-    return {
-      text: isSafeOnDevice(s) ? `${text} They're kept on this device.` : `${text}${keepOpen(s)}`,
-    }
+  if (s.pauseReason && Object.hasOwn(PAUSE_MESSAGES, s.pauseReason)) {
+    const text = __(PAUSE_MESSAGES[s.pauseReason]!)
+    if (isSafeOnDevice(s)) return { text: `${text} ${__("They're kept on this device.")}` }
+    return { text: text + keepOpen(s) }
   }
   if (s.saveState === 'failed') return stopped(s)
-  if (s.isAtLimit) return { text: 'This sheet is full: delete some data to keep editing.' }
+  if (s.isAtLimit) return { text: __('This sheet is full: delete some data to keep editing.') }
   if (s.liveState === 'polling')
-    return { text: "Live updates are unavailable, so others' changes show up late." }
+    return { text: __("Live updates are unavailable, so others' changes show up late.") }
   return null
 }
 
 /** An old spreadsheet waiting for its conversion, read-only until then. */
-export const UPGRADING_BANNER: Banner = {
-  text: 'This spreadsheet is being upgraded for editing together. It is read-only until then.',
+export function upgradingBanner(): Banner {
+  return {
+    text: __(
+      'This spreadsheet is being upgraded for editing together. It is read-only until then.',
+    ),
+  }
 }

@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
+import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
@@ -28,6 +29,9 @@ interface SheetEditorHandle {
   readonly isCollab: boolean
   /** Restores a version through the live room; rejects with the message to show. */
   restoreVersion(seq: string, bytes: Uint8Array): Promise<string>
+  /** Live room: access went or came back. */
+  loseAccess(lost: 'lost_edit' | 'lost_read'): Promise<void>
+  regainAccess(): Promise<void>
 }
 const props = defineProps<{
   session: DocumentSession
@@ -42,6 +46,12 @@ const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
+    // Live room: it sends what it can and keeps the rest on this device, and
+    // its strip says the sheet is now view only.
+    if (current?.isCollab) {
+      void current.loseAccess(access.readable.value ? 'lost_edit' : 'lost_read')
+      return
+    }
     const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
     if (!unsaved) {
       toast.warning('Editing access changed. This spreadsheet is now view only.')
@@ -57,6 +67,11 @@ const access = createSheetAccess(props.session, {
     })
   },
   widened() {
+    if (editor.value?.isCollab) {
+      void editor.value.regainAccess()
+      toast.info(__('You can edit this spreadsheet again.'))
+      return
+    }
     bodyRevision.value += 1
     toast.info('You can edit this spreadsheet again.')
   },
@@ -109,7 +124,7 @@ async function restoreVersion(seq: string) {
     // Live room: the restore goes in as one edit everyone's editor applies.
     if (editor.value?.isCollab) {
       const response = await props.session.credentials.fetch(props.session.versions.contentUrl(seq))
-      if (!response.ok) throw new Error('The version could not be read.')
+      if (!response.ok) throw new Error(__('The version could not be read.'))
       await editor.value.restoreVersion(seq, new Uint8Array(await response.arrayBuffer()))
       return
     }

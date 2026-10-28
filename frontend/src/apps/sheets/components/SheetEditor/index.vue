@@ -859,6 +859,7 @@ import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 import { confirmLeave } from '@/utils/confirmLeave'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -1218,7 +1219,17 @@ function _onRemoteChange(change) {
     notesPanel.rev++
     grid?.render?.()
   }
-  if (change.cells) for (const sn of sheetNames.value) recomputePivotsForSheet(sn)
+  if (change.cells) _recomputeAllPivots()
+}
+// One after another: every pivot build shares one token, so a build started
+// while another runs cancels it (usePivotIntegration).
+let _pivotsAfterRemote = Promise.resolve()
+function _recomputeAllPivots() {
+  _pivotsAfterRemote = _pivotsAfterRemote
+    .then(async () => {
+      for (const sn of [...sheetNames.value]) await recomputePivotsForSheet(sn)
+    })
+    .catch((e) => console.error('[sheets] pivot rebuild failed', e))
 }
 
 // Undo/redo (see useHistory.js).
@@ -3063,7 +3074,7 @@ async function _openCollab() {
     collabState.value = 'failed'
     loadError.value = {
       kind: 'collab',
-      message: 'Check your connection, then reload.',
+      message: __('Check your connection, then reload.'),
     }
     return true
   }
@@ -3175,7 +3186,7 @@ onBeforeUnmount(() => {
       : null
   // The room sends what it can and keeps the rest on the device; the glue
   // reads the workbook until then.
-  const closing = collabOn.value || collab.waiting.value ? collab.close() : null
+  const closing = props.collabSession ? collab.close() : null
   // That save reads the workbook from the worker, so stop it only after.
   if (lastSave) void lastSave.finally(_stopEngine)
   else if (closing) void closing.finally(_stopEngine)
@@ -4138,6 +4149,10 @@ defineExpose({
     return collabOn.value
   },
   restoreVersion: restoreCollabVersion,
+  // Collab: when access goes, the room keeps unsent work on the device; when
+  // it is back, the room takes edits again.
+  loseAccess: (lost) => collab.loseAccess(lost),
+  regainAccess: () => collab.regainAccess(() => props.writable),
   // The workbook for a recovery copy, with the cell edit still in progress.
   workbookJson: () => workbookJson(_draftEdit()),
   hasDraft: () => _draftEdit() !== null,

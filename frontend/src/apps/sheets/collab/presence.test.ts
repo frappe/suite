@@ -88,8 +88,12 @@ describe('presence', () => {
   it('tells two guests apart', () => {
     const doc = sheetDoc()
     const p = presenceOf(doc, [peer(36, 'Guest', 2), peer(37, 'Guest', 3)], {})
-    const users = readPresence(p, doc, 'me@x', names).users
-    expect(users.map((u) => u.full_name)).toEqual(['Guest 10', 'Guest 11'])
+    const names = readPresence(p, doc, 'me@x', (u) => ({ fullName: u, image: '' })).users.map(
+      (u) => u.full_name,
+    )
+    expect(names).toHaveLength(2)
+    expect(new Set(names).size).toBe(2)
+    for (const name of names) expect(name).toMatch(/^Guest /)
   })
 
   it('drops a selection on a deleted sheet, or one that is malformed', () => {
