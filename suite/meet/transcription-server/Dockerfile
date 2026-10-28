@@ -17,5 +17,5 @@ RUN useradd --create-home --uid 10001 transcription \
 USER transcription
 EXPOSE 8011
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15m --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('TRANSCRIPTION_PORT', '8011') + '/health', timeout=4)"]
 CMD ["python", "server.py"]

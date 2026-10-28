@@ -3,8 +3,14 @@ services:
     build:
       context: ../..
       dockerfile: transcription-server/Dockerfile
-    restart: unless-stopped
-    gpus: all
+    restart: "on-failure:5"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${TRANSCRIPTION_GPU_DEVICE:-0}"]
+              capabilities: [gpu]
     cpus: ${TRANSCRIPTION_CPUS:-2}
     mem_limit: ${TRANSCRIPTION_MEMORY:-8g}
     memswap_limit: ${TRANSCRIPTION_MEMORY:-8g}
@@ -20,13 +26,18 @@ services:
     ports:
       - "127.0.0.1:8011:8011"
     volumes:
-      - ${TRANSCRIPTION_CACHE_DIR:-./cache}:/models
+      - type: bind
+        source: ${TRANSCRIPTION_CACHE_DIR:?Set an existing model cache directory}
+        target: /models
+        bind:
+          create_host_path: false
       - ./secrets/sites.json:/run/secrets/sites.json:ro
       - ./secrets/metrics-token:/run/secrets/metrics-token:ro
     tmpfs:
       - /tmp:size=256m,mode=1777
 
   proxy:
+    profiles: [proxy]
     image: caddy:2.10.0-alpine
     restart: unless-stopped
     environment:

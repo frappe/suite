@@ -86,7 +86,24 @@ before starting; a missing mount must not fill the host root filesystem. Only
 reproducible model/runtime data belongs there. Captured audio, credentials,
 durable jobs, and results remain on persistent storage.
 
-Run `docker compose config` and `docker compose up -d --build`. The worker binds
+Set `TRANSCRIPTION_CACHE_MOUNT` to the actual mounted cache filesystem and
+`TRANSCRIPTION_CACHE_DIR` to an existing directory on it. Run `bash start.sh`
+from `deploy`; it validates the mount before building or starting anything and
+refuses to create a missing cache directory on the root disk. Run this launcher
+after reboot too. The worker uses bounded `on-failure:5` restart handling;
+it does not automatically start on daemon reboot and bypass the mount check.
+Use the existing managed Docker daemon; do not initialize a
+second daemon on a production host.
+
+`TRANSCRIPTION_GPU_DEVICE` selects one GPU (index or UUID), defaulting to `0`.
+CPU, host RAM and Torch allocation limits are bounded, but a shared GPU does not
+provide compute isolation. Prefer a dedicated GPU for transcription; before
+sharing with live ASR, measure concurrent streaming latency and error rates under
+sustained transcription load. Healthy HTTP probes alone cannot establish safety.
+
+The proxy is opt-in: use `docker compose --profile proxy up -d proxy` only on a
+host where ports 80/443 are available. The default launcher starts only the worker,
+so it does not compete with an existing ASR TLS proxy. The worker binds
 to loopback port 8011; the optional proxy exposes only `/health` and bearer-
 authenticated `/metrics` on a dedicated hostname. Integrate those paths into an
 existing TLS proxy instead of running a second listener if ports 80/443 are
@@ -126,6 +143,15 @@ the dashboard uses the maximum. Throughput counters include actual retry work,
 while completed-job counts require acknowledged delivery. Short-clip model
 benchmarks are not a worker-capacity guarantee. Operational alerts and autoscaling
 remain deferred.
+
+For rollout, keep new capture admission disabled until readiness and authenticated
+metrics succeed and each configured site's queue observation is fresh. Preserve
+the current worker image and pinned model cache for rollback. To stop this worker
+without touching live ASR or the Docker daemon, run `docker compose stop
+transcription`. Pending jobs and recorder audio remain durable; an expired lease
+can be reclaimed by a compatible replacement worker. Disable new transcription
+admission before rollback, and drain existing jobs with their original pinned
+configuration rather than rewriting them for another model.
 
 ## Verification
 
