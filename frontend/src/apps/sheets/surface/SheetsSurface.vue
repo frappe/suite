@@ -24,6 +24,10 @@ interface SheetEditorHandle {
   hasDraft(): boolean
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
+  /** True while the sheet is in a live room (collab on). */
+  readonly isCollab: boolean
+  /** Restores a version through the live room; rejects with the message to show. */
+  restoreVersion(seq: string, bytes: Uint8Array): Promise<string>
 }
 const props = defineProps<{
   session: DocumentSession
@@ -102,6 +106,13 @@ async function restoreVersion(seq: string) {
   await flushEdits()
   restoring.value = true
   try {
+    // Live room: the restore goes in as one edit everyone's editor applies.
+    if (editor.value?.isCollab) {
+      const response = await props.session.credentials.fetch(props.session.versions.contentUrl(seq))
+      if (!response.ok) throw new Error('The version could not be read.')
+      await editor.value.restoreVersion(seq, new Uint8Array(await response.arrayBuffer()))
+      return
+    }
     await props.session.versions.restore(seq)
     bodyRevision.value += 1
   } finally {
@@ -157,7 +168,9 @@ useDocumentLeaveGuard({
       :title="session.title.value"
       :credential-fetch="session.credentials.fetch"
       :request-context="session.credentials.context"
+      :collab-session="session"
       @access-refused="access.refuse()"
+      @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
       <template #header="{ viewOnly, status: EditorStatus, actions: EditorActions }">
