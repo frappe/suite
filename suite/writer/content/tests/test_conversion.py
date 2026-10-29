@@ -17,7 +17,7 @@ import frappe
 import pycrdt
 from bs4 import BeautifulSoup
 from frappe.tests.test_api import make_request
-from frappe.utils import get_datetime, get_system_timezone, get_test_client
+from frappe.utils import CallbackManager, get_datetime, get_system_timezone, get_test_client
 from frappe.utils.background_jobs import create_job_id, get_redis_conn
 from frappe.utils.logging import connection_for
 from rq.job import Job, JobStatus
@@ -98,7 +98,12 @@ class TestConversion(DriveCallbackCase):
 
             self.skipTest(reason)
 
-        job_patch = patch.object(frappe.local, "job", frappe._dict(job_name="test_conversion"), create=True)
+        job_patch = patch.object(
+            frappe.local,
+            "job",
+            frappe._dict(job_name="test_conversion", after_job=CallbackManager()),
+            create=True,
+        )
         job_patch.start()
         self.addCleanup(job_patch.stop)
 
