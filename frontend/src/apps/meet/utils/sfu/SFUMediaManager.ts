@@ -967,6 +967,18 @@ export class SFUMediaManager {
 				}
 			}
 
+			// Camera attachment can outlive a departing sharer or a receive-side reset.
+			// Never announce a screen whose consumer was removed during that await.
+			if (
+				this.consumerManager.getConsumer(consumer.id) !== consumer ||
+				consumer.consumer.closed ||
+				track.readyState === "ended"
+			) {
+				this.isScreenShareActive =
+					this.consumerManager.getScreenShareConsumers().length > 0;
+				return;
+			}
+
 			const screenStream = new MediaStream([track]);
 			if (consumer.appData && !consumer.appData.type) {
 				consumer.appData.type = "screen";
