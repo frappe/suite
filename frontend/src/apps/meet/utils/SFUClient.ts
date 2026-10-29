@@ -156,6 +156,7 @@ interface SFUProducerResponse {
 }
 
 interface SFUConsumerResponse {
+  paused: boolean
   id: string
   producerId: string
   kind: MediaKind
@@ -317,6 +318,7 @@ function normalizeConsumerResponse(value: unknown): SFUConsumerResponse {
   }
   return {
     id: payload.id,
+    paused: payload.paused === true,
     producerId: payload.producerId,
     kind: payload.kind,
     rtpParameters: payload.rtpParameters as RtpParameters,
@@ -922,6 +924,7 @@ export class SFUClient {
     transportId: string,
     producerId: string,
     rtpCapabilities: RtpCapabilities,
+    startPaused = false,
   ): Promise<SFUConsumerResponse> {
     console.log(`Creating consumer for producer ${producerId} @ ${Date.now()}`)
     return normalizeConsumerResponse(
@@ -929,6 +932,7 @@ export class SFUClient {
         transportId,
         producerId,
         rtpCapabilities,
+        startPaused,
       }),
     )
   }
@@ -954,6 +958,16 @@ export class SFUClient {
 
   async closeConsumer(consumerId: string): Promise<unknown> {
     return this.sendRequest('close_consumer', { consumerId })
+  }
+
+  async resumeConsumer(consumerId: string): Promise<void> {
+    const response = requireObject(
+      await this.sendRequest('resume_consumer', { consumerId }),
+      'consumer resume',
+    )
+    if (response.success !== true || response.resumed !== true) {
+      throw new Error('Failed to resume consumer')
+    }
   }
 
   async requestConsumerKeyFrame(consumerId: string): Promise<unknown> {

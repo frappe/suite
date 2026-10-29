@@ -573,3 +573,16 @@ describe('MediasoupManager resource access', () => {
 		).rejects.toThrow('does not belong to room room-1');
 	});
 });
+
+describe('MediasoupManager receiver-ready ownership', () => {
+	it('resumes only the owning peer in the owning room', async () => {
+		const manager = createManager();
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({ roomId: 'room', peerId: 'peer', consumer: makeConsumer({ paused: true }) } as never);
+		const resume = vi.spyOn(manager.consumerManager, 'resumeConsumer').mockResolvedValue(true);
+		await expect(manager.resumeConsumer('c1', 'other-room', 'peer')).rejects.toThrow('ownership');
+		await expect(manager.resumeConsumer('c1', 'room', 'other-peer')).rejects.toThrow('ownership');
+		expect(resume).not.toHaveBeenCalled();
+		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(true);
+		expect(resume).toHaveBeenCalledExactlyOnceWith('c1');
+	});
+});

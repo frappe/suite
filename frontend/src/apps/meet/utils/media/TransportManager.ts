@@ -525,6 +525,7 @@ export class TransportManager {
       recvTransport.id,
       producerId,
       device.rtpCapabilities,
+      true,
     )
 
     const isScreen = !!(
@@ -582,40 +583,84 @@ export class TransportManager {
         remoteSenderId: rawConsumerParams.senderId,
         mediaType: rawConsumerParams.kind,
       })
-      if (e2eeWanted && consumer.rtpReceiver) {
+      if (e2eeWanted) {
         try {
           const remoteSenderId = rawConsumerParams.senderId ?? 0
           const mediaType = rawConsumerParams.kind ?? 'video'
-          await this.e2eePolicy.setupReceiverTransform(
-            consumer.rtpReceiver,
-            remoteSenderId,
-            mediaType,
-          )
-          if (mediaType === 'video') {
-            void this.requestConsumerKeyFrameBurst(consumer.id, rawConsumerParams.producerId)
+          const installed = consumer.rtpReceiver
+            ? await this.e2eePolicy.setupReceiverTransform(
+                consumer.rtpReceiver,
+                remoteSenderId,
+                mediaType,
+              )
+            : false
+          if (rawConsumerParams.paused && !installed) {
+            throw new Error('Failed to install E2EE receiver transform')
           }
         } catch (error) {
+          if (rawConsumerParams.paused) {
+            consumer.close()
+            await client.closeConsumer(rawConsumerParams.id).catch(() => undefined)
+            throw error
+          }
           console.warn('Failed to setup E2EE receiver transform:', error)
         }
       }
+    }
+    if (rawConsumerParams.paused) {
+      try {
+        if (
+          consumer.closed ||
+          this.recvTransport !== recvTransport ||
+          recvTransport.closed ||
+          this.sfuClient !== client
+        ) {
+          throw new DOMException('Receive transport was replaced', 'AbortError')
+        }
+        // Resume only once the receiver (and any decryptor) can accept the first keyframe.
+        await client.resumeConsumer(consumer.id)
+        if (
+          consumer.closed ||
+          this.recvTransport !== recvTransport ||
+          recvTransport.closed ||
+          this.sfuClient !== client
+        ) {
+          throw new DOMException('Receive transport was replaced', 'AbortError')
+        }
+      } catch (error) {
+        consumer.close()
+        await client.closeConsumer(rawConsumerParams.id).catch(() => undefined)
+        throw error
+      }
+    }
+    if (e2eeWanted && consumer.kind === 'video') {
+      void this.requestConsumerKeyFrameBurst(consumer, recvTransport, client)
     }
     return consumer
   }
 
   private async requestConsumerKeyFrameBurst(
-    consumerId: string,
-    producerId: string,
+    consumer: Consumer,
+    recvTransport: Transport,
+    client: SFUClient,
   ): Promise<void> {
     const delays = [0, 120, 350, 800]
     for (const delay of delays) {
       if (delay > 0) {
         await sleep(delay)
       }
+      if (
+        consumer.closed ||
+        recvTransport.closed ||
+        this.recvTransport !== recvTransport ||
+        this.sfuClient !== client
+      )
+        return
       try {
-        const result = await this.sfuClient?.requestConsumerKeyFrame?.(consumerId)
+        const result = await client.requestConsumerKeyFrame(consumer.id)
         console.log('[E2EE] consumer keyframe requested', {
-          producerId,
-          consumerId,
+          producerId: consumer.producerId,
+          consumerId: consumer.id,
           delay,
           result,
         })

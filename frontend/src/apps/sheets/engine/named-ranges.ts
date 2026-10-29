@@ -66,14 +66,19 @@ export type DefinedNameChange =
 /**
  * The commands that bring IronCalc's defined names from `sent` (name →
  * formula last sent, '' for a name dropped) to the store's entries, and the
- * new `sent`. IronCalc only holds a name that is a reference, so a name whose
- * cells were all deleted (range #REF!) is dropped and `=Name` reads #NAME?
- * (Excel: #REF!); sending it would fail the batch with every other name in it.
+ * new `sent`. IronCalc only creates a name that is a reference to one of its
+ * `sheets`, so a name whose cells were all deleted (range #REF!) or whose
+ * sheet it lacks is dropped and `=Name` reads #NAME? (Excel: #REF!); sending
+ * it would fail the batch with every other name in it.
  */
-export function definedNameChanges(sent: ReadonlyMap<string, string>, entries: NamedRange[]) {
-  const want = new Map(
-    entries.map((e) => [e.name, e.range.includes('#REF!') ? '' : definedNameFormula(e)]),
-  )
+export function definedNameChanges(
+  sent: ReadonlyMap<string, string>,
+  entries: NamedRange[],
+  sheets: readonly string[],
+) {
+  const have = new Set(sheets.map((s) => s.toLowerCase()))
+  const live = (e: NamedRange) => !e.range.includes('#REF!') && have.has(e.sheet.toLowerCase())
+  const want = new Map(entries.map((e) => [e.name, live(e) ? definedNameFormula(e) : '']))
   const changes: DefinedNameChange[] = []
   for (const name of sent.keys())
     if (!want.has(name)) changes.push({ type: 'deleteDefinedName', payload: { name } })
@@ -221,6 +226,20 @@ export function createNamedRanges({
     if (changed) _notify()
   }
 
+  // A deleted sheet's names point nowhere: their range becomes #REF!, as in
+  // Excel, and stays so if a sheet of that name is added back.
+  function deleteSheet(name: string) {
+    const lc = String(name || '').toLowerCase()
+    let changed = false
+    for (const k of Object.keys(_store)) {
+      const e = _store[k] as NamedRange
+      if (String(e.sheet || '').toLowerCase() !== lc || e.range === '#REF!') continue
+      _store[k] = { ...e, range: '#REF!' }
+      changed = true
+    }
+    if (changed) _notify()
+  }
+
   // Structural permutation — rewrite the range of every named range that lives
   // on the op sheet so it keeps pointing at the same logical data.
   function _remap(sheet: string, mapCol: IndexMap | null, mapRow: IndexMap | null) {
@@ -266,6 +285,7 @@ export function createNamedRanges({
     remapCols,
     remapRows,
     renameSheet,
+    deleteSheet,
     snapshot,
     restore,
     setOnChange,

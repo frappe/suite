@@ -19,7 +19,7 @@
     },
     {
       "path": "frontend/src/apps/meet/utils/SFUClient.ts",
-      "line": 243,
+      "line": 244,
       "column": 58,
       "rule": "MTP001",
       "lineText": "function requireObject(value: unknown, context: string): Record<string, unknown> {",

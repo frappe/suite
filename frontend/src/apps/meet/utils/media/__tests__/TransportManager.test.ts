@@ -882,3 +882,153 @@ describe('consumer creation disposal', () => {
     },
   )
 })
+
+describe('receiver-ready video handshake', () => {
+  function setup(kind = 'video', paused = true) {
+    const manager = createManager()
+    const consumer = { id: 'fresh-consumer', kind, closed: false, rtpReceiver: {}, close: vi.fn() }
+    const client = {
+      ...mockSfuClient(),
+      createConsumer: vi
+        .fn()
+        .mockResolvedValue({ id: consumer.id, producerId: 'camera', kind, paused }),
+      resumeConsumer: vi.fn().mockResolvedValue({ success: true, resumed: true }),
+      closeConsumer: vi.fn().mockResolvedValue(undefined),
+      requestConsumerKeyFrame: vi.fn().mockResolvedValue({}),
+    }
+    manager.sfuClient = client as never
+    manager.device = { rtpCapabilities: {} } as never
+    manager.recvTransport = {
+      id: 'recv',
+      closed: false,
+      close: vi.fn(),
+      consume: vi.fn().mockResolvedValue(consumer),
+    } as never
+    return { manager, consumer, client }
+  }
+
+  it('keeps the server paused until consume finishes', async () => {
+    const { manager, consumer, client } = setup()
+    let finishConsume!: (consumer: unknown) => void
+    vi.mocked(manager.recvTransport!.consume).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishConsume = resolve
+        }) as never,
+    )
+    const creation = manager.createConsumer('camera')
+    await vi.waitFor(() => expect(finishConsume).toBeTypeOf('function'))
+    expect(client.createConsumer).toHaveBeenCalledWith('recv', 'camera', {}, true)
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    finishConsume(consumer)
+    expect(await creation).toBe(consumer)
+    expect(client.resumeConsumer).toHaveBeenCalledExactlyOnceWith('fresh-consumer')
+  })
+
+  it.each(['audio', 'video'])(
+    'does not acknowledge an already running %s consumer',
+    async (kind) => {
+      const { manager, client } = setup(kind, false)
+      await manager.createConsumer('camera')
+      expect(client.resumeConsumer).not.toHaveBeenCalled()
+    },
+  )
+
+  it('installs the decryptor before acknowledging readiness and cancels after transport teardown', async () => {
+    const { manager, consumer, client } = setup()
+    let finishTransform!: (ready: boolean) => void
+    vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+    vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishTransform = resolve
+        }),
+    )
+    const creation = manager.createConsumer('camera')
+    await vi.waitFor(() => expect(finishTransform).toBeTypeOf('function'))
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    manager.closeReceiveTransport()
+    finishTransform(true)
+    await expect(creation).rejects.toThrow('replaced')
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled()
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+
+  it('acknowledges after decryptor installation and stops keyframe retries after teardown', async () => {
+    vi.useFakeTimers()
+    try {
+      const { manager, consumer, client } = setup()
+      vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+      vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform').mockImplementation(async () => {
+        expect(client.resumeConsumer).not.toHaveBeenCalled()
+        return true
+      })
+      await manager.createConsumer('camera')
+      expect(client.resumeConsumer).toHaveBeenCalledExactlyOnceWith(consumer.id)
+      expect(client.requestConsumerKeyFrame).toHaveBeenCalledExactlyOnceWith(consumer.id)
+      consumer.closed = true
+      manager.cleanup()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(client.requestConsumerKeyFrame).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not resume an encrypted consumer when its decryptor cannot be installed', async () => {
+    const { manager, consumer, client } = setup()
+    vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+    vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform').mockResolvedValue(false)
+    await expect(manager.createConsumer('camera')).rejects.toThrow('Failed to install')
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled()
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+
+  it.each([true, false])('handles a missing encrypted receiver with paused=%s', async (paused) => {
+    const { manager, consumer, client } = setup('video', paused)
+    Object.assign(consumer, { rtpReceiver: undefined })
+    vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+    const install = vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform')
+    if (paused) {
+      await expect(manager.createConsumer('camera')).rejects.toThrow('Failed to install')
+      expect(consumer.close).toHaveBeenCalledOnce()
+      expect(client.closeConsumer).toHaveBeenCalledExactlyOnceWith(consumer.id)
+      expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled()
+    } else {
+      await expect(manager.createConsumer('camera')).resolves.toBe(consumer)
+      manager.cleanup()
+    }
+    expect(install).not.toHaveBeenCalled()
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+  })
+
+  it('disposes both consumers if the readiness acknowledgement fails', async () => {
+    const { manager, consumer, client } = setup()
+    client.resumeConsumer.mockRejectedValue(new Error('resume failed'))
+    await expect(manager.createConsumer('camera')).rejects.toThrow('resume failed')
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+
+  it('disposes a consumer if teardown occurs while its acknowledgement is pending', async () => {
+    const { manager, consumer, client } = setup()
+    let finishResume!: (result: { success: boolean; resumed: boolean }) => void
+    client.resumeConsumer.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishResume = resolve
+        }),
+    )
+    const creation = manager.createConsumer('camera')
+    await vi.waitFor(() => expect(finishResume).toBeTypeOf('function'))
+    manager.closeReceiveTransport()
+    finishResume({ success: true, resumed: true })
+    await expect(creation).rejects.toThrow('replaced')
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+})

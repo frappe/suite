@@ -53,3 +53,42 @@ describe('shared stage delivery', () => {
     ).toBeNull()
   })
 })
+
+it('validates and copies presentation permutations without changing older snapshot compatibility', () => {
+  const state = {
+    epoch: 'room',
+    protocolVersion: 1,
+    version: 1,
+    participantIds: ['c', 'a', 'b'],
+    activeSpeakerIds: [],
+  }
+  expect(parseSharedStage(state)).not.toBeNull()
+  const orders = { '2': ['a', 'c'] }
+  const parsed = parseSharedStage({ ...state, presentationOrders: orders })
+  expect(parsed?.presentationOrders?.[2]).toEqual(['a', 'c'])
+  orders[2][0] = 'b'
+  expect(parsed?.presentationOrders?.[2]).toEqual(['a', 'c'])
+  for (const invalid of [
+    { '2': ['a', 'b'] },
+    { '2': ['a', 'a'] },
+    { '2': ['a'] },
+    { '0': [] },
+    { '17': ['c', 'a', 'b'] },
+  ]) {
+    expect(parseSharedStage({ ...state, presentationOrders: invalid })).toBeNull()
+  }
+})
+
+it('validates the endpoint snapshot after server-owned self exclusion', () => {
+  const state = {
+    epoch: 'room',
+    protocolVersion: 1,
+    version: 4,
+    participantIds: ['self', 'c', 'a', 'b'],
+    activeSpeakerIds: ['self'],
+    excludedParticipantId: 'self',
+    presentationOrders: { '2': ['a', 'c'] },
+  }
+  expect(parseSharedStage(state)?.presentationOrders?.[2]).toEqual(['a', 'c'])
+  expect(parseSharedStage({ ...state, presentationOrders: { '2': ['self', 'c'] } })).toBeNull()
+})
