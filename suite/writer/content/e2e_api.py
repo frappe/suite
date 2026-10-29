@@ -8,6 +8,7 @@ import pycrdt
 from frappe.query_builder import Table
 from frappe.query_builder.functions import Coalesce, Count, Interval, Max
 from frappe.tests.utils import whitelist_for_tests
+from frappe.utils import CallbackManager
 
 from suite import content
 from suite.content import (
@@ -195,7 +196,7 @@ def convert_now(node: str) -> str | None:
     job = getattr(frappe.local, "job", None)
     try:
         # The converter runs only in background jobs
-        frappe.local.job = frappe._dict(job_name="e2e convert_now")
+        frappe.local.job = frappe._dict(job_name="e2e convert_now", after_job=CallbackManager())
         return conversions.convert_document(writer_content.APP, node)
     finally:
         frappe.local.job = job
