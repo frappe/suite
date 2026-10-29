@@ -3,9 +3,9 @@ import type { App, Plugin } from 'vue'
 import { transport } from '@/platform/transport'
 import { api } from '@/platform/transport/api'
 
-import { format } from './format'
+import { format, type Replacement } from './format'
 
-export type Replacement = Array<string | number> | Record<string, string | number>
+export type { Replacement } from './format'
 export type TranslationCatalog = Record<string, string>
 export type TranslationFunction = (
   message: string,
