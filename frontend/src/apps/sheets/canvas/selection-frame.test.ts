@@ -2,7 +2,7 @@
 // frame's corner. Cell edges are integers, so a 2px stroke there covers the
 // 1px gridline plus one pixel beside it: crisp, with no grey line left next
 // to the black one.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { COL_HEADER_H, COLORS, ROW_HEADER_W } from './constants.js'
 import { createSelectionPainter } from './painters/selection-painter.js'
@@ -93,10 +93,83 @@ describe('selection frame', () => {
     ])
   })
 
-  it('puts the handle on the far corner of a range', () => {
-    const { fills } = frame({ r0: 1, c0: 1, r1: 3, c1: 2 })
-    // C4's bottom-right corner: (350, 120).
-    expect(fills.at(-1)!.rect).toEqual([347, 117, 6, 6])
+  it('draws no range outline for a single cell', () => {
+    expect(frame().strokes).toHaveLength(1)
+  })
+})
+
+describe('range outline', () => {
+  // B2:C4 with B2 active: the range spans x 150 … 350, y 48 … 120.
+  const RANGE: CellBlock = { r0: 1, c0: 1, r1: 3, c1: 2 }
+
+  function paint(sel: Cell, range: CellBlock) {
+    const { ctx, strokes, fills } = recordingCtx()
+    const sp = createSelectionPainter(ctx, createMockGeo())
+    sp.drawRangeOutline(range, sel, () => null)
+    sp.drawSelectionBorder(sel, range, 0, 0, 50, 24, 1000, 1000, () => null)
+    return { strokes, fills }
+  }
+
+  it('outlines the whole range 1px on its gridline pixels, under the active frame', () => {
+    // Gridline pixels are x 150 and 350, y 48 and 120: a 1px line centred on
+    // each pixel's middle.
+    expect(paint(B2, RANGE).strokes).toEqual([
+      { rect: [150.5, 48.5, 200, 72], lineWidth: 1 },
+      { rect: [150, 48, 100, 24], lineWidth: 2 },
+    ])
+  })
+
+  it('draws no outline when the range is just the (merged) active cell', () => {
+    const { ctx, strokes } = recordingCtx()
+    const sp = createSelectionPainter(ctx, createMockGeo())
+    sp.drawRangeOutline({ r0: 1, c0: 1, r1: 2, c1: 2 }, B2, () => ({ colSpan: 2, rowSpan: 2 }))
+    expect(strokes).toEqual([])
+  })
+
+  it('draws the outline in every pane the range crosses, like the tint', () => {
+    // One frozen row: a range from B1 (frozen) to B5 (scrolling) is outlined
+    // in both panes, each clipped to its own pane.
+    const ctx = createMockCtx()
+    let outlines = 0
+    ctx.strokeRect = () => {
+      if (ctx.lineWidth === 1) outlines++
+    }
+    const geo = createMockGeo()
+    geo.frozenH = vi.fn(() => 24)
+    createRenderer(ctx as never, geo as never).render({
+      cssW: 600,
+      cssH: 300,
+      getValue: () => '',
+      cells: {},
+      sel: { r: 4, c: 1 },
+      selEnd: { r: 0, c: 1 },
+      selMode: 'cell',
+      editing: false,
+      freeze: { rows: 1, cols: 0 },
+      getDiffFor: null,
+      marchAnts: null,
+      marchPhase: 0,
+      pickerRect: null,
+      colDrag: null,
+      zoom: 1,
+    })
+    expect(outlines).toBe(2)
+  })
+
+  it('centres the handle on the 1px outline when the active cell is elsewhere', () => {
+    // The outline's corner pixel is (350, 120), centre (350.5, 120.5): a 7px
+    // square on whole pixels, x 347 … 354.
+    expect(paint(B2, RANGE).fills.at(-1)!.rect).toEqual([347, 117, 7, 7])
+  })
+
+  it('centres the handle on the 2px frame when the active cell is in that corner', () => {
+    expect(paint({ r: 3, c: 2 }, RANGE).fills.at(-1)!.rect).toEqual([347, 117, 6, 6])
+  })
+
+  it('picks the line per axis', () => {
+    // B2:C2 with B2 active: the frame reaches the bottom edge, not the right.
+    const row: CellBlock = { r0: 1, c0: 1, r1: 1, c1: 2 }
+    expect(paint(B2, row).fills.at(-1)!.rect).toEqual([347, 69, 7, 6])
   })
 })
 

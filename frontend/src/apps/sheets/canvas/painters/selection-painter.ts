@@ -8,13 +8,19 @@ import type { CellBlock, CellProvider } from '../types.js'
 // on the integer cell edge covers the 1px gridline plus one pixel beside it,
 // so it is crisp at DPR 1 and 2 and no grey line shows next to it.
 const FRAME_W = 2
-// Fill handle: a square centred on the frame's bottom-right corner, with a
-// 1px ring in the cell colour so it reads against the frame.
+// A range larger than the active cell also gets a thinner outline: 1px on
+// the gridline pixels themselves, so it covers them and stays crisp.
+const OUTLINE_W = 1
+// Fill handle: a square centred on the line under the selection's
+// bottom-right corner, with a 1px ring in the cell colour so it reads against
+// it. On the 2px frame (centred on an integer edge) it is 6px; on the 1px
+// outline (centred on a pixel's middle) 7px, so it stays on whole pixels.
 const HANDLE = 6
 const HANDLE_RING = 1
 
 export interface SelectionPainter {
   drawSelFill(range: CellBlock, sel: Cell | null, getMergeInfo: CellProvider['getMergeInfo']): void
+  drawRangeOutline(range: CellBlock, sel: Cell, getMergeInfo: CellProvider['getMergeInfo']): void
   drawSelectionBorder(
     sel: Cell,
     range: CellBlock,
@@ -63,6 +69,26 @@ export function createSelectionPainter(
     _fillBand(ax + aw, ay, right - ax - aw, ah)
   }
 
+  // Drawn per pane with the tint (the renderer clips each pane), so a range
+  // that crosses a freeze line is outlined in both panes and never over one.
+  function drawRangeOutline(
+    range: CellBlock,
+    sel: Cell,
+    getMergeInfo: CellProvider['getMergeInfo'],
+  ): void {
+    const { w: aw, h: ah } = _activeSize(sel, getMergeInfo)
+    const x = colX(range.c0),
+      y = rowY(range.r0)
+    const w = colX(range.c1) + cw(range.c1) - x
+    const h = rowY(range.r1) + rh(range.r1) - y
+    if (w <= aw && h <= ah) return
+    ctx.save()
+    ctx.strokeStyle = COLORS.selBorder
+    ctx.lineWidth = OUTLINE_W
+    ctx.strokeRect(x + 0.5, y + 0.5, w, h)
+    ctx.restore()
+  }
+
   function _fillBand(x: number, y: number, w: number, h: number): void {
     if (w > 0 && h > 0) ctx.fillRect(x, y, w, h)
   }
@@ -104,32 +130,31 @@ export function createSelectionPainter(
     ctx.beginPath()
     ctx.rect(clipX, clipY, Math.max(0, cssW - clipX), Math.max(0, cssH - clipY))
     ctx.clip()
+    // The visible selection's far corner: for a single merged cell, range is
+    // just the master cell coords, so extend r1/c1 to the merge's far corner.
+    const sr1 = Math.max(range.r1, sel.r + spanR - 1),
+      sc1 = Math.max(range.c1, sel.c + spanC - 1)
+    const right = colX(sc1) + cw(sc1),
+      bottom = rowY(sr1) + rh(sr1)
     ctx.strokeStyle = COLORS.selBorder
     ctx.lineWidth = FRAME_W
     ctx.strokeRect(x, y, mergedW, mergedH)
     ctx.lineWidth = 1
-    // Fill handle anchors at the bottom-right of the *visible* selection.
-    // For a single merged cell, range is just the master cell coords, so
-    // we extend r1/c1 to the merge's far corner — otherwise the dot sits
-    // in the middle of the merged block instead of at its bottom-right.
-    const handleRange = {
-      r0: range.r0,
-      c0: range.c0,
-      r1: Math.max(range.r1, sel.r + spanR - 1),
-      c1: Math.max(range.c1, sel.c + spanC - 1),
-    }
-    _drawFillHandle(handleRange)
+    // The handle sits on the frame where the active cell reaches the
+    // selection's right / bottom edge, else on the range outline.
+    _drawFillHandle(right, bottom, x + mergedW === right, y + mergedH === bottom)
     ctx.restore()
   }
 
-  function _drawFillHandle({ r1, c1 }: CellBlock): void {
-    const hx = colX(c1) + cw(c1)
-    const hy = rowY(r1) + rh(r1)
-    const ring = HANDLE / 2 + HANDLE_RING
+  function _drawFillHandle(hx: number, hy: number, onFrameX: boolean, onFrameY: boolean): void {
+    const w = onFrameX ? HANDLE : HANDLE + 1
+    const h = onFrameY ? HANDLE : HANDLE + 1
+    const x = hx - HANDLE / 2,
+      y = hy - HANDLE / 2
     ctx.fillStyle = COLORS.white
-    ctx.fillRect(hx - ring, hy - ring, ring * 2, ring * 2)
+    ctx.fillRect(x - HANDLE_RING, y - HANDLE_RING, w + 2 * HANDLE_RING, h + 2 * HANDLE_RING)
     ctx.fillStyle = COLORS.selHandle
-    ctx.fillRect(hx - HANDLE / 2, hy - HANDLE / 2, HANDLE, HANDLE)
+    ctx.fillRect(x, y, w, h)
   }
 
   // Copy outline and formula range border sit where the selection frame does.
@@ -172,5 +197,12 @@ export function createSelectionPainter(
     ctx.restore()
   }
 
-  return { drawSelFill, drawSelectionBorder, drawMarchingAnts, drawPickerFill, drawPickerBorder }
+  return {
+    drawSelFill,
+    drawRangeOutline,
+    drawSelectionBorder,
+    drawMarchingAnts,
+    drawPickerFill,
+    drawPickerBorder,
+  }
 }

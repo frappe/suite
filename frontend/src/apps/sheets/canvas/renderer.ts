@@ -191,6 +191,9 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
     cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, cells, getDiffFor)
     cellPainter.drawRegionBorders(r0, c0, r1, c1, cells)
+    // Cell mode only, like the active frame drawn over it later.
+    if (!editing && fillRange === range)
+      selPainter.drawRangeOutline(range, sel, (id) => cells.getMergeInfo?.(id))
     if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
     if (pickerRect) selPainter.drawPickerBorder(pickerRect)
     ctx.restore()
