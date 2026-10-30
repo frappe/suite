@@ -47,6 +47,7 @@ class TestInstallQuarantineRace(CompactionCase):
         self.assertNotIn("three", body_text)
         self.assertEqual(int(doc.q_epoch), 1)
         self.assertEqual(self.quarantined_revs(node), [2, 3])
+        self.assertEqual(self.opened(node).text, "one ")
 
     def test_a_judge_during_a_compaction_answers_busy_and_quarantines_nothing(self):
         node = self.new_document()
