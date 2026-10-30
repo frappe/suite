@@ -86,11 +86,28 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
     expect(opened).toEqual({ state: 'disabled' })
   })
 
-  it('fails on any other refusal to open', async () => {
+  it('keeps the old path for a guest the room refuses (a link guest, or no Sheets editor)', async () => {
+    // The client reports a guest's 403/404 as signed out: it can't tell them apart.
+    document.cookie = 'user_id=Guest; path=/'
+    const open = () => Promise.reject(new CollabOpenError(401, 'signed_out'))
+    const opened = await openSheetRoom({ session, client: await newClient(), stores: {}, open })
+    expect(opened).toEqual({ state: 'disabled' })
+  })
+
+  it('fails when a signed-in person is refused as signed out', async () => {
+    document.cookie = 'user_id=ann%40x.com; path=/'
     const open = () => Promise.reject(new CollabOpenError(401, 'signed_out'))
     await expect(
       openSheetRoom({ session, client: await newClient(), stores: {}, open }),
     ).rejects.toThrow('signed_out')
+    document.cookie = 'user_id=Guest; path=/'
+  })
+
+  it('fails on any other refusal to open', async () => {
+    const open = () => Promise.reject(new CollabOpenError(401, 'locked'))
+    await expect(
+      openSheetRoom({ session, client: await newClient(), stores: {}, open }),
+    ).rejects.toThrow('locked')
   })
 
   it('says when the sheet still waits for its conversion', async () => {

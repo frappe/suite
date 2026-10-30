@@ -21,6 +21,7 @@
 import * as Y from 'yjs'
 
 import { openCollabRoom, type CollabRoom, type CollabSession, type Opened } from '@/platform/collab'
+import { getCookieSessionUser } from '@/platform/session'
 
 import type { WorkbookClient } from '../core/client'
 import { sheetsAdapter } from './adapter'
@@ -71,6 +72,11 @@ export async function openSheetRoom({
     // isn't installed), or no route for it. The old path opens the sheet, and
     // says so itself if the sheet is missing.
     if ((error as { status?: unknown } | null)?.status === 404) return { state: 'disabled' }
+    // A guest (a share link) is refused as "signed out" for a 403 or 404 alike:
+    // the old path opens the sheet through the link, or says why it can't.
+    const reason = (error as { reason?: unknown } | null)?.reason
+    if (reason === 'signed_out' && (getCookieSessionUser() ?? 'Guest') === 'Guest')
+      return { state: 'disabled' }
     throw error
   }
   if (opened.state !== 'live') {
