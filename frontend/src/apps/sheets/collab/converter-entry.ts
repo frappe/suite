@@ -1,5 +1,4 @@
 import { initSync } from '@ironcalc/wasm'
-import wasmBase64 from 'virtual:ironcalc-wasm'
 
 import { readFrames } from './child-input'
 import { convertSheetsData } from './conversion'
@@ -34,7 +33,7 @@ async function convertInput() {
 
   let answer: object = {}
   if (input.legacy) {
-    initSync({ module: Buffer.from(wasmBase64, 'base64') })
+    initSync({ module: Buffer.from(__IRONCALC_WASM__, 'base64') })
     const result = await convertSheetsData(input.legacy.sheets_data, input.maxState ?? 0)
     answer =
       result.kind === 'converted'

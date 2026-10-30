@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import { defineConfig, type Plugin, type UserConfig } from 'vite'
+import { defineConfig, type UserConfig } from 'vite'
 
 // Sheets' Node builds, each one file with the browsers' Yjs and the doc layout in
 // src/apps/sheets/collab/schema.ts: the checker, which the server runs on demand
@@ -17,21 +17,17 @@ const converterVersion = JSON.parse(
   ),
 ).version
 
-// The --permission sandbox allows reading only the bundle, so IronCalc's wasm goes inside it
-const WASM_ID = 'virtual:ironcalc-wasm'
-const ironcalcWasm: Plugin = {
-  name: 'ironcalc-wasm-inline',
-  resolveId: (id) => (id === WASM_ID ? `\0${WASM_ID}` : null),
-  load(id) {
-    if (id !== `\0${WASM_ID}`) return null
-    const wasm = fs.readFileSync(requireFromFrontend.resolve('@ironcalc/wasm/wasm_bg.wasm'))
-    return `export default ${JSON.stringify(wasm.toString('base64'))}`
-  },
-}
+// The --permission sandbox allows reading only the bundle, so IronCalc's wasm goes inside it, as
+// base64. A constant rather than a virtual module, so tools that read the entry without this config
+// (vitest's coverage) still parse it
+const ironcalcWasm = fs
+  .readFileSync(requireFromFrontend.resolve('@ironcalc/wasm/wasm_bg.wasm'))
+  .toString('base64')
 
 const define = {
   __CHECKER_YJS__: JSON.stringify(yjsVersion),
   __CONVERTER_VERSION__: JSON.stringify(converterVersion),
+  __IRONCALC_WASM__: JSON.stringify(ironcalcWasm),
 }
 
 function sheetsBuild(name: 'checker' | 'converter'): UserConfig {
@@ -41,7 +37,6 @@ function sheetsBuild(name: 'checker' | 'converter'): UserConfig {
     define,
     publicDir: false,
     configFile: false,
-    plugins: [ironcalcWasm],
     resolve: {
       alias: [{ find: '@', replacement: path.resolve(__dirname, 'src') }],
       dedupe: ['yjs'],
