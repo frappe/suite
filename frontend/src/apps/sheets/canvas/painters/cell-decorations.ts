@@ -9,6 +9,7 @@ import { CHIP, chipColor, chipMetrics } from '../chip-geometry.js'
 import { COLORS } from '../constants.js'
 import type { CellFormat, CondIcon, DataBar, SparkSpec, ValidationRule } from '../types.js'
 import { setCellFont } from './cell-text-style.js'
+import { cellMidY, centredBaseline, createCapHeight } from './text-anchor.js'
 
 export interface CellDecorations {
   drawDataBar(x: number, y: number, w: number, h: number, bar: DataBar): void
@@ -36,6 +37,8 @@ export interface CellDecorations {
 export const ICON_INSET = 11 + 4 * 2
 
 export function createCellDecorations(ctx: CanvasRenderingContext2D): CellDecorations {
+  const capHeight = createCapHeight(ctx)
+
   // Horizontal data bar inside the cell — width is the rule's normalised
   // value (0..1). Stays a couple of px shy of the cell edges so it reads
   // as a separate visual layer from the cell background.
@@ -250,7 +253,10 @@ export function createCellDecorations(ctx: CanvasRenderingContext2D): CellDecora
     const textColor = fmt.color || COLORS.cellText
     const { offsetX, chipW } = chipMetrics(ctx, text, fmt, w)
     const chipX = x + offsetX
-    const chipY = y + (h - chipH) / 2
+    // Centred like plain cell text: pill on the white area, label's capitals
+    // on the pill's middle.
+    const chipMid = cellMidY(y, h)
+    const chipY = chipMid - chipH / 2
     // Pill — a known option gets its custom colour (or the auto palette slot);
     // an out-of-list value stays neutral grey (it isn't one of the choices).
     roundRectPath(chipX, chipY, chipW, chipH, chipH / 2)
@@ -260,11 +266,12 @@ export function createCellDecorations(ctx: CanvasRenderingContext2D): CellDecora
     // doesn't get hard-clipped mid-glyph.
     ctx.fillStyle = textColor
     ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
+    ctx.textBaseline = 'alphabetic'
     const textRoom = chipW - CHIP.innerPad - CHIP.caretW
-    ctx.fillText(ellipsize(text, textRoom), chipX + CHIP.innerPad, chipY + chipH / 2)
+    const textY = centredBaseline(chipMid, capHeight())
+    ctx.fillText(ellipsize(text, textRoom), chipX + CHIP.innerPad, textY)
     // Caret — same chevron as the empty-cell affordance, for consistency.
-    drawChevron(chipX + chipW - CHIP.caretW / 2, chipY + chipH / 2)
+    drawChevron(chipX + chipW - CHIP.caretW / 2, chipMid)
     ctx.restore()
     if (!valid) drawInvalidTriangle(x, y)
   }

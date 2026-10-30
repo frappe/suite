@@ -38,6 +38,7 @@ interface RegionState {
   cells: CellProvider
   getDiffFor: ((id: string) => boolean) | null
   editing: boolean
+  sel: Cell
   range: CellBlock
   fillRange: CellBlock
   marchAnts: CellBlock | null
@@ -100,6 +101,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       cells,
       getDiffFor,
       editing,
+      sel,
       range,
       fillRange,
       marchAnts,
@@ -113,8 +115,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     if (fr > 0 && fc > 0)
       _renderRegion(0, 0, fr - 1, fc - 1, ROW_HEADER_W, COL_HEADER_H, frozW_, frozH_, state)
 
-    headerPainter.drawColHeaders(c0s, c1s, fc, mainX, cssW, sel, range, selMode)
-    headerPainter.drawRowHeaders(r0s, r1s, fr, mainY, cssH, sel, range, selMode)
+    headerPainter.drawColHeaders(c0s, c1s, fc, mainX, cssW, range)
+    headerPainter.drawRowHeaders(r0s, r1s, fr, mainY, cssH, range)
     headerPainter.drawCorner()
 
     if (!editing && selMode === 'cell')
@@ -169,6 +171,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       cells,
       getDiffFor,
       editing,
+      sel,
       range,
       fillRange,
       marchAnts,
@@ -179,11 +182,18 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     ctx.beginPath()
     ctx.rect(clipX, clipY, clipW, clipH)
     ctx.clip()
-    if (!editing) selPainter.drawSelFill(fillRange || range)
+    // Only cell mode frames the active cell, so only there is it left white.
+    if (!editing)
+      selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
+        cells.getMergeInfo?.(id),
+      )
     if (pickerRect) selPainter.drawPickerFill(pickerRect)
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
     cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, cells, getDiffFor)
     cellPainter.drawRegionBorders(r0, c0, r1, c1, cells)
+    // Cell mode only, like the active frame drawn over it later.
+    if (!editing && fillRange === range)
+      selPainter.drawRangeOutline(range, sel, (id) => cells.getMergeInfo?.(id))
     if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
     if (pickerRect) selPainter.drawPickerBorder(pickerRect)
     ctx.restore()
