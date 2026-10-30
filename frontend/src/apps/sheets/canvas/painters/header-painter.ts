@@ -80,7 +80,7 @@ export function createHeaderPainter(
     const isSelected = (selMode === 'col' || selMode === 'all') && inRange
     const isAnchor = c === sel.c
     _drawColHeaderBackground(x, w, isSelected, isAnchor, inRange)
-    ctx.fillStyle = isSelected || isAnchor ? COLORS.cellText : COLORS.headerText
+    ctx.fillStyle = _headerInk(isSelected || isAnchor, inRange)
     // No gridline above the column headers: the white area is the full height.
     if (w > 0) ctx.fillText(colLabel(c), x + w / 2, centredBaseline(COL_HEADER_H / 2, capHeight()))
     _drawColHeaderSeparator(x, w, c)
@@ -120,6 +120,11 @@ export function createHeaderPainter(
       ctx.lineTo(x + w + 0.5, COL_HEADER_H)
       ctx.stroke()
     }
+  }
+
+  function _headerInk(active: boolean, inRange: boolean): string {
+    if (active) return COLORS.cellText
+    return inRange ? COLORS.rangeHeaderText : COLORS.headerText
   }
 
   // ── Row headers ──────────────────────────────────────────────────────────────
@@ -166,7 +171,7 @@ export function createHeaderPainter(
     const isSelected = (selMode === 'row' || selMode === 'all') && inRange
     const isAnchor = r === sel.r
     _drawRowHeaderBackground(y, h, isSelected, isAnchor, inRange)
-    ctx.fillStyle = isSelected || isAnchor ? COLORS.cellText : COLORS.headerText
+    ctx.fillStyle = _headerInk(isSelected || isAnchor, inRange)
     ctx.fillText(String(r + 1), ROW_HEADER_W / 2, centredBaseline(cellMidY(y, h), capHeight()))
     _drawRowHeaderSeparator(y, h, r)
   }

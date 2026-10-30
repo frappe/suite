@@ -75,6 +75,11 @@ export const COLORS = {
   get rangeHeader() {
     return _token('--surface-gray-3', '#EDEDED')
   },
+  // Header ink steps with the tint: unselected headerText, range rangeHeaderText,
+  // the active row / column cellText.
+  get rangeHeaderText() {
+    return _token('--ink-gray-7', '#525252')
+  },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')
   },
