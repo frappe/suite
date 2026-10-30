@@ -305,3 +305,13 @@ describe('names follow row and column edits', () => {
     })
   })
 })
+
+describe('a name fits a collab doc key', () => {
+  it('refuses a name longer than 128 characters', () => {
+    const nr = createNamedRanges()
+    expect(nr.add({ name: 'a'.repeat(128), sheet: 'Sheet1', range: 'A1' })).toEqual({
+      name: 'a'.repeat(128),
+    })
+    expect(nr.add({ name: 'b'.repeat(129), sheet: 'Sheet1', range: 'A1' })).toHaveProperty('error')
+  })
+})

@@ -2,7 +2,6 @@ import json
 import os
 import re
 from collections import defaultdict
-from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,17 +31,6 @@ DEVELOP_BODY = json.dumps(
         "formats": {"Budget": {"cells": {"A1": {"bold": True}}}},
     }
 )
-
-
-class AnyKey(dict):
-    """Features that hold every name, as the layer will once it takes runtime keys."""
-
-    def get(self, name, default=None):
-        return 1
-
-
-# Test-only: Sheets' schema with the key check open, until the content layer takes runtime map keys
-PERMISSIVE_SCHEMA = replace(sheets_content.SCHEMA, features=AnyKey())
 
 
 def require_converter(case) -> None:

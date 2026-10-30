@@ -30,7 +30,16 @@ import type { GlueStores } from './stores'
 
 /** Something the conversion changed or left out, for the conversion's record. */
 type Dropped =
-  { kind: 'renamed-sheet'; from: string; to: string } | { kind: 'skipped-cells'; count: number }
+  | { kind: 'renamed-sheet'; from: string; to: string }
+  | { kind: 'skipped-cells'; count: number }
+  | { kind: 'name-not-a-key'; name: string }
+
+/**
+ * The keys the server takes in a root keyed at runtime (suite/content/ingest.py
+ * `OPEN_KEY`); a push holding another key is refused. Ids, cell keys and item
+ * ids always fit; a defined name from an old body may not.
+ */
+export const OPEN_KEY = /^[A-Za-z0-9_.:-]{1,128}$/
 
 /** The converter's answer, in the shape suite/content/convert.py reads. */
 export type ConverterAnswer =
@@ -155,6 +164,16 @@ export async function convertSheetsData(
     await client.idle()
 
     const stores = sideStores()
+    // The names root is keyed by the upper-cased name: one that can't be a key is left out.
+    const names = (saved.namedRanges as { entries?: unknown } | null)?.entries
+    if (isPlainObject(names)) {
+      for (const [key, entry] of Object.entries(names)) {
+        if (OPEN_KEY.test(key)) continue
+        delete names[key]
+        const name = isPlainObject(entry) && typeof entry.name === 'string' ? entry.name : key
+        dropped.push({ kind: 'name-not-a-key', name })
+      }
+    }
     try {
       const restore: [keyof typeof stores, unknown][] = [
         ['formats', saved.formats],

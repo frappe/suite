@@ -15,7 +15,7 @@ from datetime import datetime
 
 import frappe
 
-from suite.content import capacity, compaction, convert, copies
+from suite.content import capacity, compaction, convert, copies, updates
 from suite.content.conversions import ConversionRefused
 from suite.sheets import content as sheets_content
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
@@ -86,6 +86,11 @@ def check(node: str, old: OldSheet, converted: convert.Converted) -> CheckedShee
     """Refuse a state the room can't hold or the layer can't read whole, or a copy that doesn't hold it."""
     if len(converted.state) > capacity.STATE_MAX:
         raise ConversionRefused("too_large")
+
+    # The pushes that edit it later are checked against the schema: a key it refuses would refuse them
+    schema = sheets_content.SCHEMA
+    if not schema.allows(updates.parse(converted.state), schema.version):
+        raise ConversionRefused("check", "schema")
 
     try:
         if not compaction.compact(converted.state, [], sheets_content.PART_MAP).integrated:

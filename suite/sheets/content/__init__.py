@@ -57,8 +57,10 @@ CONVERTER_VERSION = json.loads(Path(__file__).with_name("converter-version.json"
 DECLARED = json.loads(Path(__file__).with_name("schema.json").read_text())
 # The glue writes only GC, deleted, type and any content: ids, inputs and JSON values are `any`, and the
 # only nested shared type is each sheet's row and column id list, a Y.Array. `features` declares the
-# roots and the one fixed key (`meta.schemaVersion`); every other key is made at runtime (sheet, row and
-# column ids, item ids), which the layer's key check refuses until it takes runtime keys
+# roots and the one fixed key (`meta.schemaVersion`). Every map root but `meta` is open: its keys are made
+# at runtime (sheet, row and column ids, cell keys, item ids, defined names), each fitting
+# `suite.content.ingest.OPEN_KEY`
+OPEN_ROOTS = frozenset(root for root, kind in PART_MAP.items() if kind is pycrdt.Map) - {"meta"}
 SCHEMA = content.EditorSchema(
     DECLARED["schema"],
     DECLARED["features"],
@@ -66,6 +68,7 @@ SCHEMA = content.EditorSchema(
     shared_types=frozenset({0}),
     nodes=frozenset(DECLARED["nodes"]),
     marks=frozenset(DECLARED["marks"]),
+    open_roots=OPEN_ROOTS,
 )
 
 # Built apart from EDITOR, whose bare `Conversion` would hide the body bounds from mypy

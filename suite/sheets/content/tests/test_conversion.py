@@ -98,6 +98,17 @@ class TestCheck(IntegrationTestCase):
 
         self.assertEqual((refused.exception.outcome, refused.exception.reason), ("check", "copy"))
 
+    def test_refuses_a_key_later_pushes_could_not_carry(self):
+        doc: pycrdt.Doc = pycrdt.Doc()
+        doc.apply_update(self.result.state)
+        doc.get("names", type=pycrdt.Map)["GRÖSSE"] = {"name": "Größe"}
+        unkeyable = convert.Converted(**{**self.result.__dict__, "state": doc.get_update()})
+
+        with self.assertRaises(ConversionRefused) as refused:
+            conversion.check("node", self.old, unkeyable)
+
+        self.assertEqual((refused.exception.outcome, refused.exception.reason), ("check", "schema"))
+
     def test_refuses_a_root_the_layout_has_no_place_for(self):
         doc: pycrdt.Doc = pycrdt.Doc()
         doc.apply_update(self.result.state)
@@ -129,27 +140,34 @@ class TestConvertDocument(IntegrationTestCase):
         ready.start()
         self.addCleanup(ready.stop)
         saved_mode = log.mode(sheets_content.APP)
-        log.set_mode(sheets_content.APP, "on")
-        frappe.db.commit()
-        self.addCleanup(self.restore_mode, saved_mode)
+        if saved_mode != "on":
+            log.set_mode(sheets_content.APP, "on")
+            frappe.db.commit()
+            self.addCleanup(self.restore_mode, saved_mode)
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
 
     def restore_mode(self, mode: str):
-        log.set_mode(sheets_content.APP, mode)
-        frappe.db.commit()
+        try:
+            log.set_mode(sheets_content.APP, mode)
+            frappe.db.commit()
+        except frappe.ValidationError:
+            # The layer keeps an app on while any of its documents has a log; a site with other
+            # collaborative sheets stays on
+            frappe.db.rollback()
 
     def old_sheet(self, sheets_data: str) -> str:
         """A sheet made before collab was on: a row with a body and no log."""
-        log.set_mode(sheets_content.APP, "off")
         root = drive.ensure_personal_root(OWNER)
         parent = frappe.db.get_value("Drive Root", root, "node")
         node = drive.create_document(parent, f"Old {uuid.uuid4().hex[:8]}", content_doctype="Sheet")
-        docname = frappe.db.get_value("Drive Node", node, "content_docname")
-        frappe.db.set_value("Sheet", docname, "sheets_data", encode_sheets_data(sheets_data))
-        log.set_mode(sheets_content.APP, "on")
         frappe.db.commit()
         self.addCleanup(self.delete_log, node)
+        # Made while collab is on, so it starts with a log; without it, it is as an old sheet is
+        self.delete_log(node)
+        docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        frappe.db.set_value("Sheet", docname, "sheets_data", encode_sheets_data(sheets_data))
+        frappe.db.commit()
         return node
 
     def delete_log(self, node: str):

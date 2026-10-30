@@ -8,10 +8,10 @@ import type { WorkbookClient } from '../core/client'
 import { bytesToBase64, ENGINE_VERSION } from '../core/snapshot-codec'
 import { createFormatsEngine } from '../engine/formats'
 import { createMergeEngine } from '../engine/merge'
-import { convertSheetsData, inProcessClient } from './conversion'
+import { convertSheetsData, inProcessClient, OPEN_KEY } from './conversion'
 import { docToHtml } from './html'
 import { buildWorkbookFromDoc, glueCommand, readSheetInputs } from './load'
-import { roots } from './schema'
+import { ROOT, roots } from './schema'
 import { docSheets } from './stores'
 import { makeStores } from './test-tabs'
 
@@ -173,6 +173,34 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
     const tab = await opened((await converted(JSON.stringify({ view: 'x' }))).state)
     expect(tab.sheets).toEqual(['Sheet1'])
     expect(roots(tab.doc).sheetState.size).toBe(0)
+  })
+
+  it('drops a defined name the server could not take as a key, and says so', async () => {
+    const long = 'N'.repeat(129)
+    const body = JSON.stringify({
+      namedRanges: {
+        entries: {
+          RATE: { name: 'Rate', sheet: 'Sheet1', range: 'A1' },
+          GRÖSSE: { name: 'Größe', sheet: 'Sheet1', range: 'A2' },
+          [long]: { name: long, sheet: 'Sheet1', range: 'A3' },
+        },
+      },
+    })
+    const answer = await converted(body)
+    const tab = await opened(answer.state)
+    expect([...roots(tab.doc).names.keys()]).toEqual(['RATE'])
+    expect(answer.dropped).toEqual([
+      { kind: 'name-not-a-key', name: 'Größe' },
+      { kind: 'name-not-a-key', name: long },
+    ])
+  })
+
+  it('writes only keys the server takes in the roots keyed at runtime', async () => {
+    const { doc } = await opened((await converted(await currentBody())).state)
+    for (const name of Object.values(ROOT)) {
+      if (name === ROOT.meta || name === ROOT.sheets) continue
+      for (const key of doc.getMap(name).keys()) expect(key).toMatch(OPEN_KEY)
+    }
   })
 
   it('refuses a doc bigger than the room allows', async () => {
