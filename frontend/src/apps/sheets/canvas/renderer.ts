@@ -38,6 +38,7 @@ interface RegionState {
   cells: CellProvider
   getDiffFor: ((id: string) => boolean) | null
   editing: boolean
+  sel: Cell
   range: CellBlock
   fillRange: CellBlock
   marchAnts: CellBlock | null
@@ -100,6 +101,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       cells,
       getDiffFor,
       editing,
+      sel,
       range,
       fillRange,
       marchAnts,
@@ -169,6 +171,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       cells,
       getDiffFor,
       editing,
+      sel,
       range,
       fillRange,
       marchAnts,
@@ -179,7 +182,11 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     ctx.beginPath()
     ctx.rect(clipX, clipY, clipW, clipH)
     ctx.clip()
-    if (!editing) selPainter.drawSelFill(fillRange || range)
+    // Only cell mode frames the active cell, so only there is it left white.
+    if (!editing)
+      selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
+        cells.getMergeInfo?.(id),
+      )
     if (pickerRect) selPainter.drawPickerFill(pickerRect)
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
     cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, cells, getDiffFor)

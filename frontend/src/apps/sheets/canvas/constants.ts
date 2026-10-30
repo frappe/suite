@@ -59,6 +59,7 @@ export const COLORS = {
   get sparkline() {
     return _token('--ink-teal-7', '#0F766E')
   },
+  // Tint of a multi-cell range; the active cell inside it stays white.
   get selFill() {
     return _token('--surface-gray-3', 'rgba(23, 23, 23, 0.06)')
   },
