@@ -70,7 +70,7 @@ const percent = computed(() => {
             : usageText
         "
       >
-        <Progress :value="percent" size="sm" aria-hidden="true" />
+        <Progress :value="percent" size="md" aria-hidden="true" />
       </div>
       <span v-else class="text-p-sm text-ink-gray-5">{{
         user.cap_bytes === null ? __('No limit') : __('Usage unavailable')
