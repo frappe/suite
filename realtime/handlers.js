@@ -22,7 +22,7 @@ const suite_handlers = (socket) => {
 			}
 			acknowledge(currentValidation);
 		} catch (error) {
-			console.error("[suite realtime] guest room change failed", error);
+			console.error("[suite realtime] guest subscribe failed", error);
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
@@ -44,7 +44,7 @@ const suite_handlers = (socket) => {
 				...(validation.status && { status: validation.status }),
 			});
 		} catch (error) {
-			console.error("[suite realtime] guest room change failed", error);
+			console.error("[suite realtime] guest unsubscribe failed", error);
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
