@@ -668,6 +668,19 @@ describe('MediasoupManager network quality refresh', () => {
 	});
 });
 
+function priorityConsumer(id: string, priority = 1) {
+	const consumer = {
+		id,
+		kind: 'video',
+		priority,
+		closed: false,
+		setPriority: vi.fn(async (next: number) => {
+			consumer.priority = next;
+		}),
+	};
+	return consumer;
+}
+
 async function cameraAllocationFixture() {
 	const manager = createManager();
 	const levels = new EventEmitter();
@@ -683,22 +696,15 @@ async function cameraAllocationFixture() {
 	});
 	const notify = vi.fn();
 	const room = await manager.createRoom('priority-room', notify);
-	const audio = {
-		id: 'a-audio',
-		kind: 'audio',
-		appData: { type: 'microphone' },
-	};
-	const video = { id: 'a-video', kind: 'video', appData: { type: 'camera' } };
-	const otherVideo = {
-		id: 'b-video',
-		kind: 'video',
-		appData: { type: 'camera' },
-	};
-	const screen = {
-		id: 'a-screen',
-		kind: 'video',
-		appData: { type: 'screen' },
-	};
+	const producer = (id: string, kind: string, type: string) => ({
+		id,
+		kind,
+		appData: { type },
+	});
+	const audio = producer('a-audio', 'audio', 'microphone');
+	const video = producer('a-video', 'video', 'camera');
+	const otherVideo = producer('b-video', 'video', 'camera');
+	const screen = producer('a-screen', 'video', 'screen');
 	room.peers.set('speaker', {
 		id: 'speaker',
 		producers: new Map([
@@ -711,31 +717,9 @@ async function cameraAllocationFixture() {
 		id: 'listener',
 		producers: new Map([[otherVideo.id, otherVideo]]),
 	} as never);
-	const camera = {
-		id: 'camera',
-		kind: 'video',
-		priority: 1,
-		closed: false,
-		setPriority: vi.fn().mockImplementation(async (priority) => {
-			camera.priority = priority;
-		}),
-	};
-	const other = {
-		id: 'other',
-		kind: 'video',
-		priority: 2,
-		closed: false,
-		setPriority: vi.fn().mockImplementation(async (priority) => {
-			other.priority = priority;
-		}),
-	};
-	const untouched = {
-		id: 'untouched',
-		kind: 'video',
-		priority: 1,
-		closed: false,
-		setPriority: vi.fn(),
-	};
+	const camera = priorityConsumer('camera');
+	const other = priorityConsumer('other', 2);
+	const untouched = priorityConsumer('untouched');
 	vi.spyOn(
 		manager.consumerManager,
 		'getConsumersByProducer',
@@ -783,13 +767,7 @@ describe('active speaker camera allocation', () => {
 		expect(untouched.setPriority).not.toHaveBeenCalled();
 		expect(notify).toHaveBeenCalledWith('priority-room', ['speaker']);
 		// A receiver that subscribes after the volume event gets the same policy.
-		const late = {
-			id: 'late-camera',
-			kind: 'video',
-			priority: 1,
-			closed: false,
-			setPriority: vi.fn().mockResolvedValue(undefined),
-		};
+		const late = priorityConsumer('late-camera');
 		room.peers.set('receiver', {
 			id: 'receiver',
 			producers: new Map(),
@@ -861,12 +839,24 @@ describe('active speaker camera allocation', () => {
 describe('MediasoupManager receiver-ready ownership', () => {
 	it('resumes only the owning peer in the owning room', async () => {
 		const manager = createManager();
-		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({ roomId: 'room', peerId: 'peer', consumer: makeConsumer({ paused: true }) } as never);
-		const resume = vi.spyOn(manager.consumerManager, 'resumeConsumer').mockResolvedValue(true);
-		await expect(manager.resumeConsumer('c1', 'other-room', 'peer')).rejects.toThrow('ownership');
-		await expect(manager.resumeConsumer('c1', 'room', 'other-peer')).rejects.toThrow('ownership');
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'room',
+			peerId: 'peer',
+			consumer: makeConsumer({ paused: true }),
+		} as never);
+		const resume = vi
+			.spyOn(manager.consumerManager, 'resumeConsumer')
+			.mockResolvedValue(true);
+		await expect(
+			manager.resumeConsumer('c1', 'other-room', 'peer'),
+		).rejects.toThrow('ownership');
+		await expect(
+			manager.resumeConsumer('c1', 'room', 'other-peer'),
+		).rejects.toThrow('ownership');
 		expect(resume).not.toHaveBeenCalled();
-		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(true);
+		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(
+			true,
+		);
 		expect(resume).toHaveBeenCalledExactlyOnceWith('c1');
 	});
 });

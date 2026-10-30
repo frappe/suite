@@ -25,6 +25,8 @@ import assert from "node:assert/strict";
 const secret = randomBytes(32).toString("hex"),
 	metrics = randomBytes(32).toString("hex");
 const room = "load-" + randomUUID();
+const viewport = { width: 1440, height: 900 };
+const lucideIcons = resolve(repo, "node_modules/lucide-static/icons");
 const relay = await createRelay({ bypassPeers: 4 });
 const server = spawn(
 	process.execPath,
@@ -56,6 +58,14 @@ let vite, browser, page, result;
 const videoDemo = process.env.MEET_NETWORK_VIDEO === "1";
 
 const beforeDemo = process.env.MEET_NETWORK_BEFORE === "1";
+async function readSnapshot(relative) {
+	if (!beforeDemo) return;
+	try {
+		return await readFile(
+			resolve(harness, "artifacts-before/sources", relative),
+		);
+	} catch {}
+}
 const token = (id) => {
 	const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 	const x =
@@ -126,12 +136,8 @@ try {
 						const relative = id.slice(
 							(repo + "/frontend/src/apps/meet/").length,
 						);
-						try {
-							return await readFile(
-								resolve(harness, "artifacts-before/sources", relative),
-								"utf8",
-							);
-						} catch {}
+						const snapshot = await readSnapshot(relative);
+						if (snapshot) return snapshot.toString("utf8");
 					}
 					if (id === "\0session")
 						return 'export const session={user:{sessionUser:"receiver"}}';
@@ -143,9 +149,7 @@ try {
 								["inventory.push(await publish(publishers[0],'screen'));", ""],
 								[
 									"const canvas=document.createElement('canvas');",
-									"const clip=document.createElement('video');clip.src='/@fs/" +
-										output +
-										"/camera.webm';clip.muted=true;clip.loop=true;clip.currentTime=['a','b','c','d'].indexOf(e.id)*4;await clip.play(); const canvas=document.createElement('canvas');",
+									`const clip=document.createElement('video');clip.src='/@fs/${output}/camera.webm';clip.muted=true;clip.loop=true;clip.currentTime=['a','b','c','d'].indexOf(e.id)*4;await clip.play(); const canvas=document.createElement('canvas');`,
 								],
 								[
 									"ctx.fillStyle='white';ctx.fillText",
@@ -161,9 +165,7 @@ try {
 								],
 								[
 									"import MeetingLayout",
-									"import FullCall from '" +
-										harness +
-										"/FullCall.vue';\nimport MeetingLayout",
+									`import FullCall from '${harness}/FullCall.vue';\nimport MeetingLayout`,
 								],
 								[
 									"const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;",
@@ -179,9 +181,7 @@ try {
 								],
 								[
 									"import {Device}",
-									"import {TransportManager} from '" +
-										repo +
-										"/frontend/src/apps/meet/utils/media/TransportManager';\n" +
+									`import {TransportManager} from '${repo}/frontend/src/apps/meet/utils/media/TransportManager';\n` +
 										"async function publishWithMeet(e,track,type){if(!e.meetTransport){e.meetTransport=new TransportManager();e.meetTransport.device=e.device;e.meetTransport.sendTransport=e.send;e.meetTransport.initialize({getCodecStrategy:()=> 'simulcast',isE2EERequired:()=>false});}const producer=await e.meetTransport.createProducer(track,{type});(e.published??=[]).push(producer);return producer;}\nimport {Device}",
 								],
 								[
@@ -251,14 +251,7 @@ try {
 							autoInstall: false,
 							customCollections: {
 								lucide: async (name) =>
-									readFile(
-										resolve(
-											repo,
-											"node_modules/lucide-static/icons",
-											name + ".svg",
-										),
-										"utf8",
-									),
+									readFile(resolve(lucideIcons, name + ".svg"), "utf8"),
 							},
 						}),
 						(await import("unplugin-vue-components/vite")).default({
@@ -296,12 +289,12 @@ try {
 		args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"],
 	});
 	page = await browser.newPage({
-		viewport: { width: 1440, height: 900 },
+		viewport,
 		...(videoDemo
 			? {
 					recordVideo: {
 						dir: output + "/video",
-						size: { width: 1440, height: 900 },
+						size: viewport,
 					},
 				}
 			: {}),
@@ -363,16 +356,11 @@ try {
 		sourceHashes: Object.fromEntries(
 			await Promise.all(
 				files.map(async (f) => {
-					const relative = f.replace("frontend/src/apps/meet/", "");
-					let content;
-					if (beforeDemo && f.startsWith("frontend/src/apps/meet/")) {
-						try {
-							content = await readFile(
-								resolve(harness, "artifacts-before/sources", relative),
-							);
-						} catch {}
-					}
-					content ??= await readFile(resolve(repo, f));
+					const prefix = "frontend/src/apps/meet/";
+					const snapshot = f.startsWith(prefix)
+						? await readSnapshot(f.slice(prefix.length))
+						: undefined;
+					const content = snapshot ?? (await readFile(resolve(repo, f)));
 					return [f, createHash("sha256").update(content).digest("hex")];
 				}),
 			),

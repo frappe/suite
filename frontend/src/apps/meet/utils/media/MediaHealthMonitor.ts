@@ -56,6 +56,12 @@ export interface MediaHealthPort {
 	reportMediaStalls(media: Array<"audio" | "video">): void;
 }
 
+interface ConsumerHealthSample {
+	entry: ConsumerEntry;
+	bytes: number | null;
+	framesDecoded: number | null;
+}
+
 type LifecycleEvent = "offline" | "online" | "pageshow";
 type ScheduledPoll = () => void | Promise<void>;
 
@@ -109,7 +115,6 @@ export class MediaHealthMonitor {
 		string,
 		{ bytesReceived: number | null; framesDecoded: number | null }
 	>();
-	private sendFlowing = false;
 	private lastSendProgressAt: number | null = null;
 	private missingReceiveSince: number | null = null;
 	private hasSendMedia = false;
@@ -339,9 +344,8 @@ export class MediaHealthMonitor {
 						isValid: stats.isValid,
 					}
 				: stats.uplink;
-		this.sendFlowing = uplink?.flowing ?? false;
 		this.hasSendMedia = uplink?.hasMedia ?? false;
-		if (this.sendFlowing) this.lastSendProgressAt = this.environment.now();
+		if (uplink?.flowing) this.lastSendProgressAt = this.environment.now();
 		this.applyQuality("networkQuality", this.classify(uplink));
 		this.receiveQuality = this.classify(stats.downlink);
 	}
@@ -375,13 +379,7 @@ export class MediaHealthMonitor {
 		}
 	}
 
-	private observeReceiveQuality(
-		results: Array<{
-			entry: ConsumerEntry;
-			bytes: number | null;
-			framesDecoded: number | null;
-		}>,
-	): void {
+	private observeReceiveQuality(results: ConsumerHealthSample[]): void {
 		const now = this.environment.now();
 		const ids = new Set(results.map((result) => result.entry.id));
 		for (const id of this.receiveProgress.keys())
@@ -461,14 +459,7 @@ export class MediaHealthMonitor {
 		this.verifyRecovery(results, now);
 	}
 
-	private verifyRecovery(
-		results: Array<{
-			entry: ConsumerEntry;
-			bytes: number | null;
-			framesDecoded: number | null;
-		}>,
-		now: number,
-	): void {
+	private verifyRecovery(results: ConsumerHealthSample[], now: number): void {
 		if (!this.recovering) return;
 		const sendState = this.port.getTransportStats()?.sendTransport?.state;
 		const sendHealthy =
@@ -622,18 +613,15 @@ export class MediaHealthMonitor {
 		}
 
 		let statsResults = await Promise.all(
-			consumers.map(async (entry) => {
-				let bytesReceived: number | null = null;
-				let framesDecoded: number | null = null;
+			consumers.map(async (entry): Promise<ConsumerHealthSample> => {
 				try {
 					const stats = await entry.consumer.getStats();
-					const counters = extractInboundRtpCounters(stats, entry.kind);
-					bytesReceived = counters.bytesReceived;
-					framesDecoded = counters.framesDecoded;
+					const { bytesReceived: bytes, framesDecoded } =
+						extractInboundRtpCounters(stats, entry.kind);
+					return { entry, bytes, framesDecoded };
 				} catch {
-					bytesReceived = null;
+					return { entry, bytes: null, framesDecoded: null };
 				}
-				return { entry, bytes: bytesReceived, framesDecoded };
 			}),
 		);
 		if (generation !== this.lifecycleGeneration || this.isLifecycleSuspended())
@@ -644,12 +632,10 @@ export class MediaHealthMonitor {
 		);
 		this.observeReceiveQuality(statsResults);
 
-		const isPaused = (entry: ConsumerEntry) =>
-			this.port.isConsumerPaused(entry);
 		const samples: ConsumerSample[] = statsResults.map(({ entry, bytes }) => ({
 			id: entry.id,
 			kind: entry.kind,
-			isPaused: () => isPaused(entry),
+			isPaused: () => this.port.isConsumerPaused(entry),
 			isMuted: () => entry.track?.muted ?? false,
 			getBytesReceived: () => bytes,
 			getCreatedAt: () => entry.createdAt,
@@ -683,7 +669,7 @@ export class MediaHealthMonitor {
 				.filter(({ entry }) => entry.kind === "video")
 				.map(({ entry, bytes, framesDecoded }) => ({
 					id: entry.id,
-					isPaused: () => isPaused(entry),
+					isPaused: () => this.port.isConsumerPaused(entry),
 					bytesReceived: bytes,
 					framesDecoded,
 				})),
@@ -702,7 +688,7 @@ export class MediaHealthMonitor {
 			if (
 				!current ||
 				current.consumer !== result.entry.consumer ||
-				isPaused(current)
+				this.port.isConsumerPaused(current)
 			) {
 				this.decodeStallDetector.dispose(result.entry.id);
 				continue;
