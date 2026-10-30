@@ -17,7 +17,7 @@
           <List
             selectable
             class="pointer-events-none -mx-3 list-row-px-3"
-            :columns="['minmax(0,1fr)', '20rem']"
+            :columns="['minmax(0,1fr)', '10rem']"
             :row-height="64"
           >
             <ListHeader>
@@ -72,7 +72,7 @@
             v-model:selection="selected"
             selectable
             class="-mx-3 list-row-px-3"
-            :columns="['minmax(0,1fr)', '20rem']"
+            :columns="['minmax(0,1fr)', '10rem']"
             :row-height="64"
           >
             <ListHeader>
