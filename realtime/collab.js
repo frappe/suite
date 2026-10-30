@@ -239,7 +239,7 @@ function flush_presence() {
 			schedule_flush();
 		}
 	} catch (error) {
-		console.error("[suite realtime] presence flush failed", error);
+		console.error("[suite realtime] presence reschedule failed", error);
 	}
 }
 
