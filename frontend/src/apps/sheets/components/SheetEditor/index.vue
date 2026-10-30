@@ -3656,8 +3656,6 @@ const { onGlobalKey } = useShortcuts({
   openHyperlinkDialog,
   openCommentPanel,
   openQuickFilterForActive,
-  zoomBy,
-  resetZoom,
   commentPanel,
   dropdownPanel,
   splitText,
