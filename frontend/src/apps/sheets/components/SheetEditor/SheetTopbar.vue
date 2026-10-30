@@ -215,8 +215,7 @@ const emit = defineEmits<{
 .sn-save-spin {
   animation: sn-spin 0.9s linear infinite;
 }
-/* A narrow bar drops the save label and the view-only label (the matching
-   rules for the actions live in SheetTopbarActions.vue). */
+/* A narrow bar drops the save label and the view-only label. */
 @container sn-topbar (max-width: 640px) {
   .sn-save-label,
   .sn-view-only-label {

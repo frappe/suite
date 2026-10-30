@@ -86,7 +86,7 @@
   "src/apps/sheets/components/SheetEditor/SheetContextMenu.vue": 41,
   "src/apps/sheets/components/SheetEditor/SheetTabMenu.vue": 3,
   "src/apps/sheets/components/SheetEditor/SheetTabsBar.vue": 5,
-  "src/apps/sheets/components/SheetEditor/SheetToolbar.vue": 38,
+  "src/apps/sheets/components/SheetEditor/SheetToolbar.vue": 1,
   "src/apps/sheets/components/SheetEditor/SheetTopbar.vue": 7,
   "src/apps/sheets/components/SheetEditor/SlicerPanel.vue": 5,
   "src/apps/sheets/components/SheetEditor/SplitTextPopover.vue": 5,

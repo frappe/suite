@@ -34,7 +34,8 @@ export function buildMenuBar(a) {
       hideLabel: true,
       options: [
         item(__('Find and replace'), 'lucide-text-search', a.openFindReplace),
-        submenu(__('Paste special'),
+        submenu(
+          __('Paste special'),
           'lucide-clipboard',
           [
             item(__('Values only'), 'lucide-clipboard', () => a.pasteSpecial('values')),
@@ -72,7 +73,8 @@ export function buildMenuBar(a) {
       group: 'Freeze',
       hideLabel: true,
       options: [
-        submenu(__('Freeze'),
+        submenu(
+          __('Freeze'),
           'lucide-snowflake',
           [
             item(__('Rows up to the current row'), 'lucide-snowflake', a.freezeRows),
@@ -200,9 +202,14 @@ export function buildMenuBar(a) {
         item(__('Sort and filter this column'), 'lucide-arrow-down-wide-narrow', a.sortColumn, {
           write: true,
         }),
-        item(a.filterOn ? __('Remove filter') : __('Create a filter'), 'lucide-funnel', a.toggleFilter, {
-          write: true,
-        }),
+        item(
+          a.filterOn ? __('Remove filter') : __('Create a filter'),
+          'lucide-funnel',
+          a.toggleFilter,
+          {
+            write: true,
+          },
+        ),
       ],
     },
     {

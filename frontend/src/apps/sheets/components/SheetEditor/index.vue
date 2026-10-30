@@ -2068,7 +2068,7 @@ const menuBar = computed(() =>
 )
 /** The Format button at the end of row 2 opens the same Format menu. */
 const formatMenuOptions = computed(
-  () => menuBar.value.find((m) => m.label === 'Format')?.options ?? [],
+  () => menuBar.value.find((m) => m.key === 'format')?.options ?? [],
 )
 
 // View state is now per-sheet (kept in useSheetTabs._viewBySheet) so freeze /
