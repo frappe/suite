@@ -1,0 +1,9 @@
+<!doctype html><title>Camera layout integration evidence</title><div id="app" style="height:700px"></div><script type="module" src="/client.js"></script>
+<style>
+/* Fixture geometry for utility classes; production layout calculations stay real. */
+[data-testid="meeting-layout"] {position:relative; height:700px; display:flex; flex-direction:column;overflow:hidden}
+[data-testid="meeting-layout"] > div:first-child:not(:last-child) {position:relative;height:400px;display:flex;flex-shrink:0}
+[data-testid="meeting-layout"] > div:first-child:not(:last-child) > div {flex:1;height:400px}
+[data-testid="meeting-layout"] > div {display:flex; flex-wrap:wrap}
+[data-participant] video {width:100%!important;height:100%!important;object-fit:contain}
+</style>

@@ -243,18 +243,16 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 			meetingId: () => this.connectionManager?.meetingId ?? null,
 			schedule: (operation) =>
 				this.connectionManager.serializeTransportRecovery(operation),
-			onStarted: (reason) =>
+			onStarted: (reason) => {
+				this.mediaHealthMonitor?.beginRecovery("both", reason);
 				this.connectionManager?.reportRecoveryState(
 					reason.includes("send") ? "recovering_send" : "recovering_receive",
 					reason,
-				),
-			onRecovered: async (reason) => {
-				this.connectionManager?.reportRecoveryState("healthy", reason);
+				);
 			},
 			onFailed: async (_reason, result) => {
 				try {
 					await this.connectionManager.recoverFailedTransports(_reason, result);
-					this.connectionManager?.reportRecoveryState("healthy", _reason);
 				} catch (error) {
 					this.connectionManager?.reportRecoveryState("failed", _reason);
 					void this.connectionManager
@@ -311,6 +309,11 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		});
 
 		this.mediaHealthMonitor = new MediaHealthMonitor({
+			isSignalingConnected: () => this.sfuClient.isConnected(),
+			onRecoveryVerified: (reason) =>
+				this.connectionManager.completeTransportRecovery(reason),
+			hasMissingExpectedReceiveMedia: () =>
+				this.connectionManager.hasMissingExpectedReceiveMedia(),
 			getTransportStats: () => this.transportManager.getTransportStats(),
 			getNetworkStats: () => this.transportManager.getNetworkStats(),
 			getConsumers: () => this.consumerManager.getAllConsumers(),
@@ -773,6 +776,9 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		if (typeof producer.replaceTrack !== "function") {
 			throw new Error(`${kind} producer cannot replace its track`);
 		}
+		if (track.kind === "video" && "contentHint" in track) {
+			track.contentHint = kind === "screen" ? "detail" : "motion";
+		}
 		await producer.replaceTrack({ track });
 		return true;
 	}
@@ -870,6 +876,9 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 			} else if (producer.track !== track) {
 				if (typeof producer.replaceTrack !== "function") {
 					throw new Error(`${kind} producer cannot replace its track`);
+				}
+				if (track.kind === "video" && "contentHint" in track) {
+					track.contentHint = kind === "screen" ? "detail" : "motion";
 				}
 				await producer.replaceTrack({ track });
 				if (!isCurrent()) {

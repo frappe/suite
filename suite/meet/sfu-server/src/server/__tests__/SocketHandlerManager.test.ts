@@ -56,6 +56,89 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+describe('network quality participant identity', () => {
+	function reportQuality(
+		harness: ReturnType<typeof createManager>,
+		roomId: string,
+		peerId: string,
+	) {
+		const listener = vi.mocked(harness.mediasoup.onNetworkQualityUpdate).mock
+			.calls[0]?.[0];
+		if (!listener)
+			throw new Error('Network quality listener was not registered');
+		listener(roomId, peerId, 'poor');
+	}
+
+	it('addresses quality updates to the authenticated participant, not its media socket', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'media-socket',
+			userId: 'alice@example.test',
+		});
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		reportQuality(harness, 'room-1', 'media-socket');
+
+		expect(socket.emitCalls).toContainEqual({
+			event: 'network_quality_update',
+			data: { participantId: 'alice@example.test', quality: 'poor' },
+		});
+	});
+
+	it('ignores late scores from a replaced connection but accepts its current owner', async () => {
+		const harness = createManager();
+		const stale = connectFullSocket(harness, {
+			id: 'old-socket',
+			userId: 'user-1',
+		});
+		emitJoin(stale, { connectionId: 'stable-device' });
+		await new Promise((resolve) => setImmediate(resolve));
+		const current = connectFullSocket(harness, {
+			id: 'new-socket',
+			userId: 'user-1',
+		});
+		emitJoin(current, { connectionId: 'stable-device' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		reportQuality(harness, 'room-1', 'old-socket');
+		expect(
+			current.emitCalls.filter(
+				(call) => call.event === 'network_quality_update',
+			),
+		).toEqual([]);
+		reportQuality(harness, 'room-1', 'new-socket');
+		expect(current.emitCalls).toContainEqual({
+			event: 'network_quality_update',
+			data: { participantId: 'user-1', quality: 'poor' },
+		});
+	});
+
+	it('ignores scores from unknown peers, other rooms, and nonparticipant scopes', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness);
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+		connectFullSocket(harness, {
+			id: 'recorder-socket',
+			peerId: 'recorder-peer',
+			scope: 'recording',
+			roomId: 'room-1',
+			participantId: 'recorder:job',
+		});
+
+		reportQuality(harness, 'room-1', 'unknown-peer');
+		reportQuality(harness, 'different-room', socket.peerId!);
+		reportQuality(harness, 'room-1', 'recorder-peer');
+
+		expect(
+			socket.emitCalls.filter(
+				(call) => call.event === 'network_quality_update',
+			),
+		).toEqual([]);
+	});
+});
+
 describe('SocketHandlerManager characterization', () => {
 	it('middleware rejects sockets when authentication fails', () => {
 		const harness = createManager();

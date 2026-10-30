@@ -699,24 +699,19 @@ const backgroundEffects = useBackgroundEffects({
 	mediaAttachments: sfuConnection,
 });
 const noiseCancellation = useNoiseCancellation();
-const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
+const { health: networkHealth, networkQuality } = useNetworkQuality(
 	sfuConnection.sfuManager,
 );
 const localNetworkQuality = computed(() => {
-	if (isTransportFailed.value) return "critical";
 	if (
-		sfuConnection.localNetworkQuality.value === "critical" ||
-		downlinkQuality.value === "critical"
-	) {
-		return "critical";
-	}
+		networkHealth.value.networkQuality === "critical" ||
+		networkHealth.value.downlinkQuality === "critical"
+	) return "critical";
 	if (
-		sfuConnection.localNetworkQuality.value === "poor" ||
-		downlinkQuality.value === "poor"
-	) {
-		return "poor";
-	}
-	return "good";
+		networkHealth.value.networkQuality === "poor" ||
+		networkHealth.value.downlinkQuality === "poor"
+	) return "poor";
+	return networkHealth.value.status === "good" ? "good" : "unknown";
 });
 
 // --- Media Controls ---
@@ -813,6 +808,7 @@ provideMeetingContext({
 	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
 	networkQuality,
 	localNetworkQuality,
+	networkHealth,
 });
 
 // Provide legacy injects for components not yet migrated to useMeetingContext

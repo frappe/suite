@@ -91,11 +91,16 @@
 			<lucide-hand class="w-4 h-4" :class="{ wave: isAnimating }" />
 		</div>
 
-		<Tooltip v-if="showNetworkState && showNetworkIndicator" :text="networkQualityMessage" class="contents">
-			<div class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800">
-				<WifiAlertIcon class="w-4 h-4 text-white" />
-			</div>
-		</Tooltip>
+		<NetworkIndicator
+			v-if="showNetworkState"
+			class="absolute top-2 right-2"
+			:health="isLocal ? meetingCtx?.networkHealth?.value : undefined"
+			:quality="isLocal ? meetingCtx?.localNetworkQuality.value : participant.networkQuality"
+			:updated-at="participant.networkQualityUpdatedAt"
+			:participant-name="resolvedDisplayName"
+			:is-local="isLocal"
+		/>
+
 
 		<!-- Participant action toolbar -->
 		<div
@@ -155,11 +160,11 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Tooltip } from "frappe-ui";
+import { Button } from "frappe-ui";
 import { type ComputedRef, computed, inject, type Ref, ref, watch } from "vue";
 import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
-import WifiAlertIcon from "../icons/WifiAlertIcon.vue";
+import NetworkIndicator from "./NetworkIndicator.vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
@@ -249,35 +254,6 @@ const resolvedDisplayName = computed(() => {
 		props.participant.user_name ||
 		(props.participant.is_guest ? "Guest" : "")
 	);
-});
-
-const computedNetworkQuality = computed(() => {
-	if (props.isLocal) {
-		return meetingCtx?.localNetworkQuality.value ?? "good";
-	}
-	return props.participant.networkQuality || "good";
-});
-
-const showNetworkIndicator = computed(() => {
-	return computedNetworkQuality.value !== "good";
-});
-
-const networkQualityMessage = computed(() => {
-	const quality = computedNetworkQuality.value;
-	const isLocal = props.isLocal;
-	const name = resolvedDisplayName.value || "This participant";
-
-	if (quality === "critical") {
-		return isLocal
-			? "Your internet connection is unstable. Video and audio might lag or drop."
-			: `${name}'s internet connection is unstable.`;
-	}
-	if (quality === "poor") {
-		return isLocal
-			? "Your internet connection is weak. You might notice some lag."
-			: `${name}'s internet connection is weak.`;
-	}
-	return "";
 });
 
 const currentReaction = computed(() => {

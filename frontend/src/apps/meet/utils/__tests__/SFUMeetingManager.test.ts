@@ -241,7 +241,9 @@ describe("SFUMeetingManager facade operations", () => {
 		} as never;
 		const manager = createManager(client);
 		const initialTrack = mediaTrack("initial", "video");
-		const replacementTrack = mediaTrack("replacement", "video");
+		const replacementTrack = Object.assign(mediaTrack("replacement", "video"), {
+			contentHint: "",
+		});
 		const producer = {
 			id: "video-producer",
 			track: initialTrack,
@@ -260,6 +262,7 @@ describe("SFUMeetingManager facade operations", () => {
 
 		await manager.createLocalProducer("video", initialTrack);
 		await manager.replaceLocalProducerTrack("video", replacementTrack);
+		expect(replacementTrack.contentHint).toBe("motion");
 		manager.pauseLocalProducer("video");
 		manager.resumeLocalProducer("video");
 		manager.closeLocalProducer("video");
@@ -767,6 +770,16 @@ describe("SFUMeetingManager facade operations", () => {
 });
 
 describe("SFUMeetingManager recovery fallback", () => {
+	it("does not announce healthy just because ICE restart resolves",async()=>{
+		const manager=createManager({isConnected:vi.fn(()=>true)} as never);
+		const onRecoveryStateChange=vi.fn();
+		manager.initialize({meetingId:"meeting-1",currentUser:{user_id:"me"},eventHandlers:{onRecoveryStateChange}});
+		vi.spyOn(manager.transportManager,"restartAllTransportIce").mockResolvedValue({send:"not-needed",recv:"restarted"});
+		await manager.recoverTransport("transport_recv_failed");
+		expect(onRecoveryStateChange).toHaveBeenCalledWith("recovering_receive","transport_recv_failed");
+		expect(onRecoveryStateChange).not.toHaveBeenCalledWith("healthy",expect.anything());
+	});
+
 	it("keeps existing consumers after a successful ICE restart", async () => {
 		const manager = createManager({
 			isConnected: vi.fn(() => true),

@@ -767,7 +767,7 @@ export class ParticipantConnection {
 				generation === this.lifecycleGeneration &&
 				!this.lifecycleAbortController.signal.aborted
 			) {
-				this.setState(result === "failed" ? "degraded" : "ready");
+				this.setState(result === "failed" ? "degraded" : result === "skipped" ? "ready" : "recovering");
 			}
 			return result;
 		});
@@ -792,6 +792,17 @@ export class ParticipantConnection {
 		if (failed?.status === "rejected") {
 			throw failed.reason;
 		}
+	}
+
+	completeTransportRecovery(reason: string): void {
+		if (
+			this.lifecycleAbortController.signal.aborted ||
+			this._state === "stopped" ||
+			this._state === "failed"
+		)
+			return;
+		this.reportRecoveryState("healthy", reason);
+		if (this._state === "recovering") this.setState("ready");
 	}
 
 	reportRecoveryState(
@@ -936,6 +947,17 @@ export class ParticipantConnection {
 			(c) =>
 				!c.consumer.closed &&
 				(c.producerId === producerId || c.consumer.producerId === producerId),
+		);
+	}
+
+	hasMissingExpectedReceiveMedia(): boolean {
+		return Array.from(this.reconciliation.producers.values()).some(
+			(producer) =>
+				this.isRemoteProducerDesired(producer) &&
+				!this.hasConsumerForProducer(
+					producer.participantId,
+					producer.producerId,
+				),
 		);
 	}
 
@@ -1647,6 +1669,7 @@ export class ParticipantConnection {
 				);
 				this.participantManager.updateParticipant(value.participantId, {
 					networkQuality: value.quality,
+					networkQualityUpdatedAt: Date.now(),
 				});
 			}
 		});
