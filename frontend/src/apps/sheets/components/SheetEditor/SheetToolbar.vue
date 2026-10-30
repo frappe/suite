@@ -9,7 +9,7 @@
       <Button
         :aria-label="__('Undo')"
         variant="ghost"
-        size="sm"
+        size="md"
         icon="lucide-undo-2"
         :tooltip="__('Undo (Ctrl+Z)')"
         :disabled="!canUndo"
@@ -19,7 +19,7 @@
         class="sn-phone-hide"
         :aria-label="__('Redo')"
         variant="ghost"
-        size="sm"
+        size="md"
         icon="lucide-redo-2"
         :tooltip="__('Redo (Ctrl+Y)')"
         :disabled="!canRedo"
@@ -30,7 +30,7 @@
         :aria-label="__('Format painter')"
         :aria-pressed="isPaintingFormat"
         :variant="isPaintingFormat ? 'subtle' : 'ghost'"
-        size="sm"
+        size="md"
         icon="lucide-paint-roller"
         :tooltip="__('Format painter')"
         @click="emit('toggle-format-painter')"
@@ -50,7 +50,7 @@
           <template #default="{ open }">
             <Button
               :variant="open ? 'subtle' : 'ghost'"
-              size="sm"
+              size="md"
               icon-right="lucide-chevron-down"
               :aria-label="__('Number format: {0}', [numberFormatLabel])"
               :tooltip="__('Number format: {0}', [numberFormatLabel])"
@@ -62,7 +62,7 @@
           <template #default="{ open }">
             <Button
               :variant="activeNumberFormatType === 'currency' || open ? 'subtle' : 'ghost'"
-              size="sm"
+              size="md"
               :icon="currencyIcon"
               :aria-label="__('Currency: {0}', [activeCurrencySymbol])"
               :tooltip="__('Currency')"
@@ -71,7 +71,7 @@
         </Dropdown>
         <Button
           :variant="activeNumberFormatType === 'percentage' ? 'subtle' : 'ghost'"
-          size="sm"
+          size="md"
           icon="lucide-percent"
           :aria-label="__('Percent')"
           :aria-pressed="activeNumberFormatType === 'percentage'"
@@ -81,7 +81,7 @@
         <Button
           :aria-label="__('Fewer decimal places')"
           variant="ghost"
-          size="sm"
+          size="md"
           icon="lucide-decimals-arrow-left"
           :tooltip="__('Fewer decimal places')"
           @click="emit('adjust-decimals', -1)"
@@ -89,7 +89,7 @@
         <Button
           :aria-label="__('More decimal places')"
           variant="ghost"
-          size="sm"
+          size="md"
           icon="lucide-decimals-arrow-right"
           :tooltip="__('More decimal places')"
           @click="emit('adjust-decimals', +1)"
@@ -105,7 +105,7 @@
           <Tooltip :text="__('Font size')">
             <TextInput
               type="number"
-              size="sm"
+              size="md"
               variant="ghost"
               :aria-label="__('Font size')"
               :model-value="activeFormat.fontSize || 13"
@@ -120,7 +120,7 @@
           :aria-label="__('Bold')"
           :variant="activeFormat.bold ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.bold"
-          size="sm"
+          size="md"
           icon="lucide-bold"
           :tooltip="__('Bold (Ctrl+B)')"
           @click="emit('toggle-format', 'bold')"
@@ -129,7 +129,7 @@
           :aria-label="__('Italic')"
           :variant="activeFormat.italic ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.italic"
-          size="sm"
+          size="md"
           icon="lucide-italic"
           :tooltip="__('Italic (Ctrl+I)')"
           @click="emit('toggle-format', 'italic')"
@@ -138,7 +138,7 @@
           :aria-label="__('Strikethrough')"
           :variant="activeFormat.strikethrough ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.strikethrough"
-          size="sm"
+          size="md"
           icon="lucide-strikethrough"
           :tooltip="__('Strikethrough (Ctrl+Shift+X)')"
           @click="emit('toggle-format', 'strikethrough')"
@@ -205,7 +205,7 @@
             <Button
               :aria-label="__('Borders')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="sm"
+              size="md"
               icon="lucide-grid-2x2"
               :tooltip="__('Borders')"
             />
@@ -214,7 +214,7 @@
         <Button
           :aria-label="__('Merge cells')"
           variant="ghost"
-          size="sm"
+          size="md"
           icon="lucide-table-cells-merge"
           :tooltip="__('Merge or unmerge cells')"
           @click="emit('merge')"
@@ -224,7 +224,7 @@
             <Button
               :aria-label="__('Alignment')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="sm"
+              size="md"
               :icon="hAlignIcon"
               :tooltip="__('Alignment')"
             />
@@ -235,7 +235,7 @@
             <Button
               :aria-label="__('Text wrapping')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="sm"
+              size="md"
               :icon="textWrapIcon"
               :tooltip="__('Text wrapping')"
             />
@@ -249,7 +249,7 @@
         <Button
           :aria-label="__('Sort')"
           variant="ghost"
-          size="sm"
+          size="md"
           icon="lucide-arrow-down-wide-narrow"
           :tooltip="__('Sort and filter this column (Alt+↓)')"
           @click="emit('sort')"
@@ -258,7 +258,7 @@
           :aria-label="__('Filter')"
           :aria-pressed="showSortFilter"
           :variant="showSortFilter ? 'subtle' : 'ghost'"
-          size="sm"
+          size="md"
           icon="lucide-funnel"
           :tooltip="__('Filter')"
           @click="emit('update:showSortFilter', !showSortFilter)"
@@ -272,7 +272,7 @@
           <Button
             class="sn-format-btn"
             :variant="open ? 'subtle' : 'outline'"
-            size="sm"
+            size="md"
             icon-left="lucide-sliders-horizontal"
             :label="__('Format')"
             :aria-label="__('Format')"
@@ -355,16 +355,16 @@ const currencyIcon = computed(
 </script>
 
 <style scoped>
-/* ── Row 2 · tools + formula bar (36 px, B5) ─────────────────────────────── */
+/* ── Row 2 · tools + formula bar (40 px, B5) ─────────────────────────────── */
 .sn-toolbar {
   container: sn-toolbar / inline-size;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 36px;
+  height: 40px;
   padding: 0 8px;
   border-bottom: 1px solid var(--outline-gray-2);
-  background: var(--surface-base);
+  background: var(--surface-green-2);
   flex-shrink: 0;
 }
 /* The middle tools: they shrink after the formula bar has reached its
@@ -380,6 +380,10 @@ const currencyIcon = computed(
   overflow-y: hidden;
   /* Thin but visible, so a mouse user can tell more tools are there. */
   scrollbar-width: thin;
+}
+.sn-toolbar :deep(button:not(:disabled):hover),
+.sn-toolbar :deep(button[data-state='open']) {
+  background: var(--surface-green-3);
 }
 .sn-group {
   display: flex;
@@ -403,14 +407,14 @@ const currencyIcon = computed(
 
 /* Overflow only when the bar is narrow: the layout tools go first, then
    sort and filter. Nothing is lost, the menus hold both groups. */
-@container sn-toolbar (max-width: 1040px) {
+@container sn-toolbar (max-width: 1140px) {
   .sn-layout {
     display: none;
   }
 }
 /* A phone keeps undo, the formula bar, a swipeable strip of tools and an
    icon-only Format; redo and the painter are in the Edit and Format menus. */
-@container sn-toolbar (max-width: 560px) {
+@container sn-toolbar (max-width: 620px) {
   .sn-toolbar :deep(.sn-phone-hide) {
     display: none;
   }
@@ -425,7 +429,7 @@ const currencyIcon = computed(
     display: none;
   }
 }
-@container sn-toolbar (max-width: 880px) {
+@container sn-toolbar (max-width: 980px) {
   .sn-data {
     display: none;
   }
@@ -434,7 +438,7 @@ const currencyIcon = computed(
 /* flex-shrink:0 — the input has no min-content width, so a narrow bar would
    squeeze it until the size is hidden. */
 .sn-font-size {
-  width: 44px;
+  width: 52px;
   flex-shrink: 0;
 }
 .sn-font-size :deep(input) {
@@ -455,8 +459,8 @@ const currencyIcon = computed(
    open the ColorPicker popover. */
 .sn-swatch-btn {
   position: relative;
-  height: 28px;
-  width: 28px;
+  height: 32px;
+  width: 32px;
   border-radius: 6px;
   display: inline-flex;
   flex-direction: column;
@@ -472,7 +476,7 @@ const currencyIcon = computed(
 }
 .sn-swatch-btn:hover,
 .sn-swatch-btn.is-open {
-  background: var(--surface-gray-3);
+  background: var(--surface-green-3);
 }
 .sn-swatch-btn:focus-visible {
   outline: 2px solid var(--outline-gray-3);

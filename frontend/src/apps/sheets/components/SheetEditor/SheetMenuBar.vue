@@ -3,11 +3,11 @@
   in the toolbar, labelled in words. Left and Right move between the menus. -->
   <nav class="sn-menubar" :aria-label="__('Spreadsheet menus')" @keydown="moveBetweenMenus">
     <Dropdown v-for="menu in shown" :key="menu.key" :options="menu.options" align="start">
-      <template #default="{ open }">
+      <template #default>
         <Button
           class="sn-menubar-trigger sn-menubar-wide"
-          :variant="open ? 'subtle' : 'ghost'"
-          size="sm"
+          variant="ghost"
+          size="md"
           :label="menu.label"
           :data-menu="menu.key"
         />
@@ -16,11 +16,11 @@
     <!-- A narrow header folds the six into one menu, each a submenu. A
        container query on the header swaps the two, so nothing moves on load. -->
     <Dropdown :options="folded" align="start">
-      <template #default="{ open }">
+      <template #default>
         <Button
           class="sn-menubar-trigger sn-menubar-narrow"
-          :variant="open ? 'subtle' : 'ghost'"
-          size="sm"
+          variant="ghost"
+          size="md"
           icon-left="lucide-menu"
           :label="__('Menu')"
         />
@@ -87,9 +87,15 @@ function moveBetweenMenus(event: KeyboardEvent) {
   flex-shrink: 0;
 }
 .sn-menubar-trigger {
-  padding-inline: 8px;
-  font-weight: 400;
-  color: var(--ink-gray-8);
+  padding-inline: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-gray-9);
+}
+/* On the green bar a hovered or open menu takes a deeper green. */
+.sn-menubar-trigger:hover,
+.sn-menubar-trigger[data-state='open'] {
+  background: var(--surface-green-3);
 }
 .sn-menubar-narrow {
   display: none;

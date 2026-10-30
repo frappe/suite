@@ -2,7 +2,7 @@
   <header
     ref="headerElement"
     class="relative flex shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base"
-    :class="compact ? 'h-9 px-3' : 'h-12 px-3 sm:px-5'"
+    :class="compact ? 'h-10 px-3' : 'h-12 px-3 sm:px-5'"
   >
     <div class="flex min-w-0 flex-1 items-center gap-1">
       <template v-if="location">
@@ -183,7 +183,7 @@ const props = withDefaults(
     /** A file's MIME type picks its icon. Documents have none. */
     mime?: string | null
     /**
-     * A 36-px header for a surface that adds its own menu bar (the `menus`
+     * A 40-px header for a surface that adds its own menu bar (the `menus`
      * slot): the save state moves beside the title, ahead of the menus.
      */
     compact?: boolean

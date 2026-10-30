@@ -137,10 +137,10 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 36px;
+  height: 40px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--outline-elevation-1);
-  background: var(--surface-elevation-1);
+  border-bottom: 1px solid var(--outline-green-2);
+  background: var(--surface-green-2);
   flex-shrink: 0;
 }
 /* Left cluster groups: brand+title tight (gap:4); status chips sit further away

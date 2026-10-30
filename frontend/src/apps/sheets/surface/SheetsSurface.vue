@@ -220,6 +220,10 @@ useDocumentLeaveGuard({
    its six menus fold into one. */
 .sheets-header {
   container: sn-topbar / inline-size;
+  /* The two top bars share a pale Sheets green, so they read as the app's
+     controls and stand apart from the white grid. */
+  background: var(--surface-green-2);
+  border-bottom-color: var(--outline-green-2);
   position: relative;
   z-index: 10;
 }
