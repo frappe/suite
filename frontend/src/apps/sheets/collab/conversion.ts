@@ -36,8 +36,9 @@ type Dropped =
 
 /**
  * The keys the server takes in a root keyed at runtime (suite/content/ingest.py
- * `OPEN_KEY`); a push holding another key is refused. Ids, cell keys and item
- * ids always fit; a defined name from an old body may not.
+ * `OPEN_KEY`); a push holding another key is refused. Ids, cell keys and the
+ * item ids this editor makes fit; a defined name from an old body may not, and
+ * is dropped. Any other key that doesn't fit makes the server refuse the sheet.
  */
 export const OPEN_KEY = /^[A-Za-z0-9_.:-]{1,128}$/
 

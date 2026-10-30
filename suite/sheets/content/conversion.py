@@ -87,16 +87,17 @@ def check(node: str, old: OldSheet, converted: convert.Converted) -> CheckedShee
     if len(converted.state) > capacity.STATE_MAX:
         raise ConversionRefused("too_large")
 
-    # The pushes that edit it later are checked against the schema: a key it refuses would refuse them
-    schema = sheets_content.SCHEMA
-    if not schema.allows(updates.parse(converted.state), schema.version):
-        raise ConversionRefused("check", "schema")
-
     try:
         if not compaction.compact(converted.state, [], sheets_content.PART_MAP).integrated:
             raise ConversionRefused("check", "fallback")
     except compaction.CompactionFailed as failed:
         raise ConversionRefused("check", failed.reason) from None
+
+    # Compaction read the state whole. A log holds only what a push could add, so a key the schema
+    # refuses never enters one through a conversion either
+    schema = sheets_content.SCHEMA
+    if not schema.allows(updates.parse(converted.state), schema.version):
+        raise ConversionRefused("check", "schema")
 
     clean, text = copies.cleaned(converted.html)
     if not sheets_content.is_html_complete(converted.state, clean, text):

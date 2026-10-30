@@ -60,7 +60,27 @@ DECLARED = json.loads(Path(__file__).with_name("schema.json").read_text())
 # roots and the one fixed key (`meta.schemaVersion`). Every map root but `meta` is open: its keys are made
 # at runtime (sheet, row and column ids, cell keys, item ids, defined names), each fitting
 # `suite.content.ingest.OPEN_KEY`
-OPEN_ROOTS = frozenset(root for root, kind in PART_MAP.items() if kind is pycrdt.Map) - {"meta"}
+# Opening a root loosens the push key check, so a new root is opened here by name, never by default
+OPEN_ROOTS = frozenset(
+    {
+        "sheetMeta",
+        "rows",
+        "cols",
+        "inputs",
+        "formats",
+        "rowFormats",
+        "colFormats",
+        "charts",
+        "pivots",
+        "condFormats",
+        "validations",
+        "comments",
+        "slicers",
+        "names",
+        "sheetState",
+        "tails",
+    }
+)
 SCHEMA = content.EditorSchema(
     DECLARED["schema"],
     DECLARED["features"],

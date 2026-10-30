@@ -148,13 +148,9 @@ class TestConvertDocument(IntegrationTestCase):
         self.addCleanup(frappe.set_user, "Administrator")
 
     def restore_mode(self, mode: str):
-        try:
-            log.set_mode(sheets_content.APP, mode)
-            frappe.db.commit()
-        except frappe.ValidationError:
-            # The layer keeps an app on while any of its documents has a log; a site with other
-            # collaborative sheets stays on
-            frappe.db.rollback()
+        # Fails while any sheet has a log: one this class left behind
+        log.set_mode(sheets_content.APP, mode)
+        frappe.db.commit()
 
     def old_sheet(self, sheets_data: str) -> str:
         """A sheet made before collab was on: a row with a body and no log."""

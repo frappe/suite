@@ -1,12 +1,14 @@
+import re
 from unittest.mock import patch
 
 import frappe
 import pycrdt
 from frappe.tests import IntegrationTestCase
 
-from suite.content import convert, editors, updates
+from suite.content import convert, editors, ingest, updates
 from suite.sheets import content as sheets_content
 from suite.sheets.content.tests.support import (
+    SCHEMA_TS,
     converted,
     in_job,
     require_converter,
@@ -15,14 +17,17 @@ from suite.sheets.content.tests.support import (
 from suite.sheets.drive import SPEC
 
 
-def settings(sheets_mode: str, *, before: str | None) -> frappe._dict:
-    """Suite Collab Settings being saved with Sheets at `sheets_mode`, after Sheets at `before` (None: a new doc)."""
+def settings(sheets_mode: str, *, before: str | None):
+    """Suite Collab Settings being saved (never written) with Sheets at `sheets_mode`, after `before` (None: new)."""
 
-    def apps(mode: str) -> list[frappe._dict]:
-        return [frappe._dict(app="writer", mode="on"), frappe._dict(app="sheets", mode=mode)]
+    def doc(mode: str):
+        apps = [{"app": "writer", "mode": "on"}, {"app": "sheets", "mode": mode}]
+        return frappe.get_doc({"doctype": "Suite Collab Settings", "apps": apps})
 
-    previous = frappe._dict(apps=apps(before)) if before else None
-    return frappe._dict(apps=apps(sheets_mode), get_doc_before_save=lambda: previous)
+    saving = doc(sheets_mode)
+    previous = doc(before) if before else None
+    saving.get_doc_before_save = lambda: previous
+    return saving
 
 
 class TestRegistration(IntegrationTestCase):
@@ -96,6 +101,13 @@ class TestSchema(IntegrationTestCase):
         seen = doc.get_state()
         change(doc)
         return updates.parse(doc.get_update(seen))
+
+    def test_the_converter_drops_names_by_the_same_key_rule_the_layer_checks(self):
+        # conversion.ts keeps a defined name only when its key passes this rule; a rule wider than the
+        # layer's would make check refuse the whole sheet instead of dropping the one name
+        converter = (SCHEMA_TS.parent / "conversion.ts").read_text()
+        [pattern] = re.findall(r"export const OPEN_KEY = /\^(.*)\$/", converter)
+        self.assertEqual(pattern, ingest.OPEN_KEY.pattern)
 
     def test_every_map_root_but_meta_takes_runtime_keys(self):
         self.assertEqual(sheets_content.SCHEMA.open_roots, {*schema_roots()} - {"meta", "sheets"})

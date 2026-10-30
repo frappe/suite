@@ -6,8 +6,11 @@ import * as Y from 'yjs'
 
 import type { WorkbookClient } from '../core/client'
 import { bytesToBase64, ENGINE_VERSION } from '../core/snapshot-codec'
+import { createCondFormatEngine } from '../engine/cond-format'
 import { createFormatsEngine } from '../engine/formats'
 import { createMergeEngine } from '../engine/merge'
+import { createNamedRanges } from '../engine/named-ranges'
+import { createSlicerEngine } from '../engine/slicers'
 import { convertSheetsData, inProcessClient, OPEN_KEY } from './conversion'
 import { docToHtml } from './html'
 import { buildWorkbookFromDoc, glueCommand, readSheetInputs } from './load'
@@ -40,13 +43,26 @@ async function currentBody(): Promise<string> {
   await client.idle()
   const formats = createFormatsEngine()
   formats.applyToRange(['B4'], { bold: true }, 'Budget')
+  formats.setRow(5, { fill: '#eee' }, 'Budget')
   const merge = createMergeEngine()
   merge.merge(0, 0, 0, 1, 'Budget')
+  const condFormat = createCondFormatEngine()
+  condFormat.addRule(
+    { range: 'B1:B2', type: 'greaterThan', value: 500, format: {} } as never,
+    'Budget',
+  )
+  const slicers = createSlicerEngine()
+  slicers.add(0, 0, 0, 'Budget')
+  const namedRanges = createNamedRanges()
+  namedRanges.add({ name: 'Rent_Total', sheet: 'Budget', range: 'B1:B2' })
   const body = JSON.stringify({
     engine: bytesToBase64(await client.snapshot()),
     engine_version: ENGINE_VERSION,
     formats: formats.snapshot(),
     merge: merge.snapshot(),
+    condFormat: condFormat.snapshot(),
+    slicers: slicers.snapshot(),
+    namedRanges: namedRanges.snapshot(),
     view: { Budget: { colW: { 0: 140 }, zoom: 1.5 } },
     charts: { charts: { c1: { id: 'c1', type: 'bar', sheet: 'Budget', range: 'A1:B2' } } },
   })
@@ -201,6 +217,16 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
       if (name === ROOT.meta || name === ROOT.sheets) continue
       for (const key of doc.getMap(name).keys()) expect(key).toMatch(OPEN_KEY)
     }
+    for (const name of [
+      'formats',
+      'rowFormats',
+      'condFormats',
+      'slicers',
+      'names',
+      'charts',
+      'sheetState',
+    ])
+      expect(doc.getMap(name).size, name).toBeGreaterThan(0)
   })
 
   it('refuses a doc bigger than the room allows', async () => {
