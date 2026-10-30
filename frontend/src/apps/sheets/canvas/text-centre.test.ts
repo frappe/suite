@@ -120,8 +120,8 @@ describe('header label centring', () => {
     for (const h of [21, 24, 28]) {
       const { ctx, draws } = recordingCtx()
       const hp = createHeaderPainter(ctx, createMockGeo({ rowHeights: { 0: h } }))
-      const far = { r: 50, c: 50 }
-      hp.drawRowHeaders(0, 0, 0, COL_HEADER_H, 600, far, { r0: 50, c0: 50, r1: 50, c1: 50 }, 'cell')
+      const far = { r0: 50, c0: 50, r1: 50, c1: 50 }
+      hp.drawRowHeaders(0, 0, 0, COL_HEADER_H, 600, far)
       const one = draws.find((d) => d.text === '1')!
       expect(capCentre(one)).toBe(COL_HEADER_H + (h + 1) / 2)
     }
@@ -130,8 +130,8 @@ describe('header label centring', () => {
   it('centres column letters on the full header height', () => {
     const { ctx, draws } = recordingCtx()
     const hp = createHeaderPainter(ctx, createMockGeo())
-    const far = { r: 50, c: 50 }
-    hp.drawColHeaders(0, 0, 0, ROW_HEADER_W, 600, far, { r0: 50, c0: 50, r1: 50, c1: 50 }, 'cell')
+    const far = { r0: 50, c0: 50, r1: 50, c1: 50 }
+    hp.drawColHeaders(0, 0, 0, ROW_HEADER_W, 600, far)
     const a = draws.find((d) => d.text === 'A')!
     expect(capCentre(a)).toBe(COL_HEADER_H / 2)
   })

@@ -115,8 +115,8 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     if (fr > 0 && fc > 0)
       _renderRegion(0, 0, fr - 1, fc - 1, ROW_HEADER_W, COL_HEADER_H, frozW_, frozH_, state)
 
-    headerPainter.drawColHeaders(c0s, c1s, fc, mainX, cssW, sel, range, selMode)
-    headerPainter.drawRowHeaders(r0s, r1s, fr, mainY, cssH, sel, range, selMode)
+    headerPainter.drawColHeaders(c0s, c1s, fc, mainX, cssW, range)
+    headerPainter.drawRowHeaders(r0s, r1s, fr, mainY, cssH, range)
     headerPainter.drawCorner()
 
     if (!editing && selMode === 'cell')
