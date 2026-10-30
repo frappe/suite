@@ -182,15 +182,16 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     ctx.beginPath()
     ctx.rect(clipX, clipY, clipW, clipH)
     ctx.clip()
-    // Only cell mode frames the active cell, so only there is it left white.
-    if (!editing)
-      selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
-        cells.getMergeInfo?.(id),
-      )
     if (pickerRect) selPainter.drawPickerFill(pickerRect)
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
     cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, cells, getDiffFor)
     cellPainter.drawRegionBorders(r0, c0, r1, c1, cells)
+    // The tint goes over the cells, see-through, so they show under it. Only
+    // cell mode frames the active cell, so only there can a lone cell skip it.
+    if (!editing)
+      selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
+        cells.getMergeInfo?.(id),
+      )
     // Cell mode only, like the active frame drawn over it later.
     if (!editing && fillRange === range)
       selPainter.drawRangeOutline(range, sel, (id) => cells.getMergeInfo?.(id))
