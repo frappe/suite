@@ -3,6 +3,9 @@ import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
 import type { Geometry } from '../geometry.js'
 import type { Cell, SelMode } from '../selection.js'
 import type { CellBlock } from '../types.js'
+import { cellMidY, centredBaseline, createCapHeight } from './text-anchor.js'
+
+const HEADER_FONT = '12px InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
 
 export interface HeaderPainter {
   drawColHeaders(
@@ -32,6 +35,8 @@ export function createHeaderPainter(
   ctx: CanvasRenderingContext2D,
   { cw, rh, colX, rowY }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'>,
 ): HeaderPainter {
+  const capHeight = createCapHeight(ctx)
+
   // ── Column headers ───────────────────────────────────────────────────────────
 
   function drawColHeaders(
@@ -46,8 +51,8 @@ export function createHeaderPainter(
   ): void {
     ctx.fillStyle = COLORS.headerBg
     ctx.fillRect(ROW_HEADER_W, 0, cssW, COL_HEADER_H)
-    ctx.font = '12px InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
-    ctx.textBaseline = 'middle'
+    ctx.font = HEADER_FONT
+    ctx.textBaseline = 'alphabetic'
     ctx.textAlign = 'center'
 
     ctx.save()
@@ -76,7 +81,8 @@ export function createHeaderPainter(
     const isAnchor = c === sel.c
     _drawColHeaderBackground(x, w, isSelected, isAnchor, inRange)
     ctx.fillStyle = isSelected || isAnchor ? COLORS.cellText : COLORS.headerText
-    if (w > 0) ctx.fillText(colLabel(c), x + w / 2, COL_HEADER_H / 2)
+    // No gridline above the column headers: the white area is the full height.
+    if (w > 0) ctx.fillText(colLabel(c), x + w / 2, centredBaseline(COL_HEADER_H / 2, capHeight()))
     _drawColHeaderSeparator(x, w, c)
   }
 
@@ -130,8 +136,8 @@ export function createHeaderPainter(
   ): void {
     ctx.fillStyle = COLORS.headerBg
     ctx.fillRect(0, COL_HEADER_H, ROW_HEADER_W, cssH)
-    ctx.font = '12px InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
-    ctx.textBaseline = 'middle'
+    ctx.font = HEADER_FONT
+    ctx.textBaseline = 'alphabetic'
     ctx.textAlign = 'center'
 
     ctx.save()
@@ -161,7 +167,7 @@ export function createHeaderPainter(
     const isAnchor = r === sel.r
     _drawRowHeaderBackground(y, h, isSelected, isAnchor, inRange)
     ctx.fillStyle = isSelected || isAnchor ? COLORS.cellText : COLORS.headerText
-    ctx.fillText(String(r + 1), ROW_HEADER_W / 2, y + h / 2)
+    ctx.fillText(String(r + 1), ROW_HEADER_W / 2, centredBaseline(cellMidY(y, h), capHeight()))
     _drawRowHeaderSeparator(y, h, r)
   }
 
