@@ -21,8 +21,10 @@ import '@/utils/readableStreamValues'
 
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 
-pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL('./pdfWorker.ts', import.meta.url), {
-  type: 'module',
-})
+import { reportWorkerErrors } from '@/platform/error-log'
+
+const worker = new Worker(new URL('./pdfWorker.ts', import.meta.url), { type: 'module' })
+reportWorkerErrors(worker, 'PDF')
+pdfjs.GlobalWorkerOptions.workerPort = worker
 
 export { pdfjs }
