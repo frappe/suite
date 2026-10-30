@@ -410,7 +410,7 @@ const currencyIcon = computed(
 }
 /* A phone keeps undo, the formula bar, a swipeable strip of tools and an
    icon-only Format; redo and the painter are in the Edit and Format menus. */
-@container sn-toolbar (max-width: 480px) {
+@container sn-toolbar (max-width: 560px) {
   .sn-toolbar :deep(.sn-phone-hide) {
     display: none;
   }
