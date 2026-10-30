@@ -124,9 +124,29 @@ def create_empty(node: str) -> str:
     """
     deck = frappe.new_doc(DOCTYPE)
     deck.node = node
+    # A template names no theme; a deck starts on Light, whose layouts "Add slide" inserts
+    if not frappe.db.get_value("Drive Node", node, "is_template"):
+        deck.theme = light_template()
+
     deck.append("slides", {"elements": "[]"})
     deck.insert(ignore_permissions=True)
     return deck.name
+
+
+def light_template() -> str | None:
+    """Answer the shipped Light template deck, which install.py seeds as Administrator."""
+    return frappe.db.get_value(
+        "Drive Node",
+        {
+            "content_doctype": DOCTYPE,
+            "is_template": 1,
+            "state": "Active",
+            "title": "Light",
+            "owner": "Administrator",
+        },
+        "content_docname",
+        order_by="creation asc",
+    )
 
 
 def duplicate(source_docname: str, node: str) -> str:
