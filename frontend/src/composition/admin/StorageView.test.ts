@@ -18,6 +18,7 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/FormControl')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Progress')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Tooltip')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Skeleton')),
 }))
 vi.mock('@/platform/area-sidebar', () => ({ openAreaSidebar: vi.fn() }))

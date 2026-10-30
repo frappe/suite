@@ -17,8 +17,8 @@
           <List
             selectable
             class="pointer-events-none -mx-3 list-row-px-3"
-            :columns="['minmax(0,1fr)', '23rem']"
-            :row-height="96"
+            :columns="['minmax(0,1fr)', '20rem']"
+            :row-height="64"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
@@ -72,8 +72,8 @@
             v-model:selection="selected"
             selectable
             class="-mx-3 list-row-px-3"
-            :columns="['minmax(0,1fr)', '23rem']"
-            :row-height="96"
+            :columns="['minmax(0,1fr)', '20rem']"
+            :row-height="64"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
@@ -90,7 +90,7 @@
                 </ListCell>
                 <ListCell>
                   <div class="min-w-0 flex-1 space-y-1 pe-6">
-                    <StorageUsage :user="user" breakdown />
+                    <StorageUsage :user="user" />
                     <p
                       v-if="capNote(user)"
                       class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-6"
