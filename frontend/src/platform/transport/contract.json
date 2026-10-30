@@ -1594,8 +1594,7 @@
             "enum": [
               "component",
               "script",
-              "promise",
-              "worker"
+              "promise"
             ],
             "title": "Source",
             "type": "string"

@@ -739,7 +739,7 @@ describe('E2EE chain registry', () => {
       Object.defineProperty(globalThis, 'Worker', {
         configurable: true,
         writable: true,
-        value: class Worker extends EventTarget {
+        value: class Worker {
           postMessage() {}
         },
       })
@@ -805,10 +805,9 @@ describe('E2EE chain registry', () => {
       Object.defineProperty(globalThis, 'Worker', {
         configurable: true,
         writable: true,
-        value: class Worker extends EventTarget {
+        value: class Worker {
           messages: unknown[] = []
           constructor() {
-            super()
             workers.push(this)
           }
           postMessage(message: unknown) {
