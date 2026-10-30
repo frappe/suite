@@ -55,7 +55,7 @@ const percent = computed(() => {
     <div
       tabindex="0"
       :aria-label="__('Storage usage')"
-      class="w-36 max-w-full min-w-0 space-y-1.5 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
+      class="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
     >
       <div
         v-if="percent !== null"
@@ -70,14 +70,7 @@ const percent = computed(() => {
             : usageText
         "
       >
-        <Progress
-          class="storage-progress"
-          :value="percent"
-          size="md"
-          aria-hidden="true"
-          :class="{ 'storage-positive': percent > 0 }"
-          :style="{ '--storage-offset': `${percent - 100}%` }"
-        />
+        <Progress :value="percent" size="sm" aria-hidden="true" />
       </div>
       <span v-else class="text-p-sm text-ink-gray-5">{{
         user.cap_bytes === null ? __('No limit') : __('Usage unavailable')
@@ -85,14 +78,3 @@ const percent = computed(() => {
     </div>
   </Tooltip>
 </template>
-
-<style scoped>
-.storage-progress :deep([role='progressbar']) {
-  @apply bg-surface-gray-3;
-}
-
-/* Keep tiny nonzero measurements visible without changing their accessible percentage. */
-.storage-positive :deep([role='progressbar'] > div) {
-  transform: translateX(max(var(--storage-offset), calc(-100% + 3px))) !important;
-}
-</style>
