@@ -7,8 +7,9 @@ leaves every row and a retry time, never a loop. At most `admission.PLACES`
 compactions run at once on a bench, because RQ's Redis is shared by every site
 on it.
 
-An install changes nothing if a newer compaction or another lineage got there
-first, and a deadlock or lock wait retries only that short step.
+An install changes nothing if a newer compaction, another lineage or a
+quarantine got there first, and a deadlock or lock wait retries only that short
+step.
 
 A log's start is replaced only while no tab can hold it: before any session or
 row after rev 1. Its `schema` is at least the highest stamp of the rows the
@@ -230,8 +231,9 @@ class Compaction:
             raise compaction.CompactionFailed("purged")
 
         other_lineage = control_row.lineage != snapshot.lineage
+        quarantined_since = int(control_row.q_epoch) != snapshot.q_epoch
         body_up_to_date = int(control_row.body_rev) >= through_rev
-        if other_lineage or body_up_to_date:
+        if other_lineage or quarantined_since or body_up_to_date:
             frappe.db.rollback()
             return False
 
@@ -269,8 +271,14 @@ class Compaction:
             raise compaction.CompactionFailed("purged")
 
         other_lineage = control_row.lineage != snapshot.lineage
+        quarantined_since = int(control_row.q_epoch) != snapshot.q_epoch
         body_up_to_date = int(control_row.body_rev) >= through_rev
-        if other_lineage or body_up_to_date or fallback_rev(self.app, self.doc_id) >= through_rev:
+        if (
+            other_lineage
+            or quarantined_since
+            or body_up_to_date
+            or fallback_rev(self.app, self.doc_id) >= through_rev
+        ):
             frappe.db.rollback()
             return False
 
@@ -288,6 +296,7 @@ class Compaction:
             .select(
                 doc.node,
                 doc.lineage,
+                doc.q_epoch,
                 doc.mode,
                 doc.body_rev,
                 (doc.state_bytes + doc.tail_bound).as_("room_used"),
