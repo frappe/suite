@@ -17,11 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import frappe
+from frappe.query_builder import Interval, Table
 from frappe.utils.background_jobs import get_redis_conn
 from redis import Redis
 
 from suite import drive
 from suite.content import admission, checker, compaction, db, live, quarantine
+from suite.content.db import PreciseNow
 from suite.content.log import Refusal
 from suite.content.pushes import SUSPECT_RETRY_MS
 from suite.content.scheduling import enqueue
@@ -46,23 +48,37 @@ class Judging:
 
 def mark_suspect(app: str, doc_id: str, reason: str, method: str) -> None:
     """Mark the document suspect, and when it wasn't already, alert and ask a job to judge it."""
-    doc_table = table(app, "doc")
+    doc = Table(table(app, "doc"))
     is_newly_marked = db.claim(
-        f"UPDATE `{doc_table}` SET `suspect` = %s WHERE `id` = %s AND `suspect` IS NULL",
-        (reason, doc_id),
+        frappe.qb.update(doc).set(doc.suspect, reason).where(doc.id == doc_id).where(doc.suspect.isnull())
     )
     if is_newly_marked:
         alert(app, doc_id, f"suspect: {reason}", "The compaction could not take the rows; a job judges them")
         request_judge(app, doc_id, method)
 
 
+def hear_report(app: str, doc_id: str) -> bool:
+    """Claim the report slot and commit, unless a report came in the last `REPORT_EVERY_S` seconds."""
+    doc = Table(table(app, "doc"))
+    return db.claim(
+        frappe.qb.update(doc)
+        .set(doc.suspect_reported_at, PreciseNow(6))
+        .where(doc.id == doc_id)
+        .where(
+            doc.suspect_reported_at.isnull()
+            | (doc.suspect_reported_at <= PreciseNow(6) - Interval(seconds=REPORT_EVERY_S))
+        )
+    )
+
+
 def report_row(app: str, doc_id: str, rev: int, method: str) -> tuple[int, dict]:
     """Answer a tab's report that row `rev` threw when it applied it with the status and body to send."""
-    doc_table = table(app, "doc")
-    control_rows = frappe.db.sql(
-        f"SELECT `head_rev`, `body_rev`, `suspect_held`, `judged` FROM `{doc_table}` WHERE `id` = %s",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(app, "doc"))
+    control_rows = (
+        frappe.qb.from_(doc)
+        .select(doc.head_rev, doc.body_rev, doc.suspect_held, doc.judged)
+        .where(doc.id == doc_id)
+        .run(as_dict=True)
     )
     control_row = control_rows[0]
     if not 0 < rev <= int(control_row.head_rev):
@@ -74,12 +90,7 @@ def report_row(app: str, doc_id: str, rev: int, method: str) -> tuple[int, dict]
     if control_row.suspect_held:
         raise Refusal(423, "paused", reason="suspect", retry_ms=SUSPECT_RETRY_MS)
 
-    is_report_heard = db.claim(
-        f"""UPDATE `{doc_table}` SET `suspect_reported_at` = NOW(6) WHERE `id` = %s
-        AND (`suspect_reported_at` IS NULL OR `suspect_reported_at` <= NOW(6) - INTERVAL %s SECOND)""",
-        (doc_id, REPORT_EVERY_S),
-    )
-    if not is_report_heard:
+    if not hear_report(app, doc_id):
         raise Refusal(423, "busy", retry_ms=REPORT_EVERY_S * 1000)
 
     mark_suspect(app, doc_id, "client", method)
@@ -229,8 +240,8 @@ def rejudge(app: str, doc_id: str, method: str) -> bool:
     if not suspect_of(app, doc_id):
         return False
 
-    doc_table = table(app, "doc")
-    frappe.db.sql(f"UPDATE `{doc_table}` SET `suspect_held` = NULL WHERE `id` = %s", doc_id)
+    doc = Table(table(app, "doc"))
+    frappe.qb.update(doc).set(doc.suspect_held, None).where(doc.id == doc_id).run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     live.publish_change(app, doc_id, "released")
     redis = get_redis_conn()
@@ -286,26 +297,28 @@ def pycrdt_refuses(checkpoint: bytes | None, rows: list[bytes], part_map: Mappin
 
 def judged_clean(app: str, doc_id: str) -> bool:
     """Whether a judge found a compaction's suspect clean since the last checkpoint install."""
-    doc_table = table(app, "doc")
-    judged_row = frappe.db.sql(f"SELECT `suspect_judged_clean` FROM `{doc_table}` WHERE `id` = %s", doc_id)
+    doc = Table(table(app, "doc"))
+    judged_row = frappe.qb.from_(doc).select(doc.suspect_judged_clean).where(doc.id == doc_id).run()
     return bool(judged_row[0][0])
 
 
 def fallback_judged_lately(app: str, doc_id: str) -> bool:
     """Whether a judge found a fallback clean in the last day, so another fallback needs no judge."""
-    doc_table = table(app, "doc")
-    found = frappe.db.sql(
-        f"""SELECT 1 FROM `{doc_table}` WHERE `id` = %s
-        AND `fallback_judged_clean_at` > NOW(6) - INTERVAL 1 DAY""",
-        doc_id,
+    doc = Table(table(app, "doc"))
+    found = (
+        frappe.qb.from_(doc)
+        .select(1)
+        .where(doc.id == doc_id)
+        .where(doc.fallback_judged_clean_at > PreciseNow(6) - Interval(days=1))
+        .run()
     )
     return bool(found)
 
 
 def suspect_of(app: str, doc_id: str) -> str | None:
     """Load the reason the document is suspect, or None when it isn't."""
-    doc_table = table(app, "doc")
-    found = frappe.db.sql(f"SELECT `suspect` FROM `{doc_table}` WHERE `id` = %s", doc_id)
+    doc = Table(table(app, "doc"))
+    found = frappe.qb.from_(doc).select(doc.suspect).where(doc.id == doc_id).run()
     if not found:
         return None
 
@@ -314,11 +327,14 @@ def suspect_of(app: str, doc_id: str) -> str | None:
 
 def hold_document(app: str, doc_id: str, hold_reason: str, detail: str) -> str | None:
     """Answers None when an admin cleared the document while it was judged."""
-    doc_table = table(app, "doc")
+    doc = Table(table(app, "doc"))
     is_held = db.claim(
-        f"""UPDATE `{doc_table}` SET `suspect_held` = %s, `verdict` = 'held', `judged` = `judged` + 1
-        WHERE `id` = %s AND `suspect` IS NOT NULL""",
-        (hold_reason, doc_id),
+        frappe.qb.update(doc)
+        .set(doc.suspect_held, hold_reason)
+        .set(doc.verdict, "held")
+        .set(doc.judged, doc.judged + 1)
+        .where(doc.id == doc_id)
+        .where(doc.suspect.isnotnull())
     )
     if not is_held:
         return None
@@ -350,20 +366,25 @@ def unsettled(app: str, doc_id: str, suspect_reason: str, hold_reason: str, deta
 
 def clear_suspect(app: str, doc_id: str, verdict: str, *, clean_mark: str | None = None) -> None:
     """Record the verdict and end the compaction's backoff; `clean_mark` is a reason a judge found clean."""
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `suspect` = NULL, `suspect_held` = NULL, `verdict` = %s,
-        `judged` = `judged` + 1, `suspect_judged_clean` = `suspect_judged_clean` OR %s,
-        `fallback_judged_clean_at` = IF(%s, NOW(6), `fallback_judged_clean_at`),
-        `next_compaction_at` = IF(%s, NULL, `next_compaction_at`) WHERE `id` = %s""",
-        (
-            verdict,
-            clean_mark is not None,
-            clean_mark == "fallback",
-            verdict in {"clean", "quarantined"},
-            doc_id,
-        ),
+    doc = Table(table(app, "doc"))
+    query = (
+        frappe.qb.update(doc)
+        .set(doc.suspect, None)
+        .set(doc.suspect_held, None)
+        .set(doc.verdict, verdict)
+        .set(doc.judged, doc.judged + 1)
+        .where(doc.id == doc_id)
     )
+    if clean_mark is not None:
+        query = query.set(doc.suspect_judged_clean, 1)
+
+    if clean_mark == "fallback":
+        query = query.set(doc.fallback_judged_clean_at, PreciseNow(6))
+
+    if verdict in {"clean", "quarantined"}:
+        query = query.set(doc.next_compaction_at, None)
+
+    query.run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 

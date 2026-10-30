@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from typing import cast
 
 import frappe
+from frappe.query_builder import Order, Table
+from frappe.query_builder.functions import Coalesce, Count, Length, Max, Sum
+from frappe.query_builder.terms import SubQuery
 
 from suite.content.app_row import body_row
 from suite.content.db import load_system_variable
@@ -51,10 +54,14 @@ def start_clocks(doc: frappe._dict) -> dict[int, int]:
 
 def rows_after(app: str, doc_id: str, since_rev: int) -> list[tuple[int, bytes]]:
     """Load the committed rows after `since_rev` in rev order, a quarantined one empty, in one statement."""
-    update_table = table(app, "update")
-    stored_rows = frappe.db.sql(
-        f"SELECT `rev`, `payload` FROM `{update_table}` WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`",
-        (doc_id, since_rev),
+    update = Table(table(app, "update"))
+    stored_rows = (
+        frappe.qb.from_(update)
+        .select(update.rev, update.payload)
+        .where(update.doc_id == doc_id)
+        .where(update.rev > since_rev)
+        .orderby(update.rev)
+        .run()
     )
     return [(int(rev), bytes(payload)) for rev, payload in stored_rows]
 
@@ -79,6 +86,7 @@ def isolation_level() -> str | None:
 def repeatable_read() -> Iterator[None]:
     """Run the reads in one REPEATABLE READ snapshot. The level applies from the next transaction."""
     previous_level = isolation_level()
+    # Raw SQL: qb can't set a session variable
     frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     try:
@@ -87,17 +95,41 @@ def repeatable_read() -> Iterator[None]:
     finally:
         if previous_level and previous_level != "REPEATABLE-READ":
             previous_clause = previous_level.replace("-", " ")
+            # Raw SQL: qb can't set a session variable
             frappe.db.sql(f"SET SESSION TRANSACTION ISOLATION LEVEL {previous_clause}")
 
 
 def fallback_rev(app: str, doc_id: str) -> int:
     """Load the rev the document's fallback runs through, 0 when it has none."""
-    checkpoint_table = table(app, "checkpoint")
-    found = frappe.db.sql(
-        f"SELECT COALESCE(MAX(`through_rev`), 0) FROM `{checkpoint_table}` WHERE `doc_id` = %s",
-        doc_id,
+    checkpoint = Table(table(app, "checkpoint"))
+    found = (
+        frappe.qb.from_(checkpoint)
+        .select(Coalesce(Max(checkpoint.through_rev), 0))
+        .where(checkpoint.doc_id == doc_id)
+        .run()
     )
     return int(found[0][0])
+
+
+@dataclass(frozen=True)
+class TailSums:
+    """Subqueries for the rows, bytes and bound of a document's tail."""
+
+    rows: SubQuery
+    nbytes: SubQuery
+    bound: SubQuery
+
+
+def tail_sums(app: str, doc_id: str, base: int) -> TailSums:
+    """Answer subqueries for the rows, bytes and bound of the document's tail after `base`."""
+    update = Table(table(app, "update"))
+    tail = frappe.qb.from_(update).where(update.doc_id == doc_id).where(update.rev > base)
+    payload_bytes = Length(update.payload)
+    return TailSums(
+        rows=SubQuery(tail.select(Count("*"))),
+        nbytes=SubQuery(tail.select(Coalesce(Sum(payload_bytes), 0))),
+        bound=SubQuery(tail.select(Coalesce(Sum(Coalesce(update.bound, payload_bytes)), 0))),
+    )
 
 
 @dataclass(frozen=True)
@@ -124,12 +156,7 @@ def pick_base(app: str, doc_id: str, doc: frappe._dict, body: bytes, integrated:
 
     fallback_rows = None
     if not integrated:
-        checkpoint_table = table(app, "checkpoint")
-        fallback_rows = frappe.db.sql(
-            f"""SELECT `through_rev`, `gz`, `chain`, `sha256` FROM `{checkpoint_table}`
-            WHERE `doc_id` = %s AND `through_rev` > %s ORDER BY `through_rev` DESC LIMIT 1""",
-            (doc_id, rev),
-        )
+        fallback_rows = newest_fallback(app, doc_id, rev)
 
     if fallback_rows:
         through, compressed_state, stored_chain, stored_sha = fallback_rows[0]
@@ -139,6 +166,20 @@ def pick_base(app: str, doc_id: str, doc: frappe._dict, body: bytes, integrated:
             return Base(int(through), state, bytes(stored_chain), True)
 
     return Base(rev, checkpoint, chain, is_intact)
+
+
+def newest_fallback(app: str, doc_id: str, rev: int) -> Sequence:
+    """Load the newest fallback that runs past `rev`, empty when none does."""
+    checkpoint = Table(table(app, "checkpoint"))
+    return (
+        frappe.qb.from_(checkpoint)
+        .select(checkpoint.through_rev, checkpoint.gz, checkpoint.chain, checkpoint.sha256)
+        .where(checkpoint.doc_id == doc_id)
+        .where(checkpoint.through_rev > rev)
+        .orderby(checkpoint.through_rev, order=Order.desc)
+        .limit(1)
+        .run()
+    )
 
 
 @dataclass(frozen=True)
@@ -169,12 +210,23 @@ def walk_chain(stored: Sequence, chain: bytes) -> ChainWalk:
 
 def load_control_row(app: str, doc_id: str) -> frappe._dict | None:
     """Load the fields a read needs from the document's control row, None when it is purged."""
-    doc_table = table(app, "doc")
-    control_rows = frappe.db.sql(
-        f"""SELECT `node`, `lineage`, `head_rev`, `head_chain`, `body_rev`, `body_chain`, `body_sha`,
-        `schema_steps`, `q_epoch` FROM `{doc_table}` WHERE `id` = %s AND `mode` != 'purged'""",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(app, "doc"))
+    control_rows = (
+        frappe.qb.from_(doc)
+        .select(
+            doc.node,
+            doc.lineage,
+            doc.head_rev,
+            doc.head_chain,
+            doc.body_rev,
+            doc.body_chain,
+            doc.body_sha,
+            doc.schema_steps,
+            doc.q_epoch,
+        )
+        .where(doc.id == doc_id)
+        .where(doc.mode != "purged")
+        .run(as_dict=True)
     )
     if not control_rows:
         return None
@@ -184,11 +236,14 @@ def load_control_row(app: str, doc_id: str) -> frappe._dict | None:
 
 def load_rows_after_base(app: str, doc_id: str, base_rev: int) -> Sequence:
     """Load every row after `base_rev` with its sha and state, in rev order."""
-    update_table = table(app, "update")
-    return frappe.db.sql(
-        f"""SELECT `rev`, `payload`, `sha256`, `state` FROM `{update_table}`
-        WHERE `doc_id` = %s AND `rev` > %s ORDER BY `rev`""",
-        (doc_id, base_rev),
+    update = Table(table(app, "update"))
+    return (
+        frappe.qb.from_(update)
+        .select(update.rev, update.payload, update.sha256, update.state)
+        .where(update.doc_id == doc_id)
+        .where(update.rev > base_rev)
+        .orderby(update.rev)
+        .run()
     )
 
 

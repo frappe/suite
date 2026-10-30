@@ -14,7 +14,10 @@ from datetime import datetime, timedelta
 from typing import TypeGuard, cast
 
 import frappe
+from frappe.query_builder import Order, Table
+from frappe.query_builder.functions import Coalesce, Length, Sum
 
+from suite.content.db import Unhex
 from suite.content.tables import table
 
 PIECE_MAX = 256 * 2**10
@@ -64,7 +67,7 @@ class Shape:
     sha_total: bytes
 
 
-SHAPE_COLUMNS = ", ".join(f"`{field.name}`" for field in fields(Shape))
+SHAPE_COLUMNS = tuple(field.name for field in fields(Shape))
 
 
 @dataclass(frozen=True)
@@ -161,12 +164,17 @@ def placed(header: dict, purpose: str) -> bool:
 
 def already_staged(app: str, doc_id: str, stage_id: str, index: int, shape: Shape, piece: bytes) -> bool:
     """Answer whether the stage keeps these bytes at `index`; refuse a piece that disagrees with the stage."""
-    stage_table = table(app, "stage")
-    staged_pieces = frappe.db.sql(
-        f"""SELECT `idx`, {SHAPE_COLUMNS}, `bytes` = UNHEX(%s) AS `same`
-        FROM `{stage_table}` WHERE `doc_id` = %s AND `stage_id` = %s""",
-        (piece.hex(), doc_id, stage_id),
-        as_dict=True,
+    stage = Table(table(app, "stage"))
+    staged_pieces = (
+        frappe.qb.from_(stage)
+        .select(
+            stage.idx,
+            *(stage[name] for name in SHAPE_COLUMNS),
+            (stage.bytes == Unhex(piece.hex())).as_("same"),
+        )
+        .where(stage.doc_id == doc_id)
+        .where(stage.stage_id == stage_id)
+        .run(as_dict=True)
     )
     for row in staged_pieces:
         if stored_shape(row) != shape:
@@ -185,15 +193,18 @@ def already_staged(app: str, doc_id: str, stage_id: str, index: int, shape: Shap
 
 def check_room(app: str, doc_id: str, user: str, piece_len: int) -> None:
     """Refuse a piece past the user's own `DOC_MAX`, so one editor's pieces never block another's."""
-    stage_table = table(app, "stage")
-    session_table = table(app, "session")
+    stage = Table(table(app, "stage"))
+    session = Table(table(app, "session"))
     # Locked, so a user's puts take turns and each sees what the one before it kept
-    [[staged_bytes]] = frappe.db.sql(
-        f"""SELECT COALESCE(SUM(LENGTH(`stage`.`bytes`)), 0) FROM `{stage_table}` `stage`
-        JOIN `{session_table}` `session`
-            ON `session`.`doc_id` = `stage`.`doc_id` AND `session`.`sid` = `stage`.`sid`
-        WHERE `stage`.`doc_id` = %s AND `session`.`user` = %s FOR UPDATE""",
-        (doc_id, user),
+    [[staged_bytes]] = (
+        frappe.qb.from_(stage)
+        .join(session)
+        .on((session.doc_id == stage.doc_id) & (session.sid == stage.sid))
+        .select(Coalesce(Sum(Length(stage.bytes)), 0))
+        .where(stage.doc_id == doc_id)
+        .where(session.user == user)
+        .for_update()
+        .run()
     )
     if int(staged_bytes) + piece_len > DOC_MAX:
         raise Full
@@ -201,20 +212,21 @@ def check_room(app: str, doc_id: str, user: str, piece_len: int) -> None:
 
 def insert_piece(app: str, doc_id: str, stage_id: str, index: int, shape: Shape, piece: bytes) -> None:
     """Insert the piece at `index` with its stage's shape."""
-    stage_table = table(app, "stage")
-    frappe.db.sql(
-        f"""INSERT IGNORE INTO `{stage_table}`
-        (`doc_id`, `stage_id`, `idx`, {SHAPE_COLUMNS}, `bytes`, `created`)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, UNHEX(%s), UNHEX(%s), %s)""",
-        (
+    stage = Table(table(app, "stage"))
+    (
+        frappe.qb.into(stage)
+        .columns("doc_id", "stage_id", "idx", *SHAPE_COLUMNS, "bytes", "created")
+        .insert(
             doc_id,
             stage_id,
             index,
             *astuple(shape)[:-1],
-            shape.sha_total.hex(),
-            piece.hex(),
+            Unhex(shape.sha_total.hex()),
+            Unhex(piece.hex()),
             frappe.utils.now_datetime(),
-        ),
+        )
+        .ignore()
+        .run()
     )
 
 
@@ -251,10 +263,13 @@ def stored_shape(row: frappe._dict) -> Shape:
 
 def refresh_expiry(app: str, doc_id: str, stage_id: str) -> None:
     """Restart the expiry of every piece of the stage, so a slow upload loses none of its early pieces."""
-    stage_table = table(app, "stage")
-    frappe.db.sql(
-        f"UPDATE `{stage_table}` SET `created` = %s WHERE `doc_id` = %s AND `stage_id` = %s",
-        (frappe.utils.now_datetime(), doc_id, stage_id),
+    stage = Table(table(app, "stage"))
+    (
+        frappe.qb.update(stage)
+        .set(stage.created, frappe.utils.now_datetime())
+        .where(stage.doc_id == doc_id)
+        .where(stage.stage_id == stage_id)
+        .run()
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
@@ -280,12 +295,14 @@ def assemble_render(app: str, doc_id: str, stage_id: str) -> tuple[frappe._dict,
 
 def staged_rows(app: str, doc_id: str, stage_id: str) -> list[frappe._dict]:
     """Return the stage's pieces in order, refused as incomplete when it has none."""
-    stage_table = table(app, "stage")
-    rows = frappe.db.sql(
-        f"""SELECT `idx`, {SHAPE_COLUMNS}, `bytes`
-        FROM `{stage_table}` WHERE `doc_id` = %s AND `stage_id` = %s ORDER BY `idx`""",
-        (doc_id, stage_id),
-        as_dict=True,
+    stage = Table(table(app, "stage"))
+    rows = (
+        frappe.qb.from_(stage)
+        .select(stage.idx, *(stage[name] for name in SHAPE_COLUMNS), stage.bytes)
+        .where(stage.doc_id == doc_id)
+        .where(stage.stage_id == stage_id)
+        .orderby(stage.idx)
+        .run(as_dict=True)
     )
     if not rows:
         raise Incomplete
@@ -313,42 +330,55 @@ def joined(app: str, doc_id: str, stage_id: str, rows: list[frappe._dict]) -> by
 
 def drop_stage(app: str, doc_id: str, stage_id: str) -> None:
     """Delete every piece of the stage."""
-    stage_table = table(app, "stage")
-    frappe.db.sql(f"DELETE FROM `{stage_table}` WHERE `doc_id` = %s AND `stage_id` = %s", (doc_id, stage_id))
+    stage = Table(table(app, "stage"))
+    frappe.qb.from_(stage).delete().where(stage.doc_id == doc_id).where(stage.stage_id == stage_id).run()
 
 
 def expire_pieces(app: str, now: datetime) -> None:
     """Delete save pieces older than `EXPIRY`; their tab still holds the change and can stage it again."""
-    stage_table = table(app, "stage")
-    frappe.db.sql(f"DELETE FROM `{stage_table}` WHERE `purpose` = 'save' AND `created` < %s", now - EXPIRY)
+    stage = Table(table(app, "stage"))
+    frappe.qb.from_(stage).delete().where(stage.purpose == "save").where(stage.created < now - EXPIRY).run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def renders(app: str, doc_id: str) -> list[frappe._dict]:
     """Return the document's staged renders, newest rev first."""
-    stage_table = table(app, "stage")
-    return frappe.db.sql(
-        f"""SELECT DISTINCT `stage_id`, `rev` FROM `{stage_table}`
-        WHERE `doc_id` = %s AND `purpose` = 'render' ORDER BY `rev` DESC, `stage_id`""",
-        doc_id,
-        as_dict=True,
+    stage = Table(table(app, "stage"))
+    return (
+        frappe.qb.from_(stage)
+        .select(stage.stage_id, stage.rev)
+        .distinct()
+        .where(stage.doc_id == doc_id)
+        .where(stage.purpose == "render")
+        .orderby(stage.rev, order=Order.desc)
+        .orderby(stage.stage_id)
+        .run(as_dict=True)
     )
 
 
 def rendered_docs(app: str, limit: int = 100) -> list[str]:
     """Return the documents with a staged render, which is due its copy check."""
-    stage_table = table(app, "stage")
-    found = frappe.db.sql(
-        f"SELECT DISTINCT `doc_id` FROM `{stage_table}` WHERE `purpose` = 'render' LIMIT %s", limit
+    stage = Table(table(app, "stage"))
+    found = (
+        frappe.qb.from_(stage)
+        .select(stage.doc_id)
+        .distinct()
+        .where(stage.purpose == "render")
+        .limit(limit)
+        .run()
     )
     return [doc_id for (doc_id,) in found]
 
 
 def drop_renders_through(app: str, doc_id: str, rev: int, keep: str | None = None) -> None:
     """Drop the staged renders at or before `rev`, other than the stage `keep`."""
-    stage_table = table(app, "stage")
-    frappe.db.sql(
-        f"""DELETE FROM `{stage_table}` WHERE `doc_id` = %s AND `purpose` = 'render'
-        AND `rev` <= %s AND `stage_id` != %s""",
-        (doc_id, rev, keep or ""),
+    stage = Table(table(app, "stage"))
+    (
+        frappe.qb.from_(stage)
+        .delete()
+        .where(stage.doc_id == doc_id)
+        .where(stage.purpose == "render")
+        .where(stage.rev <= rev)
+        .where(stage.stage_id != (keep or ""))
+        .run()
     )

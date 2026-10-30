@@ -18,6 +18,9 @@ import nh3
 import pycrdt
 from bleach_allowlist import bleach_allowlist
 from bs4 import BeautifulSoup
+from frappe.query_builder import Table
+from frappe.query_builder.functions import Coalesce
+from frappe.query_builder.terms import ParameterizedValueWrapper
 from frappe.utils import now_datetime
 from frappe.utils.html_utils import (
     acceptable_attributes,
@@ -26,6 +29,7 @@ from frappe.utils.html_utils import (
     svg_attributes,
     svg_elements,
 )
+from pypika.terms import Values
 
 from suite.content import compaction, db, stage
 from suite.content.app_row import copy_row, forget_cached, locked_app_row, write_copy
@@ -76,16 +80,21 @@ def submit(app: str, doc_id: str, stage_id: object, user: str) -> tuple[int, dic
 
 def is_current(app: str, doc_id: str, render: frappe._dict) -> bool:
     """Whether a render is of this log as it stands and newer than the copy."""
-    doc_table = table(app, "doc")
-    projection_table = table(app, "projection")
-    found = frappe.db.sql(
-        f"""SELECT `doc`.`lineage`, `doc`.`q_epoch`, `doc`.`head_rev`,
-        COALESCE(`projection`.`projected_rev`, 0) AS `projected_rev`
-        FROM `{doc_table}` `doc`
-        LEFT JOIN `{projection_table}` `projection` ON `projection`.`doc_id` = `doc`.`id`
-        WHERE `doc`.`id` = %s AND `doc`.`mode` != 'purged'""",
-        doc_id,
-        as_dict=True,
+    doc_table = Table(table(app, "doc"))
+    projection_table = Table(table(app, "projection"))
+    found = (
+        frappe.qb.from_(doc_table)
+        .left_join(projection_table)
+        .on(projection_table.doc_id == doc_table.id)
+        .select(
+            doc_table.lineage,
+            doc_table.q_epoch,
+            doc_table.head_rev,
+            Coalesce(projection_table.projected_rev, 0).as_("projected_rev"),
+        )
+        .where(doc_table.id == doc_id)
+        .where(doc_table.mode != "purged")
+        .run(as_dict=True)
     )
     if not found:
         return False
@@ -298,7 +307,7 @@ def project(
     html_copy: ReadableCopy,
 ) -> None:
     """Write the rows that differ from `written` as the app's copy and record `rows` as the copy at `rev`."""
-    projection_table = table(app, "projection")
+    projection = Table(table(app, "projection"))
     changed: dict[str, str | None] = {key: value for key, value in rows.items() if written.get(key) != value}
     changed |= {key: None for key in written if key not in rows}
     if changed:
@@ -307,21 +316,26 @@ def project(
         if stored != html_copy.serialized(rows):
             raise CopyMismatch(stored)
 
-    frappe.db.sql(
-        f"""UPDATE `{projection_table}` SET `projected_rev` = %s, `projection_hash` = UNHEX(%s),
-        `updated` = %s WHERE `doc_id` = %s""",
-        (rev, sha_of(html_copy.serialized(rows)), now_datetime(), doc_id),
+    (
+        frappe.qb.update(projection)
+        .set(projection.projected_rev, rev)
+        .set(projection.projection_hash, db.Unhex(sha_of(html_copy.serialized(rows))))
+        .set(projection.updated, now_datetime())
+        .where(projection.doc_id == doc_id)
+        .run()
     )
 
 
 def locked_projection(app: str, doc_id: str) -> frappe._dict:
     """Lock and return the log's projection row, made at rev 0 if it has none."""
-    projection_table = table(app, "projection")
-    frappe.db.sql(f"INSERT IGNORE INTO `{projection_table}` (`doc_id`) VALUES (%s)", doc_id)
-    (projection,) = frappe.db.sql(
-        f"SELECT `projected_rev`, `projection_hash` FROM `{projection_table}` WHERE `doc_id` = %s FOR UPDATE",
-        doc_id,
-        as_dict=True,
+    projection_table = Table(table(app, "projection"))
+    frappe.qb.into(projection_table).columns(projection_table.doc_id).insert(doc_id).ignore().run()
+    (projection,) = (
+        frappe.qb.from_(projection_table)
+        .select(projection_table.projected_rev, projection_table.projection_hash)
+        .where(projection_table.doc_id == doc_id)
+        .for_update()
+        .run(as_dict=True)
     )
     return projection
 
@@ -347,40 +361,40 @@ def keep_unprojected(
 
 def keep_copy(app: str, doc_id: str, rev: int, html: str) -> None:
     """Keep the copy at `rev` and drop older ones."""
-    copy_table = table(app, "copy")
-    frappe.db.sql(
-        f"""INSERT INTO `{copy_table}` (`doc_id`, `rev`, `html`, `created`) VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE `html` = VALUES(`html`)""",
-        (doc_id, rev, html, now_datetime()),
+    copy = Table(table(app, "copy"))
+    (
+        frappe.qb.into(copy)
+        .columns(copy.doc_id, copy.rev, copy.html, copy.created)
+        .insert(doc_id, rev, html, now_datetime())
+        .on_duplicate_key_update(copy.html, Values(copy.html))
+        .run()
     )
-    frappe.db.sql(
-        f"DELETE FROM `{copy_table}` WHERE `doc_id` = %s AND `rev` < %s",
-        (doc_id, rev),
-    )
+    frappe.qb.from_(copy).delete().where(copy.doc_id == doc_id).where(copy.rev < rev).run()
 
 
 def keep_evidence(app: str, doc_id: str, reason: str, html: str, rev: int | None) -> bool:
     """Keep `html` in the recovery table for no writer; the same bytes are kept once, and answer whether they are new."""
-    doc_table = table(app, "doc")
-    recovery_table = table(app, "recovery")
+    doc = Table(table(app, "doc"))
+    recovery = Table(table(app, "recovery"))
     payload = html.encode()
+    # Copied from the control row in the same statement, so a missing document keeps nothing
+    columns = {
+        "id": ParameterizedValueWrapper(frappe.generate_hash(length=20)),
+        "doc_id": doc.id,
+        "node": doc.node,
+        "owner": ParameterizedValueWrapper("system"),
+        "reason": ParameterizedValueWrapper(reason),
+        "lineage": doc.lineage,
+        "sha256": db.Unhex(sha_of(html)),
+        "nbytes": len(payload),
+        "payload": db.Unhex(payload.hex()),
+        "context_rev": rev,
+        "created": now_datetime(),
+    }
+    values = columns.values()
+    kept = frappe.qb.into(recovery).columns(*columns).from_(doc).select(*values).where(doc.id == doc_id)
     try:
-        frappe.db.sql(
-            f"""INSERT INTO `{recovery_table}`
-            (`id`, `doc_id`, `node`, `owner`, `reason`, `lineage`, `sha256`, `nbytes`, `payload`, `context_rev`, `created`)
-            SELECT %s, `id`, `node`, 'system', %s, `lineage`, UNHEX(%s), %s, UNHEX(%s), %s, %s
-            FROM `{doc_table}` WHERE `id` = %s""",
-            (
-                frappe.generate_hash(length=20),
-                reason,
-                sha_of(html),
-                len(payload),
-                payload.hex(),
-                rev,
-                now_datetime(),
-                doc_id,
-            ),
-        )
+        kept.run()
     except Exception as error:
         if not frappe.db.is_duplicate_entry(error):
             raise

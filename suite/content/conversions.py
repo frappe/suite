@@ -24,11 +24,14 @@ from typing import NotRequired, TypedDict
 
 import frappe
 from frappe import _
+from frappe.query_builder import Table
 from frappe.utils import now_datetime
+from pypika.terms import Criterion, Values
 
 from suite import drive
 from suite.content import checker, convert, copies, live, log, selftest
 from suite.content.checkpoints import replace_start
+from suite.content.db import changed_rows, insert_into
 from suite.content.editors import CheckedBody, Conversion, OldBody, spec_of
 from suite.content.tables import table
 
@@ -42,7 +45,16 @@ STALE_ATTEMPT = timedelta(seconds=1500)
 PASSING = frozenset({"child_timeout", "child_crash"})
 CHANGED = "changed"
 LOGGED = "logged"
-OPEN_ATTEMPT = "`node` = %s AND `fingerprint` = %s AND `converter_version` = %s AND `outcome` IS NULL"
+
+
+def open_attempt(conversion: Table, node: str, fingerprint: str, version: str) -> Criterion:
+    """Match this body's record under this converter while it has no outcome."""
+    return (
+        (conversion.node == node)
+        & (conversion.fingerprint == fingerprint)
+        & (conversion.converter_version == version)
+        & conversion.outcome.isnull()
+    )
 
 
 class ConversionStatus(TypedDict):
@@ -285,17 +297,20 @@ def conversion_started(app: str) -> bool:
     if conversion_table not in frappe.db.get_tables(cached=False):
         return False
 
+    # Raw SQL: qb has no LOCK IN SHARE MODE
     return bool(frappe.db.sql(f"SELECT 1 FROM `{conversion_table}` LIMIT 1 LOCK IN SHARE MODE"))
 
 
 def held_attempt(app: str, node: str, fingerprint: str) -> frappe._dict | None:
     """Load this body's record under this converter, when a run has already started on it."""
-    conversion_table = table(app, "conversion")
-    rows = frappe.db.sql(
-        f"""SELECT `started`, `finished`, `outcome`, `reason` FROM `{conversion_table}`
-        WHERE `node` = %s AND `fingerprint` = %s AND `converter_version` = %s""",
-        (node, fingerprint, conversion_of(app).version),
-        as_dict=True,
+    conversion = Table(table(app, "conversion"))
+    rows = (
+        frappe.qb.from_(conversion)
+        .select(conversion.started, conversion.finished, conversion.outcome, conversion.reason)
+        .where(conversion.node == node)
+        .where(conversion.fingerprint == fingerprint)
+        .where(conversion.converter_version == conversion_of(app).version)
+        .run(as_dict=True)
     )
     if not rows:
         return None
@@ -305,34 +320,40 @@ def held_attempt(app: str, node: str, fingerprint: str) -> frappe._dict | None:
 
 def start_attempt(app: str, node: str, fingerprint: str, started: datetime, retry: bool) -> None:
     """Commit a record with no outcome before the converter runs, so a worker that dies on it leaves a trace."""
-    conversion_table = table(app, "conversion")
-    key = (node, fingerprint, conversion_of(app).version)
+    conversion = Table(table(app, "conversion"))
+    version = conversion_of(app).version
     if retry:
-        frappe.db.sql(
-            f"UPDATE `{conversion_table}` SET `started` = %s, `finished` = NULL WHERE {OPEN_ATTEMPT}",
-            (started, *key),
+        (
+            frappe.qb.update(conversion)
+            .set(conversion.started, started)
+            .set(conversion.finished, None)
+            .where(open_attempt(conversion, node, fingerprint, version))
+            .run()
         )
     else:
-        frappe.db.sql(
-            f"""INSERT INTO `{conversion_table}` (`node`, `fingerprint`, `converter_version`, `started`)
-            VALUES (%s, %s, %s, %s)""",
-            (*key, started),
-        )
+        row = {"node": node, "fingerprint": fingerprint, "converter_version": version, "started": started}
+        insert_into(table(app, "conversion"), row).run()
 
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def count_failure(app: str, node: str, fingerprint: str, outcome: str) -> str | None:
     """Count a run's failure on this body's attempt; at FAILURES under this converter, record and answer `outcome`."""
-    conversion_table = table(app, "conversion")
+    conversion = Table(table(app, "conversion"))
     key = (node, fingerprint, conversion_of(app).version)
-    frappe.db.sql(
-        f"UPDATE `{conversion_table}` SET `failures` = `failures` + 1, `finished` = %s WHERE {OPEN_ATTEMPT}",
-        (now_datetime(), *key),
+    (
+        frappe.qb.update(conversion)
+        .set(conversion.failures, conversion.failures + 1)
+        .set(conversion.finished, now_datetime())
+        .where(open_attempt(conversion, *key))
+        .run()
     )
-    frappe.db.sql(
-        f"UPDATE `{conversion_table}` SET `outcome` = %s WHERE {OPEN_ATTEMPT} AND `failures` >= %s",
-        (outcome, *key, FAILURES),
+    (
+        frappe.qb.update(conversion)
+        .set(conversion.outcome, outcome)
+        .where(open_attempt(conversion, *key))
+        .where(conversion.failures >= FAILURES)
+        .run()
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     held = held_attempt(app, node, fingerprint)
@@ -344,34 +365,40 @@ def count_failure(app: str, node: str, fingerprint: str, outcome: str) -> str | 
 
 def drop_attempt(app: str, node: str, fingerprint: str) -> None:
     """Let go of an attempt with no outcome: delete it, or keep the failures it counted for the next run."""
-    conversion_table = table(app, "conversion")
+    conversion = Table(table(app, "conversion"))
     key = (node, fingerprint, conversion_of(app).version)
-    frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE {OPEN_ATTEMPT} AND `failures` = 0", key)
-    frappe.db.sql(
-        f"UPDATE `{conversion_table}` SET `finished` = %s WHERE {OPEN_ATTEMPT}", (now_datetime(), *key)
-    )
+    frappe.qb.from_(conversion).delete().where(open_attempt(conversion, *key)).where(
+        conversion.failures == 0
+    ).run()
+    frappe.qb.update(conversion).set(conversion.finished, now_datetime()).where(
+        open_attempt(conversion, *key)
+    ).run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def mark_checked(app: str, node: str, fingerprint: str, checked: datetime) -> None:
     """Keep the node's newest `modified` a run last found this body unchanged at, so the pager skips it until a row moves."""
-    conversion_table = table(app, "conversion")
-    frappe.db.sql(
-        f"""UPDATE `{conversion_table}` SET `checked` = %s
-        WHERE `node` = %s AND `fingerprint` = %s AND `converter_version` = %s""",
-        (checked, node, fingerprint, conversion_of(app).version),
+    conversion = Table(table(app, "conversion"))
+    (
+        frappe.qb.update(conversion)
+        .set(conversion.checked, checked)
+        .where(conversion.node == node)
+        .where(conversion.fingerprint == fingerprint)
+        .where(conversion.converter_version == conversion_of(app).version)
+        .run()
     )
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def retry_over_quota(app: str) -> int:
     """Clear this converter's over_quota records, so the next run tries them again once space is freed."""
-    conversion_table = table(app, "conversion")
-    frappe.db.sql(
-        f"DELETE FROM `{conversion_table}` WHERE `outcome` = 'over_quota' AND `converter_version` = %s",
-        (conversion_of(app).version,),
+    conversion = Table(table(app, "conversion"))
+    cleared = changed_rows(
+        frappe.qb.from_(conversion)
+        .delete()
+        .where(conversion.outcome == "over_quota")
+        .where(conversion.converter_version == conversion_of(app).version)
     )
-    [[cleared]] = frappe.db.sql("SELECT ROW_COUNT()")
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     return cleared
 
@@ -386,25 +413,24 @@ def record(
     dropped: list[dict] | None = None,
 ) -> None:
     """Keep the outcome of converting this body with this converter, in the caller's transaction."""
-    conversion_table = table(app, "conversion")
     dropped_json = None
     if dropped is not None:
         dropped_json = json.dumps(dropped)
 
-    frappe.db.sql(
-        f"""INSERT INTO `{conversion_table}`
-        (`node`, `fingerprint`, `converter_version`, `started`, `finished`, `outcome`, `reason`, `dropped`)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE `started` = VALUES(`started`), `finished` = VALUES(`finished`),
-        `outcome` = VALUES(`outcome`), `reason` = VALUES(`reason`), `dropped` = VALUES(`dropped`)""",
-        (
-            node,
-            fingerprint,
-            conversion_of(app).version,
-            started,
-            now_datetime(),
-            outcome,
-            reason,
-            dropped_json,
-        ),
+    query = insert_into(
+        table(app, "conversion"),
+        {
+            "node": node,
+            "fingerprint": fingerprint,
+            "converter_version": conversion_of(app).version,
+            "started": started,
+            "finished": now_datetime(),
+            "outcome": outcome,
+            "reason": reason,
+            "dropped": dropped_json,
+        },
     )
+    for column in ("started", "finished", "outcome", "reason", "dropped"):
+        query = query.on_duplicate_key_update(column, Values(column))
+
+    query.run()

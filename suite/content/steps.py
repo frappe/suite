@@ -7,6 +7,8 @@ from http import HTTPStatus
 
 import frappe
 from frappe import _
+from frappe.query_builder import Table
+from frappe.query_builder.functions import Coalesce
 
 from suite.content import copies, jobs, live, log, restores, scheduling, sessions, stage, suspect, touches
 from suite.content.pushes import push, put_piece
@@ -130,19 +132,24 @@ def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tup
 
 def due_after_push(app: str, doc_id: str) -> frappe._dict | None:
     """Read in one query what a push checks after it commits: followers, the copy and compaction."""
-    doc_with_base = scheduling.docs_with_base(app, where="`doc`.`id` = %s")
-    update_table = table(app, "update")
-    projection_table = table(app, "projection")
-    found = frappe.db.sql(
-        f"""SELECT `d`.`mode`, `d`.`head_rev`, `d`.`base`, `d`.`state_bytes`, `d`.`tail_rows`, `d`.`tail_bytes`,
-        `d`.`tail_bound`, `d`.`next_compaction_at`, `d`.`suspect`, `u`.`created` AS `oldest`,
-        `d`.`touched_at`, `d`.`touched_rev`, `d`.`versioned_at`, `d`.`versioned_rev`,
-        COALESCE(`p`.`projected_rev`, 0) AS `projected_rev`, `p`.`updated` AS `copied_at`
-        FROM {doc_with_base} `d`
-        LEFT JOIN `{update_table}` `u` ON `u`.`doc_id` = `d`.`id` AND `u`.`rev` = `d`.`base` + 1
-        LEFT JOIN `{projection_table}` `p` ON `p`.`doc_id` = `d`.`id`""",
-        doc_id,
-        as_dict=True,
+    based = scheduling.docs_with_base(app, lambda doc: doc.id == doc_id)
+    docs = based.docs
+    due_columns = based.due_columns()
+    projection = Table(table(app, "projection")).as_("p")
+    found = (
+        based.query.left_join(projection)
+        .on(projection.doc_id == docs.id)
+        .select(
+            *due_columns,
+            docs.mode,
+            docs.touched_at,
+            docs.touched_rev,
+            docs.versioned_at,
+            docs.versioned_rev,
+            Coalesce(projection.projected_rev, 0).as_("projected_rev"),
+            projection.updated.as_("copied_at"),
+        )
+        .run(as_dict=True)
     )
     if not found:
         return None

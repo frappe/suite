@@ -1024,6 +1024,7 @@ const {
   // Created below; read only once the engine runs.
   namedRanges: () => namedRanges,
   getGrid: () => grid,
+  sheetNames: () => sheetNames.value,
   syncNames: () => syncNames(),
   onVersion: () => _onEngineVersion(),
   onUsedExtent: (max) => {
@@ -4215,6 +4216,9 @@ function doDuplicateSheet(name) {
 function doDeleteSheet(name) {
   tabMenu.open = false
   if (_deleteSheet(name)) {
+    // Its named ranges become #REF! (`=Name` is an error), as in Excel.
+    namedRanges.deleteSheet(name)
+    _syncDefinedNames()
     history.push()
     isDirty.value = true
   }

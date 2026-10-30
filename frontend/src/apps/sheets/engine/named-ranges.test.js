@@ -61,7 +61,7 @@ describe('names follow row and column edits', () => {
   }
   // As useWorkbook does: one command alone, several in one batch.
   const sync = (t) => {
-    const { sent, changes } = definedNameChanges(t.sent, t.nr.list())
+    const { sent, changes } = definedNameChanges(t.sent, t.nr.list(), t.wb.getSheets())
     t.sent = sent
     const commands = changes.map((c) => cmd(c.type, c.payload))
     if (commands.length === 1) t.wb.apply(commands[0])
@@ -204,6 +204,104 @@ describe('names follow row and column edits', () => {
     t.nr.remapRows(deleteMap(2, 1), 'Sheet1')
     sync(t)
     expect(shown(t, 12, 4)).toMatch(/^#/)
-    expect(definedNameChanges(t.sent, t.nr.list()).changes).toEqual([])
+    expect(definedNameChanges(t.sent, t.nr.list(), t.wb.getSheets()).changes).toEqual([])
+  })
+
+  // ISSUES #77: IronCalc refuses a name on a sheet it doesn't have, which
+  // failed the batch with every other name in it.
+  describe('a name on a deleted sheet', () => {
+    // rng on Sheet1 A1:A10; far on Data!A1 = 7. C12 = SUM(rng), D12 = far.
+    const withData = () => {
+      const t = start([['rng', 'A1:A10']])
+      t.wb.apply(cmd(CommandTypes.addSheet, { name: 'Data' }))
+      t.wb.apply(cmd(CommandTypes.setInput, { sheet: 'Data', row: 1, col: 1, input: '7' }))
+      t.nr.add({ name: 'far', sheet: 'Data', range: 'A1' })
+      sync(t)
+      put(t, 12, 3, '=SUM(rng)')
+      put(t, 12, 4, '=far')
+      return t
+    }
+    // As the editor deletes a tab (index.vue doDeleteSheet).
+    const deleteData = (t) => {
+      t.wb.apply(cmd(CommandTypes.deleteSheet, { sheet: 'Data' }))
+      t.nr.deleteSheet('Data')
+      sync(t)
+    }
+
+    it('is #REF! after the delete; the other names still move and evaluate', () => {
+      const t = withData()
+      expect(shown(t, 12, 4)).toBe('7')
+      deleteData(t)
+      expect(range(t, 'far')).toBe('#REF!')
+      expect(shown(t, 12, 4)).toMatch(/^#/)
+      edit(t, 'deleteRows', 1)
+      expect(range(t, 'rng')).toBe('A1:A9')
+      expect(shown(t, 11, 3)).toBe('540')
+      // As in Excel, a new sheet with the old name doesn't bring it back.
+      t.wb.apply(cmd(CommandTypes.addSheet, { name: 'Data' }))
+      sync(t)
+      expect(range(t, 'far')).toBe('#REF!')
+      expect(shown(t, 11, 4)).toMatch(/^#/)
+    })
+
+    it('undo of the delete brings it back', () => {
+      const t = withData()
+      const bytes = t.wb.toBytes()
+      const names = t.nr.snapshot()
+      deleteData(t)
+      t.wb = createWorkbook({ loadBytes: bytes })
+      t.nr.restore(names)
+      sync(t)
+      expect(range(t, 'far')).toBe('A1')
+      expect(shown(t, 12, 4)).toBe('7')
+      edit(t, 'deleteRows', 1)
+      expect(shown(t, 11, 3)).toBe('540')
+      expect(shown(t, 11, 4)).toBe('7')
+    })
+
+    // Saved before this fix: the store still points the name at the sheet.
+    // IronCalc keeps a name whose sheet it deletes (an update of it is
+    // taken) but refuses to create one; a workbook built without the names
+    // (collab load, a converted develop sheet) has to create every name.
+    const openSaved = (t, { held }) => {
+      t.wb.apply(cmd(CommandTypes.deleteSheet, { sheet: 'Data' }))
+      if (!held) t.wb.apply(cmd(CommandTypes.deleteDefinedName, { name: 'far' }))
+      const names = t.nr.snapshot()
+      t.wb = createWorkbook({ loadBytes: t.wb.toBytes() })
+      t.sent = new Map()
+      t.nr.restore(names)
+    }
+
+    it.each([false, true])(
+      'a file saved with it opens and syncs the other names (IronCalc holds it: %s)',
+      (held) => {
+        const t = withData()
+        openSaved(t, { held })
+        t.nr.add({ name: 'ten', sheet: 'Sheet1', range: 'A10' })
+        put(t, 12, 5, '=ten')
+        sync(t)
+        expect(shown(t, 12, 3)).toBe('550')
+        expect(shown(t, 12, 5)).toBe('100')
+        expect(shown(t, 12, 4)).toMatch(/^#/)
+        edit(t, 'deleteRows', 1)
+        expect(range(t, 'rng')).toBe('A1:A9')
+        expect(shown(t, 11, 3)).toBe('540')
+        expect(shown(t, 11, 5)).toBe('100')
+      },
+    )
+
+    it('the store sets only that sheet’s names to #REF!', () => {
+      const nr = createNamedRanges()
+      nr.add({ name: 'a', sheet: 'Data', range: 'A1:B2' })
+      nr.add({ name: 'b', sheet: 'Sheet1', range: 'A1' })
+      let notified = 0
+      nr.setOnChange(() => notified++)
+      nr.deleteSheet('Other')
+      expect(notified).toBe(0)
+      nr.deleteSheet('Data')
+      expect(nr.get('a')).toEqual({ name: 'a', sheet: 'Data', range: '#REF!' })
+      expect(nr.get('b').range).toBe('A1')
+      expect(notified).toBe(1)
+    })
   })
 })

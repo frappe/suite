@@ -20,7 +20,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import frappe
+from frappe.query_builder import Case, Order, Table
+from frappe.query_builder.functions import Coalesce, Length, Max, Min
 from frappe.utils import now_datetime
+from pypika.analytics import Preceding
+from pypika.analytics import Sum as WindowSum
 
 from suite.content import admission, checker, compaction, db
 from suite.content.app_row import body_row
@@ -63,11 +67,16 @@ def run(app: str, part_map: Mapping[str, type], bundle: Path) -> None:
     """Trim every document that has rows to trim, from the cursor on, until the time budget runs out."""
     deadline = time.monotonic() + BUDGET_S
     cursor = frappe.cache.get_value(cursor_key(app)) or ""
-    doc_table = table(app, "doc")
-    candidates = frappe.db.sql(
-        f"""SELECT `id` FROM `{doc_table}` WHERE `id` > %s AND `mode` != 'purged'
-        AND `suspect` IS NULL AND `body_rev` > `trimmed_rev` + 1 ORDER BY `id`""",
-        cursor,
+    doc = Table(table(app, "doc"))
+    candidates = (
+        frappe.qb.from_(doc)
+        .select(doc.id)
+        .where(doc.id > cursor)
+        .where(doc.mode != "purged")
+        .where(doc.suspect.isnull())
+        .where(doc.body_rev > doc.trimmed_rev + 1)
+        .orderby(doc.id)
+        .run()
     )
     for (doc_id,) in candidates:
         if time.monotonic() > deadline or not trim(app, doc_id, part_map, bundle, deadline):
@@ -136,13 +145,22 @@ def window_start(app: str, doc: frappe._dict, now: datetime) -> int:
     """Answer the lowest rev in the evidence window: under a day old, among the newest `max(4 MiB, 2 * state)` bytes."""
     window_bytes = max(WINDOW_BYTES, 2 * int(doc.state_bytes))
     cutoff = now - WINDOW_AGE
-    update_table = table(app, "update")
-    found = frappe.db.sql(
-        f"""SELECT COALESCE(MAX(CASE WHEN `newer` >= %s OR `created` < %s THEN `rev` END) + 1, MIN(`rev`), 0)
-        FROM (SELECT `rev`, `created`, COALESCE(SUM(LENGTH(`payload`)) OVER (
-            ORDER BY `rev` DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS `newer`
-            FROM `{update_table}` WHERE `doc_id` = %s AND `rev` > %s AND `rev` <= %s) AS `covered`""",
-        (window_bytes, cutoff, doc.id, int(doc.trimmed_rev), int(doc.body_rev)),
+    update = Table(table(app, "update"))
+    # Bytes of the rows newer than each row, newest first
+    newer = WindowSum(Length(update.payload)).over().orderby(update.rev, order=Order.desc)
+    covered = (
+        frappe.qb.from_(update)
+        .select(update.rev, update.created, Coalesce(newer.rows(Preceding(), Preceding(1)), 0).as_("newer"))
+        .where(update.doc_id == doc.id)
+        .where(update.rev > int(doc.trimmed_rev))
+        .where(update.rev <= int(doc.body_rev))
+        .as_("covered")
+    )
+    past_window = (covered.newer >= window_bytes) | (covered.created < cutoff)
+    found = (
+        frappe.qb.from_(covered)
+        .select(Coalesce(Max(Case().when(past_window, covered.rev)) + 1, Min(covered.rev), 0))
+        .run()
     )
     return int(found[0][0])
 
@@ -174,11 +192,16 @@ def next_chunk(app: str, doc_id: str, bound: tuple[int, int]) -> Chunk | None:
 
 def chunk_end(app: str, doc_id: str, after: int, last: int) -> int:
     """Answer the last rev of the chunk after `after`, at most `last`, or `after` when it is empty."""
-    update_table = table(app, "update")
-    rows = frappe.db.sql(
-        f"""SELECT `rev`, LENGTH(`payload`) FROM `{update_table}`
-        WHERE `doc_id` = %s AND `rev` > %s AND `rev` <= %s ORDER BY `rev` LIMIT %s""",
-        (doc_id, after, last, CHUNK_ROWS),
+    update = Table(table(app, "update"))
+    rows = (
+        frappe.qb.from_(update)
+        .select(update.rev, Length(update.payload))
+        .where(update.doc_id == doc_id)
+        .where(update.rev > after)
+        .where(update.rev <= last)
+        .orderby(update.rev)
+        .limit(CHUNK_ROWS)
+        .run()
     )
     end = after
     nbytes = 0
@@ -194,20 +217,29 @@ def chunk_end(app: str, doc_id: str, after: int, last: int) -> int:
 
 def ok_payloads(app: str, doc_id: str, after: int, through: int) -> list[bytes]:
     """Read the payloads of the rows after `after` through `through` that are not quarantined."""
-    update_table = table(app, "update")
-    rows = frappe.db.sql(
-        f"""SELECT `payload` FROM `{update_table}` WHERE `doc_id` = %s AND `rev` > %s AND `rev` <= %s
-        AND `state` = 'ok' ORDER BY `rev`""",
-        (doc_id, after, through),
+    update = Table(table(app, "update"))
+    rows = (
+        frappe.qb.from_(update)
+        .select(update.payload)
+        .where(update.doc_id == doc_id)
+        .where(update.rev > after)
+        .where(update.rev <= through)
+        .where(update.state == "ok")
+        .orderby(update.rev)
+        .run()
     )
     return [bytes(payload) for (payload,) in rows]
 
 
 def row_chain(app: str, doc_id: str, rev: int) -> bytes | None:
     """Read the chain stamped on the row at `rev`, or None when that row is gone."""
-    update_table = table(app, "update")
-    found = frappe.db.sql(
-        f"SELECT `chain` FROM `{update_table}` WHERE `doc_id` = %s AND `rev` = %s", (doc_id, rev)
+    update = Table(table(app, "update"))
+    found = (
+        frappe.qb.from_(update)
+        .select(update.chain)
+        .where(update.doc_id == doc_id)
+        .where(update.rev == rev)
+        .run()
     )
     if not found:
         return None
@@ -217,12 +249,16 @@ def row_chain(app: str, doc_id: str, rev: int) -> bytes | None:
 
 def control_row(app: str, doc_id: str) -> frappe._dict | None:
     """Read the control row of a document trimming may touch: neither purged nor suspect."""
-    doc_table = table(app, "doc")
-    found = frappe.db.sql(
-        f"""SELECT `id`, `node`, `body_rev`, `body_chain`, `body_sha`, `state_bytes`, `trimmed_rev`
-        FROM `{doc_table}` WHERE `id` = %s AND `mode` != 'purged' AND `suspect` IS NULL""",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(app, "doc"))
+    found = (
+        frappe.qb.from_(doc)
+        .select(
+            doc.id, doc.node, doc.body_rev, doc.body_chain, doc.body_sha, doc.state_bytes, doc.trimmed_rev
+        )
+        .where(doc.id == doc_id)
+        .where(doc.mode != "purged")
+        .where(doc.suspect.isnull())
+        .run(as_dict=True)
     )
     if not found:
         return None
@@ -265,26 +301,33 @@ def delete(app: str, doc_id: str, chunk: Chunk) -> bool:
         frappe.db.rollback()
         return False
 
-    doc_table = table(app, "doc")
-    update_table = table(app, "update")
-    frappe.db.sql(
-        f"""DELETE FROM `{update_table}` WHERE `doc_id` = %s AND `rev` > %s AND `rev` <= %s
-        AND `state` = 'ok'""",
-        (doc_id, chunk.after, chunk.through),
+    doc = Table(table(app, "doc"))
+    update = Table(table(app, "update"))
+    (
+        frappe.qb.from_(update)
+        .delete()
+        .where(update.doc_id == doc_id)
+        .where(update.rev > chunk.after)
+        .where(update.rev <= chunk.through)
+        .where(update.state == "ok")
+        .run()
     )
-    frappe.db.sql(f"UPDATE `{doc_table}` SET `trimmed_rev` = %s WHERE `id` = %s", (chunk.through, doc_id))
+    frappe.qb.update(doc).set(doc.trimmed_rev, chunk.through).where(doc.id == doc_id).run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     return True
 
 
 def still_as_checked(app: str, doc_id: str, chunk: Chunk) -> bool:
     """Lock the control row and answer whether its body and trim point are the ones the chunk was checked on."""
-    doc_table = table(app, "doc")
-    locked = frappe.db.sql(
-        f"""SELECT `body_sha`, `trimmed_rev` FROM `{doc_table}`
-        WHERE `id` = %s AND `mode` != 'purged' AND `suspect` IS NULL FOR UPDATE""",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(app, "doc"))
+    locked = (
+        frappe.qb.from_(doc)
+        .select(doc.body_sha, doc.trimmed_rev)
+        .where(doc.id == doc_id)
+        .where(doc.mode != "purged")
+        .where(doc.suspect.isnull())
+        .for_update()
+        .run(as_dict=True)
     )
     if not locked:
         return False

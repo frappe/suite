@@ -1,4 +1,4 @@
-import type { Replacement } from './index'
+export type Replacement = Array<string | number> | Record<string, string | number>
 
 export function format(message: string, replace?: Replacement): string {
   if (!replace || typeof replace !== 'object') return message

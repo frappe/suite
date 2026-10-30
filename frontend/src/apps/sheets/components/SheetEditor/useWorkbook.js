@@ -5,9 +5,11 @@
 //
 // Usage:
 //   const { startEngine, stopEngine, readRect, writeInputs, … } = useWorkbook({
-//     currentSheet, namedRanges, getGrid, syncNames, onVersion, onUsedExtent })
+//     currentSheet, namedRanges, getGrid, sheetNames, syncNames, onVersion,
+//     onUsedExtent })
 //
-// What reacts to the workbook stays with the editor and comes in as
+// sheetNames() is the tab list: IronCalc's sheets once everything sent so far
+// applies. What reacts to the workbook stays with the editor and comes in as
 // callbacks: syncNames when its sheet list changes, onVersion after every
 // applied edit, onUsedExtent when the open sheet's data extent is read,
 // onCrash(reason) if the worker dies (the workbook is lost with it).
@@ -24,6 +26,7 @@ export function useWorkbook({
   currentSheet,
   namedRanges,
   getGrid,
+  sheetNames,
   syncNames,
   onVersion,
   onUsedExtent,
@@ -44,16 +47,20 @@ export function useWorkbook({
       cache,
       requestRender: () => getGrid()?.render?.(),
     })
-    // Tabs follow the workbook: its sheets on load, and any later change.
-    const offSheets = client.onSheets(() => syncNames())
+    // Tabs follow the workbook: its sheets on load, and any later change. So
+    // do the names: one on a sheet an undo brings back is sent once it's back.
+    const offSheets = client.onSheets(() => {
+      syncNames()
+      syncDefinedNames()
+    })
     const offVersion = client.onVersion(() => onVersion())
     const offCrash = client.onCrash((reason) => onCrash(reason))
     engine = { client, provider, offSheets, offVersion, offCrash }
     // Nothing is sent yet: the next sync sends every name. A load restores
     // the names after this and syncs then (usePersistence).
     namesInEngine = new Map()
-    syncDefinedNames()
     syncNames()
+    syncDefinedNames()
     refreshUsedCells() // size the grid to the loaded data
     getGrid()?.render?.()
   }
@@ -114,7 +121,7 @@ export function useWorkbook({
   let namesInEngine = new Map() // name → formula ('' when dropped)
   function syncDefinedNames() {
     if (!engine) return
-    const { sent, changes } = definedNameChanges(namesInEngine, namedRanges().list())
+    const { sent, changes } = definedNameChanges(namesInEngine, namedRanges().list(), sheetNames())
     const commands = changes.map((c) => command(c.type, c.payload))
     namesInEngine = sent
     if (commands.length === 1) engine.client.dispatch(commands[0])

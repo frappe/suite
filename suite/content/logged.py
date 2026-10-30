@@ -13,6 +13,7 @@ from typing import IO, cast
 import frappe
 import pycrdt
 from frappe import _
+from frappe.query_builder import Table
 
 from suite import drive
 from suite.content import (
@@ -183,8 +184,8 @@ def remap(app: str, node: str, mapping: dict[str, str]) -> bool:
 def purge(app: str, node: str) -> None:
     """Mark `node`'s log purged in Drive's transaction, for a job to delete its rows once that commits."""
     # A refused conversion leaves a record and no log, so the record goes by node
-    conversion_table = tables.table(app, "conversion")
-    frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE `node` = %s", node)
+    conversion = Table(tables.table(app, "conversion"))
+    frappe.qb.from_(conversion).delete().where(conversion.node == node).run()
     doc_id = log.mark_purged(app, node)
     if doc_id:
         scheduling.enqueue(

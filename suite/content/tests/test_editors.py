@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
+import pycrdt
 from frappe.tests import UnitTestCase
 
 from suite.content import editors
@@ -37,6 +38,12 @@ def registered(*paths: str):
 
 def declared(**changes):
     return patch.object(note, "EDITOR", dataclasses.replace(note.EDITOR, **changes))
+
+
+def opened_cells():
+    return dataclasses.replace(
+        note.EDITOR.schema, features={"text": 1, "cells": 1}, open_roots=frozenset({"cells"})
+    )
 
 
 class TestEditorDeclarations(UnitTestCase):
@@ -126,6 +133,20 @@ class TestEditorDeclarations(UnitTestCase):
         for field, value in cases:
             with self.subTest(field=field), declared(**{field: value}):
                 self.assertIn(f"declares {field} wrongly", self.refusal(HOOK))
+
+    def test_an_open_root_that_is_a_map_the_app_writes_is_registered(self):
+        part_map = {"text": pycrdt.Text, "cells": pycrdt.Map}
+        with registered(HOOK), declared(schema=opened_cells(), part_map=part_map):
+            self.assertEqual(editors.editors()["note"].schema.open_roots, {"cells"})
+
+    def test_an_open_root_that_is_not_a_map_the_app_writes_is_refused(self):
+        part_maps = {
+            "an array": {"text": pycrdt.Text, "cells": pycrdt.Array},
+            "no such root": {"text": pycrdt.Text},
+        }
+        for case, part_map in part_maps.items():
+            with self.subTest(case), declared(schema=opened_cells(), part_map=part_map):
+                self.assertIn("declares open_roots wrongly", self.refusal(HOOK))
 
     def test_two_apps_with_one_name_are_refused(self):
         self.assertIn("note", self.refusal(HOOK, HOOK))

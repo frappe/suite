@@ -43,6 +43,7 @@ import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
 import { watchConversion, type CollabRoom } from '@/platform/collab'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 import { frozenBanner, isSafeOnDevice, notUpgradedBanner, upgradingBanner } from './collabMessages'
 import DocumentSidePanel from './DocumentSidePanel.vue'
@@ -173,15 +174,15 @@ const writes = createWriteGate(
     if (!room.value?.status.unsentCount) {
       // Access came back within the bound, so nothing turned read-only
       if (!writes.writable.value) {
-        toast.warning('Editing access changed. This document is now read-only.')
+        toast.warning(__('Editing access changed. This document is now read-only.'))
       }
 
       return
     }
 
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
+    toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
       duration: Number.POSITIVE_INFINITY,
-      action: { label: 'Download my changes', onClick: () => downloadChanges(html) },
+      action: { label: __('Download my changes'), onClick: () => downloadChanges(html) },
     })
   },
   () => void regainAccess(),
@@ -224,7 +225,7 @@ function refusesComment() {
     return false
   }
 
-  toast.warning("You can't comment on this document.")
+  toast.warning(__("You can't comment on this document."))
   return true
 }
 
@@ -266,7 +267,10 @@ const saveState = computed<DocumentSaveState>(() => roomSaveState.value ?? 'clea
 const savingPaused = computed(() => !!roomPaused.value && saveState.value !== 'failed')
 
 const saveNote = computed(() =>
-  [savingPaused.value && 'Saving paused', roomUnsent.value && `${roomUnsent.value} unsent`]
+  [
+    savingPaused.value && __('Saving paused'),
+    roomUnsent.value && __('{0} unsent', [roomUnsent.value]),
+  ]
     .filter(Boolean)
     .join(' · '),
 )
@@ -360,7 +364,7 @@ async function downloadVersion(shown: DocumentVersion) {
     await downloadHTML(html, `${props.session.title.value} (${name})`)
   } catch (error) {
     console.error(error)
-    toast.error('Could not download this version.')
+    toast.error(__('Could not download this version.'))
   }
 }
 
@@ -377,20 +381,22 @@ async function confirmRestore(shown: DocumentVersion) {
     images = await missingImages(props.session, versionImages(body))
   } catch (error) {
     console.error(error)
-    toast.error("This version's images couldn't be checked, so nothing was restored.")
+    toast.error(__("This version's images couldn't be checked, so nothing was restored."))
     return
   } finally {
     isRestoringVersion.value = false
   }
 
   const message = [
-    'The document goes back to this version for everyone. Its current state is kept as a version first.',
+    __(
+      'The document goes back to this version for everyone. Its current state is kept as a version first.',
+    ),
     imagesNotice(images),
   ]
   dialog.confirm({
-    title: 'Restore this version?',
+    title: __('Restore this version?'),
     message: message.filter(Boolean).join(' '),
-    confirmLabel: 'Restore',
+    confirmLabel: __('Restore'),
     onConfirm: () => restoreShownVersion(shown, images),
   })
 }
@@ -402,7 +408,7 @@ async function restoreShownVersion(shown: DocumentVersion, images: MissingImage[
     const notice = await restoreBody(shown)
     if (notice.canDownload) {
       toast.error(notice.message, {
-        action: { label: 'Download', onClick: () => void downloadVersion(shown) },
+        action: { label: __('Download'), onClick: () => void downloadVersion(shown) },
       })
       return
     }
@@ -418,7 +424,7 @@ async function restoreShownVersion(shown: DocumentVersion, images: MissingImage[
     void moveThreadsBack(notice.anchors)
   } catch (error) {
     console.error(error)
-    toast.error('The version was not restored.')
+    toast.error(__('The version was not restored.'))
   } finally {
     isRestoringVersion.value = false
   }
@@ -433,7 +439,7 @@ async function moveThreadsBack(anchors: Record<string, string>) {
   try {
     await props.session.comments.reanchor(anchors)
   } catch (error) {
-    showError(error, "Comments on the restored text couldn't be put back on it.")
+    showError(error, __("Comments on the restored text couldn't be put back on it."))
     return
   }
 
@@ -443,7 +449,7 @@ async function moveThreadsBack(anchors: Record<string, string>) {
 async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
   const liveRoom = room.value
   if (!liveRoom) {
-    return { isRestored: false, message: 'The version was not restored.', anchors: {} }
+    return { isRestored: false, message: __('The version was not restored.'), anchors: {} }
   }
 
   const bytes = await fetchVersion(props.session, shown.seq)
@@ -540,7 +546,7 @@ async function downloadChanges(html: string | undefined) {
 
   const [latest] = await listCopies(props.session.nodeId)
   if (!latest) {
-    toast.error('No recovery copy is kept for this document.')
+    toast.error(__('No recovery copy is kept for this document.'))
     return
   }
 

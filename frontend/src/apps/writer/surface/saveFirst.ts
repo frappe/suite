@@ -1,5 +1,6 @@
 import { HOLD_UP_MS } from '@/apps/writer/collab/timeout'
 import type { CollabRoom, RoomStatus } from '@/platform/collab'
+import { translate as __ } from '@/platform/translation'
 
 type SavingRoom = Pick<CollabRoom, 'flush' | 'onChange'> & {
   readonly status: Pick<RoomStatus, 'saveState' | 'blockReason' | 'pauseReason'>
@@ -31,18 +32,18 @@ function whenSaved(room: SavingRoom, waitMs: number) {
 function notSavedReason(room: SavingRoom) {
   const { saveState, blockReason, pauseReason } = room.status
   if (saveState === 'failed' || (blockReason && blockReason !== 'offline')) {
-    return 'No version was taken: your changes could not be saved.'
+    return __('No version was taken: your changes could not be saved.')
   }
 
   if (blockReason === 'offline' || !navigator.onLine) {
-    return "No version was taken: you're offline, so your changes aren't saved yet."
+    return __("No version was taken: you're offline, so your changes aren't saved yet.")
   }
 
   if (pauseReason) {
-    return 'No version was taken: saving is paused.'
+    return __('No version was taken: saving is paused.')
   }
 
-  return 'No version was taken: your changes are still saving. Try again in a moment.'
+  return __('No version was taken: your changes are still saving. Try again in a moment.')
 }
 
 /** Saves this tab's edits and waits for Saved; throws why when it can't. */
