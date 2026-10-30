@@ -27,7 +27,7 @@ APP = "sheets"
 # Whether the editor reads and writes the room. Until it does, a sheet turned collaborative would keep
 # saving to `sheets_data` while its log and versions held an empty doc, and the switch can't go back
 # off once logs exist, so `refuse_turning_on` keeps Sheets off. The editor's wiring sets it True
-EDITOR_READY = False
+EDITOR_READY = True
 # Every root schema.ts `ROOT` names: `sheets` is the tab order, every other root a map
 PART_MAP = {
     "meta": pycrdt.Map,

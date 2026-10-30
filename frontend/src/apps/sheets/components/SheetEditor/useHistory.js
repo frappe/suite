@@ -2,7 +2,7 @@
 //
 // Usage:
 //   const { history, undo, redo, structural } = useHistory({
-//     currentSheet, engines, getGrid, engineClient, command, writeInputs,
+//     currentSheet, engines, getGrid, engineClient, command, dispatch, writeInputs,
 //     syncDefinedNames, addSheet, deleteSheet, getLocalTouches, syncFlags,
 //     markDirty, afterStructural, afterNavigate })
 //
@@ -22,6 +22,8 @@ export function useHistory({
   getGrid,
   engineClient,
   command,
+  // Sends a command the way every edit does (useWorkbook's dispatch).
+  dispatch = (cmd) => engineClient()?.dispatch(cmd),
   writeInputs,
   syncDefinedNames,
   addSheet,
@@ -247,7 +249,7 @@ export function useHistory({
       sideAfter: null,
       applied: true,
     }
-    engineClient()?.dispatch(command(op.forward.type, op.forward.payload))
+    dispatch(command(op.forward.type, op.forward.payload))
     remapSide(axis, map, sn)
     op.sideAfter = sideSnapshot()
     history.pushOp(op)
@@ -283,7 +285,7 @@ export function useHistory({
 
   function revertStructural(op) {
     if (op.applied) {
-      if (op.inverse) engineClient()?.dispatch(command(op.inverse.type, op.inverse.payload))
+      if (op.inverse) dispatch(command(op.inverse.type, op.inverse.payload))
       else
         engineClient()
           ?.restore(op.beforeBytes)
@@ -296,7 +298,7 @@ export function useHistory({
 
   function redoStructural(op) {
     if (!op.applied) {
-      engineClient()?.dispatch(command(op.forward.type, op.forward.payload))
+      dispatch(command(op.forward.type, op.forward.payload))
       op.applied = true
     }
     restoreSide(op.sideAfter)

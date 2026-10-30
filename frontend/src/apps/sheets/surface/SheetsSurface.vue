@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
+import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
@@ -24,6 +25,15 @@ interface SheetEditorHandle {
   hasDraft(): boolean
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
+  /** True while the sheet is in a live room (collab on). */
+  readonly isCollab: boolean
+  /** Restores a version through the live room; rejects with the message to show. */
+  restoreVersion(seq: string, bytes: Uint8Array): Promise<string>
+  /** Live room: access went or came back. `mayEdit` is read once the room has sent what it could. */
+  loseAccess(lost: 'lost_edit' | 'lost_read'): Promise<void>
+  regainAccess(mayEdit: () => boolean): Promise<void>
+  /** Live room: whether unsent work outlives this tab. */
+  readonly keepsUnsentWork: boolean
 }
 const props = defineProps<{
   session: DocumentSession
@@ -38,21 +48,28 @@ const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
+    // Live room: it sends what it can and keeps the rest on this device, and
+    // its strip says the sheet is now view only. Where the browser keeps
+    // nothing, the person gets their changes as a download, as on the old path.
+    if (current?.isCollab) {
+      const unsent = current.saveState !== 'clean' || current.hasDraft()
+      if (unsent && !current.keepsUnsentWork) keepForDownload()
+      void current.loseAccess(access.readable.value ? 'lost_edit' : 'lost_read')
+      return
+    }
     const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
     if (!unsaved) {
       toast.warning('Editing access changed. This spreadsheet is now view only.')
       return
     }
-    retainRecovery()
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: 'Download my changes',
-        onClick: downloadChanges,
-      },
-    })
+    keepForDownload()
   },
   widened() {
+    if (editor.value?.isCollab) {
+      void editor.value.regainAccess(() => access.writable.value)
+      toast.info(__('You can edit this spreadsheet again.'))
+      return
+    }
     bodyRevision.value += 1
     toast.info('You can edit this spreadsheet again.')
   },
@@ -102,11 +119,29 @@ async function restoreVersion(seq: string) {
   await flushEdits()
   restoring.value = true
   try {
+    // Live room: the restore goes in as one edit everyone's editor applies.
+    if (editor.value?.isCollab) {
+      const response = await props.session.credentials.fetch(props.session.versions.contentUrl(seq))
+      if (!response.ok) throw new Error(__('The version could not be read.'))
+      await editor.value.restoreVersion(seq, new Uint8Array(await response.arrayBuffer()))
+      return
+    }
     await props.session.versions.restore(seq)
     bodyRevision.value += 1
   } finally {
     restoring.value = false
   }
+}
+// Keeps the editor's workbook in this browser and offers it as a download.
+function keepForDownload() {
+  retainRecovery()
+  toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: __('Download my changes'),
+      onClick: downloadChanges,
+    },
+  })
 }
 async function retainRecovery() {
   const workbook = await editor.value?.workbookJson()
@@ -157,7 +192,9 @@ useDocumentLeaveGuard({
       :title="session.title.value"
       :credential-fetch="session.credentials.fetch"
       :request-context="session.credentials.context"
+      :collab-session="session"
       @access-refused="access.refuse()"
+      @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
       <template
