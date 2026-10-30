@@ -4,7 +4,7 @@ import pycrdt
 from frappe.tests import UnitTestCase
 
 from suite.content.compaction import load_doc, serialize, state_vector, vector_and_deletes
-from suite.content.updates import encoded_string, encoded_uint, parse, rewrite_values
+from suite.content.updates import Update, encoded_string, encoded_uint, parse, rewrite_values
 
 
 def typed(text: str, client_id: int = 5) -> pycrdt.Doc:
@@ -13,6 +13,14 @@ def typed(text: str, client_id: int = 5) -> pycrdt.Doc:
     paragraph = fragment.children.append(pycrdt.XmlText())
     paragraph.insert(0, text)
     return doc
+
+
+def names_of(update: Update) -> set[str]:
+    names: set[str] = set()
+    for struct in update.structs:
+        names.update(struct.names)
+
+    return names
 
 
 class TestParse(UnitTestCase):
@@ -64,7 +72,7 @@ class TestParse(UnitTestCase):
         text.insert(0, "hi", marks)
         doc.get("meta", type=pycrdt.Map)["firstTabLabel"] = {"value": "One"}
 
-        names = parse(doc.get_update()).names
+        names = names_of(parse(doc.get_update()))
 
         self.assertEqual(
             names, {"default", "paragraph", "textAlign", "link", "href", "comment", "id", "meta"}
@@ -78,7 +86,7 @@ class TestParse(UnitTestCase):
         update = parse(doc.get_update())
 
         self.assertEqual([struct.key for struct in update.structs], ["s1:r1:c1", None])
-        self.assertEqual(update.names, {"cells", "format"})
+        self.assertEqual(names_of(update), {"cells", "format"})
 
     def test_json_values_nested_deeper_than_a_hundred_levels_are_refused(self):
         def one_struct_holding(ref: int, content: bytes) -> bytes:

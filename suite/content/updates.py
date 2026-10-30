@@ -84,15 +84,6 @@ class Update:
     structs: list[Struct] = field(default_factory=list)
     deletes: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
 
-    @property
-    def names(self) -> set[str]:
-        """Answer every name the structs carry; a root's direct keys are each struct's `key`."""
-        names: set[str] = set()
-        for struct in self.structs:
-            names.update(struct.names)
-
-        return names
-
     def split_points(self) -> set[tuple[int, int]]:
         """Answer where this update can split a struct: after origins, at right origins, at delete ends."""
         points: set[tuple[int, int]] = set()

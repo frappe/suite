@@ -48,9 +48,10 @@ class EditorSchema:
 
     def allows(self, update: updates.Update, stamp: int) -> bool:
         """Whether a row stamped `stamp` may hold `update`: names declared at or below it, open keys fit."""
-        names = update.names
+        names: set[str] = set()
         open_keys: list[str] = []
         for struct in update.structs:
+            names.update(struct.names)
             if struct.key is not None and struct.root in self.open_roots:
                 open_keys.append(struct.key)
             elif struct.key is not None:
