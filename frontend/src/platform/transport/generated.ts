@@ -446,6 +446,33 @@ const operationStorageDefault: MutationRef<
   loadValidators: async () => (await import('./validators')).operationStorageDefault,
 }
 
+export type ErrorsPostInput = {
+  source: 'component' | 'script' | 'promise' | 'worker'
+  title: string
+  stack: string
+  route: string
+}
+
+export type ErrorsPostOutput = null
+
+export type ErrorsPostError = never
+
+const operationErrorsPost: MutationRef<ErrorsPostInput, ErrorsPostOutput, ErrorsPostError> = {
+  id: 'errors_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'errors.report',
+  empty: true,
+  method: 'POST',
+  path: 'errors',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationErrorsPost,
+}
+
 export type GetPreferencesInput = Record<string, never>
 
 export type GetPreferencesOutput = {
@@ -1109,6 +1136,9 @@ export const api = {
     get: operationStorageGet,
     setLimits: operationStorageLimits,
     setDefault: operationStorageDefault,
+  },
+  errors: {
+    report: operationErrorsPost,
   },
   preferences: {
     get: operationGetPreferences,

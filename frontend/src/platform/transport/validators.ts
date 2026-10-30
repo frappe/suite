@@ -7,6 +7,8 @@ import type {
   AccountGetOutput,
   AdminHealthGetInput,
   AdminHealthGetOutput,
+  ErrorsPostInput,
+  ErrorsPostOutput,
   FrappeLoginInput,
   FrappeLoginOutput,
   FrappeLogoutInput,
@@ -775,6 +777,34 @@ export const operationStorageDefault: Validators<StorageDefaultInput, StorageDef
       },
       'storage_default output',
     )
+  },
+}
+
+export const operationErrorsPost: Validators<ErrorsPostInput, ErrorsPostOutput> = {
+  validateInput(value: unknown): asserts value is ErrorsPostInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          source: {
+            enum: ['component', 'script', 'promise', 'worker'],
+            title: 'Source',
+            type: 'string',
+          },
+          title: { title: 'Title', type: 'string' },
+          stack: { title: 'Stack', type: 'string' },
+          route: { title: 'Route', type: 'string' },
+        },
+        required: ['source', 'title', 'stack', 'route'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'errors_post input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ErrorsPostOutput {
+    assertSchema(value, { type: 'null' }, 'errors_post output')
   },
 }
 

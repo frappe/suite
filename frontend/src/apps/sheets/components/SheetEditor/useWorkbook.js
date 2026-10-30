@@ -14,6 +14,8 @@
 // applied edit, onUsedExtent when the open sheet's data extent is read,
 // onCrash(reason) if the worker dies (the workbook is lost with it).
 
+import { reportError } from '@/platform/error-log'
+
 import { createCellProvider } from '../../core/cell-provider'
 import { createWorkbookClient } from '../../core/client'
 import { createDisplayCache } from '../../core/display-cache'
@@ -54,7 +56,10 @@ export function useWorkbook({
       syncDefinedNames()
     })
     const offVersion = client.onVersion(() => onVersion())
-    const offCrash = client.onCrash((reason) => onCrash(reason))
+    const offCrash = client.onCrash((reason) => {
+      reportError(`Sheets worker crashed: ${reason}`, 'worker')
+      onCrash(reason)
+    })
     engine = { client, provider, offSheets, offVersion, offCrash }
     // Nothing is sent yet: the next sync sends every name. A load restores
     // the names after this and syncs then (usePersistence).

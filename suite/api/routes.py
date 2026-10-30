@@ -29,6 +29,8 @@ from suite.api.admin_storage import (
 )
 from suite.api.admin_transfer import ROUTES as TRANSFER_ROUTES
 from suite.api.admin_transfer import user_transfer, user_transfer_preview
+from suite.api.errors import ROUTES as ERROR_ROUTES
+from suite.api.errors import errors_post
 from suite.api.preferences import (
     Language,
     PreferenceChanges,
@@ -277,6 +279,7 @@ ROUTES = (
     *LIFECYCLE_ROUTES,
     *TRANSFER_ROUTES,
     *STORAGE_ROUTES,
+    *ERROR_ROUTES,
     Route(
         "GET",
         "preferences",

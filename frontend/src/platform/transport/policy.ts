@@ -31,6 +31,7 @@ export const mutationEffects = {
   'frappe.logout': 'none',
   'suite.push.subscribe': 'none',
   'suite.push.unsubscribe': 'none',
+  errors_post: 'none',
   update_preferences: {
     invalidates: ['get_preferences', 'account_get', 'people_get', 'users_get'],
   },
