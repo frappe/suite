@@ -70,7 +70,15 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 			snapshot: expect.objectContaining({
 				protocol_version: 1,
 				room_id: 'room-1',
-				cursor: 1,
+				cursor: 2,
+				shared_stage: {
+					epoch: expect.any(String),
+					protocolVersion: 1,
+					version: 1,
+					participantIds: ['p1'],
+					activeSpeakerIds: [],
+					presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['p1']])),
+				},
 				participants: [
 					{
 						participant_id: 'p1',

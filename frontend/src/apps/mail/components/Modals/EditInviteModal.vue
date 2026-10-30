@@ -42,8 +42,8 @@
 					v-model="inviteQuota"
 					type="number"
 					:min="0"
-					:label="__('Quota (GB, 0 = unlimited)')"
-					:description="__('Leave blank to use the configured default disk quota.')"
+					:label="__('Quota (GB)')"
+					:description="__('Leave blank or 0 for no limit.')"
 					:disabled="!isEditableInvite"
 				/>
 				<!-- Fixed when the request was created (set_only_once on the doctype), so the roles the
@@ -149,8 +149,6 @@ const accountRequest = ref<AccountRequestResource>()
 
 const roleLabel = computed(() => (accountRequest.value?.doc?.is_admin ? __('Admin') : __('User')))
 
-// Cleared back to null rather than 0, so a blank field keeps deferring to the configured default
-// instead of silently meaning unlimited.
 const inviteQuota = computed<number | string>({
 	get: () => accountRequest.value?.doc?.quota_gb ?? '',
 	set: (value) => {

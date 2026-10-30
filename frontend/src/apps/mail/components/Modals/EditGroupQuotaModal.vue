@@ -15,7 +15,7 @@
 	>
 		<template #default>
 			<div class="space-y-4">
-				<FormControl v-model="quotaGb" type="number" :min="0" :label="__('Quota (GB, 0 = unlimited)')" />
+				<FormControl v-model="quotaGb" type="number" :min="0" :label="__('Quota (GB)')" :description="__('0 means no limit.')" />
 				<ErrorMessage
 					:message="updateQuota.error && (updateQuota.error?.messages?.[0] || updateQuota.error?.message || __('Request failed.'))"
 				/>

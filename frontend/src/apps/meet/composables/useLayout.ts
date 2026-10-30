@@ -1,4 +1,4 @@
-import { type ComputedRef, computed, type Ref } from "vue";
+import { type ComputedRef, computed, shallowRef, watch, watchEffect, type Ref } from "vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import type { PinnedTile } from "./useGridLayout";
 import { useResponsiveGrid } from "./useResponsiveGrid";
@@ -7,6 +7,8 @@ interface LayoutDeps {
 	raisedHands: Ref<Record<string, string>>;
 	activeSpeakerIds: Ref<string[]>;
 	stableSpeakerIds: Ref<string[]>;
+	sharedStageParticipantIds?: Ref<string[]>;
+	sharedStagePresentationOrders?: Ref<Record<string, string[]>>;
 }
 
 interface DisplayParticipantsResult {
@@ -26,6 +28,8 @@ interface UseLayoutReturn {
 	displayParticipants: ComputedRef<DisplayParticipantsResult>;
 	allParticipants: ComputedRef<LayoutParticipant[]>;
 	visibleTileCount: ComputedRef<number>;
+	vacantStripSlots: ComputedRef<number[]>;
+	overflowSlotIndex: ComputedRef<number>;
 	hiddenParticipantsTooltip: ComputedRef<string>;
 }
 
@@ -51,21 +55,32 @@ export function useLayout(
 		return participants.value;
 	});
 
+	const getPinnedParticipantId = (): string[] =>
+		pinnedTiles.value.filter((t) => t.type === "participant").map((t) => t.id);
+
+	// Pin, viewport and screen changes start a new layout session. Joins do not.
+	const sidebarColumns = shallowRef(1);
+	watch(
+		() => JSON.stringify([
+			pinnedTiles.value, isMobile.value, sidebarMaxColumns.value, extraTiles.value,
+		]),
+		() => {
+			const pinned = new Set(getPinnedParticipantId());
+			const count = Object.keys(participants.value).filter(id => !pinned.has(id)).length
+				+ localTileCount + extraTiles.value;
+			sidebarColumns.value = isMobile.value
+				? 1 : Math.min(sidebarMaxColumns.value, count > 4 ? 2 : 1);
+		},
+		{ immediate: true, flush: "sync" },
+	);
+
 	const maxVisibleTiles = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 3;
-			return sidebarMaxColumns.value * 4;
+			return sidebarColumns.value * 4;
 		}
 		return maxColumns.value * 4;
 	});
-
-	// ── Slot persistence ──────────────────────────────────────────────────────
-
-	let slotAssignments: Map<string, number> = new Map();
-	const lastPromotion = new Map<string, number>();
-	let previousPriorities = new Map<string, number>();
-	let promotionSequence = 0;
-
 	// ── Priority ──────────────────────────────────────────────────────────────
 
 	const getPriority = (
@@ -87,8 +102,6 @@ export function useLayout(
 		return 6;
 	};
 
-	const getPinnedParticipantId = (): string[] =>
-		pinnedTiles.value.filter((t) => t.type === "participant").map((t) => t.id);
 
 	const getRemoteCapacity = (
 		remoteCount: number,
@@ -132,162 +145,41 @@ export function useLayout(
 		return priorityMap;
 	};
 
-	const pruneSlotAssignments = (remotes: Participant[]) => {
-		const currentIds = new Set(
-			remotes.map((participant) => participant.user_id),
-		);
-		for (const id of slotAssignments.keys()) {
-			if (!currentIds.has(id)) slotAssignments.delete(id);
-		}
-		for (const id of lastPromotion.keys()) {
-			if (!currentIds.has(id)) lastPromotion.delete(id);
-		}
-	};
-
-	const getCurrentlyVisibleIds = (remoteCapacity: number): Set<string> => {
-		const currentlyVisible = new Set<string>();
-		for (const [id, slot] of slotAssignments.entries()) {
-			if (slot < remoteCapacity) currentlyVisible.add(id);
-		}
-		return currentlyVisible;
-	};
-
-	const sortRemotesByPriority = (
-		remotes: Participant[],
-		priorityMap: Map<string, number>,
-		currentlyVisible: Set<string>,
-		raisedHands: Record<string, string>,
-	): Participant[] => {
-		return [...remotes].sort((left, right) => {
-			const leftPriority = priorityMap.get(left.user_id) ?? 4;
-			const rightPriority = priorityMap.get(right.user_id) ?? 4;
-			if (leftPriority !== rightPriority) return leftPriority - rightPriority;
-
-			// Raised hands form the same earliest-first queue as the People panel.
-			if (raisedHands[left.user_id] && raisedHands[right.user_id]) {
-				const handOrder =
-					new Date(raisedHands[left.user_id]).getTime() -
-					new Date(raisedHands[right.user_id]).getTime();
-				if (handOrder) return handOrder;
-			}
-
-			const leftVisible = currentlyVisible.has(left.user_id);
-			const rightVisible = currentlyVisible.has(right.user_id);
-			if (leftVisible !== rightVisible) return leftVisible ? -1 : 1;
-
-			// Among equally ranked visible tiles, retain the most recently
-			// promoted one instead of always evicting the same physical slot.
-			if (leftVisible && rightVisible) {
-				const promotionOrder =
-					(lastPromotion.get(right.user_id) ?? 0) -
-					(lastPromotion.get(left.user_id) ?? 0);
-				if (promotionOrder) return promotionOrder;
-			}
-
-			const leftSlot = slotAssignments.get(left.user_id) ?? 9999;
-			const rightSlot = slotAssignments.get(right.user_id) ?? 9999;
-			if (leftSlot !== rightSlot) return leftSlot - rightSlot;
-
-			return left.user_id.localeCompare(right.user_id);
-		});
-	};
-
-	const ensurePinnedParticipantVisible = (
-		visibleRemotes: Participant[],
-		remotes: Participant[],
-		pinnedParticipantIds: string[],
-		remoteCapacity: number,
-	): Participant[] => {
-		if (pinnedParticipantIds.length === 0 || remoteCapacity <= 0)
-			return visibleRemotes;
-
-		const newVisible = [...visibleRemotes];
-
-		for (const pinnedId of pinnedParticipantIds) {
-			const isPinnedVisible = newVisible.some((p) => p.user_id === pinnedId);
-
-			if (!isPinnedVisible) {
-				const pinnedParticipant = remotes.find((p) => p.user_id === pinnedId);
-				if (pinnedParticipant) {
-					if (newVisible.length >= remoteCapacity) {
-						newVisible.pop();
-					}
-					newVisible.unshift(pinnedParticipant);
-				}
-			}
-		}
-		return newVisible;
-	};
-
 	const partitionVisibleAndHidden = (
 		sortedRemotes: Participant[],
 		remoteCapacity: number,
-		remotes: Participant[],
-		pinnedParticipantId: string[],
+		pinnedParticipantIds: string[],
 	): DisplayParticipantsResult => {
-		const visibleRemotes = ensurePinnedParticipantVisible(
-			sortedRemotes.slice(0, remoteCapacity),
-			remotes,
-			pinnedParticipantId,
-			remoteCapacity,
-		);
-
-		const visibleIds = new Set(
-			visibleRemotes.map((participant) => participant.user_id),
-		);
-		const hidden = sortedRemotes.filter(
-			(participant) => !visibleIds.has(participant.user_id),
-		);
-
+		const pins = new Set(pinnedParticipantIds);
+		const pinned = sortedRemotes.filter((p) => pins.has(p.user_id));
+		const unpinned = sortedRemotes.filter((p) => !pins.has(p.user_id));
+		const stripCapacity = Math.max(0, remoteCapacity - pinned.length);
 		return {
-			list: visibleRemotes,
-			hidden,
-			extra: hidden.length,
+			list: [...unpinned.slice(0, stripCapacity), ...pinned],
+			hidden: unpinned.slice(stripCapacity),
+			extra: Math.max(0, unpinned.length - stripCapacity),
 		};
 	};
 
-	const assignStableSlots = (
-		visibleRemotes: Participant[],
-		slotLimit: number,
-	) => {
-		const usedSlots = new Set<number>();
-		const newSlotAssignments = new Map<string, number>();
-
-		for (const participant of visibleRemotes) {
-			const existingSlot = slotAssignments.get(participant.user_id);
-			if (
-				existingSlot !== undefined &&
-				existingSlot < slotLimit &&
-				!usedSlots.has(existingSlot)
-			) {
-				newSlotAssignments.set(participant.user_id, existingSlot);
-				usedSlots.add(existingSlot);
-			}
-		}
-
-		let nextFreeSlot = 0;
-		for (const participant of visibleRemotes) {
-			if (newSlotAssignments.has(participant.user_id)) continue;
-			while (usedSlots.has(nextFreeSlot)) nextFreeSlot++;
-			newSlotAssignments.set(participant.user_id, nextFreeSlot);
-			usedSlots.add(nextFreeSlot);
-			nextFreeSlot++;
-		}
-
-		slotAssignments = newSlotAssignments;
-
-		return [...visibleRemotes].sort((left, right) => {
-			const leftSlot = newSlotAssignments.get(left.user_id) ?? 999;
-			const rightSlot = newSlotAssignments.get(right.user_id) ?? 999;
-			return leftSlot - rightSlot;
-		});
-	};
+	let personalSlots: (string | undefined)[] = [];
+	let personalLayoutKey = "";
+	let personalOverflowSlot: number | undefined;
+	const stripSlots = new Map<string, number>();
+	let vacancies: number[] = [];
 
 	// ── Display participants ──────────────────────────────────────────────────
 
-	const displayParticipants = computed<DisplayParticipantsResult>(() => {
+	const projection = shallowRef<{
+		display: DisplayParticipantsResult;
+		slots: Map<string, number>;
+		vacancies: number[];
+		overflow: number | undefined;
+	}>();
+	watchEffect(() => {
 		const remotes = Object.values(stripParticipants.value || {});
-		const pinnedParticipantIds = getPinnedParticipantId();
+		const pinnedParticipantIds = [...new Set(getPinnedParticipantId())].filter(
+			(id) => remotes.some((p) => p.user_id === id),
+		);
 		const remoteCapacity = getRemoteCapacity(
 			remotes.length,
 			pinnedParticipantIds,
@@ -305,44 +197,109 @@ export function useLayout(
 			stableSpeakerSet,
 			raisedHands,
 		);
-		pruneSlotAssignments(remotes);
-		const currentlyVisible = getCurrentlyVisibleIds(remoteCapacity);
-		promotionSequence++;
-		for (const id of currentlyVisible) {
-			const previousPriority = previousPriorities.get(id);
-			const currentPriority = priorityMap.get(id);
-			if (
-				previousPriority !== undefined &&
-				currentPriority !== undefined &&
-				currentPriority < previousPriority
-			) {
-				lastPromotion.set(id, promotionSequence);
-			}
-		}
-		const sortedRemotes = sortRemotesByPriority(
-			remotes,
-			priorityMap,
-			currentlyVisible,
-			raisedHands,
+		const ranking = new Map(
+			(layoutDeps.sharedStageParticipantIds?.value ?? []).map((id, index) => [
+				id,
+				index,
+			]),
 		);
+		const sortedRemotes = [...remotes].sort((a, b) => {
+			if (ranking.size)
+				return (
+					(ranking.get(a.user_id) ?? Number.MAX_SAFE_INTEGER) -
+						(ranking.get(b.user_id) ?? Number.MAX_SAFE_INTEGER) ||
+					(a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0)
+				);
+			return (
+				(priorityMap.get(a.user_id) ?? 6) - (priorityMap.get(b.user_id) ?? 6) ||
+				(raisedHands[a.user_id] ?? "").localeCompare(
+					raisedHands[b.user_id] ?? "",
+				) ||
+				(a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0)
+			);
+		});
 		const partitioned = partitionVisibleAndHidden(
 			sortedRemotes,
 			remoteCapacity,
-			remotes,
 			pinnedParticipantIds,
 		);
 
-		for (const participant of partitioned.list) {
-			if (!currentlyVisible.has(participant.user_id)) {
-				lastPromotion.set(participant.user_id, promotionSequence);
-			}
+		// Seed personal layouts from the shared presentation; subsequent selection
+		// changes replace vacancies without moving retained strip tiles.
+		const pins = new Set(pinnedParticipantIds);
+		const strip = partitioned.list.filter((p) => !pins.has(p.user_id));
+		const presentationCapacity = strip.length
+			? sortedRemotes.findIndex(
+					(p) => p.user_id === strip[strip.length - 1].user_id,
+				) + 1
+			: 0;
+		const order =
+			layoutDeps.sharedStagePresentationOrders?.value[presentationCapacity];
+		if (order) {
+			const positions = new Map(order.map((id, index) => [id, index]));
+			partitioned.list.sort(
+				(a, b) =>
+					(positions.get(a.user_id) ?? Infinity) -
+					(positions.get(b.user_id) ?? Infinity),
+			);
 		}
-		previousPriorities = priorityMap;
-
-		return {
-			...partitioned,
-			list: assignStableSlots(partitioned.list, remoteCapacity),
+		const key = JSON.stringify([
+			pinnedTiles.value, maxVisibleTiles.value, extraTiles.value,
+		]);
+		stripSlots.clear();
+		vacancies = [];
+		if (key !== personalLayoutKey || !pinnedTiles.value.length) {
+			personalSlots = [];
+			personalOverflowSlot = undefined;
+		}
+		personalLayoutKey = key;
+		if (pinnedTiles.value.length) {
+			const selected = partitioned.list.filter((p) => !pins.has(p.user_id));
+			const selectedIds = new Set(selected.map((p) => p.user_id));
+			personalSlots = personalSlots.map((id) => id && selectedIds.has(id) ? id : undefined);
+			if (!partitioned.extra) personalOverflowSlot = undefined;
+			for (const participant of selected) {
+				if (personalSlots.includes(participant.user_id)) continue;
+				const vacancy = personalSlots.findIndex(
+					(id, index) => id === undefined && index !== personalOverflowSlot,
+				);
+				if (vacancy < 0) personalSlots.push(participant.user_id);
+				else personalSlots[vacancy] = participant.user_id;
+			}
+			if (partitioned.extra && personalOverflowSlot === undefined) {
+				const vacancy = personalSlots.indexOf(undefined);
+				personalOverflowSlot = vacancy < 0 ? personalSlots.length : vacancy;
+				if (vacancy < 0) personalSlots.push(undefined);
+			}
+			while (
+				personalSlots.length > 0 &&
+				personalSlots[personalSlots.length - 1] === undefined &&
+				personalSlots.length - 1 !== personalOverflowSlot
+			) personalSlots.pop();
+			personalSlots.forEach((id, index) => {
+				if (id) stripSlots.set(id, index);
+				else if (index !== personalOverflowSlot) vacancies.push(index);
+			});
+			const byId = new Map(selected.map((p) => [p.user_id, p]));
+			partitioned.list = [
+				...personalSlots.flatMap((id) => id ? [byId.get(id)!] : []),
+				...pinnedParticipantIds.map((id) => participants.value[id]),
+			];
+		}
+		projection.value = {
+			display: partitioned, slots: new Map(stripSlots),
+			vacancies, overflow: personalOverflowSlot,
 		};
+	}, { flush: "sync" });
+	const displayParticipants = computed(() => projection.value!.display);
+
+	const vacantStripSlots = computed(() => {
+		return projection.value!.vacancies;
+	});
+
+	const overflowSlotIndex = computed(() => {
+		const { list, hidden } = displayParticipants.value;
+		return projection.value!.overflow ?? list.length + hidden.length;
 	});
 
 	const visibleTileCount = computed<number>(
@@ -350,19 +307,14 @@ export function useLayout(
 			localTileCount +
 			extraTiles.value +
 			displayParticipants.value.list.length +
+			vacantStripSlots.value.length +
 			(displayParticipants.value.extra > 0 ? 1 : 0),
 	);
 
 	const gridColumns = computed<number>(() => {
 		if (mode.value === "sidebar") {
 			if (isMobile.value) return 1;
-			const pinnedParticipantIds = new Set(getPinnedParticipantId());
-			const stripTileCount =
-				visibleTileCount.value -
-				displayParticipants.value.list.filter((participant) =>
-					pinnedParticipantIds.has(participant.user_id),
-				).length;
-			return Math.min(stripTileCount > 4 ? 2 : 1, sidebarMaxColumns.value);
+			return sidebarColumns.value;
 		}
 		const count = visibleTileCount.value;
 		if (count <= 0) return 1;
@@ -376,7 +328,7 @@ export function useLayout(
 		const visible: LayoutParticipant[] = list.map((p, idx) => ({
 			...p,
 			isVisible: true,
-			slotIndex: idx,
+			slotIndex: projection.value!.slots.get(p.user_id) ?? idx,
 		}));
 
 		const invisible: LayoutParticipant[] = hidden.map((p, idx) => ({
@@ -406,6 +358,8 @@ export function useLayout(
 		displayParticipants,
 		allParticipants,
 		visibleTileCount,
+		vacantStripSlots,
+		overflowSlotIndex,
 		hiddenParticipantsTooltip,
 	};
 }

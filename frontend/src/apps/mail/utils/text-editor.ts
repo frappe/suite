@@ -1,4 +1,5 @@
 import { Node } from '@tiptap/core'
+import { Fragment } from '@tiptap/pm/model'
 import { useFileUpload } from 'frappe-ui'
 import { ImageExtension } from 'frappe-ui/experimental'
 
@@ -9,7 +10,18 @@ export const CustomParagraphExtension = Node.create({
 	priority: 1000,
 	group: 'block',
 	content: 'inline*',
-	parseHTML: () => [{ tag: 'div' }, { tag: 'p' }],
+	parseHTML: () => [
+		// A mail's blank line, `<div><br></div>`, is an empty paragraph: read as a paragraph holding a
+		// line break it would be drawn two lines tall, and come back out with the break doubled.
+		{
+			tag: 'div',
+			getAttrs: (element) =>
+				element.childNodes.length === 1 && element.firstChild?.nodeName === 'BR' ? null : false,
+			getContent: () => Fragment.empty,
+		},
+		{ tag: 'div' },
+		{ tag: 'p' },
+	],
 	renderHTML: ({ HTMLAttributes }) => ['div', HTMLAttributes, 0],
 })
 

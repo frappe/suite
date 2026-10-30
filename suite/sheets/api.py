@@ -5,6 +5,7 @@ import frappe
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.versioning import save as save_mod
+from suite.suite_core import suite_email
 
 MAX_TITLE_LEN = 280
 
@@ -239,18 +240,21 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
             }
         ).insert(ignore_permissions=True)
         # Best-effort email — silently skipped if the site has no mailer.
-        frappe.sendmail(
-            recipients=[recipient],
-            subject=subject,
-            message=(
-                f"<p>{frappe.utils.escape_html(sharer)} shared the sheet "
-                f"<b>{frappe.utils.escape_html(title)}</b> with you. "
-                f"You can {role} it.</p>"
-                f"<p><a href='{link}'>Open the sheet</a></p>"
-            ),
-            reference_doctype="Sheet",
-            reference_name=sheet_name,
-            now=False,
+        suite_email.enqueue(
+            "sheet-share",
+            recipient,
+            {"sharer": sharer, "sheet": title, "access": role, "link": link},
+            local={
+                "subject": subject,
+                "message": (
+                    f"<p>{frappe.utils.escape_html(sharer)} shared the sheet "
+                    f"<b>{frappe.utils.escape_html(title)}</b> with you. "
+                    f"You can {role} it.</p>"
+                    f"<p><a href='{link}'>Open the sheet</a></p>"
+                ),
+                "reference_doctype": "Sheet",
+                "reference_name": sheet_name,
+            },
         )
     except Exception:
         # Don't let notification failures roll back the share — the

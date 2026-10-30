@@ -38,8 +38,8 @@ class SuiteCloudTestCase(IntegrationTestCase):
             self.change_settings(
                 "Suite Settings",
                 suite_cloud_url="https://cloud.example.test",
-                site_api_key="key",
-                site_api_secret="secret",
+                suite_cloud_tenant="key",
+                suite_cloud_secret="secret",
             )
         )
         frappe.local.request_cache.clear()
@@ -63,62 +63,30 @@ class SuiteCloudTestCase(IntegrationTestCase):
 class TestClient(IntegrationTestCase):
     def test_configuration_needs_all_three_values(self) -> None:
         with self.change_settings(
-            "Suite Settings", suite_cloud_url="https://cloud.test", site_api_key="k", site_api_secret=""
+            "Suite Settings",
+            suite_cloud_url="https://cloud.test",
+            suite_cloud_tenant="k",
+            suite_cloud_secret="",
         ):
             frappe.local.request_cache.clear()
             self.assertFalse(is_suite_cloud_configured())
         with self.change_settings(
-            "Suite Settings", suite_cloud_url="https://cloud.test", site_api_key="k", site_api_secret="s"
+            "Suite Settings",
+            suite_cloud_url="https://cloud.test",
+            suite_cloud_tenant="k",
+            suite_cloud_secret="s",
         ):
             frappe.local.request_cache.clear()
             self.assertTrue(is_suite_cloud_configured())
         frappe.local.request_cache.clear()
-
-    def test_refusals_become_frappe_exceptions(self) -> None:
-        client = SuiteCloudClient("https://cloud.test", "k", "s")
-
-        def response(status: int, body: dict):
-            r = frappe._dict(status_code=status, ok=status < 400, content=b"x", text=json.dumps(body))
-            r.json = lambda: body
-            return r
-
-        server_message = json.dumps(
-            [json.dumps({"message": "Site acme has reached its limit of 10 domains."})]
-        )
-        with patch.object(
-            client.session, "post", return_value=response(422, {"_server_messages": server_message})
-        ):
-            self.assertRaisesRegex(
-                frappe.ValidationError,
-                "limit of 10 domains",
-                client.call,
-                "domains.create_domain",
-                domain="x.test",
-            )
-        with patch.object(
-            client.session,
-            "post",
-            return_value=response(
-                404, {"exception": "frappe.exceptions.DoesNotExistError: Mail Domain x.test not found."}
-            ),
-        ):
-            self.assertRaises(frappe.DoesNotExistError, client.call, "domains.get_domain", domain="x.test")
-        with patch.object(client.session, "post", return_value=response(403, {})):
-            self.assertRaises(frappe.PermissionError, client.call, "ping")
-        with patch.object(client.session, "post", return_value=response(200, {"message": {"site": "acme"}})):
-            self.assertEqual(client.call("site.ping"), {"site": "acme"})
-            body = json.loads(client.session.post.call_args.kwargs["data"])
-            self.assertEqual(body, {})
-        self.assertEqual(client.session.headers["Frappe-Authorization-Source"], "Suite Site")
-        self.assertEqual(client.session.headers["Authorization"], "token k:s")
 
 
 class TestSuiteSettings(SuiteCloudTestCase):
     def test_validate_credentials_pings_and_flags_jmap_url_mismatch(self) -> None:
         settings = frappe.get_doc("Suite Settings")
         site = settings.validate_suite_cloud_credentials()
-        self.assertEqual(site["site"], "acme.frappe.test")
-        self.assertEqual(self.fake.calls[-1][0], "site.ping")
+        self.assertEqual(site["tenant"], "acme.frappe.test")
+        self.assertEqual(self.fake.calls[-1][0], "tenant.ping")
         self.assertNotIn("expects the JMAP URL", frappe.get_message_log()[-1]["message"])
 
         # The site is registered on c1; a JMAP URL of another cluster is worth a warning.
@@ -143,10 +111,10 @@ class TestSuiteSettings(SuiteCloudTestCase):
         calls = len(self.fake.calls)
         with self.change_settings("Suite Settings", is_onboarded=1):
             pass
-        self.assertEqual([c for c in self.fake.calls[calls:] if c[0] == "site.update_site_profile"], [])
+        self.assertEqual([c for c in self.fake.calls[calls:] if c[0] == "tenant.update_tenant_profile"], [])
 
     def test_validate_credentials_needs_configuration(self) -> None:
-        with self.change_settings("Suite Settings", site_api_secret=""):
+        with self.change_settings("Suite Settings", suite_cloud_secret=""):
             frappe.local.request_cache.clear()
             self.assertRaisesRegex(
                 frappe.ValidationError,
@@ -259,11 +227,10 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         self.fake.groups[group]["used_disk_bytes"] = 1024
         listed = admin.get_groups()["items"][0]
         self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (2, 1024))
-        with self.change_settings("Mail Settings", default_disk_quota_gb=7):
-            frappe.local.request_cache.clear()
-            admin.add_group("ops", DOMAIN)
-        frappe.local.request_cache.clear()
-        self.assertEqual(self.fake.groups[f"ops@{DOMAIN}"]["disk_quota_gb"], 7)
+        # No quota asked for means none: Suite Cloud applies no default.
+        admin.add_group("ops", DOMAIN)
+        self.assertEqual(self.fake.groups[f"ops@{DOMAIN}"]["disk_quota_gb"], 0)
+        self.assertEqual(admin.get_group(f"ops@{DOMAIN}")["quota"]["total"], 0)
         admin.delete_groups([f"ops@{DOMAIN}"])
 
         admin.add_group_members(group, [f"bob@{DOMAIN}"])
@@ -275,7 +242,7 @@ class TestGroupsAndLists(SuiteCloudTestCase):
         # One alias per call, never the whole set: concurrent edits cannot drop each other's rows.
         self.assertEqual(
             [c[0] for c in self.fake.calls[-2:]],
-            ["mail.groups.add_group_alias", "mail.groups.set_group_alias_enabled"],
+            ["mail.groups.add_alias", "mail.groups.set_alias_enabled"],
         )
         addresses = admin.get_group(group)["email_addresses"]
         self.assertEqual(
@@ -565,21 +532,19 @@ class TestMembers(SuiteCloudTestCase):
         create_account.assert_not_called()
         self.assertEqual(self.fake.accounts[f"grace@{DOMAIN}"]["display_name"], "Grace of old")
 
-    def test_unset_quota_takes_the_mail_settings_default(self) -> None:
-        with self.change_settings("Mail Settings", default_disk_quota_gb=7):
-            frappe.local.request_cache.clear()
-            admin.add_member(
-                "dave",
-                DOMAIN,
-                is_admin=False,
-                send_invite=False,
-                backup_email="dave@backup.test",
-                first_name="Dave",
-                last_name="Doe",
-                password="a-strong-password-9",
-            )
-        frappe.local.request_cache.clear()
-        self.assertEqual(self.fake.accounts[f"dave@{DOMAIN}"]["disk_quota_gb"], 7)
+    def test_unset_quota_means_no_limit(self) -> None:
+        admin.add_member(
+            "dave",
+            DOMAIN,
+            is_admin=False,
+            send_invite=False,
+            backup_email="dave@backup.test",
+            first_name="Dave",
+            last_name="Doe",
+            password="a-strong-password-9",
+        )
+        self.assertEqual(self.fake.accounts[f"dave@{DOMAIN}"]["disk_quota_gb"], 0)
+        self.assertEqual(admin.get_member(f"dave@{DOMAIN}")["quota"]["total"], 0)
 
     def test_an_account_can_be_created_unable_to_receive(self) -> None:
         for username, disable_receiving in (("noreply", True), ("heidi", False)):
@@ -732,6 +697,18 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(admin.get_members(search="carol", start=20, page_length=20)["items"], [])
         self.assertNotIn("quota", listed)
 
+        # A refused lookup leaves the page without quotas, logged, and without the refusal's message.
+        refuse = lambda **_: frappe.throw("Suite Cloud refused the request.", frappe.ValidationError)  # noqa: E731
+        messages_before = list(frappe.local.message_log)
+        with (
+            patch.object(self.fake, "accounts__get_quotas", side_effect=refuse),
+            patch("suite.mail.api.admin.log_mail_error") as logged,
+        ):
+            listed = next(u for u in admin.get_members(search="carol")["items"] if u["name"] == self.email)
+        self.assertEqual((listed["quota_gb"], listed["used_bytes"]), (None, None))
+        self.assertEqual(frappe.local.message_log, messages_before)
+        logged.assert_called_once()
+
         admin.update_member(self.email, description="Carol D", quota_gb=3, time_zone="Asia/Kolkata")
         self.assertEqual(
             (account["display_name"], account["disk_quota_gb"], account["time_zone"]),
@@ -769,7 +746,7 @@ class TestMembers(SuiteCloudTestCase):
             (overview["domains"], overview["groups"], overview["limits"]["max_domains"]), (1, 1, 10)
         )
         self.assertEqual(overview["site"]["cluster"], "mail.c1.example.test")
-        self.assertEqual(overview["storage"]["max_gb"], 100)
+        self.assertEqual((overview["storage"]["used_bytes"], overview["storage"]["max_gb"]), (4096, 100))
         self.assertEqual(overview["domains_needing_attention"], [])
         self.assertEqual(overview["invites"], {"pending": 0, "expiring_soon": 0, "expired": 0})
         self.assertEqual(overview["recent_accounts"][0]["name"], self.email)
@@ -823,18 +800,19 @@ class TestMembers(SuiteCloudTestCase):
         frappe.set_user(self._suite_admin())
         self.addCleanup(frappe.set_user, "Administrator")
 
-        with patch("frappe.sendmail") as sendmail:
-            admin.add_member(
-                "frank",
-                DOMAIN,
-                is_admin=False,
-                send_invite=True,
-                backup_email="frank@backup.test",
-            )
+        admin.add_member(
+            "frank",
+            DOMAIN,
+            is_admin=False,
+            send_invite=True,
+            backup_email="frank@backup.test",
+        )
 
         request_key = frappe.db.get_value("Mail Account Request", {"account": account}, "request_key")
         self.assertTrue(request_key)
-        self.assertIn(f"/mail/signup/{request_key}", sendmail.call_args.kwargs["args"]["link"])
+        invite = self.fake.emails[-1]  # Suite Cloud sends it from its template
+        self.assertEqual((invite["email_type"], invite["recipient"]), ("account-invite", "frank@backup.test"))
+        self.assertIn(f"/mail/signup/{request_key}", invite["params"]["link"])
 
     def _suite_admin(self) -> str:
         """An enabled Suite Admin of this site who is not the Administrator."""

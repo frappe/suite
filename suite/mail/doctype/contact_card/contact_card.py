@@ -551,13 +551,8 @@ def _cache_contact_cards(account: str, contact_cards: dict[str, dict]) -> None:
     store.set_many(Entity.CONTACT_CARD, items=contact_cards)
 
     # Feed contact addresses into the shared address index; never let indexing break caching.
-    # Uncounted: the whole address book is re-cached on every contact sync, and a contact card says
-    # who someone is, not how much mail they are on — counting it would rank contacts the user never
-    # writes to above the addresses they actually correspond with.
     try:
-        get_email_address_index(account).index_addresses(
-            _contact_addresses(contact_cards.values()), count=False
-        )
+        get_email_address_index(account).index_addresses(_contact_addresses(contact_cards.values()))
     except Exception:
         log_mail_error(
             _("Failed to index contact addresses for search"), frappe.get_traceback(with_context=True)
@@ -576,13 +571,13 @@ def _remove_cached_contact_cards(account: str, ids: list[str]) -> None:
 
 
 def _contact_addresses(contact_cards: list[dict]) -> list[dict]:
-    """Flatten cached contact cards into {name, email} address dicts, one per email address."""
+    """Flatten cached contact cards into contact address dicts, one per email address."""
 
     addresses = []
     for contact_card in contact_cards:
         name = contact_card.get("full_name")
         for email in contact_card.get("emails") or []:
-            addresses.append({"name": name, "email": email.get("address")})
+            addresses.append({"name": name, "email": email.get("address"), "is_contact": True})
 
     return addresses
 

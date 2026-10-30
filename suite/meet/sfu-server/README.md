@@ -197,6 +197,36 @@ finish, deploy the standalone recorder, and point Frappe at its HTTPS endpoint.
 Then remove the old `suite-recorder` container. The existing `recorder-data`
 volume is retained for backup or deliberate cleanup.
 
+### UDP receive buffers (Linux host)
+
+Each mediasoup WebRTC UDP listener requests an 8 MiB receive buffer to absorb
+short traffic bursts and scheduling delays. Before the first deployment, or
+before updating an existing host to this version, run from `deploy/`:
+
+```bash
+sudo bash deploy.sh tune-host
+```
+
+This persists `net.core.rmem_max` in `/etc/sysctl.d/60-meet-sfu.conf` and applies
+only that file. It preserves a higher current host limit. It does not change
+`rmem_default`, backlog settings, or restart any service. Hosts managed through
+cloud-init/Ansible should provision the same minimum ceiling there. Check for
+later sysctl overrides in your provisioning to ensure the limit survives reboot.
+Compose uses host networking, so this is a host setting, not an image setting.
+
+Existing sockets do not resize when the ceiling changes. Schedule an SFU update
+or restart after provisioning and deploying the new image; **restarting the SFU
+disconnects active meetings**. Confirm actual listener buffers with
+`sudo ss -uanmp` (Linux normally reports roughly twice the requested size for
+accounting overhead) and compare per-socket drop-counter deltas and
+`UdpRcvbufErrors` under comparable traffic before and after rollout.
+
+8 MiB is a starting point to validate, not a bandwidth increase or capacity
+guarantee. Larger buffers cannot fix sustained overload and can allow more
+queueing latency. To roll back, restore the prior host ceiling and previous SFU
+image during a maintenance window; changing the ceiling alone does not shrink
+existing sockets. Preserve any pre-existing sysctl configuration.
+
 ### Firewall Rules
 
 | Port | Protocol | Purpose |

@@ -11,8 +11,8 @@ from suite.suite_core.utils import get_suite_cloud_config, is_suite_cloud_config
 
 SITE_CONFIG = {
     "suite_cloud_url": "https://cloud.from-site-config.test",
-    "site_api_key": "config-key",
-    "site_api_secret": "config-secret",
+    "suite_cloud_tenant": "config-key",
+    "suite_cloud_secret": "config-secret",
 }
 
 
@@ -26,37 +26,44 @@ class TestSuiteCloudConfig(IntegrationTestCase):
         """Suite Settings with these Suite Cloud values; the request cache must not remember older ones."""
 
         context = self.change_settings(
-            "Suite Settings", **{"suite_cloud_url": "", "site_api_key": "", "site_api_secret": "", **values}
+            "Suite Settings",
+            **{"suite_cloud_url": "", "suite_cloud_tenant": "", "suite_cloud_secret": "", **values},
         )
         self.enterContext(context)
         frappe.local.request_cache.clear()
 
     def test_suite_settings_holds_the_configuration(self) -> None:
-        self.settings(suite_cloud_url="https://cloud.test", site_api_key="key", site_api_secret="secret")
+        self.settings(
+            suite_cloud_url="https://cloud.test", suite_cloud_tenant="key", suite_cloud_secret="secret"
+        )
         self.assertEqual(
             get_suite_cloud_config(),
-            {"suite_cloud_url": "https://cloud.test", "site_api_key": "key", "site_api_secret": "secret"},
+            {
+                "suite_cloud_url": "https://cloud.test",
+                "suite_cloud_tenant": "key",
+                "suite_cloud_secret": "secret",
+            },
         )
-        self.assertEqual(get_suite_cloud_config("site_api_secret"), "secret")
+        self.assertEqual(get_suite_cloud_config("suite_cloud_secret"), "secret")
         self.assertEqual(
-            get_suite_cloud_config(("site_api_key", "suite_cloud_url")), ("key", "https://cloud.test")
+            get_suite_cloud_config(("suite_cloud_tenant", "suite_cloud_url")), ("key", "https://cloud.test")
         )
 
     def test_a_blank_value_falls_back_to_the_site_config_key_of_the_same_name(self) -> None:
-        self.settings(site_api_key="settings-key")
+        self.settings(suite_cloud_tenant="settings-key")
         with patch.dict(frappe.local.conf, SITE_CONFIG):
             self.assertEqual(
                 get_suite_cloud_config(),
                 {
                     "suite_cloud_url": "https://cloud.from-site-config.test",
-                    "site_api_key": "settings-key",
-                    "site_api_secret": "config-secret",
+                    "suite_cloud_tenant": "settings-key",
+                    "suite_cloud_secret": "config-secret",
                 },
             )
             self.assertTrue(is_suite_cloud_configured())
 
     def test_not_configured_until_all_three_are_known(self) -> None:
-        self.settings(suite_cloud_url="https://cloud.test", site_api_key="key")
+        self.settings(suite_cloud_url="https://cloud.test", suite_cloud_tenant="key")
         with patch.dict(frappe.local.conf, {key: None for key in SITE_CONFIG}):
             self.assertFalse(is_suite_cloud_configured())
             self.assertRaisesRegex(

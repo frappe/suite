@@ -9,6 +9,7 @@ import pycrdt
 from frappe.model.document import Document
 
 from suite.drive.api.notifications import create_notification, get_link
+from suite.suite_core import suite_email
 
 COLLISION_ERRORS = (
     frappe.exceptions.QueryDeadlockError,
@@ -149,16 +150,20 @@ def notify_comments(file, mentions):
         )
         if new_notification:
             try:
-                frappe.sendmail(
-                    recipients=[mention["id"]],
-                    subject=f"Frappe Drive - Mention in {file.file_name}",
-                    template="drive_comment",
-                    args={
-                        "message": f"{from_owner} mentioned you in a comment.",
-                        "doc": file.file_name,
-                        "link": get_link(file),
+                link = frappe.utils.get_url(get_link(file))
+                suite_email.enqueue(
+                    "writer-mention",
+                    mention["id"],
+                    {"author": from_owner, "document": file.file_name, "link": link},
+                    local={
+                        "subject": f"Frappe Drive - Mention in {file.file_name}",
+                        "template": "drive_comment",
+                        "args": {
+                            "message": f"{from_owner} mentioned you in a comment.",
+                            "doc": file.file_name,
+                            "link": link,
+                        },
                     },
-                    now=True,
                 )
             except Exception:
                 frappe.log_error(frappe.get_traceback())

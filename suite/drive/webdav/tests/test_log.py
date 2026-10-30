@@ -3,7 +3,12 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.drive.webdav.tests.utils import dispatch, enable_user_webdav, ensure_user_with_password
+from suite.drive.webdav.tests.utils import (
+    delete_error_logs,
+    dispatch,
+    enable_user_webdav,
+    ensure_user_with_password,
+)
 
 USER = "webdav-log@example.com"
 PASSWORD = "webdav-log-pw-9000"
@@ -97,7 +102,7 @@ class TestWebDAVLogging(IntegrationTestCase):
         from suite.drive.webdav import dispatch as dispatch_module
 
         log_filter = {"method": "WebDAV PROPFIND /dav/Home"}
-        frappe.db.delete("Error Log", log_filter)
+        delete_error_logs(log_filter)
         try:
             with (
                 self._with_level("error"),
@@ -106,8 +111,7 @@ class TestWebDAVLogging(IntegrationTestCase):
             ):
                 dispatch("PROPFIND", "/dav/Home", user=USER, password=PASSWORD)
         finally:
-            frappe.db.delete("Error Log", log_filter)
-            frappe.db.commit()
+            delete_error_logs(log_filter)
 
         self.assertEqual(len(logs.records), 1)
         self.assertIn("-> 500", logs.output[0])

@@ -1,3 +1,4 @@
+import type { SharedStageState } from "../utils/sharedStage";
 import { defineStore } from "pinia";
 import type {
 	Participant,
@@ -9,9 +10,19 @@ export const useParticipantStore = defineStore("meet-participant", {
 		participants: {} as Record<string, Participant>,
 		activeSpeakerIds: [] as string[],
 		stableSpeakerIds: [] as string[],
-		speakerStartTimes: {} as Record<string, number>,
+		sharedStage: null as SharedStageState | null,
 	}),
 	actions: {
+		// Only an authenticated join/rejoin snapshot may establish a new room epoch.
+		applySharedStage(state: SharedStageState, snapshot = false) {
+			if (this.sharedStage) {
+				if (state.epoch !== this.sharedStage.epoch) {
+					if (!snapshot) return;
+				} else if (state.version <= this.sharedStage.version) return;
+			}
+			this.sharedStage = state;
+			this.activeSpeakerIds = [...state.activeSpeakerIds];
+		},
 		addParticipant(participant: Participant) {
 			const userId = participant.user_id;
 			if (userId) this.participants[userId] = participant;

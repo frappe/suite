@@ -11,7 +11,7 @@
 	     is stretched to the pane and the composer fills that (`fillsHost`). -->
 	<TextEditor
 		ref="textEditor"
-		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
+		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
 		:extensions="[imageExtension, CustomParagraphExtension, QuotedContentExtension, ...mentionExtensions]"
 		:content="editorContent"
 		:upload-function="uploadInlineImage"

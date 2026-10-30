@@ -22,7 +22,7 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.directory import GB, get_account_metadata, get_active_domain_names
 from suite.mail.directory import get_domains as get_site_domains
 from suite.mail.suite_cloud import get_client
-from suite.mail.utils import get_config
+from suite.mail.utils import log_mail_error
 from suite.mail.utils.dns import ZoneFileRecord
 from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.logger import log_admin_action
@@ -596,7 +596,7 @@ def add_member(
     ``username``/``domain`` are the primary address (becomes the User); ``aliases`` are additional
     full email addresses attached to the same account. ``groups`` and ``mailing_lists`` are the
     addresses of groups and lists the account joins once it is created — right away when invites
-    are off, on verification otherwise. ``quota_gb`` unset means Suite Cloud's default for the site.
+    are off, on verification otherwise. ``quota_gb`` unset or 0 means no disk limit.
     ``disable_receiving`` makes the account send-only: mail addressed to it bounces back.
 
     ``locale`` and ``time_zone``, like the name and password, only apply when the account is created
@@ -697,16 +697,19 @@ def _attach_quotas(users: list[dict]) -> None:
     emails = [user["account"] for user in users if user.get("account")]
     if not emails:
         return
-    with suppress(Exception):
+    try:
         quotas = get_client().call("mail.accounts.get_quotas", emails=emails)
-        for user in users:
-            quota = quotas.get(user.get("account"))
-            if quota:
-                allotted = quota.get("disk_quota_gb")
-                user["quota_gb"] = (
-                    flt(allotted) if allotted is not None else None
-                )  # None: unknown, not unlimited
-                user["used_bytes"] = _bytes_or_none(quota.get("used_disk_bytes"))
+    except Exception as e:
+        # The page lists its accounts without quotas; the refusal's message must not reach it.
+        frappe.clear_last_message()
+        log_mail_error("Suite Cloud quota lookup failed", str(e))
+        return
+    for user in users:
+        quota = quotas.get(user.get("account"))
+        if quota:
+            allotted = quota.get("disk_quota_gb")
+            user["quota_gb"] = flt(allotted) if allotted is not None else None  # None: unknown, not unlimited
+            user["used_bytes"] = _bytes_or_none(quota.get("used_disk_bytes"))
 
 
 def _bytes_or_none(value) -> int | None:
@@ -1016,23 +1019,12 @@ def set_member_receiving_enabled(member_id: str, enabled: bool) -> None:
 
 # Suite Cloud changes one alias at a time under a row lock, so two admins editing the same
 # object never drop each other's rows.
-_ALIAS_CALLS = {
-    "accounts": ("add_alias", "remove_alias", "set_alias_enabled"),
-    "groups": ("add_group_alias", "remove_group_alias", "set_group_alias_enabled"),
-    "mailing_lists": (
-        "add_mailing_list_alias",
-        "remove_mailing_list_alias",
-        "set_mailing_list_alias_enabled",
-    ),
-}
-
-
 def _add_alias(kind: str, email_id: str, alias: str, description: str | None) -> None:
     alias = (alias or "").strip().lower()
     validate_email_address(alias, throw=True)
     is_subaddressed_email(alias, raise_exception=True)
     get_client().call(
-        f"mail.{kind}.{_ALIAS_CALLS[kind][0]}",
+        f"mail.{kind}.add_alias",
         email=email_id,
         alias=alias,
         description=(description or "").strip() or None,
@@ -1040,14 +1032,12 @@ def _add_alias(kind: str, email_id: str, alias: str, description: str | None) ->
 
 
 def _remove_alias(kind: str, email_id: str, alias: str) -> None:
-    get_client().call(
-        f"mail.{kind}.{_ALIAS_CALLS[kind][1]}", email=email_id, alias=(alias or "").strip().lower()
-    )
+    get_client().call(f"mail.{kind}.remove_alias", email=email_id, alias=(alias or "").strip().lower())
 
 
 def _set_alias_enabled(kind: str, email_id: str, alias: str, enabled: bool) -> None:
     get_client().call(
-        f"mail.{kind}.{_ALIAS_CALLS[kind][2]}",
+        f"mail.{kind}.set_alias_enabled",
         email=email_id,
         alias=(alias or "").strip().lower(),
         enabled=bool(enabled),
@@ -1213,9 +1203,7 @@ def add_group(
         email=email,
         description=description,
         members=_listify(members) or None,
-        # Unset means the Mail Settings default, as for accounts; Suite Cloud's own default is the
-        # last resort when that is blank too.
-        disk_quota_gb=flt(quota_gb) or flt(get_config("default_disk_quota_gb")) or None,
+        disk_quota_gb=flt(quota_gb) or None,  # unset or 0: no disk limit
         disable_receiving=bool(disable_receiving) or None,
     )
     if disable_receiving and not group.get("disable_receiving"):
@@ -1273,7 +1261,7 @@ def add_group_members(group_id: str, account_ids: list) -> None:
     check_admin_permission("update groups", group_id)
     group = get_client().call("mail.groups.get_group", email=group_id)
     members = list(dict.fromkeys([*(group.get("members") or []), *_listify(account_ids)]))
-    get_client().call("mail.groups.set_group_members", email=group_id, members=members)
+    get_client().call("mail.groups.set_members", email=group_id, members=members)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1281,7 +1269,7 @@ def remove_group_member(group_id: str, account_id: str) -> None:
     check_admin_permission("update groups", f"{group_id} ({account_id})")
     group = get_client().call("mail.groups.get_group", email=group_id)
     members = [m for m in group.get("members") or [] if m != account_id]
-    get_client().call("mail.groups.set_group_members", email=group_id, members=members)
+    get_client().call("mail.groups.set_members", email=group_id, members=members)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1460,7 +1448,7 @@ def get_overview() -> dict:
         overview["pending_invites"] = invites["pending"]
 
     with suppress(Exception):
-        site = get_client().call("site.ping")
+        site = get_client().call("tenant.ping")
         usage = site.get("usage") or {}
         limits = site.get("limits") or {}
         overview["domains"] = usage.get("domains")
@@ -1468,13 +1456,12 @@ def get_overview() -> dict:
         overview["mailing_lists"] = usage.get("mailing_lists")
         overview["limits"] = limits
         overview["storage"] = {
-            "allocated_gb": usage.get("allocated_disk_gb"),
+            "used_bytes": _bytes_or_none(usage.get("used_disk_bytes")),
             "max_gb": limits.get("max_disk_gb"),
-            "default_quota_gb": limits.get("default_disk_quota_gb"),
         }
         overview["site"] = {
             k: site.get(k)
-            for k in ("site", "title", "status", "cluster", "mail_hostname", "jmap_url", "contact_email")
+            for k in ("tenant", "title", "status", "cluster", "mail_hostname", "jmap_url", "contact_email")
         }
 
     with suppress(Exception):

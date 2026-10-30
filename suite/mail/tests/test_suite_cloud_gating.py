@@ -17,10 +17,10 @@ from suite.mail.utils.user import can_use_mail
 JMAP_URL = "https://mail.c1.example.test"
 SUITE_CLOUD = {
     "suite_cloud_url": "https://cloud.example.test",
-    "site_api_key": "key",
-    "site_api_secret": "secret",
+    "suite_cloud_tenant": "key",
+    "suite_cloud_secret": "secret",
 }
-NO_SUITE_CLOUD = {"suite_cloud_url": "", "site_api_key": "", "site_api_secret": ""}
+NO_SUITE_CLOUD = {"suite_cloud_url": "", "suite_cloud_tenant": "", "suite_cloud_secret": ""}
 
 
 class SiteConnectionTestCase(IntegrationTestCase):

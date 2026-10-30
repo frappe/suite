@@ -25,6 +25,7 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 					roomId,
 					getPeerId(socket),
 					rtpCapabilities,
+					data.startPaused === true,
 				);
 				media =
 					consumer.kind === 'audio' || consumer.kind === 'video'
@@ -50,6 +51,21 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 					},
 					(performance.now() - startedAt) / 1000,
 				);
+			}
+		});
+
+		socket.on('resume_consumer', async (data, callback) => {
+			try {
+				deps.authManager.ensureMediaConsumerAccess(socket);
+				enforceE2EEMediaPolicy(socket);
+				const resumed = await deps.mediasoup.resumeConsumer(
+					data.consumerId,
+					getRoomId(socket),
+					getPeerId(socket),
+				);
+				callback({ success: true, resumed });
+			} catch (error) {
+				callback({ success: false, error: (error as Error).message });
 			}
 		});
 

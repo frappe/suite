@@ -1,3 +1,4 @@
+import type { SharedStageState } from "../../suite/meet/types";
 import { type Ref, readonly, ref } from "vue";
 import { ConsumerManager } from "../src/apps/meet/utils/media/ConsumerManager";
 import {
@@ -46,6 +47,7 @@ export type RecorderState = {
 		participantId: string,
 		updates: RecorderParticipantUpdate,
 	) => void;
+	sharedStageChanged?: (state: SharedStageState, snapshot?: boolean) => void;
 	activeSpeakersChanged?: (participantIds: string[]) => void;
 	screenStarted?: (data: {
 		participantId: string;
@@ -538,6 +540,7 @@ export class RecorderSocketController {
 		);
 		this.state.handsSynced?.(Object.fromEntries(projection.raisedHands));
 		this.state.activeSpeakersChanged?.([...projection.activeSpeakerIds]);
+		if (projection.sharedStage) this.state.sharedStageChanged?.(projection.sharedStage, true);
 		for (const event of replayed)
 			if (
 				event.payload.type === "reaction" ||
@@ -593,6 +596,9 @@ export class RecorderSocketController {
 				break;
 			case "media_control":
 				this.updateMedia(payload.participant_id, payload.action);
+				break;
+			case "shared_stage":
+				this.state.sharedStageChanged?.(payload.state);
 				break;
 			case "active_speaker":
 				this.state.activeSpeakersChanged?.([...payload.participant_ids]);

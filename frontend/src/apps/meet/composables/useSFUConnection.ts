@@ -200,7 +200,6 @@ export function useSFUConnection(deps: {
 	onParticipantConnectionReplaced: () => void | Promise<void>;
 	onScreenShareStarted: (data: SFUScreenShareData) => void;
 	onScreenShareStopped: (data: SFUScreenShareData) => void;
-	onActiveSpeakerChanged: (participantIds: string[]) => void;
 	onRoomRejoined?: (sfuClient: SFUClient) => void;
 	onE2EERequired?: () => void;
 	onRecordingState?: (recording: RecordingState | null) => void;
@@ -221,7 +220,6 @@ export function useSFUConnection(deps: {
 		onParticipantConnectionReplaced,
 		onScreenShareStarted,
 		onScreenShareStopped,
-		onActiveSpeakerChanged,
 		onRoomRejoined,
 		onE2EERequired,
 		onRecordingState,
@@ -284,9 +282,6 @@ export function useSFUConnection(deps: {
 		immediate: false,
 	});
 
-	const activeSpeakerTimeout = shallowRef<ReturnType<typeof setTimeout> | null>(
-		null,
-	);
 	const localNetworkQuality = shallowRef("good");
 	const isConnecting = computed(
 		() => joiningInProgress.value || participantConnectionState.isConnecting,
@@ -294,7 +289,6 @@ export function useSFUConnection(deps: {
 	const isSetupComplete = computed(
 		() => participantConnectionState.isSetupComplete,
 	);
-	let stabilityCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 	let preserveGuestSessionOnEnd = false;
 
 	const markGuestSessionStatus = (status: GuestSessionStatus) => {
@@ -415,83 +409,7 @@ export function useSFUConnection(deps: {
 			},
 			onScreenShareStarted: onScreenShareStarted,
 			onScreenShareStopped: onScreenShareStopped,
-			onActiveSpeakerChanged: (participantIds: string[]) => {
-				if (activeSpeakerTimeout.value) {
-					clearTimeout(activeSpeakerTimeout.value);
-					activeSpeakerTimeout.value = null;
-				}
-				if (stabilityCheckTimeout) {
-					clearTimeout(stabilityCheckTimeout);
-					stabilityCheckTimeout = null;
-				}
-
-				onActiveSpeakerChanged(participantIds);
-
-				const STABLE_THRESHOLD_MS = 1000;
-				const DEMOTE_THRESHOLD_MS = 3000;
-
-				const checkStability = () => {
-					const now = Date.now();
-					const currentSet = new Set(participantStore.activeSpeakerIds);
-					const startTimes = {
-						...participantStore.speakerStartTimes,
-					} as Record<string, number>;
-					const currentStable = new Set(
-						participantStore.stableSpeakerIds || [],
-					);
-
-					let hasPendingCandidates = false;
-
-					for (const id of Object.keys(startTimes)) {
-						if (!currentSet.has(id)) {
-							if (startTimes[id] > 0) {
-								startTimes[id] = -now;
-							} else if (now - Math.abs(startTimes[id]) > DEMOTE_THRESHOLD_MS) {
-								delete startTimes[id];
-								currentStable.delete(id);
-							}
-						} else if (startTimes[id] < 0) {
-							startTimes[id] = now;
-						}
-					}
-
-					for (const id of currentSet) {
-						if (startTimes[id] === undefined) {
-							startTimes[id] = now;
-						}
-					}
-
-					for (const id of currentSet) {
-						const startTime = startTimes[id];
-						if (startTime > 0) {
-							if (now - startTime >= STABLE_THRESHOLD_MS) {
-								currentStable.add(id);
-							} else {
-								hasPendingCandidates = true;
-							}
-						}
-					}
-
-					participantStore.speakerStartTimes = startTimes;
-					participantStore.stableSpeakerIds = Array.from(currentStable);
-
-					if (hasPendingCandidates) {
-						if (stabilityCheckTimeout) clearTimeout(stabilityCheckTimeout);
-						stabilityCheckTimeout = setTimeout(checkStability, 200);
-					} else {
-						stabilityCheckTimeout = null;
-					}
-				};
-
-				checkStability();
-
-				if (participantIds.length > 0) {
-					activeSpeakerTimeout.value = setTimeout(() => {
-						participantStore.activeSpeakerIds = [];
-						activeSpeakerTimeout.value = null;
-					}, 1000);
-				}
-			},
+			onSharedStageChanged: (state, snapshot) => participantStore.applySharedStage(state, snapshot),
 			onHostMutedYou: onHostMutedYou,
 			onHostKickedYou: (data: { hostId?: string; banned?: boolean }) => {
 				if (data.banned) {
@@ -1111,11 +1029,6 @@ export function useSFUConnection(deps: {
 		try {
 			guestRealtime.stop();
 
-			if (activeSpeakerTimeout.value) {
-				clearTimeout(activeSpeakerTimeout.value);
-				activeSpeakerTimeout.value = null;
-			}
-
 			audioNotificationManager.playLeaveNotification(true);
 
 			if (sfuManager.value) {
@@ -1137,15 +1050,6 @@ export function useSFUConnection(deps: {
 
 	onUnmounted(async () => {
 		hasShownE2EEKeyMismatchToast.value = false;
-
-		if (activeSpeakerTimeout.value) {
-			clearTimeout(activeSpeakerTimeout.value);
-			activeSpeakerTimeout.value = null;
-		}
-		if (stabilityCheckTimeout) {
-			clearTimeout(stabilityCheckTimeout);
-			stabilityCheckTimeout = null;
-		}
 
 		guestRealtime.stop();
 		removeFrappeRealtimeEventListeners();

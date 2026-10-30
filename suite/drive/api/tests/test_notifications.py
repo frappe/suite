@@ -12,12 +12,17 @@ OTHER_USER = "drive-notifications-other@example.com"
 
 class TestShareEmail(UnitTestCase):
     @patch("suite.drive.api.notifications.drive_logo_inline_images", return_value=[])
-    @patch("suite.drive.api.notifications.frappe.sendmail")
-    def test_send_share_email_queues_email(self, sendmail, _inline_images):
-        send_share_email("user@example.com", "A file was shared", "/drive/file-1", "file")
+    @patch("suite.suite_core.suite_email.is_suite_cloud_configured", return_value=False)
+    @patch("suite.suite_core.suite_email.frappe.sendmail")
+    def test_send_share_email_queues_email(self, sendmail, _configured, _inline_images):
+        send_share_email("user@example.com", "Ana", "file", "report.pdf", "/drive/file-1")
 
         sendmail.assert_called_once()
         self.assertNotIn("now", sendmail.call_args.kwargs)
+        self.assertEqual(
+            sendmail.call_args.kwargs["args"]["message"], 'Ana shared a file with you: "report.pdf"'
+        )
+        self.assertTrue(sendmail.call_args.kwargs["args"]["link"].endswith("/drive/file-1"))
 
 
 class TestMarkAsRead(IntegrationTestCase):

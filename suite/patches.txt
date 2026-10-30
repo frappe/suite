@@ -78,7 +78,7 @@ suite.mail.patches.sync_jmap_accounts_for_configured_users
 suite.mail.patches.copy_sync_history_account_id_to_account
 suite.mail.patches.destroy_data_store
 suite.mail.patches.backfill_screened_email_address_account
-suite.mail.patches.rebuild_email_address_indexes #3
+suite.mail.patches.rebuild_email_address_indexes #5
 suite.mail.patches.enable_screening_for_personal_accounts
 suite.mail.patches.create_suite_user_role
 suite.mail.patches.rename_mail_admin_to_suite_admin
@@ -106,4 +106,6 @@ execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frapp
 suite.suite_core.patches.move_blob_store_out_of_private
 suite.suite_core.patches.align_owner_with_user
 suite.suite_core.patches.remove_desk_access_from_suite_roles
+suite.suite_core.patches.rename_suite_cloud_credentials
+suite.suite_core.patches.drop_notification_email_account
 suite.drive.patches.webdav_property_index

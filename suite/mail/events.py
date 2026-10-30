@@ -71,6 +71,13 @@ def update_password(
     return result
 
 
+def keep_new_password(doc: Document, method: str | None = None) -> None:
+    """Frappe's User clears the new password before app ``on_update`` hooks run; kept here for
+    ``update_account_password``."""
+
+    doc.flags.new_password = doc.new_password
+
+
 def update_account_password(doc: Document, method: str | None = None) -> None:
     """Updates the password on Stalwart server when the user updates their password."""
 
@@ -84,7 +91,7 @@ def update_account_password(doc: Document, method: str | None = None) -> None:
         return
 
     user = doc.name
-    new_password = doc._User__new_password
+    new_password = doc.flags.new_password
 
     if not new_password:
         return

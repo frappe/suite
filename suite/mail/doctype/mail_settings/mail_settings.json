@@ -23,8 +23,6 @@
   "spamd_hybrid_scanning_threshold",
   "accounts_tab",
   "defaults_section",
-  "default_disk_quota_gb",
-  "column_break_defaults_1",
   "enable_gravatar",
   "default_gravatar",
   "signup_section",
@@ -191,19 +189,6 @@
    "fieldname": "defaults_section",
    "fieldtype": "Section Break",
    "label": "Account Defaults"
-  },
-  {
-   "default": "5",
-   "fieldname": "default_disk_quota_gb",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Default Disk Quota (GB)",
-   "reqd": 1,
-   "description": "Disk quota, in GB, for accounts created without one."
-  },
-  {
-   "fieldname": "column_break_defaults_1",
-   "fieldtype": "Column Break"
   },
   {
    "default": "0",

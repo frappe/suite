@@ -155,6 +155,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				);
 			}
 
+			if (socket.scope === 'full')
+				socket.emit(
+					'shared_stage_snapshot',
+					deps.registry.getSharedStageSnapshot(scopedRoomId, participantId),
+				);
 			socket.emit('existing_raised_hands', {
 				hands: deps.registry.getRaisedHands(scopedRoomId),
 			});

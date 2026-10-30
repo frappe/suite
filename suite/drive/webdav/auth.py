@@ -17,12 +17,17 @@ import hmac
 import secrets
 
 import frappe
-from frappe.auth import MAX_PASSWORD_SIZE, LoginAttemptTracker
+from frappe.auth import LoginAttemptTracker
 from frappe.utils import cint
 from frappe.utils.password import check_password, get_decrypted_password, passlibctx
 from werkzeug.wrappers import Request
 
 from suite.drive.webdav.errors import AuthRequired, Forbidden
+
+try:
+    from frappe.utils.password import MAX_PASSWORD_SIZE
+except ImportError:  # Frappe before frappe/frappe#44376
+    from frappe.auth import MAX_PASSWORD_SIZE
 
 REALM = "Frappe Drive"
 CRED_CACHE_TTL = 600
