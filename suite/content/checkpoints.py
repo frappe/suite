@@ -220,8 +220,9 @@ class Compaction:
     def install_body(self, snapshot: Snapshot, result: compaction.Compacted) -> bool:
         """Install the body in one transaction under the control and app rows' locks; pushes answer busy."""
         through_rev = snapshot.head_rev
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit
         node = node_of(self.app, self.doc_id)
+        # The locks must be the first statements of a fresh transaction
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
         if node is None:
             raise compaction.CompactionFailed("purged")
 
