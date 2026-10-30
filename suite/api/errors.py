@@ -31,8 +31,10 @@ def errors_post(source: Source, title: str, stack: str, route: str) -> None:
     """
 
     user_agent = frappe.get_request_header("User-Agent") or ""
+    # frappe.log_error swaps title and message when the title has a newline.
+    one_line_title = " ".join(title.split())
     frappe.log_error(
-        title=f"Browser: {title}"[:TITLE_LENGTH],
+        title=f"Browser: {one_line_title}"[:TITLE_LENGTH],
         message=f"Source: {source}\nRoute: {route}\nUser agent: {user_agent}\n\n{stack[:STACK_LENGTH]}",
     )
 
