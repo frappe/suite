@@ -1,5 +1,5 @@
 import { cellId } from '../../utils/cells.js'
-import { COL_HEADER_H, COLORS, ROW_HEADER_W } from '../constants.js'
+import { COL_HEADER_H, COLORS, ROW_HEADER_W, SEL_ALPHA } from '../constants.js'
 import type { Geometry } from '../geometry.js'
 import type { Cell } from '../selection.js'
 import type { CellBlock, CellProvider } from '../types.js'
@@ -41,10 +41,10 @@ export function createSelectionPainter(
   ctx: CanvasRenderingContext2D,
   { cw, rh, colX, rowY }: Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY'>,
 ): SelectionPainter {
-  // The range gets a light tint; the active cell `sel` inside it stays white,
-  // so a single selected cell has no fill at all. With no `sel` (or one
-  // outside the range, which the renderer never passes) the whole range is
-  // tinted.
+  // The whole range, active cell included, gets a see-through tint painted
+  // over the cells. A selection that is just the (merged) active cell `sel`
+  // gets none: its frame says enough. With no `sel` the range is always
+  // tinted (row, column and whole-sheet selections).
   function drawSelFill(
     { r0, c0, r1, c1 }: CellBlock,
     sel: Cell | null,
@@ -52,21 +52,17 @@ export function createSelectionPainter(
   ): void {
     const x = colX(c0),
       y = rowY(r0)
-    const right = colX(c1) + cw(c1)
-    const bottom = rowY(r1) + rh(r1)
-    ctx.fillStyle = COLORS.selFill
-    if (!sel || sel.r < r0 || sel.r > r1 || sel.c < c0 || sel.c > c1) {
-      ctx.fillRect(x, y, right - x, bottom - y)
-      return
+    const w = colX(c1) + cw(c1) - x
+    const h = rowY(r1) + rh(r1) - y
+    if (sel) {
+      const { w: aw, h: ah } = _activeSize(sel, getMergeInfo)
+      if (w <= aw && h <= ah) return
     }
-    const { w: aw, h: ah } = _activeSize(sel, getMergeInfo)
-    const ax = colX(sel.c),
-      ay = rowY(sel.r)
-    // Up to four bands around the active cell: above, below, left, right.
-    _fillBand(x, y, right - x, ay - y)
-    _fillBand(x, ay + ah, right - x, bottom - ay - ah)
-    _fillBand(x, ay, ax - x, ah)
-    _fillBand(ax + aw, ay, right - ax - aw, ah)
+    ctx.save()
+    ctx.globalAlpha = SEL_ALPHA
+    ctx.fillStyle = COLORS.selFill
+    ctx.fillRect(x, y, w, h)
+    ctx.restore()
   }
 
   // Drawn per pane with the tint (the renderer clips each pane), so a range
@@ -87,10 +83,6 @@ export function createSelectionPainter(
     ctx.lineWidth = OUTLINE_W
     ctx.strokeRect(x + 0.5, y + 0.5, w, h)
     ctx.restore()
-  }
-
-  function _fillBand(x: number, y: number, w: number, h: number): void {
-    if (w > 0 && h > 0) ctx.fillRect(x, y, w, h)
   }
 
   function _activeSize(sel: Cell, getMergeInfo: CellProvider['getMergeInfo']) {

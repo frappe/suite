@@ -4,7 +4,7 @@
 // to the black one.
 import { describe, expect, it, vi } from 'vitest'
 
-import { COL_HEADER_H, COLORS, ROW_HEADER_W } from './constants.js'
+import { COL_HEADER_H, COLORS, ROW_HEADER_W, SEL_ALPHA } from './constants.js'
 import { createSelectionPainter } from './painters/selection-painter.js'
 import { createMockCtx, createMockGeo } from './painters/test-utils.js'
 import { createRenderer } from './renderer.js'
@@ -191,49 +191,46 @@ describe('copy outline and formula range border', () => {
 })
 
 describe('selection fill', () => {
-  const area = (fills: { rect: Rect }[]) => fills.reduce((a, f) => a + f.rect[2] * f.rect[3], 0)
-  const overlaps = ([x, y, w, h]: Rect, [ax, ay, aw, ah]: Rect) =>
-    x < ax + aw && ax < x + w && y < ay + ah && ay < y + h
+  // The tint is a see-through wash of the ink colour painted over the cells,
+  // so gridlines, fills and values show through it, in both themes.
+  type Fill = { rect: Rect; colour: string; alpha: number }
 
   function fill(range: CellBlock, sel: Cell | null = B2, merge: MergeInfo | null = null) {
-    const { ctx, fills } = recordingCtx()
+    const ctx = createMockCtx()
+    const fills: Fill[] = []
+    ctx.fillRect = (...rect: Rect) =>
+      void fills.push({ rect, colour: String(ctx.fillStyle), alpha: ctx.globalAlpha ?? 1 })
     createSelectionPainter(ctx, createMockGeo()).drawSelFill(range, sel, () => merge)
     return fills
   }
 
-  it('leaves a single active cell white', () => {
-    expect(fill(ONE)).toEqual([])
-  })
-
-  it('tints a range except the active cell', () => {
-    // B2:D4 is 300 × 72; the active B2 (100 × 24) stays white.
-    const fills = fill({ r0: 1, c0: 1, r1: 3, c1: 3 }, { r: 2, c: 2 })
-    expect(area(fills)).toBe(300 * 72 - 100 * 24)
-    for (const f of fills) {
-      expect(f.colour).toBe(COLORS.selFill)
-      expect(overlaps(f.rect, [250, 72, 100, 24])).toBe(false)
-    }
-  })
-
-  it('tints the whole range when there is no active cell to leave out', () => {
-    const fills = fill({ r0: 1, c0: 1, r1: 3, c1: 3 }, null)
-    expect(fills).toEqual([{ rect: [150, 48, 300, 72], colour: COLORS.selFill }])
-  })
-
-  it('tints a selected row evenly, active cell included (no frame there)', () => {
+  // Renders B2:C3 (or a row) with value 'x' everywhere; returns what was
+  // painted, in order: 'text' per value, 'tint' per see-through fill.
+  function renderOrder(selMode: 'cell' | 'row', selEnd: Cell) {
     const ctx = createMockCtx()
-    const fills: Rect[] = []
+    const order: string[] = []
+    const tints: Rect[] = []
+    // The mock's save/restore are no-ops; keep alpha scoped like a canvas.
+    const saved: number[] = []
+    ctx.globalAlpha = 1
+    ctx.save = () => void saved.push(ctx.globalAlpha)
+    ctx.restore = () => void (ctx.globalAlpha = saved.pop() ?? 1)
+    // Cell values only, not header labels.
+    ctx.fillText = (t: string) => void (t === 'x' && order.push('text'))
     ctx.fillRect = (...rect: Rect) => {
-      if (ctx.fillStyle === COLORS.selFill) fills.push(rect)
+      if ((ctx.globalAlpha ?? 1) < 1) {
+        order.push('tint')
+        tints.push(rect)
+      }
     }
     createRenderer(ctx as never, createMockGeo() as never).render({
       cssW: 600,
       cssH: 300,
-      getValue: () => '',
+      getValue: () => 'x',
       cells: {},
-      sel: { r: 1, c: 2 },
-      selEnd: { r: 1, c: 2 },
-      selMode: 'row',
+      sel: B2,
+      selEnd,
+      selMode,
       editing: false,
       freeze: { rows: 0, cols: 0 },
       getDiffFor: null,
@@ -243,14 +240,39 @@ describe('selection fill', () => {
       colDrag: null,
       zoom: 1,
     })
-    expect(fills).toHaveLength(1)
-    expect(fills[0][1]).toBe(48)
-    expect(fills[0][3]).toBe(24)
+    return { order, tints }
+  }
+
+  it('leaves a single selected cell untinted', () => {
+    expect(fill(ONE)).toEqual([])
   })
 
-  it('leaves a merged active cell white as a whole', () => {
-    const fills = fill({ r0: 1, c0: 1, r1: 3, c1: 3 }, B2, { colSpan: 2, rowSpan: 2 })
-    expect(area(fills)).toBe(300 * 72 - 200 * 48)
-    for (const f of fills) expect(overlaps(f.rect, [150, 48, 200, 48])).toBe(false)
+  it('leaves a merged active cell untinted when it is the whole selection', () => {
+    expect(fill({ r0: 1, c0: 1, r1: 2, c1: 2 }, B2, { colSpan: 2, rowSpan: 2 })).toEqual([])
+  })
+
+  it('tints the whole range, active cell included, in one see-through rect', () => {
+    // B2:D4 is x 150 … 450, y 48 … 120.
+    expect(fill({ r0: 1, c0: 1, r1: 3, c1: 3 }, { r: 2, c: 2 })).toEqual([
+      { rect: [150, 48, 300, 72], colour: COLORS.selFill, alpha: SEL_ALPHA },
+    ])
+  })
+
+  it('is light enough to read the cells through', () => {
+    expect(SEL_ALPHA).toBeGreaterThan(0)
+    expect(SEL_ALPHA).toBeLessThanOrEqual(0.1)
+  })
+
+  it('paints the tint over the cells, after their values', () => {
+    const { order } = renderOrder('cell', { r: 2, c: 2 })
+    expect(order).toContain('tint')
+    expect(order.lastIndexOf('text')).toBeLessThan(order.indexOf('tint'))
+  })
+
+  it('tints a selected row evenly in one rect', () => {
+    const { tints } = renderOrder('row', B2)
+    expect(tints).toHaveLength(1)
+    expect(tints[0][1]).toBe(48)
+    expect(tints[0][3]).toBe(24)
   })
 })
