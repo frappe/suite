@@ -16,13 +16,14 @@
           </div>
           <List
             selectable
-            class="pointer-events-none -mx-3 list-row-px-3"
-            :columns="['minmax(0,1fr)', '10rem']"
+            class="pointer-events-none -mx-3 list-row-px-3 list-gap-6"
+            :columns="['minmax(0,1fr)', '10rem', '2rem']"
             :row-height="64"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
               <ListHeaderCell>{{ __('Usage') }}</ListHeaderCell>
+              <ListHeaderCell />
             </ListHeader>
             <ListRows v-slot="{ item }" :items="SKELETON_ROWS" row-key="id">
               <ListRow :value="item.id">
@@ -38,6 +39,9 @@
                     <DashboardSkeletonText class="text-base" width="60%" />
                     <DashboardSkeletonText class="text-p-sm" width="45%" />
                   </div>
+                </ListCell>
+                <ListCell>
+                  <Skeleton class="size-7 rounded-4" />
                 </ListCell>
               </ListRow>
             </ListRows>
@@ -71,13 +75,14 @@
           <List
             v-model:selection="selected"
             selectable
-            class="-mx-3 list-row-px-3"
-            :columns="['minmax(0,1fr)', '10rem']"
+            class="-mx-3 list-row-px-3 list-gap-6"
+            :columns="['minmax(0,1fr)', '10rem', '2rem']"
             :row-height="64"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
               <ListHeaderCell>{{ __('Usage') }}</ListHeaderCell>
+              <ListHeaderCell />
             </ListHeader>
             <ListRows v-slot="{ item: user, value }" :items="report.data.users">
               <ListRow :value="value">
@@ -89,7 +94,7 @@
                   </div>
                 </ListCell>
                 <ListCell>
-                  <div class="min-w-0 flex-1 space-y-1 pe-6">
+                  <div class="min-w-0 flex-1 space-y-1">
                     <StorageUsage :user="user" />
                     <p
                       v-if="capNote(user)"
@@ -103,6 +108,8 @@
                       <span class="truncate">{{ capNote(user) }}</span>
                     </p>
                   </div>
+                </ListCell>
+                <ListCell>
                   <Button
                     variant="ghost"
                     icon="lucide-pencil"
