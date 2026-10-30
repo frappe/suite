@@ -48,7 +48,10 @@ describe('selection frame', () => {
     const { ctx } = recordingCtx()
     const clips: Rect[] = []
     ctx.rect = (...r: Rect) => void clips.push(r)
-    const sp = createSelectionPainter(ctx, createMockGeo())
+    // A1 starts where the real headers end.
+    const geo = createMockGeo()
+    geo.rowY.mockImplementation((r: number) => COL_HEADER_H + r * 24)
+    const sp = createSelectionPainter(ctx, geo)
     const a1 = { r0: 0, c0: 0, r1: 0, c1: 0 }
     sp.drawSelectionBorder(
       { r: 0, c: 0 },

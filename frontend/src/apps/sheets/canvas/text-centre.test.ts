@@ -119,7 +119,10 @@ describe('header label centring', () => {
   it('centres row numbers on the row’s white area', () => {
     for (const h of [21, 24, 28]) {
       const { ctx, draws } = recordingCtx()
-      const hp = createHeaderPainter(ctx, createMockGeo({ rowHeights: { 0: h } }))
+      // Row 1 starts where the real column header ends.
+      const geo = createMockGeo({ rowHeights: { 0: h } })
+      geo.rowY.mockImplementation((r: number) => COL_HEADER_H + r * h)
+      const hp = createHeaderPainter(ctx, geo)
       const far = { r0: 50, c0: 50, r1: 50, c1: 50 }
       hp.drawRowHeaders(0, 0, 0, COL_HEADER_H, 600, far)
       const one = draws.find((d) => d.text === '1')!

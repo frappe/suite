@@ -1,77 +1,8 @@
 <template>
-  <!-- The editor's app actions: Ask AI, File, the compact "…" menu, Notes,
-  Keyboard shortcuts and who else is here. Rendered in the editor's own top
-  bar or, on /d/, in the Drive document header. -->
-  <!-- AI Assist entry point — shown only when an admin has configured a
-     key and enabled it (gated server-side via the boot flag). -->
-  <template v-if="aiEnabled && !readOnly">
-    <span class="sn-wide-only">
-      <Button
-        variant="ghost"
-        size="sm"
-        icon="lucide-sparkles"
-        label="Ask AI"
-        tooltip="Ask AI to work on your selection"
-        @click="emit('ask-ai')"
-      />
-    </span>
-    <span class="sn-topbar-divider" aria-hidden="true" />
-  </template>
-  <span class="sn-wide-only">
-    <Dropdown :options="fileDropdownOptions" align="end">
-      <template #default="{ open }">
-        <Button
-          :variant="open ? 'subtle' : 'ghost'"
-          size="sm"
-          icon-left="lucide-file-text"
-          icon-right="lucide-chevron-down"
-          label="File"
-          tooltip="Import / export"
-        />
-      </template>
-    </Dropdown>
-  </span>
-  <!-- A narrow bar folds Ask AI, File and Keyboard shortcuts into one
-     menu. A container query swaps the two, so nothing moves on load. -->
-  <span class="sn-compact-only">
-    <Dropdown :options="compactMenuOptions" align="end">
-      <template #default="{ open }">
-        <Button
-          :variant="open ? 'subtle' : 'ghost'"
-          size="sm"
-          icon="lucide-ellipsis"
-          aria-label="More actions"
-          tooltip="More actions"
-        />
-      </template>
-    </Dropdown>
-  </span>
-  <span class="sn-topbar-divider" aria-hidden="true" />
-  <!-- Notes: button toggles the side panel listing all notes across sheets.
-     Shift+F2 still opens the per-cell inline editor for quick capture. -->
-  <span class="sn-notes-btn-wrap">
-    <Button
-      :variant="notesOpen ? 'subtle' : 'ghost'"
-      size="sm"
-      icon="lucide-sticky-note"
-      :aria-label="notesCount ? `Notes (${notesCount})` : 'Notes'"
-      :aria-pressed="notesOpen"
-      :tooltip="`Notes${notesCount ? ` (${notesCount})` : ''} — Shift+F2 to add`"
-      @click="emit('toggle-notes')"
-    />
-    <span v-if="notesCount" class="sn-notes-badge">{{ notesCount > 9 ? '9+' : notesCount }}</span>
-  </span>
-  <span class="sn-wide-only">
-    <Button
-      aria-label="Keyboard shortcuts"
-      variant="ghost"
-      size="sm"
-      icon="lucide-help-circle"
-      tooltip="Keyboard shortcuts"
-      @click="emit('shortcuts')"
-    />
-  </span>
-  <span class="sn-topbar-divider" aria-hidden="true" />
+  <!-- Who else is here, beside the header's Comments, Versions and Share. The
+  editor's other actions (Ask AI, File, Notes, Keyboard shortcuts) are in the
+  menu bar. Rendered in the editor's own top bar or, on /d/, in the Drive
+  document header. -->
   <!-- Presence avatars — other users currently in the workbook.
      Outline = their cursor color; tooltip says which sub-sheet
      they're on so cross-sheet collaborators are discoverable. -->
@@ -100,10 +31,10 @@
 </template>
 
 <script setup lang="ts">
-// The top-bar actions, extracted from SheetEditor/index.vue. It renders the
-// menus the editor builds and reports clicks back; the editor keeps the
-// hidden CSV / XLSX file inputs that the File menu clicks.
-import { Avatar, Button, Dropdown, type DropdownOptions } from 'frappe-ui'
+// The top-bar actions, extracted from SheetEditor/index.vue: the presence
+// avatars. The editor keeps the hidden CSV / XLSX file inputs that File →
+// Import clicks.
+import { Avatar } from 'frappe-ui'
 
 type PresentUser = {
   user: string
@@ -115,80 +46,18 @@ type PresentUser = {
 }
 
 defineProps<{
-  aiEnabled: boolean
-  readOnly: boolean
-  fileDropdownOptions: DropdownOptions
-  compactMenuOptions: DropdownOptions
-  notesOpen: boolean
-  notesCount: number
   presentUsers: PresentUser[]
   currentSheet: string
-}>()
-const emit = defineEmits<{
-  'ask-ai': []
-  'toggle-notes': []
-  shortcuts: []
 }>()
 </script>
 
 <style scoped>
-/* Hairline between action buttons and avatar — groups the cluster without
-   relying on extra padding. */
-.sn-topbar-divider {
-  width: 1px;
-  height: 20px;
-  background: var(--outline-gray-2);
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-.sn-wide-only {
-  display: inline-flex;
-}
-.sn-compact-only {
-  display: none;
-}
-/* A narrow bar, down to a 320 px phone, keeps every action on one row: labels
-   and dividers go, and Ask AI, File and Keyboard shortcuts fold into one menu. */
-@container sn-topbar (max-width: 640px) {
-  .sn-wide-only,
-  .sn-topbar-divider {
-    display: none;
-  }
-  .sn-compact-only {
-    display: inline-flex;
-  }
-}
-/* Notes count badge — workbook-wide teal badge on the notes icon. */
-.sn-notes-btn-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.sn-notes-badge {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  box-sizing: border-box;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1;
-  color: #fff;
-  background: #0d7490;
-  border-radius: 999px;
-  border: 1.5px solid var(--surface-base);
-  pointer-events: none;
-}
-
 /* Presence avatars — stacked/overlapping, each with a white ring so they
    visually separate even when colors are similar. */
 .sn-presence {
   display: inline-flex;
   align-items: center;
+  margin-right: 4px;
 }
 .sn-presence-avatar {
   margin-left: -6px;

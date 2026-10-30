@@ -1,7 +1,8 @@
 <template>
   <header
     ref="headerElement"
-    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5"
+    class="relative flex shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base"
+    :class="compact ? 'h-10 px-3' : 'h-12 px-3 sm:px-5'"
   >
     <div class="flex min-w-0 flex-1 items-center gap-1">
       <template v-if="location">
@@ -83,18 +84,25 @@
           @click="emit('downloadChanges')"
         />
       </template>
+      <!-- A compact header says it beside the title, before its menus. -->
+      <span
+        v-if="compact && saveState"
+        class="ms-1 me-2 whitespace-nowrap text-sm"
+        :class="saveClass"
+        aria-live="polite"
+      >
+        {{ SAVE_LABELS[saveState] }}
+      </span>
       <slot name="status" />
+      <slot name="menus" />
     </div>
 
     <div class="flex shrink-0 items-center gap-1">
       <!-- A clean or saving document says so on wide screens only; a failed save always shows. -->
       <span
-        v-if="saveState"
+        v-if="!compact && saveState"
         class="mr-1 whitespace-nowrap text-sm"
-        :class="[
-          saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
-          saveState !== 'failed' && 'max-md:hidden',
-        ]"
+        :class="saveClass"
         aria-live="polite"
       >
         {{ SAVE_LABELS[saveState] }}
@@ -174,6 +182,11 @@ const props = withDefaults(
     location?: { label: string; to: RouteLocationRaw } | null
     /** A file's MIME type picks its icon. Documents have none. */
     mime?: string | null
+    /**
+     * A 40-px header for a surface that adds its own menu bar (the `menus`
+     * slot): the save state moves beside the title, ahead of the menus.
+     */
+    compact?: boolean
   }>(),
   {
     saveState: null,
@@ -182,6 +195,7 @@ const props = withDefaults(
     panels: () => [],
     location: null,
     mime: null,
+    compact: false,
   },
 )
 
@@ -199,6 +213,11 @@ const renamable = computed(() =>
 const typeIcon = computed(() =>
   documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
 )
+/** A clean or saving document says so on wide screens only; a failed save always shows. */
+const saveClass = computed(() => [
+  props.saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
+  props.saveState !== 'failed' && 'max-md:hidden',
+])
 
 /** A refused rename, shown beside the title until the title changes. */
 const titleError = ref<string>()

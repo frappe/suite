@@ -19,6 +19,7 @@
 // mapped: colours, axis titles, `aggregate` (Excel has none, so such a
 // chart goes out as one point per source row).
 
+import { DEFAULT_COL_W, DEFAULT_ROW_H } from '../core/view-model.js'
 import { colLabel, parseCellId } from '../utils/cells.js'
 import type { ChartSpec, ChartType } from './charts.js'
 
@@ -63,8 +64,6 @@ const CT = {
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 // English Metric Units per px (914400 per inch, 96 px per inch).
 const EMU = 9525
-const DEFAULT_COL_W = 100
-const DEFAULT_ROW_H = 24
 
 // ── shared ──────────────────────────────────────────────────────────────────
 

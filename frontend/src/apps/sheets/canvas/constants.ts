@@ -1,4 +1,4 @@
-export const COL_HEADER_H = 24
+export const COL_HEADER_H = 28
 export const ROW_HEADER_W = 50
 // Thickness of the overlay scrollbars (scrollbars.ts). Shared so DOM overlays
 // (filter/pivot outlines) can keep clear of the scrollbar gutter.

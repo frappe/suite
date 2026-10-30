@@ -160,7 +160,9 @@ useDocumentLeaveGuard({
       @access-refused="access.refuse()"
       @notes-opened="panel = null"
     >
-      <template #header="{ viewOnly, status: EditorStatus, actions: EditorActions }">
+      <template
+        #header="{ viewOnly, status: EditorStatus, menus: EditorMenus, actions: EditorActions }"
+      >
         <DriveDocumentHeader
           class="sheets-header"
           :session="session"
@@ -170,11 +172,15 @@ useDocumentLeaveGuard({
           :recoverable="hasRecovery"
           :panels="['comments', 'versions']"
           :panel="panel"
+          compact
           @update:panel="showPanel"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
+          </template>
+          <template #menus>
+            <component :is="EditorMenus" :open-comments="() => showPanel('comments')" />
           </template>
           <template #actions>
             <component :is="EditorActions" />
@@ -210,11 +216,28 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's top-bar actions answer to the `sn-topbar` container: below
-   640 px they fold into one menu. */
+/* The editor's menu bar answers to the `sn-topbar` container: below 640 px
+   its six menus fold into one. */
 .sheets-header {
   container: sn-topbar / inline-size;
+  /* The bars' colours live on the editor root (SheetEditor.css --sn-bar-*). */
+  background: var(--sn-bar-bg);
+  border-bottom-color: var(--sn-bar-line);
   position: relative;
   z-index: 10;
+}
+/* Hover and "on" fills (Comments and Versions open) follow the bar colours,
+   as in row 2; solid buttons such as Share keep their own. */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-header :deep(button[data-state='open']),
+.sheets-header :deep(button[aria-pressed='true']) {
+  background: var(--sn-bar-hover);
+}
+.sheets-header :deep(button[aria-pressed='true']) {
+  box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
+}
+/* Muted text (Saved, the folder) follows the bar, to stay readable on it. */
+.sheets-header :deep(.text-ink-gray-5) {
+  color: var(--sn-bar-muted);
 }
 </style>
