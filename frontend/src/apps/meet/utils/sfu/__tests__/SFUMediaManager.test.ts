@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ConsumerManager } from '../../media/ConsumerManager'
 import { SFUMediaManager } from '../SFUMediaManager'
 
 type MockTransportManager = {
@@ -1121,4 +1122,46 @@ describe('SFUMediaManager.handleConsumerLost', () => {
     await vi.advanceTimersByTimeAsync(250)
     expect(transportManager.createConsumer).toHaveBeenCalledTimes(4)
   })
+})
+
+describe('SFUMediaManager.handleScreenShareConsumer', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each([false, true])(
+    'announces only live shares after camera attachment (removed=%s)',
+    async (removed) => {
+      const { mediaManager, videoManager } = createManager()
+      const consumers = new ConsumerManager()
+      mediaManager.consumerManager = consumers
+      vi.stubGlobal('MediaStream', FakeMediaStream)
+      const attachment = deferred<void>()
+      videoManager.attachStream.mockReturnValue(attachment.promise)
+      const started = vi.fn()
+      mediaManager.setEventHandlers({ onScreenShareStarted: started })
+
+      for (const type of ['camera', 'screen']) {
+        consumers.addConsumer(
+          {
+            id: type,
+            producerId: `producer-${type}`,
+            kind: 'video',
+            track: mediaTrack(type, 'video'),
+            appData: { type },
+            once: vi.fn(),
+            close: vi.fn(),
+            pause: vi.fn(),
+            resume: vi.fn(),
+          } as never,
+          'remote-1',
+        )
+      }
+      const pending = mediaManager.handleScreenShareConsumer(consumers.getConsumer('screen')!)
+      await vi.waitFor(() => expect(videoManager.attachStream).toHaveBeenCalledOnce())
+      if (removed) consumers.removeConsumer('screen')
+      attachment.resolve()
+      await pending
+
+      expect(started).toHaveBeenCalledTimes(removed ? 0 : 1)
+    },
+  )
 })

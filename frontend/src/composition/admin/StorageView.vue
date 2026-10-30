@@ -18,7 +18,7 @@
             selectable
             class="pointer-events-none -mx-3 list-row-px-3"
             :columns="['minmax(0,1fr)', '23rem']"
-            :row-height="72"
+            :row-height="96"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
@@ -73,7 +73,7 @@
             selectable
             class="-mx-3 list-row-px-3"
             :columns="['minmax(0,1fr)', '23rem']"
-            :row-height="72"
+            :row-height="96"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
@@ -90,10 +90,7 @@
                 </ListCell>
                 <ListCell>
                   <div class="min-w-0 flex-1 space-y-1 pe-6">
-                    <StorageUsage :user="user" />
-                    <p v-if="user.mail_bytes !== null" class="truncate text-p-sm text-ink-gray-5">
-                      {{ usageMeta(user) }}
-                    </p>
+                    <StorageUsage :user="user" breakdown />
                     <p
                       v-if="capNote(user)"
                       class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-6"
@@ -311,13 +308,6 @@ const editing = ref(false)
 function editCap(user: StorageUser) {
   selected.value = [user.name]
   editing.value = true
-}
-
-function usageMeta(user: StorageUser) {
-  return __('Drive {0} · Mail {1}', [
-    formatStorage(user.drive_bytes),
-    formatStorage(user.mail_bytes ?? 0),
-  ])
 }
 
 function capNote(user: StorageUser): string | undefined {
