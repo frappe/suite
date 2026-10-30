@@ -212,3 +212,54 @@ describe('DocumentHeader', () => {
     expect(button('Share')).toBeNull()
   })
 })
+
+describe('DocumentHeader, compact (Sheets)', () => {
+  function mountWithMenus(compact: boolean) {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({
+      setup: () => () =>
+        h(
+          DocumentHeader,
+          {
+            session: session(40) as unknown as DocumentSession,
+            titleLabel: 'Spreadsheet title',
+            saveState: 'clean',
+            panels: ['comments', 'versions'],
+            compact,
+          },
+          { menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit') },
+        ),
+    })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+    const header = root.querySelector('header')!
+    const saved = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'Saved',
+    )!
+    return { header, saved, menus: header.querySelector('nav')! }
+  }
+
+  it('is one 36-px row with Saved beside the title, then the menus', () => {
+    const { header, saved, menus } = mountWithMenus(true)
+    expect(header.classList).toContain('h-9')
+    expect(header.classList).not.toContain('h-12')
+    const left = header.firstElementChild!
+    expect(left.contains(saved)).toBe(true)
+    expect(saved.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(left.contains(menus)).toBe(true)
+  })
+
+  it('stays as it was for every other app', () => {
+    const { header, saved } = mountWithMenus(false)
+    expect([...header.classList]).toEqual(
+      expect.arrayContaining(['h-12', 'px-3', 'sm:px-5', 'border-b', 'gap-2']),
+    )
+    // The save status sits on the right, before the panel toggles.
+    expect(header.firstElementChild!.contains(saved)).toBe(false)
+    expect(header.lastElementChild!.contains(saved)).toBe(true)
+  })
+})
