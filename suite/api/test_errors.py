@@ -3,11 +3,13 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import make_request
-from frappe.utils import get_test_client
+from frappe.utils import add_to_date, get_test_client, now_datetime
 
 from suite.api.test_people import make_user, token_for
+from suite.suite_core import account_state
 
 USER = "reporter@qzerrors.example.com"
+NEW_USER = "temporary@qzerrors.example.com"
 MARK = "Qzerrors"
 
 
@@ -20,6 +22,11 @@ class TestBrowserErrors(IntegrationTestCase):
         frappe.set_user("Administrator")
         make_user(USER, f"{MARK} Reporter")
         cls.user = token_for(USER)
+        make_user(NEW_USER, f"{MARK} Newcomer")
+        account_state.write(
+            NEW_USER, must_change_password=1, temporary_expires_at=add_to_date(now_datetime(), hours=1)
+        )
+        cls.new_user = token_for(NEW_USER)
         frappe.db.commit()
         cls.addClassCleanup(cls.remove_fixtures)
 
@@ -34,8 +41,14 @@ class TestBrowserErrors(IntegrationTestCase):
             pluck="name",
         ):
             frappe.delete_doc("Error Log", log, ignore_permissions=True)
-        frappe.delete_doc("User", USER, force=True, ignore_permissions=True)
+        frappe.delete_doc("Suite Account State", NEW_USER, force=True, ignore_permissions=True)
+        for user in (USER, NEW_USER):
+            frappe.delete_doc("User", user, force=True, ignore_permissions=True)
         frappe.db.commit()
+
+    def setUp(self):
+        for user in (USER, NEW_USER):
+            frappe.cache.delete(frappe.cache.make_key(f"rl:suite.api.errors.errors_post:{user}") + b":600")
 
     def post(self, body: dict, *, auth: str | None = None):
         headers = {"Authorization": auth} if auth else {}
@@ -44,6 +57,9 @@ class TestBrowserErrors(IntegrationTestCase):
             args=("/api/suite/errors",),
             kwargs={"method": "POST", "headers": {**headers, "User-Agent": "QzBrowser/1"}, "json": body},
         )
+
+    def is_logged(self, title: str) -> bool:
+        return bool(frappe.get_all("Error Log", filters={"method": f"Browser: {title}"}, limit=1))
 
     def report(self, title: str) -> dict:
         return {"source": "component", "title": title, "stack": "at render (Page.vue:12)", "route": "/drive"}
@@ -71,10 +87,21 @@ class TestBrowserErrors(IntegrationTestCase):
         log = frappe.get_last_doc("Error Log", filters={"method": ["like", f"%{MARK} parse failed%"]})
         self.assertEqual(log.method, f"Browser: Error: {MARK} parse failed at line 3")
 
+    def test_the_31st_report_in_ten_minutes_is_refused(self):
+        for _ in range(30):
+            response = self.post(self.report(f"{MARK} flood"), auth=self.user)
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.post(self.report(f"{MARK} flood"), auth=self.user).status_code, 429)
+
+    def test_a_user_who_must_change_a_temporary_password_can_report(self):
+        response = self.post(self.report(f"{MARK} password screen"), auth=self.new_user)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertTrue(self.is_logged(f"{MARK} password screen"))
+
     def test_a_guest_cannot_write_to_the_error_log(self):
         response = self.post(self.report(f"{MARK} guest"))
         self.assertEqual(response.status_code, 403)
-        self.assertFalse(frappe.db.exists("Error Log", {"method": ["like", f"%{MARK} guest"]}))
+        self.assertFalse(self.is_logged(f"{MARK} guest"))
 
     def test_an_unknown_source_is_refused(self):
         response = self.post({**self.report(f"{MARK} unknown"), "source": "server"}, auth=self.user)
