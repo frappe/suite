@@ -300,7 +300,7 @@
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, usePageMeta } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, Dialog } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -377,7 +377,7 @@ import {
   unifiedFolderLabel,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
-import { appPageMeta } from '@/platform/page-meta'
+import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
@@ -1546,14 +1546,15 @@ const unreadCount = computed(
     store.unifiedFolders.data?.find((f: UnifiedFolder) => f.slug === folder)?.unread_threads ?? 0,
 )
 
-// An open thread names itself, as in a single account's list; otherwise the folder and its unread.
-usePageMeta(() => {
-  if (threadID) return appPageMeta(openRow.value?.subject || __('[No Subject]'), 'Mail')
-  return appPageMeta(
-    `${unreadCount.value ? `(${unreadCount.value})` : ''} ${folderLabel.value}`,
-    'Mail',
-  )
-})
+// The reader owns the open conversation's title, including messages fetched outside this list.
+usePageTitle(() =>
+  threadID
+    ? ''
+    : appDocumentTitle(
+        `${unreadCount.value ? `(${unreadCount.value})` : ''} ${folderLabel.value}`,
+        'Mail',
+      ),
+)
 
 // Keep the merged list fresh: poll periodically and react to push events — new mail, or mail changed
 // on another device — which can arrive for any account. Either way the newest window is merged into
