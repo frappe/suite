@@ -227,4 +227,19 @@ useDocumentLeaveGuard({
   position: relative;
   z-index: 10;
 }
+/* The header's grey hover and "on" fills (Comments and Versions open) match
+   the green's lightness, so here they step into green like row 2 (solid
+   buttons such as Share keep their own colours). */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-header :deep(button[data-state='open']),
+.sheets-header :deep(button[aria-pressed='true']) {
+  background: var(--surface-green-3);
+}
+.sheets-header :deep(button[aria-pressed='true']) {
+  box-shadow: inset 0 0 0 1px var(--outline-green-3);
+}
+/* Muted text (Saved, the folder) one step darker, to stay readable on green. */
+.sheets-header :deep(.text-ink-gray-5) {
+  color: var(--ink-gray-7);
+}
 </style>

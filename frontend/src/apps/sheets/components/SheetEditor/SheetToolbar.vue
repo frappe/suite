@@ -64,6 +64,7 @@
               :variant="activeNumberFormatType === 'currency' || open ? 'subtle' : 'ghost'"
               size="md"
               :icon="currencyIcon"
+              :aria-pressed="activeNumberFormatType === 'currency'"
               :aria-label="__('Currency: {0}', [activeCurrencySymbol])"
               :tooltip="__('Currency')"
             />
@@ -381,9 +382,15 @@ const currencyIcon = computed(
   /* Thin but visible, so a mouse user can tell more tools are there. */
   scrollbar-width: thin;
 }
-.sn-toolbar :deep(button:not(:disabled):hover),
-.sn-toolbar :deep(button[data-state='open']) {
+/* frappe-ui's grey hover and "on" fills match the green bar's lightness, so
+   on the bar they step into green; an "on" tool also gets a green edge. */
+.sn-toolbar :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sn-toolbar :deep(button[data-state='open']),
+.sn-toolbar :deep(button[aria-pressed='true']) {
   background: var(--surface-green-3);
+}
+.sn-toolbar :deep(button[aria-pressed='true']) {
+  box-shadow: inset 0 0 0 1px var(--outline-green-3);
 }
 .sn-group {
   display: flex;
@@ -422,7 +429,8 @@ const currencyIcon = computed(
     min-width: 96px;
   }
   .sn-toolbar :deep(.sn-cell-ref) {
-    width: 52px;
+    width: 60px;
+    padding: 0 6px;
   }
   /* Format keeps its icon; the room goes to the tools, which scroll. */
   .sn-toolbar :deep(.sn-format-btn .truncate) {
