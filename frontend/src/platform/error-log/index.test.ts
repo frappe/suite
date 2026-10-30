@@ -98,6 +98,10 @@ it('skips refusals the server already answered, cancelled work and browser noise
     Object.assign(new Error('Bad input'), { exc_type: 'ValidationError' }),
     'promise',
   )
+  errorLog.reportError(
+    Object.assign(new Error('No access'), { excType: 'PermissionError' }),
+    'promise',
+  )
   errorLog.reportError(new DOMException('The user aborted a request.', 'AbortError'), 'promise')
   errorLog.reportError('Script error.', 'script')
   errorLog.reportError('ResizeObserver loop completed with undelivered notifications.', 'script')

@@ -89,6 +89,15 @@ export function redactUrlCredentials(value: string): string {
     })
 }
 
+/** Whether an error is the server refusing a request: an answer, not a bug. */
+export function isServerRefusal(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const exceptionType =
+    ('exc_type' in error ? error.exc_type : undefined) ??
+    ('excType' in error ? error.excType : undefined)
+  return exceptionType === 'PermissionError' || exceptionType === 'ValidationError'
+}
+
 function isReportable(error: unknown): boolean {
   // The server records its own failures; a refusal is an answer, not a bug.
   if (error instanceof TransportError) return false
@@ -96,8 +105,7 @@ function isReportable(error: unknown): boolean {
     return !IGNORED_MESSAGES.some((ignored) => error.startsWith(ignored))
   if (typeof error !== 'object' || error === null) return true
   if ('name' in error && error.name === 'AbortError') return false
-  const exceptionType = 'exc_type' in error ? error.exc_type : undefined
-  return exceptionType !== 'PermissionError' && exceptionType !== 'ValidationError'
+  return !isServerRefusal(error)
 }
 
 function describe(error: unknown): string {
