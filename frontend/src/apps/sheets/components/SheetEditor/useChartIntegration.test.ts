@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { COL_HEADER_H } from '../../canvas/constants.js'
 import { createChartEngine } from '../../engine/charts.js'
 import { useChartIntegration } from './useChartIntegration.js'
 
@@ -39,7 +40,7 @@ function setup({ viewportW = 1400 } = {}) {
 describe('a new chart', () => {
   it('goes beside its data, level with the first row', () => {
     const { insert } = setup()
-    expect(insert('A1:B6')).toMatchObject({ x: 50 + 200 + 16, y: 24 })
+    expect(insert('A1:B6')).toMatchObject({ x: 50 + 200 + 16, y: COL_HEADER_H })
   })
 
   it('goes below its data when there is no room to the right', () => {

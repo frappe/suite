@@ -76,20 +76,11 @@
           :tooltip="protectionNotice"
         />
       </DefineTopbarStatus>
+      <DefineTopbarMenus v-slot="{ openComments }">
+        <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
+      </DefineTopbarMenus>
       <DefineTopbarActions>
-        <SheetTopbarActions
-          :ai-enabled="aiEnabled"
-          :read-only="readOnly"
-          :file-dropdown-options="fileDropdownOptions"
-          :compact-menu-options="compactMenuOptions"
-          :notes-open="notesPanel.open"
-          :notes-count="allNotes.length"
-          :present-users="presentUsers"
-          :current-sheet="currentSheet"
-          @ask-ai="openAskBar"
-          @toggle-notes="toggleNotesPanel"
-          @shortcuts="showShortcutsHelp = true"
-        />
+        <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
         <input
           ref="csvInputRef"
           name="csv-import"
@@ -109,12 +100,13 @@
       </DefineTopbarActions>
 
       <!-- On /d/ the surface draws the Drive document header: title, Comments,
-         Versions and Share. The editor fills its status and actions. -->
+         Versions and Share. The editor fills its status, menus and actions. -->
       <slot
         v-if="embedded"
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
+        :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
       />
       <SheetTopbar
@@ -135,10 +127,11 @@
         @cancel-title="cancelTitleEditing"
       >
         <template #status><ReuseTopbarStatus /></template>
+        <template #menus><ReuseTopbarMenus /></template>
         <template #actions><ReuseTopbarActions /></template>
       </SheetTopbar>
 
-      <!-- Bar 2 · Formatting toolbar (SheetToolbar.vue) -->
+      <!-- Row 2 · tools around the formula bar (SheetToolbar.vue) -->
       <SheetToolbar
         v-model:show-sort-filter="showSortFilter"
         :read-only="readOnly"
@@ -148,8 +141,6 @@
         :currency-dropdown-options="currencyDropdownOptions"
         :active-number-format-type="activeNumberFormatType"
         :active-currency-symbol="activeCurrencySymbol"
-        :font-family-dropdown-options="fontFamilyDropdownOptions"
-        :active-font-family-label="activeFontFamilyLabel"
         :align-dropdown-options="alignDropdownOptions"
         :h-align-icon="hAlignIcon"
         :can-undo="canUndo"
@@ -158,7 +149,7 @@
         :text-wrap-dropdown-options="textWrapDropdownOptions"
         :text-wrap-icon="textWrapIcon"
         :border-dropdown-options="borderDropdownOptions"
-        :more-toolbar-options="moreToolbarOptions"
+        :format-menu-options="formatMenuOptions"
         @number-format="toggleNumberFmt"
         @adjust-decimals="adjustDecimals"
         @font-size-input="onFontSizeInput"
@@ -167,60 +158,57 @@
         @undo="undo"
         @redo="redo"
         @toggle-format-painter="toggleFormatPainter"
-        @clear-formatting="clearFormatting"
-        @cond-format="openCfDialog(null)"
-        @hyperlink="openHyperlinkDialog"
         @merge="toggleMerge"
-        @chart="openChartDialog()"
-      />
-
-      <!-- Bar 3 · Formula bar -->
-      <div class="sn-formula-bar">
-        <Tooltip :text="__('Type a cell or range, then Enter')">
-          <input
-            class="sn-cell-ref"
-            name="name-box"
-            :aria-label="__('Name box')"
-            :value="nameBox"
-            spellcheck="false"
-            autocomplete="off"
-            @focus="$event.target.select()"
-            @keydown.enter.prevent="onNameBoxEnter"
-            @keydown.esc.prevent="onNameBoxDone($event)"
-            @blur="$event.target.value = nameBox"
-          />
-        </Tooltip>
-        <span class="sn-fx-label" aria-hidden="true">fx</span>
-        <div class="sn-formula-wrap">
-          <input
-            ref="formulaInputRef"
-            name="formula-bar"
-            aria-label="Cell value or formula"
-            class="sn-formula-input"
-            :value="formulaValue"
-            :readonly="readOnly"
-            :placeholder="readOnly ? '' : 'Enter value or formula'"
-            spellcheck="false"
-            autocomplete="off"
-            @input="onFormulaInput"
-            @keydown="onFormulaKey"
-            @blur="closeAc"
-          />
-          <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
-            <div
-              v-for="(item, i) in acItems"
-              :key="item.name + item.kind"
-              class="sn-ac-item"
-              :class="{ active: i === acIdx }"
-              @mousedown.prevent="commitAc(item)"
-            >
-              <span class="sn-ac-name">{{ item.name }}</span>
-              <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
-              <span v-else class="sn-ac-badge">sheet</span>
+        @sort="openQuickFilterForActive"
+      >
+        <!-- The formula bar: name box, then fx and the cell's value -->
+        <template #formula>
+          <Tooltip :text="__('Type a cell or range, then Enter')">
+            <input
+              class="sn-cell-ref"
+              name="name-box"
+              :aria-label="__('Name box')"
+              :value="nameBox"
+              spellcheck="false"
+              autocomplete="off"
+              @focus="$event.target.select()"
+              @keydown.enter.prevent="onNameBoxEnter"
+              @keydown.esc.prevent="onNameBoxDone($event)"
+              @blur="$event.target.value = nameBox"
+            />
+          </Tooltip>
+          <div class="sn-formula-wrap">
+            <span class="sn-fx-label" aria-hidden="true">fx</span>
+            <input
+              ref="formulaInputRef"
+              name="formula-bar"
+              aria-label="Cell value or formula"
+              class="sn-formula-input"
+              :value="formulaValue"
+              :readonly="readOnly"
+              :placeholder="readOnly ? '' : 'Enter value or formula'"
+              spellcheck="false"
+              autocomplete="off"
+              @input="onFormulaInput"
+              @keydown="onFormulaKey"
+              @blur="closeAc"
+            />
+            <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
+              <div
+                v-for="(item, i) in acItems"
+                :key="item.name + item.kind"
+                class="sn-ac-item"
+                :class="{ active: i === acIdx }"
+                @mousedown.prevent="commitAc(item)"
+              >
+                <span class="sn-ac-name">{{ item.name }}</span>
+                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
+                <span v-else class="sn-ac-badge">sheet</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </template>
+      </SheetToolbar>
 
       <SheetUpgradeBanner
         v-if="legacyUpgrade && !upgradeBannerClosed"
@@ -830,7 +818,7 @@
 </template>
 
 <script setup>
-import { createReusableTemplate, useMediaQuery } from '@vueuse/core'
+import { createReusableTemplate } from '@vueuse/core'
 import {
   Badge,
   Button,
@@ -900,10 +888,12 @@ import FilterPanel from './FilterPanel.vue'
 import FindReplace from './FindReplace.vue'
 import HyperlinkDialog from './HyperlinkDialog.vue'
 import LinkPreviewCard from './LinkPreviewCard.vue'
+import { buildMenuBar } from './menubar.config.js'
 import NamedRangesDialog from './NamedRangesDialog.vue'
 import NotesPanel from './NotesPanel.vue'
 import PivotDialog from './PivotDialog.vue'
 import SheetContextMenu from './SheetContextMenu.vue'
+import SheetMenuBar from './SheetMenuBar.vue'
 import SheetTabMenu from './SheetTabMenu.vue'
 import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
@@ -912,7 +902,7 @@ import SheetTopbarActions from './SheetTopbarActions.vue'
 import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
-import { buildAlignOptions, buildBorderOptions, buildMoreToolbarOptions } from './toolbar.config.js'
+import { buildAlignOptions, buildBorderOptions } from './toolbar.config.js'
 import { useAiAssist } from './useAiAssist.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import { useClipboard } from './useClipboard.js'
@@ -1690,32 +1680,6 @@ const fileDropdownOptions = computed(() => [
     : []),
 ])
 
-// The narrow top bar's one menu: what the wide bar shows as separate buttons.
-const compactMenuOptions = computed(() => [
-  ...(aiEnabled.value && !readOnly.value
-    ? [
-        {
-          label: 'Ask AI',
-          icon: 'lucide-sparkles',
-          onClick: () => openAskBar(),
-        },
-      ]
-    : []),
-  ...fileDropdownOptions.value,
-  {
-    group: 'Help',
-    options: [
-      {
-        label: 'Keyboard shortcuts',
-        icon: 'lucide-help-circle',
-        onClick: () => {
-          showShortcutsHelp.value = true
-        },
-      },
-    ],
-  },
-])
-
 // ── AI Assist ─────────────────────────────────────────────────────────────────
 // The Ask bar and AI settings (see useAiAssist.js).
 const {
@@ -2176,6 +2140,117 @@ const textWrapDropdownOptions = computed(() => [
   },
 ])
 
+// ── Menu bar ──────────────────────────────────────────────────────────────────
+// File / Edit / View / Insert / Format / Data (menubar.config.js), drawn in the
+// header beside the title. The surface's header takes it as the `menus` slot.
+const [DefineTopbarMenus, ReuseTopbarMenus] = createReusableTemplate()
+
+// The right-click handlers act on contextMenu.target{Row,Col}; from the menu
+// bar they act on the active cell's row and column.
+function _atActiveCell(action) {
+  return () => {
+    const p = parseCellId(activeCell.value)
+    if (!p) return
+    contextMenu.targetRow = p.row
+    contextMenu.targetCol = p.col
+    action()
+  }
+}
+// Edit → Clear contents runs the grid's own Delete key, so protection and undo
+// behave exactly as they do from the keyboard.
+function _clearContents() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  canvas.focus()
+  canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+}
+const menuBar = computed(() =>
+  buildMenuBar({
+    readOnly: readOnly.value,
+    fileOptions: fileDropdownOptions.value,
+    undo,
+    redo,
+    canUndo: canUndo.value,
+    canRedo: canRedo.value,
+    openFindReplace,
+    pasteSpecial: doPasteSpecial,
+    canPaste: clipboardHas.value,
+    clearContents: _clearContents,
+    deleteRows: _atActiveCell(doDeleteRow),
+    deleteCols: _atActiveCell(doDeleteCol),
+    moveColLeft: _atActiveCell(doMoveColLeft),
+    moveColRight: _atActiveCell(doMoveColRight),
+    zoomIn: () => zoomBy(+0.1),
+    zoomOut: () => zoomBy(-0.1),
+    resetZoom,
+    freezeRows: _atActiveCell(doFreezeRow),
+    freezeCols: _atActiveCell(doFreezeCol),
+    unfreezeRows: doUnfreezeRows,
+    unfreezeCols: doUnfreezeCols,
+    frozenRows: freezeRows.value,
+    frozenCols: freezeCols.value,
+    hideRows: doHideRows,
+    hideCols: doHideCols,
+    hasHiddenRows: manualHiddenRows.size > 0,
+    hasHiddenCols: manualHiddenCols.size > 0,
+    unhideAllRows: doUnhideAllRows,
+    unhideAllCols: doUnhideAllCols,
+    showFormulas: showFormulas.value,
+    toggleShowFormulas,
+    notesCount: allNotes.value.length,
+    toggleNotes: toggleNotesPanel,
+    openShortcuts: () => {
+      showShortcutsHelp.value = true
+    },
+    insertRowAbove: _atActiveCell(() => doInsertRow(false)),
+    insertRowBelow: _atActiveCell(() => doInsertRow(true)),
+    insertRows: _atActiveCell(() => openInsertMany('row', false)),
+    insertColLeft: _atActiveCell(() => doInsertCol(false)),
+    insertColRight: _atActiveCell(() => doInsertCol(true)),
+    insertCols: _atActiveCell(() => openInsertMany('col', false)),
+    insertChart: () => openChartDialog(),
+    insertPivot: () => openPivotDialog(),
+    insertSlicer: () => insertSlicer(),
+    insertLink: () => openHyperlinkDialog(),
+    insertCheckbox: () => validationDialogRef.value?.open({ type: 'checkbox' }),
+    insertDropdown: () => validationDialogRef.value?.open({ type: 'list' }),
+    insertNote: () => openCommentPanel(),
+    numberFormatOptions: numberFormatDropdownOptions.value,
+    currencyOptions: currencyDropdownOptions.value,
+    numberFormat: toggleNumberFmt,
+    adjustDecimals,
+    toggleFormat: toggleFmt,
+    fontFamilyOptions: fontFamilyDropdownOptions.value.map((o) => ({
+      ...o,
+      selected: o.label === activeFontFamilyLabel.value,
+    })),
+    alignOptions: alignDropdownOptions,
+    wrapOptions: textWrapDropdownOptions.value,
+    toggleMerge,
+    borderOptions: borderDropdownOptions,
+    autoFitRows: _atActiveCell(doAutoFitRow),
+    autoFitCols: _atActiveCell(doAutoFitCol),
+    openConditionalFormat: () => openCfDialog(null),
+    toggleFormatPainter,
+    clearFormatting,
+    sortColumn: () => openQuickFilterForActive(),
+    filterOn: showSortFilter.value,
+    toggleFilter: toggleSortFilter,
+    openValidation: () => openValidationDialog(),
+    openNamedRanges: () => openNamedRangesDialog(),
+    splitText: () => doSplitTextToColumns(),
+    smartFill: () => runSmartFill(),
+    protectRange: () => protectSelection(),
+    unprotectRange: () => unprotectSelection(),
+    cellHistory: props.id !== 'new' ? () => openCellHistory() : null,
+    askAi: aiEnabled.value ? () => openAskBar() : null,
+  }),
+)
+/** The Format button at the end of row 2 opens the same Format menu. */
+const formatMenuOptions = computed(
+  () => menuBar.value.find((m) => m.key === 'format')?.options ?? [],
+)
+
 // View state is now per-sheet (kept in useSheetTabs._viewBySheet) so freeze /
 // hidden rows / column widths / etc. follow each tab independently. usePersistence
 // is constructed before useSheetTabs, so the get/apply callbacks late-bind via
@@ -2417,31 +2492,6 @@ const {
   isDirty,
   getGrid: () => grid,
 })
-
-// Mirrors the `.sn-tool-extra` media query in SheetToolbar.vue's <style>: below
-// this width the inline tool groups are hidden and the "…" menu carries them.
-const toolbarCollapsed = useMediaQuery('(max-width: 1280px)')
-const moreToolbarOptions = computed(() =>
-  buildMoreToolbarOptions({
-    toggleFmt,
-    toggleWrap,
-    toggleFormatPainter,
-    clearFormatting,
-    adjustDecimals,
-    openCfDialog,
-    openHyperlinkDialog,
-    toggleMerge,
-    toggleSortFilter,
-    applyBorder,
-    zoomBy,
-    resetZoom,
-    openPivotDialog,
-    openChartDialog,
-    openNamedRangesDialog,
-    runSmartFill,
-    collapsed: toolbarCollapsed.value,
-  }),
-)
 
 // Collaboration — placed here because currentSheet comes from useSheetTabs above.
 const {
@@ -3853,8 +3903,6 @@ const { onGlobalKey } = useShortcuts({
   openHyperlinkDialog,
   openCommentPanel,
   openQuickFilterForActive,
-  zoomBy,
-  resetZoom,
   commentPanel,
   dropdownPanel,
   splitText,

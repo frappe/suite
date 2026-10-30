@@ -22,7 +22,6 @@ import { useKeyboardShortcut } from 'frappe-ui'
  *   showFindReplace: import('vue').Ref<boolean>,
  *   openHyperlinkDialog: () => void,
  *   openCommentPanel: () => void, openQuickFilterForActive: () => void,
- *   zoomBy: (d: number) => void, resetZoom: () => void,
  *   commentPanel: { open: boolean },
  *   dropdownPanel: { open: boolean },
  *   splitText: { open: boolean },
@@ -64,8 +63,6 @@ export function useShortcuts(actions) {
     openHyperlinkDialog,
     openCommentPanel,
     openQuickFilterForActive,
-    zoomBy,
-    resetZoom,
     commentPanel,
     dropdownPanel,
     splitText,
@@ -126,15 +123,8 @@ export function useShortcuts(actions) {
       group: 'View',
       handler: toggleShowFormulas,
     },
-    { combo: 'Mod+Equal', description: 'Zoom in', group: 'View', handler: () => zoomBy(+0.1) },
-    {
-      combo: 'Mod+Shift+Equal',
-      description: 'Zoom in',
-      group: 'View',
-      handler: () => zoomBy(+0.1),
-    },
-    { combo: 'Mod+Minus', description: 'Zoom out', group: 'View', handler: () => zoomBy(-0.1) },
-    { combo: 'Mod+Digit0', description: 'Reset zoom', group: 'View', handler: resetZoom },
+    // Ctrl/Cmd + = - 0 stay with the browser: its zoom scales the top bars and
+    // the grid together. View → Zoom zooms the grid alone.
 
     // Editing — mutating, so hidden + inert while read-only.
     { combo: 'Mod+Z', description: 'Undo', group: 'Editing', enabled: notReadOnly, handler: undo },

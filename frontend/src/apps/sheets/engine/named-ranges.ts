@@ -40,6 +40,8 @@ const _RESERVED = new Set(['TRUE', 'FALSE', 'NULL'])
 
 const _CELL_RE = /^[A-Z]+\d+$/
 const _NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+// The collab doc keys each name by itself, and the server takes keys of at most 128 characters.
+const _MAX_NAME = 128
 
 // An entry as an IronCalc defined-name formula: absolute, sheet-qualified,
 // no leading '=' ({ sheet: 'My Data', range: 'B2:B9' } → 'My Data'!$B$2:$B$9).
@@ -115,6 +117,7 @@ export function createNamedRanges({
     if (!trimmed) return 'Name is required'
     if (!_NAME_RE.test(trimmed))
       return 'Name must start with a letter or "_" and use only letters, digits and "_"'
+    if (trimmed.length > _MAX_NAME) return `Name must be at most ${_MAX_NAME} characters`
     const up = trimmed.toUpperCase()
     if (_RESERVED.has(up)) return `"${trimmed}" is a reserved word`
     if (_CELL_RE.test(up)) return `"${trimmed}" looks like a cell reference`
