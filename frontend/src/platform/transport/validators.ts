@@ -787,11 +787,7 @@ export const operationErrorsPost: Validators<ErrorsPostInput, ErrorsPostOutput> 
       {
         type: 'object',
         properties: {
-          source: {
-            enum: ['component', 'script', 'promise', 'worker'],
-            title: 'Source',
-            type: 'string',
-          },
+          source: { enum: ['component', 'script', 'promise'], title: 'Source', type: 'string' },
           title: { title: 'Title', type: 'string' },
           stack: { title: 'Stack', type: 'string' },
           route: { title: 'Route', type: 'string' },

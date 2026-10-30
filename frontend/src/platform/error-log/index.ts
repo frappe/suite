@@ -15,6 +15,7 @@ const reported = new Set<string>()
 
 /**
  * Record uncaught component, script and promise errors in the site's Error Log.
+ * Worker errors that the worker does not handle arrive as window script errors.
  * Install after error tracking, which still runs, and before the API error
  * handler, which drops cancelled and already-handled requests first.
  * Returns a function that removes the window listeners.
@@ -26,7 +27,16 @@ export function installErrorLog(app: App): () => void {
     if (previous) previous(error, instance, info)
     else console.error(error)
   }
-  const onError = (event: ErrorEvent) => reportError(event.error ?? event.message, 'script')
+  const onError = (event: ErrorEvent) => {
+    // A worker's uncaught error reaches the window as a message and location only.
+    if (event.error) reportError(event.error, 'script')
+    else
+      reportError(
+        event.message,
+        'script',
+        event.filename ? `at ${event.filename}:${event.lineno}:${event.colno}` : '',
+      )
+  }
   const onRejection = (event: PromiseRejectionEvent) => reportError(event.reason, 'promise')
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onRejection)
@@ -34,17 +44,6 @@ export function installErrorLog(app: App): () => void {
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onRejection)
   }
-}
-
-/** Record a worker's uncaught errors. The browser gives only the message and location. */
-export function reportWorkerErrors(worker: Pick<Worker, 'addEventListener'>, name: string): void {
-  worker.addEventListener('error', (event) =>
-    reportError(
-      `${name} worker: ${event.message}`,
-      'worker',
-      `at ${event.filename}:${event.lineno}:${event.colno}`,
-    ),
-  )
 }
 
 /** Record one error. Never throws: a failed report is dropped. */

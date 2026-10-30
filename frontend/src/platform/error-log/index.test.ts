@@ -124,12 +124,11 @@ it('records uncaught script errors and rejected promises from the window', () =>
   ])
 })
 
-it('records a worker error with where it happened', () => {
-  const worker = new EventTarget()
-  errorLog.reportWorkerErrors(worker, 'PDF')
-  worker.dispatchEvent(
+it('records an error a worker did not handle once, with where it happened', () => {
+  uninstalls.push(errorLog.installErrorLog(createApp({})))
+  window.dispatchEvent(
     new ErrorEvent('error', {
-      message: 'decode failed',
+      message: 'Uncaught Error: decode failed',
       filename: 'pdfWorker.js',
       lineno: 4,
       colno: 2,
@@ -138,8 +137,8 @@ it('records a worker error with where it happened', () => {
 
   expect(reports()).toEqual([
     expect.objectContaining({
-      source: 'worker',
-      title: 'PDF worker: decode failed',
+      source: 'script',
+      title: 'Uncaught Error: decode failed',
       stack: 'at pdfWorker.js:4:2',
     }),
   ])

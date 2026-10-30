@@ -5,8 +5,6 @@
 // module-level singleton (E2EEMeeting.instance) or instantiate directly
 // in tests.
 
-import { reportWorkerErrors } from '@/platform/error-log'
-
 import {
   createDecryptionTransformStream,
   createEncryptionTransformStream,
@@ -486,7 +484,6 @@ export class E2EEMeeting {
     const worker = new Worker(new URL('./e2eeTransformWorker.ts', import.meta.url), {
       type: 'module',
     })
-    reportWorkerErrors(worker, 'Meet encryption')
     this.scriptTransformWorkers.add(worker)
     return worker
   }

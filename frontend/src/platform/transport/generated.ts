@@ -447,7 +447,7 @@ const operationStorageDefault: MutationRef<
 }
 
 export type ErrorsPostInput = {
-  source: 'component' | 'script' | 'promise' | 'worker'
+  source: 'component' | 'script' | 'promise'
   title: string
   stack: string
   route: string

@@ -7,7 +7,7 @@ from frappe.rate_limiter import rate_limit
 
 from suite.composition.http import Route
 
-Source = Literal["component", "script", "promise", "worker"]
+Source = Literal["component", "script", "promise"]
 
 # The Error Log title field holds 140 characters.
 TITLE_LENGTH = 140
