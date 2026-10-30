@@ -1,5 +1,6 @@
 """The checks every pushed update passes before it is stored, so a bad row never reaches the log."""
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -12,6 +13,8 @@ from suite.content.tables import table
 # ContentJSON, ContentBinary and ContentDoc: no collab app writes them
 REFUSED_KINDS = {2, 3, 9}
 SKIP_KIND = 10
+# What an open root's direct key may be. Frozen: a wider rule would let older rows gain keys
+OPEN_KEY = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 
 
 class Unclosed(Exception):
@@ -27,7 +30,8 @@ class Unclosed(Exception):
 class EditorSchema:
     """What a collab app's editor writes: its current schema, for each node, mark, attribute or
     map key a row may name the schema that introduced it, the content kinds and shared types it makes,
-    and the names it gives elements and format items."""
+    the names it gives elements and format items, and the open roots, whose direct keys are ids made at
+    runtime."""
 
     version: int
     features: dict[str, int]
@@ -35,10 +39,25 @@ class EditorSchema:
     shared_types: frozenset[int]
     nodes: frozenset[str]
     marks: frozenset[str]
+    open_roots: frozenset[str] = frozenset()
 
-    def allows(self, names: Iterable[str], stamp: int) -> bool:
-        """Whether a row stamped `stamp` may hold every one of `names`: each declared at or below it."""
-        return all(self.features.get(name, stamp + 1) <= stamp for name in names)
+    def __post_init__(self) -> None:
+        undeclared = ", ".join(sorted(self.open_roots - set(self.features)))
+        if undeclared:
+            raise ValueError(f"The open roots {undeclared} are not features")
+
+    def allows(self, update: updates.Update, stamp: int) -> bool:
+        """Whether a row stamped `stamp` may hold `update`: names declared at or below it, open keys fit."""
+        names = update.names
+        open_keys: list[str] = []
+        for struct in update.structs:
+            if struct.key is not None and struct.root in self.open_roots:
+                open_keys.append(struct.key)
+            elif struct.key is not None:
+                names.add(struct.key)
+
+        declared = all(self.features.get(name, stamp + 1) <= stamp for name in names)
+        return declared and all(OPEN_KEY.fullmatch(key) for key in open_keys)
 
     def could_write(self, update: updates.Update) -> bool:
         """Whether every struct of `update` is content the editor makes, with each name in its role."""

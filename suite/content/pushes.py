@@ -161,7 +161,7 @@ def admissible_row(spec: EditorSpec, header: PushHeader, payload: bytes) -> inge
         raise Refusal(400, "malformed")
 
     row = checked_row(payload, header.client_id)
-    names_allowed = spec.schema.allows(row.update.names, header.schema)
+    names_allowed = spec.schema.allows(row.update, header.schema)
     if not names_allowed or not spec.schema.could_write(row.update):
         raise Refusal(409, "poison")
 
