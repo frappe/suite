@@ -5,8 +5,10 @@ import secrets
 import struct
 
 import frappe
+from frappe.query_builder import Table
 from frappe.utils import now_datetime
 
+from suite.content.db import Unhex, changed_rows, insert_into
 from suite.content.tables import table
 
 PURGE_BATCH = 500
@@ -48,7 +50,8 @@ def has_logs(app: str) -> bool:
     if doc_table not in frappe.db.get_tables(cached=False):
         return False
 
-    return bool(frappe.db.sql(f"SELECT 1 FROM `{doc_table}` WHERE `mode` != 'purged' LIMIT 1"))
+    doc = Table(doc_table)
+    return bool(frappe.qb.from_(doc).select(1).where(doc.mode != "purged").limit(1).run())
 
 
 def enabled(app: str) -> bool:
@@ -77,16 +80,31 @@ def chain_next(previous: bytes, rev: int, payload_sha: bytes) -> bytes:
     return hashlib.sha256(previous + struct.pack(">Q", rev) + payload_sha).digest()
 
 
+# The control row fields `find` answers
+LOG_FIELDS = (
+    "id",
+    "lineage",
+    "head_rev",
+    "head_chain",
+    "q_epoch",
+    "verdict",
+    "judged",
+    "schema_steps",
+    "suspect_held",
+    "state_bytes",
+    "tail_bound",
+    "trimmed_rev",
+)
+
+
 def find(app: str, node: str, for_update: bool = False) -> frappe._dict | None:
     """`node`'s log, or None when it has none or its log is purged; `for_update` locks it and reads past the snapshot."""
-    doc_table = table(app, "doc")
-    rows = frappe.db.sql(
-        f"""SELECT `id`, `lineage`, `head_rev`, `head_chain`, `q_epoch`, `verdict`, `judged`, `schema_steps`,
-        `suspect_held`, `state_bytes`, `tail_bound`, `trimmed_rev` FROM `{doc_table}` WHERE `node` = %s AND `mode` != 'purged'"""
-        + (" FOR UPDATE" if for_update else ""),
-        node,
-        as_dict=True,
-    )
+    doc = Table(table(app, "doc"))
+    query = frappe.qb.from_(doc).select(*LOG_FIELDS).where(doc.node == node).where(doc.mode != "purged")
+    if for_update:
+        query = query.for_update()
+
+    rows = query.run(as_dict=True)
     if not rows:
         return None
 
@@ -95,8 +113,8 @@ def find(app: str, node: str, for_update: bool = False) -> frappe._dict | None:
 
 def node_of(app: str, doc_id: str) -> str | None:
     """Load the node of the log `doc_id` without a lock, or None when it has no row."""
-    doc_table = table(app, "doc")
-    rows = frappe.db.sql(f"SELECT `node` FROM `{doc_table}` WHERE `id` = %s", doc_id)
+    doc = Table(table(app, "doc"))
+    rows = frappe.qb.from_(doc).select(doc.node).where(doc.id == doc_id).run()
     if not rows:
         return None
 
@@ -107,12 +125,16 @@ def create(app: str, node: str) -> str:
     """Start an empty log for `node` in the caller's transaction; answers its id."""
     doc_id = frappe.generate_hash(length=20)
     lineage = secrets.token_hex(16)
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"""INSERT INTO `{doc_table}` (`id`, `node`, `lineage`, `head_rev`, `head_chain`, `start_clocks`, `created`)
-        VALUES (%s, %s, %s, 0, UNHEX(%s), '{{}}', %s)""",
-        (doc_id, node, lineage, chain_seed(lineage).hex(), now_datetime()),
-    )
+    row = {
+        "id": doc_id,
+        "node": node,
+        "lineage": lineage,
+        "head_rev": 0,
+        "head_chain": Unhex(chain_seed(lineage).hex()),
+        "start_clocks": "{}",
+        "created": now_datetime(),
+    }
+    insert_into(table(app, "doc"), row).run()
     return doc_id
 
 
@@ -122,17 +144,17 @@ def mark_purged(app: str, node: str) -> str | None:
     if not doc:
         return None
 
-    doc_table = table(app, "doc")
-    frappe.db.sql(f"UPDATE `{doc_table}` SET `mode` = 'purged' WHERE `id` = %s", doc.id)
+    doc_table = Table(table(app, "doc"))
+    frappe.qb.update(doc_table).set(doc_table.mode, "purged").where(doc_table.id == doc.id).run()
     return doc.id
 
 
 def delete_in_batches(app: str, kind: str, doc_id: str) -> None:
     """Delete the log's rows from its `kind` table in batches, committing each."""
-    kind_table = table(app, kind)
+    kind_table = Table(table(app, kind))
     while True:
-        frappe.db.sql(f"DELETE FROM `{kind_table}` WHERE `doc_id` = %s LIMIT %s", (doc_id, PURGE_BATCH))
-        [(deleted,)] = frappe.db.sql("SELECT ROW_COUNT()")
+        batch = frappe.qb.from_(kind_table).delete().where(kind_table.doc_id == doc_id).limit(PURGE_BATCH)
+        deleted = changed_rows(batch)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         if deleted < PURGE_BATCH:
             break
@@ -140,13 +162,13 @@ def delete_in_batches(app: str, kind: str, doc_id: str) -> None:
 
 def delete_purged(app: str, doc_id: str) -> None:
     """Delete a purged log's rows in batches, each committed, then its control row. Safe to run again."""
-    doc_table = table(app, "doc")
-    purged = frappe.db.sql(f"SELECT 1 FROM `{doc_table}` WHERE `id` = %s AND `mode` = 'purged'", doc_id)
+    doc = Table(table(app, "doc"))
+    purged = frappe.qb.from_(doc).select(1).where(doc.id == doc_id).where(doc.mode == "purged").run()
     if not purged:
         return
 
     for kind in ("update", "checkpoint", "session", "stage", "recovery", "projection", "copy"):
         delete_in_batches(app, kind, doc_id)
 
-    frappe.db.sql(f"DELETE FROM `{doc_table}` WHERE `id` = %s AND `mode` = 'purged'", doc_id)
+    frappe.qb.from_(doc).delete().where(doc.id == doc_id).where(doc.mode == "purged").run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit

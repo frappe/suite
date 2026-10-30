@@ -5,6 +5,7 @@ keyed on the control row's id, never on the Drive node.
 """
 
 import frappe
+from frappe.query_builder import Table
 
 TABLE_OPTIONS = "ENGINE=InnoDB ROW_FORMAT=DYNAMIC CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 KINDS = ("doc", "update", "session", "checkpoint", "stage", "recovery", "projection", "copy", "conversion")
@@ -115,7 +116,8 @@ def ensure_doc_table(app: str) -> None:
         f"ALTER TABLE `{doc_table}` ADD INDEX IF NOT EXISTS `next_compaction_at` (`next_compaction_at`)"
     )
     # A bound is never below its row's bytes, so this only meets tails stored before bounds were kept
-    frappe.db.sql(f"UPDATE `{doc_table}` SET `tail_bound` = `tail_bytes` WHERE `tail_bound` < `tail_bytes`")
+    doc = Table(doc_table)
+    frappe.qb.update(doc).set(doc.tail_bound, doc.tail_bytes).where(doc.tail_bound < doc.tail_bytes).run()
 
 
 def ensure_update_table(app: str) -> None:

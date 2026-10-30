@@ -3,8 +3,10 @@
 import secrets
 
 import frappe
+from frappe.query_builder import Table
 from frappe.utils import now_datetime
 
+from suite.content.db import insert_into
 from suite.content.log import Refusal
 from suite.content.snapshot import start_clocks
 from suite.content.tables import table
@@ -15,11 +17,19 @@ CLIENT_ID_MAX = 2**30
 
 def load_session(app: str, doc_id: str, sid: str, user: str) -> frappe._dict | None:
     """Load the session row for `sid`, or None; refused when it belongs to another user."""
-    session_table = table(app, "session")
-    rows = frappe.db.sql(
-        f"SELECT `client_id`, `user`, `acked_seq`, `next_clock`, `closed` FROM `{session_table}` WHERE `doc_id` = %s AND `sid` = %s",
-        (doc_id, sid),
-        as_dict=True,
+    session_table = Table(table(app, "session"))
+    rows = (
+        frappe.qb.from_(session_table)
+        .select(
+            session_table.client_id,
+            session_table.user,
+            session_table.acked_seq,
+            session_table.next_clock,
+            session_table.closed,
+        )
+        .where(session_table.doc_id == doc_id)
+        .where(session_table.sid == sid)
+        .run(as_dict=True)
     )
     if not rows:
         return None
@@ -47,25 +57,33 @@ def session_for(app: str, doc_id: str, header: PushHeader, user: str) -> frappe.
     return session
 
 
+def locked_start_clocks(app: str, doc_id: str) -> dict[int, int]:
+    """Lock the control row and load the clocks the document's state starts from."""
+    doc = Table(table(app, "doc"))
+    doc_rows = (
+        frappe.qb.from_(doc).select(doc.start_clocks).where(doc.id == doc_id).for_update().run(as_dict=True)
+    )
+    return start_clocks(doc_rows[0])
+
+
 def insert_session(app: str, doc_id: str, sid: str, client_id: int, user: str) -> bool:
     """Commit a new session row under the doc lock; False when a session or the start already has the ids."""
-    doc_table = table(app, "doc")
-    session_table = table(app, "session")
-    doc_rows = frappe.db.sql(
-        f"SELECT `start_clocks` FROM `{doc_table}` WHERE `id` = %s FOR UPDATE",
-        doc_id,
-        as_dict=True,
-    )
-    doc = doc_rows[0]
-    if client_id in start_clocks(doc):
+    if client_id in locked_start_clocks(app, doc_id):
         return False
 
     try:
-        frappe.db.sql(
-            f"""INSERT INTO `{session_table}` (`doc_id`, `sid`, `client_id`, `user`, `acked_seq`, `next_clock`, `created`)
-            VALUES (%s, %s, %s, %s, 0, 0, %s)""",
-            (doc_id, sid, client_id, user, now_datetime()),
-        )
+        insert_into(
+            table(app, "session"),
+            {
+                "doc_id": doc_id,
+                "sid": sid,
+                "client_id": client_id,
+                "user": user,
+                "acked_seq": 0,
+                "next_clock": 0,
+                "created": now_datetime(),
+            },
+        ).run()
     except Exception as error:
         if frappe.db.is_duplicate_entry(error):
             return False

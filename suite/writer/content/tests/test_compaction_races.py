@@ -102,7 +102,7 @@ class TestCompactionRaces(CompactionCase):
             real_sql = frappe.db.sql
 
             def signalled(query, *args, **kwargs):
-                if "SET `mode` = 'purged'" in str(query):
+                if "SET `mode`=" in str(query) and "purged" in str(args):
                     marking.set()
 
                 return real_sql(query, *args, **kwargs)

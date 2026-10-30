@@ -17,7 +17,7 @@ import frappe
 import pycrdt
 from bs4 import BeautifulSoup
 from frappe.tests.test_api import make_request
-from frappe.utils import get_datetime, get_system_timezone, get_test_client
+from frappe.utils import CallbackManager, get_datetime, get_system_timezone, get_test_client
 from frappe.utils.background_jobs import create_job_id, get_redis_conn
 from frappe.utils.logging import connection_for
 from rq.job import Job, JobStatus
@@ -61,6 +61,8 @@ from suite.writer.http import routes as writer_routes
 TIME = 1_690_000_000_000
 OLD_THREAD = {"uuid": "u1", "comments": [{"userName": "Ann", "time": TIME, "content": "Old note"}]}
 REAL_CONVERT = convert.convert
+# The conversion's lock on a node, as qb renders it
+NODE_LOCK = "SELECT `name` FROM `tabDrive Node` WHERE `name`=%(param1)s FOR UPDATE"
 PNG_SOURCE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
 
@@ -96,7 +98,12 @@ class TestConversion(DriveCallbackCase):
 
             self.skipTest(reason)
 
-        job_patch = patch.object(frappe.local, "job", frappe._dict(job_name="test_conversion"), create=True)
+        job_patch = patch.object(
+            frappe.local,
+            "job",
+            frappe._dict(job_name="test_conversion", after_job=CallbackManager()),
+            create=True,
+        )
         job_patch.start()
         self.addCleanup(job_patch.stop)
 
@@ -728,7 +735,7 @@ class TestConversion(DriveCallbackCase):
 
         def sql(query, *args, **kwargs):
             answer = real_sql(query, *args, **kwargs)
-            if "`tabDrive Node` WHERE `name` = %s FOR UPDATE" in str(query) and purger.ident is None:
+            if NODE_LOCK in str(query) and purger.ident is None:
                 purger.start()
                 waited.append(locked.wait(10))
 
@@ -774,7 +781,7 @@ class TestConversion(DriveCallbackCase):
             if (
                 not release.is_set()
                 and "INSERT INTO `__writer_content_conversion`" in str(query)
-                and args[0][0] == other
+                and other in args[0].values()
             ):
                 snapshot()
 
@@ -853,7 +860,7 @@ class TestConversion(DriveCallbackCase):
         real_sql = frappe.db.sql
 
         def sql(query, *args, **kwargs):
-            if "`tabDrive Node` WHERE `name` = %s FOR UPDATE" in str(query) and restorer.ident is None:
+            if NODE_LOCK in str(query) and restorer.ident is None:
                 restorer.start()
                 waited.append(locked.wait(10))
 
@@ -942,7 +949,7 @@ class TestConversion(DriveCallbackCase):
         real_sql = frappe.db.sql
 
         def sql(query, *args, **kwargs):
-            if "`tabDrive Node` WHERE `name` = %s FOR UPDATE" not in str(query) or purger.ident is not None:
+            if NODE_LOCK not in str(query) or purger.ident is not None:
                 return real_sql(query, *args, **kwargs)
 
             purger.start()

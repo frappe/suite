@@ -12,6 +12,7 @@ import frappe
 from frappe.utils.caching import site_cache
 
 from suite.content import ingest, updates
+from suite.content.db import load_system_variable
 
 # The most a compacted document may hold and one change may, in bytes, for every app
 STATE_MAX = 4 * 2**20
@@ -32,8 +33,7 @@ def edit_max() -> int:
 @site_cache
 def max_packet() -> int:
     """Read the database's packet limit once per site and process."""
-    ((packet,),) = frappe.db.sql("SELECT @@max_allowed_packet")
-    return int(packet)
+    return int(load_system_variable("max_allowed_packet"))
 
 
 class Full(Exception):

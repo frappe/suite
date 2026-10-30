@@ -28,7 +28,9 @@ def one_struct(ref: int, content: bytes, client: int = 5) -> bytes:
 ANY_TRUE = one_struct(8, encoded_uint(1) + bytes([120]))
 
 
-def editor(version: int = 1, features: dict[str, int] | None = None) -> ingest.EditorSchema:
+def editor(
+    version: int = 1, features: dict[str, int] | None = None, open_roots: frozenset[str] = frozenset()
+) -> ingest.EditorSchema:
     return ingest.EditorSchema(
         version,
         features or {},
@@ -36,7 +38,18 @@ def editor(version: int = 1, features: dict[str, int] | None = None) -> ingest.E
         shared_types=frozenset({3, 6}),
         nodes=frozenset({"paragraph"}),
         marks=frozenset({"bold"}),
+        open_roots=open_roots,
     )
+
+
+def naming(*names: str) -> updates.Update:
+    return updates.Update([updates.Struct(5, 0, 1, names=list(names))])
+
+
+def keyed(root: str, key: str, value: object = 1) -> updates.Update:
+    doc = pycrdt.Doc(client_id=5)
+    doc.get(root, type=pycrdt.Map)[key] = value
+    return ingest.check_row(doc.get_update(), 5).update
 
 
 def written(build) -> updates.Update:
@@ -99,11 +112,46 @@ class TestIngest(UnitTestCase):
     def test_a_row_may_hold_only_names_declared_at_or_below_its_stamp(self):
         schema = editor(2, {"paragraph": 1, "callout": 2})
 
-        self.assertTrue(schema.allows(set(), 1))
-        self.assertTrue(schema.allows({"paragraph"}, 1))
-        self.assertTrue(schema.allows({"paragraph", "callout"}, 2))
-        self.assertFalse(schema.allows({"paragraph", "callout"}, 1))
-        self.assertFalse(schema.allows({"marquee"}, 2))
+        self.assertTrue(schema.allows(naming(), 1))
+        self.assertTrue(schema.allows(naming("paragraph"), 1))
+        self.assertTrue(schema.allows(naming("paragraph", "callout"), 2))
+        self.assertFalse(schema.allows(naming("paragraph", "callout"), 1))
+        self.assertFalse(schema.allows(naming("marquee"), 2))
+
+    def test_an_open_roots_direct_key_needs_no_declaring_but_a_fixed_roots_does(self):
+        schema = editor(2, {"cells": 2, "meta": 1, "title": 1}, open_roots=frozenset({"cells"}))
+
+        self.assertTrue(schema.allows(keyed("cells", "s1:r8f2kq0z:e1"), 2))
+        self.assertTrue(schema.allows(keyed("meta", "title"), 2))
+        self.assertFalse(schema.allows(keyed("meta", "s1:r8f2kq0z:e1"), 2))
+        # The open root itself is still a feature of its schema
+        self.assertFalse(schema.allows(keyed("cells", "s1:r8f2kq0z:e1"), 1))
+
+    def test_an_open_roots_key_is_ascii_letters_digits_and_four_marks_one_to_128_long(self):
+        schema = editor(1, {"cells": 1}, open_roots=frozenset({"cells"}))
+        fitting = ["A", "Z", "a", "z", "0", "9", "_", ".", ":", "-", "x" * 128]
+        # Each just outside a class: around A-Z, a-z, 0-9, `_`, `.`, `:` and `-`
+        unfitting = ["@", "[", "`", "{", "/", ";", "^", ",", " ", "é", "a\n", "", "x" * 129]
+
+        for key in fitting:
+            with self.subTest(fits=key):
+                self.assertTrue(schema.allows(keyed("cells", key), 1))
+
+        for key in unfitting:
+            with self.subTest(unfit=key):
+                self.assertFalse(schema.allows(keyed("cells", key), 1))
+
+    def test_a_key_nested_under_an_open_root_must_be_declared(self):
+        schema = editor(1, {"cells": 1, "format": 1}, open_roots=frozenset({"cells"}))
+        nested = keyed("cells", "s1:r1:c1", pycrdt.Map({"format": "bold"}))
+        undeclared = keyed("cells", "s1:r1:c1", pycrdt.Map({"colour": "red"}))
+
+        self.assertTrue(schema.allows(nested, 1))
+        self.assertFalse(schema.allows(undeclared, 1))
+
+    def test_an_open_root_that_is_not_a_feature_is_refused(self):
+        with self.assertRaises(ValueError):
+            editor(1, {"meta": 1}, open_roots=frozenset({"cells"}))
 
     def test_a_row_may_make_only_the_shared_types_the_editor_makes(self):
         schema = editor()

@@ -11,11 +11,12 @@ vi.mock(
 let cleanup: (() => void) | undefined
 afterEach(() => cleanup?.())
 
-function render(drive: number, mail: number | null, cap: number | null) {
+function render(drive: number, mail: number | null, cap: number | null, breakdown = false) {
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp(StorageUsage, {
     user: { drive_bytes: drive, mail_bytes: mail, cap_bytes: cap },
+    breakdown,
   })
   app.mount(root)
   cleanup = () => {
@@ -64,4 +65,24 @@ it('does not present incomplete Mail usage as a complete percentage', () => {
   const root = render(2e9, null, 10e9)
   expect(root.querySelector('[role="progressbar"]')).toBeNull()
   expect(root.textContent).toContain('2 GB')
+})
+
+it.each([
+  [2e9, 3e9, 10e9, ['20', '30']],
+  [0, 12e9, 10e9, ['0', '100']],
+  [2e9, null, 10e9, ['20']],
+  [2e9, 3e9, null, []],
+  [2e9, 3e9, 0, []],
+])('shows each app against the shared configured cap', (drive, mail, cap, values) => {
+  const root = render(drive, mail, cap, true)
+  const bars = [...root.querySelectorAll('[role="progressbar"]')].filter(
+    (bar) => !bar.closest('[aria-hidden="true"]'),
+  )
+  expect(bars.map((bar) => bar.getAttribute('aria-valuenow'))).toEqual(values)
+  expect(root.textContent).toContain('Drive')
+  expect(root.textContent).toContain('Mail')
+  if (cap === null) expect(root.textContent).toContain('No limit')
+  else if (cap === 0) expect(root.textContent).toContain('Limit unavailable')
+  else expect(root.textContent).toContain('of 10 GB shared limit')
+  if (mail === null) expect(root.textContent).toContain('Unavailable')
 })

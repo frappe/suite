@@ -7,6 +7,7 @@ import { ref } from 'vue'
 import { createWorkbookClient, type WorkbookClient } from '../../core/client'
 import { ENGINE_VERSION } from '../../core/snapshot-codec'
 import { createWorkerHost } from '../../core/worker'
+import { createNamedRanges } from '../../engine/named-ranges.js'
 import { usePersistence } from './usePersistence.js'
 
 const nodeRequire = createRequire(import.meta.url)
@@ -175,6 +176,33 @@ describe('Sheets persistence', () => {
       namedRanges: { restore: () => order.push('restore'), snapshot: () => ({}) },
     }).loadSheet('s')
     expect(order).toEqual(['restore', 'sync'])
+  })
+
+  // Saved before ISSUES #77: a name still points at a sheet the file no longer
+  // has. It is #REF! as if that sheet were deleted now, so a sheet added later
+  // under the same name (often the default "Sheet2") doesn't revive it.
+  it('loads a name on a missing sheet as #REF!, before the names are sent', async () => {
+    const entries = {
+      REVENUE: { name: 'Revenue', sheet: 'Sheet1', range: 'A1:A9' },
+      FAR: { name: 'far', sheet: 'Sheet2', range: 'A1' },
+    }
+    server.answer = () => ({
+      name: 's',
+      title: 'T',
+      sheets_data: JSON.stringify({ engine: btoa('\x07'), namedRanges: { entries } }),
+    })
+    const namedRanges = createNamedRanges()
+    const sent: string[][] = []
+    await persistence({
+      engine: {
+        start: async () => {},
+        toBytes: async () => WORKBOOK,
+        client: () => ({ sheets: ['sheet1'] }),
+        syncDefinedNames: () => sent.push(namedRanges.list().map((e) => `${e.name} ${e.range}`)),
+      },
+      namedRanges,
+    }).loadSheet('s')
+    expect(sent.at(-1)).toEqual(['Revenue A1:A9', 'far #REF!'])
   })
 
   it('names both IronCalc versions when a body saved by another one does not open', async () => {
@@ -403,16 +431,26 @@ describe('Sheets persistence: opening a develop sheet', () => {
     const body = {
       sheet: { sheets: { 'Q1/Q2': { A1: '5' } } },
       view: { 'Q1/Q2': { colW: { 0: 90 } } },
+      namedRanges: { entries: { REV: { name: 'Rev', sheet: 'Q1/Q2', range: 'A1' } } },
     }
     answerWith(developSheet({ sheets_data: JSON.stringify(body) }))
     const formats = { restore: () => {}, snapshot: () => ({}), renameSheet: vi.fn() }
     const charts = { restore: () => {}, renameSheet: vi.fn() }
+    const namedRanges = createNamedRanges()
     const applyViewState = vi.fn()
-    const saved = persistence({ engine: realEngine(), formats, charts, applyViewState })
+    const saved = persistence({
+      engine: realEngine(),
+      formats,
+      charts,
+      namedRanges,
+      applyViewState,
+    })
     await saved.loadSheet('old-1')
 
     expect(formats.renameSheet).toHaveBeenCalledWith('Q1/Q2', 'Q1_Q2')
     expect(charts.renameSheet).toHaveBeenCalledWith('Q1/Q2', 'Q1_Q2')
+    // Renamed before names on missing sheets turn #REF! (ISSUES #77).
+    expect(namedRanges.get('Rev')).toEqual({ name: 'Rev', sheet: 'Q1_Q2', range: 'A1' })
     expect(applyViewState).toHaveBeenCalledWith({ Q1_Q2: { colW: { 0: 90 } } })
     expect(saved.legacyUpgrade.value?.renamed).toEqual({ 'Q1/Q2': 'Q1_Q2' })
   })

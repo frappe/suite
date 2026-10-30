@@ -6,8 +6,10 @@ from collections.abc import Mapping
 from datetime import datetime
 
 import frappe
+from frappe.query_builder import Table
 
 from suite import drive
+from suite.content.db import Greatest
 from suite.content.editors import EditorSpec, ReadableCopy, spec_of
 from suite.content.log import node_of
 from suite.content.tables import table
@@ -21,14 +23,18 @@ def node_field(spec: EditorSpec) -> str:
 def body_row(app: str, node: str, *, lock: bool = False) -> frappe._dict | None:
     """Load the app's row for `node`, with its body decoded, or None when it has none."""
     spec = spec_of(app)
-    node_column = node_field(spec)
-    lock_clause = " FOR UPDATE" if lock else ""
-    found = frappe.db.sql(
-        f"""SELECT `name`, `{spec.body_field}` AS `body`, `modified` FROM `tab{spec.doctype}`
-        WHERE `{node_column}` = %s ORDER BY `name` LIMIT 1{lock_clause}""",
-        node,
-        as_dict=True,
+    app_table = frappe.qb.DocType(spec.doctype)
+    query = (
+        frappe.qb.from_(app_table)
+        .select(app_table.name, app_table[spec.body_field].as_("body"), app_table.modified)
+        .where(app_table[node_field(spec)] == node)
+        .orderby(app_table.name)
+        .limit(1)
     )
+    if lock:
+        query = query.for_update()
+
+    found = query.run(as_dict=True)
     if not found:
         return None
 
@@ -46,32 +52,33 @@ def write_body(app: str, docname: str, state: bytes, *, edited_at: datetime | No
     """Write `state` as the row's body; `edited_at` moves its `modified` forward to then, never back."""
     spec = spec_of(app)
     body = base64.b64encode(state).decode("ascii")
+    app_table = frappe.qb.DocType(spec.doctype)
+    update = (
+        frappe.qb.update(app_table).set(app_table[spec.body_field], body).where(app_table.name == docname)
+    )
     if edited_at is None:
-        frappe.db.sql(
-            f"UPDATE `tab{spec.doctype}` SET `{spec.body_field}` = %s WHERE `name` = %s", (body, docname)
-        )
+        update.run()
         return
 
-    frappe.db.sql(
-        f"""UPDATE `tab{spec.doctype}` SET `{spec.body_field}` = %s, `modified` = GREATEST(`modified`, %s)
-        WHERE `name` = %s""",
-        (body, edited_at, docname),
-    )
+    update.set(app_table.modified, Greatest(app_table.modified, edited_at)).run()
 
 
 def locked_app_row(app: str, doc_id: str, html_copy: ReadableCopy) -> frappe._dict | None:
-    """Lock an unpurged log's app row, then its control row, its copy as `written`; lock before plain reads (REPEATABLE READ)."""
+    """Lock an unpurged log's app row, then its control row, its copy as `written`."""
     spec = spec_of(app)
-    doc_table = table(app, "doc")
-    node_column = node_field(spec)
-    found = frappe.db.sql(
-        f"""SELECT `name` FROM `tab{spec.doctype}` WHERE `{node_column}` = %s
-        ORDER BY `name` LIMIT 1 FOR UPDATE""",
-        node_of(app, doc_id),
-        as_dict=True,
+    app_table = frappe.qb.DocType(spec.doctype)
+    doc = Table(table(app, "doc"))
+    found = (
+        frappe.qb.from_(app_table)
+        .select(app_table.name)
+        .where(app_table[node_field(spec)] == node_of(app, doc_id))
+        .orderby(app_table.name)
+        .limit(1)
+        .for_update()
+        .run(as_dict=True)
     )
-    unpurged = frappe.db.sql(
-        f"SELECT 1 FROM `{doc_table}` WHERE `id` = %s AND `mode` != 'purged' FOR UPDATE", doc_id
+    unpurged = (
+        frappe.qb.from_(doc).select(1).where(doc.id == doc_id).where(doc.mode != "purged").for_update().run()
     )
     if not found or not unpurged:
         return None
@@ -89,18 +96,21 @@ def write_copy(app: str, docname: str, changed: Mapping[str, str | None], html_c
 def copy_row(app: str, doc_id: str, html_copy: ReadableCopy) -> frappe._dict | None:
     """Load the copy's rows as `written`, with the head and the projection row, of a log that isn't purged."""
     spec = spec_of(app)
-    doc_table = table(app, "doc")
-    projection_table = table(app, "projection")
-    node_column = node_field(spec)
-    found = frappe.db.sql(
-        f"""SELECT `app`.`name`, `doc`.`head_rev`, `projection`.`projected_rev`,
-        `projection`.`projection_hash`
-        FROM `{doc_table}` `doc`
-        JOIN `{projection_table}` `projection` ON `projection`.`doc_id` = `doc`.`id`
-        JOIN `tab{spec.doctype}` `app` ON `app`.`{node_column}` = `doc`.`node`
-        WHERE `doc`.`id` = %s AND `doc`.`mode` != 'purged' ORDER BY `app`.`name` LIMIT 1""",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(app, "doc")).as_("doc")
+    projection = Table(table(app, "projection")).as_("projection")
+    app_table = frappe.qb.DocType(spec.doctype).as_("app")
+    found = (
+        frappe.qb.from_(doc)
+        .join(projection)
+        .on(projection.doc_id == doc.id)
+        .join(app_table)
+        .on(app_table[node_field(spec)] == doc.node)
+        .select(app_table.name, doc.head_rev, projection.projected_rev, projection.projection_hash)
+        .where(doc.id == doc_id)
+        .where(doc.mode != "purged")
+        .orderby(app_table.name)
+        .limit(1)
+        .run(as_dict=True)
     )
     if not found:
         return None
