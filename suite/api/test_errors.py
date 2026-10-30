@@ -27,7 +27,13 @@ class TestBrowserErrors(IntegrationTestCase):
     def remove_fixtures(cls):
         frappe.set_user("Administrator")
         frappe.db.rollback()
-        frappe.db.delete("Error Log", {"method": ["like", f"%{MARK}%"]})
+        # Error Log lives in the SQLite log database, so frappe.db.delete does not reach it.
+        for log in frappe.get_all(
+            "Error Log",
+            or_filters={"method": ["like", f"%{MARK}%"], "error": ["like", f"%{MARK}%"]},
+            pluck="name",
+        ):
+            frappe.delete_doc("Error Log", log, ignore_permissions=True)
         frappe.delete_doc("User", USER, force=True, ignore_permissions=True)
         frappe.db.commit()
 
@@ -58,6 +64,12 @@ class TestBrowserErrors(IntegrationTestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         log = frappe.get_last_doc("Error Log", filters={"method": ["like", f"Browser: {MARK} x%"]})
         self.assertEqual(len(log.method), 140)
+
+    def test_a_multi_line_title_is_recorded_on_one_line(self):
+        response = self.post(self.report(f"Error: {MARK} parse failed\n  at line 3"), auth=self.user)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        log = frappe.get_last_doc("Error Log", filters={"method": ["like", f"%{MARK} parse failed%"]})
+        self.assertEqual(log.method, f"Browser: Error: {MARK} parse failed at line 3")
 
     def test_a_guest_cannot_write_to_the_error_log(self):
         response = self.post(self.report(f"{MARK} guest"))
