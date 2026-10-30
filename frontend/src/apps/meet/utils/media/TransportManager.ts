@@ -85,8 +85,9 @@ async function applySenderPreferences(
 		// Some browsers reject priority hints. Still request the video degradation
 		// policy, without removing encodings or changing their existing settings.
 		if (kind !== "video") throw error;
-		parameters.encodings = originalEncodings;
-		await sender.setParameters(parameters);
+		const retry = sender.getParameters();
+		retry.degradationPreference = parameters.degradationPreference;
+		await sender.setParameters(retry);
 	}
 }
 

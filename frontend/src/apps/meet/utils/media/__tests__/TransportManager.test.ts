@@ -1047,7 +1047,9 @@ function senderPolicyFixture(
 			.mockResolvedValue({
 				id: "p",
 				rtpSender: {
-					getParameters: () => structuredClone(parameters),
+					getParameters: vi.fn().mockImplementation(() => ({
+						...structuredClone(parameters), transactionId: String(setParameters.mock.calls.length),
+					})),
 					setParameters,
 				},
 			}),
@@ -1094,6 +1096,7 @@ describe("congested media sender policy", () => {
 		await manager.createProducer(track, { type });
 		expect(track.contentHint).toBe(hint);
 		expect(setParameters).toHaveBeenCalledWith({
+			transactionId: "0",
 			...(degradation ? { degradationPreference: degradation } : {}),
 			encodings: [
 				{ rid: "tiny", maxBitrate: 87000, priority, networkPriority: priority },
@@ -1119,6 +1122,7 @@ describe("congested media sender policy", () => {
 		await manager.createProducer(track, { type: "camera" });
 		expect(setParameters).toHaveBeenCalledTimes(2);
 		expect(setParameters).toHaveBeenLastCalledWith({
+			transactionId: "1",
 			degradationPreference: "maintain-framerate",
 			encodings: [
 				{ rid: "tiny", maxBitrate: 87000 },

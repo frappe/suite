@@ -80,10 +80,12 @@ fail if their shared-fixture anchor is missing or ambiguous.
 ## Product policy and regression coverage
 
 Only the existing tile warning icon/tooltip appears for poor or critical quality.
-Local poor thresholds are ≥5% recent loss, ≥450 ms RTT, ≥40 ms jitter or camera
-video below 5 fps. Critical thresholds are ≥18% loss, ≥1200 ms RTT, ≥150 ms jitter,
+Local poor thresholds are ≥5% recent loss, ≥450 ms RTT, ≥40 ms jitter or a
+three-second media stall. Slow source capture alone does not establish local-path
+degradation. Critical thresholds are ≥18% loss, ≥1200 ms RTT, ≥150 ms jitter,
 a six-second camera/audio stall, or an offline/failed connection. Missing/stale
-measurements are unknown. Warnings clear after six healthy seconds. Static screens
+measurements are unknown; missing samples preserve an outstanding warning.
+Warnings clear after six healthy seconds. Static screens
 and intentional pauses have separate handling. ICE control success alone cannot
 report recovery: observed delivery/feedback must resume.
 

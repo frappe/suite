@@ -314,6 +314,12 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 				this.connectionManager.completeTransportRecovery(reason),
 			hasMissingExpectedReceiveMedia: () =>
 				this.connectionManager.hasMissingExpectedReceiveMedia(),
+			hasExpectedSendMedia: () =>
+				Boolean(
+					this.mediaManager.mediaHandler.localStream?.getTracks().some(
+						(track) => track.enabled && track.readyState === "live",
+					) || this.screenPublicationTrack?.readyState === "live",
+				),
 			getTransportStats: () => this.transportManager.getTransportStats(),
 			getNetworkStats: () => this.transportManager.getNetworkStats(),
 			getConsumers: () => this.consumerManager.getAllConsumers(),

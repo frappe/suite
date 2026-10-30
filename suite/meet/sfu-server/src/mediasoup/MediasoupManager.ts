@@ -314,9 +314,16 @@ export class MediasoupManager {
 			webRtcServer,
 			this.config.router.mediaCodecs as RtpCodecCapability[],
 			(activeRoomId, peerIds) => {
-				this.activeSpeakerPeers.set(activeRoomId, new Set(peerIds));
+				const previous = this.activeSpeakerPeers.get(activeRoomId);
+				const next = new Set(peerIds);
+				const unchanged =
+					previous?.size === next.size &&
+					[...next].every((id) => previous.has(id));
+				this.activeSpeakerPeers.set(activeRoomId, next);
 				const activeRoom = this.roomManager.getRoom(activeRoomId);
-				for (const peer of activeRoom?.peers.values() ?? []) {
+				for (const peer of unchanged
+					? []
+					: (activeRoom?.peers.values() ?? [])) {
 					for (const producer of peer.producers.values()) {
 						if (producer.kind !== 'video' || producer.appData.type === 'screen')
 							continue;

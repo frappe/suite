@@ -29,7 +29,10 @@ export type NetworkReport = {
 /** Keeps loss windows per stream and transport, so old loss cannot mask recovery. */
 export class NetworkStatsTracker {
 	private remoteTimestamps = new Map<string, number>();
-	private previous = new Map<string, { received: number; lost: number }>();
+	private previous = new Map<
+		string,
+		{ received: number; lost: number; at: number }
+	>();
 
 	sample(
 		direction: "send" | "recv",
@@ -110,7 +113,11 @@ export class NetworkStatsTracker {
 					activeKeys.add(key);
 					const before = this.previous.get(key);
 					// A reset/new SSRC begins a new interval. Late packets can reduce lost.
-					if (before && report.packetsReceived >= before.received) {
+					if (
+						before &&
+						Date.now() - before.at <= 10_000 &&
+						report.packetsReceived >= before.received
+					) {
 						received += report.packetsReceived - before.received;
 						if (report.packetsReceived > before.received) {
 							flowing = true;
@@ -122,6 +129,7 @@ export class NetworkStatsTracker {
 					this.previous.set(key, {
 						received: report.packetsReceived,
 						lost: report.packetsLost,
+						at: Date.now(),
 					});
 				}
 			}

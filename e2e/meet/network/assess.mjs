@@ -15,7 +15,7 @@ export function assess(
 			last = window.samples.at(-1);
 		const tail = window.samples.at(-4) ?? first;
 		const streams = last.rows.map((row) => {
-			const recent = tail.rows.find((x) => x.producerId === row.producerId);
+			const recent = measureStream(window.samples.slice(-4), row.producerId);
 			let maximumStallMs = 0,
 				lastProgress = first.timestamp;
 			for (const sample of window.samples) {
@@ -39,9 +39,8 @@ export function assess(
 				screen: row.isScreen,
 				...measureStream(window.samples, row.producerId),
 				tailProgress:
-					!!recent &&
-					row.bytes > recent.bytes &&
-					(row.kind !== "video" || row.frames > recent.frames),
+					recent.bytesDelta > 0 &&
+					(row.kind !== "video" || recent.framesDelta > 0),
 				maximumStallMs,
 			};
 		});

@@ -46,3 +46,23 @@ test("counter replacement cannot produce a negative bitrate", async () => {
   );
   assert.deepEqual(result, { bytesDelta: 350, framesDelta: 17 });
 });
+
+test("flowing replacement consumers qualify recovery tail", () => {
+	const samples = Array.from({ length: 5 }, (_, i) => ({
+		timestamp: i * 1000,
+		rows: [
+			{
+				id: i < 3 ? "old" : "new",
+				producerId: "p",
+				kind: "video",
+				bytes: i < 3 ? 10000 + i * 100 : (i - 2) * 100,
+				frames: i < 3 ? 100 + i * 25 : (i - 2) * 25,
+			},
+		],
+	}));
+	assert.equal(
+		assess([{ name: "recovered", samples }], { expectedStreams: 1 }).checks
+			.recovered,
+		true,
+	);
+});

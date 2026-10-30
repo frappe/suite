@@ -31,6 +31,7 @@ interface MediaHealthNetworkStats {
 export interface MediaHealthPort {
 	onRecoveryVerified?(reason: string): void;
 	hasMissingExpectedReceiveMedia?(): boolean;
+	hasExpectedSendMedia?(): boolean;
 	isSignalingConnected?(): boolean;
 	getTransportStats(): {
 		sendTransport?: { state?: string };
@@ -360,12 +361,23 @@ export class MediaHealthMonitor {
 			this.qualityCandidates.delete(direction);
 			return;
 		}
+		// Missing measurements cannot prove that an outstanding warning recovered.
+		if (
+			quality === "unknown" &&
+			(current === "poor" || current === "critical")
+		) {
+			this.qualityCandidates.delete(direction);
+			return;
+		}
 		if (immediate || quality === "unknown" || current === "unknown") {
 			this.qualityCandidates.delete(direction);
 			this.setState({ [direction]: quality });
 			return;
 		}
 		let candidate = this.qualityCandidates.get(direction);
+		if (candidate && candidate.quality !== "good" && quality !== "good") {
+			candidate.quality = quality;
+		}
 		if (candidate?.quality !== quality) {
 			candidate = { quality, since: this.environment.now() };
 			this.qualityCandidates.set(direction, candidate);
@@ -430,17 +442,7 @@ export class MediaHealthMonitor {
 				quality = "critical";
 				continue;
 			}
-			const fps =
-				previous &&
-				framesDecoded !== null &&
-				previous.frames !== null &&
-				now > previous.at
-					? ((framesDecoded - previous.frames) * 1000) / (now - previous.at)
-					: null;
-			if (
-				stalledFor >= deadline / 2 ||
-				(entry.kind === "video" && !entry.isScreen && fps !== null && fps < 5)
-			) {
+			if (stalledFor >= deadline / 2) {
 				if (quality !== "critical") quality = "poor";
 			} else if (quality === "unknown" && bytes > 0) quality = "good";
 		}
@@ -453,30 +455,37 @@ export class MediaHealthMonitor {
 			quality = "unknown";
 		if (this.port.hasMissingExpectedReceiveMedia?.()) {
 			this.missingReceiveSince ??= now;
-			quality = now - this.missingReceiveSince >= 6000 ? "critical" : "unknown";
+			if (now - this.missingReceiveSince >= 6000) quality = "critical";
+			else if (quality !== "poor" && quality !== "critical")
+				quality = "unknown";
 		} else this.missingReceiveSince = null;
 		this.applyQuality("downlinkQuality", quality, quality === "critical");
-		this.verifyRecovery(results, now);
+		this.verifyRecovery(results, now, quality);
 	}
 
-	private verifyRecovery(results: ConsumerHealthSample[], now: number): void {
+	private verifyRecovery(
+		results: ConsumerHealthSample[],
+		now: number,
+		effectiveReceiveQuality: NetworkQuality,
+	): void {
 		if (!this.recovering) return;
 		const sendState = this.port.getTransportStats()?.sendTransport?.state;
 		const sendHealthy =
 			this.recovering.direction === "recv" ||
-			sendState === "new" ||
-			sendState === "closed" ||
-			(this.stateValue.networkQuality === "good" &&
-				(!this.hasSendMedia ||
-					(this.lastSendProgressAt !== null &&
-						now - this.lastSendProgressAt < 6000)));
+			(!this.port.hasExpectedSendMedia?.() && !this.hasSendMedia) ||
+			(sendState === "connected" &&
+				this.hasSendMedia &&
+				this.stateValue.networkQuality === "good" &&
+				this.lastSendProgressAt !== null &&
+				now - this.lastSendProgressAt < 6000);
 		const activeReceivers = results.filter(
 			({ entry }) => !this.port.isConsumerPaused(entry),
 		);
-		const receivingNormally = activeReceivers.every(({ entry }) => {
+		const receivingNormally = activeReceivers.every(({ entry, bytes }) => {
 			const progress = this.receiveProgress.get(entry.id);
-			if (!progress) return false;
-			if (entry.isScreen && progress.bytesAt !== now) return true;
+			if (!progress || bytes === null || progress.at !== now) return false;
+			if (entry.isScreen && progress.bytesAt !== now)
+				return (progress.frames ?? 0) > 0;
 			return (
 				progress.bytesAt === now &&
 				(entry.kind !== "video" ||
@@ -485,8 +494,7 @@ export class MediaHealthMonitor {
 			);
 		});
 		const receivePathHealthy =
-			this.receiveQuality !== "poor" &&
-			this.receiveQuality !== "critical" &&
+			(activeReceivers.length === 0 || effectiveReceiveQuality === "good") &&
 			!this.port.hasMissingExpectedReceiveMedia?.();
 		const receiveHealthy =
 			this.recovering.direction === "send" ||

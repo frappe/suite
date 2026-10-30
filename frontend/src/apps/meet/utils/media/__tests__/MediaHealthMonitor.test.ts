@@ -295,6 +295,113 @@ describe("MediaHealthMonitor", () => {
 		expect(monitor.state.downlinkQuality).toBe("good");
 	});
 
+	it("keeps a receiving warning through unavailable samples and restarts healthy confirmation", async () => {
+		const environment = new TestEnvironment();
+		let bytes = 1000,
+			frames = 10;
+		const consumer = makeConsumer(environment, {
+			bytes: () => bytes,
+			framesDecoded: () => frames,
+		});
+		const { port } = makeManager({ consumers: [consumer] });
+		const monitor = startMonitor(port, environment);
+		await environment.advance(12_000);
+		vi.mocked(consumer.consumer.getStats).mockRejectedValueOnce(
+			new Error("replacing"),
+		);
+		await environment.advance(3000);
+		expect(monitor.state.downlinkQuality).toBe("critical");
+		for (let i = 0; i < 2; i++) {
+			bytes += 1000;
+			frames += 75;
+			await environment.advance(3000);
+		}
+		expect(monitor.state.downlinkQuality).toBe("critical");
+		bytes += 1000;
+		frames += 75;
+		await environment.advance(3000);
+		expect(monitor.state.downlinkQuality).toBe("good");
+	});
+
+	it("warns for continuously bad upload even when severity alternates", async () => {
+		const environment = new TestEnvironment();
+		const stats = { ...goodNetworkStats };
+		const { port } = makeManager({ getNetworkStats: async () => stats });
+		const monitor = startMonitor(port, environment);
+		await environment.advance(3000);
+		for (const loss of [10, 25, 10, 25]) {
+			stats.packetLoss = loss;
+			await environment.advance(3000);
+		}
+		expect(["poor", "critical"]).toContain(monitor.state.networkQuality);
+	});
+
+	it("does not blame the local downlink for a healthy four-fps source", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager({
+			consumers: [
+				makeConsumer(environment, {
+					bytes: () => environment.now() * 10,
+					framesDecoded: () => (environment.now() * 4) / 1000,
+				}),
+			],
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(15_000);
+		expect(monitor.state.downlinkQuality).toBe("good");
+	});
+
+	it("keeps existing loss warnings while a new subscription is pending", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager({
+			getNetworkStats: async () => ({
+				...goodNetworkStats,
+				downlink: { rtt: 50, jitter: 0, packetLoss: 25, isValid: true },
+			}),
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(3000);
+		port.hasMissingExpectedReceiveMedia = () => true;
+		await environment.advance(3000);
+		expect(monitor.state.downlinkQuality).toBe("critical");
+	});
+
+	it.each([
+		"new",
+		"closed",
+	])("does not verify %s send transport while enabled publication is missing", async (transportState) => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager({ transportState });
+		port.hasExpectedSendMedia = () => true;
+		port.onRecoveryVerified = vi.fn();
+		const monitor = startMonitor(port, environment);
+		monitor.beginRecovery("send", "send rebuild");
+		await environment.advance(15_000);
+		expect(port.onRecoveryVerified).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"incomplete",
+		"unavailable",
+	])("does not verify an %s static screen", async (condition) => {
+		const environment = new TestEnvironment();
+		const consumer = makeConsumer(environment, {
+			isScreen: true,
+			framesDecoded: () => (condition === "incomplete" ? 0 : 10),
+		});
+		const { port } = makeManager({ consumers: [consumer] });
+		port.onRecoveryVerified = vi.fn();
+		const monitor = startMonitor(port, environment);
+		await environment.advance(3000);
+		monitor.beginRecovery("recv", "recv rebuild");
+		if (condition === "unavailable")
+			vi.mocked(consumer.consumer.getStats).mockRejectedValue(
+				new Error("no sample"),
+			);
+		await environment.advance(12_000);
+		expect(port.onRecoveryVerified).not.toHaveBeenCalled();
+	});
+
 	it("marks offline immediately, without waiting for WebRTC stats", async () => {
 		const environment = new TestEnvironment();
 		const { port } = makeManager();

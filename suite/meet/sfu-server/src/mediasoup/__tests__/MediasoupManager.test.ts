@@ -749,6 +749,16 @@ async function cameraAllocationFixture() {
 }
 
 describe('active speaker camera allocation', () => {
+	it('does not rescan consumers for an unchanged active speaker set', async () => {
+		const { manager, levels, audio, camera } = await cameraAllocationFixture();
+		levels.emit('volumes', [{ producer: audio, volume: -20 }]);
+		await vi.waitFor(() => expect(camera.setPriority).toHaveBeenCalledWith(2));
+		vi.mocked(manager.consumerManager.getConsumersByProducer).mockClear();
+		levels.emit('volumes', [{ producer: audio, volume: -20 }]);
+		expect(
+			manager.consumerManager.getConsumersByProducer,
+		).not.toHaveBeenCalled();
+	});
 	it('prioritizes the speaking camera, restores others, and leaves audio and screen shares alone', async () => {
 		const {
 			manager,
@@ -810,10 +820,12 @@ describe('active speaker camera allocation', () => {
 			{} as never,
 		);
 		expect(late.setPriority).toHaveBeenCalledWith(2);
+		notify.mockClear();
 		levels.emit('silence');
 		await vi.waitFor(() =>
 			expect(camera.setPriority).toHaveBeenLastCalledWith(1),
 		);
+		expect(notify).toHaveBeenCalledExactlyOnceWith('priority-room', []);
 	});
 	it('restores normal camera priority when silence arrives during an in-flight boost', async () => {
 		const { levels, audio, camera } = await cameraAllocationFixture();
