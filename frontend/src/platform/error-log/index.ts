@@ -28,9 +28,9 @@ export function installErrorLog(app: App): () => void {
     else console.error(error)
   }
   const onError = (event: ErrorEvent) => {
-    // A worker's uncaught error reaches the window as a message and location only.
     if (event.error) reportError(event.error, 'script')
     else
+      // No error object: a worker error, or a cross-origin script.
       reportError(
         event.message,
         'script',
@@ -99,7 +99,7 @@ export function isServerRefusal(error: unknown): boolean {
 }
 
 function isReportable(error: unknown): boolean {
-  // The server records its own failures; a refusal is an answer, not a bug.
+  // The server records its own failures.
   if (error instanceof TransportError) return false
   if (typeof error === 'string')
     return !IGNORED_MESSAGES.some((ignored) => error.startsWith(ignored))
