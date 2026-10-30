@@ -160,7 +160,9 @@ useDocumentLeaveGuard({
       @access-refused="access.refuse()"
       @notes-opened="panel = null"
     >
-      <template #header="{ viewOnly, status: EditorStatus, actions: EditorActions }">
+      <template
+        #header="{ viewOnly, status: EditorStatus, menus: EditorMenus, actions: EditorActions }"
+      >
         <DriveDocumentHeader
           class="sheets-header"
           :session="session"
@@ -170,11 +172,15 @@ useDocumentLeaveGuard({
           :recoverable="hasRecovery"
           :panels="['comments', 'versions']"
           :panel="panel"
+          compact
           @update:panel="showPanel"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
+          </template>
+          <template #menus>
+            <component :is="EditorMenus" :open-comments="() => showPanel('comments')" />
           </template>
           <template #actions>
             <component :is="EditorActions" />

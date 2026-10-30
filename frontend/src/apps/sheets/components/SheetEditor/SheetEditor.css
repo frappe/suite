@@ -146,112 +146,78 @@
   border-radius: 2px;
 }
 
-/* ── Bar 2 · Formula bar ─────────────────────────────────────────────────── */
+/* ── Formula bar (inside row 2, SheetToolbar's `formula` slot) ───────────── */
 
-.sn-formula-bar {
-  display: flex;
-  align-items: center;
-  height: 48px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--outline-gray-2);
-  gap: 8px;
-  flex-shrink: 0;
-  background: var(--surface-base);
-}
-/* Cell address tag */
+/* Name box: plain text that reads as the address, a field only on hover. */
 .sn-cell-ref {
   box-sizing: border-box;
-  min-width: 50px;
-  padding: 0 8px;
+  width: 64px;
+  height: 28px;
+  padding: 0 6px;
   flex-shrink: 0;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--ink-gray-7);
-  background: var(--surface-base);
-  border: 1px solid var(--outline-gray-2);
-  border-radius: 6px;
-  height: 30px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  width: 88px;
+  color: var(--ink-gray-8);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
   outline: none;
-  transition:
-    border-color 0.12s,
-    background-color 0.12s;
-}
-.sn-cell-ref:focus {
-  border-color: var(--outline-gray-4);
-  background: var(--surface-base);
+  transition: background-color 0.12s;
 }
 .sn-cell-ref:hover {
-  border-color: var(--outline-gray-3);
-  background: var(--surface-gray-3);
+  background: var(--surface-gray-2);
 }
-/* "fx" delimiter */
-.sn-fx-label {
-  font-size: 14px;
-  font-style: italic;
-  font-weight: 500;
-  color: var(--ink-gray-4);
-  letter-spacing: 0.02em;
-  flex-shrink: 0;
-  padding: 0 6px 0 2px;
-  user-select: none;
-  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+.sn-cell-ref:focus {
+  background: var(--surface-base);
+  box-shadow: inset 0 0 0 1px var(--outline-gray-4);
 }
+/* The value field: fx, then the cell's input in the UI font. It takes the
+   row's spare width and keeps enough to read a formula when the row is tight. */
 .sn-formula-wrap {
   position: relative;
   flex: 1;
-  display: flex;
-}
-.sn-formula-wrap .sn-formula-input {
-  flex: 1;
-}
-.sn-formula-input {
-  box-sizing: border-box;
-  width: 100%;
-  height: 30px;
-  line-height: 1;
-  border-radius: 6px;
-  outline: none;
-  padding: 0 10px;
-  font-size: 13px;
-  color: var(--ink-gray-8);
-  background: var(--surface-base);
-  border: 1px solid var(--outline-gray-2);
-  font-family: 'Fira Code', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  letter-spacing: 0.005em;
-  transition:
-    background-color 0.15s,
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-.sn-formula-input::placeholder {
-  color: var(--ink-gray-3);
-  font-style: italic;
-  font-family: inherit;
-}
-.sn-formula-input:hover {
-  background: var(--surface-gray-3);
-  border-color: var(--outline-gray-3);
-}
-.sn-formula-input:focus {
-  border-color: var(--outline-gray-4);
-  background: var(--surface-base);
-  box-shadow: 0 0 0 2px rgba(23, 23, 23, 0.08);
-}
-.sn-fbar-actions {
+  min-width: 160px;
+  height: 28px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--surface-gray-1);
+  transition:
+    background-color 0.12s,
+    box-shadow 0.12s;
+}
+.sn-formula-wrap:hover {
+  background: var(--surface-gray-2);
+}
+.sn-formula-wrap:focus-within {
+  background: var(--surface-base);
+  box-shadow: inset 0 0 0 1px var(--outline-gray-4);
+}
+.sn-fx-label {
   flex-shrink: 0;
-  margin-left: 4px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-gray-4);
+  user-select: none;
+}
+.sn-formula-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-gray-8);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.sn-formula-input::placeholder {
+  color: var(--ink-gray-4);
 }
 
 /* Formula autocomplete — Frappe UI Autocomplete is form-field oriented, so the inline popover is bespoke but uses Espresso surfaces. */
