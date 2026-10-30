@@ -220,26 +220,24 @@ useDocumentLeaveGuard({
    its six menus fold into one. */
 .sheets-header {
   container: sn-topbar / inline-size;
-  /* The two top bars share a pale Sheets green, so they read as the app's
-     controls and stand apart from the white grid. */
-  background: var(--surface-green-2);
-  border-bottom-color: var(--outline-green-2);
+  /* The bars' colours live on the editor root (SheetEditor.css --sn-bar-*). */
+  background: var(--sn-bar-bg);
+  border-bottom-color: var(--sn-bar-line);
   position: relative;
   z-index: 10;
 }
-/* The header's grey hover and "on" fills (Comments and Versions open) match
-   the green's lightness, so here they step into green like row 2 (solid
-   buttons such as Share keep their own colours). */
+/* Hover and "on" fills (Comments and Versions open) follow the bar colours,
+   as in row 2; solid buttons such as Share keep their own. */
 .sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
 .sheets-header :deep(button[data-state='open']),
 .sheets-header :deep(button[aria-pressed='true']) {
-  background: var(--surface-green-3);
+  background: var(--sn-bar-hover);
 }
 .sheets-header :deep(button[aria-pressed='true']) {
-  box-shadow: inset 0 0 0 1px var(--outline-green-3);
+  box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
 }
-/* Muted text (Saved, the folder) one step darker, to stay readable on green. */
+/* Muted text (Saved, the folder) follows the bar, to stay readable on it. */
 .sheets-header :deep(.text-ink-gray-5) {
-  color: var(--ink-gray-7);
+  color: var(--sn-bar-muted);
 }
 </style>

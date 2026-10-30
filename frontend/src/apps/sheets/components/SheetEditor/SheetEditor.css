@@ -3,6 +3,13 @@
 
 /* ── Root layout ─────────────────────────────────────────────────────────── */
 .sn-root {
+  /* The two top bars' colours, in one place. Both bars and their hover and
+     "on" fills read these, so a tint changes here and nowhere else. */
+  --sn-bar-bg: var(--surface-base);
+  --sn-bar-line: var(--outline-gray-2);
+  --sn-bar-hover: var(--surface-gray-3);
+  --sn-bar-on-edge: transparent;
+  --sn-bar-muted: var(--ink-gray-5);
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -148,8 +155,8 @@
 
 /* ── Formula bar (inside row 2, SheetToolbar's `formula` slot) ───────────── */
 
-/* Name box and value field: white, bordered fields on the green bar, so
-   they read as places to type. */
+/* Name box and value field: white, bordered fields on the bar, so they
+   read as places to type. */
 .sn-cell-ref {
   box-sizing: border-box;
   width: 72px;

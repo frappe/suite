@@ -365,7 +365,7 @@ const currencyIcon = computed(
   height: 40px;
   padding: 0 8px;
   border-bottom: 1px solid var(--outline-gray-2);
-  background: var(--surface-green-2);
+  background: var(--sn-bar-bg);
   flex-shrink: 0;
 }
 /* The middle tools: they shrink after the formula bar has reached its
@@ -382,15 +382,15 @@ const currencyIcon = computed(
   /* Thin but visible, so a mouse user can tell more tools are there. */
   scrollbar-width: thin;
 }
-/* frappe-ui's grey hover and "on" fills match the green bar's lightness, so
-   on the bar they step into green; an "on" tool also gets a green edge. */
+/* Hover and "on" fills follow the bar colours (SheetEditor.css --sn-bar-*);
+   solid buttons keep their own. */
 .sn-toolbar :deep(button:not(:disabled, .bg-surface-gray-10):hover),
 .sn-toolbar :deep(button[data-state='open']),
 .sn-toolbar :deep(button[aria-pressed='true']) {
-  background: var(--surface-green-3);
+  background: var(--sn-bar-hover);
 }
 .sn-toolbar :deep(button[aria-pressed='true']) {
-  box-shadow: inset 0 0 0 1px var(--outline-green-3);
+  box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
 }
 .sn-group {
   display: flex;
@@ -484,7 +484,7 @@ const currencyIcon = computed(
 }
 .sn-swatch-btn:hover,
 .sn-swatch-btn.is-open {
-  background: var(--surface-green-3);
+  background: var(--sn-bar-hover);
 }
 .sn-swatch-btn:focus-visible {
   outline: 2px solid var(--outline-gray-3);

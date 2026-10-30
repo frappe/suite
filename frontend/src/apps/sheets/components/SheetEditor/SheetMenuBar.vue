@@ -92,10 +92,10 @@ function moveBetweenMenus(event: KeyboardEvent) {
   font-weight: 500;
   color: var(--ink-gray-9);
 }
-/* On the green bar a hovered or open menu takes a deeper green. */
+/* A hovered or open menu takes the bar's hover fill. */
 .sn-menubar-trigger:hover,
 .sn-menubar-trigger[data-state='open'] {
-  background: var(--surface-green-3);
+  background: var(--sn-bar-hover);
 }
 .sn-menubar-narrow {
   display: none;
