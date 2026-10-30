@@ -16,13 +16,8 @@ class TestInstallQuarantineRace(CompactionCase):
         )
         return [int(rev) for (rev,) in rows]
 
-    def test_a_quarantine_between_the_snapshot_and_the_install_stays_out_of_the_body(self):
-        node = self.new_document()
-        self.type_into(node, ["one ", "two ", "three"])
-        doc_id = self.doc_row(node).id
+    def quarantine_elsewhere(self, doc_id: str) -> None:
         site = frappe.local.site
-        snapshot, compacted = self.compacted(node)
-        frappe.db.rollback()
         taken: list[list[int]] = []
 
         def judge_elsewhere():
@@ -38,6 +33,14 @@ class TestInstallQuarantineRace(CompactionCase):
         thread.join()
         self.assertEqual(taken, [[2, 3]])
 
+    def test_a_quarantine_between_the_snapshot_and_the_install_stays_out_of_the_body(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two ", "three"])
+        doc_id = self.doc_row(node).id
+        snapshot, compacted = self.compacted(node)
+        frappe.db.rollback()
+        self.quarantine_elsewhere(doc_id)
+
         self.compaction_job(doc_id).install(snapshot, compacted)
         frappe.db.rollback()
 
@@ -47,6 +50,22 @@ class TestInstallQuarantineRace(CompactionCase):
         self.assertNotIn("three", body_text)
         self.assertEqual(int(doc.q_epoch), 1)
         self.assertEqual(self.quarantined_revs(node), [2, 3])
+        self.assertEqual(self.opened(node).text, "one ")
+
+    def test_a_quarantine_between_the_snapshot_and_a_fallback_stays_out_of_the_checkpoints(self):
+        node = self.new_document()
+        self.type_into(node, ["one ", "two ", "three"])
+        doc_id = self.doc_row(node).id
+        snapshot, fallback = self.compacted(node, integrated=False)
+        frappe.db.rollback()
+        self.quarantine_elsewhere(doc_id)
+
+        self.compaction_job(doc_id).install(snapshot, fallback)
+        frappe.db.rollback()
+
+        checkpoint_texts = [self.text_of(state) for _, state, _ in self.checkpoints_of(node)]
+        self.assertFalse([text for text in checkpoint_texts if "two" in text or "three" in text])
+        self.assertEqual(int(self.doc_row(node).q_epoch), 1)
         self.assertEqual(self.opened(node).text, "one ")
 
     def test_a_judge_during_a_compaction_answers_busy_and_quarantines_nothing(self):
