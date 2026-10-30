@@ -55,7 +55,7 @@ const percent = computed(() => {
     <div
       tabindex="0"
       :aria-label="__('Storage usage')"
-      class="w-full min-w-0 space-y-1.5 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
+      class="w-36 max-w-full min-w-0 space-y-1.5 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
     >
       <div
         v-if="percent !== null"
@@ -73,7 +73,7 @@ const percent = computed(() => {
         <Progress
           class="storage-progress"
           :value="percent"
-          size="lg"
+          size="md"
           aria-hidden="true"
           :class="{ 'storage-positive': percent > 0 }"
           :style="{ '--storage-offset': `${percent - 100}%` }"
