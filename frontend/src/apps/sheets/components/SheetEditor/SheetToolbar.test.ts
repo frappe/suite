@@ -126,7 +126,8 @@ describe('SheetToolbar (row 2)', () => {
 
   it('draws every tool with a Lucide icon, never a text glyph', () => {
     const { root } = mountRow()
-    // The two text triggers are the number-format menu and the Format button.
+    // Every button carries a Lucide icon; the number-format menu's "123" and the
+    // Format button's word sit beside one (a chevron, the sliders).
     const glyphs = [...root.querySelectorAll('button')].filter(
       (b) => !b.querySelector('svg, [class*="lucide-"]'),
     )

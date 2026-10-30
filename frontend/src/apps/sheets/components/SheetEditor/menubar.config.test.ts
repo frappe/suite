@@ -12,7 +12,7 @@ type Option = {
 }
 type Group = { group: string; options: Option[] }
 type Entry = Option | Group
-type Menu = { label: string; options: Entry[] }
+type Menu = { key: string; label: string; options: Entry[] }
 
 /** A submenu the editor hands over ready-made (number formats, borders…). */
 const handed = (name: string, fn: () => void) => [{ label: `${name} option`, onClick: fn }]
@@ -121,11 +121,13 @@ function items(entries: Entry[]): Option[] {
 }
 const labels = (menu: Menu) => items(menu.options).map((o) => o.label)
 const menu = (menus: Menu[], label: string) => menus.find((m) => m.label === label)!
+const keys = (menus: Menu[]) => menus.map((m) => m.key)
 
 describe('buildMenuBar', () => {
   it('builds File, Edit, View, Insert, Format and Data, in that order', () => {
     const menus: Menu[] = buildMenuBar(actions().args)
     expect(menus.map((m) => m.label)).toEqual(['File', 'Edit', 'View', 'Insert', 'Format', 'Data'])
+    expect(keys(menus)).toEqual(['file', 'edit', 'view', 'insert', 'format', 'data'])
   })
 
   it('reaches every action it is given, each labelled in words', () => {
@@ -246,7 +248,7 @@ describe('buildMenuBar', () => {
       'Notes (2)',
       'Keyboard shortcuts',
     ])
-    expect(labels(menu(menus, 'Data'))).toEqual(['Named ranges…', 'Cell history'])
+    expect(labels(menu(menus, 'Data'))).toEqual(['Cell history'])
   })
 
   it('disables what cannot run yet and drops what is not there', () => {

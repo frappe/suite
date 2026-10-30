@@ -42,7 +42,7 @@ function mountBar(menus: SheetMenu[], openComments?: () => void) {
 }
 
 const trigger = (root: HTMLElement, label: string) =>
-  root.querySelector<HTMLButtonElement>(`[data-menu="${label}"]`)!
+  root.querySelector<HTMLButtonElement>(`[data-menu="${label.toLowerCase()}"]`)!
 const openMenu = () => document.querySelector('[role="menu"]')
 const menuItem = (label: string) =>
   [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) =>
@@ -58,12 +58,12 @@ function menus() {
     zoomIn,
     exportCsv,
     list: [
-      { label: 'File', options: [{ label: 'Download as CSV', onClick: exportCsv }] },
-      { label: 'Edit', options: [{ label: 'Find and replace', onClick: vi.fn() }] },
-      { label: 'View', options: [{ label: 'Zoom in', onClick: zoomIn }] },
-      { label: 'Insert', options: [{ label: 'Chart…', onClick: vi.fn() }] },
-      { label: 'Format', options: [{ label: 'Bold', onClick: vi.fn() }] },
-      { label: 'Data', options: [{ label: 'Smart Fill', onClick: vi.fn() }] },
+      { key: 'file', label: 'File', options: [{ label: 'Download as CSV', onClick: exportCsv }] },
+      { key: 'edit', label: 'Edit', options: [{ label: 'Find and replace', onClick: vi.fn() }] },
+      { key: 'view', label: 'View', options: [{ label: 'Zoom in', onClick: zoomIn }] },
+      { key: 'insert', label: 'Insert', options: [{ label: 'Chart…', onClick: vi.fn() }] },
+      { key: 'format', label: 'Format', options: [{ label: 'Bold', onClick: vi.fn() }] },
+      { key: 'data', label: 'Data', options: [{ label: 'Smart Fill', onClick: vi.fn() }] },
     ],
   }
 }
@@ -123,9 +123,28 @@ describe('SheetMenuBar', () => {
   })
 
   it('gives a viewer with no Insert menu one for Comment, after View', () => {
-    const list = menus().list.filter((m) => m.label !== 'Insert' && m.label !== 'Format')
+    const list = menus().list.filter((m) => m.key !== 'insert' && m.key !== 'format')
     const root = mountBar(list, vi.fn())
     const names = [...root.querySelectorAll('[data-menu]')].map((b) => b.textContent?.trim())
     expect(names).toEqual(['File', 'Edit', 'View', 'Insert', 'Data'])
+  })
+
+  it('folds the six menus into one Menu, each a submenu, for a narrow header', async () => {
+    const { list, zoomIn } = menus()
+    const root = mountBar(list)
+    const menu = [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Menu')!
+    press(menu, 'Enter')
+    await settle()
+    const top = [...document.querySelectorAll('[role="menuitem"]')].map((el) =>
+      el.textContent?.trim(),
+    )
+    expect(top).toEqual(['File', 'Edit', 'View', 'Insert', 'Format', 'Data'])
+    const view = menuItem('View')!
+    view.focus()
+    press(view, 'ArrowRight')
+    await settle()
+    menuItem('Zoom in')!.click()
+    await settle()
+    expect(zoomIn).toHaveBeenCalledOnce()
   })
 })

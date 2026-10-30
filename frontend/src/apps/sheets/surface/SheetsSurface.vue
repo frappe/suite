@@ -216,8 +216,8 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's top-bar actions answer to the `sn-topbar` container: below
-   640 px they fold into one menu. */
+/* The editor's menu bar answers to the `sn-topbar` container: below 640 px
+   its six menus fold into one. */
 .sheets-header {
   container: sn-topbar / inline-size;
   position: relative;
