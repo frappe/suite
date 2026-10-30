@@ -147,7 +147,7 @@ drive_content_types = [
 ]
 
 # Dotted paths to `suite.content.EditorSpec` objects, one per app whose documents the content layer keeps
-suite_content_editors = ["suite.writer.content.EDITOR"]
+suite_content_editors = ["suite.writer.content.EDITOR", "suite.sheets.content.EDITOR"]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
@@ -254,6 +254,10 @@ doc_events = {
     # can still be cleaned up.
     "DocShare": {
         "validate": ["suite.drive.framework.refuse_governed_share"],
+    },
+    # sheets — collaboration stays off until the editor uses the room
+    "Suite Collab Settings": {
+        "validate": ["suite.sheets.content.refuse_turning_on"],
     },
     "User": {
         "before_save": ["suite.composition.users.before_save"],

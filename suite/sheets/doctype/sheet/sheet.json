@@ -7,7 +7,9 @@
  "field_order": [
   "node",
   "sheets_data",
-  "head_seq"
+  "head_seq",
+  "content",
+  "html"
  ],
  "fields": [
   {
@@ -31,10 +33,22 @@
    "label": "Head op-log seq",
    "default": "0",
    "description": "Highest op-log seq applied to the live sheets_data blob."
+  },
+  {
+   "description": "The collab doc's latest checked state, a Yjs update in base64, kept by the content layer.",
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content"
+  },
+  {
+   "description": "The readable copy of the collab doc: one table per sheet of what was typed.",
+   "fieldname": "html",
+   "fieldtype": "Long Text",
+   "label": "HTML"
   }
  ],
  "links": [],
- "modified": "2026-10-03 12:00:00.000000",
+ "modified": "2026-10-29 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sheets",
  "name": "Sheet",
