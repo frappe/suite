@@ -2,6 +2,8 @@
 
 Frappe app with a Vue frontend and separate realtime services.
 
+Ship tier: prod
+
 - Prefer deep modules. For module design or refactoring, use the `improve-codebase-architecture` skill.
 - Do not write tautological tests. Assert observable behavior against independent requirements, not expectations copied or computed from the implementation or mocks. Each test must catch a plausible behavioral regression.
 - Load only context relevant to the task; don't read whole documentation trees.
