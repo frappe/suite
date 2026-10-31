@@ -26,6 +26,7 @@ import {
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
 import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
+import PresentButton from '@/apps/slides/components/PresentButton.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
@@ -72,7 +73,7 @@ import {
   slideIndex,
   slides,
 } from '@/apps/slides/stores/slide'
-import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
+import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { session as userSession } from '@/boot/session'
@@ -515,6 +516,9 @@ function setOffline() {
   online.value = false
 }
 
+const deckUnavailable = computed(
+  () => loading.value || !access.readable.value || !slides.value.length,
+)
 const canPin = computed(
   () =>
     'serviceWorker' in navigator &&
@@ -587,16 +591,19 @@ onBeforeUnmount(() => {
         </Dropdown>
       </template>
       <template #actions>
+        <OfflineCopyButton v-if="canPin" />
         <Button
           icon="lucide-file-down"
           tooltip="Export"
           aria-label="Export"
           variant="ghost"
           class="max-md:hidden"
-          :disabled="loading || !access.readable.value || !slides.length"
+          :disabled="deckUnavailable"
           @click="exportPdf"
         />
-        <OfflineCopyButton v-if="canPin" />
+      </template>
+      <template #primary>
+        <PresentButton :is-disabled="deckUnavailable" @start="startSlideShow" />
       </template>
     </DriveDocumentHeader>
 

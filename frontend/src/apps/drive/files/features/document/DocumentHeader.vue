@@ -117,8 +117,10 @@
         :data-panel="name"
         @click="panel = panel === name ? null : name"
       />
+      <!-- A surface's own primary action takes the solid button's place. -->
       <template v-if="session.canShare.value">
         <Button
+          v-if="showsSolidShare()"
           class="ml-1 max-md:hidden"
           variant="solid"
           icon-left="lucide-share-2"
@@ -126,7 +128,7 @@
           @click="session.share()"
         />
         <Button
-          class="md:hidden"
+          :class="shareIconClass()"
           variant="ghost"
           icon="lucide-share-2"
           tooltip="Share"
@@ -134,6 +136,7 @@
           @click="session.share()"
         />
       </template>
+      <slot name="primary" />
     </div>
   </header>
 </template>
@@ -141,7 +144,7 @@
 <script setup lang="ts">
 import { useOnline } from '@vueuse/core'
 import { Badge, Button, TextInput } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useSlots, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
@@ -161,7 +164,7 @@ import {
 /**
  * The one header every document surface shows: the Drive type icon, the title
  * (renamed in place), state badges, the recovery download, the save status, the surface's own actions,
- * the side-panel toggles and Share, always in that order.
+ * the side-panel toggles, Share, then the surface's primary action, always in that order.
  */
 const props = withDefaults(
   defineProps<{
@@ -197,6 +200,7 @@ const props = withDefaults(
 const emit = defineEmits<{ downloadChanges: [] }>()
 const panel = defineModel<DocumentPanel | null>('panel', { default: null })
 
+const slots = useSlots()
 const online = useOnline()
 const headerElement = ref<HTMLElement | null>(null)
 const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
@@ -216,6 +220,15 @@ const renamable = computed(() =>
 const typeIcon = computed(() =>
   documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
 )
+
+// read on every render: slots are not reactive
+function showsSolidShare() {
+  return !slots.primary
+}
+
+function shareIconClass() {
+  return slots.primary ? '' : 'md:hidden'
+}
 
 /** A refused rename, shown beside the title until the title changes. */
 const titleError = ref<string>()

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, ref } from 'vue'
+import { createApp, h, nextTick, ref, type VNode } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { TransportError } from '@/platform/transport'
@@ -67,6 +67,7 @@ function session(role: number, canShare = true) {
 function mount(
   doc: ReturnType<typeof session>,
   props: { saveState?: DocumentSaveState; viewOnly?: boolean; centerTitle?: boolean } = {},
+  slots: Record<string, () => VNode> = {},
 ) {
   const panel = ref<DocumentPanel | null>(null)
   const header = ref<{ focusPanelToggle(name: DocumentPanel): void } | null>(null)
@@ -74,17 +75,21 @@ function mount(
   document.body.append(root)
   const app = createApp({
     setup: () => () =>
-      h(DocumentHeader, {
-        ref: header,
-        session: doc as unknown as DocumentSession,
-        titleLabel: 'Spreadsheet title',
-        panels: ['comments', 'versions'],
-        panel: panel.value,
-        'onUpdate:panel': (next: DocumentPanel | null) => {
-          panel.value = next
+      h(
+        DocumentHeader,
+        {
+          ref: header,
+          session: doc as unknown as DocumentSession,
+          titleLabel: 'Spreadsheet title',
+          panels: ['comments', 'versions'],
+          panel: panel.value,
+          'onUpdate:panel': (next: DocumentPanel | null) => {
+            panel.value = next
+          },
+          ...props,
         },
-        ...props,
-      }),
+        slots,
+      ),
   })
   app.mount(root)
   cleanup = () => {
@@ -227,5 +232,32 @@ describe('DocumentHeader', () => {
 
     const { button } = mount(session(40, false))
     expect(button('Share')).toBeNull()
+  })
+
+  it.each([
+    ['solid, with its label', {}, true],
+    [
+      'an icon on every width, after a primary action',
+      { primary: () => h('button', 'Present') },
+      false,
+    ],
+  ])('shows Share %s', (_label, slots, isSolid) => {
+    const sharer = session(40)
+    const { root, button } = mount(sharer, {}, slots)
+    const solid = [...root.querySelectorAll('button')].find(
+      (el) => el.textContent === 'Share' && el.getAttribute('variant') === 'solid',
+    )
+
+    expect(!!solid).toBe(isSolid)
+    expect(button('Share')!.classList.contains('md:hidden')).toBe(isSolid)
+    solid?.click()
+    button('Share')!.click()
+    expect(sharer.share).toHaveBeenCalledTimes(isSolid ? 2 : 1)
+  })
+
+  it('puts the primary action last', () => {
+    const { root } = mount(session(40), {}, { primary: () => h('button', 'Present') })
+
+    expect(root.querySelector('header > div:last-child > :last-child')!.textContent).toBe('Present')
   })
 })

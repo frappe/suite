@@ -59,7 +59,6 @@ vi.mock('frappe-ui', () => {
         'Combobox',
         'ContextMenu',
         'Dialog',
-        'Dropdown',
         'FileUploader',
         'Popover',
         'Select',
@@ -70,6 +69,19 @@ vi.mock('frappe-ui', () => {
         'Tooltip',
       ].map((name) => [name, passthrough]),
     ),
+    // the menu's choices render as buttons, so a test can pick one
+    Dropdown: {
+      props: { options: { type: Array, default: () => [] } },
+      setup:
+        (props: { options: { label: string; onClick: () => void }[] }, { slots }: SetupContext) =>
+        () =>
+          h('div', [
+            slots.default?.(),
+            ...props.options.map((option) =>
+              h('button', { onClick: option.onClick }, option.label),
+            ),
+          ]),
+    },
     FileUploadHandler: class {},
     dialog: vi.fn(),
     toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn(), success: vi.fn() },
@@ -110,7 +122,7 @@ vi.mock('@/apps/drive', () => ({
     setup:
       (_: unknown, { slots }: SetupContext) =>
       () =>
-        h('header', slots.actions?.()),
+        h('header', [slots.actions?.(), slots.primary?.()]),
   },
   DriveCommentAuthor: { render: () => null },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
@@ -163,6 +175,8 @@ vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
 
 const { default: SlidesSurface } = await import('./SlidesSurface.vue')
 const { duplicateSlide, slideIndex } = await import('@/apps/slides/stores/slide')
+const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
+const { router: slidesRouter } = await import('@/apps/slides/router')
 
 function answer(message: unknown) {
   return new Response(JSON.stringify({ message }), { status: 200 })
@@ -306,6 +320,83 @@ describe('Slides slideshow route', () => {
     await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
     expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
     expect(shown()).toBe(false)
+  })
+})
+
+describe('Slides Present button', () => {
+  const unwired = slidesRouter.currentRoute
+
+  async function presentable(slides = served.slides) {
+    mounted = await openedSurface({ slides })
+    const { router } = mounted
+    Object.assign(slidesRouter, { currentRoute: router.currentRoute })
+    vi.mocked(slidesRouter.replace).mockImplementation((to) => router.replace(to))
+    await vi.waitFor(() =>
+      expect(document.querySelector('[aria-label="Opening presentation"]')).toBeNull(),
+    )
+    return mounted
+  }
+
+  function choice(name: string) {
+    return [...document.querySelectorAll<HTMLElement>('header button')].find(
+      (el) => el.textContent === name,
+    )!
+  }
+
+  afterEach(() => {
+    Object.assign(slidesRouter, { currentRoute: unwired })
+    vi.mocked(slidesRouter.replace).mockReset()
+  })
+
+  it('presents from the current slide', async () => {
+    const { router } = await presentable()
+    slideIndex.value = 1
+
+    document.querySelector<HTMLElement>('header [aria-label="Present"]')!.click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('slides-slideshow'))
+    expect(router.currentRoute.value.query.slide).toBe('2')
+  })
+
+  it('presents from the start', async () => {
+    const { router } = await presentable()
+    slideIndex.value = 1
+
+    choice('From the start').click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('slides-slideshow'))
+    expect(router.currentRoute.value.query.slide).toBe('1')
+  })
+
+  it('presents on loop from the start, going round after the last slide', async () => {
+    const { router } = await presentable()
+    slideIndex.value = 1
+
+    choice('On loop').click()
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('slides-slideshow'))
+    expect(router.currentRoute.value.query.slide).toBe('1')
+    changeSlideInSlideshow(2)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(router.currentRoute.value.query.slide).toBe('1')
+  })
+
+  it.each([
+    ['an empty presentation', [], true],
+    ['a presentation with slides', served.slides, false],
+  ])('disables both halves of Present for %s', async (_label, slides, isDisabled) => {
+    await presentable(slides)
+    const options = document.querySelector('header [aria-label="Presentation options"]')!
+    const halves = [
+      ...document.querySelectorAll('header [aria-label="Present"], header [label="Present"]'),
+      options.parentElement!,
+    ]
+
+    expect(halves).toHaveLength(3)
+    for (const half of halves) {
+      // the stand-ins are divs, which keep the value as written
+      expect(half.getAttribute('disabled')).toBe(String(isDisabled))
+    }
   })
 })
 
