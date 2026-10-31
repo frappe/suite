@@ -297,7 +297,7 @@ def insert_row(
     """Write the row as `rev` and move the head to it; answers the new chain."""
     payload_sha = hashlib.sha256(payload).digest()
     chain = chain_next(bytes(doc.head_chain), rev, payload_sha)
-    insert_into(
+    insert_into(  # type: ignore[operator]  # frappe adds run() at runtime
         table(app, "update"),
         {
             "doc_id": doc_id,

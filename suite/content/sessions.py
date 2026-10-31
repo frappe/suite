@@ -72,7 +72,7 @@ def insert_session(app: str, doc_id: str, sid: str, client_id: int, user: str) -
         return False
 
     try:
-        insert_into(
+        insert_into(  # type: ignore[operator]  # frappe adds run() at runtime
             table(app, "session"),
             {
                 "doc_id": doc_id,

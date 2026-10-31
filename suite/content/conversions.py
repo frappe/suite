@@ -332,7 +332,7 @@ def start_attempt(app: str, node: str, fingerprint: str, started: datetime, retr
         )
     else:
         row = {"node": node, "fingerprint": fingerprint, "converter_version": version, "started": started}
-        insert_into(table(app, "conversion"), row).run()
+        insert_into(table(app, "conversion"), row).run()  # type: ignore[operator]  # frappe adds run() at runtime
 
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
@@ -433,4 +433,4 @@ def record(
     for column in ("started", "finished", "outcome", "reason", "dropped"):
         query = query.on_duplicate_key_update(column, Values(column))
 
-    query.run()
+    query.run()  # type: ignore[operator]  # frappe adds run() at runtime

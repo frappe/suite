@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import frappe
 from frappe.query_builder import Case, Order, Table
@@ -147,7 +148,7 @@ def window_start(app: str, doc: frappe._dict, now: datetime) -> int:
     cutoff = now - WINDOW_AGE
     update = Table(table(app, "update"))
     # Bytes of the rows newer than each row, newest first
-    newer = WindowSum(Length(update.payload)).over().orderby(update.rev, order=Order.desc)
+    newer = cast(WindowSum, WindowSum(Length(update.payload)).over().orderby(update.rev, order=Order.desc))
     covered = (
         frappe.qb.from_(update)
         .select(update.rev, update.created, Coalesce(newer.rows(Preceding(), Preceding(1)), 0).as_("newer"))

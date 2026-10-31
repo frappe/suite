@@ -3,6 +3,7 @@
 import frappe
 from frappe.query_builder import CustomFunction, Table
 from pymysql.constants import ER
+from pypika.dialects import MySQLQueryBuilder
 from pypika.queries import QueryBuilder
 
 Unhex = CustomFunction("UNHEX", ["hex"])
@@ -10,7 +11,7 @@ Greatest = CustomFunction("GREATEST", ["first", "second"])
 PreciseNow = CustomFunction("NOW", ["precision"])
 
 
-def insert_into(table_name: str, row: dict) -> QueryBuilder:
+def insert_into(table_name: str, row: dict) -> MySQLQueryBuilder:
     """Build an INSERT of `row` into `table_name`, its keys the columns, for the caller to run."""
     values = row.values()
     return frappe.qb.into(Table(table_name)).columns(*row).insert(*values)
@@ -18,7 +19,7 @@ def insert_into(table_name: str, row: dict) -> QueryBuilder:
 
 def changed_rows(query: QueryBuilder) -> int:
     """Run an UPDATE or DELETE and answer how many rows it changed."""
-    query.run()
+    query.run()  # type: ignore[operator]  # frappe adds run() at runtime
     # Raw SQL: qb has no ROW_COUNT()
     [[count]] = frappe.db.sql("SELECT ROW_COUNT()")
     return count

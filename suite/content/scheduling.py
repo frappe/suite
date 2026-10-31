@@ -88,7 +88,7 @@ def request_if_due(
     """Request a compaction if due; `final_from` is a hiding tab's session, `refused` a push short of room."""
     based = docs_with_base(app, lambda doc: doc.id == doc_id)
     due_columns = based.due_columns()
-    due_rows = based.query.select(*due_columns).run(as_dict=True)
+    due_rows = based.query.select(*due_columns).run(as_dict=True)  # type: ignore[operator]  # frappe adds run() at runtime
     if due_rows:
         request_on(app, doc_id, due_rows[0], compact_method, final_from=final_from, refused=refused)
 
@@ -151,7 +151,7 @@ def request_overdue(app: str, method: str, limit: int) -> None:
         .orderby(next_row.created)
         .limit(limit)
     )
-    for (doc_id,) in overdue.run():
+    for (doc_id,) in overdue.run():  # type: ignore[operator]  # frappe adds run() at runtime
         request_compaction(app, doc_id, method)
 
 

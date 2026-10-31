@@ -69,7 +69,7 @@ def tail_rows(app: str, doc_id: str, body_rev: int) -> list[frappe._dict]:
 def insert_recovery_copy(app: str, recovery_row: dict) -> None:
     """Insert one recovery copy, unless its owner already keeps these exact bytes."""
     try:
-        insert_into(table(app, "recovery"), recovery_row).run()
+        insert_into(table(app, "recovery"), recovery_row).run()  # type: ignore[operator]  # frappe adds run() at runtime
     except Exception as error:
         # The owner already has a copy of these exact bytes
         if not frappe.db.is_duplicate_entry(error):

@@ -134,7 +134,7 @@ def create(app: str, node: str) -> str:
         "start_clocks": "{}",
         "created": now_datetime(),
     }
-    insert_into(table(app, "doc"), row).run()
+    insert_into(table(app, "doc"), row).run()  # type: ignore[operator]  # frappe adds run() at runtime
     return doc_id
 
 
