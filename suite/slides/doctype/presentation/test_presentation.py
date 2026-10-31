@@ -7,13 +7,11 @@ from unittest.mock import patch
 
 import frappe
 from frappe.client import set_value
-from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
+from suite import drive
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
-from suite.drive._core.nodes import create_file
-from suite.drive._core.principals import Principals
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -365,23 +363,9 @@ class TestApplyTheme(IntegrationTestCase):
     @classmethod
     def make_picture_template(cls) -> tuple[str, tuple[str, str]]:
         template = make_presentation("Pictures", is_template=True)
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
-        media: list[str] = []
-        for title in ("background.png", "photo.png"):
-            blob = put_blob(io.BytesIO(unique_bytes(PNG_1PX)), is_private=True, filename=title)
-            with patch("suite.drive._core.previews.enqueue_render"):
-                media.append(
-                    create_file(
-                        admin,
-                        node_of(template.name),
-                        title,
-                        blob=blob.name,
-                        size=blob.file_size,
-                        mime=blob.mime_type,
-                    )
-                )
-
-        background, photo = media
+        parent = node_of(template.name)
+        background = drive.store_file(parent, "background.png", io.BytesIO(unique_bytes(PNG_1PX)))
+        photo = drive.store_file(parent, "photo.png", io.BytesIO(unique_bytes(PNG_1PX)))
         template.slides[0].background = background
         template.slides[0].elements = json.dumps([{"id": "photo", "type": "image", "src": photo}])
         for index in (1, 2):
