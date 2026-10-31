@@ -34,7 +34,7 @@ def edit_max() -> int:
 @site_cache
 def max_packet() -> int:
     """Read the database's packet limit once per site and process."""
-    return int(cast(int, load_system_variable("max_allowed_packet")))
+    return int(cast("str | int", load_system_variable("max_allowed_packet")))
 
 
 class Full(Exception):

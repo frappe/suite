@@ -137,7 +137,7 @@ def due_after_push(app: str, doc_id: str) -> frappe._dict | None:
     due_columns = based.due_columns()
     projection = Table(table(app, "projection")).as_("p")
     found = (
-        based.query.left_join(projection)  # type: ignore[operator]  # frappe adds run() at runtime
+        based.query.left_join(projection)  # type: ignore[operator]  # the chain's .run(): frappe adds run() at runtime
         .on(projection.doc_id == docs.id)
         .select(
             *due_columns,

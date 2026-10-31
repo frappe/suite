@@ -413,7 +413,7 @@ def write_compressed(checkpoint_table: str, doc_id: str, through: int, sha: byte
     # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
     compressed = gzip.compress(state)
     checkpoint = Table(checkpoint_table)
-    chunk_size = int(cast(int, db.load_system_variable("max_allowed_packet"))) // 4
+    chunk_size = int(cast("str | int", db.load_system_variable("max_allowed_packet"))) // 4
     for start in range(0, len(compressed), chunk_size):
         chunk = compressed[start : start + chunk_size]
         (
