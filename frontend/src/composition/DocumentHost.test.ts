@@ -444,6 +444,7 @@ describe('DocumentHost', () => {
     ],
     ['a server error', new TransportError({ type: 'ServerError', message: 'boom', status: 500 })],
   ])('keeps the node after %s', async (_label, reason) => {
+    document.cookie = 'user_id=owner@example.com'
     testState.open.mockRejectedValue(reason)
     const { root, app } = await mountHost()
 
