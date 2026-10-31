@@ -18,8 +18,8 @@ type TestableSFUMeetingManager = Pick<
 	mediaHandler: SFUMediaManager["mediaHandler"];
 };
 
-const createManager = (client: never) =>
-	new SFUMeetingManager(client) as unknown as TestableSFUMeetingManager;
+const createManager = (client: Partial<ConstructorParameters<typeof SFUMeetingManager>[0]>) =>
+	new SFUMeetingManager({ on: vi.fn(), off: vi.fn(), ...client } as never) as unknown as TestableSFUMeetingManager;
 
 class FakeMediaStream {
 	private tracks: MediaStreamTrack[];
