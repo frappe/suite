@@ -67,6 +67,46 @@ describe('ConsumerManager', () => {
 	});
 });
 
+describe('motion-preserving layer preferences', () => {
+	it('does not retain a previous low temporal layer when selecting a smaller spatial layer', async () => {
+		const manager = new ConsumerManager();
+		const consumer = Object.assign(new EventEmitter(), {
+			id: 'moving-video',
+			kind: 'video',
+			paused: false,
+			producerId: 'p',
+			preferredLayers: { spatialLayer: 2, temporalLayer: 0 },
+			rtpParameters: { encodings: [{ scalabilityMode: 'L3T3' }] },
+			requestKeyFrame: vi.fn().mockResolvedValue(undefined),
+			setPreferredLayers: vi.fn().mockResolvedValue(undefined),
+			resume: vi.fn(),
+			close: vi.fn(),
+		});
+		await manager.createConsumer(
+			{
+				id: 't',
+				closed: false,
+				dtlsState: 'connected',
+				consume: vi.fn().mockResolvedValue(consumer),
+			} as never,
+			{ closed: false } as never,
+			'p',
+			'r',
+			'receiver',
+			{} as never,
+		);
+		await manager.setConsumerPreferredLayers('moving-video', 0);
+		expect(consumer.setPreferredLayers).toHaveBeenCalledWith({
+			spatialLayer: 0,
+		});
+		await manager.setConsumerPreferredLayers('moving-video', 0, 0);
+		expect(consumer.setPreferredLayers).toHaveBeenLastCalledWith({
+			spatialLayer: 0,
+			temporalLayer: 0,
+		});
+	});
+});
+
 describe('receiver-ready startup', () => {
 	it.each([
 		['video', true, false],

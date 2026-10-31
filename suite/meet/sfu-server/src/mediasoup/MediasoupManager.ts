@@ -1,3 +1,5 @@
+import { CameraLayerDemand } from './CameraLayerDemand';
+import type { CameraLayerDemand as CameraLayerInstruction } from '../../../types/cameraLayers';
 import type { SttManager } from '../stt/SttManager';
 import type {
 	CloseProducerResult,
@@ -54,6 +56,19 @@ export class MediasoupManager {
 	private producerManager = new ProducerManager();
 	consumerManager = new ConsumerManager();
 	private sttManager: SttManager | null = null;
+	private cameraLayerListeners: Array<(roomId: string, peerId: string, demand: CameraLayerInstruction) => void> = [];
+	private cameraLayers = new CameraLayerDemand((roomId, peerId, demand) => {
+		for (const listener of this.cameraLayerListeners) listener(roomId, peerId, demand);
+	});
+
+	onCameraLayerDemand(listener: (roomId: string, peerId: string, demand: CameraLayerInstruction) => void): void {
+		this.cameraLayerListeners.push(listener);
+	}
+
+	getCameraLayerDemand(producerId: string): CameraLayerInstruction | null {
+		return this.cameraLayers.get(producerId);
+	}
+
 
 	private networkQualityListeners: Array<
 		(
@@ -69,13 +84,15 @@ export class MediasoupManager {
 		(event: ProducerClosedLifecycle) => void
 	> = [];
 
-	private peerScores = new Map<
+	private readonly peerQuality = new Map<
 		string,
-		{
-			audio?: number;
-			video?: number;
-			lastOverallQuality?: 'good' | 'poor' | 'critical';
-		}
+		Map<string, 'good' | 'poor' | 'critical'>
+	>();
+	private networkQualityTimer: ReturnType<typeof setInterval> | null = null;
+	private activeSpeakerPeers = new Map<string, Set<string>>();
+	private cameraPriorityUpdates = new WeakMap<
+		Consumer,
+		{ desired: number; pending: Promise<void> | null }
 	>();
 	private creatingConsumers = new Set<string>();
 
@@ -101,14 +118,6 @@ export class MediasoupManager {
 					listener('send', kind, avg);
 				}
 
-				let peerState = this.peerScores.get(peerId);
-				if (!peerState) {
-					peerState = {};
-					this.peerScores.set(peerId, peerState);
-				}
-
-				peerState[kind] = avg;
-
 				this.evaluateAndEmitNetworkQuality(roomId, peerId);
 			},
 		);
@@ -121,11 +130,7 @@ export class MediasoupManager {
 				kind: 'audio' | 'video',
 				producerId: string,
 			) => {
-				const peerState = this.peerScores.get(peerId);
-				if (peerState) {
-					delete peerState[kind];
-					this.evaluateAndEmitNetworkQuality(roomId, peerId);
-				}
+				this.evaluateAndEmitNetworkQuality(roomId, peerId);
 				if (this.sttManager && kind === 'audio') {
 					this.sttManager
 						.stopTranscription(roomId, peerId, producerId)
@@ -169,40 +174,42 @@ export class MediasoupManager {
 		);
 	}
 
-	private evaluateAndEmitNetworkQuality(roomId: string, peerId: string) {
-		const peerState = this.peerScores.get(peerId);
-		if (!peerState) return;
-
-		let minScore = 10;
-		if (peerState.audio !== undefined)
-			minScore = Math.min(minScore, peerState.audio);
-		if (peerState.video !== undefined)
-			minScore = Math.min(minScore, peerState.video);
-
-		if (peerState.audio === undefined && peerState.video === undefined) {
-			minScore = 10;
-		}
-
-		let quality: 'good' | 'poor' | 'critical' = 'good';
-		if (minScore < 5) {
-			quality = 'critical';
-		} else if (minScore < 8) {
-			quality = 'poor';
-		}
-
-		if (peerState.lastOverallQuality !== quality) {
-			loggers.mediasoupManager.debug(
-				'Network quality for peer %s changed to %s (audio: %s, video: %s)',
-				peerId,
-				quality,
-				peerState.audio,
-				peerState.video,
+	private evaluateAndEmitNetworkQuality(
+		roomId: string,
+		peerId: string,
+		refresh = false,
+	): void {
+		const peer = this.roomManager.getRoom(roomId)?.peers.get(peerId);
+		const scores: number[] = [];
+		for (const producer of peer?.producers.values() ?? []) {
+			if (producer.closed || producer.paused) continue;
+			const encodings = producer.score.filter(
+				({ score }) => Number.isFinite(score) && score >= 0 && score <= 10,
 			);
-			peerState.lastOverallQuality = quality;
-
-			for (const listener of this.networkQualityListeners) {
-				listener(roomId, peerId, quality);
-			}
+			if (encodings.length === 0) continue;
+			scores.push(
+				encodings.reduce((sum, encoding) => sum + encoding.score, 0) /
+					encodings.length,
+			);
+		}
+		// A muted/idle peer has no current measurement. Let subscribers expire its
+		// previous value instead of fabricating a healthy score from absent media.
+		if (scores.length === 0) {
+			this.peerQuality.get(roomId)?.delete(peerId);
+			return;
+		}
+		const minimum = Math.min(...scores);
+		const quality = minimum < 5 ? 'critical' : minimum < 8 ? 'poor' : 'good';
+		let roomQuality = this.peerQuality.get(roomId);
+		if (!roomQuality) {
+			roomQuality = new Map();
+			this.peerQuality.set(roomId, roomQuality);
+		}
+		const changed = roomQuality.get(peerId) !== quality;
+		roomQuality.set(peerId, quality);
+		if (!changed && !refresh) return;
+		for (const listener of this.networkQualityListeners) {
+			listener(roomId, peerId, quality);
 		}
 	}
 
@@ -214,6 +221,7 @@ export class MediasoupManager {
 		) => void,
 	) {
 		this.networkQualityListeners.push(listener);
+		this.startNetworkQualityRefresh();
 	}
 
 	onTransportStateChange(
@@ -320,7 +328,32 @@ export class MediasoupManager {
 			worker,
 			webRtcServer,
 			this.config.router.mediaCodecs as RtpCodecCapability[],
-			onActiveSpeaker,
+			(activeRoomId, peerIds) => {
+				const previous = this.activeSpeakerPeers.get(activeRoomId);
+				const next = new Set(peerIds);
+				const unchanged =
+					previous?.size === next.size &&
+					[...next].every((id) => previous.has(id));
+				this.activeSpeakerPeers.set(activeRoomId, next);
+				const activeRoom = this.roomManager.getRoom(activeRoomId);
+				for (const peer of unchanged
+					? []
+					: (activeRoom?.peers.values() ?? [])) {
+					for (const producer of peer.producers.values()) {
+						if (producer.kind !== 'video' || producer.appData.type === 'screen')
+							continue;
+						for (const {
+							consumer,
+							roomId: consumerRoom,
+						} of this.consumerManager.getConsumersByProducer(producer.id)) {
+							if (consumerRoom === activeRoomId) {
+								void this.applyCameraPriority(consumer, activeRoomId, peer.id);
+							}
+						}
+					}
+				}
+				onActiveSpeaker?.(activeRoomId, peerIds);
+			},
 		);
 		this.creatingRooms.set(roomId, creation);
 		try {
@@ -342,6 +375,8 @@ export class MediasoupManager {
 				await this.removePeer(roomId, peerId);
 			}
 			await this.roomManager.closeRoom(roomId);
+			this.peerQuality.delete(roomId);
+			this.activeSpeakerPeers.delete(roomId);
 		} finally {
 			this.closingRooms.delete(roomId);
 		}
@@ -404,7 +439,7 @@ export class MediasoupManager {
 		this.transportManager.closePeerTransports(roomId, peerId);
 		peer?.producers.clear();
 		room.peers.delete(peerId);
-		this.peerScores.delete(peerId);
+		this.peerQuality.get(roomId)?.delete(peerId);
 	}
 
 	async createWebRtcTransport(
@@ -537,6 +572,7 @@ export class MediasoupManager {
 			throw new Error(`Failed to create producer ${result.id}`);
 		}
 		peer.producers.set(result.id, producer);
+		this.cameraLayers.addProducer(producer, roomId, peerId);
 
 		// Add audio producers to the audio level observer for active speaker detection
 		if (kind === 'audio') {
@@ -637,6 +673,8 @@ export class MediasoupManager {
 		} finally {
 			this.creatingConsumers.delete(consumerKey);
 		}
+		const createdConsumer = this.consumerManager.getConsumerData(result.id)?.consumer;
+		if (createdConsumer) this.cameraLayers.addConsumer(createdConsumer);
 		if (existingConsumer) {
 			this.consumerManager.closeConsumer(existingConsumer.consumer.id);
 		}
@@ -650,6 +688,18 @@ export class MediasoupManager {
 			throw new Error(`Failed to create consumer ${result.id}`);
 		}
 
+		if (
+			producerData.producer.kind === 'video' &&
+			producerData.producer.appData.type !== 'screen'
+		) {
+			const data = this.consumerManager.getConsumerData(result.id);
+			if (data)
+				await this.applyCameraPriority(
+					data.consumer,
+					roomId,
+					producerData.peerId,
+				);
+		}
 		return {
 			...result,
 			senderId:
@@ -929,6 +979,8 @@ export class MediasoupManager {
 				}
 			}
 		}
+
+		this.cameraLayers.preferencesChanged(consumer);
 
 		const layerUpgraded =
 			appliedLayers &&
@@ -1238,6 +1290,13 @@ export class MediasoupManager {
 	}
 
 	async cleanup(): Promise<void> {
+		this.cameraLayers.cleanup();
+		this.cameraLayerListeners = [];
+		if (this.networkQualityTimer) clearInterval(this.networkQualityTimer);
+		this.networkQualityTimer = null;
+		this.networkQualityListeners = [];
+		this.peerQuality.clear();
+		this.activeSpeakerPeers.clear();
 		loggers.mediasoupManager.info('Starting MediaSoup cleanup');
 
 		const initialStats = {
@@ -1280,5 +1339,62 @@ export class MediasoupManager {
 		};
 		loggers.mediasoupManager.info('Final cleanup stats: %o', finalStats);
 		loggers.mediasoupManager.info('MediaSoup cleanup completed');
+	}
+
+	private startNetworkQualityRefresh(): void {
+		if (this.networkQualityTimer) return;
+		this.networkQualityTimer = setInterval(() => {
+			for (const room of this.roomManager.getAllRooms()) {
+				if (this.closingRooms.has(room.id)) continue;
+				for (const peerId of room.peers.keys()) {
+					this.evaluateAndEmitNetworkQuality(room.id, peerId, true);
+				}
+			}
+		}, 5000);
+		this.networkQualityTimer.unref();
+	}
+
+	private applyCameraPriority(
+		consumer: Consumer,
+		roomId: string,
+		producerPeerId: string,
+	): Promise<void> {
+		const desired = this.activeSpeakerPeers.get(roomId)?.has(producerPeerId)
+			? 2
+			: 1;
+		let update = this.cameraPriorityUpdates.get(consumer);
+		if (!update) {
+			update = { desired, pending: null };
+			this.cameraPriorityUpdates.set(consumer, update);
+		}
+		update.desired = desired;
+		if (update.pending) return update.pending;
+		if (consumer.closed || consumer.priority === desired)
+			return Promise.resolve();
+		const state = update;
+		// Reconcile after each worker response. A silence event can arrive before
+		// an earlier boost commits, so the getter alone cannot identify a no-op.
+		state.pending = Promise.resolve()
+			.then(async () => {
+				let applied = consumer.priority;
+				try {
+					while (!consumer.closed && applied !== state.desired) {
+						const next = state.desired;
+						await consumer.setPriority(next);
+						applied = next;
+					}
+				} catch (error) {
+					if (!consumer.closed)
+						loggers.mediasoupManager.warn(
+							'Failed to prioritize camera %s: %s',
+							consumer.id,
+							(error as Error).message,
+						);
+				}
+			})
+			.finally(() => {
+				state.pending = null;
+			});
+		return state.pending;
 	}
 }

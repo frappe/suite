@@ -16,8 +16,12 @@ type TestableSFUMeetingManager = Pick<SFUMeetingManager, keyof SFUMeetingManager
   mediaHandler: SFUMediaManager['mediaHandler']
 }
 
-const createManager = (client: never) =>
-  new SFUMeetingManager(client) as unknown as TestableSFUMeetingManager
+const createManager = (client: Partial<ConstructorParameters<typeof SFUMeetingManager>[0]>) =>
+  new SFUMeetingManager({
+    on: vi.fn(),
+    off: vi.fn(),
+    ...client,
+  } as never) as unknown as TestableSFUMeetingManager
 
 class FakeMediaStream {
   private tracks: MediaStreamTrack[]
@@ -222,7 +226,9 @@ describe('SFUMeetingManager facade operations', () => {
     } as never
     const manager = createManager(client)
     const initialTrack = mediaTrack('initial', 'video')
-    const replacementTrack = mediaTrack('replacement', 'video')
+    const replacementTrack = Object.assign(mediaTrack('replacement', 'video'), {
+      contentHint: '',
+    })
     const producer = {
       id: 'video-producer',
       track: initialTrack,
@@ -239,6 +245,7 @@ describe('SFUMeetingManager facade operations', () => {
 
     await manager.createLocalProducer('video', initialTrack)
     await manager.replaceLocalProducerTrack('video', replacementTrack)
+    expect(replacementTrack.contentHint).toBe('motion')
     manager.pauseLocalProducer('video')
     manager.resumeLocalProducer('video')
     manager.closeLocalProducer('video')
@@ -328,7 +335,9 @@ describe('SFUMeetingManager facade operations', () => {
     })
 
     expect(result).toEqual({ video: { status: 'published' } })
-    expect(producer.replaceTrack).toHaveBeenCalledWith({ track: requestedTrack })
+    expect(producer.replaceTrack).toHaveBeenCalledWith({
+      track: requestedTrack,
+    })
     expect(manager.getLocalProducerState('video')?.track).toBe(requestedTrack)
   })
 
@@ -714,6 +723,26 @@ describe('SFUMeetingManager facade operations', () => {
 })
 
 describe('SFUMeetingManager recovery fallback', () => {
+  it('does not announce healthy just because ICE restart resolves', async () => {
+    const manager = createManager({ isConnected: vi.fn(() => true) } as never)
+    const onRecoveryStateChange = vi.fn()
+    manager.initialize({
+      meetingId: 'meeting-1',
+      currentUser: { user_id: 'me' },
+      eventHandlers: { onRecoveryStateChange },
+    })
+    vi.spyOn(manager.transportManager, 'restartAllTransportIce').mockResolvedValue({
+      send: 'not-needed',
+      recv: 'restarted',
+    })
+    await manager.recoverTransport('transport_recv_failed')
+    expect(onRecoveryStateChange).toHaveBeenCalledWith(
+      'recovering_receive',
+      'transport_recv_failed',
+    )
+    expect(onRecoveryStateChange).not.toHaveBeenCalledWith('healthy', expect.anything())
+  })
+
   it('keeps existing consumers after a successful ICE restart', async () => {
     const manager = createManager({
       isConnected: vi.fn(() => true),
@@ -742,7 +771,9 @@ describe('SFUMeetingManager recovery fallback', () => {
     )
     const connection = (
       manager as unknown as {
-        connectionManager: { escalateRecovery: (trigger: unknown) => Promise<boolean> }
+        connectionManager: {
+          escalateRecovery: (trigger: unknown) => Promise<boolean>
+        }
       }
     ).connectionManager
     const escalate = vi.spyOn(connection, 'escalateRecovery').mockResolvedValue(true)
@@ -801,7 +832,11 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     const video = mediaTrack('video', 'video')
     const audio = mediaTrack('audio', 'audio')
     manager.mediaHandler.setProducers({
-      screenProducer: { id: 'old-screen', track: screen, close: vi.fn() } as never,
+      screenProducer: {
+        id: 'old-screen',
+        track: screen,
+        close: vi.fn(),
+      } as never,
       videoProducer: { id: 'old-video', track: video, close: vi.fn() } as never,
       audioProducer: { id: 'old-audio', track: audio, close: vi.fn() } as never,
     })
@@ -828,11 +863,15 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       ),
     ).resolves.toEqual({ videoPublished: true, audioPublished: true })
 
-    expect(createProducer).toHaveBeenNthCalledWith(1, video, { type: 'camera' })
+    expect(createProducer).toHaveBeenNthCalledWith(1, video, {
+      type: 'camera',
+    })
     expect(createProducer).toHaveBeenNthCalledWith(2, audio, {
       type: 'microphone',
     })
-    expect(createProducer).toHaveBeenNthCalledWith(3, screen, { type: 'screen' })
+    expect(createProducer).toHaveBeenNthCalledWith(3, screen, {
+      type: 'screen',
+    })
     expect(manager.mediaHandler.videoProducer).toBe(producers.get(video))
     expect(manager.mediaHandler.audioProducer).toBe(producers.get(audio))
     expect(manager.mediaHandler.screenProducer).toBe(producers.get(screen))

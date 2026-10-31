@@ -13,6 +13,7 @@ import type {
 
 import { api, client } from '@/api'
 
+import { parseCameraLayerDemand } from '../../../../../suite/meet/types/cameraLayers'
 import {
   isUnknownRecord,
   normalizeJoinPayload,
@@ -918,6 +919,14 @@ export class SFUClient {
       'producer',
     )
     return { id: requireString(response.id, 'id', 'producer') }
+  }
+
+  async getCameraLayerDemand(producerId: string) {
+    const response = requireObject(
+      await this.sendRequest('producer:get_camera_layers', { producerId }),
+      'camera layer demand',
+    )
+    return parseCameraLayerDemand(response.demand)
   }
 
   async createConsumer(

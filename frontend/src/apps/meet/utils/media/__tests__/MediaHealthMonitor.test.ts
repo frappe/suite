@@ -149,7 +149,11 @@ function makeManager(
       }
       return Boolean(
         entry.consumer.paused ||
-        (entry.consumer as typeof entry.consumer & { producerPaused?: boolean }).producerPaused ||
+        (
+          entry.consumer as typeof entry.consumer & {
+            producerPaused?: boolean
+          }
+        ).producerPaused ||
         entry.adaptivelyPaused ||
         (entry.kind === 'audio' && participant.audio_enabled === false) ||
         (entry.kind === 'video' && !entry.isScreen && participant.video_enabled === false),
@@ -193,7 +197,7 @@ describe('MediaHealthMonitor', () => {
     [
       'good',
       {
-        rtt: 520,
+        rtt: 50,
         packetLoss: 1,
         availableOutgoingBitrate: 900_000,
       },
@@ -217,7 +221,7 @@ describe('MediaHealthMonitor', () => {
     [
       'critical',
       {
-        rtt: 950,
+        rtt: 1300,
         packetLoss: 3,
         availableOutgoingBitrate: 150_000,
       },
@@ -232,7 +236,276 @@ describe('MediaHealthMonitor', () => {
     await environment.advance(3000)
 
     expect(monitor.state.networkQuality).toBe(quality)
+    expect(monitor.state.downlinkQuality).toBe('unknown')
+  })
+
+  it('does not call missing stats a good connection', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager({
+      networkStats: { ...goodNetworkStats, isValid: false },
+    })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(12_000)
+    expect(monitor.state.networkQuality).toBe('unknown')
+    expect(monitor.state.status).toBe('checking')
+  })
+
+  it('warns about frozen receiving video while upload stats stay healthy', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager({ consumers: [makeConsumer(environment)] })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(12_000)
+    expect(monitor.state.downlinkQuality).toBe('critical')
+    expect(monitor.state.status).toBe('degraded')
+    expect(monitor.state.issue).toBe('receive')
+  })
+
+  it('does not clear a receiving warning on one good sample', async () => {
+    const environment = new TestEnvironment()
+    let frame = 10,
+      bytes = 1000
+    const { port } = makeManager({
+      consumers: [
+        makeConsumer(environment, {
+          bytes: () => bytes,
+          framesDecoded: () => frame,
+        }),
+      ],
+    })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(12_000)
+    expect(monitor.state.downlinkQuality).toBe('critical')
+    bytes += 1000
+    frame += 75
+    await environment.advance(3000)
+    expect(monitor.state.downlinkQuality).toBe('critical')
+    for (let i = 0; i < 2; i++) {
+      bytes += 1000
+      frame += 75
+      await environment.advance(3000)
+    }
     expect(monitor.state.downlinkQuality).toBe('good')
+  })
+
+  it('keeps a receiving warning through unavailable samples and restarts healthy confirmation', async () => {
+    const environment = new TestEnvironment()
+    let bytes = 1000,
+      frames = 10
+    const consumer = makeConsumer(environment, {
+      bytes: () => bytes,
+      framesDecoded: () => frames,
+    })
+    const { port } = makeManager({ consumers: [consumer] })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(12_000)
+    vi.mocked(consumer.consumer.getStats).mockRejectedValueOnce(new Error('replacing'))
+    await environment.advance(3000)
+    expect(monitor.state.downlinkQuality).toBe('critical')
+    for (let i = 0; i < 2; i++) {
+      bytes += 1000
+      frames += 75
+      await environment.advance(3000)
+    }
+    expect(monitor.state.downlinkQuality).toBe('critical')
+    bytes += 1000
+    frames += 75
+    await environment.advance(3000)
+    expect(monitor.state.downlinkQuality).toBe('good')
+  })
+
+  it('warns for continuously bad upload even when severity alternates', async () => {
+    const environment = new TestEnvironment()
+    const stats = { ...goodNetworkStats }
+    const { port } = makeManager({ getNetworkStats: async () => stats })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(3000)
+    for (const loss of [10, 25, 10, 25]) {
+      stats.packetLoss = loss
+      await environment.advance(3000)
+    }
+    expect(['poor', 'critical']).toContain(monitor.state.networkQuality)
+  })
+
+  it('does not blame the local downlink for a healthy four-fps source', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager({
+      consumers: [
+        makeConsumer(environment, {
+          bytes: () => environment.now() * 10,
+          framesDecoded: () => (environment.now() * 4) / 1000,
+        }),
+      ],
+    })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(15_000)
+    expect(monitor.state.downlinkQuality).toBe('good')
+  })
+
+  it('keeps existing loss warnings while a new subscription is pending', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager({
+      getNetworkStats: async () => ({
+        ...goodNetworkStats,
+        downlink: { rtt: 50, jitter: 0, packetLoss: 25, isValid: true },
+      }),
+    })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(3000)
+    port.hasMissingExpectedReceiveMedia = () => true
+    await environment.advance(3000)
+    expect(monitor.state.downlinkQuality).toBe('critical')
+  })
+
+  it.each(['new', 'closed'])(
+    'does not verify %s send transport while enabled publication is missing',
+    async (transportState) => {
+      const environment = new TestEnvironment()
+      const { port } = makeManager({ transportState })
+      port.hasExpectedSendMedia = () => true
+      port.onRecoveryVerified = vi.fn()
+      const monitor = startMonitor(port, environment)
+      monitor.beginRecovery('send', 'send rebuild')
+      await environment.advance(15_000)
+      expect(port.onRecoveryVerified).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['incomplete', 'unavailable'])(
+    'does not verify an %s static screen',
+    async (condition) => {
+      const environment = new TestEnvironment()
+      const consumer = makeConsumer(environment, {
+        isScreen: true,
+        framesDecoded: () => (condition === 'incomplete' ? 0 : 10),
+      })
+      const { port } = makeManager({ consumers: [consumer] })
+      port.onRecoveryVerified = vi.fn()
+      const monitor = startMonitor(port, environment)
+      await environment.advance(3000)
+      monitor.beginRecovery('recv', 'recv rebuild')
+      if (condition === 'unavailable')
+        vi.mocked(consumer.consumer.getStats).mockRejectedValue(new Error('no sample'))
+      await environment.advance(12_000)
+      expect(port.onRecoveryVerified).not.toHaveBeenCalled()
+    },
+  )
+
+  it('marks offline immediately, without waiting for WebRTC stats', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager()
+    const monitor = startMonitor(port, environment)
+    await environment.setOnline(false)
+    expect(monitor.state.status).toBe('disconnected')
+  })
+
+  it('keeps recovery pending while media is frozen, then verifies sustained delivery', async () => {
+    const environment = new TestEnvironment()
+    let frame = 10,
+      bytes = 1000
+    const onRecoveryVerified = vi.fn()
+    const { port } = makeManager({
+      consumers: [
+        makeConsumer(environment, {
+          bytes: () => bytes,
+          framesDecoded: () => frame,
+        }),
+      ],
+    })
+    port.onRecoveryVerified = onRecoveryVerified
+    const monitor = startMonitor(port, environment)
+    await environment.advance(3000)
+    monitor.beginRecovery('recv', 'transport_recv_failed')
+    await environment.advance(12_000)
+    expect(monitor.state.status).toBe('reconnecting')
+    expect(onRecoveryVerified).not.toHaveBeenCalled()
+    for (let i = 0; i < 5; i++) {
+      bytes += 1000
+      frame += 75
+      await environment.advance(3000)
+    }
+    expect(onRecoveryVerified).toHaveBeenCalledExactlyOnceWith('transport_recv_failed')
+    expect(monitor.state.status).toBe('good')
+  })
+
+  it('expires previously good health if a stats call stops completing', async () => {
+    const environment = new TestEnvironment()
+    let release!: (value: typeof goodNetworkStats) => void
+    const { port, getNetworkStats } = makeManager()
+    const monitor = startMonitor(port, environment)
+    await environment.advance(3000)
+    getNetworkStats.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    const pending = environment.advance(3000)
+    await Promise.resolve()
+    await environment.advance(12_000)
+    expect(monitor.state.status).toBe('checking')
+    expect(monitor.state.networkQuality).toBe('unknown')
+    monitor.stop()
+    release(goodNetworkStats)
+    await pending
+  })
+
+  it('warns when expected subscriptions are missing rather than treating an empty consumer list as healthy', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager()
+    port.hasMissingExpectedReceiveMedia = () => true
+    const monitor = startMonitor(port, environment)
+    await environment.advance(12_000)
+    expect(monitor.state.status).toBe('degraded')
+    expect(monitor.state.issue).toBe('receive')
+  })
+
+  it('does not flicker for one bad network sample', async () => {
+    const environment = new TestEnvironment()
+    const stats = { ...goodNetworkStats }
+    const { port } = makeManager({ getNetworkStats: async () => stats })
+    const monitor = startMonitor(port, environment)
+    await environment.advance(3000)
+    stats.packetLoss = 12
+    await environment.advance(3000)
+    expect(monitor.state.networkQuality).toBe('good')
+    stats.packetLoss = 0
+    await environment.advance(3000)
+    expect(monitor.state.networkQuality).toBe('good')
+  })
+
+  it.each([
+    ['send', 25, 0],
+    ['receive', 0, 25],
+  ] as const)(
+    'attributes %s loss to the correct direction',
+    async (direction, sendLoss, receiveLoss) => {
+      const environment = new TestEnvironment()
+      const { port } = makeManager({
+        getNetworkStats: async () => ({
+          ...goodNetworkStats,
+          timestamp: environment.now(),
+          uplink: { rtt: 50, packetLoss: sendLoss, jitter: 0, isValid: true },
+          downlink: {
+            rtt: 50,
+            packetLoss: receiveLoss,
+            jitter: 0,
+            isValid: true,
+          },
+        }),
+      })
+      const monitor = startMonitor(port, environment)
+      await environment.advance(3000)
+      expect(monitor.state.issue).toBe(direction)
+    },
+  )
+
+  it('shows reconnecting when signaling is unavailable even if media transports stay connected', async () => {
+    const environment = new TestEnvironment()
+    const { port } = makeManager()
+    port.isSignalingConnected = () => false
+    const monitor = startMonitor(port, environment)
+    await environment.advance(3000)
+    expect(monitor.state.status).toBe('reconnecting')
   })
 
   it('treats only failed transports as hard failures', async () => {
@@ -378,7 +651,7 @@ describe('MediaHealthMonitor', () => {
 
     quality.rtt = 50
     quality.packetLoss = 0
-    await environment.advance(3000)
+    await environment.advance(9000)
     expect(requestConsumerKeyFrame).toHaveBeenCalledOnce()
   })
 
@@ -420,7 +693,7 @@ describe('MediaHealthMonitor', () => {
     resolveStats?.({ ...goodNetworkStats, packetLoss: 30 })
     await polling
 
-    expect(monitor.state.networkQuality).toBe('good')
+    expect(monitor.state.networkQuality).toBe('unknown')
   })
 
   it('uses fresh expected-media baselines after visibility resumes', async () => {
