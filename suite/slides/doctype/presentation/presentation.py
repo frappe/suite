@@ -17,6 +17,7 @@ from suite import drive
 from suite.slides import drive as slides_drive
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
+SYSTEM_TEMPLATE_FIRST_LAYOUT = 2
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 NODE_FIELD = slides_drive.NODE_FIELD
@@ -317,6 +318,36 @@ def update_theme(name: str, theme: str):
     presentation.theme = theme
     presentation.save()
     return {"modified": presentation.modified, "base_modified": base_modified}
+
+
+@frappe.whitelist(methods=["POST"])
+def apply_theme(name: str, theme: str) -> dict:
+    """Turn a new deck's blank slide into the theme's first layout; any other deck is refused."""
+    drive.check(slides_drive.node_of(name), drive.EDIT)
+    theme_node = frappe.db.get_value("Presentation", theme, NODE_FIELD)
+    if not theme_node or not slides_drive.node_is_template(theme_node):
+        frappe.throw(f"Template {theme!r} does not exist", frappe.DoesNotExistError)
+
+    if not frappe.has_permission("Presentation", "read", theme):
+        frappe.throw("You cannot use this template", frappe.PermissionError)
+
+    deck = frappe.get_doc("Presentation", name, for_update=True)
+    if len(deck.slides) != 1 or deck.slides[0].elements != "[]":
+        frappe.throw(_("Only a new, empty presentation can take a theme"), frappe.ValidationError)
+
+    layouts = frappe.get_doc("Presentation", theme).slides
+    is_system = is_system_template(slides_drive.node_title_of(theme_node))
+    first = SYSTEM_TEMPLATE_FIRST_LAYOUT if is_system and len(layouts) > SYSTEM_TEMPLATE_FIRST_LAYOUT else 0
+    slide = {field: layouts[first].get(field) for field in slides_drive.SLIDE_BODY_FIELDS}
+    elements = slides_drive.elements_of(slide)
+    remap_element_ids(elements)
+    slide["elements"] = elements
+    slide = slides_drive.adopt_slide_media(name, slide)
+    slide.pop("client_id")
+    deck.slides[0].update(slide)
+    deck.theme = theme
+    deck.save(ignore_permissions=True)
+    return {"modified": deck.modified}
 
 
 @frappe.whitelist()

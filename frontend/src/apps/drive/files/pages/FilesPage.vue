@@ -1459,7 +1459,8 @@ function create(kind: CreateRequest['kind'], contentDoctype?: string) {
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {
-    await openNode(created)
+    // the document's surface may ask what a new one should start as
+    await router.push({ ...driveNodeRoute(created), query: { new: '1' } })
     return
   }
   // A search hides what was just added, so the folder shows again.

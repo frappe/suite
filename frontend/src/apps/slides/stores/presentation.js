@@ -405,6 +405,7 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
   return loaded.doc
 }
 
+/** @type {import('vue').Ref<import('@/apps/slides/client/generated').GetTemplatesOutput>} */
 const templateList = ref([])
 
 const loadTemplates = async () => {

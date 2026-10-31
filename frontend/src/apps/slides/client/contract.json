@@ -790,6 +790,53 @@
       "bytes": false
     },
     {
+      "id": "apply_theme",
+      "kind": "mutation",
+      "publicName": "documents.applyTheme",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.slides.doctype.presentation.presentation.apply_theme",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "theme"
+        ],
+        "title": "ApplyTheme",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "modified": {
+            "title": "Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modified"
+        ],
+        "title": "SavedDeck",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "get_templates",
       "kind": "query",
       "publicName": "templates.list",

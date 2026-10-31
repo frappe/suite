@@ -16,6 +16,7 @@ import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
+import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
@@ -27,6 +28,7 @@ import {
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
 import {
+  contextFor,
   initPresentationDoc,
   inReadonlyMode,
   loadTemplates,
@@ -67,6 +69,7 @@ import {
 } from './compositeGroups'
 import ExportView from './ExportView.vue'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
+import { useNewPresentationTheme } from './newPresentation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
@@ -143,6 +146,10 @@ const editable = computed(() => access.writable.value && !composite.value && !re
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
 const editing = computed(() => editable.value && !phone.value)
+const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
+  props.session.contentDocname,
+  editable,
+)
 useHideRail()
 
 // Body requests go through the session, with this document's link credentials.
@@ -176,6 +183,25 @@ provide('openLayoutDialog', (index: number) => {
 })
 function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
+}
+
+async function applyTheme(theme: string) {
+  showThemeDialog.value = false
+  try {
+    await flushEdits()
+    restoring.value = true
+    await client.mutation(
+      api.slides.documents.applyTheme,
+      { name: props.session.contentDocname, theme },
+      { context: contextFor(props.session.contentDocname) },
+    )
+    await load()
+  } catch (error) {
+    const message = error instanceof Error && error.message
+    toast.error(message || 'Could not apply the theme.')
+  } finally {
+    restoring.value = false
+  }
 }
 
 // The header renames through the session; the deck keeps its own copy of the title.
@@ -342,7 +368,11 @@ async function load() {
     setSlideIndex(1)
     loadTemplates()
     composite.value = !!doc?.is_composite
-    if (composite.value) await loadComposite()
+    if (composite.value) {
+      await loadComposite()
+    } else {
+      void offerTheme()
+    }
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
@@ -627,6 +657,7 @@ onBeforeUnmount(() => {
     />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
+    <ThemeDialog v-model:open="showThemeDialog" @create="applyTheme" />
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />

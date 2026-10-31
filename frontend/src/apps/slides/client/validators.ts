@@ -3,6 +3,8 @@ import type { Validators } from '@/platform/transport'
 import { assertSchema } from '@/platform/transport/schema'
 
 import type {
+  ApplyThemeInput,
+  ApplyThemeOutput,
   CompositeGroupInput,
   CompositeGroupOutput,
   CompositeManifestInput,
@@ -325,6 +327,37 @@ export const operationSaveSlides: Validators<SaveSlidesInput, SaveSlidesOutput> 
         type: 'object',
       },
       'save_slides output',
+    )
+  },
+}
+
+export const operationApplyTheme: Validators<ApplyThemeInput, ApplyThemeOutput> = {
+  validateInput(value: unknown): asserts value is ApplyThemeInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          theme: { title: 'Theme', type: 'string' },
+        },
+        required: ['name', 'theme'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'apply_theme input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ApplyThemeOutput {
+    assertSchema(
+      value,
+      {
+        properties: { modified: { title: 'Modified', type: 'string' } },
+        required: ['modified'],
+        title: 'SavedDeck',
+        type: 'object',
+      },
+      'apply_theme output',
     )
   },
 }
