@@ -2,6 +2,8 @@
 
 Frappe app with a Vue frontend and separate realtime services.
 
+Ship tier: prod
+
 - Prefer deep modules. For module design or refactoring, use the `improve-codebase-architecture` skill.
 - Test observable behavior against independent expectations, not implementation details or assertions derived from the code under test.
 - Load only context relevant to the task; don't read whole documentation trees.

@@ -22,6 +22,7 @@ _PASSWORD_METHODS = frozenset(
         "login",
         "frappe.translate.get_boot_translations",
         "suite.api.routes.account_get",
+        "suite.api.routes.errors_post",
         "suite.api.routes.logout",
         "frappe.handler.logout",
         "suite.mail.events.update_password",

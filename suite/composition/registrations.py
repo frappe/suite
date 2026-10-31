@@ -16,6 +16,7 @@ SUITE_RESOURCES = (
     "storage",
     "admin",
     "onboarding",
+    "errors",
 )
 
 

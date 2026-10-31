@@ -2,6 +2,7 @@ import type { App } from 'vue'
 import type { Router } from 'vue-router'
 
 import { getSessionUser } from '@/boot/session'
+import { isServerRefusal } from '@/platform/error-log'
 
 import { redactTelemetry } from './sentryPrivacy'
 
@@ -56,13 +57,7 @@ export async function initSentry(app: App, router: Router): Promise<void> {
       },
       beforeSend(event, hint) {
         const original = hint.originalException
-        if (original && typeof original === 'object') {
-          const error = original as Record<string, unknown>
-          const exceptionType = error.exc_type ?? error.excType
-          if (exceptionType === 'PermissionError' || exceptionType === 'ValidationError')
-            return null
-        }
-
+        if (isServerRefusal(original)) return null
         const stack = original instanceof Error ? original.stack : ''
         return stack?.includes('frappe.throw') ? null : event
       },
