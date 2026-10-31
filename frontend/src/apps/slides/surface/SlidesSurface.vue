@@ -60,7 +60,6 @@ import {
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
-  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
@@ -80,7 +79,7 @@ import {
   type MergedCompositeSlide,
 } from './compositeGroups'
 import ExportView from './ExportView.vue'
-import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
+import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
@@ -480,6 +479,9 @@ useDocumentLeaveGuard({
   flush,
   retainRecovery,
 })
+function warnBeforeUnload(event: Event) {
+  resolveDocumentUnload({ state: () => saveState.value, retainRecovery }, event)
+}
 function setOnline() {
   online.value = true
 }
@@ -489,15 +491,19 @@ function setOffline() {
 onMounted(() => {
   void load()
   autosaveTimer = window.setInterval(() => {
-    if (editable.value && !isSlideInteractionActive.value && !focusedSlide.value) void saveChanges()
+    if (editable.value && !isSlideInteractionActive.value) {
+      void saveChanges()
+    }
   }, 1_000)
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
+  window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
   if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveCurrentState().finally(() => {
