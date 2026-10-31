@@ -2,6 +2,7 @@ import { computed, readonly, ref, type Ref } from 'vue'
 
 import { api, client, onTouch } from '@/api'
 import { onAccessChange } from '@/apps/drive/client/accessChanges'
+import { folderOf } from '@/apps/drive/client/nodes'
 import {
   canShare,
   documentCredentials,
@@ -10,7 +11,6 @@ import {
 } from '@/apps/drive/client/session'
 import type { DriveBreadcrumb, DriveNode, DrivePreview } from '@/apps/drive/client/types'
 
-import { folderOf } from '../../internal/locations'
 import { presentShareDialog } from '../share/present'
 
 const EXPAND = 'access,preview,breadcrumbs'

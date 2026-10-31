@@ -6,7 +6,6 @@ import {
   onMounted,
   ref,
   type ComputedRef,
-  type Ref,
 } from 'vue'
 import { useRouter, type RouteLocationPathRaw, type Router } from 'vue-router'
 
@@ -21,7 +20,7 @@ import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
-import { folderOf, useLocationTitle } from '@/apps/drive/files/internal/locations'
+import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
@@ -205,10 +204,9 @@ export function useDriveDocumentActions(
   session: DocumentSession,
 ): ComputedRef<{ back: DriveDocumentAction[]; node: DriveDocumentAction[] }> {
   const account = useSession()
-  const folder = useDocumentFolder(session.nodeId)
-  const actions = documentActions(session, folder)
+  const actions = documentActions(session)
   return computed(() => {
-    const isFiled = folder.value !== null
+    const isFiled = session.folder.value !== null
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
     return {
       back: actionsWhere([[isFiled, actions.back]]),
@@ -220,27 +218,11 @@ export function useDriveDocumentActions(
   })
 }
 
-/** The folder the document is in, once read; null when the caller cannot read it. */
-function useDocumentFolder(nodeId: string): Ref<DriveBreadcrumb | null> {
-  const folder = ref<DriveBreadcrumb | null>(null)
-  async function read() {
-    try {
-      const node = await client.query(api.drive.nodes.get, { node: nodeId, expand: 'breadcrumbs' })
-      folder.value = folderOf(node)
-    } catch {
-      folder.value = null
-    }
-  }
-
-  void read()
-  return folder
-}
-
-function documentActions(session: DocumentSession, folder: Ref<DriveBreadcrumb | null>) {
+function documentActions(session: DocumentSession) {
   const router = useRouter()
   const locationTitle = useLocationTitle()
   function folderRoute() {
-    return folderRouteOf(folder.value, locationTitle)
+    return folderRouteOf(session.folder.value, locationTitle)
   }
 
   return {
@@ -252,7 +234,7 @@ function documentActions(session: DocumentSession, folder: Ref<DriveBreadcrumb |
     duplicate: {
       label: __('Duplicate'),
       icon: 'lucide-copy',
-      onClick: () => void duplicateDocument(session, folder.value, router),
+      onClick: () => void duplicateDocument(session, session.folder.value, router),
     },
     delete: {
       label: __('Delete'),

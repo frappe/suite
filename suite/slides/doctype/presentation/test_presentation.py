@@ -1,15 +1,19 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import io
 import json
 from unittest.mock import patch
 
 import frappe
 from frappe.client import set_value
+from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.nodes import create_file
+from suite.drive._core.principals import Principals
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -34,6 +38,7 @@ from suite.slides.tests.utils import (
     share,
     title_of,
     trash,
+    unique_bytes,
 )
 from suite.tests.utils import ensure_user
 
@@ -344,6 +349,46 @@ class TestApplyTheme(IntegrationTestCase):
 
             dark.save()
             cls.dark = dark.name
+            cls.pictures, cls.picture_media = cls.make_picture_template()
+
+        with cls.set_user(OTHER_USER):
+            cls.unshared = make_presentation("Theme Nobody Shared", is_template=True).name
+            short_dark = make_presentation("Dark", is_template=True)
+            short_dark.slides[0].elements = json.dumps(
+                [{"id": "short-0", "type": "text", "content": "Short 0"}]
+            )
+            short_dark.append("slides", {"elements": "[]"})
+            short_dark.save()
+            cls.short_dark = short_dark.name
+            share(cls.short_dark, OWNER)
+
+    @classmethod
+    def make_picture_template(cls) -> tuple[str, tuple[str, str]]:
+        template = make_presentation("Pictures", is_template=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        media: list[str] = []
+        for title in ("background.png", "photo.png"):
+            blob = put_blob(io.BytesIO(unique_bytes(PNG_1PX)), is_private=True, filename=title)
+            with patch("suite.drive._core.previews.enqueue_render"):
+                media.append(
+                    create_file(
+                        admin,
+                        node_of(template.name),
+                        title,
+                        blob=blob.name,
+                        size=blob.file_size,
+                        mime=blob.mime_type,
+                    )
+                )
+
+        background, photo = media
+        template.slides[0].background = background
+        template.slides[0].elements = json.dumps([{"id": "photo", "type": "image", "src": photo}])
+        for index in (1, 2):
+            template.append("slides", {"elements": json.dumps([{"id": f"later-{index}", "type": "text"}])})
+
+        template.save()
+        return template.name, (background, photo)
 
     def setUp(self):
         super().setUp()
@@ -402,6 +447,87 @@ class TestApplyTheme(IntegrationTestCase):
 
         with self.assertRaises(frappe.DoesNotExistError):
             update_theme(self.deck, plain)
+
+        self.assertEqual(self.body_of_deck(), before)
+
+    def test_a_template_the_caller_cannot_read_is_refused(self):
+        before = self.body_of_deck()
+        for endpoint in (apply_theme, update_theme):
+            with self.subTest(endpoint.__name__):
+                self.assertRaises(frappe.DoesNotExistError, endpoint, self.deck, self.unshared)
+                self.assertEqual(self.body_of_deck(), before)
+
+    def test_a_trashed_template_is_refused(self):
+        gone = make_presentation("Theme Gone To Trash", is_template=True).name
+        trash(gone)
+        frappe.set_user(OWNER)
+        before = self.body_of_deck()
+
+        with self.assertRaises(frappe.DoesNotExistError):
+            apply_theme(self.deck, gone)
+
+        self.assertEqual(self.body_of_deck(), before)
+
+    def test_the_themes_pictures_are_the_decks_own(self):
+        apply_theme(self.deck, self.pictures)
+
+        slide = frappe.get_doc("Presentation", self.deck).slides[0]
+        [photo] = json.loads(slide.elements)
+        background, photo_original = self.picture_media
+        deck_node = node_of(self.deck)
+        for media, original in ((slide.background, background), (photo["src"], photo_original)):
+            self.assertNotEqual(media, original)
+            self.assertEqual(frappe.db.get_value("Drive Node", media, "parent_node"), deck_node)
+
+        layout = frappe.get_doc("Presentation", self.pictures).slides[0]
+        [layout_photo] = json.loads(layout.elements)
+        self.assertEqual(layout.background, background)
+        self.assertEqual(layout_photo["src"], photo_original)
+        for original in self.picture_media:
+            self.assertEqual(
+                frappe.db.get_value("Drive Node", original, "parent_node"), node_of(self.pictures)
+            )
+
+    def test_a_template_that_is_not_a_system_one_gives_its_first_layout(self):
+        apply_theme(self.deck, self.pictures)
+
+        [element] = json.loads(frappe.get_doc("Presentation", self.deck).slides[0].elements)
+        self.assertEqual(element["type"], "image")
+
+    def test_a_system_template_too_short_for_its_usual_layout_gives_its_first(self):
+        apply_theme(self.deck, self.short_dark)
+
+        _, [elements] = self.body_of_deck()
+        [element] = json.loads(elements)
+        self.assertEqual(element["content"], "Short 0")
+
+    def test_two_empty_slides_are_refused_and_left_alone(self):
+        deck = frappe.get_doc("Presentation", self.deck)
+        deck.append("slides", {"elements": "[]"})
+        deck.save()
+        before = self.body_of_deck()
+
+        with self.assertRaises(frappe.ValidationError):
+            apply_theme(self.deck, self.dark)
+
+        self.assertEqual(self.body_of_deck(), before)
+
+    def test_a_template_cannot_take_a_theme(self):
+        self.deck = make_presentation("Blank Template", is_template=True).name
+        before = self.body_of_deck()
+
+        with self.assertRaises(frappe.ValidationError):
+            apply_theme(self.deck, self.dark)
+
+        self.assertEqual(self.body_of_deck(), before)
+
+    def test_a_theme_with_no_slides_is_refused(self):
+        empty = make_presentation("Theme With No Slides", is_template=True)
+        frappe.db.delete("Slide", {"parent": empty.name, "parenttype": "Presentation"})
+        before = self.body_of_deck()
+
+        with self.assertRaises(frappe.ValidationError):
+            apply_theme(self.deck, empty.name)
 
         self.assertEqual(self.body_of_deck(), before)
 
