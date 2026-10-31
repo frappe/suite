@@ -1,6 +1,6 @@
-import { inject, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 
-import type { NetworkQuality } from '../utils/media/MediaHealthMonitor'
+import type { MediaHealthState, NetworkQuality } from '../utils/media/MediaHealthMonitor'
 import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
 
 export type { NetworkQuality }
@@ -8,16 +8,19 @@ export type { NetworkQuality }
 export function useNetworkQuality(
   sfuManagerRef = inject<Ref<SFUMeetingManager | null>>('sfuManager'),
 ) {
-  const networkQuality = ref<NetworkQuality>('good')
-  const downlinkQuality = ref<NetworkQuality>('good')
-  const isTransportFailed = ref(false)
+  const initialHealth = (): MediaHealthState => ({
+    networkQuality: 'unknown',
+    downlinkQuality: 'unknown',
+    isTransportFailed: false,
+    status: 'checking',
+    issue: null,
+  })
+  const health = ref<MediaHealthState>(initialHealth())
   let stopWatching: (() => void) | null = null
   let stopMonitoring: (() => void) | null = null
   let managerGeneration = 0
   const reset = () => {
-    networkQuality.value = 'good'
-    downlinkQuality.value = 'good'
-    isTransportFailed.value = false
+    health.value = initialHealth()
   }
   const stopCurrentMonitoring = () => {
     const stop = stopMonitoring
@@ -40,9 +43,7 @@ export function useNetworkQuality(
         stopMonitoring =
           manager?.startMediaHealthMonitoring((state) => {
             if (generation !== managerGeneration || sfuManagerRef.value !== manager) return
-            networkQuality.value = state.networkQuality
-            downlinkQuality.value = state.downlinkQuality
-            isTransportFailed.value = state.isTransportFailed
+            health.value = { ...state }
           }) ?? null
       },
       { immediate: true },
@@ -57,5 +58,12 @@ export function useNetworkQuality(
     reset()
   })
 
-  return { networkQuality, downlinkQuality, isTransportFailed }
+  return {
+    health,
+    networkQuality: computed(() => health.value.networkQuality),
+    downlinkQuality: computed(() => health.value.downlinkQuality),
+    isTransportFailed: computed(() => health.value.isTransportFailed),
+    status: computed(() => health.value.status),
+    issue: computed(() => health.value.issue),
+  }
 }

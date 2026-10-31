@@ -12,6 +12,7 @@ import type {
 } from 'mediasoup-client/types'
 
 import type { ProducerCloseMetadata, SFUClient } from '../SFUClient'
+import { CameraLayerController } from './CameraLayerController'
 import { resolveCodecStrategy } from './codecStrategy'
 import { DefaultE2EETransformPolicy, type E2EETransformPolicy } from './E2EETransformPolicy'
 import {
@@ -21,22 +22,13 @@ import {
   videoCodecOptions,
   videoEncodings,
 } from './encodings'
+import { NetworkStatsTracker } from './NetworkStatsTracker'
 
 type Direction = 'send' | 'recv'
 
 type IceRestartDirectionResult = 'restarted' | 'not-needed' | 'failed'
 
 export type TransportIceRestartResult = Record<Direction, IceRestartDirectionResult>
-
-type TransportStatReport = {
-  type?: string
-  state?: string
-  currentRoundTripTime?: number
-  availableOutgoingBitrate?: number
-  packetsReceived?: number
-  packetsLost?: number
-  roundTripTime?: number
-}
 
 type TransportConnectionState =
   'new' | 'connecting' | 'connected' | 'failed' | 'disconnected' | 'closed' | string
@@ -54,19 +46,39 @@ type InsertableStreamRTCConfiguration = Partial<RTCConfiguration> & {
   encodedInsertableStreams?: boolean
 }
 
-async function applyScreenShareSenderPreferences(producer: { rtpSender?: RTCRtpSender }) {
+async function applySenderPreferences(
+  producer: { rtpSender?: RTCRtpSender },
+  kind: string,
+  source: string,
+) {
   const sender = producer.rtpSender
-  if (!sender?.getParameters || !sender?.setParameters) {
-    return
-  }
-
+  if (!sender?.getParameters || !sender?.setParameters) return
   const parameters = sender.getParameters()
-  if (parameters.degradationPreference === 'maintain-resolution') {
-    return
+  const originalEncodings = parameters.encodings.map((encoding) => ({
+    ...encoding,
+  }))
+  if (kind === 'video') {
+    parameters.degradationPreference =
+      source === 'screen' ? 'maintain-resolution' : 'maintain-framerate'
   }
-
-  parameters.degradationPreference = 'maintain-resolution'
-  await sender.setParameters(parameters)
+  // Priority is relative to other media on this connection. DSCP remains a hint
+  // to the network; it is not a bandwidth reservation or a delivery guarantee.
+  const priority = kind === 'audio' ? 'high' : 'low'
+  parameters.encodings = originalEncodings.map((encoding) => ({
+    ...encoding,
+    priority,
+    networkPriority: priority,
+  }))
+  try {
+    await sender.setParameters(parameters)
+  } catch (error) {
+    // Some browsers reject priority hints. Still request the video degradation
+    // policy, without removing encodings or changing their existing settings.
+    if (kind !== 'video') throw error
+    const retry = sender.getParameters()
+    retry.degradationPreference = parameters.degradationPreference
+    await sender.setParameters(retry)
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -74,6 +86,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export class TransportManager {
+  private readonly networkStatsTracker = new NetworkStatsTracker()
   sendTransport: Transport | null
   recvTransport: Transport | null
   device: Device | null
@@ -86,6 +99,7 @@ export class TransportManager {
   private recvTransportCreation: Promise<Transport> | null = null
   private sendTransportGeneration = 0
   private recvTransportGeneration = 0
+  private cameraLayers = new CameraLayerController()
   private producerDiscards = new WeakMap<Producer, Promise<void>>()
 
   constructor(e2eePolicy?: E2EETransformPolicy) {
@@ -145,6 +159,7 @@ export class TransportManager {
 
   initialize(sfuClient: SFUClient) {
     this.sfuClient = sfuClient
+    this.cameraLayers.initialize(sfuClient)
     this.e2eePolicy.setSFUClient(sfuClient)
   }
 
@@ -434,8 +449,8 @@ export class TransportManager {
           produceOptions.codec = vp9Codec
         }
       }
-      if (safeAppData.type === 'screen' && 'contentHint' in track) {
-        track.contentHint = 'detail'
+      if ('contentHint' in track) {
+        track.contentHint = source === 'screen' ? 'detail' : 'motion'
       }
       produceOptions.codecOptions = videoCodecOptions
       produceOptions.appData = {
@@ -443,6 +458,7 @@ export class TransportManager {
         e2eeStartPaused: e2eeWantedBeforeProduce,
         codecStrategy: encodingConfig.decision.strategy,
         scalabilityMode: encodingConfig.decision.scalabilityMode,
+        cameraLayerDemand: source === 'camera' && encodingConfig.decision.strategy === 'simulcast',
       }
     }
 
@@ -480,14 +496,13 @@ export class TransportManager {
       }
     }
 
-    if (safeAppData.type === 'screen') {
-      try {
-        await applyScreenShareSenderPreferences(producer)
-      } catch (error) {
-        console.warn('Failed to apply screen share sender preferences', error)
-      }
+    try {
+      await applySenderPreferences(producer, track.kind, String(safeAppData.type))
+    } catch (error) {
+      console.warn('Failed to apply media sender preferences', error)
     }
 
+    this.cameraLayers.addProducer(producer)
     return producer
   }
 
@@ -692,108 +707,40 @@ export class TransportManager {
   }
 
   async getNetworkStats() {
-    const result = {
-      rtt: 0,
-      packetLoss: 0,
-      availableOutgoingBitrate: 0,
-      timestamp: Date.now(),
-      isValid: false,
+    const now = Date.now()
+    const sample = async (direction: 'send' | 'recv', transport: Transport | null | undefined) => {
+      if (!transport || transport.connectionState !== 'connected') return null
+      try {
+        const reports = await transport.getStats()
+        if (transport !== (direction === 'send' ? this.sendTransport : this.recvTransport))
+          return null
+        return this.networkStatsTracker.sample(direction, transport.id, reports.values())
+      } catch {
+        return null
+      }
     }
-
-    if (!this.sendTransport && !this.recvTransport) {
-      return result
-    }
-
-    try {
-      let packetsSent = 0
-      let packetsLost = 0
-      let validStatsFound = false
-
-      // One RTT sample per transport, from a single report type.
-      const transportRtt: number[] = []
-
-      const processStats = (
-        stats: RTCStatsReport | Map<string, TransportStatReport>,
-        preferRemoteInbound: boolean,
-      ) => {
-        let remoteRttSum = 0
-        let remoteRttCount = 0
-        let pairRttSum = 0
-        let pairRttCount = 0
-
-        for (const report of stats.values()) {
-          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-            if (report.currentRoundTripTime !== undefined) {
-              // Convert exact seconds to ms
-              pairRttSum += report.currentRoundTripTime * 1000
-              pairRttCount++
-              if (report.availableOutgoingBitrate) {
-                result.availableOutgoingBitrate = report.availableOutgoingBitrate
-              }
-            }
-          }
-
-          if (report.type === 'outbound-rtp') {
-            validStatsFound = true
-          }
-
-          // Inbound RTP (local receiving): downlink loss we see.
-          if (report.type === 'inbound-rtp') {
-            validStatsFound = true
-            if (report.packetsReceived !== undefined && report.packetsLost !== undefined) {
-              packetsSent += report.packetsReceived + report.packetsLost
-              packetsLost += report.packetsLost
-            }
-          }
-
-          // Remote Inbound RTP: SFU's view of our outbound streams.
-          // Per-stream RTT.
-          if (report.type === 'remote-inbound-rtp' && report.roundTripTime !== undefined) {
-            remoteRttSum += report.roundTripTime * 1000
-            remoteRttCount++
-          }
-        }
-
-        // Pick one source per transport. remote-inbound-rtp is
-        // the per-stream RTT the SFU measured and is only
-        // available on the send transport; recv falls back to
-        // candidate-pair.
-        if (preferRemoteInbound && remoteRttCount > 0) {
-          transportRtt.push(remoteRttSum / remoteRttCount)
-        } else if (pairRttCount > 0) {
-          transportRtt.push(pairRttSum / pairRttCount)
-        }
-      }
-
-      if (this.sendTransport && this.sendTransport.connectionState === 'connected') {
-        const sendStats = await this.sendTransport.getStats()
-        processStats(sendStats, true)
-      }
-
-      if (this.recvTransport && this.recvTransport.connectionState === 'connected') {
-        const recvStats = await this.recvTransport.getStats()
-        processStats(recvStats, false)
-      }
-
-      if (transportRtt.length > 0) {
-        const total = transportRtt.reduce((sum, v) => sum + v, 0)
-        result.rtt = total / transportRtt.length
-        validStatsFound = true
-      }
-
-      if (packetsSent > 0) {
-        result.packetLoss = (packetsLost / packetsSent) * 100
-      }
-
-      result.isValid = validStatsFound
-      return result
-    } catch (error) {
-      console.warn('Failed to get transport network stats', error)
-      return result
+    const [uplink, downlink] = await Promise.all([
+      sample('send', this.sendTransport),
+      sample('recv', this.recvTransport),
+    ])
+    const paths = [uplink, downlink].filter((path) => path?.isValid)
+    const rtts = paths.flatMap((path) =>
+      path?.rtt === null || path?.rtt === undefined ? [] : [path.rtt],
+    )
+    return {
+      rtt: rtts.length ? rtts.reduce((a, b) => a + b, 0) / rtts.length : 0,
+      packetLoss: Math.max(uplink?.packetLoss ?? 0, downlink?.packetLoss ?? 0),
+      availableOutgoingBitrate: uplink?.availableOutgoingBitrate ?? 0,
+      timestamp: now,
+      isValid: paths.length > 0,
+      uplink,
+      downlink,
     }
   }
 
   cleanup() {
+    this.cameraLayers.cleanup()
+    this.networkStatsTracker.reset()
     this.closeSendTransport()
     this.closeReceiveTransport()
     this.device = null

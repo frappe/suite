@@ -1,3 +1,4 @@
+import type { CameraLayerDemand } from "../../../types/cameraLayers";
 import type {
 	AppData,
 	AudioLevelObserver,
@@ -115,6 +116,7 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
+	"producer:camera_layers": (data: CameraLayerDemand) => void;
 	'recording:challenge': (data: RecordingProofChallenge) => void;
 	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
@@ -151,6 +153,10 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+	'producer:get_camera_layers': (
+		data: { producerId: string },
+		callback: (response: { success: true; demand: CameraLayerDemand | null } | { success: false; error: string }) => void,
+	) => void;
 	'recording:proof': (
 		data: RecordingProofRequest,
 		callback: (response: RecordingProofResponse) => void,
@@ -418,6 +424,7 @@ interface ProducerInfo {
 export interface ProducerAppData extends AppData {
 	type?: 'screen';
 	e2eeStartPaused?: boolean;
+	cameraLayerDemand?: boolean;
 	senderId?: number;
 }
 

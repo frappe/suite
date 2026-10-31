@@ -60,6 +60,7 @@ none of them commits. `content.call_app` and `content.call_app_stream` enforce
 that last part.
 """
 
+import dataclasses
 import datetime
 import io
 import json
@@ -70,6 +71,7 @@ import frappe
 from frappe import _
 
 from suite import drive
+from suite.content import with_content
 from suite.sheets.doctype.sheet.storage import (
     MAX_SHEETS_DATA_BYTES,
     decode_sheets_data,
@@ -297,7 +299,12 @@ def used_nodes(docname: str) -> set[str]:
     return found
 
 
-SPEC = drive.ContentTypeSpec(
+def _never_called(*_args) -> None:
+    """Stand in for a callback `with_content` requires and Sheets doesn't have; SPEC drops it again."""
+    raise NotImplementedError("Sheets has no export and moves no pictures")
+
+
+_ROW_SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
@@ -310,7 +317,8 @@ SPEC = drive.ContentTypeSpec(
     create_empty=create_empty,
     duplicate=duplicate,
     import_from_file=import_from_file,
-    export=None,
+    # Never called: `export_formats` is empty, and SPEC sets it back to None
+    export=_never_called,
     version_bytes=version_bytes,
     restore_version=restore_version,
     pushes_preview=False,
@@ -320,8 +328,15 @@ SPEC = drive.ContentTypeSpec(
         drive.Satellite(doctype=COLLAB_STATE_DOCTYPE, link_field="sheet"),
     ),
     used_nodes=used_nodes,
+    # Never called: SPEC sets it back to None, so Drive copies no pictures with a sheet
+    remap_media=_never_called,
     legacy_fields=(),
 )
+
+# The content layer's branch for a sheet in a log (suite.content.with_content) around the row-only
+# callbacks above. Sheets has no export and its collab docs name no pictures (its editor's `media` is
+# None), so Drive keeps offering no export and copying no pictures, as before collab
+SPEC = dataclasses.replace(with_content(_ROW_SPEC), export=None, remap_media=None)
 
 
 # ── The Drive calls Sheets makes ─────────────────────────────────────────────

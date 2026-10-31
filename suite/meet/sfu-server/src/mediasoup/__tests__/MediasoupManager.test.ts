@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../config';
-import type { Consumer } from '../../types';
+import type { Consumer, Room } from '../../types';
 import { MediasoupManager } from '../MediasoupManager';
 
 const mediasoupConfig = loadConfig(
@@ -574,15 +574,301 @@ describe('MediasoupManager resource access', () => {
 	});
 });
 
+describe('MediasoupManager network quality refresh', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	function fixture(scores: number[][] = [[6]]) {
+		vi.useFakeTimers();
+		const manager = createManager();
+		const producers = scores.map((values, index) => ({
+			id: `producer-${index}`,
+			kind: 'video',
+			closed: false,
+			paused: false,
+			score: values.map((score) => ({ score })),
+		}));
+		const room = {
+			id: 'room-1',
+			peers: new Map([
+				['media-peer', { producers: new Map(producers.map((p) => [p.id, p])) }],
+			]),
+		} as unknown as Room;
+		const internals = manager as unknown as {
+			roomManager: {
+				getAllRooms: () => Room[];
+				getRoom: (id: string) => Room | undefined;
+				cleanup: () => Promise<void>;
+			};
+		};
+		vi.spyOn(internals.roomManager, 'getAllRooms').mockReturnValue([room]);
+		vi.spyOn(internals.roomManager, 'getRoom').mockImplementation((id) =>
+			id === 'room-1' ? room : undefined,
+		);
+		vi.spyOn(internals.roomManager, 'cleanup').mockResolvedValue();
+		const listener = vi.fn();
+		manager.onNetworkQualityUpdate(listener);
+		return { manager, producers, listener, room };
+	}
+
+	it('refreshes unchanged quality once per room and peer every five seconds', () => {
+		const { manager, producers, listener } = fixture([[6], [10]]);
+		manager.onNetworkQualityUpdate(vi.fn());
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(15_000);
+		expect(listener.mock.calls).toEqual([
+			['room-1', 'media-peer', 'poor'],
+			['room-1', 'media-peer', 'poor'],
+			['room-1', 'media-peer', 'poor'],
+		]);
+		// A periodic refresh must use the current producer score, not its last event.
+		producers[0]!.score = [{ score: 2 }];
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith(
+			'room-1',
+			'media-peer',
+			'critical',
+		);
+	});
+
+	it('ignores paused, closed, unmeasured, and invalid producers without inventing good', () => {
+		const { producers, listener } = fixture([[10], [10], [], [Number.NaN]]);
+		producers[0]!.paused = true;
+		producers[1]!.closed = true;
+		vi.advanceTimersByTime(10_000);
+		expect(listener).not.toHaveBeenCalled();
+	});
+
+	it('does not clear a warning merely because its producer pauses or closes', () => {
+		const { producers, listener } = fixture([[3], [10]]);
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith(
+			'room-1',
+			'media-peer',
+			'critical',
+		);
+		producers[0]!.paused = true;
+		producers[1]!.closed = true;
+		listener.mockClear();
+		vi.advanceTimersByTime(20_000);
+		expect(listener).not.toHaveBeenCalled();
+	});
+
+	it('stops refreshing at cleanup even when its prior room snapshot remains available', async () => {
+		const { manager, listener } = fixture([[10]]);
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith('room-1', 'media-peer', 'good');
+		await manager.cleanup();
+		listener.mockClear();
+		vi.advanceTimersByTime(30_000);
+		expect(listener).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+});
+
+function priorityConsumer(id: string, priority = 1) {
+	const consumer = {
+		id,
+		kind: 'video',
+		priority,
+		closed: false,
+		setPriority: vi.fn(async (next: number) => {
+			consumer.priority = next;
+		}),
+	};
+	return consumer;
+}
+
+async function cameraAllocationFixture() {
+	const manager = createManager();
+	const levels = new EventEmitter();
+	const router = {
+		createAudioLevelObserver: vi.fn().mockResolvedValue(levels),
+		canConsume: vi.fn(() => true),
+	};
+	const workers = Reflect.get(manager, 'workerManager');
+	vi.spyOn(workers, 'getNextWorker').mockReturnValue({
+		id: 1,
+		worker: { createRouter: vi.fn().mockResolvedValue(router) },
+		webRtcServer: {},
+	});
+	const notify = vi.fn();
+	const room = await manager.createRoom('priority-room', notify);
+	const producer = (id: string, kind: string, type: string) => ({
+		id,
+		kind,
+		appData: { type },
+	});
+	const audio = producer('a-audio', 'audio', 'microphone');
+	const video = producer('a-video', 'video', 'camera');
+	const otherVideo = producer('b-video', 'video', 'camera');
+	const screen = producer('a-screen', 'video', 'screen');
+	room.peers.set('speaker', {
+		id: 'speaker',
+		producers: new Map([
+			[audio.id, audio],
+			[video.id, video],
+			[screen.id, screen],
+		]),
+	} as never);
+	room.peers.set('listener', {
+		id: 'listener',
+		producers: new Map([[otherVideo.id, otherVideo]]),
+	} as never);
+	const camera = priorityConsumer('camera');
+	const other = priorityConsumer('other', 2);
+	const untouched = priorityConsumer('untouched');
+	vi.spyOn(
+		manager.consumerManager,
+		'getConsumersByProducer',
+	).mockImplementation(
+		(id) =>
+			[
+				{
+					roomId: 'priority-room',
+					peerId: 'receiver',
+					consumer:
+						id === video.id ? camera : id === otherVideo.id ? other : untouched,
+				},
+			] as never,
+	);
+	return {
+		manager,
+		levels,
+		router,
+		notify,
+		room,
+		audio,
+		video,
+		camera,
+		other,
+		untouched,
+	};
+}
+
+describe('active speaker camera allocation', () => {
+	it('does not rescan consumers for an unchanged active speaker set', async () => {
+		const { manager, levels, audio, camera } = await cameraAllocationFixture();
+		levels.emit('volumes', [{ producer: audio, volume: -20 }]);
+		await vi.waitFor(() => expect(camera.setPriority).toHaveBeenCalledWith(2));
+		vi.mocked(manager.consumerManager.getConsumersByProducer).mockClear();
+		levels.emit('volumes', [{ producer: audio, volume: -20 }]);
+		expect(
+			manager.consumerManager.getConsumersByProducer,
+		).not.toHaveBeenCalled();
+	});
+	it('prioritizes the speaking camera, restores others, and leaves audio and screen shares alone', async () => {
+		const {
+			manager,
+			levels,
+			notify,
+			room,
+			audio,
+			video,
+			camera,
+			other,
+			untouched,
+		} = await cameraAllocationFixture();
+		levels.emit('volumes', [{ producer: audio, volume: -20 }]);
+		await vi.waitFor(() => expect(camera.setPriority).toHaveBeenCalledWith(2));
+		expect(other.setPriority).toHaveBeenCalledWith(1);
+		expect(untouched.setPriority).not.toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith('priority-room', ['speaker']);
+		// A receiver that subscribes after the volume event gets the same policy.
+		const late = priorityConsumer('late-camera');
+		room.peers.set('receiver', {
+			id: 'receiver',
+			producers: new Map(),
+		} as never);
+		vi.spyOn(
+			Reflect.get(manager, 'producerManager'),
+			'getProducerData',
+		).mockReturnValue({
+			producer: video,
+			peerId: 'speaker',
+			roomId: 'priority-room',
+		});
+		vi.spyOn(
+			Reflect.get(manager, 'transportManager'),
+			'getTransportData',
+		).mockReturnValue({
+			roomId: 'priority-room',
+			peerId: 'receiver',
+			direction: 'recv',
+			type: 'webrtc',
+			transport: { id: 'late-t' },
+		});
+		vi.spyOn(manager.consumerManager, 'createConsumer').mockResolvedValue({
+			id: 'late-camera',
+			producerId: video.id,
+			kind: 'video',
+			rtpParameters: { codecs: [], encodings: [] },
+			paused: false,
+		});
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'priority-room',
+			peerId: 'receiver',
+			consumer: late,
+		} as never);
+		await manager.createConsumer(
+			'late-t',
+			video.id,
+			'priority-room',
+			'receiver',
+			{} as never,
+		);
+		expect(late.setPriority).toHaveBeenCalledWith(2);
+		notify.mockClear();
+		levels.emit('silence');
+		await vi.waitFor(() =>
+			expect(camera.setPriority).toHaveBeenLastCalledWith(1),
+		);
+		expect(notify).toHaveBeenCalledExactlyOnceWith('priority-room', []);
+	});
+	it('restores normal camera priority when silence arrives during an in-flight boost', async () => {
+		const { levels, audio, camera } = await cameraAllocationFixture();
+		let finishBoost = () => {};
+		const pending = new Promise<void>((resolve) => {
+			finishBoost = resolve;
+		});
+		camera.setPriority.mockImplementationOnce(async (priority) => {
+			await pending;
+			camera.priority = priority;
+		});
+		levels.emit('volumes', [{ producer: audio, volume: -20 }]);
+		await vi.waitFor(() => expect(camera.setPriority).toHaveBeenCalledTimes(1));
+		levels.emit('silence');
+		finishBoost();
+		await vi.waitFor(() =>
+			expect(camera.setPriority).toHaveBeenLastCalledWith(1),
+		);
+		expect(camera.priority).toBe(1);
+	});
+});
+
 describe('MediasoupManager receiver-ready ownership', () => {
 	it('resumes only the owning peer in the owning room', async () => {
 		const manager = createManager();
-		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({ roomId: 'room', peerId: 'peer', consumer: makeConsumer({ paused: true }) } as never);
-		const resume = vi.spyOn(manager.consumerManager, 'resumeConsumer').mockResolvedValue(true);
-		await expect(manager.resumeConsumer('c1', 'other-room', 'peer')).rejects.toThrow('ownership');
-		await expect(manager.resumeConsumer('c1', 'room', 'other-peer')).rejects.toThrow('ownership');
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'room',
+			peerId: 'peer',
+			consumer: makeConsumer({ paused: true }),
+		} as never);
+		const resume = vi
+			.spyOn(manager.consumerManager, 'resumeConsumer')
+			.mockResolvedValue(true);
+		await expect(
+			manager.resumeConsumer('c1', 'other-room', 'peer'),
+		).rejects.toThrow('ownership');
+		await expect(
+			manager.resumeConsumer('c1', 'room', 'other-peer'),
+		).rejects.toThrow('ownership');
 		expect(resume).not.toHaveBeenCalled();
-		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(true);
+		await expect(manager.resumeConsumer('c1', 'room', 'peer')).resolves.toBe(
+			true,
+		);
 		expect(resume).toHaveBeenCalledExactlyOnceWith('c1');
 	});
 });

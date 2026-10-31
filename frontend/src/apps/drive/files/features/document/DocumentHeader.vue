@@ -1,7 +1,8 @@
 <template>
   <header
     ref="headerElement"
-    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-4"
+    class="relative flex shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base"
+    :class="compact ? 'h-10 px-3' : 'h-12 px-3 sm:px-4'"
   >
     <!-- A centered title lifts the title group into the header, between two
       sides that grow alike; the icon and the way back stay at the start. -->
@@ -89,18 +90,25 @@
           @click="emit('downloadChanges')"
         />
       </template>
+      <!-- A compact header says it beside the title, before its menus. -->
+      <span
+        v-if="compact && saveState"
+        class="ms-1 me-2 whitespace-nowrap text-sm"
+        :class="saveClass"
+        aria-live="polite"
+      >
+        {{ SAVE_LABELS[saveState] }}
+      </span>
       <slot name="status" />
+      <slot name="menus" />
     </div>
 
     <div class="flex shrink-0 items-center gap-1" :class="centering.end">
       <!-- A clean or saving document says so on wide screens only; a failed save always shows. -->
       <span
-        v-if="saveState"
+        v-if="!compact && saveState"
         class="mr-1 whitespace-nowrap text-sm"
-        :class="[
-          saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
-          saveState !== 'failed' && 'max-md:hidden',
-        ]"
+        :class="saveClass"
         aria-live="polite"
       >
         {{ SAVE_LABELS[saveState] }}
@@ -185,6 +193,11 @@ const props = withDefaults(
     mime?: string | null
     /** Centers the title across the header on wide screens. */
     centerTitle?: boolean
+    /**
+     * A 40-px header for a surface that adds its own menu bar (the `menus`
+     * slot): the save state moves beside the title, ahead of the menus.
+     */
+    compact?: boolean
   }>(),
   {
     saveState: null,
@@ -194,6 +207,7 @@ const props = withDefaults(
     location: null,
     mime: null,
     centerTitle: false,
+    compact: false,
   },
 )
 
@@ -220,6 +234,11 @@ const renamable = computed(() =>
 const typeIcon = computed(() =>
   documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
 )
+/** A clean or saving document says so on wide screens only; a failed save always shows. */
+const saveClass = computed(() => [
+  props.saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
+  props.saveState !== 'failed' && 'max-md:hidden',
+])
 
 // read on every render: slots are not reactive
 function showsSolidShare() {

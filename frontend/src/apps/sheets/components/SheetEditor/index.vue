@@ -34,10 +34,15 @@
         }}</template>
         <template v-else>{{ loadError.message }}</template>
       </p>
-      <Button v-if="loadError.kind === 'crashed'" variant="solid" @click="reloadPage">{{
-        __('Reload')
-      }}</Button>
-      <Button :variant="loadError.kind === 'crashed' ? 'subtle' : 'solid'" @click="emit('close')"
+      <Button
+        v-if="loadError.kind === 'crashed' || loadError.kind === 'collab'"
+        variant="solid"
+        @click="reloadPage"
+        >{{ __('Reload') }}</Button
+      >
+      <Button
+        :variant="loadError.kind === 'crashed' || loadError.kind === 'collab' ? 'subtle' : 'solid'"
+        @click="emit('close')"
         >Back to home</Button
       >
     </div>
@@ -71,20 +76,11 @@
           :tooltip="protectionNotice"
         />
       </DefineTopbarStatus>
+      <DefineTopbarMenus v-slot="{ openComments }">
+        <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
+      </DefineTopbarMenus>
       <DefineTopbarActions>
-        <SheetTopbarActions
-          :ai-enabled="aiEnabled"
-          :read-only="readOnly"
-          :file-dropdown-options="fileDropdownOptions"
-          :compact-menu-options="compactMenuOptions"
-          :notes-open="notesPanel.open"
-          :notes-count="allNotes.length"
-          :present-users="presentUsers"
-          :current-sheet="currentSheet"
-          @ask-ai="openAskBar"
-          @toggle-notes="toggleNotesPanel"
-          @shortcuts="showShortcutsHelp = true"
-        />
+        <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
         <input
           ref="csvInputRef"
           name="csv-import"
@@ -104,12 +100,13 @@
       </DefineTopbarActions>
 
       <!-- On /d/ the surface draws the Drive document header: title, Comments,
-         Versions and Share. The editor fills its status and actions. -->
+         Versions and Share. The editor fills its status, menus and actions. -->
       <slot
         v-if="embedded"
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
+        :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
       />
       <SheetTopbar
@@ -130,10 +127,11 @@
         @cancel-title="cancelTitleEditing"
       >
         <template #status><ReuseTopbarStatus /></template>
+        <template #menus><ReuseTopbarMenus /></template>
         <template #actions><ReuseTopbarActions /></template>
       </SheetTopbar>
 
-      <!-- Bar 2 · Formatting toolbar (SheetToolbar.vue) -->
+      <!-- Row 2 · tools around the formula bar (SheetToolbar.vue) -->
       <SheetToolbar
         v-model:show-sort-filter="showSortFilter"
         :read-only="readOnly"
@@ -143,8 +141,6 @@
         :currency-dropdown-options="currencyDropdownOptions"
         :active-number-format-type="activeNumberFormatType"
         :active-currency-symbol="activeCurrencySymbol"
-        :font-family-dropdown-options="fontFamilyDropdownOptions"
-        :active-font-family-label="activeFontFamilyLabel"
         :align-dropdown-options="alignDropdownOptions"
         :h-align-icon="hAlignIcon"
         :can-undo="canUndo"
@@ -153,7 +149,7 @@
         :text-wrap-dropdown-options="textWrapDropdownOptions"
         :text-wrap-icon="textWrapIcon"
         :border-dropdown-options="borderDropdownOptions"
-        :more-toolbar-options="moreToolbarOptions"
+        :format-menu-options="formatMenuOptions"
         @number-format="toggleNumberFmt"
         @adjust-decimals="adjustDecimals"
         @font-size-input="onFontSizeInput"
@@ -162,60 +158,57 @@
         @undo="undo"
         @redo="redo"
         @toggle-format-painter="toggleFormatPainter"
-        @clear-formatting="clearFormatting"
-        @cond-format="openCfDialog(null)"
-        @hyperlink="openHyperlinkDialog"
         @merge="toggleMerge"
-        @chart="openChartDialog()"
-      />
-
-      <!-- Bar 3 · Formula bar -->
-      <div class="sn-formula-bar">
-        <Tooltip :text="__('Type a cell or range, then Enter')">
-          <input
-            class="sn-cell-ref"
-            name="name-box"
-            :aria-label="__('Name box')"
-            :value="nameBox"
-            spellcheck="false"
-            autocomplete="off"
-            @focus="$event.target.select()"
-            @keydown.enter.prevent="onNameBoxEnter"
-            @keydown.esc.prevent="onNameBoxDone($event)"
-            @blur="$event.target.value = nameBox"
-          />
-        </Tooltip>
-        <span class="sn-fx-label" aria-hidden="true">fx</span>
-        <div class="sn-formula-wrap">
-          <input
-            ref="formulaInputRef"
-            name="formula-bar"
-            aria-label="Cell value or formula"
-            class="sn-formula-input"
-            :value="formulaValue"
-            :readonly="readOnly"
-            :placeholder="readOnly ? '' : 'Enter value or formula'"
-            spellcheck="false"
-            autocomplete="off"
-            @input="onFormulaInput"
-            @keydown="onFormulaKey"
-            @blur="closeAc"
-          />
-          <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
-            <div
-              v-for="(item, i) in acItems"
-              :key="item.name + item.kind"
-              class="sn-ac-item"
-              :class="{ active: i === acIdx }"
-              @mousedown.prevent="commitAc(item)"
-            >
-              <span class="sn-ac-name">{{ item.name }}</span>
-              <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
-              <span v-else class="sn-ac-badge">sheet</span>
+        @sort="openQuickFilterForActive"
+      >
+        <!-- The formula bar: name box, then fx and the cell's value -->
+        <template #formula>
+          <Tooltip :text="__('Type a cell or range, then Enter')">
+            <input
+              class="sn-cell-ref"
+              name="name-box"
+              :aria-label="__('Name box')"
+              :value="nameBox"
+              spellcheck="false"
+              autocomplete="off"
+              @focus="$event.target.select()"
+              @keydown.enter.prevent="onNameBoxEnter"
+              @keydown.esc.prevent="onNameBoxDone($event)"
+              @blur="$event.target.value = nameBox"
+            />
+          </Tooltip>
+          <div class="sn-formula-wrap">
+            <span class="sn-fx-label" aria-hidden="true">fx</span>
+            <input
+              ref="formulaInputRef"
+              name="formula-bar"
+              aria-label="Cell value or formula"
+              class="sn-formula-input"
+              :value="formulaValue"
+              :readonly="readOnly"
+              :placeholder="readOnly ? '' : 'Enter value or formula'"
+              spellcheck="false"
+              autocomplete="off"
+              @input="onFormulaInput"
+              @keydown="onFormulaKey"
+              @blur="closeAc"
+            />
+            <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
+              <div
+                v-for="(item, i) in acItems"
+                :key="item.name + item.kind"
+                class="sn-ac-item"
+                :class="{ active: i === acIdx }"
+                @mousedown.prevent="commitAc(item)"
+              >
+                <span class="sn-ac-name">{{ item.name }}</span>
+                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
+                <span v-else class="sn-ac-badge">sheet</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </template>
+      </SheetToolbar>
 
       <SheetUpgradeBanner
         v-if="legacyUpgrade && !upgradeBannerClosed"
@@ -223,6 +216,31 @@
         :read-only="readOnly"
         @close="upgradeBannerClosed = true"
       />
+
+      <!-- Saving, offline, full, lost access (collab/messages.ts), as Writer's strip -->
+      <div
+        v-if="collab.banner.value"
+        class="flex min-h-[41px] shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-1.5 text-sm text-ink-amber-7"
+        role="status"
+      >
+        <p>
+          {{ collab.banner.value.text
+          }}<a
+            v-if="collab.banner.value.link"
+            :href="collab.banner.value.link.href"
+            target="_blank"
+            class="underline"
+            >{{ collab.banner.value.link.label }}</a
+          >{{ collab.banner.value.after }}
+        </p>
+        <Button
+          v-if="collab.banner.value.canReload"
+          size="sm"
+          variant="ghost"
+          :label="__('Reload')"
+          @click="reloadPage"
+        />
+      </div>
 
       <!-- Canvas grid + filter overlay -->
       <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
@@ -480,7 +498,7 @@
         :has-hidden-cols="manualHiddenCols.size > 0"
         :can-paste="clipboardHas"
         :range-protected="selectionHasProtectedRange()"
-        :show-cell-history="props.id !== 'new'"
+        :show-cell-history="props.id !== 'new' && !collabOn"
         :active-cell="activeCell"
         @insert-row="doInsertRow"
         @insert-col="doInsertCol"
@@ -800,7 +818,7 @@
 </template>
 
 <script setup>
-import { createReusableTemplate, useMediaQuery } from '@vueuse/core'
+import { createReusableTemplate } from '@vueuse/core'
 import {
   Badge,
   Button,
@@ -829,6 +847,7 @@ import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 import { confirmLeave } from '@/utils/confirmLeave'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -869,10 +888,12 @@ import FilterPanel from './FilterPanel.vue'
 import FindReplace from './FindReplace.vue'
 import HyperlinkDialog from './HyperlinkDialog.vue'
 import LinkPreviewCard from './LinkPreviewCard.vue'
+import { buildMenuBar } from './menubar.config.js'
 import NamedRangesDialog from './NamedRangesDialog.vue'
 import NotesPanel from './NotesPanel.vue'
 import PivotDialog from './PivotDialog.vue'
 import SheetContextMenu from './SheetContextMenu.vue'
+import SheetMenuBar from './SheetMenuBar.vue'
 import SheetTabMenu from './SheetTabMenu.vue'
 import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
@@ -881,11 +902,12 @@ import SheetTopbarActions from './SheetTopbarActions.vue'
 import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
-import { buildAlignOptions, buildBorderOptions, buildMoreToolbarOptions } from './toolbar.config.js'
+import { buildAlignOptions, buildBorderOptions } from './toolbar.config.js'
 import { useAiAssist } from './useAiAssist.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import { useClipboard } from './useClipboard.js'
 import { useCollaboration } from './useCollaboration.js'
+import { useCollabRoom } from './useCollabRoom'
 import { useContextMenu } from './useContextMenu.js'
 import { useEditOps } from './useEditOps.js'
 import { useExportImport } from './useExportImport.js'
@@ -942,10 +964,18 @@ const props = defineProps({
     type: Object,
     default: undefined,
   },
+  // The Drive session while embedded. With it the editor opens the sheet's
+  // live room when the site's Sheets collaboration is on (useCollabRoom.ts);
+  // otherwise, or without it, the old save path runs.
+  collabSession: {
+    type: Object,
+    default: null,
+  },
 })
 // `access-refused`: the server refused a save, or the collaboration relay
 // refused a write. `notes-opened`: the notes panel took the right edge.
-const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened'])
+// `reopen`: the live room asks for the editor to be opened again.
+const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened', 'reopen'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.
 const [DefineTopbarStatus, ReuseTopbarStatus] = createReusableTemplate()
@@ -1000,6 +1030,8 @@ const {
   engineClient: _client,
   engineBytes: _engineBytes,
   command: _command,
+  dispatch: _dispatch,
+  setRoute: _setRoute,
   writeInputs: _writeInputs,
   syncDefinedNames: _syncDefinedNames,
   inputAt: _inputAt,
@@ -1120,11 +1152,107 @@ async function runSmartFill() {
   }
 }
 
+// ── Collaboration (collab v1) ─────────────────────────────────────────────────
+// The sheet's live room while the site's Sheets collaboration is on
+// (useCollabRoom.ts). 'pending' until the load asks the server; 'disabled'
+// runs the old save path; 'unconverted' shows the old body read-only until the
+// server has converted it.
+const collabState = ref(props.collabSession ? 'pending' : 'disabled')
+const collabOn = computed(() => collabState.value === 'live')
+const collab = useCollabRoom({
+  session: props.collabSession,
+  getStores: () => ({
+    formats,
+    comments,
+    validation,
+    merge,
+    protection,
+    sortFilter,
+    view: {
+      snapshot: () => _sheetTabs.viewSnapshot(),
+      restore: (snap) => _sheetTabs.viewRestore(_withLocalZoom(snap)),
+    },
+    condFormat,
+    slicers,
+    charts,
+    pivot,
+    namedRanges,
+  }),
+  getSelection: () => {
+    const sel = grid?.getSelection?.()
+    return sel
+      ? { sheet: currentSheet.value, r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
+      : null
+  },
+  onRemote: (change) => _onRemoteChange(change),
+  onReopen: () => emit('reopen'),
+})
+// Zoom is each person's own: the doc leaves it out, so a view from the doc
+// keeps the zoom this tab has.
+function _withLocalZoom(snap) {
+  const mine = _sheetTabs?.viewSnapshot() ?? {}
+  const out = { ...snap }
+  for (const [sheet, view] of Object.entries(out)) {
+    const zoom = mine[sheet]?.zoom
+    if (zoom != null) out[sheet] = { ...view, zoom }
+  }
+  return out
+}
+// Another tab's change (or this tab's undo) is in IronCalc and the stores.
+// IronCalc's version and sheet-list events already repaint the cells, the
+// formula bar, charts and the tabs (_onEngineVersion, syncNames).
+function _onRemoteChange(change) {
+  // Rows or columns moved under this tab's selection (and an open cell
+  // editor): it stays on its cells, as in Google Sheets.
+  const moved = change.cells ? collab.followSelection() : null
+  if (moved) {
+    const editing = grid?.isEditing?.()
+    const draft = formulaValue.value
+    grid?.setSelection?.({ r0: moved.r0, c0: moved.c0, r1: moved.r1, c1: moved.c1 })
+    if (editing) formulaValue.value = draft // the bar keeps mirroring the editor
+  }
+  if (change.stores.includes('namedRanges')) _syncDefinedNames()
+  if (change.stores.length) {
+    _syncViewMirrors()
+    _applyHiddenRows()
+    refreshActiveFormat()
+    notesPanel.rev++
+    grid?.render?.()
+  }
+  if (change.cells) _recomputeAllPivots()
+}
+// One after another: every pivot build shares one token, so a build started
+// while another runs cancels it (usePivotIntegration). Changes that arrive
+// during a rebuild make one more, not one each.
+let _pivotRebuild = null
+let _pivotRebuildAgain = false
+async function _recomputeAllPivots() {
+  if (_pivotRebuild) {
+    _pivotRebuildAgain = true
+    return
+  }
+  _pivotRebuild = (async () => {
+    do {
+      _pivotRebuildAgain = false
+      try {
+        for (const sn of [...sheetNames.value]) {
+          if (!collabOn.value || _unmounted) return // the room closed
+          await recomputePivotsForSheet(sn)
+        }
+      } catch (e) {
+        console.error('[sheets] pivot rebuild failed', e)
+      }
+    } while (_pivotRebuildAgain)
+  })()
+  await _pivotRebuild
+  _pivotRebuild = null
+}
+
 // Undo/redo (see useHistory.js).
 const {
-  history,
-  undo,
-  redo,
+  history: _oldHistory,
+  undo: _oldUndo,
+  redo: _oldRedo,
   structural: _structural,
 } = useHistory({
   currentSheet,
@@ -1144,6 +1272,7 @@ const {
   getGrid: () => grid,
   engineClient: _client,
   command: _command,
+  dispatch: (cmd) => _dispatch(cmd),
   writeInputs: _writeInputs,
   syncDefinedNames: _syncDefinedNames,
   addSheet: (name) => _addSheet(name),
@@ -1156,6 +1285,41 @@ const {
   afterStructural: (sn) => _afterStructural(sn),
   afterNavigate: (id) => _afterHistoryNavigate(id),
 })
+
+// Every history.push()/pushOp() marks the end of a user action. With collab
+// on, the action is committed to the doc instead, and that commit is the undo
+// step (collab/undo.ts).
+const history = {
+  push: () => (collabOn.value ? void collab.commit() : _oldHistory.push()),
+  pushOp: (op) => (collabOn.value ? void collab.commit() : _oldHistory.pushOp(op)),
+  canUndo: () => (collabOn.value ? collab.canUndo.value : _oldHistory.canUndo()),
+  canRedo: () => (collabOn.value ? collab.canRedo.value : _oldHistory.canRedo()),
+  init: () => _oldHistory.init(),
+  reset: () => _oldHistory.reset(),
+}
+function undo() {
+  if (collabOn.value) void _collabStep('undo')
+  else _oldUndo()
+}
+function redo() {
+  if (collabOn.value) void _collabStep('redo')
+  else _oldRedo()
+}
+// Selects what the step was made with (switching sheet if needed); the toast
+// for a refused step comes from useCollabRoom.
+async function _collabStep(which) {
+  const result = await collab[which]()
+  syncFlags()
+  if (!result?.done) return
+  const sel = result.selection
+  if (sel) {
+    if (sel.sheet !== currentSheet.value && sheetNames.value.includes(sel.sheet))
+      switchSheet(sel.sheet)
+    grid?.setSelection?.({ r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 })
+  }
+  _afterHistoryNavigate(grid?.getActiveCell?.() || 'A1')
+}
+watch([collab.canUndo, collab.canRedo], () => syncFlags())
 
 // Forward-declaration: `useCollaboration` (further down the script) sets
 // `_collabDrainLocalTouches` to its real implementation once the binding
@@ -1225,6 +1389,12 @@ const isDirty = customRef((track, trigger) => {
       return value
     },
     set(next) {
+      // Collab saves as it goes: an edit marking the sheet dirty is the end of
+      // a user action, and the action is committed (useCollabRoom.ts).
+      if (collabOn.value) {
+        if (next) void collab.commit()
+        return
+      }
       if (next) _dirtyRevision += 1
       if (next === value) return
       value = next
@@ -1510,32 +1680,6 @@ const fileDropdownOptions = computed(() => [
     : []),
 ])
 
-// The narrow top bar's one menu: what the wide bar shows as separate buttons.
-const compactMenuOptions = computed(() => [
-  ...(aiEnabled.value && !readOnly.value
-    ? [
-        {
-          label: 'Ask AI',
-          icon: 'lucide-sparkles',
-          onClick: () => openAskBar(),
-        },
-      ]
-    : []),
-  ...fileDropdownOptions.value,
-  {
-    group: 'Help',
-    options: [
-      {
-        label: 'Keyboard shortcuts',
-        icon: 'lucide-help-circle',
-        onClick: () => {
-          showShortcutsHelp.value = true
-        },
-      },
-    ],
-  },
-])
-
 // ── AI Assist ─────────────────────────────────────────────────────────────────
 // The Ask bar and AI settings (see useAiAssist.js).
 const {
@@ -1615,7 +1759,7 @@ function _resetEngineFormats(ids, sn) {
     const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
     return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
   })
-  if (commands.length) _client()?.dispatch(_command('batch', { commands }))
+  if (commands.length) _dispatch(_command('batch', { commands }))
 }
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
@@ -1635,7 +1779,7 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
     readSheet: _readWholeSheet,
     write: _writeInputs,
     clear: _clearSheet,
-    addSheet: (name) => _client()?.dispatch(_command('addSheet', { name })),
+    addSheet: (name) => _dispatch(_command('addSheet', { name })),
     extent: _sheetExtent,
     idle: () => (_client() ? _client().idle() : Promise.resolve()),
   },
@@ -1996,6 +2140,117 @@ const textWrapDropdownOptions = computed(() => [
   },
 ])
 
+// ── Menu bar ──────────────────────────────────────────────────────────────────
+// File / Edit / View / Insert / Format / Data (menubar.config.js), drawn in the
+// header beside the title. The surface's header takes it as the `menus` slot.
+const [DefineTopbarMenus, ReuseTopbarMenus] = createReusableTemplate()
+
+// The right-click handlers act on contextMenu.target{Row,Col}; from the menu
+// bar they act on the active cell's row and column.
+function _atActiveCell(action) {
+  return () => {
+    const p = parseCellId(activeCell.value)
+    if (!p) return
+    contextMenu.targetRow = p.row
+    contextMenu.targetCol = p.col
+    action()
+  }
+}
+// Edit → Clear contents runs the grid's own Delete key, so protection and undo
+// behave exactly as they do from the keyboard.
+function _clearContents() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  canvas.focus()
+  canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }))
+}
+const menuBar = computed(() =>
+  buildMenuBar({
+    readOnly: readOnly.value,
+    fileOptions: fileDropdownOptions.value,
+    undo,
+    redo,
+    canUndo: canUndo.value,
+    canRedo: canRedo.value,
+    openFindReplace,
+    pasteSpecial: doPasteSpecial,
+    canPaste: clipboardHas.value,
+    clearContents: _clearContents,
+    deleteRows: _atActiveCell(doDeleteRow),
+    deleteCols: _atActiveCell(doDeleteCol),
+    moveColLeft: _atActiveCell(doMoveColLeft),
+    moveColRight: _atActiveCell(doMoveColRight),
+    zoomIn: () => zoomBy(+0.1),
+    zoomOut: () => zoomBy(-0.1),
+    resetZoom,
+    freezeRows: _atActiveCell(doFreezeRow),
+    freezeCols: _atActiveCell(doFreezeCol),
+    unfreezeRows: doUnfreezeRows,
+    unfreezeCols: doUnfreezeCols,
+    frozenRows: freezeRows.value,
+    frozenCols: freezeCols.value,
+    hideRows: doHideRows,
+    hideCols: doHideCols,
+    hasHiddenRows: manualHiddenRows.size > 0,
+    hasHiddenCols: manualHiddenCols.size > 0,
+    unhideAllRows: doUnhideAllRows,
+    unhideAllCols: doUnhideAllCols,
+    showFormulas: showFormulas.value,
+    toggleShowFormulas,
+    notesCount: allNotes.value.length,
+    toggleNotes: toggleNotesPanel,
+    openShortcuts: () => {
+      showShortcutsHelp.value = true
+    },
+    insertRowAbove: _atActiveCell(() => doInsertRow(false)),
+    insertRowBelow: _atActiveCell(() => doInsertRow(true)),
+    insertRows: _atActiveCell(() => openInsertMany('row', false)),
+    insertColLeft: _atActiveCell(() => doInsertCol(false)),
+    insertColRight: _atActiveCell(() => doInsertCol(true)),
+    insertCols: _atActiveCell(() => openInsertMany('col', false)),
+    insertChart: () => openChartDialog(),
+    insertPivot: () => openPivotDialog(),
+    insertSlicer: () => insertSlicer(),
+    insertLink: () => openHyperlinkDialog(),
+    insertCheckbox: () => validationDialogRef.value?.open({ type: 'checkbox' }),
+    insertDropdown: () => validationDialogRef.value?.open({ type: 'list' }),
+    insertNote: () => openCommentPanel(),
+    numberFormatOptions: numberFormatDropdownOptions.value,
+    currencyOptions: currencyDropdownOptions.value,
+    numberFormat: toggleNumberFmt,
+    adjustDecimals,
+    toggleFormat: toggleFmt,
+    fontFamilyOptions: fontFamilyDropdownOptions.value.map((o) => ({
+      ...o,
+      selected: o.label === activeFontFamilyLabel.value,
+    })),
+    alignOptions: alignDropdownOptions,
+    wrapOptions: textWrapDropdownOptions.value,
+    toggleMerge,
+    borderOptions: borderDropdownOptions,
+    autoFitRows: _atActiveCell(doAutoFitRow),
+    autoFitCols: _atActiveCell(doAutoFitCol),
+    openConditionalFormat: () => openCfDialog(null),
+    toggleFormatPainter,
+    clearFormatting,
+    sortColumn: () => openQuickFilterForActive(),
+    filterOn: showSortFilter.value,
+    toggleFilter: toggleSortFilter,
+    openValidation: () => openValidationDialog(),
+    openNamedRanges: () => openNamedRangesDialog(),
+    splitText: () => doSplitTextToColumns(),
+    smartFill: () => runSmartFill(),
+    protectRange: () => protectSelection(),
+    unprotectRange: () => unprotectSelection(),
+    cellHistory: props.id !== 'new' ? () => openCellHistory() : null,
+    askAi: aiEnabled.value ? () => openAskBar() : null,
+  }),
+)
+/** The Format button at the end of row 2 opens the same Format menu. */
+const formatMenuOptions = computed(
+  () => menuBar.value.find((m) => m.key === 'format')?.options ?? [],
+)
+
 // View state is now per-sheet (kept in useSheetTabs._viewBySheet) so freeze /
 // hidden rows / column widths / etc. follow each tab independently. usePersistence
 // is constructed before useSheetTabs, so the get/apply callbacks late-bind via
@@ -2050,11 +2305,20 @@ const {
 // grid edit gate, the toolbar/formula-bar disable, the context menu, and the
 // autosave path all no-op so a viewer is never misled into editing a doc they
 // can't persist (and never triggers the server's PermissionError on save).
-const readOnly = computed(() => !canWrite.value || !props.writable)
-// Where the workbook's edits are: clean, saving, unsaved or failed.
-const saveState = computed(() =>
-  isSaving.value ? 'saving' : saveError.value ? 'failed' : isDirty.value ? 'unsaved' : 'clean',
+const readOnly = computed(
+  () => !canWrite.value || !props.writable || collab.editingState.value !== 'editing',
 )
+// Where the workbook's edits are: clean, saving, unsaved or failed.
+const saveState = computed(() => {
+  if (collabOn.value) return collab.saveState.value ?? 'clean'
+  return isSaving.value
+    ? 'saving'
+    : saveError.value
+      ? 'failed'
+      : isDirty.value
+        ? 'unsaved'
+        : 'clean'
+})
 
 // Losing write access drops every pending edit from the save path: the queued
 // autosave, the failed-save watchdog, the op queue, and a failed batch. The
@@ -2086,7 +2350,7 @@ if (props.embedded) {
 }
 _sheetTabs = useSheetTabs({
   names: () => _client()?.sheets ?? [currentSheet.value],
-  run: (type, payload) => _client()?.dispatch(_command(type, payload)),
+  run: (type, payload) => _dispatch(_command(type, payload)),
   currentSheet,
   formats,
   extras: [merge, comments, validation, protection, condFormat, sortFilter, slicers, charts, pivot],
@@ -2174,12 +2438,14 @@ const {
   createPastedPivot,
 } = usePivotIntegration({
   pivot,
+  // Pivot output is rebuilt by every tab, so it never reaches the shared doc.
+  localOnly: (fn) => collab.localOnly(fn),
   cells: {
     readRange: _readSourceRange,
     readSheet: _readWholeSheet,
     write: _writeInputs,
     clear: _clearRect,
-    addSheet: (name) => _client()?.dispatch(_command('addSheet', { name })),
+    addSheet: (name) => _dispatch(_command('addSheet', { name })),
     idle: () => (_client() ? _client().idle() : Promise.resolve()),
   },
   sheetNames: () => sheetNames.value,
@@ -2227,41 +2493,19 @@ const {
   getGrid: () => grid,
 })
 
-// Mirrors the `.sn-tool-extra` media query in SheetToolbar.vue's <style>: below
-// this width the inline tool groups are hidden and the "…" menu carries them.
-const toolbarCollapsed = useMediaQuery('(max-width: 1280px)')
-const moreToolbarOptions = computed(() =>
-  buildMoreToolbarOptions({
-    toggleFmt,
-    toggleWrap,
-    toggleFormatPainter,
-    clearFormatting,
-    adjustDecimals,
-    openCfDialog,
-    openHyperlinkDialog,
-    toggleMerge,
-    toggleSortFilter,
-    applyBorder,
-    zoomBy,
-    resetZoom,
-    openPivotDialog,
-    openChartDialog,
-    openNamedRangesDialog,
-    runSmartFill,
-    collapsed: toolbarCollapsed.value,
-  }),
-)
-
 // Collaboration — placed here because currentSheet comes from useSheetTabs above.
 const {
-  presentUsers,
-  remoteCursors,
+  presentUsers: _relayUsers,
+  remoteCursors: _relayCursors,
   broadcastCellChange,
   broadcastBatchChange,
-  broadcastCursor,
+  broadcastCursor: _relayCursor,
   drainLocalTouches,
 } = useCollaboration({
-  sheetId: computed(() => props.id),
+  // The old presence relay, only while the sheet isn't in a live room.
+  sheetId: computed(() =>
+    props.collabSession && collabState.value !== 'disabled' ? null : props.id,
+  ),
   currentSheet,
   repopulateGrid: _repopulateGrid,
   onRefused: () => emit('access-refused'),
@@ -2271,6 +2515,13 @@ const {
 // up top — undo() will now revert only this client's writes from the undone
 // segment, leaving any remote-applied cells alone.
 _collabDrainLocalTouches = drainLocalTouches
+const presentUsers = computed(() => (collabOn.value ? collab.users.value : _relayUsers.value))
+const remoteCursors = computed(() => (collabOn.value ? collab.cursors.value : _relayCursors.value))
+function broadcastCursor(row, col, subSheet, range) {
+  if (!collabOn.value) return _relayCursor(row, col, subSheet, range)
+  const r = range ?? { r0: row, c0: col, r1: row, c1: col }
+  collab.shareSelection({ sheet: subSheet, ...r })
+}
 
 // Split text — placed after currentSheet from useSheetTabs.
 const {
@@ -2886,50 +3137,81 @@ watch(currentSheet, (sn) => {
   }
 })
 
+// Opens the sheet's live room into a fresh workbook. False when the old path
+// loads it instead: Sheets collaboration is off on this site, or the sheet
+// still waits for its conversion (shown read-only meanwhile).
+async function _openCollab() {
+  await _startEngine()
+  let state
+  try {
+    state = await collab.open(_client())
+  } catch (error) {
+    console.error('[sheets] could not open the live room', error)
+    collabState.value = 'failed'
+    loadError.value = {
+      kind: 'collab',
+      message: __('Check your connection, then reload.'),
+    }
+    return true
+  }
+  collabState.value = state
+  if (state !== 'live') return false
+  _setRoute((cmd) => collab.dispatch(cmd))
+  if (props.title != null) currentTitle.value = props.title
+  _afterWorkbookLoaded()
+  return true
+}
+
+// The workbook is loaded (old path or live room): show it as it was left.
+function _afterWorkbookLoaded() {
+  // sheet.restore() now fires onCellsChanged → _repopulateGrid() as a
+  // single bulk pass, so the explicit call here was duplicating work
+  // (parseCellId + grid.setCell × every cell, on top of the per-cell
+  // notification cascade we already paid). The view-state catch-up below
+  // doesn't depend on the canvas being painted, so it's safe to skip.
+  const restored = grid.viewSnapshot?.()
+  if (restored) {
+    freezeRows.value = restored.freezeRows || 0
+    freezeCols.value = restored.freezeCols || 0
+    // Legacy docs (saved before filter hides were split out of the view)
+    // baked the active sheet's filter rows into hiddenRows. Strip the
+    // sheet's current filter rows so they aren't mistaken for manual hides
+    // and re-applied to every sheet. Harmless for clean docs.
+    const filterHidden = new Set(sortFilter.computeHiddenRows(currentSheet.value))
+    manualHiddenRows.clear()
+    for (const r of restored.hiddenRows || []) if (!filterHidden.has(r)) manualHiddenRows.add(r)
+    manualHiddenCols.clear()
+    for (const c of restored.hiddenCols || []) manualHiddenCols.add(c)
+  }
+  // The view now holds manual hides only; re-apply the active sheet's filter
+  // so a saved filter still shows its hidden rows on first load.
+  _applyHiddenRows()
+  syncNames()
+  // Reopen the tab this browser had open last (a converted develop sheet:
+  // the one that editor had open).
+  const last = _lastTab() ?? legacyUpgrade.value?.current
+  if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
+  _rememberTab = true
+  activeCell.value = 'A1'
+  _showInputInFormulaBar('A1')
+  refreshActiveFormat()
+  _syncNumberFormat('A1')
+  // Re-baseline history to the loaded state. The pre-load init() above
+  // seeded an EMPTY snapshot; a plain init() here is a no-op (stack already
+  // seeded), which would leave the empty snapshot as the undo baseline and
+  // blank the sheet on the first snapshot-based undo (e.g. insert column).
+  history.reset()
+  syncFlags()
+}
+
 async function _loadInitialData() {
   history.init()
   syncFlags()
+  if (props.collabSession && props.id && props.id !== 'new' && (await _openCollab())) return
   if (props.id && props.id !== 'new') {
     await loadSheet(props.id)
     if (props.embedded && props.title != null) currentTitle.value = props.title
-    // sheet.restore() now fires onCellsChanged → _repopulateGrid() as a
-    // single bulk pass, so the explicit call here was duplicating work
-    // (parseCellId + grid.setCell × every cell, on top of the per-cell
-    // notification cascade we already paid). The view-state catch-up below
-    // doesn't depend on the canvas being painted, so it's safe to skip.
-    const restored = grid.viewSnapshot?.()
-    if (restored) {
-      freezeRows.value = restored.freezeRows || 0
-      freezeCols.value = restored.freezeCols || 0
-      // Legacy docs (saved before filter hides were split out of the view)
-      // baked the active sheet's filter rows into hiddenRows. Strip the
-      // sheet's current filter rows so they aren't mistaken for manual hides
-      // and re-applied to every sheet. Harmless for clean docs.
-      const filterHidden = new Set(sortFilter.computeHiddenRows(currentSheet.value))
-      manualHiddenRows.clear()
-      for (const r of restored.hiddenRows || []) if (!filterHidden.has(r)) manualHiddenRows.add(r)
-      manualHiddenCols.clear()
-      for (const c of restored.hiddenCols || []) manualHiddenCols.add(c)
-    }
-    // The view now holds manual hides only; re-apply the active sheet's filter
-    // so a saved filter still shows its hidden rows on first load.
-    _applyHiddenRows()
-    syncNames()
-    // Reopen the tab this browser had open last (a converted develop sheet:
-    // the one that editor had open).
-    const last = _lastTab() ?? legacyUpgrade.value?.current
-    if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
-    _rememberTab = true
-    activeCell.value = 'A1'
-    _showInputInFormulaBar('A1')
-    refreshActiveFormat()
-    _syncNumberFormat('A1')
-    // Re-baseline history to the loaded state. The pre-load init() above
-    // seeded an EMPTY snapshot; a plain init() here is a no-op (stack already
-    // seeded), which would leave the empty snapshot as the undo baseline and
-    // blank the sheet on the first snapshot-based undo (e.g. insert column).
-    history.reset()
-    syncFlags()
+    _afterWorkbookLoaded()
     // A develop sheet converted on open is saved in the IronCalc format.
     if (legacyUpgrade.value?.save && !readOnly.value) isDirty.value = true
   } else {
@@ -2966,7 +3248,11 @@ onMounted(async () => {
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
   _refocusGridIfIdle()
 })
+// Set first thing on unmount: work queued behind the room (pivot rebuilds)
+// stops before the room has finished closing.
+let _unmounted = false
 onBeforeUnmount(() => {
+  _unmounted = true
   clearTimeout(_autoSaveTimer)
   // CRITICAL: flush any pending debounced save before the component dies.
   // Without this, navigating away within ~2s of an edit (the autosave
@@ -2978,8 +3264,14 @@ onBeforeUnmount(() => {
     isDirty.value && !readOnly.value && props.id && props.id !== 'new'
       ? saveExisting(props.id, currentTitle.value).catch(() => {})
       : null
+  // The room sends what it can and keeps the rest on the device; the glue
+  // reads the workbook until then.
+  const closing = props.collabSession
+    ? collab.close().then(() => (collabState.value = 'closed'))
+    : null
   // That save reads the workbook from the worker, so stop it only after.
   if (lastSave) void lastSave.finally(_stopEngine)
+  else if (closing) void closing.finally(_stopEngine)
   else _stopEngine()
   gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
@@ -3001,6 +3293,8 @@ let _autoSaveTimer = null
 let _savePromise = null
 let _pendingSaveBatch = null
 function hasUnsavedChanges() {
+  // Collab: unsent work the browser keeps is sent on the next open.
+  if (collabOn.value) return saveState.value !== 'clean' && !collab.status.value?.isKeptOnDevice
   return isDirty.value || isSaving.value
 }
 // The IronCalc worker died. The cells lived in it, so nothing more can be
@@ -3063,6 +3357,8 @@ function _queueOp({
   subSheet = '',
 }) {
   if (props.id === 'new') return // pre-save doc has no version yet
+  // Collab saves through the room, never this queue's saves: kept, it would only grow.
+  if (collabOn.value) return
   _opQueue.push({
     opType,
     cellRefs,
@@ -3334,6 +3630,7 @@ async function _doAutoSave() {
   }, 2500)
 }
 async function flushSave() {
+  if (collabOn.value) return collab.flush()
   clearTimeout(_autoSaveTimer)
   do {
     await _doAutoSave()
@@ -3606,8 +3903,6 @@ const { onGlobalKey } = useShortcuts({
   openHyperlinkDialog,
   openCommentPanel,
   openQuickFilterForActive,
-  zoomBy,
-  resetZoom,
   commentPanel,
   dropdownPanel,
   splitText,
@@ -3929,6 +4224,20 @@ defineExpose({
   currentSheet,
   saveState,
   flushSave,
+  /** True while the sheet is in a live room: versions restore through it. */
+  get isCollab() {
+    return collabOn.value
+  },
+  restoreVersion: restoreCollabVersion,
+  // Collab: when access goes, the room keeps unsent work on the device; when
+  // it is back, the room takes edits again.
+  loseAccess: (lost) => collab.loseAccess(lost),
+  regainAccess: (mayEdit) => collab.regainAccess(mayEdit),
+  /** Whether unsent work outlives this tab (the room keeps it on the device). */
+  get keepsUnsentWork() {
+    const status = collab.status.value
+    return !!status && status.isKeptOnDevice && !status.hasCopyFailed
+  },
   // The workbook for a recovery copy, with the cell edit still in progress.
   workbookJson: () => workbookJson(_draftEdit()),
   hasDraft: () => _draftEdit() !== null,
@@ -3937,6 +4246,13 @@ defineExpose({
     notesPanel.open = false
   },
 })
+// Restores version `seq` through the live room (collab/restore.ts). Throws
+// with the message to show when it didn't land.
+async function restoreCollabVersion(seq, bytes) {
+  const notice = await collab.restore(Number(seq), bytes)
+  if (!notice.isRestored) throw new Error(notice.message)
+  return notice.message
+}
 function addNoteFromPanel() {
   // Convenience: same as topbar note button, but invoked from inside the panel.
   openCommentPanel()

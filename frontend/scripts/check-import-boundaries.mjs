@@ -346,7 +346,6 @@ const unstableFrappeUIDebtGroups = [
       'sheets/components/SheetEditor/FilterPanel.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/PivotDialog.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/PivotFieldPicker.vue|frappe-ui/experimental',
-      'sheets/components/SheetEditor/SheetToolbar.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/SheetTopbar.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/ValidationDialog.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/index.vue|frappe-ui/experimental',

@@ -18,6 +18,8 @@
         "recorder/frappeUi.ts",
         "src/apps/mail/sw.ts",
         "src/apps/writer/collab/checker-entry.ts",
+        "src/apps/sheets/collab/checker-entry.ts",
+        "src/apps/sheets/collab/converter-entry.ts",
         "src/apps/sheets/engine/difftest/compare-engines.js",
         "src/apps/sheets/engine/difftest/run.js",
         "scripts/generate-pwa-assets.mjs"

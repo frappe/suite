@@ -18,6 +18,7 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/FormControl')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Progress')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Tooltip')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Skeleton')),
 }))
 vi.mock('@/platform/area-sidebar', () => ({ openAreaSidebar: vi.fn() }))
@@ -224,7 +225,10 @@ describe('Storage actions', () => {
 
   it('shows each configured limit and offers no separate extra-storage actions', async () => {
     await render()
-    expect(document.body.textContent).toContain('of 10 GB')
+    expect(document.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext')).toContain(
+      'of 10 GB',
+    )
+    expect(document.querySelector('[role=table]')?.textContent).not.toContain('of 10 GB')
     expect(
       [...document.querySelectorAll('[role=columnheader]')].map((item) => item.textContent?.trim()),
     ).not.toContain('Limit')

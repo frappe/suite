@@ -1,6 +1,12 @@
 import { COLORS } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
 
+// Selection frame width (painters/selection-painter.ts): the editor's border
+// takes its place, so opening the editor doesn't move the frame.
+const FRAME_W = 2
+// Inter's metrics as shares of the font size, for when no canvas can measure.
+const FALLBACK = { ascent: 0.96875, descent: 0.2421875, cap: 0.727 }
+
 /** The in-cell editor's <textarea>, added to `parent`. */
 export interface Overlay extends EditorOverlay {
   remove(): void
@@ -23,7 +29,6 @@ export function createOverlay(parent: HTMLElement): Overlay {
     'background:var(--surface-base, #FFFFFF)',
     'padding:0 4px',
     'font:13px InterVar,Inter,ui-sans-serif,system-ui,sans-serif',
-    'letter-spacing:0.02em',
     `color:${COLORS.cellText}`,
     'outline:none',
     'box-shadow:none',
@@ -36,6 +41,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
   parent.appendChild(el)
 
   let baseH = 0 // cell height; autosize never shrinks below it
+  let borderW = FRAME_W
+  let measure: OffscreenCanvasRenderingContext2D | null | undefined
 
   function position(
     x: number,
@@ -45,13 +52,23 @@ export function createOverlay(parent: HTMLElement): Overlay {
     fmt: EditorFormat = {},
     zoom = 1,
   ): void {
-    el.style.left = x + 'px'
-    el.style.top = y + 'px'
-    el.style.width = w + 'px'
-    el.style.height = h + 'px'
+    // The text has to stay where the canvas drew it (cell-painter.ts): 4px
+    // in from the left, capitals centred on the white area below the
+    // gridline. The border sits on the selection frame, one (zoomed) pixel
+    // outside the cell box.
+    borderW = FRAME_W * zoom
+    const out = borderW / 2
+    el.style.left = x - out + 'px'
+    el.style.top = y - out + 'px'
+    el.style.width = w + borderW + 'px'
+    el.style.height = h + borderW + 'px'
+    el.style.borderWidth = borderW + 'px'
+    el.style.paddingLeft = el.style.paddingRight = 4 * zoom - out + 'px'
     el.style.fontWeight = fmt.bold ? 'bold' : 'normal'
     el.style.fontStyle = fmt.italic ? 'italic' : 'normal'
-    el.style.fontSize = (fmt.fontSize || 13) * zoom + 'px'
+    // Same size the canvas draws (chipFont clamps it to 8…72 before zoom).
+    const size = Math.max(8, Math.min(72, fmt.fontSize || 13)) * zoom
+    el.style.fontSize = size + 'px'
     el.style.fontFamily = fmt.fontFamily || 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
     el.style.textAlign = fmt.align || 'left'
     const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through']
@@ -61,18 +78,49 @@ export function createOverlay(parent: HTMLElement): Overlay {
     el.style.color = fmt.color || COLORS.cellText
     el.style.backgroundColor = fmt.backgroundColor || fmt.bg || COLORS.white
     el.style.borderColor = COLORS.selBorder
-    // Textareas top-align text; pad so a single line sits centered like the
-    // old <input> did. 4px = the 2px borders (box-sizing:border-box).
-    const lineH = Math.round((fmt.fontSize || 13) * zoom * 1.3)
+    // A textarea top-aligns its first line, and CSS centres the font's
+    // ascent + descent in the line box; pad the top so the capitals' middle
+    // lands on the canvas's centre line, y + (h + zoom) / 2.
+    const lineH = Math.round(size * 1.3)
+    const m = _metrics(size)
+    const baselineInLine = (lineH - m.ascent - m.descent) / 2 + m.ascent
+    const contentTop = out // border top (y - out + borderW) relative to y
+    const capCentre = (h + zoom) / 2
     el.style.lineHeight = lineH + 'px'
-    el.style.paddingTop = Math.max(0, (h - 4 - lineH) / 2) + 'px'
-    baseH = h
+    el.style.paddingTop = Math.max(0, capCentre + m.cap / 2 - baselineInLine - contentTop) + 'px'
+    baseH = h + borderW
+  }
+
+  // Line metrics of the editor's font at this zoom, measured on a canvas
+  // (canvas font-box metrics are the ones CSS lays lines out with).
+  function _metrics(size: number) {
+    // OffscreenCanvas: every current browser has one; jsdom (tests) doesn't,
+    // and falls back to Inter's ratios without logging a missing canvas.
+    if (measure === undefined)
+      measure =
+        typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('2d')
+    if (!measure) {
+      return {
+        ascent: size * FALLBACK.ascent,
+        descent: size * FALLBACK.descent,
+        cap: size * FALLBACK.cap,
+      }
+    }
+    const st = el.style
+    measure.font = `${st.fontStyle} ${st.fontWeight} ${size}px ${st.fontFamily}`
+    measure.textBaseline = 'alphabetic'
+    const t = measure.measureText('H')
+    return {
+      ascent: t.fontBoundingBoxAscent,
+      descent: t.fontBoundingBoxDescent,
+      cap: t.actualBoundingBoxAscent,
+    }
   }
 
   // Grow the editor downward to fit newline-separated lines.
   function autosize(): void {
     el.style.height = baseH + 'px'
-    if (el.scrollHeight > el.clientHeight) el.style.height = el.scrollHeight + 4 + 'px'
+    if (el.scrollHeight > el.clientHeight) el.style.height = el.scrollHeight + 2 * borderW + 'px'
   }
   el.addEventListener('input', autosize)
 
