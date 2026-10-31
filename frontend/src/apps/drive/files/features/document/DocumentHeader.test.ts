@@ -66,7 +66,7 @@ function session(role: number, canShare = true) {
 
 function mount(
   doc: ReturnType<typeof session>,
-  props: { saveState?: DocumentSaveState; viewOnly?: boolean } = {},
+  props: { saveState?: DocumentSaveState; viewOnly?: boolean; centerTitle?: boolean } = {},
 ) {
   const panel = ref<DocumentPanel | null>(null)
   const header = ref<{ focusPanelToggle(name: DocumentPanel): void } | null>(null)
@@ -95,6 +95,11 @@ function mount(
   const button = (name: string) =>
     root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)
   return { root, title, button, panel, header }
+}
+
+/** The group that holds the title field. */
+function titleGroup(root: HTMLElement) {
+  return root.querySelector('header > div:has(input[aria-label="Spreadsheet title"])')!
 }
 
 describe('DocumentHeader', () => {
@@ -196,6 +201,18 @@ describe('DocumentHeader', () => {
     header.value!.focusPanelToggle('versions')
 
     expect(document.activeElement).toBe(button('Versions'))
+  })
+
+  it('keeps the title beside the icon unless asked to center it', () => {
+    const { root } = mount(session(40))
+    expect(titleGroup(root).className).toBe('flex min-w-0 flex-1 items-center gap-1')
+    expect(root.querySelector('[class*="md:"][class*="flex-1"]')).toBeNull()
+    cleanup?.()
+
+    const centered = mount(session(40), { centerTitle: true }).root
+    expect(titleGroup(centered).classList).toContain('md:contents')
+    expect(titleGroup(centered).firstElementChild!.classList).toContain('md:flex-1')
+    expect(centered.querySelector('header > div:last-child')!.classList).toContain('md:flex-1')
   })
 
   it('offers Share only to people who can share', () => {
