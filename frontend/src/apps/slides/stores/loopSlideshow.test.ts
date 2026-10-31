@@ -67,6 +67,27 @@ describe('presenting from the navbar', () => {
     })
   })
 
+  it('keeps the rest of the query from the start of the show to its end', async () => {
+    const { router } = await import('@/apps/slides/router')
+    Object.assign(router.currentRoute.value, { query: { from: 'home', slide: '3' } })
+
+    startSlideShow()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { from: 'home', slide: 1 } }),
+    )
+    changeSlideInSlideshow(1)
+    await nextTick()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { from: 'home', slide: 2 } }),
+    )
+    slideIndex.value = 1
+    endSlideShow()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: 'document-host', query: { from: 'home', slide: 2 } }),
+    )
+    Object.assign(router.currentRoute.value, { query: undefined })
+  })
+
   it('starts on loop from the first slide', () => {
     slideIndex.value = 2
     startSlideShow({ loop: true })

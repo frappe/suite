@@ -11,7 +11,7 @@ import {
   ref,
   watch,
 } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { api, client } from '@/api'
 import {
@@ -104,10 +104,13 @@ const props = defineProps<{
   session: DocumentSession
 }>()
 const loading = ref(true)
+// a reload mid-show keeps the show up
+const loaded = ref(false)
 const loadError = ref('')
 const route = useRoute()
+const router = useRouter()
 const presenting = computed(
-  () => route.name === 'slides-slideshow' && !loading.value && slides.value.length > 0,
+  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
 )
 const presentedSlide = computed(() => Number(route.query.slide) || 1)
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
@@ -255,6 +258,12 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
+// an empty presentation has no show, so its /present opens the editor
+watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
+  if (name === 'slides-slideshow' && done && !count) {
+    void router.replace({ name: 'document-host', params: route.params, query: route.query })
+  }
+})
 watch(
   editable,
   (canEdit) => {
@@ -409,7 +418,9 @@ async function load() {
     )
     if (run !== latestLoad) return
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
-    setSlideIndex(1)
+
+    const shown = presentedSlide.value
+    setSlideIndex(presenting.value ? shown : 1)
     loadTemplates()
     composite.value = !!doc?.is_composite
     if (composite.value) {
@@ -421,7 +432,10 @@ async function load() {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
   } finally {
-    if (run === latestLoad) loading.value = false
+    if (run === latestLoad) {
+      loading.value = false
+      loaded.value = true
+    }
   }
 }
 function normalizeCompositeSlide(value: unknown) {
@@ -728,11 +742,7 @@ onBeforeUnmount(() => {
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
-      <Slideshow
-        v-if="presenting"
-        :presentation-id="session.contentDocname"
-        :active-slide-id="presentedSlide"
-      />
+      <Slideshow v-if="presenting" :active-slide-id="presentedSlide" />
     </teleport>
   </div>
 </template>

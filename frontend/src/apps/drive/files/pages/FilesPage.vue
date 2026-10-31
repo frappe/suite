@@ -1316,9 +1316,7 @@ function trashPath(row: Pick<DriveNode, 'root'>): RouteLocationRaw {
   return trashLocation(row, discovered.data)
 }
 function nodePath(row: Pick<DriveNode, 'name' | 'title' | 'kind'>) {
-  const slug = slugify(row.title)
-  const base = row.kind === 'folder' ? '/drive/f' : '/d'
-  return `${base}/${encodeURIComponent(row.name)}${slug ? `/${slug}` : ''}`
+  return driveNodeRoute(row).path
 }
 function pickUpload(source: 'files' | 'folder') {
   const target = newUploadTarget.value

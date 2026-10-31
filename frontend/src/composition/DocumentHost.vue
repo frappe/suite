@@ -196,7 +196,7 @@ function handleRetry() {
 }
 
 async function replaceDecorativeSlug(opened: DocumentSession) {
-  if (route.name === 'slides-slideshow') return
+  if (route.name !== 'document-host') return
   const destination = { ...driveNodeRoute(opened.nodeId, opened.title.value), query: route.query }
   if (router.resolve(destination).path !== route.path) await router.replace(destination)
 }

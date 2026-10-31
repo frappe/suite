@@ -172,6 +172,9 @@ export function recordDriveVisit(node: string): Promise<void> {
   return recordVisit(node)
 }
 
+/** The segments a document's own views take after /d/<node>, so no slug can name one. */
+export const DOCUMENT_VIEW_SEGMENTS = ['present']
+
 export function driveNodeRoute(
   node: DriveNodeSummary | { name: string; title: string; kind: string } | string,
   title?: string,
@@ -180,9 +183,12 @@ export function driveNodeRoute(
   const id = typeof node === 'string' ? node : node.name
   const label = typeof node === 'string' ? (title ?? '') : node.title
   const nodeKind = typeof node === 'string' ? kind : node.kind
-  const slug = slugify(label)
-  const base =
-    nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
+  const isFolder = nodeKind === 'folder'
+  const titleSlug = slugify(label)
+  const slug = !isFolder && DOCUMENT_VIEW_SEGMENTS.includes(titleSlug) ? '' : titleSlug
+  const prefix = isFolder ? '/drive/f' : '/d'
+  const address = encodeURIComponent(id)
+  const base = `${prefix}/${address}`
   // The history entry carries the title, so the tab names the node before
   // its page loads.
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }

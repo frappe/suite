@@ -19,7 +19,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const { openingTitleState } = await import('@/platform/page-meta')
+  const { driveNodeRoute } = await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
   return {
     // Stands in for the password form: a click is a right password.
     DriveUnlockScreen: define({
@@ -37,10 +37,7 @@ vi.mock('@/apps/drive', async () => {
     isDriveNodeLocked: testState.nodeLocked,
     filePreviewSurface: testState.preview,
     openDocumentSession: testState.open,
-    driveNodeRoute: (node: string, title: string) => ({
-      path: `/d/${node}/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-      state: openingTitleState(title),
-    }),
+    driveNodeRoute,
     DriveDocumentHeaderSkeleton: define({
       props: { title: String },
       setup: (props) => () => render('header', { 'data-skeleton': '' }, props.title),
@@ -68,7 +65,7 @@ testState.preview.render = function (this: { session: { title: { value: string }
 async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+    routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
   })
   await router.push('/d/node-1/quarterly-plan')
   await router.isReady()
@@ -122,7 +119,7 @@ describe('DocumentHost', () => {
     testState.open.mockResolvedValue(session())
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
     await router.push('/d/node-1/stale')
     await router.isReady()
@@ -172,6 +169,38 @@ describe('DocumentHost', () => {
     app.unmount()
   })
 
+  it('drops the slug when a rename would turn it into a view', async () => {
+    const opened = session()
+    testState.open.mockResolvedValue(opened)
+    const view = { render: (): unknown => null }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/d/:node',
+          component: DocumentHost,
+          children: [
+            { path: 'present', name: 'slides-slideshow', component: view },
+            { path: ':slug?', name: 'document-host', component: view },
+          ],
+        },
+      ],
+    })
+    await router.push('/d/node-1/quarterly-plan')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+
+    opened.title.value = 'Present'
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/d/node-1'))
+    expect(router.currentRoute.value.name).toBe('document-host')
+    app.unmount()
+  })
+
   it("names the tab from the first frame: the opener's title, else Opening…, then the document's", async () => {
     let answer!: (value: unknown) => void
     testState.open.mockReturnValue(
@@ -181,7 +210,14 @@ describe('DocumentHost', () => {
     )
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost, meta: { title: 'Opening…' } }],
+      routes: [
+        {
+          path: '/d/:node/:slug?',
+          name: 'document-host',
+          component: DocumentHost,
+          meta: { title: 'Opening…' },
+        },
+      ],
     })
     const uninstall = installPageMeta(router)
     await router.push({ path: '/d/node-1/q3', state: openingTitleState('Q3 plan') })
@@ -220,7 +256,7 @@ describe('DocumentHost', () => {
     )
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
     await router.push('/d/node-1/quarterly-plan')
     await router.isReady()
@@ -333,7 +369,7 @@ describe('DocumentHost', () => {
     testState.open.mockRejectedValueOnce(serverError).mockResolvedValueOnce(session())
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
     await router.push('/d/node-1/quarterly-plan')
     await router.isReady()

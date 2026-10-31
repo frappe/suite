@@ -35,7 +35,6 @@ import {
   updateSelectionBounds,
 } from '@/apps/slides/stores/slide'
 import {
-  changeSlideInSlideshow,
   performNextStep,
   performPreviousStep,
   startSlideShow,
@@ -457,48 +456,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       group: 'Slideshow',
       handler: () => {
         if (inEditMode() || inReadonly()) startSlideShow()
-      },
-    },
-    {
-      combo: 'F5',
-      description: 'Restart',
-      group: 'Slideshow',
-      enabled: inSlideShow,
-      handler: () => changeSlideInSlideshow(0),
-    },
-    {
-      combo: 'ArrowLeft',
-      description: 'Previous step',
-      group: 'Slideshow',
-      handler: handleArrowLeft,
-    },
-    {
-      combo: 'PageUp',
-      description: 'Previous step',
-      group: 'Slideshow',
-      handler: () => {
-        if (inSlideShow()) performPreviousStep()
-      },
-    },
-    {
-      combo: 'Space',
-      description: 'Next step',
-      group: 'Slideshow',
-      enabled: inSlideShow,
-      handler: () => performNextStep(),
-    },
-    {
-      combo: 'ArrowRight',
-      description: 'Next step',
-      group: 'Slideshow',
-      handler: handleArrowRight,
-    },
-    {
-      combo: 'PageDown',
-      description: 'Next step',
-      group: 'Slideshow',
-      handler: () => {
-        if (inSlideShow()) performNextStep()
       },
     },
   ]

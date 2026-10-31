@@ -71,11 +71,10 @@ import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGua
 import { resetFocus } from '@/apps/slides/stores/element'
 import {
   applyReverseTransition,
-  initPresentationDoc,
   inReadonlyMode,
   pageTitle,
 } from '@/apps/slides/stores/presentation'
-import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import { currentSlide, setSlideIndex, slideIndex } from '@/apps/slides/stores/slide'
 import {
   cancelAdvance,
   changeSlideInSlideshow,
@@ -99,10 +98,6 @@ import { getTransitionKey } from '@/apps/slides/stores/transition'
 import { appPageMeta, usePageTitle } from '@/platform/page-meta'
 
 const props = defineProps({
-  presentationId: {
-    type: String,
-    required: true,
-  },
   activeSlideId: {
     type: Number,
     required: true,
@@ -309,12 +304,6 @@ const initFullscreenMode = async () => {
   handleFullScreenChange()
 }
 
-const loadPresentation = async () => {
-  if (slides.value.length) return
-  // the slide asked for was picked before there were any to pick from
-  if (await initPresentationDoc(props.presentationId)) setSlideIndex(props.activeSlideId)
-}
-
 const updateWindowSize = () => {
   windowWidth.value = window.innerWidth
   windowHeight.value = window.innerHeight
@@ -328,7 +317,6 @@ useBrowserZoomGuard()
 onMounted(() => {
   active = true
   resetFocus()
-  loadPresentation()
   initFullscreenMode()
   document.addEventListener('fullscreenchange', handleFullScreenChange)
   document.addEventListener('visibilitychange', handleVisibilityChange)

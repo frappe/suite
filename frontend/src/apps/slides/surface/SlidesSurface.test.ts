@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { computed, createApp, defineComponent, h, nextTick, ref, type SetupContext } from 'vue'
+import {
+  computed,
+  createApp,
+  defineComponent,
+  h,
+  nextTick,
+  ref,
+  type Ref,
+  type SetupContext,
+} from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive'
@@ -112,21 +121,26 @@ for (const path of [
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
 
+vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
+  __esModule: true,
+  default: { render: () => h('div', { 'data-show': '' }) },
+}))
+
 const { default: SlidesSurface } = await import('./SlidesSurface.vue')
-const { duplicateSlide } = await import('@/apps/slides/stores/slide')
+const { duplicateSlide, slideIndex } = await import('@/apps/slides/stores/slide')
 
 function answer(message: unknown) {
   return new Response(JSON.stringify({ message }), { status: 200 })
 }
 
-function session(docname: string): DocumentSession {
+function session(docname: string, access: Ref<{ role: number }>): DocumentSession {
   return {
     nodeId: 'node-1',
     contentDoctype: 'Presentation',
     contentDocname: docname,
     title: ref('Quarterly plan'),
     state: ref('Active'),
-    access: ref({ role: 50 }),
+    access,
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
     media: () => undefined,
@@ -136,8 +150,9 @@ function session(docname: string): DocumentSession {
 // each test opens its own presentation, so no draft carries over between them
 let opens = 0
 
-async function openedSurface() {
+async function openedSurface({ path = '', role = 50, slides = served.slides } = {}) {
   const docname = `p${++opens}`
+  const loads: Array<Promise<void>> = []
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.includes('save_slides')) {
       saves.push(JSON.parse(String(init?.body)))
@@ -149,21 +164,42 @@ async function openedSurface() {
       return answer([])
     }
 
-    return answer({ ...structuredClone(served), name: docname })
+    const held = loads.shift()
+    if (held) {
+      await held
+    }
+
+    return answer({ ...structuredClone(served), slides, name: docname })
   })
-  const opened = session(docname)
+  const access = ref({ role })
+  const opened = session(docname, access)
+  const view = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/d/:node', component: SlidesSurface, props: () => ({ session: opened }) }],
+    routes: [
+      {
+        path: '/d/:node',
+        component: SlidesSurface,
+        props: () => ({ session: opened }),
+        children: [
+          { path: 'present', name: 'slides-slideshow', component: view },
+          { path: ':slug?', name: 'document-host', component: view },
+        ],
+      },
+    ],
   })
-  await router.push('/d/node-1')
+  await router.push(`/d/node-1${path}`)
   const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
   app.use(router)
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
-  await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(2))
-  return { app, root, docname }
+  await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
+  return { app, root, docname, router, access, loads }
+}
+
+function shown() {
+  return document.querySelector('[data-show]') !== null
 }
 
 function thumbnails(root: Element) {
@@ -205,5 +241,35 @@ describe('Slides autosave', () => {
 
     expect(clean.defaultPrevented).toBe(false)
     expect(unsaved.defaultPrevented).toBe(true)
+  })
+})
+
+describe('Slides slideshow route', () => {
+  it('keeps the show up on its slide while the presentation reloads', async () => {
+    mounted = await openedSurface({ path: '/present?slide=2', role: 10 })
+    await vi.waitFor(() => expect(shown()).toBe(true))
+    let release!: () => void
+    mounted.loads.push(
+      new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+
+    mounted.access.value = { role: 50 }
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    expect(shown()).toBe(true)
+    release()
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(shown()).toBe(true)
+    expect(slideIndex.value).toBe(1)
+  })
+
+  it('opens an empty presentation in the editor instead of its show', async () => {
+    mounted = await openedSurface({ path: '/present?slide=1', slides: [] })
+
+    await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
+    expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
+    expect(shown()).toBe(false)
   })
 })
