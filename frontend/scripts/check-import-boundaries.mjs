@@ -41,6 +41,12 @@ const boundaryDebtGroups = [
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/utils/dayjs',
     ],
   },
+  {
+    owner: 'Slides frontend owner',
+    removal:
+      'Remove when @/router installs the slides guard itself, instead of the slides package root installing it as an import side effect.',
+    entries: ['composition/home/HomePage.test.ts|@/apps/slides/router'],
+  },
 ]
 
 // Exact entries only. Each group names its owner and removal condition.

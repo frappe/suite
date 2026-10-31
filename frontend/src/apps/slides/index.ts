@@ -3,13 +3,13 @@ import { defineComponent, h } from 'vue'
 import { router } from '@/apps/slides/router'
 import { trackLoadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { claimSlidesCachesFor } from '@/apps/slides/utils/serviceWorker'
-import { getSessionUser } from '@/boot/session'
 import type { DocumentTypeDefinition } from '@/platform/contracts'
+import { getCookieSessionUser } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 // before any page reads slides data, so another user arriving never sees the last one's
 router.beforeEach(async () => {
-  const user = getSessionUser()
+  const user = getCookieSessionUser()
 
   if (user) {
     await claimSlidesCachesFor(user).catch(() => {})

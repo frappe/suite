@@ -140,7 +140,7 @@ vi.mock('@/platform/session', async (importOriginal) => {
   }
 })
 
-// the slides document installs a guard on the app router
+// the slides package root installs a guard on the app router at import (boundary debt)
 vi.mock('@/apps/slides/router', () => ({ router: { beforeEach: () => {} } }))
 vi.mock('@/apps/drive', async (importOriginal) => ({
   // Drive's own listing date, so the Recent meta is checked against Drive's format.

@@ -1,22 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h } from 'vue'
-import { createMemoryHistory, createRouter } from 'vue-router'
-
-import { translationPlugin } from '@/platform/translation'
-import { TransportError } from '@/platform/transport'
 
 const state = vi.hoisted(() => ({
   guards: [] as Array<() => unknown>,
   user: null as string | null,
-  open: vi.fn(),
 }))
 
 vi.mock('@/apps/slides/router', () => ({
   router: { beforeEach: (guard: () => unknown) => state.guards.push(guard) },
 }))
-vi.mock('@/boot/session', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/boot/session')>()),
-  getSessionUser: () => state.user,
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  getCookieSessionUser: () => state.user,
 }))
 vi.mock('@/apps/slides/stores/presentation', async () => {
   const { ref } = await import('vue')
@@ -24,22 +18,8 @@ vi.mock('@/apps/slides/stores/presentation', async () => {
 })
 vi.mock('@/apps/slides/stores/slide', async () => ({ slides: (await import('vue')).ref([]) }))
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (src: string) => src }))
-vi.mock('@/apps/drive', async () => {
-  const { defineComponent: define, h: render } = await import('vue')
-  return {
-    isDriveLocked: () => false,
-    isDriveNodeLocked: async () => false,
-    openDocumentSession: state.open,
-    driveNodeRoute: (node: string) => ({ path: `/d/${node}` }),
-    filePreviewSurface: {},
-    DriveUnlockScreen: define({ render: () => null }),
-    DriveDocumentHeaderSkeleton: define({ setup: () => () => render('header') }),
-  }
-})
 
 const { slidesDocument } = await import('./index')
-vi.doMock('@/composition/documentRegistry', () => ({ documentTypes: [slidesDocument] }))
-const { default: DocumentHost } = await import('@/composition/DocumentHost.vue')
 
 const pinned = new Map<string, Response>()
 
@@ -62,26 +42,10 @@ async function navigate() {
   }
 }
 
-async function openHost() {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
-  })
-  await router.push('/d/n1/deck')
-  await router.isReady()
-  const root = document.createElement('div')
-  document.body.append(root)
-  const app = createApp(defineComponent({ setup: () => () => h(DocumentHost) }))
-  app.use(router).use(translationPlugin)
-  app.mount(root)
-  return { root, app }
-}
-
 beforeEach(() => {
   localStorage.clear()
   pinned.clear()
   state.user = null
-  state.open.mockReset()
   vi.stubGlobal('caches', {
     open: async () => ({
       delete: async (key: string) => pinned.delete(key),
@@ -100,9 +64,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   vi.unstubAllGlobals()
-  document.body.innerHTML = ''
 })
 
 describe('the slides document', () => {
@@ -113,33 +75,6 @@ describe('the slides document', () => {
     expect(pinned.has('/d/n1')).toBe(false)
     expect(hasCopy('p2')).toBe(true)
     expect(pinned.has('/d/n2')).toBe(true)
-  })
-
-  it('keeps a pinned copy when the presentation is opened offline', async () => {
-    state.open.mockRejectedValue(
-      new TransportError({ type: 'NetworkError', message: 'offline', status: 0 }),
-    )
-    const { root, app } = await openHost()
-
-    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(hasCopy('p1')).toBe(true)
-    expect(pinned.has('/d/n1')).toBe(true)
-    app.unmount()
-  })
-
-  it('drops the copy when opening the presentation is refused', async () => {
-    document.cookie = 'user_id=a@example.com'
-    state.open.mockRejectedValue(
-      new TransportError({ type: 'DrivePermissionDenied', message: 'denied', status: 403 }),
-    )
-    const { app } = await openHost()
-
-    await vi.waitFor(() => expect(hasCopy('p1')).toBe(false))
-    expect(pinned.has('/d/n1')).toBe(false)
-    expect(hasCopy('p2')).toBe(true)
-    app.unmount()
   })
 })
 

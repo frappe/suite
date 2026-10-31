@@ -90,14 +90,15 @@ vi.mock('frappe-ui', () => {
     usePageMeta: vi.fn(),
   }
 })
-vi.mock('@/boot/session', async (importOriginal) => {
-  const { reactive: wrap } = await import('vue')
+vi.mock('@/platform/session', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/platform/session')>()
   return {
-    ...(await importOriginal<typeof import('@/boot/session')>()),
-    session: wrap({
+    ...original,
+    useSession: () => ({
+      ...original.useSession(),
       user: {
-        get sessionUser() {
-          return signedIn.user
+        get value() {
+          return { id: signedIn.user }
         },
       },
     }),

@@ -76,8 +76,8 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
-import { session as userSession } from '@/boot/session'
 import { useHideRail } from '@/platform/rail'
+import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 
 import { createSlidesAccess } from './access'
@@ -120,6 +120,7 @@ const loaded = ref(false)
 const loadError = ref('')
 const route = useRoute()
 const router = useRouter()
+const userSession = useSession()
 const presenting = computed(
   () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
 )
@@ -524,7 +525,7 @@ const canPin = computed(
     'serviceWorker' in navigator &&
     'caches' in window &&
     !window.disable_slides_service_worker &&
-    isMediaOwner(presentationDoc.value?.owner, userSession.user?.sessionUser),
+    isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
 watch([slides, () => presentationDoc.value?.modified], () => {
   if (!slides.value.length) {
