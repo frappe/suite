@@ -25,6 +25,7 @@ import {
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
+import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
@@ -39,11 +40,17 @@ import {
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
 import {
+  pruneOfflineCopy,
+  refreshOfflineStatus,
+  warmOfflineCopyAssets,
+} from '@/apps/slides/stores/offlineCopy'
+import {
   contextFor,
   initPresentationDoc,
   inReadonlyMode,
   loadTemplates,
   presentationDoc,
+  presentationId,
   resetEditorState,
   setDocumentContext,
   slidesLength,
@@ -66,6 +73,9 @@ import {
   slides,
 } from '@/apps/slides/stores/slide'
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
+import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
+import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { session as userSession } from '@/boot/session'
 import { useHideRail } from '@/platform/rail'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 
@@ -428,6 +438,8 @@ async function load() {
     } else {
       void offerTheme()
     }
+
+    pruneOfflineCopy(presentationId.value).catch(() => {})
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
@@ -502,8 +514,27 @@ function setOnline() {
 function setOffline() {
   online.value = false
 }
+
+const canPin = computed(
+  () =>
+    'serviceWorker' in navigator &&
+    'caches' in window &&
+    !window.disable_slides_service_worker &&
+    isMediaOwner(presentationDoc.value?.owner, userSession.user?.sessionUser),
+)
+watch([slides, () => presentationDoc.value?.modified], () => {
+  if (!slides.value.length) {
+    refreshOfflineStatus(null)
+    return
+  }
+
+  refreshOfflineStatus(presentationId.value)
+  void warmOfflineCopyAssets(presentationId.value)
+})
 onMounted(() => {
   void load()
+  void registerSlidesWorker()
+  void postToServiceWorker('slides-entered')
   autosaveTimer = window.setInterval(() => {
     if (editable.value && !isSlideInteractionActive.value) {
       void saveChanges()
@@ -514,6 +545,7 @@ onMounted(() => {
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
+  void postToServiceWorker('slides-left')
   if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
@@ -560,6 +592,7 @@ onBeforeUnmount(() => {
           :disabled="loading || !access.readable.value || !slides.length"
           @click="exportPdf"
         />
+        <OfflineCopyButton v-if="canPin" />
       </template>
     </DriveDocumentHeader>
 

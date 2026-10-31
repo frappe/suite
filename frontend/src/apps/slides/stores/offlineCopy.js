@@ -1,17 +1,20 @@
 import { ref } from 'vue'
 
+import { isMediaNodeId, mediaSettled } from '@/apps/slides/stores/documentMedia'
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
+import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
-import { collectMediaSources, presentationLoadRequests } from '@/apps/slides/utils/pinTargets'
+import { collectMediaSources, entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { PIN_HEADER, PINNED_CACHE_NAME, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
-import { isMediaContentType } from '@/apps/slides/utils/slidesRequests'
+import { isCacheable, isMediaContentType } from '@/apps/slides/utils/slidesRequests'
 
 const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
+const HTTP_OK = 200
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
@@ -43,6 +46,15 @@ const readAllRecords = () => {
   return records
 }
 
+// the pictures; every other key is the start-up copy, which a visit replaces whole
+function isMediaKey(key) {
+  return canonicalMediaKey(key) === key
+}
+
+function startupKeys(record) {
+  return record?.keys.filter((key) => !isMediaKey(key)) ?? []
+}
+
 // keys no copy other than `id` lists
 const unsharedKeys = (id, keys) => {
   const records = readAllRecords()
@@ -61,6 +73,12 @@ const getMediaTargets = () => {
     targets.set(key, { key, url, src, slideIndex })
   }
   return [...targets.values()]
+}
+
+function mediaNodeIds() {
+  return collectMediaSources(slides.value)
+    .map(({ src }) => src)
+    .filter(isMediaNodeId)
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -128,19 +146,68 @@ const warmAssets = () =>
     loadBundledFonts().catch(() => {}),
   ])
 
-const warmShellAndApi = async (id, loadOptions, signal) => {
-  await fetch(location.pathname, { headers: { [PIN_HEADER]: 'shell' }, signal }).then(
-    (response) => response.body?.cancel(),
-    () => {},
-  )
-  for (const { url, params } of presentationLoadRequests(id, loadOptions)) {
-    await fetch(`/api/method/${url}?${new URLSearchParams(params)}`, {
-      credentials: 'same-origin',
-      signal,
-    })
-      .then((response) => response.body?.cancel())
-      .catch(() => {})
+function getLoadOptions() {
+  return { readonly: viewOnly.value, composite: !!presentationDoc.value?.is_composite }
+}
+
+// a shell from another build would pair its code with this page's chunks
+async function fetchShell(node, signal) {
+  const response = await fetch(`/d/${node}`, { signal })
+  const build = Number(response.headers.get('X-Suite-Build'))
+
+  if (
+    response.status === HTTP_OK &&
+    isCacheable('shell', response) &&
+    build === Number(__SUITE_BUILD__)
+  ) {
+    return response
   }
+
+  await response.body?.cancel()
+  throw new Error(`The presentation page could not be stored (${response.status})`)
+}
+
+async function fetchCacheable(url, type, signal) {
+  const response = await fetch(url, { signal }).catch(() => null)
+
+  if (response?.status === HTTP_OK && isCacheable(type, response)) {
+    return response
+  }
+
+  await response?.body?.cancel()
+  return null
+}
+
+// what opening /d/<node> offline reads, under the keys the worker looks them up by
+async function fetchStartup(node, id, pinned, signal) {
+  const shell = await fetchShell(node, signal)
+  const html = await shell.clone().text()
+  const responses = new Map([[`/d/${node}`, shell]])
+  const assets = [...new Set([...entryAssets(html), ...loadedAssets()])]
+  // content-hashed, so a pinned asset is already current
+  const kept = assets.filter((asset) => pinned.has(asset))
+  const requests = [
+    ...startupUrls(node, id, getLoadOptions()).map((url) => [url, 'api']),
+    ...assets.filter((asset) => !pinned.has(asset)).map((asset) => [asset, 'asset']),
+  ]
+  await runPool(requests, async ([url, type]) => {
+    const response = await fetchCacheable(url, type, signal)
+
+    if (response) {
+      responses.set(url, response)
+    }
+  })
+  return { keys: [...responses.keys(), ...kept], responses }
+}
+
+async function putStartup(cache, id, startup, previous) {
+  await Promise.all([...startup.responses].map(([key, response]) => cache.put(key, response)))
+  const dropped = previous.filter((key) => !startup.keys.includes(key))
+  await Promise.all(unsharedKeys(id, dropped).map((key) => cache.delete(key)))
+}
+
+async function pinnedPaths(cache) {
+  return new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
 }
 
 // bytes the presentation no longer shows go, and its ledger stops listing them
@@ -152,14 +219,14 @@ const pruneOfflineCopy = async (id, targets = null) => {
   const orphans = new Set(
     unsharedKeys(
       id,
-      record.keys.filter((key) => !needed.has(key)),
+      record.keys.filter((key) => isMediaKey(key) && !needed.has(key)),
     ),
   )
   if (!orphans.size) return
 
   const cache = await openPinnedCache()
   await Promise.all([...orphans].map((key) => cache.delete(key)))
-  writeRecord(id, { keys: record.keys.filter((key) => !orphans.has(key)) })
+  writeRecord(id, { ...record, keys: record.keys.filter((key) => !orphans.has(key)) })
 }
 
 const saveOfflineCopy = async (id) => {
@@ -167,12 +234,8 @@ const saveOfflineCopy = async (id) => {
   controller = new AbortController()
   const { signal } = controller
 
-  const targets = getMediaTargets()
-  const loadOptions = {
-    readonly: viewOnly.value,
-    composite: !!presentationDoc.value?.is_composite,
-  }
-  offlineCopyProgress.value = { running: true, done: 0, total: targets.length, failed: [] }
+  const node = presentationDoc.value?.node
+  offlineCopyProgress.value = { running: true, done: 0, total: 0, failed: [] }
   const progress = offlineCopyProgress.value
 
   try {
@@ -181,15 +244,22 @@ const saveOfflineCopy = async (id) => {
       return { ok: false, uncontrolled: true, registered }
     }
     await warmAssets()
-    await warmShellAndApi(id, loadOptions, signal)
+    // a node-id picture has no url until Drive signs it
+    await mediaSettled(mediaNodeIds(), signal)
+    const targets = getMediaTargets()
+    progress.total = targets.length
 
     const cache = await openPinnedCache()
-    const pinned = new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
+    const pinned = await pinnedPaths(cache)
+    const startup = await fetchStartup(node, id, pinned, signal)
 
     await pruneOfflineCopy(id, targets)
 
-    const record = { keys: targets.map((target) => target.key).filter((key) => pinned.has(key)) }
+    const previous = startupKeys(readRecord(id))
+    const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
+    const record = { node, keys: [...startup.keys, ...media] }
     writeRecord(id, record)
+    await putStartup(cache, id, startup, previous)
     navigator.storage?.persist?.().catch(() => {})
 
     await runPool(targets, async (target) => {
@@ -239,6 +309,36 @@ const removeOfflineCopy = async (id) => {
   localStorage.removeItem(recordKey(id))
 }
 
+// every copy of the node, found by the node because a refused open never learns the docname
+async function removeNodeOfflineCopy(node) {
+  const ids = Object.entries(readAllRecords())
+    .filter(([, record]) => record.node === node)
+    .map(([id]) => id)
+  for (const id of ids) {
+    await removeOfflineCopy(id)
+  }
+}
+
+const refreshed = new Set()
+
+// an online visit replaces the start-up copy, so after a deploy it holds the new build
+async function warmOfflineCopyAssets(id) {
+  const record = readRecord(id)
+  if (!record?.node || !navigator.onLine || refreshed.has(id)) return
+
+  if (offlineCopyProgress.value.running) return
+
+  refreshed.add(id)
+  await warmAssets()
+  try {
+    const cache = await openPinnedCache()
+    const startup = await fetchStartup(record.node, id, await pinnedPaths(cache))
+    const previous = startupKeys(record)
+    writeRecord(id, { ...record, keys: [...startup.keys, ...record.keys.filter(isMediaKey)] })
+    await putStartup(cache, id, startup, previous)
+  } catch {}
+}
+
 // the ledger says what is pinned; the cache is only walked when a copy is saved
 const getOfflineStatus = (id) => {
   if (id !== presentationId.value) return 'none'
@@ -261,5 +361,7 @@ export {
   pruneOfflineCopy,
   cancelOfflineCopy,
   removeOfflineCopy,
+  removeNodeOfflineCopy,
   refreshOfflineStatus,
+  warmOfflineCopyAssets,
 }

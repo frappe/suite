@@ -27,6 +27,7 @@ import { toast } from '@/platform/feedback'
 import { openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { buildUrl } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -306,6 +307,13 @@ function actionsWhere(items: [boolean, DriveDocumentAction][]): DriveDocumentAct
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */
 const OPENING_EXPAND = 'access,preview,breadcrumbs'
+/** The urls opening a document session reads, for a copy that opens it offline. */
+export function documentSessionUrls(nodeId: string): string[] {
+  return [
+    buildUrl(api.drive.nodes.get, { node: nodeId, expand: OPENING_EXPAND }),
+    buildUrl(api.drive.nodes.media, { node: nodeId }),
+  ]
+}
 export async function openDocumentSession(nodeId: string) {
   // `session.share()` opens its dialog in the app that opened the session.
   rememberDialogContext(getCurrentInstance()?.appContext)

@@ -13,6 +13,7 @@ const testState = vi.hoisted(() => ({
   open: vi.fn(),
   dispose: vi.fn(),
   nodeLocked: vi.fn(),
+  forget: vi.fn(),
   surface: { name: 'WriterTestSurface', render: (): unknown => null },
   preview: { name: 'FileTestSurface', props: ['session'], render: (): unknown => null },
 }))
@@ -52,6 +53,13 @@ vi.mock('@/composition/documentRegistry', () => ({
       newLabel: () => 'New document',
       icon: {},
       loadSurface: async () => testState.surface,
+    },
+    {
+      contentDoctype: 'Presentation',
+      newLabel: () => 'New presentation',
+      icon: {},
+      loadSurface: async () => testState.surface,
+      forgetNode: testState.forget,
     },
   ],
 }))
@@ -97,6 +105,7 @@ afterEach(() => {
   testState.open.mockReset()
   testState.dispose.mockReset()
   testState.nodeLocked.mockReset()
+  testState.forget.mockReset()
   document.body.innerHTML = ''
 })
 
@@ -387,6 +396,73 @@ describe('DocumentHost', () => {
     await vi.waitFor(() => expect(root.textContent).not.toContain('Could not open this document'))
     expect(testState.open).toHaveBeenCalledTimes(2)
     expect(root.querySelector("[aria-label='Opening document']")).toBeNull()
+    app.unmount()
+  })
+
+  // a device copy of a document the user lost access to goes (DESIGN-slides-offline §6)
+  it.each([403, 404, 410])(
+    'forgets the node on every type that keeps copies when the open is a %i',
+    async (status) => {
+      testState.open.mockRejectedValue(refusal(status, 'Refused'))
+      const { root, app } = await mountHost()
+
+      await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+      expect(testState.forget).toHaveBeenCalledExactlyOnceWith('node-1')
+      app.unmount()
+    },
+  )
+
+  it('forgets the node when an open document is refused', async () => {
+    const open = session()
+    testState.open.mockResolvedValue(open)
+    testState.nodeLocked.mockResolvedValue(false)
+    const { root, app } = await mountHost()
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+    expect(testState.forget).not.toHaveBeenCalled()
+
+    open.state.value = 'Refused'
+
+    await vi.waitFor(() => expect(testState.forget).toHaveBeenCalledExactlyOnceWith('node-1'))
+    app.unmount()
+  })
+
+  it.each([
+    [
+      'an offline open',
+      new TransportError({ type: 'NetworkError', message: 'offline', status: 0 }),
+    ],
+    ['a server error', new TransportError({ type: 'ServerError', message: 'boom', status: 500 })],
+  ])('keeps the node after %s', async (_label, reason) => {
+    testState.open.mockRejectedValue(reason)
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    expect(testState.forget).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('keeps both nodes when moving from one document to the next', async () => {
+    testState.open
+      .mockResolvedValueOnce(session())
+      .mockResolvedValueOnce({ ...session(), nodeId: 'node-2', title: ref('Budget') })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
+    })
+    await router.push('/d/node-1/quarterly-plan')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(DocumentHost)
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+
+    await router.push('/d/node-2/budget')
+    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+
+    expect(testState.forget).not.toHaveBeenCalled()
     app.unmount()
   })
 })

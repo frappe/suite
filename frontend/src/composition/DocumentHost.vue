@@ -53,6 +53,10 @@ const guestFrame = inject(GUEST_FRAME_KEY, null)
 
 const reopen = shallowRef(0)
 
+const FORBIDDEN = 403
+const NOT_FOUND = 404
+const GONE = 410
+const REFUSAL_STATUSES = [FORBIDDEN, NOT_FOUND, GONE]
 let opening = 0
 
 const nodeId = computed(() => String(route.params.node ?? ''))
@@ -125,6 +129,10 @@ watch(
         return
       }
 
+      if (reason instanceof TransportError && REFUSAL_STATUSES.includes(reason.status)) {
+        forgetNode(node)
+      }
+
       error.value = failureMessage(reason)
     } finally {
       if (request === opening) loading.value = false
@@ -147,6 +155,7 @@ watch(
     const lockedAgain = await isDriveNodeLocked(lapsed.nodeId)
     if (request !== opening) return
     if (!lockedAgain) {
+      forgetNode(lapsed.nodeId)
       guestFrame?.requireSignIn()
       return
     }
@@ -174,6 +183,13 @@ function present(next: DocumentSession | null, nextSurface: Component | null) {
   session.value = next
   surface.value = nextSurface
   if (previous !== next) previous?.dispose()
+}
+
+// only on a refusal: an offline or failed open says nothing about access
+function forgetNode(node: string) {
+  for (const type of documentTypes) {
+    type.forgetNode?.(node)
+  }
 }
 
 function failureMessage(reason: unknown) {

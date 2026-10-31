@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   computed,
   createApp,
@@ -15,8 +15,10 @@ import type { DocumentSession } from '@/apps/drive'
 
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 const saves: unknown[] = []
+const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
 const served = {
   node: 'node-1',
+  owner: 'me@example.com',
   title: 'Quarterly plan',
   modified: 'M1',
   modified_by: 'me@example.com',
@@ -75,12 +77,30 @@ vi.mock('frappe-ui', () => {
     usePageMeta: vi.fn(),
   }
 })
+vi.mock('@/boot/session', async (importOriginal) => {
+  const { reactive: wrap } = await import('vue')
+  return {
+    ...(await importOriginal<typeof import('@/boot/session')>()),
+    session: wrap({
+      user: {
+        get sessionUser() {
+          return signedIn.user
+        },
+      },
+    }),
+  }
+})
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
 vi.mock('@/apps/drive', () => ({
   GUEST_NAME_LIMIT: 50,
-  DriveDocumentHeader: { render: () => null },
+  DriveDocumentHeader: {
+    setup:
+      (_: unknown, { slots }: SetupContext) =>
+      () =>
+        h('header', slots.actions?.()),
+  },
   DriveCommentAuthor: { render: () => null },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
   useDriveGuestName: () => ({
@@ -120,6 +140,10 @@ for (const path of [
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('@/apps/slides/components/OfflineCopyButton.vue', () => ({
+  default: { render: () => h('button', { 'data-offline-copy': '' }) },
+}))
 
 vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
   __esModule: true,
@@ -271,5 +295,89 @@ describe('Slides slideshow route', () => {
     await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
     expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
     expect(shown()).toBe(false)
+  })
+})
+
+// the offline copy (DESIGN-slides-offline §1, §5)
+describe('Slides offline copy', () => {
+  const posted: string[] = []
+  const register = vi.fn(async () => ({}))
+  const unregister = vi.fn(async () => true)
+
+  function offlineCopyButton() {
+    return document.querySelector('[data-offline-copy]')
+  }
+
+  beforeEach(() => {
+    posted.length = 0
+    register.mockClear()
+    unregister.mockClear()
+    signedIn.user = 'me@example.com'
+    vi.stubEnv('VITE_SLIDES_SW', '1')
+    vi.stubGlobal('caches', { open: async () => ({}), match: async () => undefined })
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        register,
+        getRegistration: async () => ({ unregister }),
+        addEventListener: () => {},
+        controller: {
+          postMessage: (message: string, [port]: MessagePort[]) => {
+            posted.push(message)
+            port.postMessage(true)
+          },
+        },
+      },
+    })
+  })
+
+  afterEach(() => {
+    delete (navigator as { serviceWorker?: unknown }).serviceWorker
+    delete window.disable_slides_service_worker
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('offers the copy to the owner and registers the worker', async () => {
+    mounted = await openedSurface()
+
+    await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
+    expect(register).toHaveBeenCalledWith('/service-worker.js')
+  })
+
+  it('hides the copy from someone who is not the owner', async () => {
+    signedIn.user = 'someone@example.com'
+    mounted = await openedSurface()
+    await nextTick()
+
+    expect(offlineCopyButton()).toBeNull()
+  })
+
+  it('hides the copy in a browser without service workers', async () => {
+    delete (navigator as { serviceWorker?: unknown }).serviceWorker
+    mounted = await openedSurface()
+    await nextTick()
+
+    expect(offlineCopyButton()).toBeNull()
+  })
+
+  it('hides the copy and unregisters the worker with the kill switch on', async () => {
+    window.disable_slides_service_worker = true
+    mounted = await openedSurface()
+
+    await vi.waitFor(() => expect(unregister).toHaveBeenCalledOnce())
+    expect(register).not.toHaveBeenCalled()
+    expect(offlineCopyButton()).toBeNull()
+  })
+
+  it('tells the worker when the presentation opens and closes', async () => {
+    mounted = await openedSurface()
+    await vi.waitFor(() => expect(posted).toEqual(['slides-entered']))
+
+    mounted.app.unmount()
+    mounted.root.remove()
+    mounted = null
+
+    expect(posted).toEqual(['slides-entered', 'slides-left'])
   })
 })

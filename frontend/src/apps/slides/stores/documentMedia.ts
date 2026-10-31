@@ -1,3 +1,5 @@
+import { watch } from 'vue'
+
 import type { MediaHandle } from '@/apps/drive'
 
 /** Opens the Drive media handle for one of the deck's media node ids. */
@@ -31,4 +33,28 @@ export const mediaNodeUrl = (id: string): string => {
   const handle = documentMedia?.(id)
   if (!handle || handle.status.value === 'refused') return ''
   return handle.src.value ?? ''
+}
+
+/** Resolves once Drive has answered for every one of these media nodes, or on abort. */
+export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise<void> {
+  const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
+  function isSettled() {
+    return handles.every((handle) => handle.status.value !== 'loading')
+  }
+
+  if (isSettled()) return
+
+  await new Promise<void>((resolve) => {
+    const stop = watch(isSettled, (isNowSettled) => {
+      if (isNowSettled) {
+        finish()
+      }
+    })
+    function finish() {
+      stop()
+      resolve()
+    }
+
+    signal?.addEventListener('abort', finish, { once: true })
+  })
 }

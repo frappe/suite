@@ -15,7 +15,9 @@ export const fileUploadHandler = new FileUploadHandler()
 export const MEDIA_UPLOAD_ENDPOINT = '/api/method/suite.mail.api.mail.upload_file'
 
 // these users read a file straight from /private/files; everyone else goes through the proxy
-const isMediaOwner = (owner, user) => !!user && (owner === user || user === 'Administrator')
+export function isMediaOwner(owner, user) {
+  return !!user && (owner === user || user === 'Administrator')
+}
 
 // Pass targetElement to swap that element's media instead of adding a new element.
 const performPostUploadActions = async (
