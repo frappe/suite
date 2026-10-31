@@ -1,7 +1,7 @@
 <template>
   <header
     ref="headerElement"
-    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5"
+    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-4"
   >
     <div class="flex min-w-0 flex-1 items-center gap-1">
       <template v-if="location">
