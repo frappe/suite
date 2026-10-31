@@ -32,3 +32,26 @@ export const sheetRowClass = (active: boolean) =>
 		'flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base text-ink-gray-8',
 		active ? 'bg-surface-gray-2 !font-semibold' : 'active:bg-surface-gray-1',
 	].join(' ')
+
+/**
+ * A tile in a picker sheet laid out as a grid rather than rows — the calendar's views. The
+ * launcher's tile at a sheet's scale: a 48px square holding the glyph — a touch under the
+ * launcher's 54, since four sit side by side here — the name beneath, the square tinted for
+ * the one you are on the way a row is.
+ */
+export const sheetTileClass = (active: boolean) =>
+	[
+		'flex flex-col items-center gap-2 rounded-6 py-2 text-center',
+		active ? 'text-ink-gray-9' : 'text-ink-gray-7',
+	].join(' ')
+
+/** The square a tile's glyph sits in. */
+export const sheetTileBoxClass = (active: boolean) =>
+	[
+		'grid size-12 place-items-center rounded-4',
+		active ? 'bg-surface-gray-3' : 'bg-surface-gray-2 active:bg-surface-gray-3',
+	].join(' ')
+
+/** A tile's name, at the launcher's size; heavier for the one you are on. */
+export const sheetTileLabelClass = (active: boolean) =>
+	['text-sm leading-none', active ? '!font-semibold' : '!font-medium'].join(' ')
