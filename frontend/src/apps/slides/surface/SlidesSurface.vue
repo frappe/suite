@@ -585,7 +585,11 @@ onBeforeUnmount(() => {
     >
       <template #icon="{ icon }">
         <Dropdown :options="presentationMenu">
-          <Button variant="ghost" icon-right="lucide-chevron-down" aria-label="Presentation menu">
+          <Button
+            variant="ghost"
+            icon-right="lucide-chevron-down"
+            :aria-label="__('Presentation menu')"
+          >
             <span class="block size-4.5" :class="icon" aria-hidden="true" />
           </Button>
         </Dropdown>

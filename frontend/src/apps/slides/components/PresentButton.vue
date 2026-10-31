@@ -4,7 +4,7 @@
       variant="solid"
       class="rounded-r-none focus-visible:outline-none max-md:hidden"
       icon-left="lucide-play"
-      label="Present"
+      :label="__('Present')"
       :disabled="isDisabled"
       @click="emit('start', {})"
     />
@@ -12,8 +12,8 @@
       variant="solid"
       class="rounded-r-none focus-visible:outline-none md:hidden"
       icon="lucide-play"
-      tooltip="Present"
-      aria-label="Present"
+      :tooltip="__('Present')"
+      :aria-label="__('Present')"
       :disabled="isDisabled"
       @click="emit('start', {})"
     />
@@ -21,7 +21,7 @@
       <Button
         variant="solid"
         icon="lucide-chevron-down"
-        aria-label="Presentation options"
+        :aria-label="__('Presentation options')"
         class="divider rounded-l-none border-l-[0.5px] focus-visible:outline-none data-[state=open]:bg-surface-gray-10"
       />
     </Dropdown>

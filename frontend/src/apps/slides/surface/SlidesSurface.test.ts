@@ -12,6 +12,7 @@ import {
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive'
+import { translationPlugin } from '@/platform/translation'
 
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 const saves: unknown[] = []
@@ -239,7 +240,7 @@ async function openedSurface({ path = '', role = 50, slides = served.slides } = 
   })
   await router.push(`/d/node-1${path}`)
   const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
-  app.use(router)
+  app.use(router).use(translationPlugin)
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
