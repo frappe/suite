@@ -37,12 +37,10 @@ describe('startupUrls', () => {
   const opening = [
     '/api/suite/drive/nodes/n1?expand=access%2Cpreview%2Cbreadcrumbs',
     '/api/suite/drive/nodes/n1/media',
-    '/api/suite/account',
-    '/api/suite/preferences',
-    '/api/v2/method/frappe.translate.get_boot_translations',
   ]
 
-  it('lists the presentation read and the drive and boot reads the page starts with', () => {
+  // the account, preferences and translations are the user's, not the presentation's
+  it('lists the presentation read and the drive reads the page starts with', () => {
     expect(startupUrls('n1', 'p1', { readonly: false, composite: false })).toEqual([
       `${PRESENTATION}.get_public_presentation?name=p1`,
       ...opening,

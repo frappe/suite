@@ -314,7 +314,11 @@ describe('Slides offline copy', () => {
     unregister.mockClear()
     signedIn.user = 'me@example.com'
     vi.stubEnv('VITE_SLIDES_SW', '1')
-    vi.stubGlobal('caches', { open: async () => ({}), match: async () => undefined })
+    vi.stubGlobal('caches', {
+      open: async () => ({ keys: async () => [] }),
+      match: async () => undefined,
+      delete: async () => true,
+    })
     Object.defineProperty(navigator, 'serviceWorker', {
       configurable: true,
       value: {
@@ -334,6 +338,7 @@ describe('Slides offline copy', () => {
   afterEach(() => {
     delete (navigator as { serviceWorker?: unknown }).serviceWorker
     delete window.disable_slides_service_worker
+    localStorage.clear()
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
   })
@@ -368,6 +373,36 @@ describe('Slides offline copy', () => {
     await vi.waitFor(() => expect(unregister).toHaveBeenCalledOnce())
     expect(register).not.toHaveBeenCalled()
     expect(offlineCopyButton()).toBeNull()
+  })
+
+  it('forgets every offline copy with the kill switch on', async () => {
+    window.disable_slides_service_worker = true
+    localStorage.setItem('slides-offline-copy:other', JSON.stringify({ node: 'n9', keys: [] }))
+    mounted = await openedSurface()
+
+    await vi.waitFor(() => expect(localStorage.getItem('slides-offline-copy:other')).toBeNull())
+  })
+
+  // an online visit refreshes the copy's start-up files (DESIGN-slides-offline §3)
+  it.each([
+    ['the owner', 'me@example.com', ['/d/node-1']],
+    ['someone who is not the owner', 'someone@example.com', []],
+  ])('refreshes the offline copy only for %s', async (_label, user, refreshed) => {
+    signedIn.user = user
+    const fetched: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      fetched.push(url)
+      return new Response('', { status: 404 })
+    })
+    const next = opens + 1
+    localStorage.setItem(
+      `slides-offline-copy:p${next}`,
+      JSON.stringify({ node: 'node-1', keys: [] }),
+    )
+    mounted = await openedSurface()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(fetched.filter((url) => url.startsWith('/d/'))).toEqual(refreshed)
   })
 
   it('tells the worker when the presentation opens and closes', async () => {

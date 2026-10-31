@@ -99,9 +99,6 @@ const STARTUP_API = [
   '/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=p1',
   '/api/suite/drive/nodes/n1?expand=access%2Cpreview%2Cbreadcrumbs',
   '/api/suite/drive/nodes/n1/media',
-  '/api/suite/account',
-  '/api/suite/preferences',
-  '/api/v2/method/frappe.translate.get_boot_translations',
 ]
 const ENTRY_ASSETS = [
   '/assets/suite/frontend/assets/index-a1.js',
@@ -332,6 +329,26 @@ describe('saveOfflineCopy', () => {
     expect(recordedKeys('p1')).toEqual([])
   })
 
+  it('ends a save cancelled before Drive has signed its pictures', async () => {
+    const release = setDocumentMedia((id) => ({
+      id,
+      src: ref(null),
+      status: ref('loading' as const),
+      cacheKey: ref(id),
+      refresh: async () => {},
+    }))
+    slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+
+    const saving = saveOfflineCopy('p1')
+    cancelOfflineCopy()
+    const result = await saving
+    release()
+
+    expect(result).toBeNull()
+    expect(offlineCopyProgress.value.running).toBe(false)
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
+
   it('surfaces a ledger write failure, so the button can report it', async () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('full', 'QuotaExceededError')
@@ -496,22 +513,49 @@ describe('the start-up copy', () => {
     expect(offlineCopyProgress.value.running).toBe(false)
   })
 
-  it('leaves out a start-up read that failed', async () => {
-    const failing = '/api/suite/preferences'
-    const next = globalThis.fetch
-    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-      if (url === failing) {
-        return json(500)
+  it.each([STARTUP_API[0], ENTRY_ASSETS[0]])(
+    'fails the save and stores nothing when %s fails',
+    async (failing) => {
+      const next = globalThis.fetch
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+        if (url === failing) {
+          return json(500)
+        }
+
+        return next(url, init)
+      })
+
+      await expect(saveOfflineCopy('p1')).rejects.toThrow()
+
+      expect(cache.store.size).toBe(0)
+      expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+    },
+  )
+
+  it.each([
+    ['a save', 'q1', (id: string) => saveOfflineCopy(id)],
+    ['a visit', 'q2', (id: string) => warmOfflineCopyAssets(id)],
+  ])('fails %s on a full disk, keeping every stored key listed', async (_label, id, run) => {
+    await saveOfflineCopy(id)
+    const before = recordOf(id).keys
+    shell = () => shellResponse({}, 200, SHELL_HTML.replaceAll('index-a1', 'index-e5'))
+    const put = cache.put.bind(cache)
+    cache.put = async (key, response) => {
+      if (key.includes('index-e5')) {
+        throw new DOMException('full', 'QuotaExceededError')
       }
 
-      return next(url, init)
+      return put(key, response)
+    }
+
+    await expect(run(id)).rejects.toThrow()
+
+    const stored = [...cache.store.keys()].map((href) => {
+      const url = new URL(href)
+      return url.pathname + url.search
     })
-
-    await saveOfflineCopy('p1')
-
-    expect(cache.has(failing)).toBe(false)
-    expect(recordOf('p1').keys).not.toContain(failing)
-    expect(cache.has('/api/suite/account')).toBe(true)
+    expect(recordOf(id).keys).toEqual(before)
+    expect(stored.filter((key) => !before.includes(key))).toEqual([])
   })
 
   it('removes the shell, the reads and the assets with the copy', async () => {
@@ -549,6 +593,44 @@ describe('the start-up copy', () => {
     expect(cache.has('/assets/suite/frontend/assets/index-a1.js')).toBe(false)
     expect(recordOf('p1').keys).toContain('/assets/suite/frontend/assets/index-e5.js')
     expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+  })
+
+  it('leaves no record and no shell when the node is forgotten during a visit', async () => {
+    await saveOfflineCopy('f1')
+    const { promise: answered, resolve: answer } = Promise.withResolvers<void>()
+    const next = globalThis.fetch
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url === '/d/n1') {
+        await answered
+      }
+
+      return next(url, init)
+    })
+
+    const warming = warmOfflineCopyAssets('f1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await removeNodeOfflineCopy('n1')
+    answer()
+    await warming
+
+    expect(localStorage.getItem('slides-offline-copy:f1')).toBeNull()
+    expect(cache.has('/d/n1')).toBe(false)
+    expect(cache.store.size).toBe(0)
+  })
+
+  it('stops a save when its node is forgotten, leaving nothing behind', async () => {
+    let forgetting: Promise<void> | undefined
+    responses['/private/files/b.png?slides_media=1'] = () => {
+      forgetting = removeNodeOfflineCopy('n1')
+      return image(20)
+    }
+
+    const result = await saveOfflineCopy('f2')
+    await forgetting
+
+    expect(result).toBeNull()
+    expect(localStorage.getItem('slides-offline-copy:f2')).toBeNull()
+    expect(cache.store.size).toBe(0)
   })
 
   it('refreshes nothing for a presentation with no offline copy', async () => {

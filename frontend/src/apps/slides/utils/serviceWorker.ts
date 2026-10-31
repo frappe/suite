@@ -9,6 +9,7 @@ export async function registerSlidesWorker() {
   if (window.disable_slides_service_worker) {
     const registration = await navigator.serviceWorker.getRegistration('/').catch(() => null)
     await registration?.unregister().catch(() => {})
+    await clearSlidesUserData().catch(() => {})
     return
   }
 

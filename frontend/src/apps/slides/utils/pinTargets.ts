@@ -43,12 +43,7 @@ export function startupUrls(
     urls.push(buildUrl(api.slides.documents.composite, { name: presentationId }))
   }
 
-  urls.push(
-    ...documentSessionUrls(node),
-    buildUrl(api.suite.account.get, {}),
-    buildUrl(api.suite.preferences.get, {}),
-    buildUrl(api.suite.translations.get, {}),
-  )
+  urls.push(...documentSessionUrls(node))
   return urls
 }
 

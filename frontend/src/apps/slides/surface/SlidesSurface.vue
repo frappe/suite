@@ -529,7 +529,11 @@ watch([slides, () => presentationDoc.value?.modified], () => {
   }
 
   refreshOfflineStatus(presentationId.value)
-  void warmOfflineCopyAssets(presentationId.value)
+  if (canPin.value) {
+    warmOfflineCopyAssets(presentationId.value).catch((err) =>
+      console.warn('Slides offline copy refresh failed:', err),
+    )
+  }
 })
 onMounted(() => {
   void load()

@@ -35,6 +35,7 @@ import { documentTypes } from '@/composition/documentRegistry'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { describeFailure } from '@/platform/open-failure'
 import { openingTitle as historyOpeningTitle, usePageTitle } from '@/platform/page-meta'
+import { getCookieSessionUser } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
 const route = useRoute()
@@ -129,7 +130,11 @@ watch(
         return
       }
 
-      if (reason instanceof TransportError && REFUSAL_STATUSES.includes(reason.status)) {
+      if (
+        reason instanceof TransportError &&
+        REFUSAL_STATUSES.includes(reason.status) &&
+        getCookieSessionUser()
+      ) {
         forgetNode(node)
       }
 

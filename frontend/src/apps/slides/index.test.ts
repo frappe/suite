@@ -100,6 +100,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
@@ -129,6 +130,7 @@ describe('the slides document', () => {
   })
 
   it('drops the copy when opening the presentation is refused', async () => {
+    document.cookie = 'user_id=a@example.com'
     state.open.mockRejectedValue(
       new TransportError({ type: 'DrivePermissionDenied', message: 'denied', status: 403 }),
     )

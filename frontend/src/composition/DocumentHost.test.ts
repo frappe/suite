@@ -106,6 +106,7 @@ afterEach(() => {
   testState.dispose.mockReset()
   testState.nodeLocked.mockReset()
   testState.forget.mockReset()
+  document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   document.body.innerHTML = ''
 })
 
@@ -403,6 +404,7 @@ describe('DocumentHost', () => {
   it.each([403, 404, 410])(
     'forgets the node on every type that keeps copies when the open is a %i',
     async (status) => {
+      document.cookie = 'user_id=owner@example.com'
       testState.open.mockRejectedValue(refusal(status, 'Refused'))
       const { root, app } = await mountHost()
 
@@ -411,6 +413,15 @@ describe('DocumentHost', () => {
       app.unmount()
     },
   )
+
+  it('keeps the node when a signed-out open is refused', async () => {
+    testState.open.mockRejectedValue(refusal(403, 'Refused'))
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    expect(testState.forget).not.toHaveBeenCalled()
+    app.unmount()
+  })
 
   it('forgets the node when an open document is refused', async () => {
     const open = session()
