@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { effectScope } from 'vue'
 
 import type { Operation } from '@/platform/transport'
 
@@ -31,13 +32,13 @@ vi.mock('@/platform/transport', async (actual) => ({
         modified: null,
         content_modified: null,
         access: { role: 10, via_link: null },
-        breadcrumbs: [{ name: 'p', title: 'Projects' }],
+        breadcrumbs: [{ name: 'p', title: 'Projects', kind: 'folder' }],
       }
     },
   },
 }))
 
-const { openDocumentSession } = await import('./index')
+const { openDocumentSession, useDriveDocumentLocation } = await import('./index')
 
 describe('Opening a node', () => {
   it('opens a file preview or a document from one read of the node', async () => {
@@ -51,6 +52,19 @@ describe('Opening a node', () => {
       'node_get brief',
     ])
     file.dispose()
+    document.dispose()
+  })
+})
+
+describe("A document's folder", () => {
+  it('links the header back to the folder the document is in', async () => {
+    const document = await openDocumentSession('brief')
+    const scope = effectScope()
+    const location = scope.run(() => useDriveDocumentLocation(document))
+
+    expect(location?.value?.label).toBe('Projects')
+    expect(location?.value?.to.path).toBe('/drive/f/p/projects')
+    scope.stop()
     document.dispose()
   })
 })

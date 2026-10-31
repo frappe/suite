@@ -19,7 +19,7 @@ import type {
   NodeVersionsOutputVersionShape,
 } from './generated'
 import { driveLinks } from './links'
-import { DRIVE_ROLES, type DriveAccess, type DriveNode } from './types'
+import { DRIVE_ROLES, type DriveAccess, type DriveBreadcrumb, type DriveNode } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
@@ -75,6 +75,11 @@ export interface DocumentSession {
   readonly title: Readonly<Ref<string>>
   readonly state: Readonly<Ref<SessionState>>
   readonly access: Readonly<Ref<DriveAccess>>
+  /**
+   * The folder the node is in, when the caller can read it: the header links
+   * back to it. Follows a move.
+   */
+  readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
   /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
   readonly canShare: Readonly<Ref<boolean>>
   rename(title: string): Promise<DriveNode>
@@ -149,7 +154,7 @@ export async function openDriveDocumentSession(
       api.drive.nodes.get,
       {
         node: nodeId,
-        expand: 'access',
+        expand: 'access,breadcrumbs',
       },
       {
         signal: controller.signal,
@@ -178,6 +183,7 @@ export async function openDriveDocumentSession(
   const title = ref(node.title)
   const state = ref<SessionState>(toSessionState(node))
   const access = ref<DriveAccess>(node.access ?? {})
+  const folder = ref<DriveBreadcrumb | null>(folderOf(node))
   const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
@@ -188,7 +194,7 @@ export async function openDriveDocumentSession(
         api.drive.nodes.get,
         {
           node: nodeId,
-          expand: 'access',
+          expand: 'access,breadcrumbs',
         },
         {
           signal: controller.signal,
@@ -197,6 +203,7 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
+      folder.value = folderOf(fresh)
     } catch (error) {
       let status = 0
       if (error instanceof TransportError) {
@@ -289,6 +296,7 @@ export async function openDriveDocumentSession(
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),
+    folder: readonly(folder),
     canShare: computed(() => canShare(state.value, access.value)),
     async rename(nextTitle) {
       const updated = await requester.mutation(
@@ -574,6 +582,24 @@ interface InternalMediaHandle {
 /** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
 export function canShare(state: SessionState, access: DriveAccess): boolean {
   return state === 'Active' && (access.role ?? 0) >= DRIVE_ROLES.manage
+}
+
+/** Kinds of node that hold files in a listing. */
+const FOLDER_KINDS = new Set(['folder', 'root'])
+
+/**
+ * The breadcrumbs end at the node's own folder, when the caller can read it.
+ * A picture inside a Writer document or a Slides deck has no folder: the
+ * document is its parent, and a document is never listed as a folder.
+ */
+export function folderOf(node: DriveNode): DriveBreadcrumb | null {
+  const trail = node.breadcrumbs ?? []
+  const parent = trail.at(-1)
+  if (!parent || parent.name !== node.parent_node || !FOLDER_KINDS.has(parent.kind)) {
+    return null
+  }
+
+  return trail.some((step) => step.kind === 'document') ? null : parent
 }
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'

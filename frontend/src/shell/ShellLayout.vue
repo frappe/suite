@@ -28,7 +28,7 @@
       :scroll="scrollOwner === 'shell'"
       class="h-full suite-area-shell"
     >
-      <template #rail>
+      <template v-if="railShown" #rail>
         <Rail :areas="areas" :badges="badges">
           <template #bell><slot name="bell" /></template>
         </Rail>
@@ -107,6 +107,7 @@ import type {
   ShellFrame,
 } from '@/platform/contracts'
 import { shellPhoneChromeRequested } from '@/platform/phone-chrome'
+import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import AccountSheet from '@/shell/AccountSheet.vue'
@@ -136,6 +137,7 @@ const SuiteSettingsDialog = defineAsyncComponent(
 const SuiteCommandPalette = defineAsyncComponent(() => import('@/shell/SuiteCommandPalette.vue'))
 const session = useSession()
 const activeArea = computed(() => props.activeArea)
+const railShown = computed(() => !railHidden.value)
 const unavailable = computed(() => {
   const area = activeArea.value
   if (!area || session.status.value !== 'authenticated') return null

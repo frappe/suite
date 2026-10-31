@@ -5,6 +5,7 @@ import { onAccessChange } from '@/apps/drive/client/accessChanges'
 import {
   canShare,
   documentCredentials,
+  folderOf,
   type DocumentSession,
   type MediaHandle,
 } from '@/apps/drive/client/session'
@@ -19,11 +20,6 @@ export interface FilePreviewSession extends DocumentSession {
   readonly size: Readonly<Ref<number>>
   /** The id of the folder the file is in. A replace names it; `null` for a root. Follows a move. */
   readonly parent: Readonly<Ref<string | null>>
-  /**
-   * The folder the file is in, when the caller can read it: the header links
-   * back to it. Follows a move.
-   */
-  readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
   /** The root the file is in. A restore whose folder is gone picks a folder in it. */
   readonly root: string
   /** The node whose trashing trashed the file: the file itself, a folder it is in, or `null` while Active. Follows a refresh. */
@@ -355,20 +351,6 @@ export async function openFilePreviewSession(
   }
 }
 
-/** Kinds of node that hold files in a listing a preview can step through. */
-const FOLDER_KINDS = new Set(['folder', 'root'])
-
-/**
- * The breadcrumbs end at the file's own folder, when the caller can read it.
- * A picture inside a Writer document or a Slides deck has no folder: the
- * document is its parent, and a document is never listed as a folder.
- */
-function folderOf(node: DriveNode): DriveBreadcrumb | null {
-  const trail = node.breadcrumbs ?? []
-  const parent = trail.at(-1)
-  if (!parent || parent.name !== node.parent_node || !FOLDER_KINDS.has(parent.kind)) return null
-  return trail.some((step) => step.kind === 'document') ? null : parent
-}
 function sessionState(node: DriveNode): 'Active' | 'Trashed' | 'Refused' {
   if ((node.access?.role ?? 0) < 10) return 'Refused'
   return node.state === 'Trashed' ? 'Trashed' : 'Active'
