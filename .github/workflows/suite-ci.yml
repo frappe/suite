@@ -268,14 +268,13 @@ jobs:
       - name: Run Meet SFU Server Tests
         if: always() && steps.node-server-changes.outputs.run_meet == '1'
         working-directory: suite/meet/sfu-server
-        env:
-          ONNXRUNTIME_NODE_INSTALL: skip
         run: |
           if ! command -v ffmpeg >/dev/null; then
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends ffmpeg
           fi
-          yarn install --frozen-lockfile --verbose
+          yarn install --frozen-lockfile
+          node -e 'require("mediasoup").createWorker().then(worker => worker.close())'
           mkdir -p test-results
           yarn test:ci
 
