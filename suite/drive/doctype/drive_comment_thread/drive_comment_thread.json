@@ -1,0 +1,69 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "node",
+  "anchor",
+  "client_id",
+  "resolved",
+  "resolved_by",
+  "resolved_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "reqd": 1
+  },
+  {
+   "fieldname": "anchor",
+   "fieldtype": "Data",
+   "label": "Anchor",
+   "length": 255,
+   "reqd": 1
+  },
+  {
+   "description": "The writing client's own id for this write, so a resend returns the first answer",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "length": 64,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "resolved",
+   "fieldtype": "Check",
+   "label": "Resolved"
+  },
+  {
+   "fieldname": "resolved_by",
+   "fieldtype": "Link",
+   "label": "Resolved By",
+   "options": "User"
+  },
+  {
+   "fieldname": "resolved_at",
+   "fieldtype": "Datetime",
+   "label": "Resolved At"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Comment Thread",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

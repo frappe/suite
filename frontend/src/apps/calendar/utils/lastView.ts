@@ -17,13 +17,13 @@ const STORAGE_KEY = 'calendar-view'
 
 /** Remembers `name`, if it is a view route at all. */
 export const rememberCalendarView = (name: unknown) => {
-	if (typeof name !== 'string' || !VIEW_ROUTES.includes(name)) return
-	try {
-		localStorage.setItem(STORAGE_KEY, name)
-	} catch {
-		// Private windows and blocked site data throw on write. A forgotten
-		// preference is not worth failing navigation over.
-	}
+  if (typeof name !== 'string' || !VIEW_ROUTES.includes(name)) return
+  try {
+    localStorage.setItem(STORAGE_KEY, name)
+  } catch {
+    // Private windows and blocked site data throw on write. A forgotten
+    // preference is not worth failing navigation over.
+  }
 }
 
 /**
@@ -32,11 +32,11 @@ export const rememberCalendarView = (name: unknown) => {
  * between the phone and the desktop.
  */
 export const lastCalendarView = (): string | null => {
-	let stored: string | null = null
-	try {
-		stored = localStorage.getItem(STORAGE_KEY)
-	} catch {
-		return null
-	}
-	return stored && VIEW_ROUTES.includes(stored) ? stored : null
+  let stored: string | null = null
+  try {
+    stored = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
+  return stored && VIEW_ROUTES.includes(stored) ? stored : null
 }

@@ -1,7 +1,12 @@
+const send_reply = require("./acknowledge");
+
 const suite_handlers = (socket) => {
 	// guest specific rooms
 	socket.on("guest_subscribe", async (payload, untrustedAcknowledge) => {
-		const acknowledge = safe_acknowledge(untrustedAcknowledge);
+		function acknowledge(reply) {
+			send_reply(untrustedAcknowledge, reply);
+		}
+
 		try {
 			const validation = await validate_guest(socket, payload);
 			if (!validation.ok) {
@@ -22,7 +27,10 @@ const suite_handlers = (socket) => {
 	});
 
 	socket.on("guest_unsubscribe", async (payload, untrustedAcknowledge) => {
-		const acknowledge = safe_acknowledge(untrustedAcknowledge);
+		function acknowledge(reply) {
+			send_reply(untrustedAcknowledge, reply);
+		}
+
 		try {
 			const validation = await validate_guest(socket, payload);
 			if (!validation.ok && !validation.status) {
@@ -38,6 +46,13 @@ const suite_handlers = (socket) => {
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
+
+	// A fault in collab must not keep Meet's handlers from loading
+	try {
+		require("./collab")(socket);
+	} catch (error) {
+		console.error("collab handlers failed", error);
+	}
 };
 
 const GUEST_STATUSES = new Set([
@@ -47,13 +62,6 @@ const GUEST_STATUSES = new Set([
 	"rejected",
 	"banned",
 ]);
-
-const safe_acknowledge = (acknowledge) => (value) => {
-	if (typeof acknowledge !== "function") return;
-	try {
-		Promise.resolve(acknowledge(value)).catch(() => {});
-	} catch {}
-};
 
 const validate_guest = async (socket, payload) => {
 	if (

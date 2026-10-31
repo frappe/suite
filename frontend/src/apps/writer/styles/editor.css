@@ -31,30 +31,112 @@ b {
   color: inherit !important;
 }
 
+/* A person's colour: the element carries both modes' shades, and the theme picks one */
+.peer-colour {
+  --peer-solid: var(--peer-light);
+  --peer-tint: var(--peer-light-tint);
+  --peer-ink: var(--peer-light-ink);
+  --peer-selection: var(--peer-light-selection);
+}
+
+:root[data-theme='dark'] .peer-colour {
+  --peer-solid: var(--peer-dark);
+  --peer-tint: var(--peer-dark-tint);
+  --peer-ink: var(--peer-dark-ink);
+  --peer-selection: var(--peer-dark-selection);
+}
+
+.collaboration-carets__selection {
+  background-color: var(--peer-selection);
+  border-radius: 3px;
+}
+
+/* A 2px bar as tall as the text, square on top where its dot joins it */
 .collaboration-carets__caret {
-  border-left: 1px solid #0d0d0d;
-  border-right: 1px solid #0d0d0d;
-  margin-left: -1px;
-  margin-right: -1px;
+  background-color: var(--peer-solid);
+  border-radius: 0 0 1px 1px;
+  display: inline-block;
+  height: 1.25em;
+  margin: 0 -1px;
   pointer-events: none;
   position: relative;
+  vertical-align: -0.22em;
+  width: 2px;
   word-break: normal;
 }
 
-/* Render the username above the caret */
-.collaboration-carets__label {
-  border-radius: 3px 3px 3px 0;
-  color: var(--ink-base);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 600;
-  left: -1px;
-  line-height: normal;
-  padding: 0.15rem 0.3rem;
+/* Room to hover a caret, which brings its name back */
+.collaboration-carets__caret::after {
+  bottom: 0;
+  content: '';
+  left: -2px;
+  pointer-events: auto;
   position: absolute;
-  top: -1.4em;
+  top: 0;
+  width: 6px;
+}
+
+/* The name in a flag on top of the caret; it shows at once */
+.collaboration-carets__label {
+  align-items: center;
+  background-color: var(--peer-tint);
+  border-radius: 6px 6px 6px 1px;
+  bottom: calc(100% - 1px);
+  box-shadow: inset 0 0 0 1px var(--peer-solid);
+  color: var(--peer-ink);
+  cursor: default;
+  display: flex;
+  font:
+    500 11px/16px ui-sans-serif,
+    -apple-system,
+    sans-serif;
+  left: 0;
+  padding: 0 6px;
+  pointer-events: auto;
+  position: absolute;
   user-select: none;
   white-space: nowrap;
+}
+
+/* Three seconds after its person stops, the flag shrinks to a dot clear of the text. The dot sinks 2px into
+   the caret so the two read as one shape, and at 8px it centres on the 2px bar to the whole pixel */
+.collaboration-carets__caret--quiet .collaboration-carets__label {
+  background-color: var(--peer-solid);
+  border-radius: 50%;
+  bottom: calc(100% - 2px);
+  box-shadow: none;
+  font-size: 0;
+  height: 8px;
+  left: -3px;
+  padding: 0;
+  transition-duration: 0.2s;
+  transition-property: background-color, border-radius, bottom, font-size, height, left, padding;
+  transition-timing-function: ease-out;
+  width: 8px;
+}
+
+.collaboration-carets__caret--quiet:hover .collaboration-carets__label {
+  background-color: var(--peer-tint);
+  border-radius: 6px 6px 6px 1px;
+  bottom: calc(100% - 1px);
+  box-shadow: inset 0 0 0 1px var(--peer-solid);
+  font-size: 11px;
+  height: 16px;
+  left: 0;
+  padding: 0 6px;
+  transition: none;
+  width: auto;
+}
+
+/* Dimmed, flag and dot with it, while its person is idle */
+.collaboration-carets__caret--idle {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-carets__caret--quiet .collaboration-carets__label {
+    transition: none;
+  }
 }
 
 .selection {

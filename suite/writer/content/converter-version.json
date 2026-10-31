@@ -1,0 +1,4 @@
+{
+  "version": "4",
+  "note": "Bump on any change that can change a conversion. A change made without a bump runs as the old version, and the documents that version refused are not retried."
+}

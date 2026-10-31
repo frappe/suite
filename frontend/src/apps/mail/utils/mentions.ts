@@ -5,15 +5,15 @@ import * as cheerio from 'cheerio'
 // the same `@Name` text, so a mention still reads as the person it names — and resolves
 // to them — wherever the mail lands.
 export const flattenMentions = ($: cheerio.CheerioAPI) => {
-	$('span[data-type="mention"]').each((_, span) => {
-		const $mention = $(span)
-		const email = $mention.attr('data-id')
-		if (!email) return
+  $('span[data-type="mention"]').each((_, span) => {
+    const $mention = $(span)
+    const email = $mention.attr('data-id')
+    if (!email) return
 
-		$mention.replaceWith(
-			$('<a></a>')
-				.attr('href', `mailto:${email}`)
-				.text($mention.text() || `@${$mention.attr('data-label') || email}`),
-		)
-	})
+    $mention.replaceWith(
+      $('<a></a>')
+        .attr('href', `mailto:${email}`)
+        .text($mention.text() || `@${$mention.attr('data-label') || email}`),
+    )
+  })
 }

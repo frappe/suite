@@ -9,10 +9,10 @@
 export type RecurringScope = 'instance' | 'following' | 'series'
 
 export interface RecurringScopeOption {
-	value: RecurringScope
-	label: string
-	/** Offered but not available yet — the row is there, greyed out. */
-	disabled?: boolean
+  value: RecurringScope
+  label: string
+  /** Offered but not available yet — the row is there, greyed out. */
+  disabled?: boolean
 }
 
 /**
@@ -22,9 +22,9 @@ export interface RecurringScopeOption {
  * module scope they are not loaded yet.
  */
 const scopeLabels = (): Record<RecurringScope, string> => ({
-	instance: __('This event only'),
-	following: __('This and following events'),
-	series: __('All events in the series'),
+  instance: __('This event only'),
+  following: __('This and following events'),
+  series: __('All events in the series'),
 })
 
 /**
@@ -34,8 +34,8 @@ const scopeLabels = (): Record<RecurringScope, string> => ({
  * rather than offering the same answer twice.
  */
 export const isFirstOccurrence = (event?: {
-	recurrence_id?: string
-	master_start?: string
+  recurrence_id?: string
+  master_start?: string
 }): boolean => !!event?.recurrence_id && event.recurrence_id === event.master_start
 
 /**
@@ -50,13 +50,13 @@ export const isFirstOccurrence = (event?: {
  *   is the same answer as "all events" and is left out rather than greyed out.
  */
 export const scopeOptions = ({
-	unavailable = [],
-	isFirst = false,
+  unavailable = [],
+  isFirst = false,
 }: { unavailable?: RecurringScope[]; isFirst?: boolean } = {}): RecurringScopeOption[] =>
-	(['instance', 'following', 'series'] as const)
-		.filter((value) => !(isFirst && value === 'following'))
-		.map((value) => ({
-			value,
-			label: scopeLabels()[value],
-			disabled: unavailable.includes(value),
-		}))
+  (['instance', 'following', 'series'] as const)
+    .filter((value) => !(isFirst && value === 'following'))
+    .map((value) => ({
+      value,
+      label: scopeLabels()[value],
+      disabled: unavailable.includes(value),
+    }))

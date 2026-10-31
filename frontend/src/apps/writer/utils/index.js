@@ -1,35 +1,14 @@
-import router from '@/apps/writer/router'
-
-import { formatSize } from '@/apps/writer/utils/format'
-import { nextTick, h } from 'vue'
-import { useTimeAgo } from '@vueuse/core'
-import editorStyle from '@/apps/writer/styles/editor.css?inline'
-import globalStyle from '@/apps/writer/styles/index.css?inline'
-import slugify from 'slugify'
-import { toast as nToast, createResource } from 'frappe-ui'
-import { rootInfo } from '@/apps/drive/sdk'
-
-rootInfo.fetch()
-import { createLowlight, common } from 'lowlight'
 import { toHtml } from 'hast-util-to-html'
-import JSZip from 'jszip'
-import { saveAs } from 'file-saver'
-import TurndownService from 'turndown'
-import { formatDate } from '@/apps/writer/utils/format'
-import { FontSize } from '@/apps/writer/extensions/font-size'
+import { common, createLowlight } from 'lowlight'
+
 import EmbedExtension from '@/apps/writer/extensions/embed-extension'
 import ExtendedParagraph from '@/apps/writer/extensions/extended-paragraph'
 import FontFamily from '@/apps/writer/extensions/font-family'
+import { FontSize } from '@/apps/writer/extensions/font-size'
+import editorStyle from '@/apps/writer/styles/editor.css?inline'
+import globalStyle from '@/apps/writer/styles/index.css?inline'
 import { cssLineHeight } from '@/apps/writer/utils/typography'
 
-export const prettyData = (entities) => {
-  return entities.map((entity) => {
-    entity.file_size_pretty = formatSize(entity.file_size)
-    entity.relativeModified = useTimeAgo(entity.modified)
-    if (entity.accessed) entity.relativeAccessed = useTimeAgo(entity.accessed)
-    return entity
-  })
-}
 function highlightCodeBlocks(html) {
   const lowlight = createLowlight(common)
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -130,16 +109,11 @@ export function printDoc(html, settings = {}) {
           `
   const iframe = document.createElement('iframe')
   iframe.id = 'el-tiptap-iframe'
-  iframe.setAttribute(
-    'style',
-    'position: absolute; width: 0; height: 0; top: -10px; left: -10px;',
-  )
+  iframe.setAttribute('style', 'position: absolute; width: 0; height: 0; top: -10px; left: -10px;')
   document.body.appendChild(iframe)
 
   const frameWindow = iframe.contentWindow
-  const doc =
-    iframe.contentDocument ||
-    (iframe.contentWindow && iframe.contentWindow.document)
+  const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document)
 
   if (doc) {
     doc.open()
@@ -172,26 +146,6 @@ export function printDoc(html, settings = {}) {
   }
 }
 
-function slugger(title) {
-  return slugify(title.split('.').join(' '), {
-    lower: true,
-    trim: true,
-    remove: /[^\w\s\']|_/,
-  })
-}
-
-export async function updateURLSlug(title) {
-  const route = router.currentRoute.value
-  await nextTick()
-  const slug = slugger(title)
-  if (route.params.slug !== slug) {
-    // Hacky, but we only want to update the URL - triggering a reload breaks a lot
-    const base = window.location.pathname.split('/').slice(0, 4).join('/')
-    const new_path = base + (base.endsWith('/') ? '' : '/') + slug
-    history.replaceState({}, null, new_path)
-  }
-}
-
 export function dynamicList(k) {
   return k.filter((a) => typeof a !== 'object' || !('cond' in a) || a.cond)
 }
@@ -200,8 +154,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Caveat',
     key: 'caveat',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-caveat)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-caveat)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-caveat)',
@@ -210,8 +163,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Comic Sans',
     key: 'comic-sans',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-comic-sans)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-comic-sans)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-comic-sans)',
@@ -220,8 +172,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Comfortaa',
     key: 'comfortaa',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-comfortaa)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-comfortaa)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-comfortaa)',
@@ -230,8 +181,7 @@ export const FONT_FAMILIES = [
   {
     label: 'EB Garamond',
     key: 'eb-garamond',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-eb-garamond)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-eb-garamond)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-eb-garamond)',
@@ -249,8 +199,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Geist',
     key: 'geist',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-geist)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-geist)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-geist)',
@@ -259,8 +208,7 @@ export const FONT_FAMILIES = [
   {
     label: 'IBM Plex Sans',
     key: 'ibm-plex',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-ibm-plex)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-ibm-plex)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-ibm-plex)',
@@ -269,8 +217,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Inter',
     key: 'inter',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-inter)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-inter)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-inter)',
@@ -279,8 +226,7 @@ export const FONT_FAMILIES = [
   {
     label: 'JetBrains Mono',
     key: 'jetbrains',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-jetbrains)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-jetbrains)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-jetbrains)',
@@ -289,8 +235,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Lora',
     key: 'lora',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-lora)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-lora)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-lora)',
@@ -299,8 +244,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Merriweather',
     key: 'merriweather',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-merriweather)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-merriweather)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-merriweather)',
@@ -309,8 +253,7 @@ export const FONT_FAMILIES = [
   {
     label: 'Nunito',
     key: 'nunito',
-    action: (editor) =>
-      editor.chain().focus().setFontFamily('var(--font-nunito)').run(),
+    action: (editor) => editor.chain().focus().setFontFamily('var(--font-nunito)').run(),
     isActive: (editor) =>
       editor.isActive('textStyle', {
         fontFamily: 'var(--font-nunito)',
@@ -340,112 +283,4 @@ export function isModKey(e) {
   return isApple() ? e.metaKey : e.ctrlKey
 }
 
-export function toast(obj) {
-  if (typeof obj === 'string') return nToast.success(obj)
-  const { title, buttons, icon, duration, type } = obj
-  nToast.create({
-    message: title,
-    action: buttons?.[0],
-    icon: icon && h(icon, { class: 'text-ink-base' }),
-    duration: duration || 5,
-    type,
-  })
-}
-
-export const COMMON_EXTENSIONS = [
-  FontSize,
-  FontFamily,
-  EmbedExtension,
-  ExtendedParagraph,
-]
-
-export async function downloadMD(editor, foldername) {
-  let html = editor.value.getHTML()
-  const turndownService = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    bulletListMarker: '-',
-  })
-
-  const zip = new JSZip()
-  const urls = editor.value.commands.getEmbedUrls()
-  const getExtension = createResource({
-    url: 'suite.writer.api.docs.get_extension',
-  })
-  const parent = router.currentRoute.value.params.entityName
-  const markdown = turndownService.turndown(html)
-  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
-
-  if (urls.length === 0) {
-    saveAs(blob, `${foldername}.md`)
-    return
-  }
-  zip.file(`${foldername}.md`, blob)
-
-  for (const i in urls) {
-    const ext = await getExtension.fetch({ entity_name: urls[i].name })
-    const title = `${urls[i].title}.${ext}`
-    html = html.replace(
-      `src="/api/method/suite.writer.api.embed.get?id=${urls[i].name}"`,
-      `src="./${title}"`,
-    )
-    const fileUrl = `/api/method/suite.writer.api.embed.get?id=${urls[i].name}`
-    const blob = await (await fetch(fileUrl)).blob()
-    zip.file(title, blob)
-  }
-
-  const blobzip = await zip.generateAsync({
-    type: 'blob',
-    compression: 'DEFLATE',
-  })
-
-  saveAs(blobzip, `${foldername}.zip`)
-}
-
-export function downloadZippedHTML(editor, foldername, settings = {}) {
-  nToast.promise(
-    (async () => {
-      let html = editor.value.getHTML()
-      const zip = new JSZip()
-      zip.file(`${foldername}.html`, html)
-      const urls = editor.value.commands.getEmbedUrls()
-      const getExtension = createResource({
-        url: 'suite.writer.api.docs.get_extension',
-      })
-
-      for (const i in urls) {
-        const ext = await getExtension.fetch({ entity_name: urls[i].name })
-        const title = `${urls[i].title}.${ext}`
-        html = html.replace(
-          `src="/api/method/suite.writer.api.embed.get?id=${urls[i].name}"`,
-          `src="./${title}"`,
-        )
-        const fileUrl = `/api/method/suite.writer.api.embed.get?id=${urls[i].name}`
-        const blob = await (await fetch(fileUrl)).blob()
-        zip.file(title, blob)
-      }
-
-      const blob = await zip.generateAsync({
-        type: 'blob',
-        compression: 'DEFLATE',
-      })
-      saveAs(blob, `${foldername}.zip`)
-    })(),
-    {
-      loading: 'Preparing download...',
-      success: 'Download completed!',
-      error: 'Download failed',
-    },
-  )
-}
-
-export const insertTemplate = (template, editor) => {
-  if (!template.content) return false
-  const content = template.content.replaceAll(
-    /\{\{(date|time|datetime)\}\}/g,
-    (_, type) => formatDate(new Date(), { datetime: type }),
-  )
-  editor.commands.insertContent(content)
-  editor.commands.focus()
-  return true
-}
+export const COMMON_EXTENSIONS = [FontSize, FontFamily, EmbedExtension, ExtendedParagraph]

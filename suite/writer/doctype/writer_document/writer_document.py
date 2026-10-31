@@ -1,169 +1,45 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import base64
-from datetime import datetime, timedelta
-
 import frappe
-import pycrdt
 from frappe.model.document import Document
 
-from suite.drive.api.notifications import create_notification, get_link
-from suite.suite_core import suite_email
+from suite import content, drive
+from suite.writer.content import APP
 
-COLLISION_ERRORS = (
-    frappe.exceptions.QueryDeadlockError,
-    frappe.exceptions.TimestampMismatchError,
-)
-
-AUTOVERSION_DURATION = 10
+# A document with a log keeps these through it, so nothing else writes them
+LOGGED_FIELDS = ("content", "html", "ycomments", "collab")
 
 
-class WriterDocument(Document):
-    def on_trash(self):
-        # Versions are a standalone doctype linking back here, so the framework's
-        # link check would refuse the delete before anything cleaned them up —
-        # and nothing outside this document references a version.
-        frappe.db.delete("Writer Version", {"doc": self.name})
+class WriterDocument(drive.DriveContent, Document):
+    """The body of one Writer document.
 
-    @frappe.whitelist(methods=["POST"])
-    def save_doc(self, data: str, html: str | None = None):
-        self.check_permission("write")
-        try:
-            frappe.db.set_value("Writer Document", self.name, "content", data)
-            if html is not None:
-                frappe.db.set_value("Writer Document", self.name, "html", html)
-            self.update_file(file_size=len(self.content))
-        except COLLISION_ERRORS:
-            pass
+    Drive owns the document's title, place, grants, lifecycle, versions,
+    comments, and byte charge; the `DriveContent` mixin supplies `node`,
+    `node_title`, `drive_check`, `drive_touch`, and `drive_take_version`, and
+    nothing here mirrors a field Drive owns (§10.2). Every write asks Drive for
+    EDIT on the node first.
 
-    @frappe.whitelist(methods=["POST"])
-    def new_version(self, data: str, title: str | None = None):
-        """Create a new version of the document"""
-        self.check_permission("write")
-        if not data or not data.strip() or data.strip() == "<p></p>":
-            frappe.response["data"] = False
-            return
-
-        manual = bool(title)
-        if not manual:
-            now_time = frappe.utils.now_datetime()
-            last_auto_version = frappe.db.get_value(
-                "Writer Version",
-                filters={
-                    "doc": self.name,
-                    "manual": 0,
-                },
-                fieldname=["title", "name", "creation"],
-                order_by="creation desc",
-                as_dict=True,
-            )
-
-            if last_auto_version:
-                prev_time = datetime.strptime(
-                    last_auto_version.title,
-                    "%Y-%m-%d %H:%M",
-                )
-                diff = now_time - prev_time
-                if diff < timedelta(minutes=AUTOVERSION_DURATION):
-                    frappe.response["data"] = False
-                    return
-
-            title = datetime.strftime(now_time, "%Y-%m-%d %H:%M")
-
-        # Create a new Writer Version document
-        version = frappe.get_doc(
-            {
-                "doctype": "Writer Version",
-                "doc": self.name,
-                "snapshot": data,
-                "manual": manual,
-                "title": title,
-            }
-        )
-        version.insert()
-
-        frappe.response["data"] = version.as_dict()
+    The editor saves through the document's log, not through this row.
+    """
 
     @frappe.whitelist(methods=["POST"])
     def update_settings(self, data: str):
-        self.check_permission("write")
-        self.settings = data
-        self.save()
+        self.drive_check(drive.EDIT)
+        # settings only; save() would rewrite the logged body
+        self.db_set("settings", data)
 
-    @frappe.whitelist(methods=["POST"])
-    def save_html(self, html: str):
-        self.check_permission("write")
-        self.html = html
-        self.update_file()
-        self.save()
+    def validate(self) -> None:
+        """Refuse a generic save that changes a logged field of a logged document."""
+        if (
+            not self.is_new()
+            and any(self.has_value_changed(field) for field in LOGGED_FIELDS)
+            and content.find(APP, self.node, for_update=True)
+        ):
+            raise drive.DriveConflict(frappe._("This document saves as you edit; reload it to keep editing"))
 
-    def update_file(self, **kwargs):
-        file = frappe.db.get_value(
-            "File", {"content_docname": self.name, "content_doctype": "Writer Document"}, "name"
-        )
-        doc = frappe.get_doc("File", file)
-        for k in kwargs:
-            setattr(doc, k, kwargs[k])
-        doc.file_modified = frappe.utils.now()
-        doc.save(ignore_permissions=True)
-
-    def save_comments(self, data, file):
-        try:
-            frappe.db.set_value("Writer Document", self.name, "ycomments", data)
-
-            # Go over every comment in the YJS data and check replies for mentions
-            comments_doc = pycrdt.Doc()
-            comments_doc.apply_update(base64.b64decode(data))
-            comments_map = comments_doc.get("comments", type=pycrdt.Map)
-            for comment_id, comment_data in comments_map.items():
-                mentions = [{**k, "owner": comment_data["owner"]} for k in comment_data.get("mentions", [])]
-                for reply in comment_data["replies"]:
-                    mentions.extend([{**k, "owner": reply["owner"]} for k in reply.get("mentions", [])])
-                if mentions:
-                    frappe.enqueue(
-                        notify_comments,
-                        job_id=f"doc_comments_{self.name}_{comment_id}",
-                        now=True,
-                        deduplicate=True,
-                        mentions=mentions,
-                        file=file,
-                    )
-        except COLLISION_ERRORS:
-            pass
-
-    def as_dict(self, *args, **kwargs):
-        result = super().as_dict(*args, **kwargs)
-        result.pop("versions")
-        return result
-
-
-def notify_comments(file, mentions):
-    for mention in mentions:
-        from_owner = frappe.get_cached_value("User", mention["owner"], "full_name")
-        new_notification = create_notification(
-            mention["owner"],
-            mention["id"],
-            "Mention",
-            file,
-            f'{from_owner} mentioned you in a comment in "{file.file_name}".',
-        )
-        if new_notification:
-            try:
-                link = frappe.utils.get_url(get_link(file))
-                suite_email.enqueue(
-                    "writer-mention",
-                    mention["id"],
-                    {"author": from_owner, "document": file.file_name, "link": link},
-                    local={
-                        "subject": f"Frappe Drive - Mention in {file.file_name}",
-                        "template": "drive_comment",
-                        "args": {
-                            "message": f"{from_owner} mentioned you in a comment.",
-                            "doc": file.file_name,
-                            "link": link,
-                        },
-                    },
-                )
-            except Exception:
-                frappe.log_error(frappe.get_traceback())
+    def apply_fieldlevel_read_permissions(self) -> None:
+        """Hide the row's body of a logged document, which may be behind the edits after it."""
+        super().apply_fieldlevel_read_permissions()
+        if content.find(APP, self.node):
+            self.content = None

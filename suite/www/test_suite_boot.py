@@ -13,6 +13,7 @@ class SuiteBoot(unittest.TestCase):
         self.frappe.conf.get.side_effect = lambda key, default=None: default
         self.frappe.conf.developer_mode = 0
         self.frappe._dict.side_effect = lambda d: d
+        self.enterContext(mock.patch("suite.www.suite.get_max_file_size", return_value=1024 * 1024 * 1024))
 
         self.get_onboarding_state = self.enterContext(
             mock.patch(
@@ -35,6 +36,9 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["socketio_port"], 9000)
         self.assertEqual(boot["push_relay_server_url"], "")
         self.assertIs(boot["disable_slides_service_worker"], False)
+        self.assertEqual(boot["max_file_size"], 1024 * 1024 * 1024)
+        self.assertNotIn("suite_flip_shell", boot)
+        self.assertNotIn("suite_flip_files", boot)
 
     def test_kill_switch_reaches_the_boot(self):
         self.frappe.conf.get.side_effect = lambda key, default=None: (

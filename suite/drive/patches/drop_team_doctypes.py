@@ -2,8 +2,9 @@ import frappe
 
 
 def execute():
-    """Drop the Drive Team doctypes and every leftover team column, after
-    remove_teams has restructured the tree."""
+    """Drop the Drive Team doctypes and every leftover team column. The patch
+    that collapsed the per-team trees into one ran before this on every
+    upgraded site and has since been deleted."""
     frappe.delete_doc_if_exists("Custom Field", "File-team")
     frappe.delete_doc_if_exists("DocType", "Drive Team Member")
     frappe.delete_doc_if_exists("DocType", "Drive Team")

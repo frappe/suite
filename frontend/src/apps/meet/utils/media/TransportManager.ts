@@ -1,797 +1,748 @@
-import { CameraLayerController } from "./CameraLayerController";
-import { NetworkStatsTracker } from "./NetworkStatsTracker";
 import type {
-	AppData,
-	Consumer,
-	ConsumerOptions,
-	Device,
-	DtlsParameters,
-	Producer,
-	ProducerOptions,
-	RtpCapabilities,
-	Transport,
-	TransportOptions,
-} from "mediasoup-client/types";
-import type { ProducerCloseMetadata, SFUClient } from "../SFUClient";
-import { resolveCodecStrategy } from "./codecStrategy";
+  AppData,
+  Consumer,
+  ConsumerOptions,
+  Device,
+  DtlsParameters,
+  Producer,
+  ProducerOptions,
+  RtpCapabilities,
+  Transport,
+  TransportOptions,
+} from 'mediasoup-client/types'
+
+import type { ProducerCloseMetadata, SFUClient } from '../SFUClient'
+import { CameraLayerController } from './CameraLayerController'
+import { resolveCodecStrategy } from './codecStrategy'
+import { DefaultE2EETransformPolicy, type E2EETransformPolicy } from './E2EETransformPolicy'
 import {
-	DefaultE2EETransformPolicy,
-	type E2EETransformPolicy,
-} from "./E2EETransformPolicy";
-import {
-	audioCodecOptions,
-	screenEncodings,
-	svcEncodingTemplate,
-	videoCodecOptions,
-	videoEncodings,
-} from "./encodings";
+  audioCodecOptions,
+  screenEncodings,
+  svcEncodingTemplate,
+  videoCodecOptions,
+  videoEncodings,
+} from './encodings'
+import { NetworkStatsTracker } from './NetworkStatsTracker'
 
-type Direction = "send" | "recv";
+type Direction = 'send' | 'recv'
 
-type IceRestartDirectionResult = "restarted" | "not-needed" | "failed";
+type IceRestartDirectionResult = 'restarted' | 'not-needed' | 'failed'
 
-export type TransportIceRestartResult = Record<
-	Direction,
-	IceRestartDirectionResult
->;
+export type TransportIceRestartResult = Record<Direction, IceRestartDirectionResult>
 
 type TransportConnectionState =
-	| "new"
-	| "connecting"
-	| "connected"
-	| "failed"
-	| "disconnected"
-	| "closed"
-	| string;
+  'new' | 'connecting' | 'connected' | 'failed' | 'disconnected' | 'closed' | string
 
 type TransportStateHandler = (payload: {
-	direction: Direction;
-	state: TransportConnectionState;
-}) => void;
+  direction: Direction
+  state: TransportConnectionState
+}) => void
 
 type EventHandlers = {
-	onTransportConnectionStateChange?: TransportStateHandler;
-};
+  onTransportConnectionStateChange?: TransportStateHandler
+}
 
 type InsertableStreamRTCConfiguration = Partial<RTCConfiguration> & {
-	encodedInsertableStreams?: boolean;
-};
+  encodedInsertableStreams?: boolean
+}
 
 async function applySenderPreferences(
-	producer: { rtpSender?: RTCRtpSender },
-	kind: string,
-	source: string,
+  producer: { rtpSender?: RTCRtpSender },
+  kind: string,
+  source: string,
 ) {
-	const sender = producer.rtpSender;
-	if (!sender?.getParameters || !sender?.setParameters) return;
-	const parameters = sender.getParameters();
-	const originalEncodings = parameters.encodings.map((encoding) => ({
-		...encoding,
-	}));
-	if (kind === "video") {
-		parameters.degradationPreference =
-			source === "screen" ? "maintain-resolution" : "maintain-framerate";
-	}
-	// Priority is relative to other media on this connection. DSCP remains a hint
-	// to the network; it is not a bandwidth reservation or a delivery guarantee.
-	const priority = kind === "audio" ? "high" : "low";
-	parameters.encodings = originalEncodings.map((encoding) => ({
-		...encoding,
-		priority,
-		networkPriority: priority,
-	}));
-	try {
-		await sender.setParameters(parameters);
-	} catch (error) {
-		// Some browsers reject priority hints. Still request the video degradation
-		// policy, without removing encodings or changing their existing settings.
-		if (kind !== "video") throw error;
-		const retry = sender.getParameters();
-		retry.degradationPreference = parameters.degradationPreference;
-		await sender.setParameters(retry);
-	}
+  const sender = producer.rtpSender
+  if (!sender?.getParameters || !sender?.setParameters) return
+  const parameters = sender.getParameters()
+  const originalEncodings = parameters.encodings.map((encoding) => ({
+    ...encoding,
+  }))
+  if (kind === 'video') {
+    parameters.degradationPreference =
+      source === 'screen' ? 'maintain-resolution' : 'maintain-framerate'
+  }
+  // Priority is relative to other media on this connection. DSCP remains a hint
+  // to the network; it is not a bandwidth reservation or a delivery guarantee.
+  const priority = kind === 'audio' ? 'high' : 'low'
+  parameters.encodings = originalEncodings.map((encoding) => ({
+    ...encoding,
+    priority,
+    networkPriority: priority,
+  }))
+  try {
+    await sender.setParameters(parameters)
+  } catch (error) {
+    // Some browsers reject priority hints. Still request the video degradation
+    // policy, without removing encodings or changing their existing settings.
+    if (kind !== 'video') throw error
+    const retry = sender.getParameters()
+    retry.degradationPreference = parameters.degradationPreference
+    await sender.setParameters(retry)
+  }
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export class TransportManager {
-	private readonly networkStatsTracker = new NetworkStatsTracker();
-	sendTransport: Transport | null;
-	recvTransport: Transport | null;
-	device: Device | null;
-	sfuClient: SFUClient | null;
-	routerRtpCapabilities: RtpCapabilities | null;
-	activeVideoStrategy: string;
-	eventHandlers: EventHandlers;
-	e2eePolicy: E2EETransformPolicy;
-	private sendTransportCreation: Promise<Transport> | null = null;
-	private recvTransportCreation: Promise<Transport> | null = null;
-	private sendTransportGeneration = 0;
-	private recvTransportGeneration = 0;
-	private cameraLayers = new CameraLayerController();
-	private producerDiscards = new WeakMap<Producer, Promise<void>>();
+  private readonly networkStatsTracker = new NetworkStatsTracker()
+  sendTransport: Transport | null
+  recvTransport: Transport | null
+  device: Device | null
+  sfuClient: SFUClient | null
+  routerRtpCapabilities: RtpCapabilities | null
+  activeVideoStrategy: string
+  eventHandlers: EventHandlers
+  e2eePolicy: E2EETransformPolicy
+  private sendTransportCreation: Promise<Transport> | null = null
+  private recvTransportCreation: Promise<Transport> | null = null
+  private sendTransportGeneration = 0
+  private recvTransportGeneration = 0
+  private cameraLayers = new CameraLayerController()
+  private producerDiscards = new WeakMap<Producer, Promise<void>>()
 
-	constructor(e2eePolicy?: E2EETransformPolicy) {
-		this.sendTransport = null;
-		this.recvTransport = null;
-		this.device = null;
-		this.sfuClient = null;
-		this.routerRtpCapabilities = null;
-		this.activeVideoStrategy = "svc";
-		this.eventHandlers = {};
-		this.e2eePolicy = e2eePolicy ?? new DefaultE2EETransformPolicy();
-	}
+  constructor(e2eePolicy?: E2EETransformPolicy) {
+    this.sendTransport = null
+    this.recvTransport = null
+    this.device = null
+    this.sfuClient = null
+    this.routerRtpCapabilities = null
+    this.activeVideoStrategy = 'svc'
+    this.eventHandlers = {}
+    this.e2eePolicy = e2eePolicy ?? new DefaultE2EETransformPolicy()
+  }
 
-	setEventHandlers(handlers: EventHandlers = {}) {
-		this.eventHandlers = { ...this.eventHandlers, ...handlers };
-	}
+  setEventHandlers(handlers: EventHandlers = {}) {
+    this.eventHandlers = { ...this.eventHandlers, ...handlers }
+  }
 
-	emitTransportConnectionState(
-		direction: Direction,
-		state: TransportConnectionState,
-	) {
-		if (
-			typeof this.eventHandlers.onTransportConnectionStateChange === "function"
-		) {
-			this.eventHandlers.onTransportConnectionStateChange({ direction, state });
-		}
-	}
+  emitTransportConnectionState(direction: Direction, state: TransportConnectionState) {
+    if (typeof this.eventHandlers.onTransportConnectionStateChange === 'function') {
+      this.eventHandlers.onTransportConnectionStateChange({ direction, state })
+    }
+  }
 
-	getVideoEncodingDecision() {
-		const preference = this.sfuClient?.getCodecStrategy?.() || "svc";
-		return resolveCodecStrategy({
-			preference,
-			deviceCapabilities: this.device?.rtpCapabilities,
-			routerCapabilities: this.routerRtpCapabilities,
-		});
-	}
+  getVideoEncodingDecision() {
+    const preference = this.sfuClient?.getCodecStrategy?.() || 'svc'
+    return resolveCodecStrategy({
+      preference,
+      deviceCapabilities: this.device?.rtpCapabilities,
+      routerCapabilities: this.routerRtpCapabilities,
+    })
+  }
 
-	getVideoEncodingConfig(source: "camera" | "screen" = "camera") {
-		const decision = this.getVideoEncodingDecision();
-		const isScreen = source === "screen";
+  getVideoEncodingConfig(source: 'camera' | 'screen' = 'camera') {
+    const decision = this.getVideoEncodingDecision()
+    const isScreen = source === 'screen'
 
-		// no adaptive streaming for screensharing
-		// as we don't reduce resolution for screenshare
-		// and fps is handled by the hint in the browser in case of congestion control
-		const strategy = isScreen ? "single" : decision.strategy;
-		const scalabilityMode =
-			strategy === "svc" ? decision.scalabilityMode : null;
+    // no adaptive streaming for screensharing
+    // as we don't reduce resolution for screenshare
+    // and fps is handled by the hint in the browser in case of congestion control
+    const strategy = isScreen ? 'single' : decision.strategy
+    const scalabilityMode = strategy === 'svc' ? decision.scalabilityMode : null
 
-		return {
-			decision: {
-				...decision,
-				strategy,
-				scalabilityMode,
-			},
-			encodings:
-				strategy === "svc"
-					? svcEncodingTemplate(scalabilityMode ?? undefined)
-					: isScreen
-						? screenEncodings
-						: videoEncodings,
-		};
-	}
+    return {
+      decision: {
+        ...decision,
+        strategy,
+        scalabilityMode,
+      },
+      encodings:
+        strategy === 'svc'
+          ? svcEncodingTemplate(scalabilityMode ?? undefined)
+          : isScreen
+            ? screenEncodings
+            : videoEncodings,
+    }
+  }
 
-	initialize(sfuClient: SFUClient) {
-		this.sfuClient = sfuClient;
-		this.cameraLayers.initialize(sfuClient);
-		this.e2eePolicy.setSFUClient(sfuClient);
-	}
+  initialize(sfuClient: SFUClient) {
+    this.sfuClient = sfuClient
+    this.cameraLayers.initialize(sfuClient)
+    this.e2eePolicy.setSFUClient(sfuClient)
+  }
 
-	private getClient(): SFUClient {
-		if (!this.sfuClient) throw new Error("SFU client is not initialized");
-		return this.sfuClient;
-	}
+  private getClient(): SFUClient {
+    if (!this.sfuClient) throw new Error('SFU client is not initialized')
+    return this.sfuClient
+  }
 
-	async initializeDevice() {
-		if (this.device) return this.device;
-		const { Device } = await import("mediasoup-client");
-		const client = this.getClient();
-		this.device = new Device();
-		const routerRtpCapabilities = await client.getRouterRtpCapabilities();
-		this.routerRtpCapabilities = routerRtpCapabilities;
+  async initializeDevice() {
+    if (this.device) return this.device
+    const { Device } = await import('mediasoup-client')
+    const client = this.getClient()
+    this.device = new Device()
+    const routerRtpCapabilities = await client.getRouterRtpCapabilities()
+    this.routerRtpCapabilities = routerRtpCapabilities
 
-		await this.device.load({ routerRtpCapabilities });
+    await this.device.load({ routerRtpCapabilities })
 
-		return this.device;
-	}
+    return this.device
+  }
 
-	async createSendTransport() {
-		if (this.sendTransport) return this.sendTransport;
-		if (this.sendTransportCreation) return this.sendTransportCreation;
+  async createSendTransport() {
+    if (this.sendTransport) return this.sendTransport
+    if (this.sendTransportCreation) return this.sendTransportCreation
 
-		const generation = this.sendTransportGeneration;
-		const creation = (async () => {
-			this.e2eePolicy.assertContextReady("create send transport");
-			if (!this.device) await this.initializeDevice();
-			const device = this.device;
-			if (!device) throw new Error("Device failed to initialize");
-			const client = this.getClient();
-			const rawTransportParams = await client.createWebRtcTransport("send");
-			const additionalSettings: InsertableStreamRTCConfiguration = {};
-			if (this.e2eePolicy.legacyInsertableStreamsEnabled) {
-				additionalSettings.encodedInsertableStreams = true;
-			}
+    const generation = this.sendTransportGeneration
+    const creation = (async () => {
+      this.e2eePolicy.assertContextReady('create send transport')
+      if (!this.device) await this.initializeDevice()
+      const device = this.device
+      if (!device) throw new Error('Device failed to initialize')
+      const client = this.getClient()
+      const rawTransportParams = await client.createWebRtcTransport('send')
+      const additionalSettings: InsertableStreamRTCConfiguration = {}
+      if (this.e2eePolicy.legacyInsertableStreamsEnabled) {
+        additionalSettings.encodedInsertableStreams = true
+      }
 
-			const transport = device.createSendTransport({
-				id: rawTransportParams.id,
-				iceParameters: rawTransportParams.iceParameters,
-				iceCandidates: rawTransportParams.iceCandidates,
-				dtlsParameters: rawTransportParams.dtlsParameters,
-				additionalSettings,
-			});
-			if (generation !== this.sendTransportGeneration) {
-				transport.close();
-				throw new Error("Send transport creation was cancelled");
-			}
-			this.sendTransport = transport;
-			this.setupSendTransportHandlers();
-			return transport;
-		})();
-		this.sendTransportCreation = creation;
+      const transport = device.createSendTransport({
+        id: rawTransportParams.id,
+        iceParameters: rawTransportParams.iceParameters,
+        iceCandidates: rawTransportParams.iceCandidates,
+        dtlsParameters: rawTransportParams.dtlsParameters,
+        additionalSettings,
+      })
+      if (generation !== this.sendTransportGeneration) {
+        transport.close()
+        throw new Error('Send transport creation was cancelled')
+      }
+      this.sendTransport = transport
+      this.setupSendTransportHandlers()
+      return transport
+    })()
+    this.sendTransportCreation = creation
 
-		try {
-			return await creation;
-		} finally {
-			if (this.sendTransportCreation === creation) {
-				this.sendTransportCreation = null;
-			}
-		}
-	}
+    try {
+      return await creation
+    } finally {
+      if (this.sendTransportCreation === creation) {
+        this.sendTransportCreation = null
+      }
+    }
+  }
 
-	setupSendTransportHandlers() {
-		if (!this.sendTransport) return;
-		const client = this.getClient();
-		const sendTransport = this.sendTransport;
-		const sendTransportId = sendTransport.id;
-		sendTransport.on(
-			"connect",
-			async (
-				{ dtlsParameters }: { dtlsParameters: DtlsParameters },
-				callback: () => void,
-				errback: (error: Error) => void,
-			) => {
-				try {
-					await client.connectWebRtcTransport(sendTransportId, dtlsParameters);
-					callback();
-				} catch (error) {
-					errback(error instanceof Error ? error : new Error(String(error)));
-				}
-			},
-		);
+  setupSendTransportHandlers() {
+    if (!this.sendTransport) return
+    const client = this.getClient()
+    const sendTransport = this.sendTransport
+    const sendTransportId = sendTransport.id
+    sendTransport.on(
+      'connect',
+      async (
+        { dtlsParameters }: { dtlsParameters: DtlsParameters },
+        callback: () => void,
+        errback: (error: Error) => void,
+      ) => {
+        try {
+          await client.connectWebRtcTransport(sendTransportId, dtlsParameters)
+          callback()
+        } catch (error) {
+          errback(error instanceof Error ? error : new Error(String(error)))
+        }
+      },
+    )
 
-		sendTransport.on("produce", async (parameters, callback, errback) => {
-			try {
-				const response = await client.createProducer(
-					sendTransportId,
-					parameters.rtpParameters,
-					parameters.kind,
-					parameters.appData,
-				);
-				callback({ id: response.id });
-			} catch (error) {
-				errback(error instanceof Error ? error : new Error(String(error)));
-			}
-		});
+    sendTransport.on('produce', async (parameters, callback, errback) => {
+      try {
+        const response = await client.createProducer(
+          sendTransportId,
+          parameters.rtpParameters,
+          parameters.kind,
+          parameters.appData,
+        )
+        callback({ id: response.id })
+      } catch (error) {
+        errback(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
 
-		sendTransport.on("connectionstatechange", (state) => {
-			if (state === "failed") {
-				console.error("Send transport failed");
-			}
-			this.emitTransportConnectionState("send", String(state));
-		});
-	}
+    sendTransport.on('connectionstatechange', (state) => {
+      if (state === 'failed') {
+        console.error('Send transport failed')
+      }
+      this.emitTransportConnectionState('send', String(state))
+    })
+  }
 
-	async createReceiveTransport() {
-		if (this.recvTransport) return this.recvTransport;
-		if (this.recvTransportCreation) return this.recvTransportCreation;
+  async createReceiveTransport() {
+    if (this.recvTransport) return this.recvTransport
+    if (this.recvTransportCreation) return this.recvTransportCreation
 
-		const generation = this.recvTransportGeneration;
-		const creation = (async () => {
-			this.e2eePolicy.assertContextReady("create receive transport");
-			if (!this.device) await this.initializeDevice();
-			const device = this.device;
-			if (!device) throw new Error("Device failed to initialize");
-			const client = this.getClient();
-			const rawTransportParams = await client.createWebRtcTransport("recv");
-			const additionalSettings: InsertableStreamRTCConfiguration = {};
-			if (this.e2eePolicy.legacyInsertableStreamsEnabled) {
-				additionalSettings.encodedInsertableStreams = true;
-			}
+    const generation = this.recvTransportGeneration
+    const creation = (async () => {
+      this.e2eePolicy.assertContextReady('create receive transport')
+      if (!this.device) await this.initializeDevice()
+      const device = this.device
+      if (!device) throw new Error('Device failed to initialize')
+      const client = this.getClient()
+      const rawTransportParams = await client.createWebRtcTransport('recv')
+      const additionalSettings: InsertableStreamRTCConfiguration = {}
+      if (this.e2eePolicy.legacyInsertableStreamsEnabled) {
+        additionalSettings.encodedInsertableStreams = true
+      }
 
-			const transport = device.createRecvTransport({
-				id: rawTransportParams.id,
-				iceParameters: rawTransportParams.iceParameters,
-				iceCandidates: rawTransportParams.iceCandidates,
-				dtlsParameters: rawTransportParams.dtlsParameters,
-				additionalSettings,
-			});
-			if (generation !== this.recvTransportGeneration) {
-				transport.close();
-				throw new Error("Receive transport creation was cancelled");
-			}
-			this.recvTransport = transport;
-			this.setupReceiveTransportHandlers();
-			return transport;
-		})();
-		this.recvTransportCreation = creation;
+      const transport = device.createRecvTransport({
+        id: rawTransportParams.id,
+        iceParameters: rawTransportParams.iceParameters,
+        iceCandidates: rawTransportParams.iceCandidates,
+        dtlsParameters: rawTransportParams.dtlsParameters,
+        additionalSettings,
+      })
+      if (generation !== this.recvTransportGeneration) {
+        transport.close()
+        throw new Error('Receive transport creation was cancelled')
+      }
+      this.recvTransport = transport
+      this.setupReceiveTransportHandlers()
+      return transport
+    })()
+    this.recvTransportCreation = creation
 
-		try {
-			return await creation;
-		} finally {
-			if (this.recvTransportCreation === creation) {
-				this.recvTransportCreation = null;
-			}
-		}
-	}
+    try {
+      return await creation
+    } finally {
+      if (this.recvTransportCreation === creation) {
+        this.recvTransportCreation = null
+      }
+    }
+  }
 
-	closeReceiveTransport() {
-		this.recvTransportGeneration++;
-		this.recvTransportCreation = null;
-		const transport = this.recvTransport;
-		this.recvTransport = null;
-		if (!transport) return;
-		try {
-			transport.close();
-		} catch (_e) {
-			/* ignore */
-		}
-	}
+  closeReceiveTransport() {
+    this.recvTransportGeneration++
+    this.recvTransportCreation = null
+    const transport = this.recvTransport
+    this.recvTransport = null
+    if (!transport) return
+    try {
+      transport.close()
+    } catch (_e) {
+      /* ignore */
+    }
+  }
 
-	closeSendTransport() {
-		this.sendTransportGeneration++;
-		this.sendTransportCreation = null;
-		const transport = this.sendTransport;
-		this.sendTransport = null;
-		if (!transport) return;
-		try {
-			transport.close();
-		} catch (_e) {
-			/* ignore */
-		}
-	}
+  closeSendTransport() {
+    this.sendTransportGeneration++
+    this.sendTransportCreation = null
+    const transport = this.sendTransport
+    this.sendTransport = null
+    if (!transport) return
+    try {
+      transport.close()
+    } catch (_e) {
+      /* ignore */
+    }
+  }
 
-	setupReceiveTransportHandlers() {
-		if (!this.recvTransport) return;
-		const client = this.getClient();
-		const recvTransport = this.recvTransport;
-		recvTransport.on(
-			"connect",
-			async (
-				{ dtlsParameters }: { dtlsParameters: DtlsParameters },
-				callback: () => void,
-				errback: (error: Error) => void,
-			) => {
-				try {
-					await client.connectWebRtcTransport(recvTransport.id, dtlsParameters);
-					callback();
-				} catch (error) {
-					errback(error instanceof Error ? error : new Error(String(error)));
-				}
-			},
-		);
+  setupReceiveTransportHandlers() {
+    if (!this.recvTransport) return
+    const client = this.getClient()
+    const recvTransport = this.recvTransport
+    recvTransport.on(
+      'connect',
+      async (
+        { dtlsParameters }: { dtlsParameters: DtlsParameters },
+        callback: () => void,
+        errback: (error: Error) => void,
+      ) => {
+        try {
+          await client.connectWebRtcTransport(recvTransport.id, dtlsParameters)
+          callback()
+        } catch (error) {
+          errback(error instanceof Error ? error : new Error(String(error)))
+        }
+      },
+    )
 
-		recvTransport.on("connectionstatechange", (state) => {
-			if (state === "failed") {
-				console.error("Receive transport failed");
-			}
-			this.emitTransportConnectionState("recv", String(state));
-		});
-	}
+    recvTransport.on('connectionstatechange', (state) => {
+      if (state === 'failed') {
+        console.error('Receive transport failed')
+      }
+      this.emitTransportConnectionState('recv', String(state))
+    })
+  }
 
-	async restartTransportIce(direction: Direction) {
-		const transport =
-			direction === "send" ? this.sendTransport : this.recvTransport;
-		if (!transport || !this.sfuClient) {
-			return false;
-		}
+  async restartTransportIce(direction: Direction) {
+    const transport = direction === 'send' ? this.sendTransport : this.recvTransport
+    if (!transport || !this.sfuClient) {
+      return false
+    }
 
-		const iceParameters = await this.sfuClient.restartWebRtcTransportIce(
-			transport.id,
-		);
-		await transport.restartIce({ iceParameters });
-		return true;
-	}
+    const iceParameters = await this.sfuClient.restartWebRtcTransportIce(transport.id)
+    await transport.restartIce({ iceParameters })
+    return true
+  }
 
-	async restartAllTransportIce(): Promise<TransportIceRestartResult> {
-		const restartDirection = async (
-			direction: Direction,
-		): Promise<IceRestartDirectionResult> => {
-			const transport =
-				direction === "send" ? this.sendTransport : this.recvTransport;
-			if (!transport) return "not-needed";
+  async restartAllTransportIce(): Promise<TransportIceRestartResult> {
+    const restartDirection = async (direction: Direction): Promise<IceRestartDirectionResult> => {
+      const transport = direction === 'send' ? this.sendTransport : this.recvTransport
+      if (!transport) return 'not-needed'
 
-			try {
-				return (await this.restartTransportIce(direction))
-					? "restarted"
-					: "failed";
-			} catch {
-				return "failed";
-			}
-		};
+      try {
+        return (await this.restartTransportIce(direction)) ? 'restarted' : 'failed'
+      } catch {
+        return 'failed'
+      }
+    }
 
-		const [send, recv] = await Promise.all([
-			restartDirection("send"),
-			restartDirection("recv"),
-		]);
-		return { send, recv };
-	}
+    const [send, recv] = await Promise.all([restartDirection('send'), restartDirection('recv')])
+    return { send, recv }
+  }
 
-	async createProducer(track: MediaStreamTrack, appData: AppData = {}) {
-		if (!this.sendTransport) await this.createSendTransport();
-		const kind = track.kind === "audio" ? "audio" : "video";
-		if (!this.device?.canProduce(kind)) throw new Error("Unsupported");
-		if (!this.sendTransport?.produce)
-			throw new Error("Send transport is not ready to produce");
+  async createProducer(track: MediaStreamTrack, appData: AppData = {}) {
+    if (!this.sendTransport) await this.createSendTransport()
+    const kind = track.kind === 'audio' ? 'audio' : 'video'
+    if (!this.device?.canProduce(kind)) throw new Error('Unsupported')
+    if (!this.sendTransport?.produce) throw new Error('Send transport is not ready to produce')
 
-		const safeAppData = { type: "camera", ...(appData || {}) };
-		console.log("createProducer called", {
-			trackId: track?.id,
-			trackKind: track?.kind,
-			trackReadyState: track?.readyState,
-			appData: safeAppData,
-		});
+    const safeAppData = { type: 'camera', ...(appData || {}) }
+    console.log('createProducer called', {
+      trackId: track?.id,
+      trackKind: track?.kind,
+      trackReadyState: track?.readyState,
+      appData: safeAppData,
+    })
 
-		const e2eeWantedBeforeProduce = this.e2eePolicy.transformsEnabled;
-		const produceOptions: ProducerOptions = {
-			track,
-			appData: {
-				...safeAppData,
-				e2eeStartPaused: e2eeWantedBeforeProduce,
-			},
-			stopTracks: false,
-		};
-		let senderTransformSetup: Promise<boolean> | null = null;
-		const setupProducerSenderTransform = async (
-			sender: RTCRtpSender | undefined,
-		) => {
-			if (!e2eeWantedBeforeProduce || !sender) {
-				return false;
-			}
-			senderTransformSetup ??= this.e2eePolicy.setupSenderTransform(
-				sender,
-				this.e2eePolicy.ownSenderId,
-				track?.kind ?? "video",
-			);
-			return senderTransformSetup;
-		};
-		if (e2eeWantedBeforeProduce) {
-			produceOptions.onRtpSender = setupProducerSenderTransform;
-		}
+    const e2eeWantedBeforeProduce = this.e2eePolicy.transformsEnabled
+    const produceOptions: ProducerOptions = {
+      track,
+      appData: {
+        ...safeAppData,
+        e2eeStartPaused: e2eeWantedBeforeProduce,
+      },
+      stopTracks: false,
+    }
+    let senderTransformSetup: Promise<boolean> | null = null
+    const setupProducerSenderTransform = async (sender: RTCRtpSender | undefined) => {
+      if (!e2eeWantedBeforeProduce || !sender) {
+        return false
+      }
+      senderTransformSetup ??= this.e2eePolicy.setupSenderTransform(
+        sender,
+        this.e2eePolicy.ownSenderId,
+        track?.kind ?? 'video',
+      )
+      return senderTransformSetup
+    }
+    if (e2eeWantedBeforeProduce) {
+      produceOptions.onRtpSender = setupProducerSenderTransform
+    }
 
-		if (track?.kind === "video") {
-			const source = safeAppData.type === "screen" ? "screen" : "camera";
-			const encodingConfig = this.getVideoEncodingConfig(source);
-			this.activeVideoStrategy = encodingConfig.decision.strategy;
+    if (track?.kind === 'video') {
+      const source = safeAppData.type === 'screen' ? 'screen' : 'camera'
+      const encodingConfig = this.getVideoEncodingConfig(source)
+      this.activeVideoStrategy = encodingConfig.decision.strategy
 
-			console.info("Video encoding decision", {
-				strategy: encodingConfig.decision.strategy,
-				scalabilityMode: encodingConfig.decision.scalabilityMode,
-			});
+      console.info('Video encoding decision', {
+        strategy: encodingConfig.decision.strategy,
+        scalabilityMode: encodingConfig.decision.scalabilityMode,
+      })
 
-			produceOptions.encodings = encodingConfig.encodings;
-			if (encodingConfig.decision.strategy === "svc") {
-				const vp9Codec = this.device?.rtpCapabilities?.codecs?.find((codec) =>
-					codec.mimeType.toLowerCase().includes("vp9"),
-				);
-				if (vp9Codec) {
-					produceOptions.codec = vp9Codec;
-				}
-			}
-			if ("contentHint" in track) {
-				track.contentHint = source === "screen" ? "detail" : "motion";
-			}
-			produceOptions.codecOptions = videoCodecOptions;
-			produceOptions.appData = {
-				...safeAppData,
-				e2eeStartPaused: e2eeWantedBeforeProduce,
-				codecStrategy: encodingConfig.decision.strategy,
-				scalabilityMode: encodingConfig.decision.scalabilityMode,
-				cameraLayerDemand: source === "camera" && encodingConfig.decision.strategy === "simulcast",
-			};
-		}
+      produceOptions.encodings = encodingConfig.encodings
+      if (encodingConfig.decision.strategy === 'svc') {
+        const vp9Codec = this.device?.rtpCapabilities?.codecs?.find((codec) =>
+          codec.mimeType.toLowerCase().includes('vp9'),
+        )
+        if (vp9Codec) {
+          produceOptions.codec = vp9Codec
+        }
+      }
+      if ('contentHint' in track) {
+        track.contentHint = source === 'screen' ? 'detail' : 'motion'
+      }
+      produceOptions.codecOptions = videoCodecOptions
+      produceOptions.appData = {
+        ...safeAppData,
+        e2eeStartPaused: e2eeWantedBeforeProduce,
+        codecStrategy: encodingConfig.decision.strategy,
+        scalabilityMode: encodingConfig.decision.scalabilityMode,
+        cameraLayerDemand: source === 'camera' && encodingConfig.decision.strategy === 'simulcast',
+      }
+    }
 
-		if (track?.kind === "audio") {
-			produceOptions.codecOptions = audioCodecOptions;
-		}
+    if (track?.kind === 'audio') {
+      produceOptions.codecOptions = audioCodecOptions
+    }
 
-		const producer = await this.sendTransport.produce(produceOptions);
-		const e2eeGate = this.e2eePolicy.transformsEnabled;
-		const e2eeRequired = this.sfuClient?.isE2EERequired?.() ?? false;
-		const hasContext = this.e2eePolicy.hasContext;
-		console.log("[E2EE] createProducer gate", {
-			e2eeGate,
-			e2eeRequired,
-			hasContext,
-			hasRtpSender: !!producer.rtpSender,
-			kind: track?.kind,
-			senderId: this.e2eePolicy.ownSenderId,
-		});
-		if (e2eeWantedBeforeProduce) {
-			try {
-				const transformInstalled = senderTransformSetup
-					? await senderTransformSetup
-					: await setupProducerSenderTransform(producer.rtpSender);
-				if (!transformInstalled) {
-					throw new Error("Failed to install E2EE sender transform");
-				}
-				const { resumed } = await this.getClient().resumeProducer(producer.id);
-				if (!resumed) {
-					throw new Error("Failed to resume E2EE producer");
-				}
-			} catch (error) {
-				await this.discardProducer(producer);
-				throw error;
-			}
-		}
+    const producer = await this.sendTransport.produce(produceOptions)
+    const e2eeGate = this.e2eePolicy.transformsEnabled
+    const e2eeRequired = this.sfuClient?.isE2EERequired?.() ?? false
+    const hasContext = this.e2eePolicy.hasContext
+    console.log('[E2EE] createProducer gate', {
+      e2eeGate,
+      e2eeRequired,
+      hasContext,
+      hasRtpSender: !!producer.rtpSender,
+      kind: track?.kind,
+      senderId: this.e2eePolicy.ownSenderId,
+    })
+    if (e2eeWantedBeforeProduce) {
+      try {
+        const transformInstalled = senderTransformSetup
+          ? await senderTransformSetup
+          : await setupProducerSenderTransform(producer.rtpSender)
+        if (!transformInstalled) {
+          throw new Error('Failed to install E2EE sender transform')
+        }
+        const { resumed } = await this.getClient().resumeProducer(producer.id)
+        if (!resumed) {
+          throw new Error('Failed to resume E2EE producer')
+        }
+      } catch (error) {
+        await this.discardProducer(producer)
+        throw error
+      }
+    }
 
-		try {
-			await applySenderPreferences(
-				producer,
-				track.kind,
-				String(safeAppData.type),
-			);
-		} catch (error) {
-			console.warn("Failed to apply media sender preferences", error);
-		}
+    try {
+      await applySenderPreferences(producer, track.kind, String(safeAppData.type))
+    } catch (error) {
+      console.warn('Failed to apply media sender preferences', error)
+    }
 
-		this.cameraLayers.addProducer(producer);
-		return producer;
-	}
+    this.cameraLayers.addProducer(producer)
+    return producer
+  }
 
-	discardProducer(
-		producer: Producer,
-		metadata: ProducerCloseMetadata = {},
-	): Promise<void> {
-		const existing = this.producerDiscards.get(producer);
-		if (existing) return existing;
+  discardProducer(producer: Producer, metadata: ProducerCloseMetadata = {}): Promise<void> {
+    const existing = this.producerDiscards.get(producer)
+    if (existing) return existing
 
-		try {
-			producer.close();
-		} catch {
-			// The producer may already have closed with its transport.
-		}
-		const discard =
-			producer.id && this.sfuClient
-				? this.sfuClient
-						.closeProducer(producer.id, metadata)
-						.then(() => undefined)
-						.catch(() => undefined)
-				: Promise.resolve();
-		this.producerDiscards.set(producer, discard);
-		return discard;
-	}
+    try {
+      producer.close()
+    } catch {
+      // The producer may already have closed with its transport.
+    }
+    const discard =
+      producer.id && this.sfuClient
+        ? this.sfuClient
+            .closeProducer(producer.id, metadata)
+            .then(() => undefined)
+            .catch(() => undefined)
+        : Promise.resolve()
+    this.producerDiscards.set(producer, discard)
+    return discard
+  }
 
-	async createConsumer(
-		producerId: string,
-		metadata: { isScreen?: boolean } = {},
-	) {
-		if (!this.device) await this.initializeDevice();
-		if (!this.recvTransport) await this.createReceiveTransport();
-		if (!this.device || !this.recvTransport)
-			throw new Error("Consumer transport is not initialized");
-		const client = this.getClient();
-		const recvTransport = this.recvTransport;
-		const device = this.device;
-		if (!recvTransport.consume)
-			throw new Error("Receive transport is not ready to consume");
+  async createConsumer(producerId: string, metadata: { isScreen?: boolean } = {}) {
+    if (!this.device) await this.initializeDevice()
+    if (!this.recvTransport) await this.createReceiveTransport()
+    if (!this.device || !this.recvTransport)
+      throw new Error('Consumer transport is not initialized')
+    const client = this.getClient()
+    const recvTransport = this.recvTransport
+    const device = this.device
+    if (!recvTransport.consume) throw new Error('Receive transport is not ready to consume')
 
-		const rawConsumerParams = (await client.createConsumer(
-			recvTransport.id,
-			producerId,
-			device.rtpCapabilities,
-			true,
-		));
+    const rawConsumerParams = await client.createConsumer(
+      recvTransport.id,
+      producerId,
+      device.rtpCapabilities,
+      true,
+    )
 
-		const isScreen = !!(
-			metadata.isScreen ||
-			rawConsumerParams.isScreen ||
-			rawConsumerParams?.appData?.type === "screen"
-		);
-		const e2eeWanted = this.e2eePolicy.transformsEnabled;
+    const isScreen = !!(
+      metadata.isScreen ||
+      rawConsumerParams.isScreen ||
+      rawConsumerParams?.appData?.type === 'screen'
+    )
+    const e2eeWanted = this.e2eePolicy.transformsEnabled
 
-		let consumer: Consumer | null = null;
-		try {
-			const consumeArgs: ConsumerOptions = {
-				id: rawConsumerParams.id,
-				producerId: rawConsumerParams.producerId,
-				kind: rawConsumerParams.kind,
-				rtpParameters: rawConsumerParams.rtpParameters,
-				...(isScreen ? { appData: { type: "screen" } } : {}),
-			};
-			if (e2eeWanted) {
-				consumeArgs.onRtpReceiver = (receiver: RTCRtpReceiver) => {
-					console.log("[E2EE] onRtpReceiver callback fired", {
-						producerId: rawConsumerParams.producerId,
-					});
-					this.e2eePolicy.preCreateReceiverStreams(receiver);
-				};
-			}
-			consumer = await recvTransport.consume(consumeArgs);
-		} catch (err) {
-			await client.closeConsumer(rawConsumerParams.id).catch((error: unknown) => {
-				console.warn("Failed to dispose server consumer after consume failure:", error);
-			});
-			throw err;
-		}
+    let consumer: Consumer | null = null
+    try {
+      const consumeArgs: ConsumerOptions = {
+        id: rawConsumerParams.id,
+        producerId: rawConsumerParams.producerId,
+        kind: rawConsumerParams.kind,
+        rtpParameters: rawConsumerParams.rtpParameters,
+        ...(isScreen ? { appData: { type: 'screen' } } : {}),
+      }
+      if (e2eeWanted) {
+        consumeArgs.onRtpReceiver = (receiver: RTCRtpReceiver) => {
+          console.log('[E2EE] onRtpReceiver callback fired', {
+            producerId: rawConsumerParams.producerId,
+          })
+          this.e2eePolicy.preCreateReceiverStreams(receiver)
+        }
+      }
+      consumer = await recvTransport.consume(consumeArgs)
+    } catch (err) {
+      await client.closeConsumer(rawConsumerParams.id).catch((error: unknown) => {
+        console.warn('Failed to dispose server consumer after consume failure:', error)
+      })
+      throw err
+    }
 
-		if (this.recvTransport !== recvTransport || recvTransport.closed) {
-			consumer?.close();
-			await client.closeConsumer(rawConsumerParams.id);
-			throw new DOMException("Receive transport was replaced", "AbortError");
-		}
+    if (this.recvTransport !== recvTransport || recvTransport.closed) {
+      consumer?.close()
+      await client.closeConsumer(rawConsumerParams.id)
+      throw new DOMException('Receive transport was replaced', 'AbortError')
+    }
 
-		if (isScreen && consumer)
-			console.info("Screen share consumer created", {
-				consumerId: consumer.id,
-			});
+    if (isScreen && consumer)
+      console.info('Screen share consumer created', {
+        consumerId: consumer.id,
+      })
 
-		if (consumer) {
-			const e2eeRequired = this.sfuClient?.isE2EERequired?.() ?? false;
-			const hasContext = this.e2eePolicy.hasContext;
-			console.log("[E2EE] createConsumer gate", {
-				e2eeGate: e2eeWanted,
-				e2eeRequired,
-				hasContext,
-				hasRtpReceiver: !!consumer.rtpReceiver,
-				producerId: rawConsumerParams.producerId,
-				remoteSenderId: rawConsumerParams.senderId,
-				mediaType: rawConsumerParams.kind,
-			});
-			if (e2eeWanted) {
-				try {
-					const remoteSenderId = rawConsumerParams.senderId ?? 0;
-					const mediaType = rawConsumerParams.kind ?? "video";
-					const installed = consumer.rtpReceiver
-						? await this.e2eePolicy.setupReceiverTransform(
-								consumer.rtpReceiver,
-								remoteSenderId,
-								mediaType,
-							)
-						: false;
-					if (rawConsumerParams.paused && !installed) {
-						throw new Error("Failed to install E2EE receiver transform");
-					}
-				} catch (error) {
-					if (rawConsumerParams.paused) {
-						consumer.close();
-						await client.closeConsumer(rawConsumerParams.id).catch(() => undefined);
-						throw error;
-					}
-					console.warn("Failed to setup E2EE receiver transform:", error);
-				}
-			}
-		}
-		if (rawConsumerParams.paused) {
-			try {
-				if (
-					consumer.closed ||
-					this.recvTransport !== recvTransport ||
-					recvTransport.closed ||
-					this.sfuClient !== client
-				) {
-					throw new DOMException("Receive transport was replaced", "AbortError");
-				}
-				// Resume only once the receiver (and any decryptor) can accept the first keyframe.
-				await client.resumeConsumer(consumer.id);
-				if (
-					consumer.closed ||
-					this.recvTransport !== recvTransport ||
-					recvTransport.closed ||
-					this.sfuClient !== client
-				) {
-					throw new DOMException("Receive transport was replaced", "AbortError");
-				}
-			} catch (error) {
-				consumer.close();
-				await client.closeConsumer(rawConsumerParams.id).catch(() => undefined);
-				throw error;
-			}
-		}
-		if (e2eeWanted && consumer.kind === "video") {
-			void this.requestConsumerKeyFrameBurst(consumer, recvTransport, client);
-		}
-		return consumer;
-	}
+    if (consumer) {
+      const e2eeRequired = this.sfuClient?.isE2EERequired?.() ?? false
+      const hasContext = this.e2eePolicy.hasContext
+      console.log('[E2EE] createConsumer gate', {
+        e2eeGate: e2eeWanted,
+        e2eeRequired,
+        hasContext,
+        hasRtpReceiver: !!consumer.rtpReceiver,
+        producerId: rawConsumerParams.producerId,
+        remoteSenderId: rawConsumerParams.senderId,
+        mediaType: rawConsumerParams.kind,
+      })
+      if (e2eeWanted) {
+        try {
+          const remoteSenderId = rawConsumerParams.senderId ?? 0
+          const mediaType = rawConsumerParams.kind ?? 'video'
+          const installed = consumer.rtpReceiver
+            ? await this.e2eePolicy.setupReceiverTransform(
+                consumer.rtpReceiver,
+                remoteSenderId,
+                mediaType,
+              )
+            : false
+          if (rawConsumerParams.paused && !installed) {
+            throw new Error('Failed to install E2EE receiver transform')
+          }
+        } catch (error) {
+          if (rawConsumerParams.paused) {
+            consumer.close()
+            await client.closeConsumer(rawConsumerParams.id).catch(() => undefined)
+            throw error
+          }
+          console.warn('Failed to setup E2EE receiver transform:', error)
+        }
+      }
+    }
+    if (rawConsumerParams.paused) {
+      try {
+        if (
+          consumer.closed ||
+          this.recvTransport !== recvTransport ||
+          recvTransport.closed ||
+          this.sfuClient !== client
+        ) {
+          throw new DOMException('Receive transport was replaced', 'AbortError')
+        }
+        // Resume only once the receiver (and any decryptor) can accept the first keyframe.
+        await client.resumeConsumer(consumer.id)
+        if (
+          consumer.closed ||
+          this.recvTransport !== recvTransport ||
+          recvTransport.closed ||
+          this.sfuClient !== client
+        ) {
+          throw new DOMException('Receive transport was replaced', 'AbortError')
+        }
+      } catch (error) {
+        consumer.close()
+        await client.closeConsumer(rawConsumerParams.id).catch(() => undefined)
+        throw error
+      }
+    }
+    if (e2eeWanted && consumer.kind === 'video') {
+      void this.requestConsumerKeyFrameBurst(consumer, recvTransport, client)
+    }
+    return consumer
+  }
 
-	private async requestConsumerKeyFrameBurst(
-		consumer: Consumer,
-		recvTransport: Transport,
-		client: SFUClient,
-	): Promise<void> {
-		const delays = [0, 120, 350, 800];
-		for (const delay of delays) {
-			if (delay > 0) {
-				await sleep(delay);
-			}
-			if (
-				consumer.closed || recvTransport.closed ||
-				this.recvTransport !== recvTransport || this.sfuClient !== client
-			) return;
-			try {
-				const result = await client.requestConsumerKeyFrame(consumer.id);
-				console.log("[E2EE] consumer keyframe requested", {
-					producerId: consumer.producerId,
-					consumerId: consumer.id,
-					delay,
-					result,
-				});
-			} catch (error) {
-				console.warn("Failed to request E2EE consumer keyframe:", error);
-			}
-		}
-	}
+  private async requestConsumerKeyFrameBurst(
+    consumer: Consumer,
+    recvTransport: Transport,
+    client: SFUClient,
+  ): Promise<void> {
+    const delays = [0, 120, 350, 800]
+    for (const delay of delays) {
+      if (delay > 0) {
+        await sleep(delay)
+      }
+      if (
+        consumer.closed ||
+        recvTransport.closed ||
+        this.recvTransport !== recvTransport ||
+        this.sfuClient !== client
+      )
+        return
+      try {
+        const result = await client.requestConsumerKeyFrame(consumer.id)
+        console.log('[E2EE] consumer keyframe requested', {
+          producerId: consumer.producerId,
+          consumerId: consumer.id,
+          delay,
+          result,
+        })
+      } catch (error) {
+        console.warn('Failed to request E2EE consumer keyframe:', error)
+      }
+    }
+  }
 
-	getDeviceCapabilities() {
-		return this.device?.rtpCapabilities || null;
-	}
+  getDeviceCapabilities() {
+    return this.device?.rtpCapabilities || null
+  }
 
-	isDeviceLoaded() {
-		return this.device?.loaded || false;
-	}
+  isDeviceLoaded() {
+    return this.device?.loaded || false
+  }
 
-	getTransportStats() {
-		return {
-			sendTransport: {
-				id: this.sendTransport?.id || null,
-				state: this.sendTransport?.connectionState || "closed",
-			},
-			recvTransport: {
-				id: this.recvTransport?.id || null,
-				state: this.recvTransport?.connectionState || "closed",
-			},
-		};
-	}
+  getTransportStats() {
+    return {
+      sendTransport: {
+        id: this.sendTransport?.id || null,
+        state: this.sendTransport?.connectionState || 'closed',
+      },
+      recvTransport: {
+        id: this.recvTransport?.id || null,
+        state: this.recvTransport?.connectionState || 'closed',
+      },
+    }
+  }
 
-	async getNetworkStats() {
-		const now = Date.now();
-		const sample = async (
-			direction: "send" | "recv",
-			transport: Transport | null | undefined,
-		) => {
-			if (!transport || transport.connectionState !== "connected") return null;
-			try {
-				const reports = await transport.getStats();
-				if (
-					transport !==
-					(direction === "send" ? this.sendTransport : this.recvTransport)
-				)
-					return null;
-				return this.networkStatsTracker.sample(
-					direction,
-					transport.id,
-					reports.values(),
-				);
-			} catch {
-				return null;
-			}
-		};
-		const [uplink, downlink] = await Promise.all([
-			sample("send", this.sendTransport),
-			sample("recv", this.recvTransport),
-		]);
-		const paths = [uplink, downlink].filter((path) => path?.isValid);
-		const rtts = paths.flatMap((path) =>
-			path?.rtt === null || path?.rtt === undefined ? [] : [path.rtt],
-		);
-		return {
-			rtt: rtts.length ? rtts.reduce((a, b) => a + b, 0) / rtts.length : 0,
-			packetLoss: Math.max(uplink?.packetLoss ?? 0, downlink?.packetLoss ?? 0),
-			availableOutgoingBitrate: uplink?.availableOutgoingBitrate ?? 0,
-			timestamp: now,
-			isValid: paths.length > 0,
-			uplink,
-			downlink,
-		};
-	}
+  async getNetworkStats() {
+    const now = Date.now()
+    const sample = async (direction: 'send' | 'recv', transport: Transport | null | undefined) => {
+      if (!transport || transport.connectionState !== 'connected') return null
+      try {
+        const reports = await transport.getStats()
+        if (transport !== (direction === 'send' ? this.sendTransport : this.recvTransport))
+          return null
+        return this.networkStatsTracker.sample(direction, transport.id, reports.values())
+      } catch {
+        return null
+      }
+    }
+    const [uplink, downlink] = await Promise.all([
+      sample('send', this.sendTransport),
+      sample('recv', this.recvTransport),
+    ])
+    const paths = [uplink, downlink].filter((path) => path?.isValid)
+    const rtts = paths.flatMap((path) =>
+      path?.rtt === null || path?.rtt === undefined ? [] : [path.rtt],
+    )
+    return {
+      rtt: rtts.length ? rtts.reduce((a, b) => a + b, 0) / rtts.length : 0,
+      packetLoss: Math.max(uplink?.packetLoss ?? 0, downlink?.packetLoss ?? 0),
+      availableOutgoingBitrate: uplink?.availableOutgoingBitrate ?? 0,
+      timestamp: now,
+      isValid: paths.length > 0,
+      uplink,
+      downlink,
+    }
+  }
 
-	cleanup() {
-		this.cameraLayers.cleanup();
-		this.networkStatsTracker.reset();
-		this.closeSendTransport();
-		this.closeReceiveTransport();
-		this.device = null;
-	}
+  cleanup() {
+    this.cameraLayers.cleanup()
+    this.networkStatsTracker.reset()
+    this.closeSendTransport()
+    this.closeReceiveTransport()
+    this.device = null
+  }
 }

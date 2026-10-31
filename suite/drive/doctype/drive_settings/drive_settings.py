@@ -2,9 +2,8 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
-
-PRIVILEGED_FIELDS = ("quota", "user_folder")
 
 
 class DriveSettings(Document):
@@ -16,21 +15,12 @@ class DriveSettings(Document):
     if TYPE_CHECKING:
         from frappe.types import DF
 
-        quota: DF.Int
         user: DF.Link | None
-        user_folder: DF.Link | None
         webdav_enabled: DF.Check
         writer_settings: DF.JSON | None
     # end: auto-generated types
 
-    def validate(self):
-        if self.flags.ignore_permissions or frappe.session.user == "Administrator":
-            return
-        if "Suite Admin" in frappe.get_roles():
-            return
-
-        before = self.get_doc_before_save()
-        for field in PRIVILEGED_FIELDS:
-            previous = before.get(field) if before else None
-            if (self.get(field) or None) != (previous or None):
-                frappe.throw(f"{field} is managed by Drive.", frappe.PermissionError)
+    def validate(self) -> None:
+        """Refuse a row whose name is not its user: reads go by name, permission checks by user."""
+        if self.name != self.user:
+            frappe.throw(_("Drive settings must be named after their own user"), frappe.ValidationError)

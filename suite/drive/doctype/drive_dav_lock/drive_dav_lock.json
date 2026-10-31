@@ -35,11 +35,11 @@
    "unique": 1
   },
   {
-   "description": "The locked File entity.",
+   "description": "The locked Drive Node.",
    "fieldname": "entity",
    "fieldtype": "Link",
    "label": "Entity",
-   "options": "File",
+   "options": "Drive Node",
    "reqd": 1,
    "search_index": 1
   },

@@ -7,9 +7,10 @@
 //
 // Without the fix these go red: _applyCanvasSize re-clamps scroll and shifts
 // every cell, but leaves the textarea floating at its pre-change offset.
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createMockCtx } from './painters/test-utils.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { createGrid } from './index.js'
+import { createMockCtx } from './painters/test-utils.js'
 
 // Open the editor on the given cell by synthesizing the dblclick the grid
 // listens for. jsdom's getBoundingClientRect() is all-zero (no layout), so
@@ -21,21 +22,29 @@ function mount() {
   vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
   parent.appendChild(canvas)
   document.body.appendChild(parent)
-  const grid = createGrid(canvas, { getFormat: () => ({}), canEdit: () => true })
+  const grid = createGrid(canvas, {
+    cells: { getStyle: () => ({}) },
+    host: { canEdit: () => true },
+  })
   grid.resize(800, 600)
   const editor = () => parent.querySelector('textarea')
-  const openA1 = () => canvas.dispatchEvent(
-    new MouseEvent('dblclick', { clientX: 55, clientY: 30, bubbles: true }))
+  const openA1 = () =>
+    canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: 55, clientY: 30, bubbles: true }))
   return { grid, editor, openA1 }
 }
 
 // The overlay stores its on-screen offset as inline px styles; strip 'px'.
-const leftOf = el => parseFloat(el.style.left)
-const topOf  = el => parseFloat(el.style.top)
+// Its border sits on the selection frame, one zoomed pixel outside the cell,
+// so add that back to compare with the cell's rect.
+const leftOf = (el, zoom = 1) => parseFloat(el.style.left) + zoom
+const topOf = (el, zoom = 1) => parseFloat(el.style.top) + zoom
 
 describe('in-cell editor stays pinned to its cell', () => {
   let h
-  beforeEach(() => { document.body.innerHTML = ''; h = mount() })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    h = mount()
+  })
 
   it('opens the editor anchored to the double-clicked cell', () => {
     h.openA1()
@@ -53,8 +62,8 @@ describe('in-cell editor stays pinned to its cell', () => {
     // Zoom doubles the cell's on-screen rect; the editor must follow it there,
     // not stay at its pre-zoom offset.
     expect(rect.x).toBeGreaterThan(before)
-    expect(leftOf(h.editor())).toBeCloseTo(rect.x, 3)
-    expect(topOf(h.editor())).toBeCloseTo(rect.y, 3)
+    expect(leftOf(h.editor(), 2)).toBeCloseTo(rect.x, 3)
+    expect(topOf(h.editor(), 2)).toBeCloseTo(rect.y, 3)
   })
 
   it('does not touch the overlay when no edit is open (guarded no-op)', () => {

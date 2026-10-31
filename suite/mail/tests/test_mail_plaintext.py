@@ -44,7 +44,7 @@ class TestOutgoingPlaintext(StalwartIntegrationTestCase):
             message="Mail did not arrive.",
         )
         with self.set_user(self.receiver.email):
-            eml = bytes(fetch_mail_as_eml(thread["messages"][-1]["name"]))
+            eml = bytes(fetch_mail_as_eml(thread["messages"][-1]["name"]).get_data())
         return message_from_bytes(eml, policy=policy.default)
 
     @staticmethod

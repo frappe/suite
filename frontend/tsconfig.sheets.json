@@ -1,0 +1,58 @@
+{
+  // Strict type-check for the sheets rewrite (P1 onward).
+  //
+  // Frontend-wide checking is not viable: the pre-existing app is untyped
+  // JavaScript and would report thousands of errors. This config scopes
+  // `tsc --noEmit` to the rewritten sheets core, so new code is checked
+  // from the first commit and the checked surface grows per phase.
+  //
+  // Run: yarn workspace @suite/frontend typecheck
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": false,
+    // TS 6 deprecates `baseUrl`, inherited from ./tsconfig.json. Remove once
+    // the shared config drops it.
+    "ignoreDeprecations": "6.0",
+    // Beyond `strict`. Each of these catches a class of bug the sheets
+    // core is exposed to: sparse cell lookups, optional style paths,
+    // and message-protocol payloads.
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "types": []
+  },
+  "include": [
+    // The app's globals (window.csrf_token, …).
+    "src/env.d.ts",
+    "src/apps/sheets/core/**/*.ts",
+    "src/apps/sheets/utils/*.ts",
+    // engine/: the modules converted so far; the rest are still .js.
+    "src/apps/sheets/engine/*.ts",
+    "src/apps/sheets/engine/patterns/*.ts",
+    // Not services/: it imports @/api, which would pull the platform layer
+    // (not written for these flags) into this check.
+    "src/apps/sheets/canvas/*.ts",
+    "src/apps/sheets/canvas/input/*.ts",
+    "src/apps/sheets/canvas/painters/*.ts",
+    // collab/: the new Yjs schema and glue (the older .js files there predate them).
+    "src/apps/sheets/collab/schema*.ts",
+    "src/apps/sheets/collab/glue*.ts",
+    "src/apps/sheets/collab/stores*.ts",
+    "src/apps/sheets/collab/load.ts",
+    "src/apps/sheets/collab/undo*.ts",
+    "src/apps/sheets/collab/test-tabs.ts",
+    "src/apps/sheets/collab/test-fuzz.ts"
+  ],
+  // Canvas, utils and engine tests predate the strict config; the policy covers source.
+  "exclude": [
+    "src/apps/sheets/canvas/**/*.test.ts",
+    "src/apps/sheets/utils/*.test.ts",
+    "src/apps/sheets/engine/*.test.ts"
+  ]
+}

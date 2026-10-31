@@ -29,37 +29,37 @@ import type { Thread } from '@/apps/mail/types'
  *   own addresses to resolve. A stale avatar until the next refresh beats guessing the wrong face.
  */
 export const resummariseRow = (
-	thread: Thread,
-	{ mailbox, outgoing = false }: { mailbox?: string; outgoing?: boolean } = {},
+  thread: Thread,
+  { mailbox, outgoing = false }: { mailbox?: string; outgoing?: boolean } = {},
 ) => {
-	const before = {
-		from_name: thread.from_name,
-		from_email: thread.from_email,
-		received_at: thread.received_at,
-		recipients: thread.recipients,
-		draft: thread.draft,
-		preview: thread.preview,
-		attachments: thread.attachments,
-	}
-	const restore = () => void Object.assign(thread, before)
+  const before = {
+    from_name: thread.from_name,
+    from_email: thread.from_email,
+    received_at: thread.received_at,
+    recipients: thread.recipients,
+    draft: thread.draft,
+    preview: thread.preview,
+    attachments: thread.attachments,
+  }
+  const restore = () => void Object.assign(thread, before)
 
-	const messages = thread.messages ?? []
-	if (!messages.length) return restore
+  const messages = thread.messages ?? []
+  if (!messages.length) return restore
 
-	const inMailbox = mailbox
-		? messages.filter((m) => m.mailboxes.some((mb) => mb.mailbox_id === mailbox))
-		: []
-	// Falls back to the whole conversation rather than to nothing, exactly as the server does.
-	const inView = (inMailbox.length ? inMailbox : messages).at(-1)!
-	const latest = outgoing ? inView : messages.at(-1)!
+  const inMailbox = mailbox
+    ? messages.filter((m) => m.mailboxes.some((mb) => mb.mailbox_id === mailbox))
+    : []
+  // Falls back to the whole conversation rather than to nothing, exactly as the server does.
+  const inView = (inMailbox.length ? inMailbox : messages).at(-1)!
+  const latest = outgoing ? inView : messages.at(-1)!
 
-	thread.from_name = latest.from_name
-	thread.from_email = latest.from_email
-	thread.received_at = inView.received_at
-	thread.recipients = latest.recipients
-	thread.draft = latest.draft
-	thread.preview = latest.preview
-	thread.attachments = latest.attachments
+  thread.from_name = latest.from_name
+  thread.from_email = latest.from_email
+  thread.received_at = inView.received_at
+  thread.recipients = latest.recipients
+  thread.draft = latest.draft
+  thread.preview = latest.preview
+  thread.attachments = latest.attachments
 
-	return restore
+  return restore
 }

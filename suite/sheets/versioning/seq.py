@@ -22,6 +22,10 @@ def allocate(sheet: str, count: int = 1) -> int:
     if count < 1:
         frappe.throw("allocate(count) requires count >= 1")
 
+    # Lock order: the Sheet row, then its Sheet Seq row. The content layer's restore_version
+    # (suite.content.logged) locks the Sheet row before Sheets' own restore allocates a seq, so a
+    # save that locked the seq first could deadlock with it
+    frappe.db.sql("SELECT `name` FROM `tabSheet` WHERE `name` = %s FOR UPDATE", (sheet,))
     _ensure_row(sheet)
     row = frappe.db.sql(
         "SELECT next_seq FROM `tabSheet Seq` WHERE name = %s FOR UPDATE",

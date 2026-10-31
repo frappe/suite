@@ -18,32 +18,32 @@ import type { CheerioAPI } from 'cheerio'
 // module isn't in frappe-ui's package exports. They double as the extension's own legacy parse
 // map, so a body written this way still reads back as a named colour when a draft is reopened.
 const TEXT_COLORS: Record<string, string> = {
-	black: '#000000',
-	red: '#dc2626',
-	blue: '#1579D0',
-	green: '#16a34a',
-	yellow: '#ca8a04',
-	orange: '#ea580c',
-	purple: '#9333ea',
-	pink: '#db2777',
-	gray: '#6b7280',
-	indigo: '#4f46e5',
-	teal: '#0d9488',
-	cyan: '#06b6d4',
+  black: '#000000',
+  red: '#dc2626',
+  blue: '#1579D0',
+  green: '#16a34a',
+  yellow: '#ca8a04',
+  orange: '#ea580c',
+  purple: '#9333ea',
+  pink: '#db2777',
+  gray: '#6b7280',
+  indigo: '#4f46e5',
+  teal: '#0d9488',
+  cyan: '#06b6d4',
 }
 
 const HIGHLIGHT_COLORS: Record<string, string> = {
-	red: '#fecaca',
-	blue: '#bfdbfe',
-	green: '#bbf7d0',
-	yellow: '#fef08a',
-	orange: '#fed7aa',
-	purple: '#e9d5ff',
-	pink: '#fbcfe8',
-	gray: '#e5e7eb',
-	indigo: '#c7d2fe',
-	teal: '#99f6e4',
-	cyan: '#a5f3fc',
+  red: '#fecaca',
+  blue: '#bfdbfe',
+  green: '#bbf7d0',
+  yellow: '#fef08a',
+  orange: '#fed7aa',
+  purple: '#e9d5ff',
+  pink: '#fbcfe8',
+  gray: '#e5e7eb',
+  indigo: '#c7d2fe',
+  teal: '#99f6e4',
+  cyan: '#a5f3fc',
 }
 
 const PROSE_COLOR_VAR = /var\(--prose-(color|highlight)-([a-z]+)\)/g
@@ -52,10 +52,10 @@ const PROSE_COLOR_VAR = /var\(--prose-(color|highlight)-([a-z]+)\)/g
 // smaller loss than a confidently wrong colour, and it keeps a colour added upstream from being
 // silently flattened to something else.
 const resolveColorVariables = (style: string) =>
-	style.replace(PROSE_COLOR_VAR, (variable, kind: string, name: string) => {
-		const palette = kind === 'color' ? TEXT_COLORS : HIGHLIGHT_COLORS
-		return palette[name] ?? variable
-	})
+  style.replace(PROSE_COLOR_VAR, (variable, kind: string, name: string) => {
+    const palette = kind === 'color' ? TEXT_COLORS : HIGHLIGHT_COLORS
+    return palette[name] ?? variable
+  })
 
 // Text colour and highlight are separate marks, so colouring a highlighted run nests them:
 // `<span style="color: …"><mark style="background-color: …">`. That looks right in the editor
@@ -78,26 +78,26 @@ const resolveColorVariables = (style: string) =>
 const CARRIED_OVER = '.frappe_mail_quote, .frappe_mail_fwd, .gmail_quote'
 
 const keepTextColorThroughHighlights = ($: CheerioAPI) => {
-	$('mark').each((_, element) => {
-		const mark = $(element)
-		if (mark.closest(CARRIED_OVER).length) return
+  $('mark').each((_, element) => {
+    const mark = $(element)
+    if (mark.closest(CARRIED_OVER).length) return
 
-		const style = mark.attr('style') ?? ''
-		if (/(^|;)\s*color\s*:/.test(style)) return
+    const style = mark.attr('style') ?? ''
+    if (/(^|;)\s*color\s*:/.test(style)) return
 
-		mark.attr('style', style ? `${style.replace(/;\s*$/, '')}; color: inherit` : 'color: inherit')
-	})
+    mark.attr('style', style ? `${style.replace(/;\s*$/, '')}; color: inherit` : 'color: inherit')
+  })
 }
 
 // Everything that has to happen to the editor's colours before a body goes on the wire.
 export const preserveEditorColors = ($: CheerioAPI) => {
-	// Variables are resolved everywhere, quotes included: only our own editor writes them, so one
-	// inside a quote is our earlier mail coming back and would render just as broken as the first
-	// time. It is the mark rewrite below that has to keep its hands off other people's markup.
-	$('[style]').each((_, element) => {
-		const styled = $(element)
-		styled.attr('style', resolveColorVariables(styled.attr('style')!))
-	})
+  // Variables are resolved everywhere, quotes included: only our own editor writes them, so one
+  // inside a quote is our earlier mail coming back and would render just as broken as the first
+  // time. It is the mark rewrite below that has to keep its hands off other people's markup.
+  $('[style]').each((_, element) => {
+    const styled = $(element)
+    styled.attr('style', resolveColorVariables(styled.attr('style')!))
+  })
 
-	keepTextColorThroughHighlights($)
+  keepTextColorThroughHighlights($)
 }

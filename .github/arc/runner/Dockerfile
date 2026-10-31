@@ -11,6 +11,7 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
 COPY package.json yarn.lock root/
 COPY frontend/package.json root/frontend/
+COPY frontend/packages/collab-client/package.json root/frontend/packages/collab-client/
 COPY e2e/package.json e2e/yarn.lock e2e/
 COPY suite/meet/sfu-server/package.json suite/meet/sfu-server/yarn.lock sfu/
 

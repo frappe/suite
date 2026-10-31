@@ -1,0 +1,747 @@
+import ast
+import unittest
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+
+from suite import drive
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+SUITE_ROOT = REPOSITORY_ROOT / "suite"
+PRODUCTS = frozenset({"calendar", "draw", "drive", "mail", "meet", "sheets", "slides", "writer"})
+CONTENT_PRODUCTS = frozenset({"draw", "sheets", "slides", "writer"})
+MIN_SUITE_MODULE_PARTS = 2
+
+
+@dataclass(frozen=True)
+class Debt:
+    owner: str
+    removal: str
+
+
+@dataclass(frozen=True)
+class Violation:
+    path: str
+    line: int
+    kind: str
+    module: str
+    reason: str
+
+    @property
+    def base_key(self):
+        return f"{self.path}|{self.kind}|{self.module}"
+
+
+def _debt(owner, removal, entries):
+    debt = Debt(owner, removal)
+    return {entry: debt for entry in entries}
+
+
+BASELINE_DEBT = {
+    **_debt(
+        "Suite Drive and Meet",
+        "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
+        ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
+    ),
+    **_debt(
+        "Drive and adopting product owners",
+        "Remove through Drive implementation tickets 15-23 and the backend integration review (30).",
+        (
+            "suite/hooks.py|dotted-string|suite.drive.webdav.locks.purge_expired_locks",
+            "suite/hooks.py|dotted-string|suite.drive.webdav.dispatch.handle_before_request",
+            "suite/writer/doctype/writer_document/test_writer_document.py|import|suite.drive._core.errors",
+        ),
+    ),
+    **_debt(
+        "Suite content layer",
+        "Remove when `suite.drive` can register a content type for one test.",
+        (
+            "suite/content/tests/test_editors.py|import|suite.drive._core.content",
+            "suite/content/tests/test_note.py|import|suite.drive._core.content",
+        ),
+    ),
+    **_debt(
+        "Suite Drive",
+        "Remove when `suite.drive` exposes a grant workflow and a shipped-templates folder for "
+        "Administrator (the seed in `suite/slides/install.py` then needs nothing below the facade).",
+        # Issue 38: the Slides template seed replaced the `Presentation`
+        # fixture. §8.10 puts shipped templates in Administrator's Personal
+        # root with a `$GENERAL` READ grant on each; the facade refuses
+        # Administrator in `ensure_personal_root` and has no grant call.
+        (
+            "suite/slides/install.py|import|suite.drive._core.access",
+            "suite/slides/install.py|import|suite.drive._core.roots",
+            "suite/slides/install.py|import|suite.drive.framework",
+        ),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
+        (
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive._core.content.spec_for",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission#2",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions#2",
+            "suite/writer/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.refuse_unlinked_documents",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.access",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.content",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.errors",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.nodes",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.nodes#2",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.principals",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.roots",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.versions",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.framework",
+            # The collab reader case needs a READ grant, which has no public call yet
+            "suite/writer/content/tests/test_collab_access.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_collab_access.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_collab_rooms.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_collab_rooms.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_collab_stage.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_collab_stage.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_suspect.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_suspect.py|import|suite.drive._core.principals",
+            # The checkpoint cases trash and purge each document they make; neither is a public call yet
+            "suite/writer/content/tests/support.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/support.py|import|suite.drive._core.principals",
+            # The trimming case reads every version back as its writer; reading one is not a public call yet
+            "suite/writer/content/tests/test_trimming.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_trimming.py|import|suite.drive._core.versions",
+            # The callback cases run Drive's media sweep on one document, and
+            # trash, purge and restore a version as its writer; none of these
+            # is a public call yet
+            "suite/writer/content/tests/drive_callback_case.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_document_row.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.versions",
+            "suite/writer/content/tests/test_media_sweep.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_purges.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/test_purges.py|import|suite.drive._core.principals",
+            # The lock-order case trashes a document and races its purge; neither is a public call yet
+            "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_touches.py|import|suite.drive._core",
+            "suite/writer/content/tests/test_touches.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_touches.py|import|suite.drive._core.versions",
+            "suite/writer/content/tests/test_restores.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_restores.py|import|suite.drive._core.versions",
+            # The conversion reads back the version it took before the first write
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.nodes",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.principals",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.versions",
+            # The conversion cases grant EDIT by link and READ to a reader, hold a tree's
+            # lock and open a Drive write in a race; none of these is a public call yet
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.access",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive._core.roots",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive.framework",
+            # An embedded picture is a media node below the document (§9.4),
+            # so the fixture builds roots and nodes and reads Drive's own
+            # upload path; there is no upload fixture above it yet.
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.access",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.errors",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.nodes",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.principals",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive._core.roots",
+            "suite/writer/api/tests/test_embed.py|import|suite.drive.tests.fixtures",
+        ),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when a public Drive call writes a version from caller-supplied bytes.",
+        # §14.6 copied a `Writer Version` snapshot into a `Drive Node Version`
+        # as raw HTML. No public Drive call writes a version from caller-supplied
+        # bytes, so proving that a migrated version restores means writing the
+        # row the way Build wrote it.
+        ("suite/writer/tests/test_drive_adoption.py|drive-table-write|Drive Node Version",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Drive's media sweep takes the time it measures the grace period from.",
+        # The sweep spares media younger than its grace period, so the case
+        # backdates one media node's `creation` to make it eligible
+        ("suite/writer/content/tests/drive_callback_case.py|drive-table-write|Drive Node",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Build's comment port is gone, with the conversion of what it ported.",
+        # The conversion finds each old comment on the Drive thread Build ported
+        # under its id, or renamed as Build renames it; no Drive call names a thread
+        (
+            "suite/writer/content/tests/test_conversion.py|drive-table-write|Drive Comment",
+            "suite/writer/content/tests/test_conversion.py|drive-table-write|Drive Comment Thread",
+            "suite/writer/content/tests/test_conversion.py|import|suite.drive.patches.build.content_mapping",
+        ),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when Drive can drop a version's bytes for one test.",
+        # The old-body case points one version at bytes that don't exist; no Drive call breaks a version
+        ("suite/writer/content/tests/test_drive_versions.py|drive-table-write|Drive Node Version",),
+    ),
+    **_debt(
+        "Suite Writer",
+        "Remove when `suite.composition.lifecycle` can run one product's hooks for one test.",
+        # The migrate cases stub every other step, which would alter the schema, seed
+        # templates or check the whole site's content; the install cases stub the
+        # hooks that insert rate limits the site already holds
+        (
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.drive.framework.validate_content_registry",
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.drive.install.index_group_membership",
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.mail.install.after_migrate",
+            "suite/writer/content/tests/test_conversion.py|dotted-string|suite.slides.install.seed_system_templates",
+            "suite/writer/content/tests/test_switch.py|dotted-string|suite.calendar.install.after_install",
+            "suite/writer/content/tests/test_switch.py|dotted-string|suite.mail.install.after_install",
+            "suite/writer/content/tests/test_switch.py|dotted-string|suite.meet.install.after_install",
+        ),
+    ),
+    **_debt(
+        "Suite Slides",
+        "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
+        (
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.content.spec_for",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.copy_preview",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render#2",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission#2",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions#2",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission#2",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions",
+            "suite/slides/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions#2",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.access",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.content",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.errors",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.nodes",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.principals",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.roots",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.versions",
+            "suite/slides/tests/test_drive_adoption.py|import|suite.drive.framework",
+            # Ticket 29 activated the registry, so a deck fixture is a Drive
+            # node and `make_public` is a `Drive Grant`, not a `Drive Permission`
+            # row. `suite.drive` exposes no grant workflow, so the shared Slides
+            # fixture takes the same `_core` route this module already takes,
+            # and the refusal assertions name the error classes by type.
+            "suite/slides/doctype/presentation/test_presentation.py|import|suite.drive._core.errors",
+            "suite/slides/tests/utils.py|import|suite.drive._core.access",
+            "suite/slides/tests/utils.py|import|suite.drive._core.principals",
+            "suite/slides/tests/utils.py|import|suite.drive._core.roles",
+            # `trash` puts a fixture deck in Drive's trash so a case can tell
+            # "Drive hides it" apart from "it is gone". No public Drive call
+            # trashes a node yet.
+            "suite/slides/tests/utils.py|import|suite.drive._core.nodes",
+        ),
+    ),
+    **_debt(
+        "Suite Slides API",
+        "Remove when tickets 21 and 22 expose root, grant, and trash workflows over HTTP.",
+        (
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.satellite_has_permission",
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.satellite_query_conditions",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.access",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.content",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.principals",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.roots",
+        ),
+    ),
+    **_debt(
+        "Suite Sheets",
+        "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
+        (
+            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
+            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_has_permission",
+            "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.satellite_query_conditions",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.access",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.content",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.errors",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.nodes",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.principals",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.roots",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive._core.versions",
+            "suite/sheets/tests/test_drive_adoption.py|import|suite.drive.framework",
+            # The title fixtures create a sheet through the endpoint and hand
+            # it back through Drive's trash and purge, which `suite.drive` does
+            # not expose yet.
+            "suite/sheets/tests/test_api_titles.py|import|suite.drive._core.nodes",
+            "suite/sheets/tests/test_api_titles.py|import|suite.drive._core.principals",
+        ),
+    ),
+    **_debt(
+        "Mail and Calendar owners",
+        "Replace the existing Mail/Calendar cycle with declared package interfaces after the Drive rewrite.",
+        (
+            "suite/calendar/api/__init__.py|import|suite.mail.jmap",
+            "suite/calendar/api/__init__.py|import|suite.mail.utils.dt",
+            "suite/calendar/api/invites.py|import|suite.mail.jmap",
+            "suite/calendar/api/rsvp.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/api/rsvp.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils.dt",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils.logger",
+            "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.doctype.mail_queue.mail_queue",
+            "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.push_subscription.push_subscription",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils.logger",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils.user",
+            "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.utils.dt",
+            "suite/calendar/tests/test_calendar_calendars.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_events.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_exchange_and_notifications.py|import|suite.mail.api.account",
+            "suite/calendar/tests/test_calendar_exchange_and_notifications.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_invites_rsvp.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_invites_rsvp.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_calendar_mail_invites.py|import|suite.mail.api.mail",
+            "suite/calendar/tests/test_calendar_mail_invites.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.api.admin",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.tests.base",
+            "suite/mail/api/jmap.py|import|suite.calendar.doctype.calendar_event.calendar_event",
+            "suite/mail/tests/test_jmap_calendar_event_notification.py|import|suite.calendar.doctype.event_notification.event_notification",
+            "suite/mail/utils/query.py|import|suite.calendar.doctype.calendar.calendar",
+        ),
+    ),
+    **_debt(
+        "Meet, Mail, and Calendar owners",
+        "Declare scheduling interfaces before changing the existing Meet integration.",
+        (
+            "suite/meet/api/schedule.py|import|suite.calendar.doctype.calendar_event.calendar_event",
+            "suite/meet/api/schedule.py|import|suite.mail.doctype.user_account.user_account",
+        ),
+    ),
+    **_debt(
+        "Suite architecture",
+        "Move Suite-level orchestration behind composition-owned interfaces.",
+        (
+            "suite/api/account.py|import|suite.mail.utils.user",
+            "suite/tests/ci_smoke.py|dotted-string|suite.meet.api.recording.reconcile_pending_recordings",
+            "suite/tests/test_composition.py|dotted-string|suite.mail.email_suggestions.clear_directory_addresses",
+            "suite/www/event_rsvp.py|import|suite.calendar.api.rsvp",
+        ),
+    ),
+    **_debt(
+        "Mail, Calendar, and Suite core owners",
+        "Remove when Calendar uses Mail's public interfaces and Suite settings reach Mail through composition.",
+        # Source: upstream `develop`, merged at a3dba155c and again at
+        # 082e84001 (the move to jmaplib). Mail exposes its email provider at
+        # package root, but these Calendar dependencies still use internal
+        # modules, and Suite settings need a composition seam.
+        (
+            "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.directory",
+            "suite/calendar/tests/test_calendar_calendars.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_calendar_event_search.py|import|suite.mail.tests.base",
+            "suite/calendar/jmap_events.py|import|suite.mail.jmap",
+            "suite/calendar/jmap_events.py|import|suite.mail.utils.dt",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.directory",
+            "suite/calendar/tests/test_calendar_refused_reads.py|import|suite.mail.doctype.participant_identity",
+            "suite/calendar/tests/test_calendar_refused_reads.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_invite_event_resolution.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_jmap_events.py|import|suite.mail.jmap",
+            "suite/mail/tests/test_jmap_calendar_event_notification.py"
+            "|import|suite.calendar.doctype.event_notification.event_notification#2",
+            "suite/mail/tests/test_suite_cloud_gating.py"
+            "|dotted-string|suite.calendar.doctype.calendar_event.mailing_lists.get_mailing_list_index",
+            "suite/mail/tests/test_suite_cloud_gating.py"
+            "|dotted-string|suite.calendar.doctype.calendar_event.mailing_lists.log_mail_error",
+            "suite/mail/tests/test_suite_cloud_gating.py|import|suite.calendar.doctype.calendar_event.mailing_lists",
+            "suite/suite_core/doctype/suite_settings/suite_settings.py|dotted-string|suite.mail.directory.push_tenant_profile",
+            "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail",
+            "suite/suite_core/doctype/suite_settings/suite_settings.py|import|suite.mail.utils",
+            "suite/suite_core/test_utils.py|import|suite.mail.utils",
+        ),
+    ),
+    **_debt(
+        "Suite composition",
+        "Remove when Mail declares the account lookup the route registry needs.",
+        # Source: this branch (47311aa11, the `/api/suite/<owner>` route
+        # registry), not upstream. Mail has no package-root interface yet.
+        (
+            "suite/calendar/http/routes.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/meet/http/routes.py|import|suite.mail.doctype.user_account.user_account",
+        ),
+    ),
+}
+
+
+def _owner(path):
+    parts = PurePosixPath(path).parts
+    if (
+        len(parts) > 1
+        and parts[0] == "suite"
+        and parts[1]
+        in PRODUCTS
+        | {
+            "composition",
+            "content",
+            "suite_core",
+        }
+    ):
+        return parts[1]
+    return None
+
+
+def layer_violation(source, target):
+    if source == "drive" and target in CONTENT_PRODUCTS:
+        return "Drive imports a concrete content-product implementation"
+
+    if source == "suite_core" and target in PRODUCTS:
+        return "suite_core imports a product implementation"
+
+    if source == "content" and target in PRODUCTS - {"drive"}:
+        return "the content layer imports a product implementation"
+
+    if source == "drive" and target == "content":
+        return "Drive imports the content layer"
+
+    return None
+
+
+def interface_violation(path, module, source, target):
+    if source in PRODUCTS and target in PRODUCTS and source != target:
+        if module == f"suite.{target}":
+            return None
+        return "a product imports another product below its package-root interface"
+
+    if target == "drive" and source != "drive":
+        if module == "suite.drive":
+            return None
+        if path == "suite/hooks.py" and module.startswith(("suite.drive.framework.", "suite.drive.jobs.")):
+            return None
+        return "code outside Drive imports a private Drive module"
+
+    if source is None and path != "suite/hooks.py" and target in PRODUCTS:
+        if module != f"suite.{target}":
+            return "Suite-level code imports a product below its package-root interface"
+
+    return None
+
+
+def classify(path, module):
+    parts = module.split(".")
+    if len(parts) < MIN_SUITE_MODULE_PARTS or parts[0] != "suite":
+        return None
+
+    if parts[1] not in PRODUCTS | {"content", "suite_core"}:
+        return None
+
+    source = _owner(path)
+    target = parts[1]
+    if source == "composition":
+        return None
+
+    return layer_violation(source, target) or interface_violation(path, module, source, target)
+
+
+DRIVE_TABLE_WRITE_CALLS = frozenset(
+    {
+        "frappe.db.set_value",
+        "frappe.db.set_single_value",
+        "frappe.db.delete",
+        "frappe.db.bulk_insert",
+        "frappe.delete_doc",
+        "frappe.new_doc",
+        "frappe.rename_doc",
+    }
+)
+DRIVE_TABLE_WRITE_REASON = "code outside Drive writes a Drive table directly"
+
+
+def _dotted_call_name(node):
+    parts = []
+    current = node.func
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    return ".".join(reversed(parts))
+
+
+def _drive_doctype_argument(node):
+    """Return the Drive DocType a call writes to, or None."""
+    name = _dotted_call_name(node)
+    if not name or not node.args:
+        return None
+    first = node.args[0]
+    if name in DRIVE_TABLE_WRITE_CALLS:
+        if isinstance(first, ast.Constant) and str(first.value).startswith("Drive "):
+            return first.value
+        return None
+    if name in ("frappe.get_doc", "frappe.new_doc") and isinstance(first, ast.Dict):
+        for key, value in zip(first.keys, first.values, strict=True):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == "doctype"
+                and isinstance(value, ast.Constant)
+                and str(value.value).startswith("Drive ")
+            ):
+                return value.value
+        return None
+    if name == "frappe.db.sql" and isinstance(first, ast.Constant):
+        statement = str(first.value).strip().split(None, 1)[0].upper() if first.value.strip() else ""
+        if statement in ("UPDATE", "INSERT", "DELETE", "REPLACE") and "tabDrive " in first.value:
+            return "tabDrive"
+    return None
+
+
+def table_write_violations(path, tree):
+    """Enforce ARCHITECTURE.md rule 5.5 for every caller outside Drive."""
+    if PurePosixPath(path).parts[:2] == ("suite", "drive"):
+        return []
+    violations = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        doctype = _drive_doctype_argument(node)
+        if doctype:
+            violations.append(
+                Violation(path, node.lineno, "drive-table-write", doctype, DRIVE_TABLE_WRITE_REASON)
+            )
+    return violations
+
+
+APP_ROW = "suite.content.app_row"
+APP_ROW_REASON = "code outside the content layer reaches the app's row past it"
+
+
+def app_row_violations(path, tree):
+    if PurePosixPath(path).parts[:2] == ("suite", "content"):
+        return []
+
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        kind, modules = _modules(node)
+        if isinstance(node, ast.ImportFrom) and node.module == "suite.content":
+            modules = [f"{node.module}.{alias.name}" for alias in node.names]
+
+        matched = [module for module in modules if module == APP_ROW or module.startswith(f"{APP_ROW}.")]
+        for module in matched:
+            violations.append(Violation(path, node.lineno, kind, module, APP_ROW_REASON))
+
+    return violations
+
+
+def _modules(node):
+    if isinstance(node, ast.Import):
+        return ("import", [alias.name for alias in node.names])
+    if isinstance(node, ast.ImportFrom):
+        if node.module == "suite":
+            return ("import", [f"suite.{alias.name}" for alias in node.names])
+        return ("import", [node.module] if node.module else [])
+    if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("suite."):
+        return ("dotted-string", [node.value])
+    return (None, [])
+
+
+def violations_in_tree(path, tree):
+    violations = []
+    for node in ast.walk(tree):
+        kind, modules = _modules(node)
+        for module in modules:
+            reason = classify(path, module)
+            if reason:
+                violations.append(Violation(path, node.lineno, kind, module, reason))
+    violations.extend(table_write_violations(path, tree))
+    violations.extend(app_row_violations(path, tree))
+    return sorted(
+        violations, key=lambda violation: (violation.path, violation.line, violation.kind, violation.module)
+    )
+
+
+def python_violations():
+    violations = []
+    for source in sorted(SUITE_ROOT.rglob("*.py")):
+        relative = source.relative_to(REPOSITORY_ROOT).as_posix()
+        if relative == "suite/tests/test_architecture.py":
+            continue
+        tree = ast.parse(source.read_text(), filename=relative)
+        violations.extend(violations_in_tree(relative, tree))
+    return violations
+
+
+def keyed_violations(violations):
+    counts = Counter()
+    keyed = {}
+    for violation in violations:
+        counts[violation.base_key] += 1
+        occurrence = counts[violation.base_key]
+        key = violation.base_key if occurrence == 1 else f"{violation.base_key}#{occurrence}"
+        keyed[key] = violation
+    return keyed
+
+
+class TestArchitecture(unittest.TestCase):
+    def test_python_boundaries_match_owned_debt_baseline(self):
+        actual = keyed_violations(python_violations())
+        unexpected = sorted(set(actual) - set(BASELINE_DEBT))
+        resolved = sorted(set(BASELINE_DEBT) - set(actual))
+        details = []
+        if unexpected:
+            details.append(
+                "New boundary violations:\n"
+                + "\n".join(f"  {key} (line {actual[key].line}: {actual[key].reason})" for key in unexpected)
+            )
+        if resolved:
+            details.append(
+                "Resolved debt still present in BASELINE_DEBT:\n"
+                + "\n".join(f"  {key} (owner: {BASELINE_DEBT[key].owner})" for key in resolved)
+            )
+        self.assertFalse(details, "\n\n".join(details))
+
+    def test_forbidden_static_and_dynamic_imports_are_detected(self):
+        tree = ast.parse(
+            "from suite.drive._core.access import require\n"
+            "target = 'suite.drive.doctype.drive_node.drive_node.DriveNode'\n"
+        )
+        violations = violations_in_tree("suite/writer/new_caller.py", tree)
+        self.assertEqual(len(violations), 2)
+        self.assertTrue(all("package-root interface" in violation.reason for violation in violations))
+
+    def test_drive_table_writes_outside_drive_are_detected(self):
+        source = (
+            "frappe.db.set_value('Drive Root', root, 'used_bytes', 1)\n"
+            "frappe.db.delete('Drive Grant', {'node': node})\n"
+            "frappe.get_doc({'doctype': 'Drive Storage Reservation', 'root': root}).insert()\n"
+            "frappe.new_doc('Drive Node')\n"
+            "frappe.db.sql('UPDATE `tabDrive Root` SET used_bytes = 0')\n"
+        )
+        violations = violations_in_tree("suite/meet/new_caller.py", ast.parse(source))
+        self.assertEqual([violation.kind for violation in violations], ["drive-table-write"] * 5)
+        self.assertTrue(all(DRIVE_TABLE_WRITE_REASON == v.reason for v in violations))
+
+    def test_drive_reads_and_drive_owned_writes_are_allowed(self):
+        source = (
+            "frappe.db.get_value('Drive Root', root, 'used_bytes')\n"
+            "frappe.get_all('Drive Node', filters={'root': root})\n"
+            "frappe.db.sql('SELECT name FROM `tabDrive Node`')\n"
+            "frappe.db.count('Drive Storage Reservation', {'root': root})\n"
+        )
+        self.assertEqual(violations_in_tree("suite/meet/new_caller.py", ast.parse(source)), [])
+        write = "frappe.db.delete('Drive Grant', {'node': node})\n"
+        self.assertEqual(violations_in_tree("suite/drive/_core/roots.py", ast.parse(write)), [])
+
+    def test_the_app_row_is_reached_only_inside_the_content_layer(self):
+        source = (
+            "from suite.content import app_row, jobs\n"
+            "from suite.content.app_row import write_body\n"
+            "target = 'suite.content.app_row.write_copy'\n"
+        )
+        violations = violations_in_tree("suite/writer/new_caller.py", ast.parse(source))
+        self.assertEqual([violation.reason for violation in violations], [APP_ROW_REASON] * 3)
+        self.assertEqual(violations_in_tree("suite/content/copies.py", ast.parse(source)), [])
+
+    def test_the_content_layer_sits_above_drive_and_below_the_products(self):
+        source = "from suite import drive, writer\nfrom suite.slides import drive as slides_drive\n"
+        violations = violations_in_tree("suite/content/new_caller.py", ast.parse(source))
+        self.assertEqual(
+            [(violation.module, violation.reason) for violation in violations],
+            [
+                ("suite.writer", "the content layer imports a product implementation"),
+                ("suite.slides", "the content layer imports a product implementation"),
+            ],
+        )
+        drive_source = "from suite import content\n"
+        drive_violations = violations_in_tree("suite/drive/new_caller.py", ast.parse(drive_source))
+        self.assertEqual(
+            [violation.reason for violation in drive_violations], ["Drive imports the content layer"]
+        )
+        product_source = "from suite.content import log\n"
+        self.assertEqual(violations_in_tree("suite/writer/new_caller.py", ast.parse(product_source)), [])
+
+    def test_package_root_import_is_allowed(self):
+        tree = ast.parse("from suite import drive\n")
+        self.assertEqual(violations_in_tree("suite/writer/new_caller.py", tree), [])
+
+    def test_drive_public_interface_is_explicit_and_complete_only(self):
+        self.assertIsInstance(drive.__all__, tuple)
+        self.assertEqual(
+            drive.__all__,
+            (
+                "COMMENT",
+                "EDIT",
+                "MANAGE",
+                "READ",
+                "UPLOAD",
+                "ContentTypeSpec",
+                "DriveConflict",
+                "DriveContent",
+                "DriveError",
+                "DriveForbidden",
+                "DriveLinkExpired",
+                "DriveLocked",
+                "DriveNotFound",
+                "DriveOverQuota",
+                "Satellite",
+                "administration_usage",
+                "adopt_media",
+                "bind_legacy_storage_reservation",
+                "check",
+                "comment_threads",
+                "copy",
+                "create_document",
+                "create_file",
+                "create_storage_reservation",
+                "ensure_folder",
+                "ensure_personal_root",
+                "get_storage_reservation",
+                "get_storage_usage",
+                "grow_storage_reservation",
+                "has_blank_old_comment",
+                "import_document",
+                "install_threads",
+                "legacy_node",
+                "list_versions",
+                "node_field",
+                "node_owner",
+                "node_url",
+                "personal_root_for",
+                "preview_user_transfer",
+                "push_preview",
+                "read_file",
+                "read_version",
+                "reduce_storage_reservation",
+                "refuse_shared_child_rows",
+                "refuse_shared_linked_rows",
+                "refuse_shared_row",
+                "release_storage_reservation",
+                "resolve_share_link",
+                "rollback_savepoint",
+                "set_user_active",
+                "store_file",
+                "take_version",
+                "touch",
+                "transfer_user_drive",
+            ),
+        )
+        for name in drive.__all__:
+            self.assertTrue(getattr(drive, name, None), name)
+        self.assertIn("## Content apps", drive.__doc__)
+        self.assertIn("## Errors", drive.__doc__)
+        self.assertIn("## Transactions", drive.__doc__)
+        self.assertIn("## Permissions", drive.__doc__)
+        self.assertIn("## Performance", drive.__doc__)
+
+    def test_every_baseline_entry_has_a_removal_owner(self):
+        for key, debt in BASELINE_DEBT.items():
+            with self.subTest(key=key):
+                self.assertTrue(debt.owner)
+                self.assertTrue(debt.removal)

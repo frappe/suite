@@ -1,50 +1,35 @@
-import { ref, watch, onUnmounted } from 'vue'
-import { call }                        from '../../utils/api.js'
-import { getSessionUser, fullName as sessionFullName, imageURL as sessionImageURL } from '@/boot/session'
-import { userInitials }                from '../../utils/session.js'
-import { createYDoc, hydrateYDoc }     from '../../collab/ydoc.js'
-import { bindCells }                   from '../../collab/cells-binding.js'
-import { createFrappeProvider }        from '../../collab/frappe-provider.js'
-import { createRealtimeAdapter }       from '../../collab/realtime-adapter.js'
-import { createAwareness }             from '../../collab/awareness.js'
-import { createHocuspocusClient }      from '../../collab/hocuspocus-client.js'
-import { ensureFrappeRealtime }        from '../../collab/frappe-realtime-init.js'
+import { onUnmounted, ref, watch } from 'vue'
 
-// Feature flag for the Hocuspocus-backed collab path. When false (default),
-// the legacy `frappe.realtime` relay path runs unchanged so a deploy of this
-// frontend without the collab server doesn't break editing. Flip to true on
-// benches that have the collab server running + reachable at COLLAB_WS_URL.
-//
-// Resolution order (first non-empty wins):
-//   1. `window.frappe.boot.collab_v2`  — server-side flag from site_config
-//   2. `window.__COLLAB_V2__`           — local dev override
-function _collabV2Enabled() {
-  if (typeof window === 'undefined') return false
-  if (window.frappe?.boot?.collab_v2 === true) return true
-  if (window.__COLLAB_V2__ === true) return true
-  return false
-}
+import {
+  getSessionUser,
+  fullName as sessionFullName,
+  imageURL as sessionImageURL,
+} from '@/boot/session'
 
-function _collabWsUrl() {
-  if (typeof window === 'undefined') return null
-  const fromBoot   = window.frappe?.boot?.collab_ws_url
-  const fromGlobal = window.__COLLAB_WS_URL__
-  return fromBoot || fromGlobal || _defaultCollabUrl()
-}
-
-function _defaultCollabUrl() {
-  if (typeof window === 'undefined') return null
-  // Same-origin upgrade — nginx is expected to proxy /collab/ → upstream.
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/collab/`
-}
+import { createAwareness } from '../../collab/awareness.js'
+import { bindCells } from '../../collab/cells-binding.js'
+import { createFrappeProvider } from '../../collab/frappe-provider.js'
+import { ensureFrappeRealtime } from '../../collab/frappe-realtime-init.js'
+import { createRealtimeAdapter } from '../../collab/realtime-adapter.js'
+import { createYDoc, hydrateYDoc } from '../../collab/ydoc.js'
+import { isRefusal, relay } from '../../utils/relay.js'
+import { userInitials } from '../../utils/session.js'
 
 // Collaboration cursor palette — 8 distinct colours not covered by Espresso tokens.
-const CURSOR_PALETTE = ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#AB47BC', '#00ACC1', '#FF7043', '#8D6E63']
+const CURSOR_PALETTE = [
+  '#4285F4',
+  '#EA4335',
+  '#34A853',
+  '#FBBC05',
+  '#AB47BC',
+  '#00ACC1',
+  '#FF7043',
+  '#8D6E63',
+]
 
 function hashUserColor(user) {
   let hash = 0
-  for (const char of (user || '')) hash = (hash * 31 + char.charCodeAt(0)) & 0xFFFFFFFF
+  for (const char of user || '') hash = (hash * 31 + char.charCodeAt(0)) & 0xffffffff
   return CURSOR_PALETTE[Math.abs(hash) % CURSOR_PALETTE.length]
 }
 
@@ -52,7 +37,9 @@ function hashUserColor(user) {
 // Google Sheets paints as the cursor label. We prefer first names because
 // they read at a glance and aren't redundant with the avatar's initials.
 function _firstName(fullName, initials) {
-  const first = String(fullName || '').trim().split(/\s+/)[0]
+  const first = String(fullName || '')
+    .trim()
+    .split(/\s+/)[0]
   return first || initials || '?'
 }
 
@@ -69,14 +56,20 @@ function _throttle(fn, wait) {
   function flush() {
     last = Date.now()
     timer = null
-    if (pending) { fn(...pending); pending = null }
+    if (pending) {
+      fn(...pending)
+      pending = null
+    }
   }
   return function (...args) {
     const now = Date.now()
     const remaining = wait - (now - last)
     pending = args
     if (remaining <= 0) {
-      if (timer) { clearTimeout(timer); timer = null }
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
       flush()
     } else if (!timer) {
       timer = setTimeout(flush, remaining)
@@ -104,7 +97,8 @@ function _throttle(fn, wait) {
  * @param {{
  *   sheetId:        import('vue').Ref<string>,
  *   currentSheet:   import('vue').Ref<string>,
- *   getSheet:       () => object,
+ *   getSheet?:      () => object | null,  the engine cell sync binds to; none
+ *                   means presence and cursors only
  *   repopulateGrid: () => void,
  *   _self?:         string,
  *   _realtime?:     { on: Function, off: Function },
@@ -117,20 +111,36 @@ export function useCollaboration({
   currentSheet,
   getSheet,
   repopulateGrid,
-  _self        = getSessionUser(),
-  _realtime    = window.frappe?.realtime,
-  _callFn      = (method, args) => call(method, args),
-  _watch       = watch,
+  // A collaboration verdict: the relay refused this client's write. The
+  // editor narrows access.
+  onRefused = () => {},
+  // Send relay calls through this fetch. The `/d/` surface passes the Drive
+  // session's, which adds its link credentials.
+  credentialFetch,
+  _self = getSessionUser(),
+  _realtime = window.frappe?.realtime,
+  _callFn = (method, args) => relay(method, args, { fetch: credentialFetch }),
+  _watch = watch,
   _onUnmounted = onUnmounted,
 }) {
-  const presentUsers  = ref([])           // other users currently viewing
-  const remoteCursors = ref(new Map())    // userId → { row, col, subSheet, color, ... }
+  const _relay = async (method, args) => {
+    try {
+      return await _callFn(method, args)
+    } catch (err) {
+      if (isRefusal(err)) onRefused()
+      throw err
+    }
+  }
 
-  let _doc       = null
-  let _provider  = null
+  const presentUsers = ref([]) // other users currently viewing
+  const remoteCursors = ref(new Map()) // userId → { row, col, subSheet, color, ... }
+
+  let _doc = null
+  let _provider = null
   let _awareness = null
-  let _binding   = null
-  let _sheetId   = null
+  let _binding = null
+  let _adapter = null // legacy relay only: holds the sheet-room subscription
+  let _sheetId = null
 
   // ── Outbound API (kept for backwards-compatibility with index.vue) ──────────
 
@@ -147,15 +157,7 @@ export function useCollaboration({
   // Raw, un-throttled write to awareness. Wrapped below for the public API.
   function _publishCursor(row, col, subSheet, range) {
     if (!_awareness) return
-    const cursor = { row, col, range, subSheet }
-    // y-protocols Awareness uses setLocalStateField for one-key patches;
-    // our bespoke awareness uses setLocalState (replace). Pick the right
-    // one based on what the live awareness object actually supports.
-    if (typeof _awareness.setLocalStateField === 'function') {
-      _awareness.setLocalStateField('cursor', cursor)
-    } else {
-      _awareness.setLocalState({ cursor })
-    }
+    _awareness.setLocalState({ cursor: { row, col, range, subSheet } })
   }
 
   const _publishCursorThrottled = _throttle(_publishCursor, CURSOR_BROADCAST_MS)
@@ -172,10 +174,10 @@ export function useCollaboration({
 
   function _syncFromAwareness() {
     if (!_awareness) return
-    const peers   = _awareness.getStates()    // already excludes our clientId
-    const users   = []
+    const peers = _awareness.getStates() // already excludes our clientId
+    const users = []
     const cursors = new Map()
-    const seen    = new Set()                  // dedupe presence by user id
+    const seen = new Set() // dedupe presence by user id
 
     for (const state of peers.values()) {
       const user = state?.user
@@ -185,16 +187,16 @@ export function useCollaboration({
       if (!seen.has(user.id)) {
         seen.add(user.id)
         users.push({
-          user:        user.id,
-          full_name:   user.fullName,
-          first_name:  _firstName(user.fullName, user.initials),
-          initials:    user.initials,
-          user_image:  user.image,
+          user: user.id,
+          full_name: user.fullName,
+          first_name: _firstName(user.fullName, user.initials),
+          initials: user.initials,
+          user_image: user.image,
           color,
           // Sub-sheet the peer is currently looking at. Lets the topbar
           // avatar pile show a small "on Sheet2" badge and powers the
           // per-tab dot indicators.
-          sub_sheet:   subSheet,
+          sub_sheet: subSheet,
         })
       }
       if (state.cursor) {
@@ -203,18 +205,18 @@ export function useCollaboration({
         const c = state.cursor
         const range = c.range || { r0: c.row, c0: c.col, r1: c.row, c1: c.col }
         cursors.set(user.id, {
-          row:        c.row,
-          col:        c.col,
+          row: c.row,
+          col: c.col,
           range,
-          subSheet:   c.subSheet,
+          subSheet: c.subSheet,
           color,
-          fullName:   user.fullName,
-          firstName:  _firstName(user.fullName, user.initials),
-          initials:   user.initials,
+          fullName: user.fullName,
+          firstName: _firstName(user.fullName, user.initials),
+          initials: user.initials,
         })
       }
     }
-    presentUsers.value  = users
+    presentUsers.value = users
     remoteCursors.value = cursors
   }
 
@@ -224,103 +226,67 @@ export function useCollaboration({
     if (_doc) _stop()
     _sheetId = docId
 
-    const sheet  = getSheet()
+    // Cell sync patches a sheet engine's setCell. IronCalc has none to patch,
+    // so until collaboration moves to it, only presence and cursors run.
+    const sheet = getSheet?.() ?? null
     const identity = _readUserIdentity()
 
-    // 1. Fresh Y.Doc. For v2 we leave hydration to the Hocuspocus client
-    //    (server-authoritative state lives in `Sheet Collab State`; only
-    //    the first-ever opener seeds from the engine snapshot). For v1
-    //    every client seeds locally — late peers overwrite us via the
-    //    state-sync handshake.
+    // 1. Fresh Y.Doc. Every client seeds it locally from the engine snapshot
+    //    (below, once the binding is in place); late peers overwrite us via
+    //    the state-sync handshake.
     _doc = createYDoc()
 
     // 2. Patch sheet.setCell so every write also lands in Y.Map; observe
     //    remote writes and apply them through the engine. Cross-sheet
     //    remote writes still need a full canvas repopulate because the
     //    engine's onCellChanged callback paints to the active grid only.
-    _binding = bindCells({
-      doc: _doc,
-      sheet,
-      onRemoteSheetChange(name) {
-        if (name !== currentSheet.value) repopulateGrid()
-      },
-    })
+    _binding = sheet
+      ? bindCells({
+          doc: _doc,
+          sheet,
+          getCurrentSheet: () => currentSheet.value,
+          onRemoteSheetChange(name) {
+            if (name !== currentSheet.value) repopulateGrid()
+          },
+        })
+      : null
 
-    if (_collabV2Enabled()) {
-      // Hocuspocus path. The client connects to the collab server over
-      // WebSocket, syncs against the authoritative server-side Y.Doc, and
-      // exposes a y-protocols Awareness on the same socket.
-      const session = _createHocuspocus({ sheet, identity })
-      _provider  = session
-      _awareness = session.awareness
-      // Y-awareness has no `initial:` arg — set our user slot post-create.
-      _awareness.setLocalStateField('user', identity)
-      _awareness.on('change', _syncFromAwareness)
-      _syncFromAwareness()
-    } else {
-      // Legacy path — seed locally, relay through frappe.realtime.
-      hydrateYDoc(_doc, { sheet: sheet?.snapshot?.() })
-      // The www/sheets page doesn't load Frappe's socketio_client,
-      // so `window.frappe.realtime` is undefined and the legacy path
-      // would have no transport. ensureFrappeRealtime stands up a minimal
-      // shim against the site's socketio namespace on first use; no-op
-      // when a real client already exists (Desk-embedded paths, tests
-      // injecting `_realtime`).
-      if (!_realtime || typeof _realtime.on !== 'function') {
-        _realtime = ensureFrappeRealtime() || _realtime
-      }
-      const adapter = createRealtimeAdapter({
-        sheetId:  _sheetId,
-        realtime: _realtime,
-        callFn:   _callFn,
-      })
-      _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
-      _awareness = createAwareness({
-        sheetId:  _sheetId,
-        realtime: adapter,
-        clientId: _provider.tag,
-        initial:  { user: identity, cursor: null },
-      })
-      _awareness.on('change', _syncFromAwareness)
-      _syncFromAwareness()
+    hydrateYDoc(_doc, { sheet: sheet?.snapshot?.() })
+
+    // 3. Relay through frappe.realtime. The www/sheets page doesn't load
+    //    Frappe's socketio_client, so `window.frappe.realtime` is undefined
+    //    and there would be no transport. ensureFrappeRealtime stands up a
+    //    minimal shim against the site's socketio namespace on first use;
+    //    no-op when a real client already exists (Desk-embedded paths, tests
+    //    injecting `_realtime`).
+    if (!_realtime || typeof _realtime.on !== 'function') {
+      _realtime = ensureFrappeRealtime() || _realtime
     }
-  }
-
-  function _createHocuspocus({ sheet, identity }) {
-    void identity  // identity is plumbed via setLocalStateField in _start
-    const url   = _collabWsUrl()
-    const token = _readSessionId()
-    return createHocuspocusClient({
-      doc:      _doc,
-      sheetId:  _sheetId,
-      url,
-      token,
-      // Used only on first-ever open of this sheet — see leader election
-      // in hocuspocus-client.js. Subsequent opens see a populated server
-      // state and skip this entirely.
-      getSnapshot: () => sheet?.snapshot?.(),
+    const adapter = (_adapter = createRealtimeAdapter({
+      sheetId: _sheetId,
+      realtime: _realtime,
+      callFn: _relay,
+    }))
+    _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
+    _awareness = createAwareness({
+      sheetId: _sheetId,
+      realtime: adapter,
+      clientId: _provider.tag,
+      initial: { user: identity, cursor: null },
     })
-  }
-
-  // `sid` is HttpOnly so the browser can't read it directly. The Frappe boot
-  // payload exposes it explicitly for this kind of use-case; fall back to a
-  // plain cookie read for older Frappe versions that don't surface it.
-  function _readSessionId() {
-    if (typeof document === 'undefined') return ''
-    const fromBoot = window.frappe?.boot?.sid
-    if (fromBoot) return fromBoot
-    const m = document.cookie.match(/(?:^|;\s*)sid=([^;]+)/)
-    return m ? decodeURIComponent(m[1]) : ''
+    _awareness.on('change', _syncFromAwareness)
+    _syncFromAwareness()
   }
 
   function _stop() {
     _binding?.dispose()
     _awareness?.destroy()
     _provider?.destroy()
+    _adapter?.close()
     _doc?.destroy()
-    _binding = _awareness = _provider = _doc = null
+    _binding = _awareness = _provider = _adapter = _doc = null
     _sheetId = null
-    presentUsers.value  = []
+    presentUsers.value = []
     remoteCursors.value = new Map()
   }
 
@@ -340,10 +306,14 @@ export function useCollaboration({
     }
   }
 
-  _watch(sheetId, docId => {
-    if (docId && docId !== 'new') _start(docId)
-    else                          _stop()
-  }, { immediate: true })
+  _watch(
+    sheetId,
+    (docId) => {
+      if (docId && docId !== 'new') _start(docId)
+      else _stop()
+    },
+    { immediate: true },
+  )
 
   _onUnmounted(_stop)
 

@@ -11,6 +11,7 @@ on:
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
+      - ".coveragerc"
       - ".github/scripts/**"
       - ".github/workflows/suite-ci.yml"
   workflow_dispatch:
@@ -71,8 +72,8 @@ jobs:
               fi
             fi
             backend_paths="$(printf '%s\n' "$changed_files" \
-              | grep -Ev '^(suite/sheets/collab-server/|suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
-              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+              | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.coveragerc$|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
             [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
           fi
 
@@ -133,13 +134,32 @@ jobs:
         env:
           CI: "Yes"
 
+      - name: Check HTTP contract
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          # The route tables export to contract.json. The frontend job checks
+          # that generated.ts matches contract.json; this step checks that
+          # contract.json matches the Python route tables.
+          bench --site test_site execute suite.composition.contract.write_all
+          git -C apps/suite diff --exit-code --stat -- ':(glob)frontend/src/**/contract.json'
+
+      - name: Type-check Python
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench/apps/suite
+        run: |
+          pip install "mypy~=2.4"
+          mypy
+
       - name: Run Backend Tests
         if: steps.backend-changes.outputs.run == '1'
         working-directory: /home/runner/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
-          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
           bench --site test_site set-config allow_tests true
+          # Frappe refuses a new User once 60 were created in the last hour.
+          # The suite creates more than that, so the later modules would fail.
+          bench --site test_site set-config throttle_user_limit 1000 --parse
           status=0
           bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
           python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
@@ -148,8 +168,15 @@ jobs:
           rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
           exit "$status"
         env:
-          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
+          COVERAGE_RCFILE: ${{ github.workspace }}/.coveragerc
           TYPE: server
+
+      - name: Compare Collab Compaction With Yjs
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          ./env/bin/python apps/suite/suite/content/tests/differential/compact.py "$RUNNER_TEMP/compacted.json"
+          node apps/suite/suite/content/tests/differential/judge.cjs "$RUNNER_TEMP/compacted.json"
 
       - name: Check Background Worker
         if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
@@ -166,6 +193,20 @@ jobs:
           kill "$worker_pid" 2>/dev/null || true
           wait "$worker_pid" 2>/dev/null || true
           trap - EXIT
+
+      # Last, since it swaps Node for the oldest one the converter supports (suite/content/convert.py NODE_MIN)
+      - name: Setup Node 22.13
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Run Converter Tests On Node 22.13
+        if: always() && steps.backend-changes.outputs.run == '1' && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          test "$(node --version)" = v22.13.0
+          bench --site test_site run-tests --module suite.writer.content.tests.test_converter
 
       - name: Collect Backend Evidence
         if: always() && steps.backend-changes.outputs.run == '1'
@@ -209,13 +250,11 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_realtime=1
-            run_sheets=1
             run_meet=1
             run_recorder=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
             printf '%s\n' "$changed_files" | grep -Eq '^(realtime/|\.github/workflows/suite-ci\.yml)' && run_realtime=1 || run_realtime=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
           else
@@ -225,17 +264,14 @@ jobs:
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
             printf '%s\n' "$changed_files" | grep -Eq '^(realtime/|\.github/workflows/suite-ci\.yml)' && run_realtime=1 || run_realtime=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
           fi
 
           echo "run_realtime=$run_realtime" >> $GITHUB_OUTPUT
-          echo "run_sheets=$run_sheets" >> $GITHUB_OUTPUT
           echo "run_meet=$run_meet" >> $GITHUB_OUTPUT
           echo "run_recorder=$run_recorder" >> $GITHUB_OUTPUT
           echo "Run realtime handler tests: $run_realtime"
-          echo "Run sheets collab server tests: $run_sheets"
           echo "Run meet sfu server tests: $run_meet"
           echo "Run meet recorder server tests: $run_recorder"
 
@@ -253,17 +289,6 @@ jobs:
             --test-reporter=spec --test-reporter-destination=stdout \
             --test-reporter=junit --test-reporter-destination=test-results/realtime/junit.xml \
             'realtime/*.test.js'
-
-      - name: Run Sheets Collab Server Tests
-        if: always() && steps.node-server-changes.outputs.run_sheets == '1'
-        working-directory: suite/sheets/collab-server
-        run: |
-          npm install
-          mkdir -p "$GITHUB_WORKSPACE/test-results/sheets-collab"
-          node --test \
-            --test-reporter=spec --test-reporter-destination=stdout \
-            --test-reporter=junit --test-reporter-destination="$GITHUB_WORKSPACE/test-results/sheets-collab/junit.xml" \
-            'test/**/*.test.js'
 
       - name: Run Meet SFU Server Tests
         if: always() && steps.node-server-changes.outputs.run_meet == '1'
@@ -481,6 +506,138 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  drive-migration-rehearsal:
+    runs-on: ubuntu-latest
+    name: Drive Migration Rehearsal
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check backend changes
+        id: drive-migration-changes
+        run: |
+          # The rehearsal runs against a fresh site whenever the backend changes,
+          # using the same gate as the backend job
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_backend=1
+          else
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            else
+              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+                changed_files="$(git diff --name-only HEAD~1 HEAD)"
+              else
+                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+              fi
+            fi
+            backend_paths="$(printf '%s\n' "$changed_files" \
+              | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
+              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
+            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+          fi
+
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
+          echo "Run drive migration rehearsal: $run_backend"
+
+      - name: Setup Python
+        if: steps.drive-migration-changes.outputs.run == '1'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.drive-migration-changes.outputs.run == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.drive-migration-changes.outputs.run == '1'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Install MariaDB Client
+        if: steps.drive-migration-changes.outputs.run == '1'
+        run: |
+          sudo apt update
+          sudo apt-get install -y mariadb-client
+
+      - name: Setup Bench
+        if: steps.drive-migration-changes.outputs.run == '1'
+        run: |
+          pip install frappe-bench "unittest-xml-reporting~=4.0"
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install Suite
+        if: steps.drive-migration-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench get-app suite $GITHUB_WORKSPACE --skip-assets
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin rehearsal_site
+          bench --site rehearsal_site install-app suite
+        env:
+          CI: "Yes"
+
+      - name: Run Drive Migration Rehearsal
+        if: steps.drive-migration-changes.outputs.run == '1'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/drive-migration"
+          bench --site rehearsal_site set-config allow_tests true
+          bench --site rehearsal_site set-config storage_v2 1
+          # The whole-migration rehearsal test opts in through this key; it seeds a
+          # legacy Drive dataset, runs Build and Cleanup, and checks the result.
+          bench --site rehearsal_site set-config drive_migration_rehearsal 1
+          status=0
+          bench --site rehearsal_site run-tests --module suite.drive.tests.test_migration --junit-xml-output "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/drive-migration/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml"
+          exit "$status"
+        env:
+          TYPE: server
+
+      - name: Upload Drive Migration Evidence
+        if: always() && steps.drive-migration-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-drive-migration-evidence
+          path: test-results/drive-migration/
+          if-no-files-found: warn
+          retention-days: 30
+
   frontend:
     runs-on: ubuntu-latest
     name: Frontend
@@ -524,11 +681,46 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         run: yarn install --frozen-lockfile
 
+      - name: Check frontend formatting
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn format:check
+
+      - name: Lint frontend
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn lint
+
+      - name: Check untranslated text
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn check:untranslated
+
+      - name: Check generated contract types
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn check:contract
+
       - name: Create bench site config
         if: steps.frontend-changes.outputs.run == '1'
         run: |
           mkdir -p "$GITHUB_WORKSPACE/../../sites"
           printf '{"default_site":"localhost","webserver_port":8000,"socketio_port":9000}\n' > "$GITHUB_WORKSPACE/../../sites/common_site_config.json"
+
+      - name: Check frontend import boundaries
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn check:import-boundaries
+
+      - name: Typecheck frontend
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn typecheck
+
+      - name: Check frontend bundle budget
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn check:bundle-budget
 
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
@@ -538,12 +730,10 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
         run: |
-          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            mkdir -p test-results
-            yarn test:ci
-          else
-            echo "No frontend test script configured"
-          fi
+          mkdir -p test-results
+          yarn test:coverage-reporting
+          yarn test:ci
+          test -s test-results/coverage/cobertura-coverage.xml
 
       - name: Upload Frontend Evidence
         if: always() && steps.frontend-changes.outputs.run == '1'
@@ -562,3 +752,140 @@ jobs:
           path: frontend/test-results/coverage/cobertura-coverage.xml
           if-no-files-found: warn
           retention-days: 7
+
+  unified-e2e:
+    name: Unified Frontend E2E
+    runs-on: suite-e2e-drive
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    env:
+      SITE: unified.test
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Clone Frappe
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: frappe/frappe
+          path: .frappe-source
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.14.7"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.12.0"
+
+      - name: Setup Yarn
+        run: corepack enable && corepack prepare yarn@1.22.22 --activate
+
+      - name: Add to hosts
+        run: echo "127.0.0.1 $SITE" | sudo tee -a /etc/hosts
+
+      - name: Setup Bench
+        run: |
+          rm -rf "$RUNNER_TEMP/frappe-bench"
+          if [ "$(bench --version 2>/dev/null || true)" != "5.31.0" ]; then
+            python -m pip install "frappe-bench==5.31.0"
+          fi
+          bench init --frappe-path "$GITHUB_WORKSPACE/.frappe-source" --skip-redis-config-generation --skip-assets --python "$(which python)" "$RUNNER_TEMP/frappe-bench"
+
+      - name: Install Suite
+        working-directory: ${{ runner.temp }}/frappe-bench
+        run: |
+          rm -rf apps/suite "sites/$SITE" sites/assets/suite
+          git clone "$GITHUB_WORKSPACE" apps/suite
+          uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
+          cache_key=$(cd apps/suite && { node --version; yarn --version; sha256sum package.json yarn.lock frontend/package.json; } | sha256sum | cut -d ' ' -f 1)
+          if [ -f /var/cache/suite-node-modules/key ] && [ "$cache_key" = "$(cat /var/cache/suite-node-modules/key)" ]; then
+            tar -xzf /var/cache/suite-node-modules/node_modules.tar.gz -C apps/suite
+          else
+            yarn --cwd apps/suite install --check-files
+          fi
+          python -c 'from bench.bench import Bench; Bench(".").apps.sync(app_name="suite", app_dir="suite")'
+          bench build --app suite
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+          bench new-site --db-root-password root --admin-password admin "$SITE"
+          bench --site "$SITE" install-app suite
+        env:
+          CI: "Yes"
+
+      - name: Configure site for E2E
+        working-directory: ${{ runner.temp }}/frappe-bench
+        run: |
+          bench --site "$SITE" set-config allow_tests true
+          bench --site "$SITE" set-config storage_v2 1
+          bench --site "$SITE" set-config ignore_csrf 1
+          bench --site "$SITE" set-config host_name "http://$SITE:8000"
+          # A fresh site sends everyone to the setup wizard; the journeys start past it.
+          bench --site "$SITE" execute suite.api.account.mark_onboarded
+
+      - name: Install E2E dependencies
+        working-directory: ${{ github.workspace }}/e2e
+        timeout-minutes: 20
+        run: |
+          yarn install --frozen-lockfile --non-interactive
+          yarn playwright install --with-deps chromium
+
+      - name: Start Frappe server
+        working-directory: ${{ runner.temp }}/frappe-bench
+        run: |
+          sed -i 's/^watch:/# watch:/g; s/^schedule:/# schedule:/g' Procfile
+          bench start &> bench_start.log &
+          timeout 60 bash -c "until curl -s http://$SITE:8000 > /dev/null; do sleep 2; done"
+
+      - name: Run E2E tests
+        working-directory: ${{ github.workspace }}/e2e
+        run: |
+          yarn typecheck
+          status=0
+          for suite in shell files home; do
+            yarn "test:unified-$suite" || status=1
+          done
+          exit $status
+        env:
+          BASE_URL: http://unified.test:8000
+          BENCH_WEB_URL: http://unified.test:8000
+          BENCH_PATH: ${{ runner.temp }}/frappe-bench
+          BENCH_SITE: unified.test
+          CI: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: unified-e2e-playwright-report
+          path: |
+            e2e/unified-frontend/*/playwright-report/
+            e2e/unified-frontend/*/test-results/
+            ${{ runner.temp }}/frappe-bench/bench_start.log
+          compression-level: 1
+          retention-days: 14

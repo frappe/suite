@@ -17,6 +17,9 @@
         "recorder/main.ts",
         "recorder/frappeUi.ts",
         "src/apps/mail/sw.ts",
+        "src/apps/writer/collab/checker-entry.ts",
+        "src/apps/sheets/collab/checker-entry.ts",
+        "src/apps/sheets/collab/converter-entry.ts",
         "src/apps/sheets/engine/difftest/compare-engines.js",
         "src/apps/sheets/engine/difftest/run.js",
         "scripts/generate-pwa-assets.mjs"
@@ -30,15 +33,23 @@
         "drive-backed-apps/global-setup.ts",
         "drive-backed-apps/global-teardown.ts",
         "meet/global-setup.ts",
+        "meet/captions/global-setup.ts",
         "meet/load/client.ts",
-        "meet/load/*.test.mjs"
+        "meet/load/*.test.mjs",
+        "unified-frontend/global-setup.ts"
       ],
       "project": [
         "shared/**/*.ts",
         "drive-backed-apps/**/*.ts",
-        "meet/**/*.{ts,mjs}"
+        "meet/**/*.{ts,mjs}",
+        "unified-frontend/**/*.ts"
       ],
-      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts"]}
+      "playwright": {
+        "config": [
+          "{drive-backed-apps,meet}/playwright.config.ts",
+          "unified-frontend/{shell,files}/playwright.config.ts"
+        ]
+      }
     },
     "suite/meet/sfu-server": {
       "entry": ["src/server/RecordingGrantPersistenceFile.ts"],
@@ -48,9 +59,6 @@
     "suite/meet/recorder-server": {
       "entry": ["src/integration/*.integration.ts"],
       "project": ["src/**/*.ts"]
-    },
-    "suite/sheets/collab-server": {
-      "project": ["*.js", "test/**/*.js"]
     }
   }
 }

@@ -3,12 +3,15 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.drive.api.product import set_settings, set_webdav_enabled, webdav_config
+from suite.drive._core.errors import DriveForbidden
 from suite.drive.webdav.settings import (
     allowed_webdav_methods,
     dav_compliance,
     global_webdav_enabled,
+    set_global_webdav_enabled,
+    set_user_webdav_enabled,
     user_webdav_enabled,
+    webdav_access,
 )
 from suite.tests.utils import ensure_user
 
@@ -24,10 +27,20 @@ class TestWebDAVSettings(IntegrationTestCase):
         ensure_user(FRESH)
 
     def setUp(self):
+        super().setUp()
         self._set_global(0)
+        # `allowed_webdav_methods` reads this Single, and nothing else in the
+        # class establishes it. A site or an earlier module that left a list
+        # behind would silently change what every case here is measuring.
+        self._set_method_list("")
 
     def tearDown(self):
         self._set_global(0)
+        self._set_method_list("")
+        frappe.set_user("Administrator")
+        # the opt-in cases write `Drive Settings` for a real user, and
+        # `IntegrationTestCase` rolls back only once the class is finished
+        frappe.db.delete("Drive Settings", {"user": ["in", (USER, FRESH)]})
         frappe.set_user("Administrator")
         super().tearDown()
 
@@ -35,53 +48,65 @@ class TestWebDAVSettings(IntegrationTestCase):
         frappe.db.set_single_value("Drive Disk Settings", "webdav_enabled", value)
         frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
 
-    def test_config_is_empty_for_users_while_disabled(self):
+    def _set_method_list(self, value: str):
+        frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", value)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+
+    def test_access_is_empty_for_users_while_disabled(self):
         with self.set_user(USER):
-            self.assertEqual(webdav_config(), {})
+            self.assertEqual(webdav_access(), {})
 
-    def test_config_shows_admin_the_toggle_while_disabled(self):
-        config = webdav_config()  # Administrator
-        self.assertEqual(config, {"globally_enabled": False, "is_admin": True})
+    def test_access_shows_admin_the_toggle_while_disabled(self):
+        access = webdav_access()  # Administrator
+        self.assertEqual(access, {"globally_enabled": False, "is_admin": True})
 
-    def test_config_for_enabled_user(self):
+    def test_access_for_enabled_user(self):
         self._set_global(1)
         with self.set_user(USER):
-            config = webdav_config()
-        self.assertTrue(config["globally_enabled"])
-        self.assertFalse(config["is_admin"])
-        self.assertTrue(config["server_url"].endswith("/dav/"))
-        self.assertEqual(config["username"], USER)
-        # per-user access is opt-in: off until the user flips it
-        self.assertFalse(config["enabled_for_user"])
-        self.assertFalse(config["two_factor_blocked"])
+            access = webdav_access()
+        self.assertTrue(access["globally_enabled"])
+        self.assertFalse(access["is_admin"])
+        self.assertTrue(access["server_url"].endswith("/dav/"))
+        self.assertEqual(access["username"], USER)
+        # per-user access is opt-in: off until the user turns it on
+        self.assertFalse(access["enabled_for_user"])
+        self.assertFalse(access["two_factor_blocked"])
 
         with self.set_user(USER):
-            set_settings({"webdav_enabled": 1})
-            self.assertTrue(webdav_config()["enabled_for_user"])
+            set_user_webdav_enabled(USER, True)
+            self.assertTrue(webdav_access()["enabled_for_user"])
 
-    def test_config_flags_two_factor(self):
+    def test_access_flags_two_factor(self):
         self._set_global(1)
         with patch("frappe.twofactor.should_run_2fa", return_value=True), self.set_user(USER):
-            self.assertTrue(webdav_config()["two_factor_blocked"])
+            self.assertTrue(webdav_access()["two_factor_blocked"])
 
-    def test_set_webdav_enabled_is_admin_only(self):
-        with self.set_user(USER), self.assertRaises(frappe.PermissionError):
-            set_webdav_enabled(True)
+    def test_the_site_switch_is_admin_only(self):
+        with self.set_user(USER), self.assertRaises(DriveForbidden):
+            set_global_webdav_enabled(True)
         self.assertFalse(global_webdav_enabled())
 
-        set_webdav_enabled(True)  # Administrator
+        set_global_webdav_enabled(True)  # Administrator
         self.assertTrue(global_webdav_enabled())
-        set_webdav_enabled(False)
+        set_global_webdav_enabled(False)
         self.assertFalse(global_webdav_enabled())
 
-    def test_user_opt_in_via_set_settings(self):
-        # default-off is covered by test_missing_settings_row_defaults_to_disabled;
-        # earlier tests in this class may already have opted USER in
+    def test_a_user_can_opt_in_and_out(self):
         with self.set_user(USER):
-            set_settings({"webdav_enabled": 1})
+            set_user_webdav_enabled(USER, True)
             self.assertTrue(user_webdav_enabled(USER))
-            set_settings({"webdav_enabled": 0})
+            set_user_webdav_enabled(USER, False)
             self.assertFalse(user_webdav_enabled(USER))
+
+    def test_a_first_write_that_loses_the_race_becomes_an_update(self):
+        """Two first writes can both see no row. The second insert then hits
+        the unique `user` name, and must update the row the first one made."""
+        frappe.db.delete("Drive Settings", {"user": FRESH})
+        frappe.get_doc({"doctype": "Drive Settings", "user": FRESH}).insert(ignore_permissions=True)
+        with patch.object(frappe.db, "exists", return_value=None), self.set_user(FRESH):
+            set_user_webdav_enabled(FRESH, True)
+        self.assertTrue(user_webdav_enabled(FRESH))
+        self.assertEqual(frappe.db.count("Drive Settings", {"user": FRESH}), 1)
 
     def test_missing_settings_row_defaults_to_disabled(self):
         frappe.db.delete("Drive Settings", {"user": FRESH})
@@ -110,6 +135,12 @@ class TestWebDAVSettings(IntegrationTestCase):
             doc.save()
 
     def test_allowed_methods_runtime_gate(self):
+        """The stored list narrows the implemented surface, and never widens it.
+
+        Ticket 25 relinked the write verbs, so the ceiling is now
+        `ALLOWED_METHODS` itself: an admin who narrows nothing gets a
+        read-write mount, and one who names a subset gets exactly that subset.
+        """
         from suite.drive.webdav import ALLOWED_METHODS
 
         self.assertEqual(allowed_webdav_methods(), ALLOWED_METHODS)
@@ -121,9 +152,16 @@ class TestWebDAVSettings(IntegrationTestCase):
         try:
             methods = allowed_webdav_methods()
             self.assertEqual(methods, ("OPTIONS", "GET", "HEAD", "PROPFIND"))
-            # no locking allowed -> no class 2 advertised
+            # no locking offered -> no class 2 advertised
             self.assertEqual(dav_compliance(methods), "1, 3")
             self.assertEqual(dav_compliance(ALLOWED_METHODS), "1, 2, 3")
+
+            # the write verbs are real now, so a list naming them offers them
+            frappe.db.set_single_value(
+                "Drive Disk Settings", "webdav_allowed_methods", "PUT, LOCK, UNLOCK, PROPFIND"
+            )
+            frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+            self.assertEqual(allowed_webdav_methods(), ("OPTIONS", "PUT", "PROPFIND", "LOCK", "UNLOCK"))
 
             # unvalidated garbage in the DB must not take every request down
             frappe.db.set_single_value("Drive Disk Settings", "webdav_allowed_methods", "BREW")

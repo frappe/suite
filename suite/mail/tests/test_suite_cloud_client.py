@@ -85,6 +85,18 @@ class TestSuiteCloudClient(UnitTestCase):
     def test_success_unwraps_data(self) -> None:
         self.assertEqual(self._call(_response(200, {"data": {"domain": "acme.com"}})), {"domain": "acme.com"})
 
+    def test_a_successful_tenant_ping_clears_suspension_and_returns_data(self) -> None:
+        with patch.object(frappe.cache, "delete_value") as clear:
+            result = self._call(_response(200, {"data": {"limits": {"max_disk_gb": 50}}}), "tenant.ping")
+        self.assertEqual(result, {"limits": {"max_disk_gb": 50}})
+        clear.assert_called_once_with("suite:provider_suspended")
+
+    def test_a_tenant_suspension_is_recorded_before_the_refusal(self) -> None:
+        with patch.object(frappe.cache, "set_value") as record:
+            with self.assertRaises(frappe.PermissionError):
+                self._call(_frappe_error(403, "TenantSuspendedError", "Suspended"))
+        record.assert_called_once_with("suite:provider_suspended", True)
+
     def test_a_delete_answers_nothing(self) -> None:
         self.assertIsNone(
             self._call(_response(204, text=""), "mail.domains.delete_domain", domain="acme.com")
@@ -115,6 +127,11 @@ class TestSuiteCloudClient(UnitTestCase):
         for status, expected in cases:
             with self.subTest(status=status), self.assertRaises(expected):
                 self._call(_response(status, text="not json"))
+
+    def test_malformed_errors_fall_back_to_the_status_code(self) -> None:
+        for errors in ({"type": "DuplicateEntryError"}, "DuplicateEntryError", 409):
+            with self.subTest(errors=errors), self.assertRaises(frappe.DuplicateEntryError):
+                self._call(_response(409, {"errors": errors}))
 
     def test_bad_credentials_keep_the_settings_hint(self) -> None:
         for response in (

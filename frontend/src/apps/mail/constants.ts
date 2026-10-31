@@ -1,44 +1,42 @@
-// The Screening mailbox is a plain named folder (no JMAP role), created server-side as "Screener";
-// it's surfaced to users as the "Screener".
-export const SCREENER_MAILBOX_NAME = 'Screener'
-
 export const getAttachmentOptions = () => [
-	{ label: __('All'), value: ' ' },
-	{ label: __('With Attachments'), value: 'true' },
-	{ label: __('Without Attachments'), value: 'false' },
+  { label: __('All'), value: ' ' },
+  { label: __('With Attachments'), value: 'true' },
+  { label: __('Without Attachments'), value: 'false' },
 ]
 
 export const getReadStatusOptions = () => [
-	{ label: __('All'), value: ' ' },
-	{ label: __('Read'), value: 'true' },
-	{ label: __('Unread'), value: 'false' },
+  { label: __('All'), value: ' ' },
+  { label: __('Read'), value: 'true' },
+  { label: __('Unread'), value: 'false' },
 ]
 
 export const FOLDER_ICON_MAP = {
-	inbox: 'inbox',
-	sent: 'send',
-	trash: 'trash-2',
-	junk: 'mail-warning',
-	drafts: 'pencil-line',
-	archive: 'archive',
-	important: 'bookmark',
+  inbox: 'inbox',
+  sent: 'send',
+  trash: 'trash-2',
+  junk: 'mail-warning',
+  drafts: 'pencil-line',
+  archive: 'archive',
+  important: 'bookmark',
 }
 
 export const FOLDER_ICON_COLOR_MAP = {
-	Blue: '!text-blue-500',
-	Green: '!text-green-500',
-	Amber: '!text-amber-500',
-	Red: '!text-red-500',
-	Purple: '!text-purple-500',
+  // A gray folder's icon keeps the sidebar's own gray.
+  Gray: '',
+  Blue: '!text-blue-500',
+  Green: '!text-green-500',
+  Amber: '!text-amber-500',
+  Red: '!text-red-500',
+  Purple: '!text-purple-500',
 }
 
 export const FOLDER_COLOR_MAP = {
-	Gray: 'bg-surface-gray-8',
-	Blue: 'bg-blue-500',
-	Green: 'bg-green-500',
-	Amber: 'bg-amber-500',
-	Red: 'bg-red-500',
-	Purple: 'bg-purple-500',
+  Gray: 'bg-surface-gray-8',
+  Blue: 'bg-blue-500',
+  Green: 'bg-green-500',
+  Amber: 'bg-amber-500',
+  Red: 'bg-red-500',
+  Purple: 'bg-purple-500',
 }
 
 // The amber of a starred mail's star, wherever one is drawn.
@@ -50,8 +48,8 @@ export const FOLDER_COLOR_MAP = {
 // Clearing the mask hands rendering back to the real svg, whose fill and stroke then show —
 // and the background has to go with it, or it would paint the whole icon box amber.
 export const FLAGGED_STAR_STYLE =
-	'fill: var(--ink-amber-6); color: var(--ink-amber-6); ' +
-	'mask-image: none; -webkit-mask-image: none; background-color: transparent'
+  'fill: var(--ink-amber-6); color: var(--ink-amber-6); ' +
+  'mask-image: none; -webkit-mask-image: none; background-color: transparent'
 
 /**
  * The geometry of a Split View: a list column beside a reading pane.
@@ -70,3 +68,13 @@ export const SPLIT_LIST_CLASS = 'w-[28vw] min-w-64 shrink-0 border-r lg:min-w-80
 
 /** The pane takes whatever the column leaves, down to its own floor. */
 export const SPLIT_PANE_CLASS = 'min-w-56 flex-1 lg:min-w-64'
+
+/**
+ * The mail list's "you are here": a dark bar down a row's left side. 1.5px for the keyboard's
+ * cursor (a row or a date header); 3px for the thread open in the pane, so the one being read
+ * stands out from a ticked row the cursor is on.
+ */
+const BAR =
+  "relative sm:before:absolute sm:before:inset-y-0 sm:before:left-0 sm:before:rounded-r-full sm:before:bg-[var(--ink-gray-8)] sm:before:content-['']"
+export const CURSOR_BAR_CLASS = `${BAR} sm:before:w-[1.5px]`
+export const OPEN_BAR_CLASS = `${BAR} sm:before:w-[3px]`

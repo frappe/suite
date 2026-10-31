@@ -6,7 +6,8 @@ from frappe import _
 from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_datetime
 from frappe.utils.data import sha256_hash
 
-from suite.mail.api.mail import normalize_filter
+from suite.mail import classification
+from suite.mail.api.mail import MAX_ATTACHMENT_SIZE, normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.directory import get_domains
 from suite.mail.doctype.identity.identity import fetch_identities
@@ -164,6 +165,15 @@ def create_account(
     """Create a new mail account"""
 
     account_request = frappe.get_last_doc("Mail Account Request", {"request_key": request_key})
+    from suite.suite_core.storage import state
+
+    state(lock=True)
+    frappe.db.get_value("Mail Account Request", account_request.name, "name", for_update=True)
+    account_request.reload()
+    if account_request.request_key != request_key:
+        frappe.throw(_("This invitation link has been replaced"))
+    if account_request.is_verified:
+        frappe.throw(_("This invitation has already been accepted"))
     account_request.validate_expired()
     account_request.is_verified = 1
     account_request.save(ignore_permissions=True)
@@ -172,6 +182,14 @@ def create_account(
         # Account setup (JMAP account sync, archive mailbox, sieve) resolves ownership
         # against the session user, which is Guest on this endpoint — run it elevated,
         # same as signup().
+        from suite.mail.directory import get_account_metadata
+
+        options = get_account_metadata()
+        locales = {option["value"] for option in options["locales"]}
+        zones = {option["value"] for option in options["time_zones"]}
+        locale = locale if locale in locales else "en-US"
+        site_zone = get_system_timezone()
+        time_zone = time_zone if time_zone in zones else site_zone if site_zone in zones else "UTC"
         with user_context("Administrator"):
             account_request.create_account(first_name, last_name, password, locale, time_zone)
 
@@ -208,7 +226,7 @@ def get_user_info() -> dict | None:
             USER.username,
             USER.api_key,
             USER.time_zone,
-            USER_SETTINGS.group_messages_by,
+            USER_SETTINGS.group_by_date,
             USER_SETTINGS.show_reading_pane,
             USER_SETTINGS.undo_send_period,
             USER_SETTINGS.name.as_("user_settings"),
@@ -231,6 +249,15 @@ def get_user_info() -> dict | None:
     data.is_suite_admin = is_suite_admin(user)
     data.is_system_manager = is_system_manager(user)
     data.is_jmap_configured = can_use_mail(user)
+    # The compose UI refuses a larger attachment before it uploads it.
+    data.max_attachment_size = MAX_ATTACHMENT_SIZE
+    # Whether mail is being sorted into categories, and so whether the lists offer them as filters.
+    data.email_classification = classification.is_enabled()
+    # Whether the Inbox is split, and its tabs for when it is: kept apart, so the choice of tabs
+    # survives the split being turned off.
+    split, chosen = classification.chosen_tabs(user)
+    data.split_inbox = int(split)
+    data.inbox_tabs = [tab.value for tab in chosen]
     # The Admin Dashboard is offered only on a site connected to a Suite Cloud, and only admins
     # are told whether it is.
     data.is_suite_cloud_configured = (
@@ -253,9 +280,9 @@ def get_user_info() -> dict | None:
                 "_name",
                 "is_personal",
                 "default_outgoing_email",
-                "on_mark_as_junk",
                 "enable_screening",
                 "block_remote_images",
+                "on_block_old_mail",
             ],
         )
     }
@@ -268,9 +295,9 @@ def get_user_info() -> dict | None:
         account["in_calendar"] = apps.get(account["account"], {}).get("calendar", True)
         account["jmap_account"] = settings["name"] if settings else None
         account["default_outgoing_email"] = settings["default_outgoing_email"] if settings else None
-        account["on_mark_as_junk"] = settings["on_mark_as_junk"] if settings else "Junk Sender's Mail"
         account["enable_screening"] = bool(settings["enable_screening"]) if settings else False
         account["block_remote_images"] = bool(settings["block_remote_images"]) if settings else True
+        account["on_block_old_mail"] = (settings["on_block_old_mail"] if settings else None) or "Ask"
 
     data.user_image = data.user_image or get_avatar_url(user)
 

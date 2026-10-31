@@ -1,61 +1,59 @@
 import { expect, test } from "../../fixtures/test";
-import { createFolder, driveEntities } from "../../helpers/drive";
-import { frappeData } from "../../../shared/frappe";
+import {
+	createFolder,
+	discardNode,
+	DRIVE,
+	openRowMenu,
+	row,
+	sidebarLink,
+	uniqueName,
+	view,
+} from "../../helpers/drive";
 
-function uniqueName(runId: string, label: string): string {
-	return `${label}-${runId}-${Date.now()}`;
-}
-
-test("favourite and unfavourite a file toggles its Favourites membership", async ({
+test("starring a folder puts it in Starred, and unstarring takes it out again", async ({
 	owner,
 	run,
 }) => {
-	await owner.page.goto("/drive");
+	const { page } = owner;
 	const name = uniqueName(run.run_id, "fav");
-	const folder = await createFolder(owner.page, name);
+	const folder = await createFolder(page.request, name);
+	const starred = async () => (await view(page.request, "favourites")).map((item) => item.name);
 
-	const favouriteNames = async (): Promise<string[]> => {
-		const response = await owner.page.request.get(
-			"/api/method/suite.drive.api.list.favourites",
-		);
-		const rows = await frappeData<Array<{ name: string }>>(response);
-		return rows.map((row) => row.name);
-	};
+	// Starred from the row menu.
+	await page.goto("/drive");
+	const menu = await openRowMenu(page, name);
+	await menu.getByRole("menuitem", { name: "Star", exact: true }).click();
+	await expect.poll(starred).toContain(folder.name);
+	await sidebarLink(page, "Starred").click();
+	await expect(row(page, folder.name)).toBeVisible();
 
-	// Favourite it → appears in Favourites.
-	const fav = await owner.page.request.post(
-		"/api/method/suite.drive.api.files.set_favourite",
-		{ data: { entities: [{ name: folder.name, is_favourite: true }] } },
-	);
-	expect(fav.ok()).toBe(true);
-	await expect.poll(favouriteNames).toContain(folder.name);
+	// Unstarred through the API, which the page reflects.
+	const unstar = await page.request.delete(`${DRIVE}/nodes/${folder.name}/favourite`);
+	expect(unstar.ok()).toBe(true);
+	await expect.poll(starred).not.toContain(folder.name);
+	await page.reload();
+	await expect(row(page, folder.name)).toHaveCount(0);
 
-	// Unfavourite it → gone from Favourites.
-	const unfav = await owner.page.request.post(
-		"/api/method/suite.drive.api.files.set_favourite",
-		{ data: { entities: [{ name: folder.name, is_favourite: false }] } },
-	);
-	expect(unfav.ok()).toBe(true);
-	await expect.poll(favouriteNames).not.toContain(folder.name);
+	await discardNode(page.request, folder.name);
 });
 
-test("search finds a newly created entity by name", async ({ owner, run }) => {
-	await owner.page.goto("/drive");
+test("search finds a newly created folder by name", async ({ owner, run }) => {
 	// A distinctive, index-friendly token (no hyphens, > 3 chars) so fulltext matches.
 	const token = `zsearch${run.run_id.replace(/-/g, "")}${Date.now().toString(36)}`;
-	const folder = await createFolder(owner.page, token);
+	const folder = await createFolder(owner.page.request, token);
 
 	await expect
-		.poll(async () => {
-			const response = await owner.page.request.get(
-				"/api/method/suite.drive.api.files.search",
-				{ params: { query: token } },
-			);
-			if (!response.ok()) return [];
-			const rows = await frappeData<Array<{ name: string }>>(response).catch(
-				() => [],
-			);
-			return Array.isArray(rows) ? rows.map((row) => row.name) : [];
-		})
+		.poll(() =>
+			view(owner.page.request, "search", { term: token })
+				.then((rows) => rows.map((item) => item.name))
+				.catch((): string[] => []),
+		)
 		.toContain(folder.name);
+
+	// The page's search box reaches the same result.
+	await owner.page.goto("/drive");
+	await owner.page.getByRole("searchbox", { name: "Search all files" }).fill(token);
+	await expect(row(owner.page, folder.name)).toBeVisible();
+
+	await discardNode(owner.page.request, folder.name);
 });

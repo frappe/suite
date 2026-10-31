@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { remapRefs, moveMap, insertMap, deleteMap } from './ref-remap.js'
+import { describe, expect, it } from 'vitest'
+
+import { deleteMap, insertMap, moveMap, remapRefs } from './ref-remap.js'
 
 // Convenience: apply a col map to a formula on 'Sheet1' as its own sheet.
 const R = (formula, mapCol, opts = {}) =>
@@ -115,19 +116,27 @@ describe('remapRefs — sheet scoping', () => {
   })
 
   it('rewrites qualified refs that point at the op sheet, from any sheet', () => {
-    expect(remapRefs('=Sheet1!B1', { sheetOfFormula: 'Sheet2', opSheet: 'Sheet1', mapCol: m })).toBe('=Sheet1!C1')
+    expect(
+      remapRefs('=Sheet1!B1', { sheetOfFormula: 'Sheet2', opSheet: 'Sheet1', mapCol: m }),
+    ).toBe('=Sheet1!C1')
   })
 
   it('leaves qualified refs to other sheets untouched', () => {
-    expect(remapRefs('=Sheet2!B1', { sheetOfFormula: 'Sheet1', opSheet: 'Sheet1', mapCol: m })).toBe('=Sheet2!B1')
+    expect(
+      remapRefs('=Sheet2!B1', { sheetOfFormula: 'Sheet1', opSheet: 'Sheet1', mapCol: m }),
+    ).toBe('=Sheet2!B1')
   })
 
   it('matches sheet names case-insensitively', () => {
-    expect(remapRefs('=sheet1!B1', { sheetOfFormula: 'Sheet2', opSheet: 'Sheet1', mapCol: m })).toBe('=sheet1!C1')
+    expect(
+      remapRefs('=sheet1!B1', { sheetOfFormula: 'Sheet2', opSheet: 'Sheet1', mapCol: m }),
+    ).toBe('=sheet1!C1')
   })
 
   it('handles quoted sheet names', () => {
-    expect(remapRefs("='My Sheet'!B1", { sheetOfFormula: 'Sheet2', opSheet: 'My Sheet', mapCol: m })).toBe("='My Sheet'!C1")
+    expect(
+      remapRefs("='My Sheet'!B1", { sheetOfFormula: 'Sheet2', opSheet: 'My Sheet', mapCol: m }),
+    ).toBe("='My Sheet'!C1")
   })
 })
 

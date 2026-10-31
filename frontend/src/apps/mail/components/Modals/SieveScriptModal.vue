@@ -1,124 +1,123 @@
 <template>
-	<Dialog
-		v-model:open="show"
-	 v-bind="{
-			title: selectedScript ? __('Edit Sieve Script') : __('New Sieve Script'),
-			size: '3xl',
-			actions: [
-				{
-					label: __('Save'),
-					variant: 'solid',
-					disabled: !script._name || !script.content || (selectedScript && isNotDirty),
-					onClick: () =>
-						selectedScript ? updateScript.submit() : createScript.submit(),
-				},
-			],
-		}"
-	>
-		<template #default>
-			<div class="space-y-4">
-				<FormControl v-model="script._name" :label="__('Script Name')" required />
-				<div class="space-y-1.5">
-					<label class="text-ink-gray-5 block text-xs">
-						{{ __('Script Content') }}
-					</label>
-					<FormControl
-						v-model="script.content"
-						type="textarea"
-						:rows="20"
-						required
-						class="font-mono"
-					/>
-				</div>
+  <Dialog
+    v-model:open="show"
+    v-bind="{
+      title: selectedScript ? __('Edit Sieve Script') : __('New Sieve Script'),
+      size: '3xl' as const,
+      actions: [
+        {
+          label: __('Save'),
+          variant: 'solid' as const,
+          disabled: !script._name || !script.content || (selectedScript && isNotDirty),
+          onClick: () => (selectedScript ? updateScriptSubmit() : createScriptSubmit()),
+        },
+      ],
+    }"
+  >
+    <template #default>
+      <div class="space-y-4">
+        <FormControl v-model="script._name" :label="__('Script Name')" required />
+        <div class="space-y-1.5">
+          <label class="text-ink-gray-5 block text-xs">
+            {{ __('Script Content') }}
+          </label>
+          <FormControl
+            v-model="script.content"
+            type="textarea"
+            :rows="20"
+            required
+            class="font-mono"
+          />
+        </div>
 
-				<hr />
-				<Switch
-					v-model="script.active"
-					:label="__('Activate Script')"
-					:description="__('Activate this script to apply your rules and filters.')"
-					class="!p-0"
-				/>
-				<Alert
-					v-if="script.active && activeScript && activeScript !== original._name"
-					:title="
-						isSystemScript(activeScript)
-							? __('{0} Enabled', [getScriptName(activeScript)])
-							: __('Active Script {0} Detected', [getScriptName(activeScript)])
-					"
-					:description="
-						isSystemScript(activeScript)
-							? __('Activating this script will disable {0}.', [
-									getScriptName(activeScript),
-								])
-							: __(
-									'Activating this script will deactivate the currently active script.',
-								)
-					"
-					theme="amber"
-					:dismissable="false"
-				/>
-			</div>
-		</template>
-	</Dialog>
+        <hr />
+        <Switch
+          v-model="script.active"
+          :label="__('Activate Script')"
+          :description="__('Activate this script to apply your rules and filters.')"
+          class="!p-0"
+        />
+        <Alert
+          v-if="script.active && activeScript && activeScript !== original._name"
+          :title="
+            isSystemScript(activeScript)
+              ? __('{0} Enabled', [getScriptName(activeScript)])
+              : __('Active Script {0} Detected', [getScriptName(activeScript)])
+          "
+          :description="
+            isSystemScript(activeScript)
+              ? __('Activating this script will disable {0}.', [getScriptName(activeScript)])
+              : __('Activating this script will deactivate the currently active script.')
+          "
+          theme="amber"
+          :dismissable="false"
+        />
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
+import { Alert, Dialog, FormControl, Switch } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
-import { Alert, Dialog, FormControl, Switch, createResource } from 'frappe-ui'
 
-import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
-
 import type { SieveScript } from '@/apps/mail/types'
+import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
-const { selectedScript } = defineProps<{ selectedScript?: SieveScript }>()
-
+const { selectedScript } = defineProps<{
+  selectedScript?: SieveScript
+}>()
 const store = userStore()
 const activeScript = computed(() => store.sieveScripts.data?.find((s) => s.active)?._name)
-
-const DEFAULT_SCRIPT = { _name: '', content: '', active: false }
-
-const script = reactive({ ...DEFAULT_SCRIPT })
-const original = reactive({ ...DEFAULT_SCRIPT })
-
+const DEFAULT_SCRIPT = {
+  _name: '',
+  content: '',
+  active: false,
+}
+const script = reactive({
+  ...DEFAULT_SCRIPT,
+})
+const original = reactive({
+  ...DEFAULT_SCRIPT,
+})
 const isNotDirty = computed(
-	() =>
-		script._name === original._name &&
-		script.content === original.content &&
-		script.active === original.active,
+  () =>
+    script._name === original._name &&
+    script.content === original.content &&
+    script.active === original.active,
 )
-
-const createScript = createResource({
-	url: 'suite.mail.api.sieve.create_sieve_script',
-	makeParams: () => ({ account: store.accountId, ...script }),
-	onSuccess: () => {
-		raiseToast(__('Sieve script created.'))
-		store.sieveScripts.reload()
-		show.value = false
-	},
-	onError: (e) => raiseToast(e.messages[0], 'error'),
-})
-
-const updateScript = createResource({
-	url: 'suite.mail.api.sieve.update_sieve_script',
-	makeParams: () => ({ account: store.accountId, id: selectedScript!.id, ...script }),
-	onSuccess: () => {
-		raiseToast(__('Sieve script updated.'))
-		store.sieveScripts.reload()
-		show.value = false
-	},
-	onError: (e) => raiseToast(e.messages[0], 'error'),
-})
-
+const createScript = useMutation(api.mail.sieve.create)
+async function createScriptSubmit() {
+  const input: InputOf<typeof api.mail.sieve.create> = {
+    account: store.accountId,
+    ...script,
+  }
+  await createScript.run(input)
+  raiseToast(__('Sieve script created.'))
+  show.value = false
+}
+const updateScript = useMutation(api.mail.sieve.update)
+async function updateScriptSubmit() {
+  const input: InputOf<typeof api.mail.sieve.update> = {
+    account: store.accountId,
+    id: selectedScript!.id,
+    ...script,
+  }
+  await updateScript.run(input)
+  raiseToast(__('Sieve script updated.'))
+  show.value = false
+}
 watch(show, (val) => {
-	if (!val) {
-		Object.assign(script, DEFAULT_SCRIPT)
-		Object.assign(original, DEFAULT_SCRIPT)
-	} else if (selectedScript) {
-		script._name = original._name = selectedScript._name
-		script.content = original.content = selectedScript.content
-		script.active = original.active = !!selectedScript.active
-	}
+  if (!val) {
+    Object.assign(script, DEFAULT_SCRIPT)
+    Object.assign(original, DEFAULT_SCRIPT)
+  } else if (selectedScript) {
+    script._name = original._name = selectedScript._name
+    script.content = original.content = selectedScript.content
+    script.active = original.active = !!selectedScript.active
+  }
 })
 </script>

@@ -40,16 +40,19 @@ def sanitize_filter(filter: dict | None) -> dict | None:
 
 
 @frappe.whitelist()
-def get_contact_cards(account: str, filter: dict | None = None, limit: int = 50) -> list[dict]:
-    """Returns the contact cards for the given account."""
-
+def get_contact_cards(account: str, filter: dict | None = None, limit: int = 50, start: int = 0) -> dict:
+    """Returns an offset page of contact summaries and the total match count."""
     filter = sanitize_filter(filter)
-
-    if not (contact_cards := fetch_contact_cards(account, filter, 0, limit)[0]):
-        return []
-
+    cards, total = fetch_contact_cards(account, filter, max(start, 0), max(1, min(limit, 500)))
     fields = ["id", "full_name", "kind", "emails"]
-    return [{f: d[f].capitalize() if f == "kind" and d[f] else d[f] for f in fields} for d in contact_cards]
+    rows = [
+        {
+            field: card[field].capitalize() if field == "kind" and card[field] else card[field]
+            for field in fields
+        }
+        for card in cards
+    ]
+    return {"rows": rows, "total": total}
 
 
 @frappe.whitelist()
@@ -57,7 +60,7 @@ def get_contacts(account: str, filter: dict | None = None, limit: int = 50) -> l
     """Returns the emails contacts for the given account."""
 
     contacts = []
-    contact_cards = get_contact_cards(account, filter, limit)
+    contact_cards = get_contact_cards(account, filter, limit)["rows"]
 
     for card in contact_cards:
         if emails := card.get("emails"):

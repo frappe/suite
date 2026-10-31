@@ -18,41 +18,40 @@ const SCROLL_LOCK_Y = 24
 type SwipeOffset = 1 | -1
 
 export const createSwipeGesture = () => {
-	let origin: { x: number; y: number } | null = null
-	let scrolling = false
+  let origin: { x: number; y: number } | null = null
+  let scrolling = false
 
-	return {
-		/** `touchCount` over one hand back the gesture: a pinch or a two-finger scroll. */
-		start(x: number, y: number, touchCount = 1) {
-			scrolling = false
-			origin = touchCount === 1 ? { x, y } : null
-		},
+  return {
+    /** `touchCount` over one hand back the gesture: a pinch or a two-finger scroll. */
+    start(x: number, y: number, touchCount = 1) {
+      scrolling = false
+      origin = touchCount === 1 ? { x, y } : null
+    },
 
-		move(x: number, y: number) {
-			if (!origin || scrolling) return
-			const dy = y - origin.y
-			if (Math.abs(dy) > SCROLL_LOCK_Y && Math.abs(dy) > Math.abs(x - origin.x))
-				scrolling = true
-		},
+    move(x: number, y: number) {
+      if (!origin || scrolling) return
+      const dy = y - origin.y
+      if (Math.abs(dy) > SCROLL_LOCK_Y && Math.abs(dy) > Math.abs(x - origin.x)) scrolling = true
+    },
 
-		/** The direction to page, or null when the gesture was not a swipe. */
-		end(x: number, y: number): SwipeOffset | null {
-			if (!origin) return null
-			const dx = x - origin.x
-			const dy = y - origin.y
-			const wasScrolling = scrolling
-			origin = null
-			scrolling = false
+    /** The direction to page, or null when the gesture was not a swipe. */
+    end(x: number, y: number): SwipeOffset | null {
+      if (!origin) return null
+      const dx = x - origin.x
+      const dy = y - origin.y
+      const wasScrolling = scrolling
+      origin = null
+      scrolling = false
 
-			if (wasScrolling) return null
-			if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return null
-			return dx < 0 ? 1 : -1
-		},
+      if (wasScrolling) return null
+      if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return null
+      return dx < 0 ? 1 : -1
+    },
 
-		/** Drops the gesture — nothing it does afterwards can page the thread. */
-		cancel() {
-			origin = null
-			scrolling = false
-		},
-	}
+    /** Drops the gesture — nothing it does afterwards can page the thread. */
+    cancel() {
+      origin = null
+      scrolling = false
+    },
+  }
 }

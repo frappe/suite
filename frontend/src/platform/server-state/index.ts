@@ -1,0 +1,205 @@
+/** Product-neutral API engine. Owners register scope and effects once, lazily. */
+import type { Realtime } from '@/platform/realtime'
+import {
+  transport as defaultTransport,
+  type MutationRef,
+  type PageRef,
+  type QueryRef,
+  type TransferRef,
+  type Transport,
+} from '@/platform/transport'
+
+import { Entities } from './entities'
+import { recordMutationFailure } from './errors'
+import { mutationObserver, observe } from './observers'
+import { identityPartition } from './partition'
+import { Reads } from './reads'
+import type {
+  CallArgs,
+  InfiniteQueryState,
+  MutationState,
+  ObserveArgs,
+  OwnerLoader,
+  OwnerRegistration,
+  ReadOptions,
+  UploadState,
+  WriteOptions,
+} from './types'
+import { Writes } from './writes'
+
+export { installApiErrorHandler } from './errors'
+
+// How long a page has to be out of sight before coming back to it fetches every read again.
+const REFRESH_AFTER_AWAY_MS = 30_000
+export type {
+  QueryState,
+  InfiniteQueryState,
+  MutationState,
+  UploadState,
+  OwnerRegistration,
+  Policy,
+  Effects,
+  TransferContext,
+} from './types'
+export interface ClientOptions {
+  transport?: Transport
+  realtime?: Realtime | false
+  persistence?: boolean
+  identity?: string | null
+  feedback?: (error: Error) => void
+}
+
+export function createApiClient(
+  loaders: Readonly<Record<string, OwnerLoader>>,
+  options: ClientOptions = {},
+) {
+  const feedback = options.feedback ?? reportError
+  const transport = options.transport ?? defaultTransport
+  const entities = new Entities(options.persistence ?? true)
+  const reads = new Reads(
+    transport,
+    entities,
+    options.realtime,
+    identityPartition(options.identity),
+  )
+  const writes = new Writes(transport, reads, options.feedback ?? reportError)
+  const owners = new Map<string, Promise<OwnerRegistration>>()
+  const cleanup: Array<() => void> = []
+  function owner(name: string): Promise<OwnerRegistration> {
+    const loader = loaders[name]
+    if (!loader) return Promise.reject(new TypeError(`No API registration for ${name}`))
+    let pending = owners.get(name)
+    if (!pending) {
+      pending = loader()
+      owners.set(name, pending)
+    }
+    return pending
+  }
+  const client = {
+    async query<I, O>(reference: QueryRef<I, O>, ...args: CallArgs<I, ReadOptions>): Promise<O> {
+      if (reference.kind !== 'query') throw new TypeError('Expected a query reference')
+      const input = (args[0] ?? {}) as I
+      const request = args[1] ?? {}
+      request.signal?.throwIfAborted()
+      const registration = await owner(reference.owner)
+      const record = reads.record(
+        reference,
+        input,
+        registration.policy(reference),
+        false,
+        request.context,
+      )
+      return (await reads.fetch(record, input, request)) as O
+    },
+    mutation<I, O>(reference: MutationRef<I, O>, ...args: CallArgs<I, WriteOptions>): Promise<O> {
+      if (reference.kind !== 'mutation')
+        return Promise.reject(new TypeError('Expected a mutation reference'))
+      return writes.run(reference, (args[0] ?? {}) as I, owner(reference.owner), args[1])
+    },
+  }
+  function useQuery<I, O>(reference: QueryRef<I, O>, ...args: ObserveArgs<I>) {
+    if (reference.kind !== 'query') throw new TypeError('Expected a query reference')
+    return observe(reads, owner(reference.owner), reference, args[0], false).query
+  }
+  function useInfiniteQuery<I, Row, O>(
+    reference: PageRef<I, Row, string, O>,
+    ...args: ObserveArgs<I>
+  ): InfiniteQueryState<Row> {
+    if (reference.kind !== 'query' || !reference.page)
+      throw new TypeError('Expected a page reference')
+    return observe(reads, owner(reference.owner), reference, args[0], true)
+      .infinite as InfiniteQueryState<Row>
+  }
+  function useMutation<I, O>(
+    reference: MutationRef<I, O>,
+    options: Omit<WriteOptions, 'signal'> = {},
+  ): MutationState<I, O> {
+    return mutationObserver((input: I, signal) =>
+      writes.run(reference, input, owner(reference.owner), { ...options, signal }),
+    ) as MutationState<I, O>
+  }
+  function useUpload<I, O>(
+    reference: TransferRef<I, O>,
+    options: { silent?: boolean } = {},
+  ): UploadState<I, O> {
+    return mutationObserver(async (input: I, signal, progress) => {
+      const registration = await owner(reference.owner)
+      signal.throwIfAborted()
+      if (!registration.transfer) throw new TypeError(`Missing transfer: ${reference.id}`)
+      progress(0)
+      try {
+        return await registration.transfer(reference, input, {
+          signal,
+          progress,
+          client,
+          transport,
+        })
+      } catch (cause) {
+        recordMutationFailure(cause)
+        if (!signal.aborted && !options.silent && cause instanceof Error) feedback(cause)
+        throw cause
+      }
+    }) as UploadState<I, O>
+  }
+  if (typeof window !== 'undefined') {
+    // Back on the page after a while away, every read is fetched again: realtime keeps an open page
+    // current, and this catches what a sleeping laptop or a dropped socket missed. Not on window
+    // focus — clicking back out of a frame (a mail's body) gives the window focus, so every such click
+    // refetched every read on the page — and not after a glance at another tab.
+    // A page opened in a background tab counts as away from the start.
+    let hiddenAt: number | undefined =
+      document.visibilityState === 'hidden' ? Date.now() : undefined
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+        return
+      }
+      const away = hiddenAt === undefined ? 0 : Date.now() - hiddenAt
+      hiddenAt = undefined
+      if (away >= REFRESH_AFTER_AWAY_MS) reads.invalidate(() => true)
+    }
+    document.addEventListener('visibilitychange', visibility)
+    cleanup.push(() => document.removeEventListener('visibilitychange', visibility))
+  }
+  if (options.realtime) {
+    const realtime = options.realtime
+    cleanup.push(realtime.onReconnect(() => reads.invalidate(() => true)))
+    for (const event of ['doc_update', 'doc_rename', 'list_update']) {
+      cleanup.push(
+        realtime.subscribe<{ doctype: string; name?: string }>(event, (value) =>
+          reads.invalidate(
+            (reference) =>
+              reference.entity?.tag.replaceAll(' ', '').toLowerCase() ===
+              value.doctype.replaceAll(' ', '').toLowerCase(),
+          ),
+        ),
+      )
+    }
+    cleanup.push(
+      realtime.subscribe('drive:changed', () =>
+        reads.invalidate((reference) => reference.owner === 'drive'),
+      ),
+    )
+  }
+  return {
+    client,
+    useQuery,
+    useMutation,
+    useInfiniteQuery,
+    useUpload,
+    onTouch: writes.onTouch.bind(writes),
+    onChallenge: writes.onChallenge.bind(writes),
+    writesSettled: writes.settled.bind(writes),
+    resetIdentity: (identity?: string | null) =>
+      reads.switchPartition(identityPartition(identity, true)),
+    invalidate: reads.invalidate.bind(reads),
+    dispose() {
+      for (const stop of cleanup) stop()
+      reads.dispose()
+    },
+  }
+}
+
+function reportError(error: Error): void {
+  void import('@/platform/feedback').then(({ reportMutationError }) => reportMutationError(error))
+}

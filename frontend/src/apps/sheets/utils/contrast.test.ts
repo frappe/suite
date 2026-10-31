@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { relativeLuminance, prefersLightInk } from './contrast.js'
+import { describe, expect, it } from 'vitest'
+
+import { prefersLightInk, relativeLuminance } from './contrast.js'
 
 describe('relativeLuminance', () => {
   it('spans the full range between black and white', () => {
