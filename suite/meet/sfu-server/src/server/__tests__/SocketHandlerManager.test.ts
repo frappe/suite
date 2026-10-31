@@ -1751,6 +1751,46 @@ describe('SocketHandlerManager characterization', () => {
 		harness.manager.stop();
 	});
 
+	it('camera layer instructions go only to the current publishing socket', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness);
+		emitJoin(publisher);
+		await new Promise((r) => setImmediate(r));
+		const viewer = connectFullSocket(harness, { id: 'viewer', userId: 'viewer' });
+		emitJoin(viewer, { userId: 'viewer' });
+		await new Promise((r) => setImmediate(r));
+		const notify = vi.mocked(harness.mediasoup.onCameraLayerDemand).mock.calls[0][0];
+		const demand = { producerId: 'camera', version: 2, maxSpatialLayer: 0 };
+		notify('room-1', publisher.peerId!, demand);
+		expect(publisher.emitCalls.filter(x => x.event === 'producer:camera_layers')).toEqual([{event:'producer:camera_layers', data:demand}]);
+		expect(viewer.emitCalls.some(x => x.event === 'producer:camera_layers')).toBe(false);
+		publisher.emitCalls.length = 0;
+		notify('other-room', publisher.peerId!, demand);
+		notify('room-1', 'old-peer', demand);
+		expect(publisher.emitCalls).toEqual([]);
+		harness.manager.stop();
+	});
+
+	it('camera demand snapshots require the current publication owner', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness);
+		emitJoin(publisher);
+		await new Promise((r) => setImmediate(r));
+		vi.mocked(harness.mediasoup.getCameraLayerDemand).mockReturnValue({
+			producerId: 'camera', version: 3, maxSpatialLayer: 0,
+		});
+		const callback = vi.fn();
+		publisher.fire('producer:get_camera_layers', { producerId: 'camera' }, callback);
+		expect(harness.mediasoup.assertProducerAccess).toHaveBeenCalledWith('camera', 'room-1', publisher.peerId);
+		expect(callback).toHaveBeenCalledWith({ success: true, demand: { producerId: 'camera', version: 3, maxSpatialLayer: 0 } });
+		vi.mocked(harness.mediasoup.assertProducerAccess).mockImplementationOnce(() => { throw new Error('Producer ownership mismatch'); });
+		const denied = vi.fn();
+		publisher.fire('producer:get_camera_layers', { producerId: 'other-camera' }, denied);
+		expect(denied).toHaveBeenCalledWith({ success: false, error: 'Producer ownership mismatch' });
+		expect(harness.mediasoup.getCameraLayerDemand).toHaveBeenCalledTimes(1);
+		harness.manager.stop();
+	});
+
 	it('create_producer broadcasts screen producers to existing full-access participants', async () => {
 		const harness = createManager();
 

@@ -1,3 +1,4 @@
+import { CameraLayerController } from "./CameraLayerController";
 import { NetworkStatsTracker } from "./NetworkStatsTracker";
 import type {
 	AppData,
@@ -109,6 +110,7 @@ export class TransportManager {
 	private recvTransportCreation: Promise<Transport> | null = null;
 	private sendTransportGeneration = 0;
 	private recvTransportGeneration = 0;
+	private cameraLayers = new CameraLayerController();
 	private producerDiscards = new WeakMap<Producer, Promise<void>>();
 
 	constructor(e2eePolicy?: E2EETransformPolicy) {
@@ -174,6 +176,7 @@ export class TransportManager {
 
 	initialize(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
+		this.cameraLayers.initialize(sfuClient);
 		this.e2eePolicy.setSFUClient(sfuClient);
 	}
 
@@ -486,6 +489,7 @@ export class TransportManager {
 				e2eeStartPaused: e2eeWantedBeforeProduce,
 				codecStrategy: encodingConfig.decision.strategy,
 				scalabilityMode: encodingConfig.decision.scalabilityMode,
+				cameraLayerDemand: source === "camera" && encodingConfig.decision.strategy === "simulcast",
 			};
 		}
 
@@ -533,6 +537,7 @@ export class TransportManager {
 			console.warn("Failed to apply media sender preferences", error);
 		}
 
+		this.cameraLayers.addProducer(producer);
 		return producer;
 	}
 
@@ -783,6 +788,7 @@ export class TransportManager {
 	}
 
 	cleanup() {
+		this.cameraLayers.cleanup();
 		this.networkStatsTracker.reset();
 		this.closeSendTransport();
 		this.closeReceiveTransport();

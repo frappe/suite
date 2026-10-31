@@ -26,6 +26,8 @@ function mockedIceRestart(manager: TransportManager) {
 
 function mockSfuClient(getCodecStrategy?: () => string) {
 	return {
+		on: vi.fn(),
+		off: vi.fn(),
 		getCodecStrategy: getCodecStrategy ?? (() => "svc"),
 		getE2EEMode: vi.fn(() => "none"),
 		isE2EERequired: vi.fn(() => false),
