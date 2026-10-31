@@ -275,7 +275,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends ffmpeg
           fi
-          yarn install --frozen-lockfile
+          yarn install --frozen-lockfile --verbose
           mkdir -p test-results
           yarn test:ci
 
