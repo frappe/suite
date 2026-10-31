@@ -707,6 +707,36 @@ describe('the start-up copy', () => {
     expect(cache.store.size).toBe(0)
   })
 
+  it('writes nothing back when a visit stored its copy after an unpin and a failed re-pin', async () => {
+    await saveOfflineCopy('o1')
+    shell = () => shellResponse({}, 200, SHELL_HTML.replaceAll('index-a1', 'index-e5'))
+    const { promise: landed, resolve: land } = Promise.withResolvers<void>()
+    const { promise: reached, resolve: reach } = Promise.withResolvers<void>()
+    const put = cache.put.bind(cache)
+    let isHeld = false
+    cache.put = async (key, response) => {
+      if (key === '/d/n1' && !isHeld) {
+        isHeld = true
+        reach()
+        await landed
+      }
+
+      return put(key, response)
+    }
+
+    const warming = warmOfflineCopyAssets('o1')
+    await reached
+    await removeOfflineCopy('o1')
+    shell = () => shellResponse({ 'X-Suite-Build': '200' })
+    const saving = saveOfflineCopy('o1')
+    land()
+    await warming
+
+    await expect(saving).rejects.toThrow('could not be stored')
+    expect(localStorage.getItem('slides-offline-copy:o1')).toBeNull()
+    expect([...cache.store.keys()]).toEqual([])
+  })
+
   it('keeps every picture a save stores while a visit is still refreshing', async () => {
     slides.value = slidesWith(['/files/a.png'])
     await saveOfflineCopy('w1')

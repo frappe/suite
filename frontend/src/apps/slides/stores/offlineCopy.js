@@ -14,7 +14,7 @@ import { isCacheable, isMediaContentType } from '@/apps/slides/utils/slidesReque
 const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
-const UNSIGNED = 'timeout'
+const TIMEOUT = 'timeout'
 const HTTP_OK = 200
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
@@ -271,7 +271,8 @@ async function putStartup(cache, id, record, startup, previous, signal) {
     throw failure.reason
   }
 
-  if (forgotten.has(record.node)) {
+  // a run stopped by an unpin finds its record gone, even once a re-pin has cleared the tombstone
+  if (forgotten.has(record.node) || (signal.aborted && !readRecord(id))) {
     await deleteUnshared(cache, id, startup.keys)
     return
   }
@@ -310,7 +311,10 @@ const pruneOfflineCopy = async (id, targets = null) => {
 // a save and a visit's refresh share one slot; a later run stops the one before and waits for it
 function claimRun(id, node) {
   run?.controller.abort()
-  const { promise: done, resolve: settle } = Promise.withResolvers()
+  let settle
+  const done = new Promise((resolve) => {
+    settle = resolve
+  })
   run = { id, node, controller: new AbortController(), previous: run?.done, done, settle }
   return run
 }
@@ -348,7 +352,7 @@ const saveOfflineCopy = async (id) => {
     const targets = getMediaTargets()
     progress.total = targets.length
     for (const source of unsigned) {
-      recordFailure(progress, source, UNSIGNED)
+      recordFailure(progress, source, TIMEOUT)
     }
 
     const cache = await openPinnedCache()
