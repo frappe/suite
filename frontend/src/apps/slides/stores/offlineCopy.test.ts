@@ -707,6 +707,25 @@ describe('the start-up copy', () => {
     expect(cache.store.size).toBe(0)
   })
 
+  it("keeps the old shell when the new build's assets can't be stored", async () => {
+    await saveOfflineCopy('s1')
+    shell = () => shellResponse({}, 200, SHELL_HTML.replaceAll('index-a1', 'index-e5'))
+    const put = cache.put.bind(cache)
+    cache.put = async (key, response) => {
+      if (key.includes('index-e5')) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+
+      return put(key, response)
+    }
+
+    await expect(warmOfflineCopyAssets('s1')).rejects.toThrow('full')
+
+    expect(await cache.text('/d/n1')).toBe(SHELL_HTML)
+    expect(cache.has('/assets/suite/frontend/assets/index-a1.js')).toBe(true)
+    expect(recordOf('s1').keys).toContain('/assets/suite/frontend/assets/index-a1.js')
+  })
+
   it('writes nothing back when a visit stored its copy after an unpin and a failed re-pin', async () => {
     await saveOfflineCopy('o1')
     shell = () => shellResponse({}, 200, SHELL_HTML.replaceAll('index-a1', 'index-e5'))

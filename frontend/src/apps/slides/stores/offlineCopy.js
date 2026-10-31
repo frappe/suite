@@ -254,14 +254,23 @@ function deleteUnshared(cache, id, keys) {
   return Promise.all(unsharedKeys(id, keys).map((key) => cache.delete(key)))
 }
 
+async function firstFailedPut(cache, entries) {
+  const puts = entries.map(([key, response]) => cache.put(key, response))
+  return (await Promise.allSettled(puts)).find((put) => put.status === 'rejected')
+}
+
 // the puts land before the record lists them, so a failed put leaves the old record whole
 async function putStartup(cache, id, record, startup, previous, signal) {
   if (signal.aborted) {
     return
   }
 
-  const puts = [...startup.responses].map(([key, response]) => cache.put(key, response))
-  const failure = (await Promise.allSettled(puts)).find((put) => put.status === 'rejected')
+  // the shell goes last, so a failed put never leaves it naming assets the rollback deletes
+  const shellKey = `/d/${record.node}`
+  const others = [...startup.responses].filter(([key]) => key !== shellKey)
+  const failure =
+    (await firstFailedPut(cache, others)) ??
+    (await firstFailedPut(cache, [[shellKey, startup.responses.get(shellKey)]]))
   if (failure) {
     await deleteUnshared(
       cache,
