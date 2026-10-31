@@ -381,6 +381,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import { mailSearchRoute, useMobileSearch, useScreenSize } from '@/apps/mail/utils/composables'
 import HighlightedText from '@/components/HighlightedText.vue'
 import type { AreaDefinition } from '@/platform/contracts'
+import { openAreaShortcuts } from '@/platform/shortcuts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
@@ -677,6 +678,15 @@ const unregisterSuiteCommands = root.registerPaletteGroups(
           icon: 'lucide-settings',
           keywords: ['account', 'personal', 'preferences', 'workspace'],
           run: () => openSettings(),
+        },
+        {
+          id: 'suite-keyboard-shortcuts',
+          label: 'Keyboard shortcuts',
+          shortcut: 'Shift+Slash',
+          enterHint: 'show shortcuts',
+          icon: 'lucide-keyboard',
+          keywords: ['hotkeys', 'keys', 'help'],
+          run: () => openAreaShortcuts(),
         },
       ],
     },
