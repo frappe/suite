@@ -416,8 +416,14 @@ const loadTemplates = async () => {
   }
 }
 
+// a presentation with no theme, or one the caller can't read, adds slides from Light
 const presentationTheme = computed(() => {
-  return presentationDoc.value?.theme
+  const theme = presentationDoc.value?.theme
+  if (templateList.value.some((template) => template.name === theme)) {
+    return theme
+  }
+
+  return templateList.value.find((template) => template.title === 'Light')?.name
 })
 
 const pageTitle = () => {
