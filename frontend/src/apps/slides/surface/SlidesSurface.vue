@@ -8,7 +8,6 @@ import {
   DriveCommentAuthor,
   DriveDocumentHeader,
   GUEST_NAME_LIMIT,
-  useDriveDocumentLocation,
   useDriveGuestName,
   type DocumentPanel,
   type DocumentSession,
@@ -145,7 +144,6 @@ const editable = computed(() => access.writable.value && !composite.value && !re
 const phone = useMediaQuery('(max-width: 767px)')
 const editing = computed(() => editable.value && !phone.value)
 useHideRail()
-const location = useDriveDocumentLocation(props.session)
 
 // Body requests go through the session, with this document's link credentials.
 // A refused write is a verdict: access narrows until the presentation opens again.
@@ -440,7 +438,6 @@ onBeforeUnmount(() => {
   <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base">
     <DriveDocumentHeader
       :session="session"
-      :location="location"
       title-label="Presentation title"
       :save-state="saveState"
       :view-only="!editable"

@@ -1,12 +1,4 @@
-import {
-  computed,
-  defineAsyncComponent,
-  getCurrentInstance,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  type ComputedRef,
-} from 'vue'
+import { defineAsyncComponent, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { RouteLocationPathRaw } from 'vue-router'
 
 import { api, client, useQuery } from '@/api'
@@ -14,11 +6,10 @@ import FilesIcon from '@/apps/drive/AreaIcon.vue'
 import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
-import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
+import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
-import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { openingTitleState } from '@/platform/page-meta'
@@ -183,25 +174,6 @@ export function driveNodeRoute(
   // The history entry carries the title, so the tab names the node before
   // its page loads.
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
-}
-
-/**
- * The header's link back to the folder a document is in, or `null` when the
- * caller can't read that folder. Call it in a component's setup.
- */
-export function useDriveDocumentLocation(
-  session: DocumentSession,
-): ComputedRef<{ label: string; to: RouteLocationPathRaw } | null> {
-  const locationTitle = useLocationTitle()
-  return computed(() => {
-    const crumb = session.folder.value
-    if (!crumb) {
-      return null
-    }
-
-    const label = locationTitle(crumb)
-    return { label, to: driveNodeRoute(crumb.name, label, 'folder') }
-  })
 }
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */
