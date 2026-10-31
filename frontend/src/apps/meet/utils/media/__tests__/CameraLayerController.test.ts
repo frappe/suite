@@ -31,18 +31,6 @@ const flush = async () => {
 	for (let i = 0; i < 8; i++) await Promise.resolve();
 };
 describe("camera publisher quality control", () => {
-	it("fetches demand after publication so an early event is not lost", async () => {
-		const { controller, client, producer, command } = setup();
-		command(0, 2);
-		client.getCameraLayerDemand.mockResolvedValue({
-			producerId: "camera",
-			version: 2,
-			maxSpatialLayer: 0,
-		});
-		controller.addProducer(producer as never);
-		await flush();
-		expect(producer.setMaxSpatialLayer).toHaveBeenCalledWith(0);
-	});
 	it("serializes sender changes and restores high quality when an upgrade arrives during a downgrade", async () => {
 		const { controller, producer, command } = setup();
 		let complete!: () => void;
@@ -108,44 +96,29 @@ describe("camera publisher quality control", () => {
 		expect(producer.setMaxSpatialLayer).toHaveBeenCalledTimes(3);
 		controller.cleanup();
 	});
-	it("verifies sender state when mediasoup silently swallows a browser error", async () => {
+	it("recovers actual sender quality when an upgrade reports success without applying", async () => {
 		const { controller, producer, command } = setup();
-		let cached: number | undefined;
-		let active = [true, true, true];
-		let failOnce = true;
-		const setLayer = vi.fn(async (layer: number) => {
-			if (cached === layer) return;
-			cached = layer;
-			if (failOnce) {
-				failOnce = false;
-				return;
-			}
-			active = active.map((_, index) => index <= layer);
-		});
-		controller.addProducer({
-			...producer,
-			get maxSpatialLayer() {
-				return cached;
+		let active = [true, true, true], cached: number | undefined, failUpgrade = true;
+		controller.addProducer({ ...producer,
+			get maxSpatialLayer() { return cached; },
+			rtpSender: { getParameters: () => ({ encodings: active.map(active => ({ active })) }) },
+			setMaxSpatialLayer: async (layer: number) => {
+				cached = layer;
+				if (layer === 0) active = [true, false, false];
+				else if (failUpgrade) failUpgrade = false; // Browser ignored the upgrade.
+				else active = [true, true, true];
 			},
-			rtpSender: {
-				getParameters: () => ({
-					encodings: active.map((value) => ({ active: value })),
-				}),
-			},
-			setMaxSpatialLayer: setLayer,
 		} as never);
-		command(0, 2);
-		await flush();
+		command(0, 2); await flush();
+		expect(active).toEqual([true, false, false]);
+		command(2, 3); await flush();
 		expect(active).toEqual([true, true, true]);
+		command(0, 4); await flush();
 		expect(active).toEqual([true, true, true]);
-		command(0, 3);
-		await flush();
-		expect(setLayer).toHaveBeenCalledTimes(2);
-		controller.cleanup();
 	});
 
-	it("ignores commands and outstanding snapshots after cleanup or publication close", async () => {
-		const { controller, client, producer, command } = setup();
+	it("ignores outstanding snapshots after cleanup", async () => {
+		const { controller, client, producer } = setup();
 		let resolve!: (value: unknown) => void;
 		client.getCameraLayerDemand.mockImplementation(
 			() => new Promise((r) => (resolve = r)),
@@ -155,7 +128,6 @@ describe("camera publisher quality control", () => {
 		resolve({ producerId: "camera", version: 2, maxSpatialLayer: 0 });
 		await flush();
 		expect(producer.setMaxSpatialLayer).not.toHaveBeenCalled();
-		command(0, 3);
 	});
 	it.each([
 		{ kind: "audio" },

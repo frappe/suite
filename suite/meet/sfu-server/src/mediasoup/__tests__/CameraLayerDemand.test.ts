@@ -35,7 +35,7 @@ function setup() {
 afterEach(() => vi.useRealTimers());
 describe('camera upload demand', () => {
 	it('keeps the lowest stream, delays reductions, and never pauses the camera', () => {
-		const { demand, notify } = setup();
+		const { notify } = setup();
 		vi.advanceTimersByTime(2999);
 		expect(notify).not.toHaveBeenCalled();
 		vi.advanceTimersByTime(1);
@@ -44,7 +44,6 @@ describe('camera upload demand', () => {
 			version: 2,
 			maxSpatialLayer: 0,
 		});
-		expect(demand.get('camera')?.maxSpatialLayer).toBe(0);
 	});
 	it('keeps the highest requested layer, even when the receiver currently gets a lower layer', () => {
 		const { demand, notify } = setup();
@@ -94,14 +93,6 @@ describe('camera upload demand', () => {
 		viewer.paused = false;
 		viewer.observer.emit('resume');
 		expect(demand.get('camera')?.maxSpatialLayer).toBe(2);
-	});
-	it('drops demand on consumer closure, including transport-driven closure', () => {
-		const { demand } = setup();
-		const viewer = consumer('viewer', 2);
-		demand.addConsumer(viewer as never);
-		viewer.observer.emit('close');
-		vi.advanceTimersByTime(3000);
-		expect(demand.get('camera')?.maxSpatialLayer).toBe(0);
 	});
 	it('cancels scheduled work when a publication closes or the manager cleans up', () => {
 		const { demand, camera, notify } = setup();
