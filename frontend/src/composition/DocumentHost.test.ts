@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { installPageMeta, openingTitleState } from '@/platform/page-meta'
@@ -135,6 +135,41 @@ describe('DocumentHost', () => {
     expect(router.options.history.state.back).toBeFalsy()
     app.unmount()
     expect(testState.dispose).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the document open through its slideshow, and its slug once back', async () => {
+    testState.open.mockResolvedValue(session())
+    const view = { render: (): unknown => null }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/d/:node',
+          component: DocumentHost,
+          children: [
+            { path: 'present', name: 'slides-slideshow', component: view },
+            { path: ':slug?', name: 'document-host', component: view },
+          ],
+        },
+      ],
+    })
+    await router.push('/d/node-1/present?slide=2')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+    expect(router.currentRoute.value.fullPath).toBe('/d/node-1/present?slide=2')
+
+    await router.replace({ name: 'document-host', params: { node: 'node-1' }, query: { slide: 2 } })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe('/d/node-1/quarterly-plan?slide=2'),
+    )
+    expect(testState.open).toHaveBeenCalledOnce()
+    expect(testState.dispose).not.toHaveBeenCalled()
+    app.unmount()
   })
 
   it("names the tab from the first frame: the opener's title, else Opening…, then the document's", async () => {

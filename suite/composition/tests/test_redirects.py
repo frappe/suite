@@ -82,7 +82,11 @@ class TestRedirectTable(DriveHTTPCase):
                 f"/slides/presentation/view/{PRESENTATION}",
                 f"/d/{document}",
             ),
-            ("/slides/slideshow/:docname", f"/slides/slideshow/{PRESENTATION}", f"/d/{document}"),
+            (
+                "/slides/slideshow/:docname",
+                f"/slides/slideshow/{PRESENTATION}",
+                f"/d/{document}/present",
+            ),
             ("/sheets/new", "/sheets/new", "/home"),
             ("/slides/presentation/new", "/slides/presentation/new", "/home"),
             ("/slides/not-permitted", "/slides/not-permitted", "/home"),
@@ -116,6 +120,10 @@ class TestRedirectTable(DriveHTTPCase):
         self.assertRedirect(
             self.open(f"/slides/presentation/{PRESENTATION}/q3-review", query={"slide": "3"}),
             f"/d/{self.document}?slide=3",
+        )
+        self.assertRedirect(
+            self.open(f"/slides/slideshow/{PRESENTATION}/q3-review", query={"slide": "3"}),
+            f"/d/{self.document}/present?slide=3",
         )
         self.assertRedirect(self.open(f"/drive/d/{self.folder}/reports/"), f"/drive/f/{self.folder}")
         self.assertRedirect(self.open("/sheets/new/"), "/home")

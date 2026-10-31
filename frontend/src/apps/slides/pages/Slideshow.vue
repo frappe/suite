@@ -1,6 +1,6 @@
 <template>
   <div
-    class="absolute left-0 top-0 h-full w-full overflow-clip bg-black"
+    class="fixed inset-0 z-50 overflow-clip bg-black"
     :class="{ 'slideshow-hide-cursor': cursorHidden }"
   >
     <div class="flex h-screen w-full items-center justify-center" :style="slideContainerStyles">
@@ -9,7 +9,7 @@
         class="flex h-full w-full items-center justify-center bg-black"
         @click="endSlideShow()"
       >
-        <SlideshowEndScreen @restartSlideShow="changeSlideInSlideshow(0)" />
+        <SlideshowEndScreen @restart-slide-show="changeSlideInSlideshow(0)" />
       </div>
 
       <div
@@ -27,7 +27,7 @@
             mode="slideshow"
             :element="element"
             :data-index="element.id"
-            :transitionStyles="transitionStyles"
+            :transition-styles="transitionStyles"
             :style="getElementTransitionStyles(element)"
             class="forward-transition"
           />
@@ -61,8 +61,8 @@
 </template>
 
 <script setup>
-import { toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
-import { computed, onActivated, onDeactivated, provide, ref, watch } from 'vue'
+import { useKeyboardShortcut, usePageMeta } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 
 import FadeElementTransition from '@/apps/slides/components/FadeElementTransition.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
@@ -300,8 +300,9 @@ const initFullscreenMode = async () => {
   const inFullscreen = Boolean(document.fullscreenElement) || (await requestFullscreen())
   if (!active) return exitFullscreen()
   if (!inFullscreen) {
-    toast.error('Could not enter fullscreen mode')
-    endSlideShow()
+    // a load or a reload has no click to grant fullscreen, so the show fills the window
+    inSlideShowMode.value = true
+    requestWakeLock()
     return
   }
 
@@ -319,12 +320,12 @@ const updateWindowSize = () => {
   windowHeight.value = window.innerHeight
 }
 
-// the title goes through the platform's page meta, which also restores it when this page is reactivated
+// the title goes through the platform's page meta
 usePageTitle(pageTitle)
 usePageMeta(() => ({ icon: appPageMeta(pageTitle(), 'Slides').icon }))
 useBrowserZoomGuard()
 
-onActivated(() => {
+onMounted(() => {
   active = true
   resetFocus()
   loadPresentation()
@@ -340,7 +341,7 @@ onActivated(() => {
   }, 500)
 })
 
-onDeactivated(() => {
+onUnmounted(() => {
   active = false
   document.removeEventListener('fullscreenchange', handleFullScreenChange)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -399,6 +400,17 @@ useKeyboardShortcut([
     description: 'Previous step',
     group: 'Slideshow',
     handler: performPreviousStep,
+  },
+  {
+    combo: 'Escape',
+    description: 'End slideshow',
+    group: 'Slideshow',
+    // in fullscreen, Esc leaves it and the change ends the show
+    handler: () => {
+      if (!document.fullscreenElement) {
+        endSlideShow()
+      }
+    },
   },
   {
     combo: 'F5',

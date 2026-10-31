@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
 import { Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue'
+import { useRoute } from 'vue-router'
 
 import { api, client } from '@/api'
 import {
@@ -77,6 +87,8 @@ import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
 type Panel = DocumentPanel
 
+const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
+
 /** `GET nodes/<id>/threads` */
 interface CommentThread {
   name: string
@@ -94,6 +106,11 @@ const props = defineProps<{
 }>()
 const loading = ref(true)
 const loadError = ref('')
+const route = useRoute()
+const presenting = computed(
+  () => route.name === 'slides-slideshow' && !loading.value && slides.value.length > 0,
+)
+const presentedSlide = computed(() => Number(route.query.slide) || 1)
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
@@ -705,6 +722,11 @@ onBeforeUnmount(() => {
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
+      <Slideshow
+        v-if="presenting"
+        :presentation-id="session.contentDocname"
+        :active-slide-id="presentedSlide"
+      />
     </teleport>
   </div>
 </template>

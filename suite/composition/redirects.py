@@ -53,8 +53,9 @@ CLIENT_TABLE = Path(__file__).resolve().parents[2] / "frontend/src/composition/r
 # How a row finds its target when the path alone does not say it:
 # - `node`: the node's address by kind, from `drive.node_url`;
 # - `legacy`: a pre-migration Drive id, through `drive.legacy_node`;
-# - `sheet`, `presentation`: the product document's `node` field.
-Lookup = Literal["node", "legacy", "sheet", "presentation"]
+# - `sheet`, `presentation`: the product document's `node` field;
+# - `slideshow`: that node's slideshow
+Lookup = Literal["node", "legacy", "sheet", "presentation", "slideshow"]
 
 
 @dataclass(frozen=True)
@@ -105,7 +106,7 @@ ROWS: tuple[Row, ...] = (
     Row("/sheets/:docname", lookup="sheet"),
     Row("/slides/presentation/:docname", lookup="presentation"),
     Row("/slides/presentation/view/:docname", lookup="presentation"),
-    Row("/slides/slideshow/:docname", lookup="presentation"),
+    Row("/slides/slideshow/:docname", lookup="slideshow"),
     # Old utility pages go to Home, whose New menu and Recent cover them.
     Row("/sheets/new", "/home"),
     Row("/slides/presentation/new", "/home"),
@@ -231,12 +232,16 @@ def _node_address(node: str | None) -> str | None:
         return None
 
 
-def _document_address(doctype: str, docname: str) -> str | None:
+def _document_address(doctype: str, docname: str, view: str = "") -> str | None:
     # Drive's grants govern a Sheet or a Presentation, so READ on its node is
     # the product's own read check. The document always opens in the document
     # host, so its kind needs no read.
     node = frappe.db.get_value(doctype, docname, "node")
-    return f"/d/{quote(node, safe='')}" if _readable(node) else None
+    if not _readable(node):
+        return None
+
+    address = quote(node, safe="")
+    return f"/d/{address}{view}"
 
 
 LOOKUPS: dict[Lookup, Callable[[str], str | None]] = {
@@ -244,6 +249,7 @@ LOOKUPS: dict[Lookup, Callable[[str], str | None]] = {
     "legacy": lambda old_id: _node_address(drive.legacy_node(old_id)),
     "sheet": lambda docname: _document_address("Sheet", docname),
     "presentation": lambda docname: _document_address("Presentation", docname),
+    "slideshow": lambda docname: _document_address("Presentation", docname, "/present"),
 }
 
 

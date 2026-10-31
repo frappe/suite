@@ -158,12 +158,12 @@ watch(
 )
 
 // A kept file preview is not the route's node, so its renames leave the route alone.
-watch(
-  () => session.value?.title.value,
-  () => {
-    if (session.value?.nodeId === nodeId.value) void replaceDecorativeSlug(session.value)
-  },
-)
+// Coming back from the slideshow puts the slug back
+watch([() => session.value?.title.value, () => route.name], () => {
+  if (session.value?.nodeId === nodeId.value) {
+    void replaceDecorativeSlug(session.value)
+  }
+})
 
 /**
  * Shows `next` with its surface in one step, so a surface never renders
@@ -196,6 +196,7 @@ function handleRetry() {
 }
 
 async function replaceDecorativeSlug(opened: DocumentSession) {
+  if (route.name === 'slides-slideshow') return
   const destination = { ...driveNodeRoute(opened.nodeId, opened.title.value), query: route.query }
   if (router.resolve(destination).path !== route.path) await router.replace(destination)
 }
