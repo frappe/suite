@@ -814,7 +814,7 @@
           "name",
           "theme"
         ],
-        "title": "ApplyTheme",
+        "title": "DeckTheme",
         "type": "object"
       },
       "output": {
@@ -828,6 +828,58 @@
           "modified"
         ],
         "title": "SavedDeck",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_theme",
+      "kind": "mutation",
+      "publicName": "documents.updateTheme",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.slides.doctype.presentation.presentation.update_theme",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "theme"
+        ],
+        "title": "DeckTheme",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "modified": {
+            "title": "Modified",
+            "type": "string"
+          },
+          "base_modified": {
+            "title": "Base Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "modified",
+          "base_modified"
+        ],
+        "title": "ThemedDeck",
         "type": "object"
       },
       "errors": [],

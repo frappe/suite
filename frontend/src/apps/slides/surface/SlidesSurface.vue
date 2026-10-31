@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { Button, Skeleton, TextInput, toast } from 'frappe-ui'
+import { Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 
 import { api, client } from '@/api'
@@ -8,6 +8,7 @@ import {
   DriveCommentAuthor,
   DriveDocumentHeader,
   GUEST_NAME_LIMIT,
+  useDriveDocumentActions,
   useDriveGuestName,
   type DocumentPanel,
   type DocumentSession,
@@ -57,6 +58,7 @@ import {
 } from '@/apps/slides/stores/slide'
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 import { useHideRail } from '@/platform/rail'
+import { openAreaShortcuts } from '@/platform/shortcuts'
 
 import { createSlidesAccess } from './access'
 import {
@@ -185,24 +187,50 @@ function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
 }
 
-async function applyTheme(theme: string) {
+/** A theme write rewrites the deck on the server, so it pauses editing like a restore. */
+async function writeTheme(
+  endpoint: typeof api.slides.documents.applyTheme | typeof api.slides.documents.updateTheme,
+  theme: string,
+) {
   showThemeDialog.value = false
+  showThemeChange.value = false
   try {
     await flushEdits()
     restoring.value = true
     await client.mutation(
-      api.slides.documents.applyTheme,
+      endpoint,
       { name: props.session.contentDocname, theme },
       { context: contextFor(props.session.contentDocname) },
     )
     await load()
   } catch (error) {
     const message = error instanceof Error && error.message
-    toast.error(message || 'Could not apply the theme.')
+    toast.error(message || 'Could not change the theme.')
   } finally {
     restoring.value = false
   }
 }
+
+const showThemeChange = ref(false)
+const driveActions = useDriveDocumentActions(props.session)
+const presentationMenu = computed(() => [
+  { group: '', options: driveActions.value.back },
+  {
+    group: '',
+    options: [
+      {
+        label: 'Change theme',
+        icon: 'lucide-swatch-book',
+        condition: () => editable.value,
+        onClick: () => {
+          showThemeChange.value = true
+        },
+      },
+      { label: 'Keyboard shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+    ],
+  },
+  { group: '', options: driveActions.value.node },
+])
 
 // The header renames through the session; the deck keeps its own copy of the title.
 watch(
@@ -477,6 +505,13 @@ onBeforeUnmount(() => {
       @update:panel="showPanel"
       @download-changes="downloadChanges"
     >
+      <template #icon="{ icon }">
+        <Dropdown :options="presentationMenu">
+          <Button variant="ghost" icon-right="lucide-chevron-down" aria-label="Presentation menu">
+            <span class="block size-4.5" :class="icon" aria-hidden="true" />
+          </Button>
+        </Dropdown>
+      </template>
       <template #actions>
         <Button
           icon="lucide-file-down"
@@ -657,7 +692,15 @@ onBeforeUnmount(() => {
     />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
-    <ThemeDialog v-model:open="showThemeDialog" @create="applyTheme" />
+    <ThemeDialog
+      v-model:open="showThemeDialog"
+      @create="writeTheme(api.slides.documents.applyTheme, $event)"
+    />
+    <ThemeDialog
+      v-model:open="showThemeChange"
+      update
+      @update="writeTheme(api.slides.documents.updateTheme, $event)"
+    />
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />

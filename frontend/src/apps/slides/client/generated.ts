@@ -203,6 +203,28 @@ const operationApplyTheme: MutationRef<ApplyThemeInput, ApplyThemeOutput, ApplyT
   loadValidators: async () => (await import('./validators')).operationApplyTheme,
 }
 
+export type UpdateThemeInput = { name: string; theme: string }
+
+export type UpdateThemeOutput = { modified: string; base_modified: string }
+
+export type UpdateThemeError = never
+
+const operationUpdateTheme: MutationRef<UpdateThemeInput, UpdateThemeOutput, UpdateThemeError> = {
+  id: 'update_theme',
+  owner: 'slides',
+  kind: 'mutation',
+  publicName: 'documents.updateTheme',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.slides.doctype.presentation.presentation.update_theme',
+  prefix: '/api/suite/slides/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationUpdateTheme,
+}
+
 export type GetTemplatesOutputSlide = {
   name?: string
   idx?: number
@@ -433,6 +455,7 @@ export const api = {
     isComposite: operationIsCompositePresentation,
     save: operationSaveSlides,
     applyTheme: operationApplyTheme,
+    updateTheme: operationUpdateTheme,
     access: operationGetEditorAccess,
   },
   templates: {

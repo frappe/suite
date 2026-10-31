@@ -14,6 +14,9 @@ const effects = {
   apply_theme: {
     invalidates: ['get_public_presentation', 'drive.node_versions', 'drive.view_list'],
   },
+  update_theme: {
+    invalidates: ['get_public_presentation', 'drive.node_versions', 'drive.view_list'],
+  },
   get_updated_json: 'none',
   update_slide_attachments: 'none',
 } as const

@@ -14,6 +14,7 @@ from suite.slides.doctype.presentation.presentation import (
     get_updated_json,
     is_composite_presentation,
     update_slide_attachments,
+    update_theme,
 )
 
 
@@ -78,8 +79,13 @@ class SavedDeck(TypedDict):
     modified: str
 
 
-class ApplyTheme(DeckInput):
+class DeckTheme(DeckInput):
     theme: str
+
+
+class ThemedDeck(TypedDict):
+    modified: str
+    base_modified: str
 
 
 class Template(TypedDict):
@@ -173,10 +179,20 @@ CONTRACT_ROUTES = (
         "POST",
         "/api/method/suite.slides.doctype.presentation.presentation.apply_theme",
         "apply_theme",
-        body=ApplyTheme,
+        body=DeckTheme,
         output=SavedDeck,
         kind="mutation",
         public_name="documents.applyTheme",
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.doctype.presentation.presentation.update_theme",
+        "update_theme",
+        body=DeckTheme,
+        output=ThemedDeck,
+        kind="mutation",
+        public_name="documents.updateTheme",
         envelope="message",
     ),
     Route(

@@ -314,9 +314,10 @@ class TestVersionHandshake(IntegrationTestCase):
 
     def test_update_theme_reports_the_base_it_saved_over(self):
         with self.set_user(OWNER):
+            theme = make_presentation("Version Handshake Theme", is_template=True).name
             presentation = make_presentation("Version Handshake Presentation")
             before = cstr(presentation.modified)
-            result = update_theme(presentation.name, "another-theme")
+            result = update_theme(presentation.name, theme)
 
         self.assertEqual(cstr(result["base_modified"]), before)
         self.assertNotEqual(cstr(result["modified"]), before)
@@ -327,7 +328,7 @@ class TestVersionHandshake(IntegrationTestCase):
 
 
 class TestApplyTheme(IntegrationTestCase):
-    """A new deck takes the theme picked for it, as develop's create did."""
+    """A deck takes the theme picked for it: a new one as develop's create did, any one through a change."""
 
     @classmethod
     def setUpClass(cls):
@@ -382,6 +383,25 @@ class TestApplyTheme(IntegrationTestCase):
 
         with self.assertRaises(frappe.DoesNotExistError):
             apply_theme(self.deck, plain)
+
+        self.assertEqual(self.body_of_deck(), before)
+
+    def test_a_change_of_theme_keeps_the_slides(self):
+        deck = frappe.get_doc("Presentation", self.deck)
+        deck.slides[0].elements = json.dumps([{"id": "mine", "type": "text", "content": "Mine"}])
+        deck.save()
+        _, slides = self.body_of_deck()
+
+        update_theme(self.deck, self.dark)
+
+        self.assertEqual(self.body_of_deck(), (self.dark, slides))
+
+    def test_a_change_to_a_theme_that_is_not_a_template_is_refused(self):
+        plain = make_presentation("Not A Theme To Change To").name
+        before = self.body_of_deck()
+
+        with self.assertRaises(frappe.DoesNotExistError):
+            update_theme(self.deck, plain)
 
         self.assertEqual(self.body_of_deck(), before)
 

@@ -310,10 +310,23 @@ def _home_folder() -> str:
     return home
 
 
+def readable_template_node(theme: str) -> str:
+    """Return the theme's Drive node when the theme is a template the caller can read."""
+    theme_node = frappe.db.get_value("Presentation", theme, NODE_FIELD)
+    if not theme_node or not slides_drive.node_is_template(theme_node):
+        frappe.throw(f"Template {theme!r} does not exist", frappe.DoesNotExistError)
+
+    if not frappe.has_permission("Presentation", "read", theme):
+        frappe.throw("You cannot use this template", frappe.PermissionError)
+
+    return theme_node
+
+
 @frappe.whitelist(methods=["POST"])
 def update_theme(name: str, theme: str):
     presentation = frappe.get_doc("Presentation", name)
     presentation.check_permission("write")
+    readable_template_node(theme)
     base_modified = presentation.modified
     presentation.theme = theme
     presentation.save()
@@ -324,13 +337,7 @@ def update_theme(name: str, theme: str):
 def apply_theme(name: str, theme: str) -> dict:
     """Turn a new deck's blank slide into the theme's first layout; any other deck is refused."""
     drive.check(slides_drive.node_of(name), drive.EDIT)
-    theme_node = frappe.db.get_value("Presentation", theme, NODE_FIELD)
-    if not theme_node or not slides_drive.node_is_template(theme_node):
-        frappe.throw(f"Template {theme!r} does not exist", frappe.DoesNotExistError)
-
-    if not frappe.has_permission("Presentation", "read", theme):
-        frappe.throw("You cannot use this template", frappe.PermissionError)
-
+    theme_node = readable_template_node(theme)
     deck = frappe.get_doc("Presentation", name, for_update=True)
     if len(deck.slides) != 1 or deck.slides[0].elements != "[]":
         frappe.throw(_("Only a new, empty presentation can take a theme"), frappe.ValidationError)
