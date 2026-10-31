@@ -226,7 +226,7 @@ const presentationMenu = computed(() => [
           showThemeChange.value = true
         },
       },
-      { label: 'Keyboard shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+      { label: 'Shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
     ],
   },
   { group: '', options: driveActions.value.node },
