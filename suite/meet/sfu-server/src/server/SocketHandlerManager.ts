@@ -132,6 +132,14 @@ export class SocketHandlerManager {
 			registerErrorHandlers(deps),
 		];
 
+		this.mediasoup.onCameraLayerDemand((roomId, peerId, demand) => {
+			const socket = Array.from(this.io.sockets.sockets.values()).find(
+				(candidate) => candidate.scope === 'full' && candidate.peerId === peerId && candidate.roomId === roomId,
+			);
+			if (socket?.participantId && this.registry.isParticipantOwner(socket, roomId, socket.participantId))
+				socket.emit('producer:camera_layers', demand);
+		});
+
 		this.mediasoup.onProducerClosed((event) => {
 			this.registry.emitProducerClosed(event.roomId, {
 				participantId: event.participantId,

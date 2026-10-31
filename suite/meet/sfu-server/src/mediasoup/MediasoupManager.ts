@@ -1,3 +1,5 @@
+import { CameraLayerDemand } from './CameraLayerDemand';
+import type { CameraLayerDemand as CameraLayerInstruction } from '../../../types/cameraLayers';
 import type { SttManager } from '../stt/SttManager';
 import type {
 	CloseProducerResult,
@@ -54,6 +56,19 @@ export class MediasoupManager {
 	private producerManager = new ProducerManager();
 	consumerManager = new ConsumerManager();
 	private sttManager: SttManager | null = null;
+	private cameraLayerListeners: Array<(roomId: string, peerId: string, demand: CameraLayerInstruction) => void> = [];
+	private cameraLayers = new CameraLayerDemand((roomId, peerId, demand) => {
+		for (const listener of this.cameraLayerListeners) listener(roomId, peerId, demand);
+	});
+
+	onCameraLayerDemand(listener: (roomId: string, peerId: string, demand: CameraLayerInstruction) => void): void {
+		this.cameraLayerListeners.push(listener);
+	}
+
+	getCameraLayerDemand(producerId: string): CameraLayerInstruction | null {
+		return this.cameraLayers.get(producerId);
+	}
+
 
 	private networkQualityListeners: Array<
 		(
@@ -557,6 +572,7 @@ export class MediasoupManager {
 			throw new Error(`Failed to create producer ${result.id}`);
 		}
 		peer.producers.set(result.id, producer);
+		this.cameraLayers.addProducer(producer, roomId, peerId);
 
 		// Add audio producers to the audio level observer for active speaker detection
 		if (kind === 'audio') {
@@ -657,6 +673,8 @@ export class MediasoupManager {
 		} finally {
 			this.creatingConsumers.delete(consumerKey);
 		}
+		const createdConsumer = this.consumerManager.getConsumerData(result.id)?.consumer;
+		if (createdConsumer) this.cameraLayers.addConsumer(createdConsumer);
 		if (existingConsumer) {
 			this.consumerManager.closeConsumer(existingConsumer.consumer.id);
 		}
@@ -961,6 +979,8 @@ export class MediasoupManager {
 				}
 			}
 		}
+
+		this.cameraLayers.preferencesChanged(consumer);
 
 		const layerUpgraded =
 			appliedLayers &&
@@ -1270,6 +1290,8 @@ export class MediasoupManager {
 	}
 
 	async cleanup(): Promise<void> {
+		this.cameraLayers.cleanup();
+		this.cameraLayerListeners = [];
 		if (this.networkQualityTimer) clearInterval(this.networkQualityTimer);
 		this.networkQualityTimer = null;
 		this.networkQualityListeners = [];
