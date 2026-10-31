@@ -157,7 +157,7 @@ class TestVersionWorkflows(IntegrationTestCase):
         ensure_rootless_user(USER, OTHER)
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
         self.root = create_root(kind="Personal", title="Version root", user=USER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.content_doc = frappe.get_doc(
             {"doctype": "ToDo", "description": f"Drive version fixture {self.root.name}"}
         ).insert(ignore_permissions=True)

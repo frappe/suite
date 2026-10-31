@@ -1153,7 +1153,15 @@ class TestRecordRoutes(BoundaryCase):
         self.assertEqual(workflow.call_args.kwargs["cursor"], "b2Zmc2V0OjAw")
 
     def test_a_notification_page_is_two_keys_and_carries_the_cursor(self):
-        row = frappe._dict({"name": "p1", "read": 0, "activity": {"name": "h1", "action": "comment"}})
+        row = frappe._dict(
+            {
+                "name": "p1",
+                "read": 0,
+                "activity": {"name": "h1", "action": "comment", "actor": "a@example.com"},
+                "node_title": "Plan",
+                "node_kind": "document",
+            }
+        )
         result = {"rows": [row], "next_cursor": None}
         with patch.object(routes.activity_core, "notifications", return_value=result) as workflow:
             answer = routes.notifications_list(cursor="b2Zmc2V0OjAw", unread="1")

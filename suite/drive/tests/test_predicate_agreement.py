@@ -254,13 +254,19 @@ class TestPredicateAgreement(IntegrationTestCase):
         self.assertGreater(compared, 200)
         self.assertGreater(admitted, 20)
 
-    def test_an_admin_has_no_filter_and_manage_everywhere(self):
+    def test_the_system_has_no_filter_and_manage_everywhere(self):
         rng = random.Random(7)
         nodes, _grants = self._seed_tree(rng)
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        system = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
+        with patch("suite.drive.framework.principals_for", return_value=system):
+            self.assertEqual(framework._list_predicate(NODE_COLUMN, system.user), "")
+        self.assertTrue(all(effective_role(node, system) == MANAGE for node in nodes))
+
+    def test_a_suite_admin_is_filtered_by_their_grants(self):
+        # ADR 0001: the admin override is Manage alone, never a read of every row.
+        admin = Principals("admin@example.com", ("admin@example.com",), (), is_admin=True)
         with patch("suite.drive.framework.principals_for", return_value=admin):
-            self.assertEqual(framework._list_predicate(NODE_COLUMN, admin.user), "")
-        self.assertTrue(all(effective_role(node, admin) == MANAGE for node in nodes))
+            self.assertIn("EXISTS", framework._list_predicate(NODE_COLUMN, admin.user))
 
     def test_a_caller_with_no_principals_sees_nothing(self):
         nobody = Principals("Guest", (), ())

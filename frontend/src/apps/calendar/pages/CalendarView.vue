@@ -33,6 +33,7 @@ import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetim
 import { eventRowId, sameEvent, serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { gridEventFields, type GridEvent } from '@/apps/calendar/utils/eventWrite'
 import { weekSpanLabel } from '@/apps/calendar/utils/format'
 import { rememberCalendarView } from '@/apps/calendar/utils/lastView'
 import {
@@ -52,6 +53,7 @@ import {
 } from '@/apps/calendar/utils/recurringScope'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/platform/page-meta'
+import { userTimeZone } from '@/platform/time-zone'
 import { useRootStore } from '@/stores/root'
 
 const dayjs = inject('$dayjs')
@@ -378,7 +380,7 @@ const events = useQuery(api.calendar.events.sharedWindow, () => {
     account: store.accountId,
     from_date: from.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
     to_date: to.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-    time_zone: dayjs.tz.guess(),
+    time_zone: userTimeZone(),
   }
 })
 const eventRows = computed(() => events.data?.map(transformEvent))
@@ -389,7 +391,7 @@ const todayEvents = useQuery(api.calendar.events.sharedWindow, () => {
     account: store.accountId,
     from_date: start.utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
     to_date: start.endOf('day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-    time_zone: dayjs.tz.guess(),
+    time_zone: userTimeZone(),
   }
 })
 const todayRows = computed(() => todayEvents.data?.map(transformEvent))
@@ -494,7 +496,7 @@ watch(
         account: store.accountId,
         text: searchWords.value,
         limit: SEARCH_RESULT_LIMIT,
-        time_zone: dayjs.tz.guess(),
+        time_zone: userTimeZone(),
         filters: searchFilters.params.value,
       }
     }, 180)
@@ -1000,7 +1002,23 @@ watch(
   { immediate: true },
 )
 
-const eventToBeUpdated = reactive({})
+// The event being dragged: the grid's copy of it, then the move it was given.
+type DraggedEvent = GridEvent & {
+  account?: string
+  uid?: string
+  event_id?: string
+  master_id?: string
+  master_start?: string
+  recurrence_id?: string
+  participants?: { email: string }[]
+  isAllDay?: boolean
+  isDraft?: boolean
+  fromDateTime?: string
+  toDateTime?: string
+  masterTimeZone?: string
+  startBeforeDrag?: string
+}
+const eventToBeUpdated = reactive<DraggedEvent>({})
 const showRecurringEventModal = ref(false)
 const updateScope = ref<RecurringScope>('series')
 const showNotifyModal = ref(false)
@@ -1064,7 +1082,7 @@ const submitEvent = (sendEmail: boolean) => {
   if (!eventToBeUpdated.isAllDay) {
     // The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
     // same numbers would be reinterpreted in the event's original zone.
-    eventToBeUpdated.time_zone = dayjs.tz.guess()
+    eventToBeUpdated.time_zone = userTimeZone()
     const start = dayjs(eventToBeUpdated.fromDateTime)
     const end = dayjs(eventToBeUpdated.toDateTime)
     const diff = dayjs.duration(end.diff(start))
@@ -1143,7 +1161,7 @@ const instanceStart = () => {
   const eventZone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
   if (eventToBeUpdated.isAllDay || !eventZone || !dayjs?.tz) return eventToBeUpdated.start
   return dayjs
-    .tz(eventToBeUpdated.fromDateTime, dayjs.tz.guess())
+    .tz(eventToBeUpdated.fromDateTime, userTimeZone())
     .tz(eventZone)
     .format('YYYY-MM-DD[T]HH:mm:ss')
 }
@@ -1189,7 +1207,8 @@ async function editEventInstanceSubmit(input: { sendEmail: boolean }) {
 
 const splitSeries = useMutation(api.calendar.events.splitSeries, { silent: true })
 const splitSeriesInput = ({ sendEmail }: { sendEmail: boolean }) => ({
-  ...eventToBeUpdated,
+  ...gridEventFields(eventToBeUpdated),
+  account: eventToBeUpdated.account,
   master_id: eventToBeUpdated.master_id,
   recurrence_id: eventToBeUpdated.recurrence_id,
   send_scheduling_messages: sendEmail,
@@ -1207,8 +1226,10 @@ async function splitSeriesSubmit(input: { sendEmail: boolean }) {
 
 const editEvent = useMutation(api.calendar.events.update, { silent: true })
 const editEventInput = ({ sendEmail }: { sendEmail: boolean }) => ({
-  ...eventToBeUpdated,
+  ...gridEventFields(eventToBeUpdated),
+  account: eventToBeUpdated.account,
   id: serverEventId(eventToBeUpdated),
+  uid: eventToBeUpdated.uid,
   send_scheduling_messages: sendEmail,
 })
 async function editEventSubmit(input: { sendEmail: boolean }) {

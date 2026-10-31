@@ -43,6 +43,7 @@ export function submissionDetails(row: WireDetails) {
     priority: row.priority,
     next_retry: row.next_retry ?? undefined,
     dsn_count: row.dsn_count,
+    dsn_thread_id: row.dsn_thread_id ?? undefined,
     mdn_count: row.mdn_count,
   }
 }

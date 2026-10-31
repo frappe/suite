@@ -86,6 +86,8 @@ suite.mail.patches.move_screener_to_unscreened_keyword
 suite.mail.patches.turn_reject_rules_into_spam
 execute:frappe.db.set_single_value("Mail Settings", "enable_email_classification", 1)
 suite.mail.patches.group_by_date
+# T3-27: the Screening gate keeps delivery reports unmarked.
+suite.mail.patches.rebuild_screening_gates #delivery-reports
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
@@ -119,3 +121,5 @@ suite.drive.patches.migrate_preview_size_unit #2026-10-06
 suite.drive.patches.build
 suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup
+# ADR 0001: a Suite Admin edits only with a grant; gives them the creator grants the override skipped.
+suite.drive.patches.grant_admin_creators_edit

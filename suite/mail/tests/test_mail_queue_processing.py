@@ -154,6 +154,36 @@ class RefusedMail(_Processing):
         self.assertFalse(doc.retries)
 
 
+class ReplacedDraft(_Processing):
+    """Saving a draft again replaces it: the new version is created, then the old one destroyed."""
+
+    def destroyed(self) -> list[str]:
+        return [
+            email_id
+            for request in self.server.requests
+            for name, arguments, _call_id in request["methodCalls"]
+            if name == "Email/set"
+            for email_id in arguments.get("destroy") or []
+        ]
+
+    def test_a_refused_replacement_leaves_the_draft_it_was_replacing(self):
+        refusal = {"type": "blobNotFound", "description": "blobId B0 does not exist on this server."}
+        self.server.respond("Email/set", {"notCreated": {f"draft-{QUEUE}": refusal}})
+
+        doc = self.process(id="e0", save_as_draft=1)
+
+        self.assert_retried(doc, "Failed to Draft")
+        self.assertEqual(self.destroyed(), [])
+
+    def test_a_saved_replacement_destroys_the_draft_it_replaces(self):
+        self.server.respond("Email/set", DRAFTED)
+
+        doc = self.process(id="e0", save_as_draft=1)
+
+        self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
+        self.assertEqual(self.destroyed(), ["e0"])
+
+
 class MaybeAppliedMail(_Processing):
     """An error after which the submission may have happened all the same: sending it again
     could send the mail twice, so the row waits for a person instead of the retry worker."""

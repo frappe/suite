@@ -792,14 +792,19 @@ def ticket_ok(token: str, password_hash: str, exp: str, mac: str) -> bool:
 
 ### 4.9 Suite Admin bypass and privacy
 
-A Suite Admin's effective role is MANAGE on every node. It resolves
-before grants, so no deny touches it. `explain()` reports the source as
-`site admin` [002].
+Superseded in part by [Drive ADR 0001](../../suite/drive/docs/adr/0001-suite-admin-administers-but-does-not-edit.md).
+A Suite Admin passes every check that needs MANAGE at every node: sharing,
+restoring what someone else trashed, and deleting for good. It resolves before
+grants, so no deny touches it. Below MANAGE the admin's effective role is the
+one their grants give: reading, commenting, uploading, and editing need a real
+grant. `access.holds_without_grant` is the one place this rule lives. The
+`Administrator` account and Drive's own workflows (`Principals.is_system`) keep
+MANAGE everywhere, and `explain()` reports their source as `system`.
 
 Two guardrails bind the admin as well: no `$PUBLIC` grant and no
 `$LINK` grant on a root node (`kind=root`) [007 §5, 008 §9].
 
-**Privacy statement.** A Suite Admin reads every Personal root on the site, including content its owner never shared, and including Archived roots. This is today's behaviour (`suite/drive/api/permissions.py:31`), kept on purpose. Offboarding relies on it: content a departed user never shared is reachable by Suite Admins only [001]. An admin write records the admin as actor; an admin read records nothing.
+**Privacy statement.** A Suite Admin does not read a Personal root's content, an Archived root's content, or anything else without a grant. To read it, they grant themselves a role, and that grant change is recorded. Offboarding does not need a read: the retained-content transfer moves a disabled user's content with Drive's own authority and records the admin as actor (ADR 0001).
 
 Rejected: `$ROLE:Suite Admin` grant rows. A row per root that must always exist and never be denied rebuilds the bypass out of data, with an outage for every missed row [002].
 
@@ -1917,8 +1922,8 @@ Rules that hold for every row above.
 - The activity row carries `via_link` when the grant that decided the right
   named a link, and `client` (the User-Agent) on WebDAV requests
   [008 §6, 009 §10].
-- A Suite Admin holds MANAGE everywhere and is never refused by a grant
-  [002].
+- A Suite Admin passes every MANAGE check and is never refused one by a
+  grant. Below MANAGE they hold only what their grants give (ADR 0001).
 
 ### 8.3 Create, per kind
 
@@ -2138,8 +2143,21 @@ matching `path LIKE CONCAT(:old_prefix, '%')` in the source root.
 
 Active and Trashed nodes both count. Reservations never move [010 §3, §8].
 Own grants on the moved nodes travel with them, because grants name node
-ids and no id changes [009 §7]. The creator grant fires when the mover
-lands below EDIT at the destination.
+ids and no id changes [009 §7]. A signed-in mover keeps the role they had
+on the moved node: when their role at the destination would be lower, the
+move writes one grant for them on the node at their old role. A mover who
+already holds a grant on the node, or who reached the destination through a
+link, gets no row. This replaced an EDIT-only grant, which cost a
+non-admin mover the right to share their own file [R2-T1-24].
+
+`GET /nodes/<id>/move-preview?parent_node=<dest>` is the dry run that the
+move confirmation reads (unified frontend §5.7). It checks the access that
+the move checks (EDIT on the node, UPLOAD on `dest`), and writes and locks
+nothing. It answers `{gains, role_now, role_after}`. `gains` holds each
+principal whose nearest live grant would give it a higher role under `dest`
+than it has now, as `{principal, role, person?}`. Every link is `$LINK`,
+without its token. `role_now` and `role_after` are the mover's own role on
+the node before and after the move.
 
 Benchmark: the subtree rewrite is 9.1 ms for 1000 nodes and is not affected
 by the frozen `(parent_node, state, title)` index [004].
@@ -3242,7 +3260,10 @@ and get the same error [012].
   and the row key; `person` is the §11.3 person object, present when the
   principal is a user, so the dialog shows a name and an avatar without a
   second request. `owner` on the list is the person whose Personal root
-  holds the node, `null` in the Shared root. `grants` holds the node's
+  holds the node, `null` in the Shared root. The dialog also shows
+  "Added by <name>" from the node's own `owner` (§11.3) when that is a
+  different person, and always in the Shared root, so the person who added
+  the node stays visible. That line is not the Owner row [R2-T1-24]. `grants` holds the node's
   local rows, expired ones included. `inherited` holds every live grant on
   an ancestor, nearest
   ancestor first, read in one query over the chain (`EXPLAIN_SQL` without
@@ -3815,9 +3836,9 @@ reachable over DAV. No DAV MOVE crosses roots.
 | UNLOCK | the lock owner, or a Suite Admin | |
 | PROPPATCH | EDIT | node |
 
-Unreadable is always 404, never 403. The Suite Admin bypass applies to what
-an admin reaches by path; there is no admin mount of other users' roots
-[009 §2].
+Unreadable is always 404, never 403. The Suite Admin bypass applies only to
+MANAGE checks on what an admin reaches by path; there is no admin mount of
+other users' roots [009 §2].
 
 ### 12.2 Content documents
 

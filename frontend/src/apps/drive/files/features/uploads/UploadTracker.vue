@@ -47,6 +47,7 @@
           <p
             class="mt-1 truncate text-sm"
             :class="entry.state === 'failed' ? 'text-ink-red-7' : 'text-ink-gray-5'"
+            :title="entry.state === 'failed' ? status(entry) : undefined"
           >
             {{ status(entry) }}
           </p>

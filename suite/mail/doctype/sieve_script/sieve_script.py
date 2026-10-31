@@ -1138,6 +1138,10 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
       files into the Inbox itself, so naming it would only add a lookup. The accepted branch above
       does name it, because it is reached by spam too, and an explicit `fileinto` is what keeps a
       trusted sender's mail out of Junk.
+    - A delivery report (`multipart/report; report-type=delivery-status`, RFC 3464) the server has
+      not classified as spam is kept unmarked, ahead of that: it comes from MAILER-DAEMON, whom
+      nobody accepts, yet it is about mail the user sent, not from a new sender. Spam is left to
+      the server, so backscatter about mail the user never sent still goes to Junk.
     - Otherwise (spam from an unrecognised sender) nothing is done, so the server's default filtering
       assigns the mailbox: Junk, unless Stalwart overrides the verdict because the sender is one of the
       user's contacts or replied to the user's own mail, and delivers it to the Inbox as ham.
@@ -1174,6 +1178,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     # Mail the server has not classified as spam (spamtest value below 5, i.e. ham or unscored) is
     # screened; spam falls through to the server's default filtering.
     not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "5"'
+    delivery_report_test = 'header :matches "Content-Type" "multipart/report*delivery-status*"'
 
     lines = ["# Screening"]
     if accepted_test:
@@ -1185,13 +1190,16 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
             f'  fileinto "{inbox_mailbox_path}";',
             "  stop;",
             "}",
-            f"elsif {not_spam_test} {{",
         ]
-    else:
-        # Nothing trusted yet → screen every non-spam sender (only reached after the Spam block).
-        lines.append(f"if {not_spam_test} {{")
 
+    # With nothing trusted yet, the gate opens here (only reached after the Spam block).
+    opener = "elsif" if accepted_test else "if"
     lines += [
+        f"{opener} allof ({not_spam_test}, {delivery_report_test}) {{",
+        "  keep;",
+        "  stop;",
+        "}",
+        f"elsif {not_spam_test} {{",
         f'  keep :flags "{UNSCREENED_KEYWORD}";',
         "  stop;",
         "}",

@@ -371,7 +371,7 @@ class TestContentContract(UnitTestCase):
                 self.assertEqual(signature.parameters["doctype"].default, None)
 
     def test_the_list_predicate_disappears_for_an_admin_and_refuses_a_stranger(self):
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         nobody = Principals("Guest", (), ())
         with patch("suite.drive.framework.principals_for", return_value=admin):
             self.assertEqual(framework._list_predicate("`tabX`.`node`", None), "")
@@ -946,7 +946,7 @@ class TestContentContract(UnitTestCase):
     def test_an_admin_lists_beside_a_share_instead_of_being_locked_out(self):
         # The predicate disappears for an admin, so the engine adds no
         # condition and has nothing to OR the share around.
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         with (
             registered(spec()),
             patch("suite.drive.framework.is_drive_admin", return_value=True),
@@ -1128,7 +1128,7 @@ class TestContentWorkflows(IntegrationTestCase):
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Content Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Content Other", user=OTHER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.person = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
         self.stranger = Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",))
         frappe.cache().delete_value(content._sweep_cursor_key())
@@ -1943,7 +1943,7 @@ def _purge_fixture_roots() -> None:
     clears every reference table and calls `on_purge` for the app rows behind
     a document, so the fixture registry has to be live while it runs.
     """
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", (USER, OTHER)]}, pluck="name")
     if not roots:
         return

@@ -168,6 +168,24 @@ class HeaderLayer(unittest.TestCase):
         self.assertEqual(self.category("alice@example.org", headers), Category.PRIMARY)
         self.assertEqual(self.category("MAILER-DAEMON@mx.example.org", headers), Category.PRIMARY)
 
+    def test_a_bounce_is_primary_though_generated_by_a_system(self):
+        # As Stalwart sends one: from MAILER-DAEMON, auto-generated, with no thread headers.
+        headers = {
+            "Auto-Submitted": "auto-generated",
+            "Content-Type": 'multipart/report; report-type="delivery-status"; \r\n\tboundary="b1"',
+        }
+        self.assertEqual(self.category("MAILER-DAEMON@mx.example.org", headers), Category.PRIMARY)
+
+        headers["Content-Type"] = "multipart/report; report-type=disposition-notification"
+        self.assertEqual(self.category("noreply@example.org", headers), Category.PRIMARY)
+
+    def test_a_system_report_on_anything_else_is_still_updates(self):
+        headers = {
+            "Auto-Submitted": "auto-generated",
+            "Content-Type": "multipart/report; report-type=feedback-report",
+        }
+        self.assertEqual(self.category("abuse@isp.example", headers), Category.UPDATES)
+
     def test_headers_are_read_whatever_their_case_and_folding(self):
         headers = {"list-id": "<dev.lists.example.org>", "PRECEDENCE": "List"}
         self.assertEqual(self.category("bob@example.net", headers), Category.FORUMS)

@@ -124,12 +124,6 @@ export const routes: RouteRecordRaw[] = [
     meta: { frame: 'none', scroll: 'content', title: 'Change password' },
   },
   {
-    path: '/suite/account-unavailable',
-    name: 'suite-account-unavailable',
-    component: () => import('@/shell/AccountAccessView.vue'),
-    meta: { frame: 'none', scroll: 'content', title: 'Account setup required' },
-  },
-  {
     path: '/draw',
     redirect: '/home',
     meta: areaMeta('home', 'Home'),

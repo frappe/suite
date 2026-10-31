@@ -66,6 +66,10 @@ website_route_rules = [
     {"from_route": "/meet/<path:app_path>", "to_route": "suite"},
     {"from_route": "/calendar", "to_route": "suite"},
     {"from_route": "/calendar/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/people", "to_route": "suite"},
+    {"from_route": "/people/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/admin", "to_route": "suite"},
+    {"from_route": "/admin/<path:app_path>", "to_route": "suite"},
 ]
 
 home_page = "suite"
@@ -280,6 +284,7 @@ doc_events = {
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
             "suite.mail.email_suggestions.clear_directory_addresses",
+            "suite.mail.events.sync_identity_names",
         ],
         "on_trash": [
             "suite.composition.users.on_trash",

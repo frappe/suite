@@ -214,7 +214,9 @@ class DriveHTTPCase(IntegrationTestCase):
         ensure_user(OWNER)
         ensure_user(STRANGER)
         drop_personal_root(OWNER)
-        cls.admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        cls.admin = Principals(
+            "Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True
+        )
         cls.owner = Principals(OWNER, (OWNER, "$GENERAL"), ("$PUBLIC",))
         cls.stranger = Principals(STRANGER, (STRANGER, "$GENERAL"), ("$PUBLIC",))
 

@@ -156,9 +156,23 @@ class Acc:
         return max(self.own or 0, self.open or 0)
 
 
+def holds_without_grant(need: int, principals: Principals) -> bool:
+    """Whether `need` is met at every node before any grant is read (ADR 0001).
+
+    Drive's own account holds every right. A Suite Admin holds Manage and
+    nothing below it: they share, restore what others trashed, and delete for
+    good anywhere, but read, comment, and edit only what a grant gives them.
+    """
+    return principals.is_system or (principals.is_admin and need >= MANAGE)
+
+
 def effective_role(node: Mapping, principals: Principals) -> int:
-    """Resolve one node from its materialized ancestry and current grant rows."""
-    if principals.is_admin:
+    """Resolve one node from its materialized ancestry and current grant rows.
+
+    A Suite Admin gets the role their grants give, not MANAGE: this is what an
+    editor shows them. `check` and `require` add the admin's Manage on top.
+    """
+    if principals.is_system:
         return MANAGE
     if not principals.all():
         return 0
@@ -173,7 +187,7 @@ def effective_roles(
     principals: Principals,
 ) -> dict[str, int]:
     """Resolve a page of children from the two grant result sets."""
-    if principals.is_admin:
+    if principals.is_system:
         return dict.fromkeys(child_rows, MANAGE)
 
     ticket_results = {}
@@ -292,7 +306,7 @@ def _expired_link_in_rows(node, principals, need, current_rows, depth, ticket_re
 
 
 def check(node: Mapping, need: int, principals: Principals) -> bool:
-    return effective_role(node, principals) >= need
+    return holds_without_grant(need, principals) or effective_role(node, principals) >= need
 
 
 def require(node: Mapping, need: int, principals: Principals) -> str | None:
@@ -302,7 +316,7 @@ def require(node: Mapping, need: int, principals: Principals) -> str | None:
     This lets write workflows bind a Guest/link-authorized operation to the
     exact capability that made it possible without issuing another grant query.
     """
-    if principals.is_admin:
+    if holds_without_grant(need, principals):
         return None
     if not principals.all():
         role, rows, depth, ticket_results = 0, [], {}, {}
@@ -382,7 +396,7 @@ def require_from_rows(
     Successful listing checks stay inside their fixed query budget. A denied
     check may issue the expired-link probe needed to distinguish its error.
     """
-    if principals.is_admin:
+    if holds_without_grant(need, principals):
         return
     depth = {node_id: index for index, node_id in enumerate(chain_ids(node))}
     ticket_results = {}
@@ -428,8 +442,8 @@ def describe(node: Mapping, principals: Principals) -> dict:
     reports; it never refuses. A caller below READ is not this function's
     problem: `require` has already raised by the time an expansion is built.
     """
-    if principals.is_admin:
-        return _admin_description()
+    if principals.is_system:
+        return _system_description()
     if not principals.all():
         return _empty_description()
 
@@ -449,8 +463,8 @@ def describe_page(
     on the role alone. The deciding row is in the same result set, so an
     `?expand=access` list costs no query that a plain list did not already run.
     """
-    if principals.is_admin:
-        return {child_id: _admin_description() for child_id in child_rows}
+    if principals.is_system:
+        return {child_id: _system_description() for child_id in child_rows}
     if not principals.all():
         return {child_id: _empty_description() for child_id in child_rows}
 
@@ -491,15 +505,28 @@ def _describe_rows(
         "via_link": _authorizing_link(rows, depth, principals, role, ticket_results) if role else None,
         "source_node": winner.node if winner else None,
         "source_principal": winner.principal if winner else None,
+        "can_manage": role >= MANAGE or holds_without_grant(MANAGE, principals),
     }
 
 
-def _admin_description() -> dict:
-    return {"role": MANAGE, "via_link": None, "source_node": None, "source_principal": None}
+def _system_description() -> dict:
+    return {
+        "role": MANAGE,
+        "via_link": None,
+        "source_node": None,
+        "source_principal": None,
+        "can_manage": True,
+    }
 
 
 def _empty_description() -> dict:
-    return {"role": NONE, "via_link": None, "source_node": None, "source_principal": None}
+    return {
+        "role": NONE,
+        "via_link": None,
+        "source_node": None,
+        "source_principal": None,
+        "can_manage": False,
+    }
 
 
 def chain_roles(node: Mapping, principals: Principals) -> dict[str, int]:
@@ -510,7 +537,7 @@ def chain_roles(node: Mapping, principals: Principals) -> dict[str, int]:
     the chain is capped at depth 40 (§3.1), so the repeated pass is bounded.
     """
     chain = chain_ids(node)
-    if principals.is_admin:
+    if principals.is_system:
         return dict.fromkeys(chain, MANAGE)
     if not principals.all():
         return dict.fromkeys(chain, NONE)
@@ -550,8 +577,8 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
     """
     require(node, MANAGE, principals)
     subject = subject or principals
-    if subject.is_admin:
-        return {"role": MANAGE, "source": "site admin", "rows": []}
+    if subject.is_system:
+        return {"role": MANAGE, "source": "system", "rows": []}
 
     chain = chain_ids(node)
     depth = {node_id: index for index, node_id in enumerate(chain)}
@@ -1237,7 +1264,7 @@ def _tree(node: Mapping) -> str:
 
 
 def _require_manage(node: Mapping, principals: Principals) -> None:
-    if effective_role(node, principals) < MANAGE:
+    if not check(node, MANAGE, principals):
         raise DriveForbidden(
             _("You do not have the required access to Drive node {0}").format(node.get("name"))
         )

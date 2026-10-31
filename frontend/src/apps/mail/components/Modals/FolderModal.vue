@@ -70,9 +70,8 @@
                 theme="amber"
                 :dismissable="false"
               >
-                <template #footer>
+                <template #actions>
                   <Button
-                    class="col-span-full"
                     :label="__('Enable')"
                     variant="outline"
                     @click="showEnableFolderAutomation = true"

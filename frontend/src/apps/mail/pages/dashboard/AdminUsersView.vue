@@ -37,7 +37,13 @@
               :description="user.account || user.email"
             >
               <template v-if="user.account" #actions>
+                <FailedCreationActions
+                  v-if="failedCreation(user.account)"
+                  :request="failedCreation(user.account)!"
+                  @settled="reloadUsers"
+                />
                 <Button
+                  v-else
                   variant="ghost"
                   :label="__('Review account')"
                   :route="`/admin/mail/accounts/${encodeURIComponent(user.account)}`"
@@ -61,6 +67,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
+import FailedCreationActions from '@/apps/mail/pages/dashboard/FailedCreationActions.vue'
 import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import { DashboardLayout } from '@/platform/dashboard'
@@ -89,6 +96,17 @@ const failedUsers = computed(() =>
     (user) => user.setup_status === 'Setup failed' || user.setup_status === 'Deletion failed',
   ),
 )
+// An Admin's direct creation that did not finish; Retry and Remove settle it from its user's alert.
+const failedCreations = useQuery(api.mail.admin.invites.list, () => ({
+  status: 'Setup failed' as const,
+  start: 0,
+  page_length: 100,
+}))
+function failedCreation(account: string) {
+  return failedCreations.data?.items.find((request) => request.account === account)
+}
+const reloadUsers = () =>
+  Promise.all([users.refetch(), failedCreations.refetch()]).catch(() => {})
 const tabs = [
   { value: 'users', label: __('Users') },
   { value: 'invitations', label: __('Invitations') },
@@ -96,7 +114,12 @@ const tabs = [
 const adding = ref(false)
 useAddOnArrival(adding)
 const invitations = useTemplateRef('invitations')
-async function reload() {
+// An invitation waits under Invitations; an account created directly, set up or not, is a user.
+async function reload(invited: boolean) {
+  if (!invited) {
+    tab.value = 'users'
+    return reloadUsers()
+  }
   if (tab.value !== 'invitations') await router.push('/admin/users/invitations')
   await nextTick()
   await invitations.value?.reloadInvites()

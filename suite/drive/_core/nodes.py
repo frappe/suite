@@ -21,9 +21,10 @@ from frappe.utils import get_datetime, now, now_datetime
 
 from suite.drive._core import activity, content, previews
 from suite.drive._core.access import (
+    EXPLAIN_SQL,
     POINT_SQL,
-    _admin_description,
     _describe_rows,
+    _system_description,
     add_creator_grant,
     chain_ids,
     chain_roles,
@@ -762,7 +763,7 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
             as_dict=True,
         )
     }
-    if principals.is_admin:
+    if principals.is_system:
         return counts
 
     decided = frappe.db.sql(
@@ -1623,13 +1624,14 @@ def _move(
         from suite.drive._core.changes import emit_for_node
 
         emit_for_node(current.name)
+        role_before = effective_role(current, principals)
         _rewrite_subtree(current, destination, destination_root, actor=principals.user)
         if source_root != destination_root:
             release(source_root, delta)
 
         moved = _node(current.name)
         activity_link = source_link or destination_link
-        _add_mover_grant(moved, principals, destination_link=destination_link)
+        _add_mover_grant(moved, principals, role_before=role_before, destination_link=destination_link)
         _record_activity(
             moved.name,
             "move",
@@ -1667,19 +1669,91 @@ def _lock_move_rows(
     return current, destination, subtree
 
 
-def _add_mover_grant(node: dict, principals: Principals, *, destination_link: str | None) -> bool:
-    """Keep a mover at EDIT only when their authority no longer travels."""
-    if principals.user == "Guest" or destination_link or effective_role(node, principals) >= EDIT:
+def _add_mover_grant(
+    node: Mapping, principals: Principals, *, role_before: int, destination_link: str | None
+) -> bool:
+    """Give a mover back the role they had, when it does not travel with the node (§8.7)."""
+    role = _kept_mover_role(node, principals, role_before=role_before, destination_link=destination_link)
+    if role is None:
         return False
     frappe.get_doc(
         {
             "doctype": "Drive Grant",
             "node": node.get("name"),
             "principal": principals.user,
-            "role": EDIT,
+            "role": role,
         }
     ).insert(ignore_permissions=True)
     return True
+
+
+def _kept_mover_role(
+    node: Mapping, principals: Principals, *, role_before: int, destination_link: str | None
+) -> int | None:
+    """Answer the role a mover's own grant must keep on `node` at its new place, or None.
+
+    A move must not cost the mover the right to share their own file: someone
+    with Manage in My files who moves a file into a folder where they can only
+    upload keeps Manage on it. A Guest, and a caller who reached the
+    destination through a link, get no row, as with the creator grant (§4.5).
+    A grant the mover already has on the node travels with it and stays as
+    whoever wrote it left it.
+    """
+    if principals.user == "Guest" or destination_link or effective_role(node, principals) >= role_before:
+        return None
+    if frappe.db.exists("Drive Grant", {"node": node.get("name"), "principal": principals.user}):
+        return None
+    return role_before
+
+
+def preview_move(principals: Principals, node_id: str, destination_id: str) -> dict:
+    """Answer what moving a node into `destination_id` would change in who can reach it.
+
+    Unified frontend §5.7: a move that widens access is confirmed first, and
+    the client cannot work this out itself, because reading the destination's
+    grants needs Manage there. `gains` lists each principal whose nearest
+    grant would give it a higher role under the destination than it has now,
+    as `{principal, role}`; every share link is `$LINK`, because a token is a
+    secret this caller may not hold. `role_now` and `role_after` are the
+    mover's own role on the node before and after the move.
+
+    Nothing is written or locked. It checks the access the move checks (EDIT
+    on the node, UPLOAD on the destination) and leaves cycles, title
+    conflicts and quota to the move.
+    """
+    current = _node(node_id)
+    reject_illegal_root_operation(current, "move")
+    require(current, EDIT, principals)
+    destination = _node(destination_id)
+    destination_link = require(destination, UPLOAD, principals)
+    before_chain = chain_ids(current)
+    after_chain = [*chain_ids(destination), current.name]
+    moved = {**current, "root": after_chain[0], "path": "/".join(after_chain[1:-1])}
+    rows = frappe.db.sql(EXPLAIN_SQL, {"chain": [*before_chain, *after_chain], "now": now()}, as_dict=True)
+    before = _nearest_roles(rows, before_chain)
+    gains: dict[str, int] = {}
+    for principal, role in _nearest_roles(rows, after_chain).items():
+        if principal != principals.user and role > before.get(principal, 0):
+            shown = "$LINK" if principal.startswith("$LINK:") else principal
+            gains[shown] = max(gains.get(shown, 0), role)
+    role_now = effective_role(current, principals)
+    kept = _kept_mover_role(moved, principals, role_before=role_now, destination_link=destination_link)
+    return {
+        "gains": [{"principal": principal, "role": role} for principal, role in sorted(gains.items())],
+        "role_now": role_now,
+        "role_after": kept if kept is not None else effective_role(moved, principals),
+    }
+
+
+def _nearest_roles(rows: Sequence[Mapping], chain: Sequence[str]) -> dict[str, int]:
+    """Map each principal to the role of its grant nearest the end of `chain`."""
+    depth = {node: index for index, node in enumerate(chain)}
+    nearest: dict[str, tuple[int, int]] = {}
+    for row in rows:
+        at = depth.get(row["node"])
+        if at is not None and at >= nearest.get(row["principal"], (-1, 0))[0]:
+            nearest[row["principal"]] = (at, row["role"])
+    return {principal: role for principal, (_, role) in nearest.items()}
 
 
 def _trash(principals: Principals, node_id: str) -> dict:
@@ -1738,8 +1812,7 @@ def _restore(principals: Principals, node_id: str, *, parent_node: str | None) -
             raise DriveConflict(_("Only a trash root can be restored"))
         subtree = _subtree(current)
         _validate_subtree(current, subtree)
-        via_link = require(current, EDIT, principals)
-        _require_restore_actor(current, principals, via_link)
+        via_link = _require_restore_actor(current, principals)
 
         original_available = _original_parent_available(current)
         if original_available:
@@ -1858,7 +1931,7 @@ def purge_expired_trash_root(node: str, cutoff: datetime) -> int:
         ):
             frappe.db.release_savepoint(savepoint)
             return 0
-        system = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        system = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         subtree = _subtree(current)
         _validate_purge_root(current)
         count = _purge_locked(current, system, via_link=None, subtree=subtree)
@@ -2236,7 +2309,12 @@ def _original_parent_available(node: dict) -> bool:
     return True
 
 
-def _require_restore_actor(node: dict, principals: Principals, via_link: str | None) -> None:
+def _require_restore_actor(node: dict, principals: Principals) -> str | None:
+    """Require EDIT of whoever trashed the node and MANAGE of anyone else.
+
+    Returns the link that supplied the right. A guest counts as the one who
+    trashed it only through the same link.
+    """
     activity = frappe.db.get_value(
         "Drive Activity",
         {"node": node.get("name"), "action": "trash", "at": node.get("trashed_at")},
@@ -2244,11 +2322,11 @@ def _require_restore_actor(node: dict, principals: Principals, via_link: str | N
         as_dict=True,
         order_by="creation desc",
     )
-    same_actor = bool(activity and activity.actor == principals.user)
-    if principals.user == "Guest":
-        same_actor = same_actor and bool(via_link) and activity.via_link == via_link
-    if not same_actor:
-        require(node, MANAGE, principals)
+    if activity and activity.actor == principals.user:
+        via_link = require(node, EDIT, principals)
+        if principals.user != "Guest" or (via_link and activity.via_link == via_link):
+            return via_link
+    return require(node, MANAGE, principals)
 
 
 def _deduplicated_title(parent: str, title: str, *, exclude: str | None = None) -> str:
@@ -3307,7 +3385,7 @@ def _readable_rows(
         return []
     chains = {row.name: chain_ids(row) for row in rows}
     union = {node_id for chain in chains.values() for node_id in chain}
-    grant_rows = [] if principals.is_admin else _grant_rows(list(union), principals)
+    grant_rows = [] if principals.is_system else _grant_rows(list(union), principals)
     by_node = collections.defaultdict(list)
     for grant_row in grant_rows:
         by_node[grant_row.node].append(grant_row)
@@ -3319,8 +3397,8 @@ def _readable_rows(
         depth = {node_id: index for index, node_id in enumerate(chain)}
         candidate_rows = [grant_row for node_id in chain for grant_row in by_node[node_id]]
         detail = (
-            _admin_description()
-            if principals.is_admin
+            _system_description()
+            if principals.is_system
             else _describe_rows(candidate_rows, depth, principals, ticket_results)
         )
         if detail["role"] < READ:
@@ -3362,7 +3440,7 @@ def _attach_breadcrumbs_from_union(
             candidate_rows = [grant for ancestor in prefix for grant in grants_by_node[ancestor]]
             role = (
                 MANAGE
-                if principals.is_admin
+                if principals.is_system
                 else _describe_rows(
                     candidate_rows,
                     {ancestor: index for index, ancestor in enumerate(prefix)},
@@ -3395,7 +3473,7 @@ def _readable_archived_roots(rows: list, principals: Principals, values: dict) -
 
 
 def _visible_root_ids(principals: Principals) -> list[str]:
-    if principals.is_admin:
+    if principals.is_system:
         return frappe.get_all("Drive Root", pluck="name")
     return frappe.db.sql(
         VISIBLE_ROOTS_SQL,

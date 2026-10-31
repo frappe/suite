@@ -7,7 +7,14 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.suite_core.administration import guard_user_change, list_users, require_admin, update_user
-from suite.suite_core.storage import check_addition, effective_limit, set_default, state, validate_cap
+from suite.suite_core.storage import (
+    check_addition,
+    effective_limit,
+    set_default,
+    state,
+    update_limits,
+    validate_cap,
+)
 from suite.tests.utils import ensure_user
 
 GB = 1_000_000_000
@@ -56,6 +63,16 @@ class TestCombinedStorage(TestCase):
     def test_missing_measurements_are_not_zero(self):
         self.assertRaises(frappe.ValidationError, self.check, mail=None)
         self.assertRaises(frappe.ValidationError, self.check, site=None)
+
+    def test_a_user_without_a_mailbox_has_no_mail_usage(self):
+        check_addition(
+            {"users": {"alice": {"cap": 10 * GB}}},
+            {"allowance": 100 * GB, "site_mail": 0, "personal": {"bob": 4 * GB}},
+            user="alice",
+            site_drive=0,
+            personal_drive=9 * GB,
+            delta=GB,
+        )
 
     def test_cleanup_does_not_require_a_measurement(self):
         check_addition({}, {}, user="alice", site_drive=0, personal_drive=0, delta=0)
@@ -109,11 +126,38 @@ class TestAdministrationAccess(IntegrationTestCase):
             self.assertEqual(require_admin(), self.admin)
             self.assertIn(self.normal, {row["name"] for row in list_users()})
 
+    def test_a_user_without_a_full_name_is_listed_by_their_id(self):
+        frappe.db.set_value("User", self.normal, "full_name", None, update_modified=False)
+        with self.set_user(self.admin):
+            row = next(row for row in list_users() if row["name"] == self.normal)
+        self.assertEqual(row["full_name"], self.normal)
+
     def test_normal_users_and_technical_managers_cannot_read_or_mutate_policy(self):
         for user in (self.normal, self.technical):
             with self.subTest(user=user), self.set_user(user):
                 self.assertRaises(frappe.PermissionError, list_users)
                 self.assertRaises(frappe.PermissionError, set_default, GB)
+
+    def test_a_suite_member_without_desk_access_can_be_promoted(self):
+        self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")
+        with self.set_user(self.admin):
+            update_user(self.normal, is_admin=True)
+        self.assertIn("Suite Admin", frappe.get_roles(self.normal))
+
+    def test_a_suite_member_without_desk_access_can_be_capped(self):
+        self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")
+        with self.set_user(self.admin):
+            capped = update_limits([self.normal], 5 * GB)
+            _doc, policy, _measurements = state()
+        self.assertEqual(capped, [{"user": self.normal, "success": True, "error": None}])
+        self.assertEqual(policy["users"][self.normal], {"cap": 5 * GB})
+
+    def test_storage_limits_refuse_recovery_identities_and_missing_users(self):
+        with self.set_user(self.admin):
+            for user in ("missing-policy-test@example.test", "Administrator", "Guest"):
+                with self.subTest(user=user):
+                    [result] = update_limits([user], 5 * GB)
+                    self.assertFalse(result["success"])
 
     def test_an_admin_cannot_disable_their_own_account(self):
         with self.set_user(self.admin):

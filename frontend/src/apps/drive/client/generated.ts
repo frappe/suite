@@ -6,6 +6,7 @@ export type NodeCreateCreateFolderOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeCreateCreateFolderOutputBreadcrumbShape = {
@@ -75,6 +76,7 @@ export type NodeCreateCreateFileOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeCreateCreateFileOutputBreadcrumbShape = {
@@ -152,6 +154,7 @@ export type NodeCreateCreateLinkOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeCreateCreateLinkOutputBreadcrumbShape = {
@@ -226,6 +229,7 @@ export type NodeCreateCreateDocumentOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeCreateCreateDocumentOutputBreadcrumbShape = {
@@ -363,6 +367,7 @@ export type NodeGetOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeGetOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -420,6 +425,7 @@ export type NodePatchRenameOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodePatchRenameOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -502,6 +508,7 @@ export type NodePatchMoveOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodePatchMoveOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -580,6 +587,7 @@ export type NodePatchTrashOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodePatchTrashOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -662,6 +670,7 @@ export type NodePatchRestoreOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodePatchRestoreOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -744,6 +753,7 @@ export type NodePatchStampOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodePatchStampOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -821,6 +831,48 @@ const operationNodePatchStamp: MutationRef<
   loadValidators: async () => (await import('./validators')).operationNodePatchStamp,
 }
 
+export type NodeMovePreviewOutputAccessGainShape = {
+  principal: string
+  role: number
+  person?: NodeMovePreviewOutputPerson
+}
+
+export type NodeMovePreviewOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
+export type NodeMovePreviewInput = { parent_node: string; node: string }
+
+export type NodeMovePreviewOutput = {
+  gains: Array<NodeMovePreviewOutputAccessGainShape>
+  role_now: number
+  role_after: number
+}
+
+export type NodeMovePreviewError =
+  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveForbidden'
+
+const operationNodeMovePreview: QueryRef<
+  NodeMovePreviewInput,
+  NodeMovePreviewOutput,
+  NodeMovePreviewError
+> = {
+  id: 'node_move_preview',
+  owner: 'drive',
+  kind: 'query',
+  publicName: 'nodes.previewMove',
+  method: 'GET',
+  path: 'nodes/{node}/move-preview',
+  prefix: '/api/suite/drive/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveForbidden'],
+  loadValidators: async () => (await import('./validators')).operationNodeMovePreview,
+}
+
 export type NodePurgeInput = { node: string }
 
 export type NodePurgeOutput = { count: number }
@@ -848,6 +900,7 @@ export type NodeChildrenOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeChildrenOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -925,6 +978,7 @@ export type NodeCopyOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodeCopyOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -1084,6 +1138,7 @@ export type NodePutContentOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type NodePutContentOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -1319,6 +1374,7 @@ export type UploadFinishOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type UploadFinishOutputBreadcrumbShape = { name: string; title: string; kind: string }
@@ -1389,7 +1445,18 @@ const operationUploadFinish: MutationRef<UploadFinishInput, UploadFinishOutput, 
 export type NodeActivityOutputActivityShape = {
   name: string
   node: string
-  action: string
+  action:
+    | 'create'
+    | 'rename'
+    | 'move'
+    | 'edit'
+    | 'comment'
+    | 'trash'
+    | 'restore'
+    | 'delete'
+    | 'share_add'
+    | 'share_edit'
+    | 'share_remove'
   actor: string
   at: string | null
   via_link: string | null
@@ -1792,6 +1859,7 @@ export type ViewListOutputAccessShape = {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  can_manage?: boolean
 }
 
 export type ViewListOutputArchivedRootShape = {
@@ -2400,7 +2468,18 @@ const operationCommentDelete: MutationRef<
 export type NotificationsListOutputActivityShape = {
   name: string
   node: string
-  action: string
+  action:
+    | 'create'
+    | 'rename'
+    | 'move'
+    | 'edit'
+    | 'comment'
+    | 'trash'
+    | 'restore'
+    | 'delete'
+    | 'share_add'
+    | 'share_edit'
+    | 'share_remove'
   actor: string
   at: string | null
   via_link: string | null
@@ -2413,6 +2492,15 @@ export type NotificationsListOutputNotificationShape = {
   read: number
   creation: string | null
   activity: NotificationsListOutputActivityShape
+  node_title: string
+  node_kind: string
+  actor: NotificationsListOutputPerson
+}
+
+export type NotificationsListOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
 }
 
 export type NotificationsListInput = { limit?: number; cursor?: string; unread?: boolean }
@@ -2876,6 +2964,7 @@ export const api = {
     trash: operationNodePatchTrash,
     restore: operationNodePatchRestore,
     stamp: operationNodePatchStamp,
+    previewMove: operationNodeMovePreview,
     purge: operationNodePurge,
     children: operationNodeChildren,
     copy: operationNodeCopy,

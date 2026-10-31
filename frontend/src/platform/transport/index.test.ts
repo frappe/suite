@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createTransport, TransportError, type Operation } from './index'
+import { assertSchema } from './schema'
 
 const getNode: Operation<{ node: string; expand?: string[] }, { name: string }> = {
   id: 'node_get',
@@ -285,6 +286,40 @@ describe('transport', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it('sends nothing and logs the operation when its input breaks the contract', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const strict: Operation<{ node: string }, { name: string }> = {
+      ...getNode,
+      publicName: 'nodes.get',
+      loadValidators: async () => ({
+        validateInput: (input) =>
+          assertSchema(
+            input,
+            {
+              type: 'object',
+              properties: { node: { type: 'string' } },
+              additionalProperties: false,
+            },
+            'node_get input',
+          ),
+        validateOutput: () => {},
+      }),
+    }
+    const request = createTransport({ fetch: fetcher }).request(strict, {
+      node: 'n1',
+      role: 'user',
+    } as { node: string })
+
+    await expect(request).rejects.toThrow('node_get input.role is not allowed')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('drive.nodes.get was not sent'),
+      expect.any(TypeError),
+    )
+    log.mockRestore()
+  })
+
   it('passes AbortSignal through without converting AbortError', async () => {
     const client = createTransport({
       fetch: (_url, init) =>
@@ -321,6 +356,28 @@ describe('declared framework response behavior', () => {
     const client = createTransport({ fetch: network })
     await expect(client.request(save, {})).resolves.toBeNull()
     await expect(client.request(save, {})).rejects.toThrow('Expected a void method')
+  })
+  it('treats a v2 answer that only carries messages as a void result', async () => {
+    const send: Operation<{ name: string }, null> = {
+      id: 'send_invite',
+      owner: 'mail',
+      kind: 'mutation',
+      method: 'POST',
+      path: '/api/suite/mail/admin/invites/{name}/send',
+      pathParams: ['name'],
+      empty: true,
+      validateOutput(output): asserts output is null {
+        if (output !== null) throw new TypeError('send_invite output has the wrong type')
+      },
+    }
+    const network = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        messages: [{ message: 'Verification email sent successfully.', indicator: 'green' }],
+      }),
+    )
+    await expect(
+      createTransport({ fetch: network }).request(send, { name: 'invite-1' }),
+    ).resolves.toBeNull()
   })
   it('does not retry a mutation implemented by a legacy GET endpoint', async () => {
     const write: Operation<{ token: string }, unknown> = {

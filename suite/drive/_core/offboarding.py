@@ -1,5 +1,6 @@
 """Move a disabled user's retained tree without restoring trash or changing node identities."""
 
+import dataclasses
 import hashlib
 import json
 
@@ -132,6 +133,9 @@ def transfer(
         _check_combined(target_root.name, current["bytes"], lock=True, source_root=current["source_root"])
     else:
         preflight(target_root, current["bytes"])
+    # The admin holds no grant on what they move, so the move runs with Drive's
+    # own authority and records the admin as its actor (ADR 0001).
+    acting = dataclasses.replace(principals, is_system=True)
     results = []
     # Bounded requests provide observable progress; each item uses Drive's own
     # savepoint. A retry only lists what remains in the source, never copies an
@@ -139,7 +143,7 @@ def transfer(
     for item in current["items"][:50]:
         try:
             _move(
-                principals,
+                acting,
                 item.name,
                 destination,
                 expect_parent_node=current["source_root"],

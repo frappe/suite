@@ -1,7 +1,7 @@
 """Drive activity, recents, favourites, and notification workflows."""
 
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, Literal, get_args
 from uuid import uuid4
 
 import frappe
@@ -19,7 +19,7 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 from suite.suite_core import suite_email
 
-ACTIVITY_ACTIONS = (
+ActivityAction = Literal[
     "create",
     "rename",
     "move",
@@ -31,7 +31,8 @@ ACTIVITY_ACTIONS = (
     "share_add",
     "share_edit",
     "share_remove",
-)
+]
+ACTIVITY_ACTIONS: tuple[ActivityAction, ...] = get_args(ActivityAction)
 # §11.4 fixes one page size for the whole HTTP surface. A record listing is
 # paged by the same helper as a folder page, so it keeps the same default and
 # the same cap rather than a second pair that could drift.
@@ -464,12 +465,23 @@ def notifications(
     A pointer whose activity is gone, or whose node the caller can no longer
     read, is dropped after the SQL window, so a full page can answer short.
     `next_cursor` still advances by the window (§11.4).
+
+    Each row carries its node's current `node_title` and `node_kind`, read for
+    the whole page in one query. They are joined here, not stored: a
+    notification renders from its activity and its node as they are (§9.5).
     """
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
 
     window = page_limit(limit)
     offset = decode_cursor(cursor)
     rows, seen = _visible_notifications(principals, only_unread=only_unread, limit=window, offset=offset)
+    wanted = list({row.activity.node for row in rows})
+    fields = ["name", "title", "kind"]
+    found = frappe.get_all("Drive Node", filters={"name": ["in", wanted]}, fields=fields) if wanted else []
+    nodes = {node.name: node for node in found}
+    for row in rows:
+        node = nodes[row.activity.node]
+        row.node_title, row.node_kind = node.title, node.kind
     return page_of(rows, offset, seen, window)
 
 

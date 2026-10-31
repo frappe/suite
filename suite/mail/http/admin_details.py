@@ -74,7 +74,7 @@ class Quota(TypedDict):
 class Member(TypedDict):
     name: str
     full_name: str
-    user_image: str
+    user_image: str | None
     description: str
     last_active: str | None
     joined_on: str | None

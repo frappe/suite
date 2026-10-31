@@ -36,8 +36,13 @@ class Principals:
     user: str
     own: tuple[str, ...]
     open: tuple[str, ...]
+    # A Suite Admin. Holds Manage at every node without a grant, and nothing
+    # below it: reading, commenting and editing come from grants (ADR 0001).
     is_admin: bool = False
     link_tickets: tuple[tuple[str, str, str], ...] = ()
+    # Drive's own authority: the `Administrator` account and Drive's workflows.
+    # Holds every right at every node.
+    is_system: bool = False
 
     def all(self) -> tuple[str, ...]:
         """Return principals in their structural own/open order."""

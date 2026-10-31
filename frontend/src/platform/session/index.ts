@@ -9,6 +9,8 @@ export interface SessionUser {
   id: string
   fullName: string
   avatar: string | null
+  /** The User's Settings time zone; null when unset. */
+  timeZone: string | null
   email?: string
   [key: string]: unknown
 }
@@ -50,6 +52,7 @@ type AccountResponse = Record<string, unknown> & {
   fullName?: string
   avatar?: string | null
   user_image?: string | null
+  time_zone?: string | null
   roles?: string[] | { system_manager?: boolean; suite_admin?: boolean }
   is_jmap_configured?: boolean
   capabilities?: Partial<SessionCapabilities>
@@ -113,6 +116,7 @@ export function createSession(client: Transport = defaultTransport): Session {
             string(account.fullName) ?? string(account.full_name) ?? user.value?.fullName ?? id,
           avatar:
             string(account.avatar) ?? string(account.user_image) ?? user.value?.avatar ?? null,
+          timeZone: string(account.time_zone),
         }
         capabilities.value = {
           suiteAdmin:
@@ -239,6 +243,7 @@ function cookieUser(id: string, cookies: Record<string, string>): SessionUser {
     email: id,
     fullName: cookies.full_name || id,
     avatar: cookies.user_image || null,
+    timeZone: null,
   }
 }
 

@@ -220,7 +220,6 @@ const moduleGraphDebtGroups = [
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/types',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/composables/useCalendarSearchFilters',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/stores/user',
-      'shell/SuiteCommandPalette.vue|@/apps/calendar/utils/dayjs',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/utils/eventTime',
       'shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailFilterPanel.vue',
       'shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailSearchResult.vue',

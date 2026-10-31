@@ -28,35 +28,21 @@ _PASSWORD_METHODS = frozenset(
         "frappe.core.doctype.user.user.update_password",
     }
 )
-_SETUP_METHODS = frozenset(
-    {
-        "frappe.core.doctype.user.user.get_timezones",
-        "frappe.translate.get_boot_translations",
-        "suite.api.routes.site_get",
-        "suite.api.routes.site_patch",
-        "suite.api.routes.onboarding_get",
-        "suite.api.routes.onboarding_post",
-        "suite.api.routes.get_timezones",
-        "suite.api.routes.get_boot_translations",
-    }
-)
+# Products that run on the user's business Mail account. Drive, Writer and the
+# rest of Suite work without it.
+_MAIL_ACCOUNT_METHODS = ("suite.mail.", "mail.", "suite.calendar.")
 
 
-def _admin_method(method: str) -> bool:
-    from suite.api.routes import ROUTES as suite_routes
+def _mail_admin_method(method: str) -> bool:
     from suite.mail.http.routes import ROUTES as mail_routes
 
-    for target, routes, prefixes in (
-        ("suite.api.routes", suite_routes, ("users.", "storage.", "admin.")),
-        ("suite.mail.http.routes", mail_routes, ("admin.",)),
-    ):
-        for route in routes:
-            if (
-                isinstance(route.public_name, str)
-                and route.public_name.startswith(prefixes)
-                and method == f"{target}.{route.handler}"
-            ):
-                return True
+    for route in mail_routes:
+        if (
+            isinstance(route.public_name, str)
+            and route.public_name.startswith("admin.")
+            and method == f"suite.mail.http.routes.{route.handler}"
+        ):
+            return True
     return method.startswith("suite.mail.api.admin.")
 
 
@@ -75,16 +61,16 @@ def require_access(user: str, *, method: str = "", page: bool = False) -> None:
         if method in _PASSWORD_METHODS or page:
             return
         frappe.throw(_("Change your temporary password before using Suite"), PasswordChangeRequired)
+    if not method.startswith(_MAIL_ACCOUNT_METHODS):
+        return
     failed = current.get("status") in ("Setup failed", "Deleted", "Deletion failed")
     account = frappe.db.get_value("User Settings", {"user": user}, "username")
     if failed or not account:
-        if method in _PASSWORD_METHODS or page:
+        # Remediation is available to a business Admin without a Mail account.
+        # This is not a developer-mode or technical-role bypass.
+        if is_suite_admin(user) and _mail_admin_method(method):
             return
-        # Remediation is available to a business Admin without normal product
-        # access. This is not a developer-mode or technical-role bypass.
-        if is_suite_admin(user) and (method in _SETUP_METHODS or _admin_method(method)):
-            return
-        frappe.throw(_("Complete business Mail account setup before using Suite"), AccountSetupRequired)
+        frappe.throw(_("Complete business Mail account setup before using Mail"), AccountSetupRequired)
 
 
 def authenticated_request() -> None:
@@ -94,7 +80,7 @@ def authenticated_request() -> None:
     path = request.path
     method = frappe.form_dict.get("cmd") or path.removeprefix("/api/v2/method/").removeprefix("/api/method/")
     # Public SPA HTML contains no product data. Its router uses the account
-    # access state to show the password/setup screen; data requests stay gated.
+    # access state to show the password or Mail setup screen; data requests stay gated.
     page = request.method == "GET" and not path.startswith(
         ("/api/", "/private/", "/files/", "/backups/", "/f/")
     )

@@ -193,7 +193,8 @@ class BlockResult(TypedDict):
 
 class DraftAttachment(TypedDict, total=False):
     filename: str
-    file_url: str
+    # A site file just uploaded; null on an attachment the mail server holds as ``blob_id``.
+    file_url: str | None
     blob_id: str
     type: str
     size: int | str
@@ -277,15 +278,13 @@ MimeMessage = TypedDict(
 )
 
 
-class BlobInput(AccountInput):
-    blob_id: str
-
-
 class DeliveryRecipient(TypedDict):
     email: str
     action: str
     status: str
     diagnostic_code: str
+    # The Diagnostic-Code, or else what the bounce's text says about this recipient.
+    reason: str
     remote_mta: str
     will_retry_until: str
 
@@ -293,7 +292,11 @@ class DeliveryRecipient(TypedDict):
 class DeliveryReport(TypedDict):
     reporting_mta: str
     arrival_date: str
+    original_envelope_id: str
     recipients: list[DeliveryRecipient]
+    # The sent message the report is about, when this site sent it.
+    sent_thread_id: str | None
+    submission_id: str | None
 
 
 _OPERATIONS: tuple[
@@ -351,7 +354,7 @@ _OPERATIONS: tuple[
         Literal["one_click", "mailto", "already"],
         None,
     ),
-    (mail.get_delivery_status, "query", "messages.deliveryStatus", BlobInput, DeliveryReport, None),
+    (mail.get_delivery_status, "query", "messages.deliveryStatus", IdInput, DeliveryReport, None),
     (mail.create_mail, "mutation", "messages.create", CreateInput, DraftResult, None),
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),
