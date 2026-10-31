@@ -349,6 +349,30 @@ describe('saveOfflineCopy', () => {
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
   })
 
+  it('reports a picture Drive has not signed after 30 seconds as not saved', async () => {
+    vi.useFakeTimers()
+    const release = setDocumentMedia((id) => ({
+      id,
+      src: ref(null),
+      status: ref('loading' as const),
+      cacheKey: ref(id),
+      refresh: async () => {},
+    }))
+    slides.value = slidesWith(['/files/a.png'], ['media-node-1'])
+
+    const saving = saveOfflineCopy('p1')
+    await vi.advanceTimersByTimeAsync(30_000)
+    const result = await saving
+    release()
+    vi.useRealTimers()
+
+    expect(result).toEqual({
+      ok: false,
+      failed: [{ slideIndex: 1, src: 'media-node-1', status: 'timeout' }],
+      count: 2,
+    })
+  })
+
   it('surfaces a ledger write failure, so the button can report it', async () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('full', 'QuotaExceededError')
@@ -558,6 +582,50 @@ describe('the start-up copy', () => {
     expect(stored.filter((key) => !before.includes(key))).toEqual([])
   })
 
+  it.each([
+    ['a save', 'q3', (id: string) => saveOfflineCopy(id)],
+    ['a visit', 'q4', (id: string) => warmOfflineCopyAssets(id)],
+  ])('rolls back %s only after its slower stores land', async (_label, id, run) => {
+    await saveOfflineCopy(id)
+    const before = recordOf(id).keys
+    shell = () =>
+      shellResponse(
+        {},
+        200,
+        SHELL_HTML.replaceAll('index-a1', 'index-e5').replaceAll('index-c3', 'index-f6'),
+      )
+    const { promise: landing, resolve: land } = Promise.withResolvers<void>()
+    const { promise: storing, resolve: stored } = Promise.withResolvers<void>()
+    const put = cache.put.bind(cache)
+    cache.put = async (key, response) => {
+      if (key.includes('index-e5')) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+
+      if (key.includes('index-f6')) {
+        stored()
+        await landing
+      }
+
+      return put(key, response)
+    }
+
+    const running = run(id).catch((err) => err)
+    await storing
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    land()
+    const failure = await running
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const keys = [...cache.store.keys()].map((href) => {
+      const url = new URL(href)
+      return url.pathname + url.search
+    })
+    expect(failure).toBeInstanceOf(DOMException)
+    expect(recordOf(id).keys).toEqual(before)
+    expect(keys.filter((key) => !before.includes(key))).toEqual([])
+  })
+
   it('removes the shell, the reads and the assets with the copy', async () => {
     await saveOfflineCopy('p1')
 
@@ -595,8 +663,11 @@ describe('the start-up copy', () => {
     expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
   })
 
-  it('leaves no record and no shell when the node is forgotten during a visit', async () => {
-    await saveOfflineCopy('f1')
+  it.each([
+    ['the node is forgotten', 'f1', () => removeNodeOfflineCopy('n1')],
+    ['the copy is removed', 'f3', (id: string) => removeOfflineCopy(id)],
+  ])('leaves no record and no shell when %s during a visit', async (_label, id, remove) => {
+    await saveOfflineCopy(id)
     const { promise: answered, resolve: answer } = Promise.withResolvers<void>()
     const next = globalThis.fetch
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -607,30 +678,59 @@ describe('the start-up copy', () => {
       return next(url, init)
     })
 
-    const warming = warmOfflineCopyAssets('f1')
+    const warming = warmOfflineCopyAssets(id)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    await removeNodeOfflineCopy('n1')
+    await remove(id)
     answer()
     await warming
 
-    expect(localStorage.getItem('slides-offline-copy:f1')).toBeNull()
+    expect(localStorage.getItem(`slides-offline-copy:${id}`)).toBeNull()
     expect(cache.has('/d/n1')).toBe(false)
     expect(cache.store.size).toBe(0)
   })
 
-  it('stops a save when its node is forgotten, leaving nothing behind', async () => {
-    let forgetting: Promise<void> | undefined
+  it.each([
+    ['its node is forgotten', 'f2', () => removeNodeOfflineCopy('n1')],
+    ['its copy is removed', 'f4', (id: string) => removeOfflineCopy(id)],
+  ])('stops a save when %s, leaving nothing behind', async (_label, id, remove) => {
+    let removing: Promise<void> | undefined
     responses['/private/files/b.png?slides_media=1'] = () => {
-      forgetting = removeNodeOfflineCopy('n1')
+      removing = remove(id)
       return image(20)
     }
 
-    const result = await saveOfflineCopy('f2')
-    await forgetting
+    const result = await saveOfflineCopy(id)
+    await removing
 
     expect(result).toBeNull()
-    expect(localStorage.getItem('slides-offline-copy:f2')).toBeNull()
+    expect(localStorage.getItem(`slides-offline-copy:${id}`)).toBeNull()
     expect(cache.store.size).toBe(0)
+  })
+
+  it('keeps every picture a save stores while a visit is still refreshing', async () => {
+    slides.value = slidesWith(['/files/a.png'])
+    await saveOfflineCopy('w1')
+    slides.value = slidesWith(['/files/a.png'], ['/files/b.png'])
+    const { promise: answered, resolve: answer } = Promise.withResolvers<void>()
+    const next = globalThis.fetch
+    let isHeld = false
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url === '/d/n1' && !isHeld) {
+        isHeld = true
+        await answered
+      }
+
+      return next(url, init)
+    })
+
+    const warming = warmOfflineCopyAssets('w1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const saving = saveOfflineCopy('w1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    answer()
+    await Promise.all([warming, saving])
+
+    expect(recordedKeys('w1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
   })
 
   it('refreshes nothing for a presentation with no offline copy', async () => {

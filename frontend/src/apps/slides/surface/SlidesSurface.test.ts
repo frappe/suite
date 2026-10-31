@@ -90,6 +90,17 @@ vi.mock('@/boot/session', async (importOriginal) => {
     }),
   }
 })
+const warms = vi.hoisted(() => [] as Promise<void>[])
+vi.mock('@/apps/slides/stores/offlineCopy', async (importOriginal) => {
+  const store = await importOriginal<typeof import('@/apps/slides/stores/offlineCopy')>()
+  function warmOfflineCopyAssets(id: string) {
+    const warm = store.warmOfflineCopyAssets(id)
+    warms.push(warm)
+    return warm
+  }
+
+  return { ...store, warmOfflineCopyAssets }
+})
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
@@ -399,9 +410,11 @@ describe('Slides offline copy', () => {
       `slides-offline-copy:p${next}`,
       JSON.stringify({ node: 'node-1', keys: [] }),
     )
+    warms.length = 0
     mounted = await openedSurface()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await Promise.allSettled(warms)
 
+    expect(warms).toHaveLength(refreshed.length)
     expect(fetched.filter((url) => url.startsWith('/d/'))).toEqual(refreshed)
   })
 

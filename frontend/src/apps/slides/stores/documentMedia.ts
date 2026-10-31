@@ -37,14 +37,20 @@ export const mediaNodeUrl = (id: string): string => {
 
 const SETTLE_TIMEOUT = 30_000
 
-/** Resolves once Drive has answered for every one of these media nodes, on abort, or after 30s. */
-export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise<void> {
+function loadingIds(handles: MediaHandle[]) {
+  return handles.filter((handle) => handle.status.value === 'loading').map((handle) => handle.id)
+}
+
+/** Resolves with the media nodes still loading once Drive has answered for every one, on abort, or after 30s. */
+export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise<string[]> {
   const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
   function isSettled() {
     return handles.every((handle) => handle.status.value !== 'loading')
   }
 
-  if (signal?.aborted || isSettled()) return
+  if (signal?.aborted || isSettled()) {
+    return loadingIds(handles)
+  }
 
   await new Promise<void>((resolve) => {
     const stop = watch(isSettled, (isNowSettled) => {
@@ -62,4 +68,6 @@ export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise
 
     signal?.addEventListener('abort', finish, { once: true })
   })
+
+  return loadingIds(handles)
 }

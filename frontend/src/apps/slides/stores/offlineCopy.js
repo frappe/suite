@@ -14,12 +14,13 @@ import { isCacheable, isMediaContentType } from '@/apps/slides/utils/slidesReque
 const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
+const UNSIGNED = 'timeout'
 const HTTP_OK = 200
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
-let controller = null
-let savingNode = null
+// a save or a visit's refresh: { id, node, controller, previous, done, settle }
+let run = null
 
 // nodes refused since their last save; nothing more is stored for them
 const forgotten = new Set()
@@ -89,6 +90,18 @@ function mediaNodeIds() {
   return collectMediaSources(slides.value)
     .map(({ src }) => src)
     .filter(isMediaNodeId)
+}
+
+// one entry per node Drive never signed
+function unsignedSources(ids) {
+  const sources = new Map()
+  for (const source of collectMediaSources(slides.value)) {
+    if (ids.includes(source.src) && !sources.has(source.src)) {
+      sources.set(source.src, source)
+    }
+  }
+
+  return [...sources.values()]
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -242,16 +255,20 @@ function deleteUnshared(cache, id, keys) {
 }
 
 // the puts land before the record lists them, so a failed put leaves the old record whole
-async function putStartup(cache, id, record, startup, previous) {
-  try {
-    await Promise.all([...startup.responses].map(([key, response]) => cache.put(key, response)))
-  } catch (err) {
+async function putStartup(cache, id, record, startup, previous, signal) {
+  if (signal.aborted) {
+    return
+  }
+
+  const puts = [...startup.responses].map(([key, response]) => cache.put(key, response))
+  const failure = (await Promise.allSettled(puts)).find((put) => put.status === 'rejected')
+  if (failure) {
     await deleteUnshared(
       cache,
       id,
       startup.keys.filter((key) => !previous.includes(key)),
     )
-    throw err
+    throw failure.reason
   }
 
   if (forgotten.has(record.node)) {
@@ -290,31 +307,49 @@ const pruneOfflineCopy = async (id, targets = null) => {
   writeRecord(id, { ...record, keys: record.keys.filter((key) => !orphans.has(key)) })
 }
 
+// a save and a visit's refresh share one slot; a later run stops the one before and waits for it
+function claimRun(id, node) {
+  run?.controller.abort()
+  const { promise: done, resolve: settle } = Promise.withResolvers()
+  run = { id, node, controller: new AbortController(), previous: run?.done, done, settle }
+  return run
+}
+
+function releaseRun(current) {
+  current.settle()
+  if (run === current) {
+    run = null
+  }
+}
+
 const saveOfflineCopy = async (id) => {
   if (offlineCopyProgress.value.running) return null
-  controller = new AbortController()
-  const { signal } = controller
-
   const node = presentationDoc.value?.node
-  savingNode = node
   forgotten.delete(node)
+  const current = claimRun(id, node)
+  const { controller } = current
+  const { signal } = controller
   offlineCopyProgress.value = { running: true, done: 0, total: 0, failed: [] }
   const progress = offlineCopyProgress.value
 
   try {
+    await current.previous
     if (!(await waitForController())) {
       const registered = !!(await navigator.serviceWorker?.getRegistration?.())
       return { ok: false, uncontrolled: true, registered }
     }
     await warmAssets()
     // a node-id picture has no url until Drive signs it
-    await mediaSettled(mediaNodeIds(), signal)
+    const unsigned = unsignedSources(await mediaSettled(mediaNodeIds(), signal))
     if (signal.aborted) {
       return null
     }
 
     const targets = getMediaTargets()
     progress.total = targets.length
+    for (const source of unsigned) {
+      recordFailure(progress, source, UNSIGNED)
+    }
 
     const cache = await openPinnedCache()
     const pinned = await pinnedPaths(cache)
@@ -325,7 +360,7 @@ const saveOfflineCopy = async (id) => {
     const previous = startupKeys(readRecord(id))
     const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
     const record = { node, keys: [...startup.keys, ...media] }
-    await putStartup(cache, id, record, startup, previous)
+    await putStartup(cache, id, record, startup, previous, signal)
     navigator.storage?.persist?.().catch(() => {})
 
     await runPool(targets, async (target) => {
@@ -361,7 +396,8 @@ const saveOfflineCopy = async (id) => {
     // the ledger is current, so a cancelled run needs no report
     if (signal.aborted && signal.reason !== QUOTA) return null
 
-    return { ok: progress.failed.length === 0, failed: [...progress.failed], count: targets.length }
+    const count = targets.length + unsigned.length
+    return { ok: progress.failed.length === 0, failed: [...progress.failed], count }
   } catch (err) {
     if (signal.aborted) {
       return null
@@ -370,16 +406,29 @@ const saveOfflineCopy = async (id) => {
     throw err
   } finally {
     progress.running = false
-    controller = null
-    savingNode = null
+    releaseRun(current)
   }
 }
 
-const cancelOfflineCopy = () => controller?.abort()
+function cancelOfflineCopy() {
+  run?.controller.abort()
+}
+
+function forget(node) {
+  forgotten.add(node)
+  if (run?.node === node) {
+    run.controller.abort()
+  }
+}
 
 // the record outlives the bytes it lists
 const removeOfflineCopy = async (id) => {
   const record = readRecord(id)
+  const node = record?.node ?? (run?.id === id && run.node)
+  if (node) {
+    forget(node)
+  }
+
   if (record) {
     const cache = await openPinnedCache()
     await Promise.all(unsharedKeys(id, record.keys).map((key) => cache.delete(key)))
@@ -389,11 +438,7 @@ const removeOfflineCopy = async (id) => {
 
 // every copy of the node, found by the node because a refused open never learns the docname
 async function removeNodeOfflineCopy(node) {
-  forgotten.add(node)
-  if (savingNode === node) {
-    controller?.abort()
-  }
-
+  forget(node)
   const ids = Object.entries(readAllRecords())
     .filter(([, record]) => record.node === node)
     .map(([id]) => id)
@@ -409,14 +454,26 @@ async function warmOfflineCopyAssets(id) {
   const record = readRecord(id)
   if (!record?.node || !navigator.onLine || refreshed.has(id)) return
 
-  if (offlineCopyProgress.value.running) return
+  if (run) return
 
   refreshed.add(id)
-  await warmAssets()
-  const cache = await openPinnedCache()
-  const startup = await fetchStartup(record.node, id, await pinnedPaths(cache))
-  const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
-  await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record))
+  const current = claimRun(id, record.node)
+  const { signal } = current.controller
+  try {
+    await warmAssets()
+    const cache = await openPinnedCache()
+    const startup = await fetchStartup(record.node, id, await pinnedPaths(cache), signal)
+    const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
+    await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record), signal)
+  } catch (err) {
+    if (signal.aborted) {
+      return
+    }
+
+    throw err
+  } finally {
+    releaseRun(current)
+  }
 }
 
 // the ledger says what is pinned; the cache is only walked when a copy is saved
