@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Simulate an SFU source change (trial only)
-        run: echo '// SFU cache source-change trial, round 1' >> suite/meet/sfu-server/src/server.ts
+        run: echo '// SFU cache source-change trial, round 2' >> suite/meet/sfu-server/src/server.ts
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -62,7 +62,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=gha,scope=sfu-source-trial-${{ matrix.cache-mode }}
-            type=gha
+          cache-from: type=gha,scope=sfu-source-trial-${{ matrix.cache-mode }}
           cache-to: type=gha,scope=sfu-source-trial-${{ matrix.cache-mode }},mode=${{ matrix.cache-mode }}
