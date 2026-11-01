@@ -1,4 +1,4 @@
-ARG NODE_VERSION=24-bookworm-slim
+ARG NODE_VERSION=24-trixie-slim
 
 # --- Build stage (installs build deps & compiles native modules) ---
 FROM node:${NODE_VERSION} AS build
