@@ -100,7 +100,9 @@ const props = defineProps<{
   badges: Readonly<Record<string, number>>
 }>()
 
-const railAreas = computed(() => props.areas.filter((area) => area.placement !== 'workspace'))
+const railAreas = computed(() =>
+  props.areas.filter((area) => !area.placement || area.placement === 'rail'),
+)
 const workspaceAreas = computed(() => props.areas.filter((area) => area.placement === 'workspace'))
 
 defineSlots<{ bell?: () => unknown }>()

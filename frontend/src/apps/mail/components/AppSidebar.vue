@@ -89,6 +89,16 @@
       </SidebarSection>
     </div>
 
+    <SidebarSection v-if="!route.meta.isDashboard">
+      <SidebarItem
+        :label="__('Contacts')"
+        icon="lucide-contact-round"
+        :route="
+          store.accountId ? `/people/account/${encodeURIComponent(store.accountId)}` : '/people'
+        "
+      />
+    </SidebarSection>
+
     <!-- Personal widgets (quota) are meaningless while administering the
 		     server, and the phone's sheet is a folder switcher, not a dashboard. -->
     <AreaSidebarFooter v-if="showWidgets">

@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { AreaSidebar } from '@/platform/area-sidebar'
 import type { AreaDefinition } from '@/platform/contracts'
 import { AREA_PROGRESS_KEY, type AreaProgressSource } from '@/shell/areaProgress'
+import { deriveMobileNav } from '@/shell/mobileNav'
 import MobileNav from '@/shell/MobileNav.vue'
 
 // A phone-width media query, before the platform reads it.
@@ -182,4 +183,11 @@ describe('area progress on the bottom nav', () => {
     expect(root.querySelector("[data-slot='area-progress-dot']")).toBeNull()
     expect(item('Drive').querySelector("[role='status']")?.textContent).toBe('Drive: Done')
   })
+})
+
+it('keeps launcher-only Contacts off the dock while preserving the other destinations', () => {
+  const contacts = { ...area('people', 'Contacts'), placement: 'launcher' as const }
+  expect(
+    deriveMobileNav([...areas, contacts], 'people', () => false).map((item) => item.to),
+  ).toEqual(['/home', '/drive'])
 })

@@ -5,9 +5,10 @@ import { translate as __ } from '@/platform/translation'
 /** A mail account's contacts and address books. They live on the mail server, so People needs Mail. */
 export const peopleArea: AreaDefinition = {
   id: 'people',
-  label: () => __('People'),
+  label: () => __('Contacts'),
   icon: PeopleIcon,
   to: '/people',
+  placement: 'launcher',
   requires: ['jmap'],
   loadRoutes: () => import('@/apps/people/routes'),
 }
