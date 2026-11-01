@@ -107,6 +107,17 @@ jobs:
         env:
           CI: "Yes"
 
+      - name: Build backend content bundles
+        if: steps.backend-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench/apps/suite
+        run: |
+          # Pilot clones the app with --skip-assets; tests use this clone, not the Actions checkout.
+          yarn install --frozen-lockfile --non-interactive
+          yarn workspace @suite/frontend vite build --config vite.checker.config.ts
+          yarn workspace @suite/frontend vite build --config vite.checker.config.ts --mode converter
+          yarn workspace @suite/frontend vite build --config vite.sheets-checker.config.ts
+          yarn workspace @suite/frontend vite build --config vite.sheets-checker.config.ts --mode converter
+
       - name: Start Pilot
         id: start-pilot
         if: steps.backend-changes.outputs.run == '1'
