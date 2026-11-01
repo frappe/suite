@@ -249,6 +249,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends ffmpeg
           fi
           yarn install --frozen-lockfile
+          node -e 'require("mediasoup").createWorker().then(worker => worker.close())'
           mkdir -p test-results
           yarn test:ci
 
