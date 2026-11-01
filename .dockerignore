@@ -20,6 +20,8 @@ frontend/*
 suite/*
 !suite/meet/
 suite/meet/*
+!suite/meet/types/
+!suite/meet/types/**
 !suite/meet/recorder-server/
 !suite/meet/recorder-server/package.json
 !suite/meet/recorder-server/yarn.lock
