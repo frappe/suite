@@ -54,19 +54,22 @@ class TestRegistration(IntegrationTestCase):
         validate = frappe.get_hooks("doc_events")["Suite Collab Settings"]["validate"]
         self.assertIn("suite.sheets.content.refuse_turning_on", validate)
 
+    @patch.object(sheets_content, "EDITOR_READY", False)
     def test_refuses_switching_sheets_on_before_the_editor_uses_the_room(self):
         for before in (None, "off"):
             with self.subTest(before=before):
                 with self.assertRaises(frappe.ValidationError):
                     sheets_content.refuse_turning_on(settings("on", before=before))
 
+    @patch.object(sheets_content, "EDITOR_READY", False)
     def test_a_site_left_on_can_still_change_other_apps(self):
         sheets_content.refuse_turning_on(settings("on", before="on"))
         sheets_content.refuse_turning_on(settings("off", before="on"))
 
     def test_switches_sheets_on_once_the_editor_uses_the_room(self):
-        with patch.object(sheets_content, "EDITOR_READY", True):
-            sheets_content.refuse_turning_on(settings("on", before="off"))
+        for before in (None, "off"):
+            with self.subTest(before=before):
+                sheets_content.refuse_turning_on(settings("on", before=before))
 
     def test_drive_still_offers_no_export_and_copies_no_pictures(self):
         # The declaration the `drive_content_types` hook registers
