@@ -31,10 +31,10 @@ ENV NODE_ENV=production \
 RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates curl ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app /app
+COPY --from=build --chown=node:node /app /app
 
 # Persistent volumes mount over /data, so initialize its ownership in the image.
-RUN mkdir -p /app/sfu-server/logs /data && chown -R node:node /app /data
+RUN mkdir -p /app/sfu-server/logs /data && chown node:node /app/sfu-server/logs /data
 
 USER node
 
