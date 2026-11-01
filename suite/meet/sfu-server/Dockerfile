@@ -19,7 +19,8 @@ RUN corepack prepare yarn@1.22.22 --activate
 RUN ONNXRUNTIME_NODE_INSTALL=skip yarn install --frozen-lockfile
 COPY sfu-server/src ./src
 COPY sfu-server/assets ./assets
-RUN yarn build
+RUN yarn build \
+  && ONNXRUNTIME_NODE_INSTALL=skip yarn install --production --frozen-lockfile
 
 # --- Runtime stage (minimal) ---
 FROM node:${NODE_VERSION} AS runtime
