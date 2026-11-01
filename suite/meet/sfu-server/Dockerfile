@@ -22,6 +22,16 @@ COPY sfu-server/assets ./assets
 RUN yarn build \
   && ONNXRUNTIME_NODE_INSTALL=skip yarn install --production --frozen-lockfile
 
+# ONNX bundles binaries for every platform; retain only this image's target.
+RUN node -e "\
+  const fs = require('node:fs'); \
+  const root = 'node_modules/onnxruntime-node/bin/napi-v6'; \
+  fs.accessSync(root + '/' + process.platform + '/' + process.arch + '/onnxruntime_binding.node'); \
+  for (const platform of fs.readdirSync(root)) \
+    if (platform !== process.platform) fs.rmSync(root + '/' + platform, { recursive: true }); \
+  for (const arch of fs.readdirSync(root + '/' + process.platform)) \
+    if (arch !== process.arch) fs.rmSync(root + '/' + process.platform + '/' + arch, { recursive: true });"
+
 # --- Runtime stage (minimal) ---
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app/sfu-server
