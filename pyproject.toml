@@ -15,9 +15,8 @@ dependencies = [
     "boto3~=1.43.29",
     "pycrdt==0.14.8",
     "lxml~=6.1",  # drive: WebDAV XML (previously only a transitive dep via frappe)
-    # kept for other suite modules (drive dropped these): PyJWT→meet, Markdown→writer, beautifulsoup4→mail/client
+    # kept for other suite modules (drive dropped these): PyJWT→meet, beautifulsoup4→mail/client
     "PyJWT>=2.8.0",
-    "Markdown==3.8.2",
     "beautifulsoup4>=4.13.5,<5",
     # mail
     "lmdb~=1.7.1",

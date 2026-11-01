@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Avatar, Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
-import { v4 } from 'uuid'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import {
@@ -12,6 +11,7 @@ import {
 import { DOCUMENT_ANCHOR } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 import { confirm, toast } from '@/platform/feedback'
+import { randomId } from '@/platform/random-id'
 import { useSession } from '@/platform/session'
 
 import CommentDraftCard from './CommentDraftCard.vue'
@@ -315,7 +315,7 @@ async function discardSentDraft(draft: ShownDraft) {
 // Sending the same words again reuses their client id, so Drive posts them once
 function replyClientId(thread: string, text: string) {
   const unsent = unsentReplies.get(thread) ?? new Map<string, string>()
-  const clientId = unsent.get(text) ?? v4()
+  const clientId = unsent.get(text) ?? randomId()
   unsent.set(text, clientId)
   unsentReplies.set(thread, unsent)
   return clientId
