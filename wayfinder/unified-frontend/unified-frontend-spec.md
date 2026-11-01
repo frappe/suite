@@ -206,10 +206,6 @@ interface AreaDefinition {
 - Array order sets rail position [T002].
 - It evaluates each area's `requires` once against `@/platform/session`. It
   omits an unavailable area from the rail and every launch surface [T002].
-  Contacts is launcher-only: it stays discoverable without Mail configured,
-  and its existing capability gate explains availability when opened. Mail
-  also links to Contacts after its mailbox navigation; Contacts keeps its
-  own routes and sidebar.
 - It owns one badge source per area. Mail's badge comes from
   `useInboxSummary()` in `apps/mail/index.ts` [T012]. Drive's badge comes
   from `driveUploadProgress()` in `apps/drive/index.ts` (section 6.3)

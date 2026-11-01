@@ -41,10 +41,7 @@ export function useAppRegistry(session: Session = useSession()): AppRegistry {
 
   return {
     get areas() {
-      // Launcher-only areas stay discoverable; their routes retain capability checks.
-      return areaDefinitions.filter(
-        (area) => area.placement === 'launcher' || areaIsAvailable(area, session),
-      )
+      return areaDefinitions.filter((area) => areaIsAvailable(area, session))
     },
     badges: computed(() => deriveAreaBadges(inbox.data, upcoming.data)),
   }

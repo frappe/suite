@@ -55,7 +55,6 @@ vi.mock('@/apps/people', () => ({
     icon: {},
     to: '/people',
     requires: ['jmap'],
-    placement: 'launcher',
     loadRoutes: vi.fn(),
   },
 }))
@@ -90,7 +89,7 @@ describe('app registry', () => {
 
     expect(findArea('mail')?.to).toBe('/mail')
     expect(findArea('calendar')?.to).toBe('/calendar')
-    expect(registry.areas.map((area) => area.id)).toEqual(['home', 'files', 'meet', 'people'])
+    expect(registry.areas.map((area) => area.id)).toEqual(['home', 'files', 'meet'])
     capabilities.value.jmap = true
     expect(registry.areas.map((area) => area.id)).toEqual([
       'home',
@@ -101,7 +100,7 @@ describe('app registry', () => {
       'people',
     ])
     capabilities.value.jmap = false
-    expect(registry.areas.map((area) => area.id)).toEqual(['home', 'files', 'meet', 'people'])
+    expect(registry.areas.map((area) => area.id)).toEqual(['home', 'files', 'meet'])
   })
 
   it('shows Admin only to a Suite Admin, not a System Manager alone', () => {
