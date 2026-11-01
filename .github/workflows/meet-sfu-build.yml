@@ -21,6 +21,9 @@ env:
 
 jobs:
   build-and-push:
+    strategy:
+      matrix:
+        cache-mode: [min, max]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,6 +32,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Simulate an SFU source change (trial only)
+        run: echo '// SFU cache source-change trial, round 1' >> suite/meet/sfu-server/src/server.ts
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -46,10 +52,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ github.event.inputs.tag || 'latest' }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=sha,prefix=,format=short
-            type=ref,event=branch
+            type=raw,value=source-cache-trial-${{ matrix.cache-mode }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -59,5 +62,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-from: |
+            type=gha,scope=sfu-source-trial-${{ matrix.cache-mode }}
+            type=gha
+          cache-to: type=gha,scope=sfu-source-trial-${{ matrix.cache-mode }},mode=${{ matrix.cache-mode }}
