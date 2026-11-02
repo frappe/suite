@@ -24,6 +24,7 @@ from suite.drive.patches.build.ports import (
     UsageLedger,
 )
 from suite.drive.patches.build.state import BuildState
+from suite.drive.patches.database_marker import DatabaseMarkers
 
 # §14.2: Build commits per batch of 1000 rows.
 BUILD_BATCH_SIZE = 1000
@@ -69,6 +70,9 @@ class BuildEnvironment:
     # Every legacy S3 object the copy step placed, by key, for the manual
     # legacy-object delete. `None` only in a test of a step that never copies.
     copy_ledger: CopyLedger | None = None
+    # Ties `state` to this database (`database_marker`). `None` only in a
+    # test of one step; `run_build` refuses to start without it.
+    markers: DatabaseMarkers | None = None
     # Whether an operator has accepted this run's skipped rows in site config
     # (`drive_build_accept_skips`). Unset, Build refuses to finish with any.
     accept_skips: bool = False
@@ -118,6 +122,7 @@ class BuildEnvironment:
             SiteUsage,
         )
         from suite.drive.patches.build.slide_journal import SlidePreimageJournal
+        from suite.drive.patches.database_marker import SiteDatabaseMarkers
 
         refuse_below_upgrade_floor()
         return cls(
@@ -126,6 +131,7 @@ class BuildEnvironment:
             state=BuildState.for_site(),
             legacy_s3=LegacyS3Config.for_site(),
             copy_ledger=CopyLedger.for_site(),
+            markers=SiteDatabaseMarkers(),
             accept_skips=bool(frappe.conf.get(ACCEPT_SKIPS_CONFIG_KEY)),
             # Deferred: building the driver constructs a boto3 client, and the
             # gate must be able to refuse a misconfigured site first.
@@ -147,6 +153,13 @@ class BuildEnvironment:
         if self.open_bucket is None:
             raise RuntimeError("Build has no S3 bucket, but the legacy S3 copy step needs one")
         return self.open_bucket()
+
+    def database_markers(self) -> DatabaseMarkers:
+        if self.markers is None:
+            raise RuntimeError(
+                "Build has no database markers, so it cannot tell whose record it would resume"
+            )
+        return self.markers
 
     def ledger(self) -> CopyLedger:
         if self.copy_ledger is None:

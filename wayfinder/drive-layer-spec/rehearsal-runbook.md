@@ -417,6 +417,18 @@ reachable-node check, and deletes their `File` rows. After the migrate, the
 backup named in `drive_cleanup_backup` is the only copy of these rows. Keep
 `drive-build-skipped.json` with the migration evidence.
 
+**After a database-only restore.** Build and Cleanup each keep a marker in
+the database that matches their state file. If the database is restored
+without `private/`, for example by Frappe Cloud after a failed migrate, the
+next migrate refuses with "does not belong to this database" and names the
+file. If the restored database is the backup taken before the migrate, move
+every `drive-build-*` and `drive-cleanup-*` file and folder in `private/`
+into a dated folder, and migrate again. Build copies nothing twice and
+records every copy in a new copy ledger. If the restored database is not
+that backup, restore the database and `private/` from the same backup. A
+migrate that continues a matching state file prints
+`Resuming the Drive migration from <file>`.
+
 **Pass:** the runner exits 0 with no changed patch files.
 
 **Record:**

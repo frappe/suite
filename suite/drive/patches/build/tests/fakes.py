@@ -402,6 +402,7 @@ def build_environment(
         legacy_s3=legacy_s3,
         open_bucket=lambda: bucket,
         copy_ledger=CopyLedger(tmp_path / "drive-build-copied-objects.jsonl"),
+        markers=drive,
         accept_skips=accept_skips,
         tree=tree,
         drive=drive,
@@ -557,6 +558,16 @@ class FakeDrive:
         self.tree = None
         self.docshares_deleted = []
         self.committed_docshares = None
+        # `DatabaseMarkers`: committed as written, so `rollback` keeps them.
+        self.markers = {}
+
+    # -- database markers
+
+    def read_marker(self, key):
+        return self.markers.get(key)
+
+    def write_marker(self, key, marker):
+        self.markers[key] = marker
 
     # -- reads
 

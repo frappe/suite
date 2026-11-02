@@ -43,6 +43,7 @@ from suite.drive.patches.build.skips import report_skips
 from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.tree import convert_trees
 from suite.drive.patches.build.usage import recompute_usage
+from suite.drive.patches.database_marker import refuse_foreign_record, stamp_record
 
 # Two is what the adoption rule needs. The third is margin, and reaching it
 # means the content record disagrees with itself.
@@ -64,9 +65,14 @@ def run_build(env, *, batch_size: int = BUILD_BATCH_SIZE) -> dict:
     Resumable at any batch boundary. Each step reads the durable record,
     redoes only what the target is missing, and recomputes its census from
     the source rows, so a run that resumes after a kill reports the same
-    numbers as one that was never interrupted.
+    numbers as one that was never interrupted. A record is resumed only on
+    the database it was stamped for (`database_marker`); any other database
+    is refused before a step reads it.
     """
+    markers = env.database_markers()
+    refuse_foreign_record(env.state, markers)
     _refuse_record_without_target(env)
+    stamp_record(env.state, markers)
 
     # Step 1 is the gate, and step 2 and 3 are the byte preparation. The
     # gate runs inside `prepare_legacy_bytes`: it has to be the first thing

@@ -7,11 +7,14 @@ migrate` reaches these two patches the legacy tables and columns are all
 still there: Build reads them, Cleanup drops them, and the site comes out
 the other side with only the new model.
 
-`run_cleanup` refuses in three layers, all before phase 1 mutates anything,
+`run_cleanup` refuses in four layers, all before phase 1 mutates anything,
 each checked once per call:
 
 - `state.CleanupState.refuse_if_corrupt` — an unreadable existing state
   record is quarantined and refused, never treated as a fresh site.
+- `database_marker.refuse_foreign_record` — a state record whose marker
+  this database does not hold describes another database (the one before
+  a database-only restore), and is refused rather than resumed.
 - `gate.check_gate_reachable_nodes` — every reachable Drive `File` has a
   `Drive Node`, recomputed live against the current site, never against
   Build's own persisted state. Site config `drive_build_accept_skips`, the

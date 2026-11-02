@@ -4763,9 +4763,19 @@ chains, missing bytes and dropped grants and shares are reported but do not
 refuse.
 
 **Restored database.** The record lives in `private/`, not the database. A
-database restored without its `private/` directory would meet a record that
-says the tree is done and a `Drive Root` table that is empty; Build refuses
-that pair instead of reporting a finished migration over nothing.
+database restored without its `private/` directory (Frappe Cloud restores
+only the database after a failed migrate) would meet a record that claims
+steps the database never saw, and a rerun would skip them. So Build and
+Cleanup each stamp their record with a random marker, and keep the same
+marker in the database (`tabDefaultValue`, keyed by the record's file name)
+before the record claims any work. A record that claims work under a marker
+the database does not hold, or under no marker, is refused before any step
+reads it, and the refusal names the file. The fix is to move every
+`drive-build-*` and `drive-cleanup-*` file and folder in `private/` aside
+and migrate again, or to restore the database and `private/` from the same
+backup. A record that matches is resumed, and the migration log says so.
+Build also still refuses a record that says the tree is done over a
+`Drive Root` table that is empty.
 
 **Copied objects.** Every legacy S3 object the copy step placed is appended
 to `private/drive-build-copied-objects.jsonl` by key, before the `File.blob`
