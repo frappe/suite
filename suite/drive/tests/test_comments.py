@@ -703,9 +703,9 @@ class TestCommentWorkflows(IntegrationTestCase):
         notified = frappe.get_all(
             "Drive Notification", filters={"activity": ["in", activity]}, pluck="to_user"
         )
-        self.assertEqual((mentions, notified), ([MENTIONED], [MENTIONED]))
+        self.assertEqual((mentions, sorted(notified)), ([MENTIONED], sorted([MENTIONED, OWNER])))
 
-    def test_a_comment_typing_the_user_doctype_mentions_and_notifies_no_one(self):
+    def test_a_comment_typing_the_user_doctype_mentions_no_one_and_notifies_only_the_owner(self):
         thread = create_thread(self.commenter, self.document.name, "anchor", "Ask @[User]").name
 
         mentions = frappe.parse_json(frappe.db.get_value("Drive Comment", {"thread": thread}, "mentions"))
@@ -715,7 +715,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         notified = frappe.get_all(
             "Drive Notification", filters={"activity": ["in", activity]}, pluck="to_user"
         )
-        self.assertEqual((mentions, notified), ([], []))
+        self.assertEqual((mentions, notified), ([], [OWNER]))
 
     def test_an_edit_notifies_only_the_people_it_adds(self):
         thread = create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]").name

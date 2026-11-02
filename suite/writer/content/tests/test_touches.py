@@ -11,11 +11,10 @@ from suite import drive
 from suite.content import jobs, scheduling, touches
 from suite.content.http import routes
 from suite.drive._core import content as drive_content
-from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
 from suite.tests.utils import ensure_user
-from suite.writer.content.tests.drive_callback_case import DriveCallbackCase
+from suite.writer.content.tests.drive_callback_case import DriveCallbackCase, share_as_writer
 from suite.writer.content.tests.support import OUTSIDER, WRITER
 
 
@@ -190,8 +189,7 @@ class TestWriterTouches(DriveCallbackCase):
     def test_an_automatic_version_credits_who_made_most_of_its_changes_not_who_took_it(self):
         ensure_user(OUTSIDER)
         node = self.new_document()
-        owner = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
-        grant(node, OUTSIDER, drive.EDIT, owner)
+        share_as_writer(node, OUTSIDER, drive.EDIT)
         frappe.db.commit()
         start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
         with self.frozen_clock(start):

@@ -1,8 +1,7 @@
 import frappe
 
 from suite import drive
-from suite.drive._core.access import grant
-from suite.drive._core.principals import Principals
+from suite.writer.content.tests.drive_callback_case import share_as_writer
 from suite.writer.content.tests.support import READER, WRITER, CollabCase
 from suite.writer.http import routes
 
@@ -10,7 +9,7 @@ from suite.writer.http import routes
 class TestPublicReader(CollabCase):
     def test_a_public_reader_gets_the_document_without_its_old_comments(self):
         node = self.new_document()
-        grant(node, "$PUBLIC", drive.READ, Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)))
+        share_as_writer(node, "$PUBLIC", drive.READ)
         name = frappe.db.get_value("Drive Node", node, "content_docname")
         frappe.db.set_value("Writer Document", name, "ycomments", "AAEC", update_modified=False)
         frappe.db.commit()
