@@ -35,9 +35,9 @@ def unique_bytes(base64_data):
     return base64.b64decode(base64_data.split(",", 1)[-1]) + uuid.uuid4().bytes
 
 
-def make_thumbnail_data():
-    """A distinct webp data URI, in the only format save_presentation_thumbnail accepts."""
-    return "data:image/webp;base64," + base64.b64encode(unique_bytes(WEBP_1PX)).decode()
+def push_capture(presentation_name):
+    """Push one distinct browser capture as the deck's Drive preview, as the session user."""
+    drive.push_preview(node_of(presentation_name), unique_bytes(WEBP_1PX), "image/webp")
 
 
 def make_presentation(title, parent=None, **fields):
