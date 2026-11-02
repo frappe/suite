@@ -34,6 +34,9 @@ suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
 suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails
 suite.slides.doctype.presentation.patches.set_default_theme
+# T3-21: media uploaded as Files after Build. It only reads decks already linked to nodes;
+# on a site Build has not reached, none are, and Build converts their media itself.
+suite.slides.patches.move_file_media_to_drive
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- drive (legacy tree, before Build) ---
@@ -120,5 +123,3 @@ suite.drive.patches.migrate_preview_size_unit #2026-10-06
 suite.drive.patches.build
 suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup
-# Needs decks linked to nodes, so after Build. T3-21: media uploaded as Files after Build.
-suite.slides.patches.move_file_media_to_drive
