@@ -1,7 +1,7 @@
 """Seed/reset Mail and Calendar for the Northwind demo on a Stalwart server without Suite Cloud.
 
-Run after suite.demo.drive.seed:
-`pilot -b suite frappe --site suite.localhost execute suite.demo.mail.seed`.
+Run after suite.composition.demo.drive.seed:
+`pilot -b suite frappe --site suite.localhost execute suite.composition.demo.mail.seed`.
 The domain, accounts and mailing lists are made with Stalwart's management API as the admin in
 the `mail` site config. Each account is linked like any self-managed one: User Settings holds
 the address and a Stalwart app password. Mail is imported with JMAP Email/import so it keeps its
@@ -22,8 +22,8 @@ import frappe
 import httpx
 from frappe.utils import get_system_timezone
 
-from suite.demo import agenda, inbox
-from suite.demo.drive import PASSWORD, PEOPLE, URL
+from suite.composition.demo import agenda, inbox
+from suite.composition.demo.drive import PASSWORD, PEOPLE, URL
 
 DOMAIN = "northwind.test"
 LISTS = {
@@ -50,11 +50,38 @@ PEOPLE_BY_KEY = {person.first.lower(): person for person in PEOPLE}
 
 def seed(fresh: bool = False) -> None:
     """Create the Northwind mailboxes, mail and calendars; add only what is missing."""
+    caller = frappe.session.user
     frappe.set_user("Administrator")
-    missing = [person.email for person in PEOPLE if not frappe.db.exists("User", person.email)]
-    if missing:
-        frappe.throw(f"Run suite.demo.drive.seed first. Missing users: {', '.join(missing)}")
-    stalwart = Stalwart()
+    try:
+        missing = [person.email for person in PEOPLE if not frappe.db.exists("User", person.email)]
+        if missing:
+            frappe.throw(f"Run suite.composition.demo.drive.seed first. Missing users: {', '.join(missing)}")
+        fill(Stalwart(), fresh)
+    finally:
+        frappe.set_user(caller)
+
+
+def reset() -> None:
+    """Unlink the Northwind users from Mail and delete their accounts, lists and domain."""
+    caller = frappe.session.user
+    frappe.set_user("Administrator")
+    try:
+        stalwart = Stalwart()
+        try:
+            for person in PEOPLE:
+                unlink(person.email)
+            frappe.db.commit()
+            stalwart.remove()
+            print("Removed the Northwind mail accounts, lists and domain.")
+            print("If a reseed reuses a removed account id, restart the web process to drop its old cache.")
+        finally:
+            stalwart.http.close()
+    finally:
+        frappe.set_user(caller)
+
+
+def fill(stalwart: Stalwart, fresh: bool) -> None:
+    """Provision the accounts, then import the mail and calendars; closes `stalwart` when done."""
     try:
         stalwart.provision()
         for person in PEOPLE:
@@ -72,22 +99,6 @@ def seed(fresh: bool = False) -> None:
         frappe.db.commit()
         print(f"Imported {delivered} messages; {scheduled} calendar copies are in place.")
         print(f"Mail and Calendar are ready at {URL}/mail for {', '.join(p.email for p in PEOPLE)}.")
-    finally:
-        stalwart.http.close()
-        frappe.set_user("Administrator")
-
-
-def reset() -> None:
-    """Unlink the Northwind users from Mail and delete their accounts, lists and domain."""
-    frappe.set_user("Administrator")
-    stalwart = Stalwart()
-    try:
-        for person in PEOPLE:
-            unlink(person.email)
-        frappe.db.commit()
-        stalwart.remove()
-        print("Removed the Northwind mail accounts, lists and domain.")
-        print("If a reseed reuses a removed account id, restart the web process to drop its old cache.")
     finally:
         stalwart.http.close()
 

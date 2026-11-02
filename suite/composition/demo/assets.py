@@ -15,7 +15,8 @@ from suite import drive
 
 # PNGs are 256 px renders of the SVG sources beside them; re-render after editing one.
 BRAND = Path(__file__).parent / "brand"
-BUDGET = [
+type Rows = list[list[str | int | float | None]]
+BUDGET: Rows = [
     ["Q4 2026 operating budget", None, None, None, None],
     ["Category", "October", "November", "December", "Quarter"],
     ["People", 42000, 44000, 44000, "=SUM(B3:D3)"],
@@ -26,7 +27,7 @@ BUDGET = [
     ["Total", "=SUM(B3:B7)", "=SUM(C3:C7)", "=SUM(D3:D7)", "=SUM(E3:E7)"],
     ["Monthly average", "=AVERAGE(B8:D8)"],
 ]
-HIRING = [
+HIRING: Rows = [
     ["Q4 hiring tracker", None, None, None, None],
     ["Role", "Team", "Stage", "Annual salary", "Interview score"],
     ["Backend engineer", "Engineering", "Technical interview", 96000, 4.2],
@@ -36,7 +37,7 @@ HIRING = [
     ["Planned salary total", None, None, "=SUM(D3:D6)"],
     ["Average interview score", None, None, None, "=AVERAGE(E3:E6)"],
 ]
-PIPELINE = [
+PIPELINE: Rows = [
     ["November sales pipeline", None, None, None, None],
     ["Account", "Stage", "Annual value", "Probability", "Weighted value"],
     ["Cedar Health", "Pilot", 18000, 0.6, "=C3*D3"],
@@ -94,7 +95,7 @@ REVIEW = [
 ]
 
 
-def spreadsheet(parent: str, imports: str, title: str, rows: list[list], kind: str) -> str:
+def spreadsheet(parent: str, imports: str, title: str, rows: Rows, kind: str) -> str:
     """Import a styled XLSX and retain the original as an ordinary uploaded file."""
     workbook = Workbook()
     sheet = workbook.active

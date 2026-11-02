@@ -1,14 +1,14 @@
-"""Realistic Northwind Writer bodies, encoded for the editor and its HTML fallback."""
+"""Realistic Northwind Writer bodies, saved through the content layer with their readable copies."""
 
-import base64
 from html import escape
 from xml.etree import ElementTree as ET
 
-import frappe
 import pycrdt
 
-from suite import drive
-from suite.writer.drive import BODY_FRAGMENT
+from suite import content, drive
+from suite.content import checkpoints, copies
+from suite.writer.content import APP, EDITOR
+from suite.writer.content.files import BODY_FRAGMENT
 
 ONBOARDING = """
 <h1>Welcome to Northwind Labs</h1>
@@ -102,15 +102,23 @@ Email opens are directional only. Spend cap: <strong>$4,500</strong>.</p>
 
 
 def writer(parent: str, title: str, html: str) -> str:
-    """Create a populated Writer document through Drive."""
+    """Create a Writer document through Drive and start its log from `html`."""
     node = drive.create_document(parent, title, content_doctype="Writer Document")
-    ydoc = pycrdt.Doc()
+    log = content.find(APP, node)
+    html_copy = EDITOR.readable_copy
+    if log is None or html_copy is None:
+        raise RuntimeError(f"Writer collaboration must be on to seed {title!r}")
+    checkpoints.replace_start(APP, log.id, body_state(html), EDITOR.schema.version)
+    copies.replace_copy(APP, log.id, 1, copies.cleaned(html)[0], html_copy)
+    return node
+
+
+def body_state(html: str) -> bytes:
+    """Encode `html` as the Yjs state the editor binds to."""
+    ydoc: pycrdt.Doc = pycrdt.Doc()
     fragment = ydoc.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
     _append(fragment, ET.fromstring(f"<doc>{html}</doc>"))
-    body = base64.b64encode(ydoc.get_update()).decode()
-    name = frappe.db.get_value("Writer Document", {"node": node})
-    frappe.db.set_value("Writer Document", name, {"content": body, "html": html})
-    return node
+    return ydoc.get_update()
 
 
 def personal_note(first_name: str, team: str) -> str:
@@ -169,8 +177,6 @@ def _text(parent: pycrdt.XmlFragment | pycrdt.XmlElement, value: str, marks: dic
     value = (
         (" " if value[0].isspace() else "") + " ".join(value.split()) + (" " if value[-1].isspace() else "")
     )
-    if len(parent.children) and isinstance(parent.children[len(parent.children) - 1], pycrdt.XmlText):
-        text = parent.children[len(parent.children) - 1]
-    else:
-        text = parent.children.append(pycrdt.XmlText())
+    last = parent.children[len(parent.children) - 1] if len(parent.children) else None
+    text = last if isinstance(last, pycrdt.XmlText) else parent.children.append(pycrdt.XmlText())
     text.insert(len(text), value, marks)

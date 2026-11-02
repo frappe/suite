@@ -1,11 +1,12 @@
 """Seed/reset a fictional company for manual Drive testing, never during migration.
 
-Run with `pilot -b suite frappe --site suite.localhost execute suite.demo.drive.seed`.
-The six fixed accounts are reserved for this dataset. Reset purges their personal
-roots and Shared-root nodes, the Northwind logo, then their groups and accounts. Other users
-and the site's Shared root are retained. Each completed batch is committed, so a
-failed run can be removed with reset. Internal Drive helpers fill gaps in its facade.
-When the site has a `mail` server configured, the seed ends with `suite.demo.mail.seed`.
+Run with `pilot -b suite frappe --site suite.localhost execute suite.composition.demo.drive.seed`.
+The six fixed accounts are reserved for this dataset, so anything they own counts as demo data.
+Reset removes their Mail, purges their personal roots and Shared-root nodes, restores the
+workspace name and logo, then removes their groups and accounts. Other users and the site's
+Shared root are retained. Each completed batch is committed, so a failed run can be removed with
+reset. Internal Drive helpers fill gaps in its facade, which composition may reach.
+When the site has a `mail` server configured, the seed ends with `suite.composition.demo.mail.seed`.
 """
 
 import json
@@ -16,17 +17,19 @@ import frappe
 
 from suite import drive
 from suite.api.account import delete_logo_file
-from suite.demo import assets, content
+from suite.composition.demo import assets, content
 from suite.drive._core import activity, comments, nodes
-from suite.drive._core.access import grant
+from suite.drive._core.access import grant, revoke_grant
 from suite.drive._core.roots import archive_personal_root, create_root, purge_root
 from suite.drive.framework import principals_for
 from suite.suite_core.storage import state as storage_state
 
 PASSWORD = "NorthwindDemo!2026"
 URL = "https://suite.netchamp.dev"
-PREFIX = "Northwind Labs - "
+WORKSPACE = "Northwind Labs"
+PREFIX = f"{WORKSPACE} - "
 LOGO = "northwind-labs-logo.png"
+PREVIOUS_BRANDING = "northwind_demo_previous_branding"
 TEAMS = ("Product", "Design", "Engineering", "Marketing", "Finance")
 
 
@@ -55,13 +58,15 @@ PEOPLE = (
 
 def seed(fresh: bool = False) -> None:
     """Create Northwind; refuse an existing dataset unless fresh=True."""
+    caller = frappe.session.user
     frappe.set_user("Administrator")
     try:
         if fresh:
             reset()
         if _exists():
             print(
-                "Northwind demo data already exists. Run suite.demo.drive.reset first, or seed with fresh=True."
+                "Northwind demo data already exists. Run suite.composition.demo.drive.reset first, "
+                "or seed with fresh=True. To retry only Mail, run suite.composition.demo.mail.seed."
             )
             return
         print("Creating Northwind demo users...")
@@ -86,21 +91,30 @@ def seed(fresh: bool = False) -> None:
         print(f"\nPublished beta brief: {URL}{drive.node_url(shared_nodes['launch brief'])}")
         if frappe.conf.mail:
             # Imported here: mail reads the cast from this module.
-            from suite.demo import mail
+            from suite.composition.demo import mail
 
             mail.seed(fresh=fresh)
     except Exception:
         frappe.db.rollback()
-        print("Seed failed. Completed batches remain; run reset or seed(fresh=True) before retrying.")
+        print(
+            "Seed failed. Completed batches remain; run reset or seed(fresh=True) before retrying. "
+            "If only Mail failed, suite.composition.demo.mail.seed adds what is missing."
+        )
         raise
     finally:
-        frappe.set_user("Administrator")
+        frappe.set_user(caller)
 
 
 def reset() -> None:
-    """Permanently remove the reserved Northwind accounts and their Drive content."""
+    """Permanently remove the reserved Northwind accounts, their Mail and their Drive content."""
+    caller = frappe.session.user
     frappe.set_user("Administrator")
     try:
+        if frappe.conf.mail:
+            # Imported here: mail reads the cast from this module.
+            from suite.composition.demo import mail
+
+            mail.reset()
         emails = [person.email for person in PEOPLE]
         admin = principals_for("Administrator")
         # Pick all Shared roots, including archived ones, and shallow nodes first.
@@ -134,11 +148,13 @@ def reset() -> None:
                     archive_personal_root(person.email)
                 purge_root(root.name, admin)
             frappe.db.commit()
-        _remove_logo()
+        _restore_branding()
         for team in TEAMS:
             group = PREFIX + team
             if frappe.db.exists("User Group", group):
-                frappe.db.delete("Drive Grant", {"principal": f"$GROUP:{group}"})
+                grants = frappe.get_all("Drive Grant", filters={"principal": f"$GROUP:{group}"}, pluck="name")
+                for grant_name in grants:
+                    revoke_grant(grant_name, admin)
                 frappe.delete_doc("User Group", group, ignore_permissions=True)
         for person in PEOPLE:
             if frappe.db.exists("User", person.email):
@@ -158,7 +174,7 @@ def reset() -> None:
         frappe.db.rollback()
         raise
     finally:
-        frappe.set_user("Administrator")
+        frappe.set_user(caller)
 
 
 def _exists() -> bool:
@@ -201,8 +217,14 @@ def _users_and_groups() -> None:
 
 
 def _branding() -> None:
+    if not frappe.defaults.get_global_default(PREVIOUS_BRANDING):
+        previous = {
+            field: frappe.db.get_single_value("Suite Settings", field)
+            for field in ("workspace_name", "workspace_logo")
+        }
+        frappe.defaults.set_global_default(PREVIOUS_BRANDING, json.dumps(previous))
     logo = assets.brand_file("northwind-icon.png", LOGO, "Suite Settings", "Suite Settings", "workspace_logo")
-    frappe.db.set_single_value("Suite Settings", {"workspace_name": "Northwind Labs", "workspace_logo": logo})
+    frappe.db.set_single_value("Suite Settings", {"workspace_name": WORKSPACE, "workspace_logo": logo})
     for person in PEOPLE:
         name = person.first.lower()
         image = assets.brand_file(
@@ -211,12 +233,16 @@ def _branding() -> None:
         frappe.db.set_value("User", person.email, "user_image", image)
 
 
-def _remove_logo() -> None:
-    """Clear the workspace logo only while it is still the Northwind one."""
+def _restore_branding() -> None:
+    """Put back the workspace name and logo the seed replaced, unless someone has changed them since."""
+    previous = json.loads(frappe.defaults.get_global_default(PREVIOUS_BRANDING) or "{}")
     logo = frappe.db.get_single_value("Suite Settings", "workspace_logo")
     if logo and frappe.db.exists("File", {"file_url": logo, "file_name": LOGO}):
-        frappe.db.set_single_value("Suite Settings", "workspace_logo", "")
+        frappe.db.set_single_value("Suite Settings", "workspace_logo", previous.get("workspace_logo") or "")
         delete_logo_file(logo)
+    if frappe.db.get_single_value("Suite Settings", "workspace_name") == WORKSPACE:
+        frappe.db.set_single_value("Suite Settings", "workspace_name", previous.get("workspace_name") or "")
+    frappe.defaults.clear_default(key=PREVIOUS_BRANDING)
 
 
 def _grant(node: str, principal: str, role: int) -> None:
