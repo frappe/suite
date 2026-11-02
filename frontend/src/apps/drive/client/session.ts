@@ -19,7 +19,8 @@ import type {
   NodeVersionsOutputVersionShape,
 } from './generated'
 import { driveLinks } from './links'
-import { canManage, type DriveAccess, type DriveNode } from './types'
+import { folderOf } from './nodes'
+import { canManage, type DriveAccess, type DriveBreadcrumb, type DriveNode } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
@@ -77,6 +78,8 @@ export interface DocumentSession {
   readonly access: Readonly<Ref<DriveAccess>>
   /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
   readonly canShare: Readonly<Ref<boolean>>
+  /** The folder the document was in when it opened; null when the caller cannot read it. */
+  readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
   rename(title: string): Promise<DriveNode>
   /**
    * Opens the Drive share dialog. Access is read again after each write in
@@ -149,7 +152,7 @@ export async function openDriveDocumentSession(
       api.drive.nodes.get,
       {
         node: nodeId,
-        expand: 'access',
+        expand: 'access,breadcrumbs',
       },
       {
         signal: controller.signal,
@@ -178,6 +181,7 @@ export async function openDriveDocumentSession(
   const title = ref(node.title)
   const state = ref<SessionState>(toSessionState(node))
   const access = ref<DriveAccess>(node.access ?? {})
+  const folder = ref<DriveBreadcrumb | null>(folderOf(node))
   const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
@@ -290,6 +294,7 @@ export async function openDriveDocumentSession(
     state: readonly(state),
     access: readonly(access),
     canShare: computed(() => canShare(state.value, access.value)),
+    folder: readonly(folder),
     async rename(nextTitle) {
       const updated = await requester.mutation(
         api.drive.nodes.rename,

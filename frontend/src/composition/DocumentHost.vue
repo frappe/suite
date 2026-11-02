@@ -35,6 +35,7 @@ import { documentTypes } from '@/composition/documentRegistry'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { describeFailure } from '@/platform/open-failure'
 import { openingTitle as historyOpeningTitle, usePageTitle } from '@/platform/page-meta'
+import { getCookieSessionUser } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
 const route = useRoute()
@@ -53,6 +54,10 @@ const guestFrame = inject(GUEST_FRAME_KEY, null)
 
 const reopen = shallowRef(0)
 
+const FORBIDDEN = 403
+const NOT_FOUND = 404
+const GONE = 410
+const REFUSAL_STATUSES = [FORBIDDEN, NOT_FOUND, GONE]
 let opening = 0
 
 const nodeId = computed(() => String(route.params.node ?? ''))
@@ -125,6 +130,14 @@ watch(
         return
       }
 
+      if (
+        reason instanceof TransportError &&
+        REFUSAL_STATUSES.includes(reason.status) &&
+        getCookieSessionUser()
+      ) {
+        forgetNode(node)
+      }
+
       error.value = failureMessage(reason)
     } finally {
       if (request === opening) loading.value = false
@@ -147,6 +160,7 @@ watch(
     const lockedAgain = await isDriveNodeLocked(lapsed.nodeId)
     if (request !== opening) return
     if (!lockedAgain) {
+      forgetNode(lapsed.nodeId)
       guestFrame?.requireSignIn()
       return
     }
@@ -158,12 +172,12 @@ watch(
 )
 
 // A kept file preview is not the route's node, so its renames leave the route alone.
-watch(
-  () => session.value?.title.value,
-  () => {
-    if (session.value?.nodeId === nodeId.value) void replaceDecorativeSlug(session.value)
-  },
-)
+// Coming back from the slideshow puts the slug back
+watch([() => session.value?.title.value, () => route.name], () => {
+  if (session.value?.nodeId === nodeId.value) {
+    void replaceDecorativeSlug(session.value)
+  }
+})
 
 /**
  * Shows `next` with its surface in one step, so a surface never renders
@@ -174,6 +188,13 @@ function present(next: DocumentSession | null, nextSurface: Component | null) {
   session.value = next
   surface.value = nextSurface
   if (previous !== next) previous?.dispose()
+}
+
+// only on a refusal: an offline or failed open says nothing about access
+function forgetNode(node: string) {
+  for (const type of documentTypes) {
+    type.forgetNode?.(node)
+  }
 }
 
 function failureMessage(reason: unknown) {
@@ -196,6 +217,7 @@ function handleRetry() {
 }
 
 async function replaceDecorativeSlug(opened: DocumentSession) {
+  if (route.name !== 'document-host') return
   const destination = { ...driveNodeRoute(opened.nodeId, opened.title.value), query: route.query }
   if (router.resolve(destination).path !== route.path) await router.replace(destination)
 }

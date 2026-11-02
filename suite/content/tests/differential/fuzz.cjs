@@ -2,8 +2,9 @@
 // Usage: node fuzz.cjs <seed> <sessions>. Prints one JSON case per line:
 // { case, cid, update (base64), yjs: { structs, deletes } | null when Yjs can't read it }
 // Each struct is [client, clock, length, content ref, origin, right origin, parent id, shared type,
-// element name, format key, names], where names are the root, parent key, element name, format key
-// before `--` and the format value's keys that Yjs reads
+// element name, format key, names, root key], where names are the root, a nested parent key, element
+// name, format key before `--` and the format value's keys that Yjs reads, and the root key is the parent
+// key of a struct whose parent is a root
 const path = require('path')
 const Yjs = require(path.resolve(__dirname, '../../../../node_modules/yjs'))
 
@@ -57,7 +58,10 @@ function structNames(struct) {
     names.push(struct.parent)
   }
 
-  if (struct.parentSub !== null) {
+  let rootKey = null
+  if (struct.parentSub !== null && typeof struct.parent === 'string') {
+    rootKey = struct.parentSub
+  } else if (struct.parentSub !== null) {
     names.push(struct.parentSub)
   }
 
@@ -86,7 +90,7 @@ function structNames(struct) {
     }
   }
 
-  return [type, node, key, names]
+  return [type, node, key, names, rootKey]
 }
 
 function readWithYjs(update) {
@@ -100,7 +104,7 @@ function readWithYjs(update) {
   const structs = decoded.structs.map((struct) => {
     const idAndLength = [struct.id.client, struct.id.clock, struct.length]
     if (!(struct instanceof Yjs.Item)) {
-      return [...idAndLength, struct instanceof Yjs.GC ? 0 : 10, null, null, null, null, null, null, []]
+      return [...idAndLength, struct instanceof Yjs.GC ? 0 : 10, null, null, null, null, null, null, [], null]
     }
 
     let parent = null

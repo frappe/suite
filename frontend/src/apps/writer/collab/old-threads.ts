@@ -1,6 +1,5 @@
-import { v4 } from 'uuid'
-
 import { isPlainObject } from '@/apps/writer/collab/inventory'
+import { randomId } from '@/platform/random-id'
 
 // What Drive stores for a comment: its text's bytes and blank as the server reads them, the
 // display name's length in code points and the last year a server time holds
@@ -157,7 +156,7 @@ export function readOldThreads(texts: string[]) {
       return null
     }
 
-    const key = v4()
+    const key = randomId()
     keys.set(uuid, key)
     threads.push({
       key,

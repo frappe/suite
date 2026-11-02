@@ -64,6 +64,7 @@ class CompactionCase(CheckpointCase):
             parts.append(frame.checkpoint)
 
         revs = [rev for rev, _ in frame.rows]
-        state = compaction.pycrdt.merge_updates(*parts, *(payload for _, payload in frame.rows))
+        # An empty row is a quarantined rev, which a reader skips
+        state = compaction.pycrdt.merge_updates(*parts, *(payload for _, payload in frame.rows if payload))
         text = self.text_of(state)
         return Opened(frame.header, revs, text)

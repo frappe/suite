@@ -3,6 +3,7 @@ import { restoreEdit } from '@/apps/writer/collab/restore'
 import { restoredAnchors, type AnchoredThread } from '@/apps/writer/collab/restoredAnchors'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
 import type { CollabRoom, RestoreResult } from '@/platform/collab'
+import { translate as __ } from '@/platform/translation'
 
 import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
 
@@ -27,12 +28,13 @@ export interface VersionRestore extends RestoreNotice {
 // The server's wait between restores, for a refusal that doesn't say how long is left
 const RESTORE_EVERY_SECONDS = 60
 
-const REFUSALS: Record<string, string> = {
-  restoring: 'Someone else is restoring a version. Try again once it is done.',
-  behind: 'This tab is still catching up. Try again in a moment.',
-  milestone_failed:
-    "The document as it is now couldn't be kept as a version first, so nothing was restored.",
-  paused: 'Saving is paused, so nothing was restored.',
+// Functions, so each message is translated once the catalog has loaded
+const REFUSALS: Record<string, () => string> = {
+  restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
+  behind: () => __('This tab is still catching up. Try again in a moment.'),
+  milestone_failed: () =>
+    __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
+  paused: () => __('Saving is paused, so nothing was restored.'),
 }
 
 /** Restores version `seq` from its stored bytes, after this tab's edits are saved; `convert` upgrades an old one. */
@@ -47,7 +49,7 @@ export async function restoreVersion(
   try {
     body = await readVersionBody(bytes)
   } catch {
-    return { isRestored: false, message: "This version can't be restored.", anchors: {} }
+    return { isRestored: false, message: __("This version can't be restored."), anchors: {} }
   }
 
   if ('legacy' in body) {
@@ -55,7 +57,7 @@ export async function restoreVersion(
     if ('isPending' in converted) {
       return {
         isRestored: false,
-        message: 'This version is still being upgraded. Try restoring it again in a minute.',
+        message: __('This version is still being upgraded. Try restoring it again in a minute.'),
         anchors: {},
       }
     }
@@ -93,9 +95,11 @@ function savedAnchors(room: RestoringRoom, anchors: Record<string, string>) {
 }
 
 function refusedNotice(reason: string | null): RestoreNotice {
-  let message = "This version couldn't be upgraded, so it can't be restored. You can download it."
+  let message = __(
+    "This version couldn't be upgraded, so it can't be restored. You can download it.",
+  )
   if (reason) {
-    message += ` Reason: ${reason}.`
+    message += ' ' + __('Reason: {0}.', [reason])
   }
 
   return { isRestored: false, message, canDownload: true }
@@ -103,25 +107,32 @@ function refusedNotice(reason: string | null): RestoreNotice {
 
 function noticeFor(result: RestoreResult): RestoreNotice {
   if (result.outcome === 'landed') {
-    return { isRestored: true, message: 'Version restored' }
+    return { isRestored: true, message: __('Version restored') }
   }
 
   if (result.outcome === 'unchanged') {
-    return { isRestored: true, message: 'The document already matches this version.' }
+    return { isRestored: true, message: __('The document already matches this version.') }
   }
 
   if (result.outcome === 'unsent') {
-    return { isRestored: false, message: 'Your changes are still saving. Try again in a moment.' }
+    return {
+      isRestored: false,
+      message: __('Your changes are still saving. Try again in a moment.'),
+    }
   }
 
   if (result.refusal === 'restore_recent') {
     const wait = result.retryS ?? RESTORE_EVERY_SECONDS
     return {
       isRestored: false,
-      message: `A restore just ran. Try again in ${wait} seconds.`,
+      message: __('A restore just ran. Try again in {0} seconds.', [wait]),
     }
   }
 
-  const message = REFUSALS[result.refusal ?? ''] ?? 'The version was not restored.'
-  return { isRestored: false, message }
+  const refusal = result.refusal ?? ''
+  if (Object.hasOwn(REFUSALS, refusal)) {
+    return { isRestored: false, message: REFUSALS[refusal]() }
+  }
+
+  return { isRestored: false, message: __('The version was not restored.') }
 }

@@ -1,20 +1,33 @@
-import { defineAsyncComponent, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { RouteLocationPathRaw } from 'vue-router'
+import {
+  computed,
+  defineAsyncComponent,
+  getCurrentInstance,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  type ComputedRef,
+} from 'vue'
+import { useRouter, type RouteLocationPathRaw, type Router } from 'vue-router'
 
 import { api, client, useQuery } from '@/api'
 import FilesIcon from '@/apps/drive/AreaIcon.vue'
 import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
-import { openDriveDocumentSession } from '@/apps/drive/client/session'
-import type { DriveNode } from '@/apps/drive/client/types'
+import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
+import type { DriveBreadcrumb, DriveNode } from '@/apps/drive/client/types'
+import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
+import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
+import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
+import { toast } from '@/platform/feedback'
 import { openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { buildUrl } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -161,6 +174,9 @@ export function recordDriveVisit(node: string): Promise<void> {
   return recordVisit(node)
 }
 
+/** The segments a document's own views take after /d/<node>, so no slug can name one. */
+export const DOCUMENT_VIEW_SEGMENTS = ['present']
+
 export function driveNodeRoute(
   node: DriveNodeSummary | { name: string; title: string; kind: string } | string,
   title?: string,
@@ -169,16 +185,136 @@ export function driveNodeRoute(
   const id = typeof node === 'string' ? node : node.name
   const label = typeof node === 'string' ? (title ?? '') : node.title
   const nodeKind = typeof node === 'string' ? kind : node.kind
-  const slug = slugify(label)
-  const base =
-    nodeKind === 'folder' ? `/drive/f/${encodeURIComponent(id)}` : `/d/${encodeURIComponent(id)}`
+  const isFolder = nodeKind === 'folder'
+  const titleSlug = slugify(label)
+  const slug = !isFolder && DOCUMENT_VIEW_SEGMENTS.includes(titleSlug) ? '' : titleSlug
+  const prefix = isFolder ? '/drive/f' : '/d'
+  const address = encodeURIComponent(id)
+  const base = `${prefix}/${address}`
   // The history entry carries the title, so the tab names the node before
   // its page loads.
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
 }
 
+/** A document menu item, in frappe-ui Dropdown's shape. */
+export interface DriveDocumentAction {
+  label: string
+  icon: string
+  onClick: () => void
+}
+
+/**
+ * A document's own Drive actions for its menu: `back` to the folder it is in,
+ * and its `node` actions, Duplicate and Delete. Each shows only when the caller
+ * may take it. Call it in a component's setup.
+ */
+export function useDriveDocumentActions(
+  session: DocumentSession,
+): ComputedRef<{ back: DriveDocumentAction[]; node: DriveDocumentAction[] }> {
+  const account = useSession()
+  const actions = documentActions(session)
+  return computed(() => {
+    const isFiled = session.folder.value !== null
+    const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
+    return {
+      back: actionsWhere([[isFiled, actions.back]]),
+      node: actionsWhere([
+        [isFiled && can.copy, actions.duplicate],
+        [can.trash, actions.delete],
+      ]),
+    }
+  })
+}
+
+function documentActions(session: DocumentSession) {
+  const router = useRouter()
+  const locationTitle = useLocationTitle()
+  function folderRoute() {
+    return folderRouteOf(session.folder.value, locationTitle)
+  }
+
+  return {
+    back: {
+      label: __('Back to folder'),
+      icon: 'lucide-arrow-left',
+      onClick: () => void router.push(folderRoute()),
+    },
+    duplicate: {
+      label: __('Duplicate'),
+      icon: 'lucide-copy',
+      onClick: () => void duplicateDocument(session, session.folder.value, router),
+    },
+    delete: {
+      label: __('Delete'),
+      icon: 'lucide-trash-2',
+      onClick: () => void trashDocument(session, router, folderRoute()),
+    },
+  }
+}
+
+function folderRouteOf(
+  folder: DriveBreadcrumb | null,
+  locationTitle: (crumb: DriveBreadcrumb) => string,
+): RouteLocationPathRaw {
+  if (!folder) {
+    return { path: '/drive' }
+  }
+
+  return driveNodeRoute(folder.name, locationTitle(folder), 'folder')
+}
+
+async function duplicateDocument(
+  session: DocumentSession,
+  folder: DriveBreadcrumb | null,
+  router: Router,
+) {
+  if (!folder) {
+    return
+  }
+
+  try {
+    await router.push(driveNodeRoute(await session.copy(folder.name)))
+  } catch (error) {
+    toast.error((error instanceof Error && error.message) || __('Could not duplicate this file.'))
+  }
+}
+
+async function trashDocument(session: DocumentSession, router: Router, back: RouteLocationPathRaw) {
+  const item = { node: session.nodeId, title: session.title.value }
+  try {
+    await client.mutation(api.drive.nodes.trash, { node: item.node, state: 'Trashed' })
+  } catch (error) {
+    toast.error((error instanceof Error && error.message) || __('Could not delete this file.'))
+    return
+  }
+
+  announceTrash([item])
+  await router.push(back)
+}
+
+function actionNodeOf(session: DocumentSession): ActionNode {
+  return {
+    name: session.nodeId,
+    kind: 'document',
+    state: session.state.value,
+    trash_root: null,
+    access: session.access.value,
+  }
+}
+
+function actionsWhere(items: [boolean, DriveDocumentAction][]): DriveDocumentAction[] {
+  return items.filter(([isShown]) => isShown).map(([, action]) => action)
+}
+
 /** What a document session and a file preview session each need of the node, so one read opens either. */
 const OPENING_EXPAND = 'access,preview,breadcrumbs'
+/** The urls opening a document session reads, for a copy that opens it offline. */
+export function documentSessionUrls(nodeId: string): string[] {
+  return [
+    buildUrl(api.drive.nodes.get, { node: nodeId, expand: OPENING_EXPAND }),
+    buildUrl(api.drive.nodes.media, { node: nodeId }),
+  ]
+}
 export async function openDocumentSession(nodeId: string) {
   // `session.share()` opens its dialog in the app that opened the session.
   rememberDialogContext(getCurrentInstance()?.appContext)

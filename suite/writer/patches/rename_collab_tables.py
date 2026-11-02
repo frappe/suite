@@ -5,13 +5,14 @@ either side is dropped. Rows on both sides stop the patch rather than lose eithe
 """
 
 import frappe
+from frappe.query_builder import Table
 
 from suite.content.tables import KINDS, table
 
 
 def has_rows(name: str) -> bool:
     """Answer whether the table `name` holds any row."""
-    first_row = frappe.db.sql(f"SELECT 1 FROM `{name}` LIMIT 1")
+    first_row = frappe.qb.from_(Table(name)).select(1).limit(1).run()
     return bool(first_row)
 
 

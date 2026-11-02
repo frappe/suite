@@ -31,7 +31,6 @@ import * as Y from 'yjs'
 
 import type { Glue } from './glue'
 import {
-  axis,
   isTailId,
   parseCellKey,
   parseLineKey,
@@ -40,16 +39,9 @@ import {
   type AxisName,
   type Roots,
 } from './schema'
-import { docSheets } from './stores'
+import { selectionFromIds, selectionToIds, type SavedSelection, type Selection } from './selection'
 
-/** A selected range: sheet name and 0-based positions, as the canvas has them. */
-export interface Selection {
-  sheet: string
-  r0: number
-  c0: number
-  r1: number
-  c1: number
-}
+export type { Selection }
 
 interface UndoResult {
   /** Whether the doc changed. */
@@ -81,17 +73,6 @@ export interface UndoOptions {
   getSelection?: () => Selection | null
   /** Oldest steps are dropped beyond this many. */
   maxSteps?: number
-}
-
-// A selection by row/col id, so it follows rows other tabs insert or delete.
-// Past the end of an id list there are no ids yet: those ends keep a position.
-type End = string | number
-interface SavedSelection {
-  sheetId: string
-  r0: End
-  c0: End
-  r1: End
-  c1: End
 }
 
 const SELECTION = 'selection'
@@ -268,36 +249,11 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
 
   // ---- selection ----
 
-  function saveSelection(): SavedSelection | null {
-    const sel = getSelection?.()
-    if (!sel) return null
-    const sheetId = docSheets(doc).find((s) => s.name === sel.sheet)?.id
-    if (!sheetId) return null
-    const end = (name: AxisName, pos: number): End => axis(doc, sheetId, name).idAt(pos) ?? pos
-    return {
-      sheetId,
-      r0: end('rows', sel.r0),
-      c0: end('cols', sel.c0),
-      r1: end('rows', sel.r1),
-      c1: end('cols', sel.c1),
-    }
-  }
-
-  function resolveSelection(saved: SavedSelection | null | undefined): Selection | null {
-    if (!saved) return null
-    const sheet = docSheets(doc).find((s) => s.id === saved.sheetId)?.name
-    if (sheet === undefined) return null
-    const pos = (name: AxisName, end: End) =>
-      typeof end === 'number' ? end : axis(doc, saved.sheetId, name).posOf(end)
-    const sel = {
-      sheet,
-      r0: pos('rows', saved.r0),
-      c0: pos('cols', saved.c0),
-      r1: pos('rows', saved.r1),
-      c1: pos('cols', saved.c1),
-    }
-    return sel.r0 < 0 || sel.c0 < 0 || sel.r1 < 0 || sel.c1 < 0 ? null : sel
-  }
+  // The selection a step is made with, by row/col id, so it follows rows other
+  // tabs insert or delete (selection.ts).
+  const saveSelection = () => selectionToIds(doc, getSelection?.() ?? null)
+  const resolveSelection = (saved: SavedSelection | null | undefined) =>
+    selectionFromIds(doc, saved)
 
   // ---- undo / redo ----
 

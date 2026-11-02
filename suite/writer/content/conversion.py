@@ -15,6 +15,7 @@ from datetime import datetime
 
 import frappe
 import pycrdt
+from frappe.query_builder.functions import Max
 
 from suite import drive
 from suite.content import compaction, convert, copies
@@ -47,13 +48,18 @@ def old_row(node: str, columns: Collection[str], *, lock: bool = False) -> frapp
     # Must order as app_row.body_row does, pinned by the tests
     # test_writes_the_body_and_clears_the_comments_on_the_same_row_of_a_node_with_two_rows and
     # test_fingerprints_the_row_the_body_is_written_to_on_a_node_with_two_rows
-    selected = ", ".join(f"`{column}`" for column in columns)
-    lock_clause = " FOR UPDATE" if lock else ""
-    found = frappe.db.sql(
-        f"SELECT {selected} FROM `tab{DOCTYPE}` WHERE `node` = %s ORDER BY `name` LIMIT 1{lock_clause}",
-        node,
-        as_dict=True,
+    writer_doc = frappe.qb.DocType(DOCTYPE)
+    query = (
+        frappe.qb.from_(writer_doc)
+        .select(*(writer_doc[column] for column in columns))
+        .where(writer_doc.node == node)
+        .orderby(writer_doc.name)
+        .limit(1)
     )
+    if lock:
+        query = query.for_update()
+
+    found = query.run(as_dict=True)
     if not found:
         return None
 
@@ -79,11 +85,15 @@ def read_old(node: str, *, lock: bool = False) -> OldDocument | None:
 
     if lock:
         # Lock the node with no plain read before it, which would take a snapshot missing a thread made meanwhile
-        frappe.db.sql("SELECT `name` FROM `tabDrive Node` WHERE `name` = %s FOR UPDATE", (node,))
+        drive_node = frappe.qb.DocType("Drive Node")
+        frappe.qb.from_(drive_node).select(drive_node.name).where(drive_node.name == node).for_update().run()
 
     legacy = {name: row[name] for name in FIELDS}
     threads = drive.comment_threads(node)
-    [[newest]] = frappe.db.sql(f"SELECT MAX(`modified`) FROM `tab{DOCTYPE}` WHERE `node` = %s", node)
+    writer_doc = frappe.qb.DocType(DOCTYPE)
+    [[newest]] = (
+        frappe.qb.from_(writer_doc).select(Max(writer_doc.modified)).where(writer_doc.node == node).run()
+    )
     return OldDocument(row.name, legacy, fingerprint_of(legacy), threads, newest)
 
 

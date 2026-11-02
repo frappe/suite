@@ -126,14 +126,25 @@ export function usePersistence({
       if (saved.view && applyViewState) applyViewState(saved.view)
       if (saved.pivot && pivot?.restore) pivot.restore(saved.pivot)
       if (saved.charts && charts?.restore) charts.restore(saved.charts)
+      if (saved.namedRanges && namedRanges?.restore) namedRanges.restore(saved.namedRanges)
+      for (const [from, to] of renamed) {
+        for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
+      }
       if (saved.namedRanges && namedRanges?.restore) {
-        namedRanges.restore(saved.namedRanges)
+        // A name on a sheet the file no longer has (saved before ISSUES #77)
+        // is #REF!, as if that sheet were deleted now: a sheet added later
+        // under its name doesn't bring it back. Checked after a develop
+        // sheet's renames; skipped when its conversion failed (IronCalc then
+        // holds none of its sheets).
+        const sheets = engine.client?.()?.sheets
+        if (sheets && namedRanges.deleteSheet && converted?.ok !== false) {
+          const have = new Set(sheets.map((s) => s.toLowerCase()))
+          for (const e of namedRanges.list())
+            if (e.sheet && !have.has(e.sheet.toLowerCase())) namedRanges.deleteSheet(e.sheet)
+        }
         // IronCalc started before the names were back, and its saved names
         // can be out of date (one whose cells were deleted: ISSUES #74).
         engine.syncDefinedNames?.()
-      }
-      for (const [from, to] of renamed) {
-        for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
       }
       legacyUpgrade.value = plan ? await _legacyUpgrade(plan, converted, mayWrite) : null
       // Before the first save of a converted sheet, Drive keeps the develop

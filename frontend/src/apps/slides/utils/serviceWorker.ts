@@ -1,6 +1,25 @@
 import { adoptLegacyDrafts } from '@/apps/slides/utils/drafts'
 import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
 
+// only for someone who opened a presentation; the kill switch takes the worker out
+export async function registerSlidesWorker() {
+  const isEnabled = import.meta.env.PROD || import.meta.env.VITE_SLIDES_SW === '1'
+  if (!('serviceWorker' in navigator) || !isEnabled) return
+
+  if (window.disable_slides_service_worker) {
+    const registration = await navigator.serviceWorker.getRegistration('/').catch(() => null)
+    await registration?.unregister().catch(() => {})
+    await clearSlidesUserData().catch(() => {})
+    return
+  }
+
+  try {
+    await navigator.serviceWorker.register('/service-worker.js')
+  } catch (err) {
+    console.warn('Slides Service Worker registration failed:', err)
+  }
+}
+
 // a broken worker must not hold up navigation
 const ACK_TIMEOUT = 500
 

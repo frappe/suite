@@ -5,9 +5,11 @@
 //
 // Usage:
 //   const { startEngine, stopEngine, readRect, writeInputs, … } = useWorkbook({
-//     currentSheet, namedRanges, getGrid, syncNames, onVersion, onUsedExtent })
+//     currentSheet, namedRanges, getGrid, sheetNames, syncNames, onVersion,
+//     onUsedExtent })
 //
-// What reacts to the workbook stays with the editor and comes in as
+// sheetNames() is the tab list: IronCalc's sheets once everything sent so far
+// applies. What reacts to the workbook stays with the editor and comes in as
 // callbacks: syncNames when its sheet list changes, onVersion after every
 // applied edit, onUsedExtent when the open sheet's data extent is read,
 // onCrash(reason) if the worker dies (the workbook is lost with it).
@@ -24,6 +26,7 @@ export function useWorkbook({
   currentSheet,
   namedRanges,
   getGrid,
+  sheetNames,
   syncNames,
   onVersion,
   onUsedExtent,
@@ -44,16 +47,20 @@ export function useWorkbook({
       cache,
       requestRender: () => getGrid()?.render?.(),
     })
-    // Tabs follow the workbook: its sheets on load, and any later change.
-    const offSheets = client.onSheets(() => syncNames())
+    // Tabs follow the workbook: its sheets on load, and any later change. So
+    // do the names: one on a sheet an undo brings back is sent once it's back.
+    const offSheets = client.onSheets(() => {
+      syncNames()
+      syncDefinedNames()
+    })
     const offVersion = client.onVersion(() => onVersion())
     const offCrash = client.onCrash((reason) => onCrash(reason))
     engine = { client, provider, offSheets, offVersion, offCrash }
     // Nothing is sent yet: the next sync sends every name. A load restores
     // the names after this and syncs then (usePersistence).
     namesInEngine = new Map()
-    syncDefinedNames()
     syncNames()
+    syncDefinedNames()
     refreshUsedCells() // size the grid to the loaded data
     getGrid()?.render?.()
   }
@@ -75,6 +82,17 @@ export function useWorkbook({
   function engineBytes() {
     if (!engine) return Promise.reject(new Error('IronCalc is not running'))
     return engine.client.toBytes()
+  }
+
+  // Where commands go: IronCalc, or (collab on) the glue, which passes them
+  // on to IronCalc and writes them into the shared doc (useCollabRoom.ts).
+  let route = null
+  function setRoute(next) {
+    route = next
+  }
+  function dispatch(cmd) {
+    if (route) route(cmd)
+    else engine?.client.dispatch(cmd)
   }
 
   let commandSeq = 0
@@ -102,8 +120,8 @@ export function useWorkbook({
     const commands = Object.entries(map)
       .map(([id, value]) => inputCommand(sn, id, value))
       .filter(Boolean)
-    if (commands.length === 1) engine.client.dispatch(commands[0])
-    else if (commands.length > 1) engine.client.dispatch(command('batch', { commands }))
+    if (commands.length === 1) dispatch(commands[0])
+    else if (commands.length > 1) dispatch(command('batch', { commands }))
   }
 
   // Named ranges live in their own store (the dialog edits it, the document
@@ -114,9 +132,11 @@ export function useWorkbook({
   let namesInEngine = new Map() // name → formula ('' when dropped)
   function syncDefinedNames() {
     if (!engine) return
-    const { sent, changes } = definedNameChanges(namesInEngine, namedRanges().list())
+    const { sent, changes } = definedNameChanges(namesInEngine, namedRanges().list(), sheetNames())
     const commands = changes.map((c) => command(c.type, c.payload))
     namesInEngine = sent
+    // Straight to IronCalc, never through the glue: IronCalc's names follow the
+    // named-ranges store, which is what the collab doc keeps.
     if (commands.length === 1) engine.client.dispatch(commands[0])
     else if (commands.length > 1) engine.client.dispatch(command('batch', { commands }))
   }
@@ -309,7 +329,7 @@ export function useWorkbook({
 
   // Empties a rect's cells (0-based; contents only, formats stay).
   function clearRect(sn, rect) {
-    engine?.client.dispatch(
+    dispatch(
       command('clearContents', {
         sheet: sn,
         range: { r1: rect.r0 + 1, c1: rect.c0 + 1, r2: rect.r1 + 1, c2: rect.c1 + 1 },
@@ -321,7 +341,7 @@ export function useWorkbook({
   async function clearSheet(sn) {
     const ext = await sheetExtent(sn)
     if (!ext || !engine) return
-    engine.client.dispatch(
+    dispatch(
       command('clearContents', {
         sheet: sn,
         range: { r1: 1, c1: 1, r2: ext.maxRow + 1, c2: ext.maxCol + 1 },
@@ -335,6 +355,8 @@ export function useWorkbook({
     engineClient,
     engineBytes,
     command,
+    dispatch,
+    setRoute,
     writeInputs,
     syncDefinedNames,
     inputAt,

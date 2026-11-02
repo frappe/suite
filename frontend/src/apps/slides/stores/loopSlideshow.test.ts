@@ -5,7 +5,7 @@ const replace = vi.fn(() => Promise.resolve())
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({
-  router: { replace, currentRoute: { value: { params: { presentationId: 'p1' } } } },
+  router: { replace, currentRoute: { value: { params: { node: 'n1', slug: 'q3-review' } } } },
 }))
 
 const { slides, slideIndex } = await import('./slide')
@@ -39,6 +39,53 @@ describe('presenting from the navbar', () => {
     endSlideShow()
     cancelAdvance()
     vi.useRealTimers()
+  })
+
+  it('presents at the node, and comes back to its document on the slide it left', async () => {
+    startSlideShow()
+    expect(replace).toHaveBeenLastCalledWith({
+      name: 'slides-slideshow',
+      params: { node: 'n1' },
+      query: { slide: 1 },
+    })
+
+    changeSlideInSlideshow(1)
+    await nextTick()
+    expect(replace).toHaveBeenLastCalledWith({
+      name: 'slides-slideshow',
+      params: { node: 'n1' },
+      query: { slide: 2 },
+    })
+
+    // the page follows the query
+    slideIndex.value = 1
+    endSlideShow()
+    expect(replace).toHaveBeenLastCalledWith({
+      name: 'document-host',
+      params: { node: 'n1' },
+      query: { slide: 2 },
+    })
+  })
+
+  it('keeps the rest of the query from the start of the show to its end', async () => {
+    const { router } = await import('@/apps/slides/router')
+    Object.assign(router.currentRoute.value, { query: { from: 'home', slide: '3' } })
+
+    startSlideShow()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { from: 'home', slide: 1 } }),
+    )
+    changeSlideInSlideshow(1)
+    await nextTick()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { from: 'home', slide: 2 } }),
+    )
+    slideIndex.value = 1
+    endSlideShow()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: 'document-host', query: { from: 'home', slide: 2 } }),
+    )
+    Object.assign(router.currentRoute.value, { query: undefined })
   })
 
   it('starts on loop from the first slide', () => {

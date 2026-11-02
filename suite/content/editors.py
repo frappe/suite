@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 import frappe
+import pycrdt
 
 from suite import drive
 from suite.content.ingest import EditorSchema
@@ -48,7 +49,8 @@ class HtmlCopy:
 
     def read(self, doctype: str, docname: str) -> Mapping[str, str]:
         """Answer the field as the copy's one row, or no row when it is empty."""
-        found = frappe.db.sql(f"SELECT `{self.field}` FROM `tab{doctype}` WHERE `name` = %s", docname)
+        row = frappe.qb.DocType(doctype)
+        found = frappe.qb.from_(row).select(row[self.field]).where(row.name == docname).run()
         if not found or not found[0][0]:
             return {}
 
@@ -56,10 +58,8 @@ class HtmlCopy:
 
     def write(self, doctype: str, docname: str, changed: Mapping[str, str | None]) -> None:
         """Write the field, emptied when its row is removed."""
-        frappe.db.sql(
-            f"UPDATE `tab{doctype}` SET `{self.field}` = %s WHERE `name` = %s",
-            (changed[self.field] or "", docname),
-        )
+        row = frappe.qb.DocType(doctype)
+        frappe.qb.update(row).set(row[self.field], changed[self.field] or "").where(row.name == docname).run()
 
     def serialized(self, rows: Mapping[str, str]) -> str:
         """Answer the field's HTML."""
@@ -226,12 +226,22 @@ def wrong_declarations(spec: EditorSpec) -> list[str]:
         and bool(spec.part_map)
         and all(text(root) and isinstance(kind, type) for root, kind in spec.part_map.items()),
         "schema": isinstance(spec.schema, EditorSchema),
+        "open_roots": open_roots_right(spec.schema, spec.part_map),
         "checker_build": isinstance(spec.checker_build, Path),
         "readable_copy": copy_right(spec.readable_copy),
         "media": media_right(spec.media),
         "conversion": conversion_right(spec.conversion),
     }
     return [field for field, ok in right.items() if not ok]
+
+
+def open_roots_right(schema: object, part_map: object) -> bool:
+    """Whether each open root of an editor's schema is a Map in its `part_map`."""
+    # A wrong schema or part_map is named as itself
+    if not isinstance(schema, EditorSchema) or not isinstance(part_map, Mapping):
+        return True
+
+    return all(part_map.get(root) is pycrdt.Map for root in schema.open_roots)
 
 
 def conversion_right(conversion: object) -> bool:

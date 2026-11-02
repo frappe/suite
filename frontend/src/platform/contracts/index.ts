@@ -78,6 +78,8 @@ export interface DocumentTypeDefinition {
   loadUnsavedWork?: () => Promise<Component>
   /** Each such copy this device keeps, without loading the list. */
   listUnsavedCopies?: () => Promise<UnsavedCopy[]>
+  /** Drops what this device keeps of the node, once the user lost access to it. */
+  forgetNode?: (nodeId: string) => void
 }
 
 /** One copy of work kept on this device, by the document it belongs to. */

@@ -21,3 +21,29 @@ snapshot and ordered projection. The browser still owns layout: it projects this
 room ranking through viewport capacity, the local self tile, and personal pins.
 This removes independent browser history from default membership and order
 without moving viewport or recording-readiness policy into the SFU.
+
+### Stable presentation slots
+
+Conversational priority selects each capacity's participant set; it does not
+specify tile positions. The SFU snapshots a presentation order for each supported
+ranked prefix (1–16 tiles). Retained members keep their slots and entrants fill
+vacancies. Equal-priority joins follow room arrival order, so a new identifier
+cannot evict an incumbent merely by sorting earlier. Departures that reduce the
+population move tail survivors only when needed to fill a hole.
+
+The SFU also maintains these orders after each human endpoint's self exclusion,
+and sends only that endpoint's projection on join and updates. This prevents local
+speaking priority from changing remote slots. Endpoints project the received
+orders through screen tiles and capacity. Unpinned defaults have no browser
+presentation history; fresh join/reconnect snapshots reproduce the room's current
+presentation.
+
+Pinned layouts keep their panels in pin order. Their unpinned strip
+starts from the shared presentation, then retains local slots while pin settings,
+viewport capacity and screen layout are unchanged. Selection still follows shared
+priority; entrants fill vacancies. Interior vacancies remain empty when no
+replacement is available, so survivors do not move. The overflow tile reserves
+a vacancy when first needed and retains it through selection changes. Only the current personal layout is
+retained, without server histories for pin combinations. Pin/unpin, viewport and
+screen-layout changes may reset these slots. Sidebar column count follows viewport
+capacity so participant joins do not resize the pinned panel.

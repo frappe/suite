@@ -42,10 +42,11 @@ function linesPaintedFor(fmt: CellFormat, value = VALUE, merge: MergeInfo | null
   return segments
 }
 
-// Row 0 starts at y=24, is 60px tall; two 16px lines centre at y=46 and y=62.
-// Strike sits 1px below a line's middle, underline 8px below.
-const STRIKE_Y = [47, 63]
-const UNDER_Y = [54, 70]
+// Row 0 starts at y=24, is 60px tall; below its gridline the white area is
+// 25…84, so two 16px lines centre at y=46.5 and y=62.5. Strike sits 1px below
+// a line's middle, underline 8px below.
+const STRIKE_Y = [47.5, 63.5]
+const UNDER_Y = [54.5, 70.5]
 
 describe('decorations on wrapped text', () => {
   it('strikes through every wrapped line, at that line’s width', () => {
@@ -94,7 +95,7 @@ describe('decorations on wrapped text', () => {
     // Two columns (192px usable) fit the whole value on one line.
     const merge: MergeInfo = { colSpan: 2, rowSpan: 1 }
     expect(linesPaintedFor({ textWrap: 'wrap', strikethrough: true }, VALUE, merge)).toEqual([
-      { x0: 54, x1: 187, y: 55 },
+      { x0: 54, x1: 187, y: 55.5 },
     ])
   })
 })

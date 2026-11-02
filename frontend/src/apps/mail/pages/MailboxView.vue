@@ -380,7 +380,7 @@
   />
 </template>
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown, usePageMeta } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -446,7 +446,7 @@ import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectAct
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
-import { appPageMeta } from '@/platform/page-meta'
+import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 
 const {
   accountId,
@@ -1349,10 +1349,9 @@ const unreadThreadsPrefix = computed(() => (unreadThreads.value ? `(${unreadThre
 const currentThread = computed(() =>
   threadRows.value?.find((t: Thread) => t.thread_id === threadID),
 )
-usePageMeta(() => {
-  if (threadID) return appPageMeta(currentThread.value?.subject || __('[No Subject]'), 'Mail')
-  return appPageMeta(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail')
-})
+usePageTitle(() =>
+  threadID ? '' : appDocumentTitle(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail'),
+)
 const title = computed(() => {
   if (selections.value.length)
     return selections.value.length === 1

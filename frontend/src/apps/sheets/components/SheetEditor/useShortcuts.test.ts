@@ -34,8 +34,6 @@ function makeActions(overrides = {}) {
     openHyperlinkDialog: vi.fn(),
     openCommentPanel: vi.fn(),
     openQuickFilterForActive: vi.fn(),
-    zoomBy: vi.fn(),
-    resetZoom: vi.fn(),
     commentPanel: { open: false },
     dropdownPanel: { open: false },
     splitText: { open: false },
@@ -147,15 +145,14 @@ describe('registered shortcuts', () => {
     fire({ key: 'h', ctrl: true })
     expect(a.showFindReplace.value).toBe(true)
   })
-  it('Mod+= / Mod+- / Mod+0 register zoom', () => {
-    const a = makeActions()
-    useShortcuts(a)
-    fire({ key: '=', ctrl: true })
-    expect(a.zoomBy).toHaveBeenCalledWith(+0.1)
-    fire({ key: '-', ctrl: true })
-    expect(a.zoomBy).toHaveBeenCalledWith(-0.1)
-    fire({ key: '0', ctrl: true })
-    expect(a.resetZoom).toHaveBeenCalled()
+  // Browser zoom scales the whole page, top bars and grid together (the
+  // canvas follows the device pixel ratio); View → Zoom zooms the grid alone.
+  it('leaves Mod+= / Mod+- / Mod+0 to the browser', () => {
+    useShortcuts(makeActions())
+    for (const key of ['=', '+', '-', '0']) {
+      expect(find({ key, ctrl: true }), key).toBeUndefined()
+      expect(find({ key, ctrl: true, shift: true }), key).toBeUndefined()
+    }
   })
   it('Mod+L / Shift+F2 / Alt+ArrowDown register nav-edits', () => {
     const a = makeActions()

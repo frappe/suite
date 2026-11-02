@@ -17,6 +17,7 @@ from suite import drive
 from suite.slides import drive as slides_drive
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
+SYSTEM_TEMPLATE_FIRST_LAYOUT = 2
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 NODE_FIELD = slides_drive.NODE_FIELD
@@ -309,14 +310,61 @@ def _home_folder() -> str:
     return home
 
 
+def readable_template_node(theme: str) -> str:
+    """Return the theme's node if the caller can read it as an Active template; every miss is one refusal."""
+    theme_node = frappe.db.get_value("Presentation", theme, NODE_FIELD)
+    is_readable = theme_node and frappe.has_permission("Presentation", "read", theme)
+    active_template = {"name": theme_node, "is_template": 1, "state": "Active"}
+    if not is_readable or not frappe.db.exists("Drive Node", active_template):
+        frappe.throw(f"Template {theme!r} does not exist", frappe.DoesNotExistError)
+
+    return theme_node
+
+
 @frappe.whitelist(methods=["POST"])
 def update_theme(name: str, theme: str):
+    drive.check(slides_drive.node_of(name), drive.EDIT)
+    readable_template_node(theme)
     presentation = frappe.get_doc("Presentation", name)
-    presentation.check_permission("write")
     base_modified = presentation.modified
     presentation.theme = theme
     presentation.save()
     return {"modified": presentation.modified, "base_modified": base_modified}
+
+
+@frappe.whitelist(methods=["POST"])
+def apply_theme(name: str, theme: str) -> dict:
+    """Turn a new deck's blank slide into the theme's first layout; any other deck is refused."""
+    deck_node = slides_drive.node_of(name)
+    drive.check(deck_node, drive.EDIT)
+    if slides_drive.node_is_template(deck_node):
+        frappe.throw(_("A template cannot take a theme"), frappe.ValidationError)
+
+    theme_node = readable_template_node(theme)
+    deck = frappe.get_doc("Presentation", name, for_update=True)
+    if len(deck.slides) != 1 or deck.slides[0].elements != "[]":
+        frappe.throw(_("Only a new, empty presentation can take a theme"), frappe.ValidationError)
+
+    layouts = frappe.get_doc("Presentation", theme).slides
+    if not layouts:
+        frappe.throw(_("This theme has no slides to start from"), frappe.ValidationError)
+
+    is_system = is_system_template(slides_drive.node_title_of(theme_node))
+    first = SYSTEM_TEMPLATE_FIRST_LAYOUT if is_system and len(layouts) > SYSTEM_TEMPLATE_FIRST_LAYOUT else 0
+    slide: dict = {}
+    for field in slides_drive.SLIDE_BODY_FIELDS:
+        if field != "thumbnail":
+            slide[field] = layouts[first].get(field)
+
+    elements = slides_drive.elements_of(slide)
+    remap_element_ids(elements)
+    slide["elements"] = elements
+    slide = slides_drive.adopt_slide_media(name, slide)
+    slide.pop("client_id")
+    deck.slides[0].update(slide)
+    deck.theme = theme
+    deck.save(ignore_permissions=True)
+    return {"modified": deck.modified}
 
 
 @frappe.whitelist()

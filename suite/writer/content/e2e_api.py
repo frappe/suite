@@ -5,7 +5,10 @@ from typing import cast
 
 import frappe
 import pycrdt
+from frappe.query_builder import Table
+from frappe.query_builder.functions import Coalesce, Count, Interval, Max
 from frappe.tests.utils import whitelist_for_tests
+from frappe.utils import CallbackManager
 
 from suite import content
 from suite.content import (
@@ -58,11 +61,12 @@ def compact_now(node: str) -> dict:
 def trim_now(node: str) -> dict:
     """Age `node`'s edit rows past the evidence window and queue its trimming, as the hourly run would."""
     doc_id = find_log(node)["id"]
-    update_table = table(writer_content.APP, "update")
-    frappe.db.sql(
-        f"""UPDATE `{update_table}`
-        SET `created` = `created` - INTERVAL 25 HOUR WHERE `doc_id` = %s""",
-        doc_id,
+    update = Table(table(writer_content.APP, "update"))
+    (
+        frappe.qb.update(update)
+        .set(update.created, update.created - Interval(hours=25))
+        .where(update.doc_id == doc_id)
+        .run()
     )
     frappe.db.commit()
     frappe.enqueue(
@@ -80,15 +84,19 @@ def trim_now(node: str) -> dict:
 def age_copy(node: str) -> int:
     """Make `node`'s readable copy a minute old, so the next push asks for a render; answer its rev."""
     doc_id = find_log(node)["id"]
-    projection_table = table(writer_content.APP, "projection")
-    frappe.db.sql(
-        f"""UPDATE `{projection_table}`
-        SET `updated` = `updated` - INTERVAL 1 MINUTE WHERE `doc_id` = %s""",
-        doc_id,
+    projection = Table(table(writer_content.APP, "projection"))
+    (
+        frappe.qb.update(projection)
+        .set(projection.updated, projection.updated - Interval(minutes=1))
+        .where(projection.doc_id == doc_id)
+        .run()
     )
     frappe.db.commit()
-    ((projected_rev,),) = frappe.db.sql(
-        f"SELECT COALESCE(MAX(`projected_rev`), 0) FROM `{projection_table}` WHERE `doc_id` = %s", doc_id
+    ((projected_rev,),) = (
+        frappe.qb.from_(projection)
+        .select(Coalesce(Max(projection.projected_rev), 0))
+        .where(projection.doc_id == doc_id)
+        .run()
     )
     return projected_rev
 
@@ -103,11 +111,8 @@ def trimmed_rev(node: str) -> int:
 def hold(node: str, why: str) -> dict:
     """Hold `node` for an admin, as a judge that can't settle a compaction's suspect does."""
     doc_id = find_log(node)["id"]
-    doc_table = table(writer_content.APP, "doc")
-    frappe.db.sql(
-        f"UPDATE `{doc_table}` SET `suspect` = 'unreadable' WHERE `id` = %s",
-        doc_id,
-    )
+    doc = Table(table(writer_content.APP, "doc"))
+    frappe.qb.update(doc).set(doc.suspect, "unreadable").where(doc.id == doc_id).run()
     suspect.hold_document(writer_content.APP, doc_id, why, "Held by the Playwright suite")
     return state(node)
 
@@ -133,11 +138,10 @@ def quarantine_last(node: str, why: str) -> dict:
 def leave_no_room(node: str) -> dict:
     """Count `node`'s state as big as the tail leaves room for, so its next adding push waits for a compaction."""
     doc_id = find_log(node)["id"]
-    doc_table = table(writer_content.APP, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `state_bytes` = %s - `tail_bound` WHERE `id` = %s""",
-        (capacity.STATE_MAX, doc_id),
-    )
+    doc = Table(table(writer_content.APP, "doc"))
+    frappe.qb.update(doc).set(doc.state_bytes, capacity.STATE_MAX - doc.tail_bound).where(
+        doc.id == doc_id
+    ).run()
     return state(node)
 
 
@@ -145,11 +149,8 @@ def leave_no_room(node: str) -> dict:
 def fill_up(node: str) -> dict:
     """Count `node`'s state as big as a document may be, so nothing that adds is taken again."""
     doc_id = find_log(node)["id"]
-    doc_table = table(writer_content.APP, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `state_bytes` = %s WHERE `id` = %s""",
-        (capacity.STATE_MAX, doc_id),
-    )
+    doc = Table(table(writer_content.APP, "doc"))
+    frappe.qb.update(doc).set(doc.state_bytes, capacity.STATE_MAX).where(doc.id == doc_id).run()
     return state(node)
 
 
@@ -162,11 +163,8 @@ def write_newer_schema(node: str) -> dict:
     next_schema = steps[-1][1] + 1
     steps.append([next_rev, next_schema])
     steps_json = json.dumps(steps)
-    doc_table = table(writer_content.APP, "doc")
-    frappe.db.sql(
-        f"UPDATE `{doc_table}` SET `schema_steps` = %s WHERE `id` = %s",
-        (steps_json, log_row["id"]),
-    )
+    doc = Table(table(writer_content.APP, "doc"))
+    frappe.qb.update(doc).set(doc.schema_steps, steps_json).where(doc.id == log_row["id"]).run()
     return state(node)
 
 
@@ -181,8 +179,8 @@ def make_old(node: str, html: str) -> None:
         if value is None:
             continue
 
-        kind_table = table(writer_content.APP, kind)
-        frappe.db.sql(f"DELETE FROM `{kind_table}` WHERE `{column}` = %s", value)
+        kind_table = Table(table(writer_content.APP, kind))
+        frappe.qb.from_(kind_table).delete().where(kind_table[column] == value).run()
 
     old = {"content": None, "html": html, "collab": 0, "ycomments": None}
     frappe.db.set_value("Writer Document", {"node": node}, old, update_modified=False)
@@ -198,7 +196,7 @@ def convert_now(node: str) -> str | None:
     job = getattr(frappe.local, "job", None)
     try:
         # The converter runs only in background jobs
-        frappe.local.job = frappe._dict(job_name="e2e convert_now")
+        frappe.local.job = frappe._dict(job_name="e2e convert_now", after_job=CallbackManager())
         return conversions.convert_document(writer_content.APP, node)
     finally:
         frappe.local.job = job
@@ -268,12 +266,12 @@ def state_bytes(node: str) -> int:
 def state(node: str) -> dict:
     """Where `node`'s collab log stands: its body, its head and the rows between."""
     doc_id = find_log(node)["id"]
-    doc_table = table(writer_content.APP, "doc")
-    rows = frappe.db.sql(
-        f"""SELECT `body_rev`, `head_rev`, `tail_rows`
-        FROM `{doc_table}` WHERE `id` = %s""",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(writer_content.APP, "doc"))
+    rows = (
+        frappe.qb.from_(doc)
+        .select(doc.body_rev, doc.head_rev, doc.tail_rows)
+        .where(doc.id == doc_id)
+        .run(as_dict=True)
     )
     row = rows[0]
     return {key: int(value) for key, value in row.items()}
@@ -292,10 +290,9 @@ def log_rows(log: str) -> dict:
     # The conversion record is the node's, not the log's
     for kind in (kind for kind in KINDS if kind != "conversion"):
         key_column = "id" if kind == "doc" else "doc_id"
-        kind_table = table(writer_content.APP, kind)
-        ((row_count,),) = frappe.db.sql(
-            f"SELECT COUNT(*) FROM `{kind_table}` WHERE `{key_column}` = %s",
-            log,
+        kind_table = Table(table(writer_content.APP, kind))
+        ((row_count,),) = (
+            frappe.qb.from_(kind_table).select(Count("*")).where(kind_table[key_column] == log).run()
         )
         counts[kind] = row_count
 

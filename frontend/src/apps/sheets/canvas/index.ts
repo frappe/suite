@@ -421,7 +421,11 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     isEditingFormula: () => editor.isOpen() && editor.value().startsWith('='),
     isEditing: () => editor.isOpen(),
     getSelection: () => S.range(),
-    setSelection: act.setSelRange,
+    // An open editor follows (another tab's row insert moves the selection).
+    setSelection(range) {
+      act.setSelRange(range)
+      editor.reposition()
+    },
     getPreMousedownSel: () => mouse?.preMousedownSel() ?? null,
     moveTo: act.moveSel,
 

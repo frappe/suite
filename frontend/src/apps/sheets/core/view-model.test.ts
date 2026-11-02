@@ -5,8 +5,8 @@ import { createViewModel, DEFAULT_TOTAL_ROWS } from './view-model.js'
 describe('sizes', () => {
   it('defaults, then stores, never below the minimum', () => {
     const vm = createViewModel()
-    expect(vm.colWidth(3)).toBe(100)
-    expect(vm.rowHeight(3)).toBe(24)
+    expect(vm.colWidth(3)).toBe(120)
+    expect(vm.rowHeight(3)).toBe(28)
     vm.setColWidth(3, 10)
     vm.setRowHeight(3, 5)
     expect(vm.colWidth(3)).toBe(30)

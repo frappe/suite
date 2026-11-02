@@ -1,9 +1,9 @@
 import { createNodeFromContent } from '@tiptap/core'
 import { toast as nToast, useFileUpload } from 'frappe-ui'
-import { v4 as uuidv4 } from 'uuid'
 
 import { purgeNodes } from '@/apps/writer/drive'
 import { findTab } from '@/apps/writer/extensions/tabs'
+import { randomId } from '@/platform/random-id'
 
 const IMAGE_EXTENSIONS = {
   'image/png': 'png',
@@ -138,7 +138,7 @@ function _insertAtEnd(editor, content) {
 // Put the imported content in a new tab; the current content stays as the
 // first tab. createTab() focuses the new tab by itself
 function _insertInNewTab(editor, content, label) {
-  const id = uuidv4()
+  const id = randomId()
   editor.commands.createTab({ id, label })
   const tab = findTab(editor.state.doc, id)
   if (!tab) {

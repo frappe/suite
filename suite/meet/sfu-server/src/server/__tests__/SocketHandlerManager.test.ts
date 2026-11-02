@@ -56,6 +56,89 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+describe('network quality participant identity', () => {
+	function reportQuality(
+		harness: ReturnType<typeof createManager>,
+		roomId: string,
+		peerId: string,
+	) {
+		const listener = vi.mocked(harness.mediasoup.onNetworkQualityUpdate).mock
+			.calls[0]?.[0];
+		if (!listener)
+			throw new Error('Network quality listener was not registered');
+		listener(roomId, peerId, 'poor');
+	}
+
+	it('addresses quality updates to the authenticated participant, not its media socket', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'media-socket',
+			userId: 'alice@example.test',
+		});
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		reportQuality(harness, 'room-1', 'media-socket');
+
+		expect(socket.emitCalls).toContainEqual({
+			event: 'network_quality_update',
+			data: { participantId: 'alice@example.test', quality: 'poor' },
+		});
+	});
+
+	it('ignores late scores from a replaced connection but accepts its current owner', async () => {
+		const harness = createManager();
+		const stale = connectFullSocket(harness, {
+			id: 'old-socket',
+			userId: 'user-1',
+		});
+		emitJoin(stale, { connectionId: 'stable-device' });
+		await new Promise((resolve) => setImmediate(resolve));
+		const current = connectFullSocket(harness, {
+			id: 'new-socket',
+			userId: 'user-1',
+		});
+		emitJoin(current, { connectionId: 'stable-device' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		reportQuality(harness, 'room-1', 'old-socket');
+		expect(
+			current.emitCalls.filter(
+				(call) => call.event === 'network_quality_update',
+			),
+		).toEqual([]);
+		reportQuality(harness, 'room-1', 'new-socket');
+		expect(current.emitCalls).toContainEqual({
+			event: 'network_quality_update',
+			data: { participantId: 'user-1', quality: 'poor' },
+		});
+	});
+
+	it('ignores scores from unknown peers, other rooms, and nonparticipant scopes', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness);
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+		connectFullSocket(harness, {
+			id: 'recorder-socket',
+			peerId: 'recorder-peer',
+			scope: 'recording',
+			roomId: 'room-1',
+			participantId: 'recorder:job',
+		});
+
+		reportQuality(harness, 'room-1', 'unknown-peer');
+		reportQuality(harness, 'different-room', socket.peerId!);
+		reportQuality(harness, 'room-1', 'recorder-peer');
+
+		expect(
+			socket.emitCalls.filter(
+				(call) => call.event === 'network_quality_update',
+			),
+		).toEqual([]);
+	});
+});
+
 describe('SocketHandlerManager characterization', () => {
 	it('middleware rejects sockets when authentication fails', () => {
 		const harness = createManager();
@@ -1668,6 +1751,46 @@ describe('SocketHandlerManager characterization', () => {
 		harness.manager.stop();
 	});
 
+	it('camera layer instructions go only to the current publishing socket', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness);
+		emitJoin(publisher);
+		await new Promise((r) => setImmediate(r));
+		const viewer = connectFullSocket(harness, { id: 'viewer', userId: 'viewer' });
+		emitJoin(viewer, { userId: 'viewer' });
+		await new Promise((r) => setImmediate(r));
+		const notify = vi.mocked(harness.mediasoup.onCameraLayerDemand).mock.calls[0][0];
+		const demand = { producerId: 'camera', version: 2, maxSpatialLayer: 0 };
+		notify('room-1', publisher.peerId!, demand);
+		expect(publisher.emitCalls.filter(x => x.event === 'producer:camera_layers')).toEqual([{event:'producer:camera_layers', data:demand}]);
+		expect(viewer.emitCalls.some(x => x.event === 'producer:camera_layers')).toBe(false);
+		publisher.emitCalls.length = 0;
+		notify('other-room', publisher.peerId!, demand);
+		notify('room-1', 'old-peer', demand);
+		expect(publisher.emitCalls).toEqual([]);
+		harness.manager.stop();
+	});
+
+	it('camera demand snapshots require the current publication owner', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness);
+		emitJoin(publisher);
+		await new Promise((r) => setImmediate(r));
+		vi.mocked(harness.mediasoup.getCameraLayerDemand).mockReturnValue({
+			producerId: 'camera', version: 3, maxSpatialLayer: 0,
+		});
+		const callback = vi.fn();
+		publisher.fire('producer:get_camera_layers', { producerId: 'camera' }, callback);
+		expect(harness.mediasoup.assertProducerAccess).toHaveBeenCalledWith('camera', 'room-1', publisher.peerId);
+		expect(callback).toHaveBeenCalledWith({ success: true, demand: { producerId: 'camera', version: 3, maxSpatialLayer: 0 } });
+		vi.mocked(harness.mediasoup.assertProducerAccess).mockImplementationOnce(() => { throw new Error('Producer ownership mismatch'); });
+		const denied = vi.fn();
+		publisher.fire('producer:get_camera_layers', { producerId: 'other-camera' }, denied);
+		expect(denied).toHaveBeenCalledWith({ success: false, error: 'Producer ownership mismatch' });
+		expect(harness.mediasoup.getCameraLayerDemand).toHaveBeenCalledTimes(1);
+		harness.manager.stop();
+	});
+
 	it('create_producer broadcasts screen producers to existing full-access participants', async () => {
 		const harness = createManager();
 
@@ -2557,5 +2680,28 @@ describe('SocketHandlerManager characterization', () => {
 				expect.anything(),
 			);
 		});
+	});
+});
+
+
+describe('receiver readiness acknowledgement', () => {
+	it('authenticates and forwards the socket room and peer', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, { userId: 'viewer-1', roomId: 'room-1' });
+		const callback = vi.fn();
+		socket.fire('resume_consumer', { consumerId: 'fresh' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(harness.authManager.ensureMediaConsumerAccess).toHaveBeenCalledWith(socket);
+		expect(harness.mediasoup.resumeConsumer).toHaveBeenCalledExactlyOnceWith('fresh', 'room-1', 'viewer-1');
+		expect(callback).toHaveBeenCalledWith({ success: true, resumed: true });
+	});
+	it('rejects acknowledgement before the required encryption handshake', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, { e2eeRequired: true, e2eeReady: false });
+		const callback = vi.fn();
+		socket.fire('resume_consumer', { consumerId: 'fresh' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(harness.mediasoup.resumeConsumer).not.toHaveBeenCalled();
+		expect(callback).toHaveBeenCalledWith({ success: false, error: 'E2EE join handshake not completed' });
 	});
 });

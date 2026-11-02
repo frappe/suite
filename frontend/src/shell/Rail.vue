@@ -54,7 +54,6 @@
            also holds the bell's 34 px while the async component loads, so the
            group below does not move once the bell arrives. -->
       <RailItem
-        v-if="hasAreaShortcuts"
         :label="__('Shortcuts')"
         description="?"
         variant="ghost"
@@ -86,7 +85,7 @@ import {
 } from 'vue'
 
 import type { AreaDefinition } from '@/platform/contracts'
-import { hasAreaShortcuts, openAreaShortcuts } from '@/platform/shortcuts'
+import { openAreaShortcuts } from '@/platform/shortcuts'
 import AccountMenu from '@/shell/AccountMenu.vue'
 import { useAreaProgress } from '@/shell/areaProgress'
 import RailItem from '@/shell/RailItem.vue'

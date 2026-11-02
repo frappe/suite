@@ -11,9 +11,11 @@ import secrets
 from datetime import datetime, timedelta
 
 import frappe
+from frappe.query_builder import Table
 from frappe.utils import now_datetime
 
 from suite.content import live
+from suite.content.db import Unhex
 from suite.content.log import Refusal
 from suite.content.tables import table
 from suite.content.wire import busy_refusal
@@ -33,18 +35,41 @@ def locked(app: str, doc_id: str) -> frappe._dict:
     """Lock the document row; refuse `busy` when another request holds it."""
     # The lock must be the first statement of a fresh transaction
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    doc_table = table(app, "doc")
-    rows = frappe.db.sql(
-        f"""SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `suspect_held`, `restore_token`,
-        `restore_deadline`, `restored_at`, `milestone_chain` FROM `{doc_table}`
-        WHERE `id` = %s FOR UPDATE SKIP LOCKED""",
-        doc_id,
-        as_dict=True,
+    doc = Table(table(app, "doc"))
+    rows = (
+        frappe.qb.from_(doc)
+        .select(
+            doc.lineage,
+            doc.head_rev,
+            doc.head_chain,
+            doc.mode,
+            doc.suspect_held,
+            doc.restore_token,
+            doc.restore_deadline,
+            doc.restored_at,
+            doc.milestone_chain,
+        )
+        .where(doc.id == doc_id)
+        .for_update(skip_locked=True)
+        .run(as_dict=True)
     )
     if not rows:
         raise busy_refusal()
 
     return rows[0]
+
+
+def fence(app: str, doc_id: str, token: str, deadline: datetime) -> None:
+    """Put the document in restoring mode under `token` until `deadline`."""
+    doc = Table(table(app, "doc"))
+    (
+        frappe.qb.update(doc)
+        .set(doc.mode, "restoring")
+        .set(doc.restore_token, token)
+        .set(doc.restore_deadline, deadline)
+        .where(doc.id == doc_id)
+        .run()
+    )
 
 
 def begin(app: str, doc_id: str, seen_rev: int) -> dict:
@@ -54,13 +79,7 @@ def begin(app: str, doc_id: str, seen_rev: int) -> dict:
     try:
         check_can_begin(doc, seen_rev, now)
         token = secrets.token_hex(16)
-        deadline = now + timedelta(seconds=FENCE_SECONDS)
-        doc_table = table(app, "doc")
-        frappe.db.sql(
-            f"""UPDATE `{doc_table}` SET `mode` = 'restoring', `restore_token` = %s,
-            `restore_deadline` = %s WHERE `id` = %s""",
-            (token, deadline, doc_id),
-        )
+        fence(app, doc_id, token, now + timedelta(seconds=FENCE_SECONDS))
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
     except BaseException:
         frappe.db.rollback()
@@ -107,23 +126,28 @@ def check_landing(doc: frappe._dict, token: str, seen_rev: int, now: datetime) -
 
 def landed(app: str, doc_id: str, rev: int, now: datetime) -> None:
     """Record `rev` as the restore and lift its fence, in the push's transaction."""
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `mode` = 'active', `restore_token` = NULL,
-        `restore_deadline` = NULL, `restore_rev` = %s, `restored_at` = %s WHERE `id` = %s""",
-        (rev, now, doc_id),
+    doc = Table(table(app, "doc"))
+    (
+        frappe.qb.update(doc)
+        .set(doc.mode, "active")
+        .set(doc.restore_token, None)
+        .set(doc.restore_deadline, None)
+        .set(doc.restore_rev, rev)
+        .set(doc.restored_at, now)
+        .where(doc.id == doc_id)
+        .run()
     )
 
 
 def header_fields(app: str, doc_id: str) -> dict:
     """Answer the last restore's rev and how long a standing fence lasts."""
-    doc_table = table(app, "doc")
+    doc_table = Table(table(app, "doc"))
     # Read after the rows a tab gets, so the rev covers every restore among them
-    (doc,) = frappe.db.sql(
-        f"""SELECT `mode`, `restore_deadline`, `restore_rev` FROM `{doc_table}`
-        WHERE `id` = %s""",
-        doc_id,
-        as_dict=True,
+    (doc,) = (
+        frappe.qb.from_(doc_table)
+        .select(doc_table.mode, doc_table.restore_deadline, doc_table.restore_rev)
+        .where(doc_table.id == doc_id)
+        .run(as_dict=True)
     )
     now = now_datetime()
     fields = {"restore_rev": int(doc.restore_rev)}
@@ -135,21 +159,22 @@ def header_fields(app: str, doc_id: str) -> dict:
 
 def milestone_taken(app: str, doc_id: str, head_chain: bytes) -> None:
     """Record that a version holds this head, so a restore begun again with no edits takes none."""
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"UPDATE `{doc_table}` SET `milestone_chain` = UNHEX(%s) WHERE `id` = %s",
-        (head_chain.hex(), doc_id),
-    )
+    doc = Table(table(app, "doc"))
+    frappe.qb.update(doc).set(doc.milestone_chain, Unhex(head_chain.hex())).where(doc.id == doc_id).run()
 
 
 def cancel(app: str, doc_id: str, token: str) -> None:
     """Lift the fence `token` set, if it still stands; tabs go back to editing."""
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
-    doc_table = table(app, "doc")
-    lineage = frappe.db.sql(
-        f"""SELECT `lineage` FROM `{doc_table}` WHERE `id` = %s AND `mode` = 'restoring'
-        AND `restore_token` = %s FOR UPDATE""",
-        (doc_id, token),
+    doc = Table(table(app, "doc"))
+    lineage = (
+        frappe.qb.from_(doc)
+        .select(doc.lineage)
+        .where(doc.id == doc_id)
+        .where(doc.mode == "restoring")
+        .where(doc.restore_token == token)
+        .for_update()
+        .run()
     )
     if not lineage:
         frappe.db.rollback()
@@ -162,9 +187,12 @@ def cancel(app: str, doc_id: str, token: str) -> None:
 
 def lift(app: str, doc_id: str) -> None:
     """Clear the fence so the document takes edits again."""
-    doc_table = table(app, "doc")
-    frappe.db.sql(
-        f"""UPDATE `{doc_table}` SET `mode` = 'active', `restore_token` = NULL,
-        `restore_deadline` = NULL WHERE `id` = %s""",
-        doc_id,
+    doc = Table(table(app, "doc"))
+    (
+        frappe.qb.update(doc)
+        .set(doc.mode, "active")
+        .set(doc.restore_token, None)
+        .set(doc.restore_deadline, None)
+        .where(doc.id == doc_id)
+        .run()
     )

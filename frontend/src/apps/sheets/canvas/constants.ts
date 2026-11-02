@@ -1,8 +1,10 @@
-export const COL_HEADER_H = 24
+export const COL_HEADER_H = 28
 export const ROW_HEADER_W = 50
 // Thickness of the overlay scrollbars (scrollbars.ts). Shared so DOM overlays
 // (filter/pivot outlines) can keep clear of the scrollbar gutter.
 export const SCROLLBAR_THICK = 12
+// Opacity of the selection tint (COLORS.selFill) over the cells.
+export const SEL_ALPHA = 0.06
 
 // Default cell size and sheet size. The live sheet size is per grid, in the
 // ViewModel; a fresh, pivot or drill-down sheet starts at these.
@@ -59,8 +61,11 @@ export const COLORS = {
   get sparkline() {
     return _token('--ink-teal-7', '#0F766E')
   },
+  // Tint of a multi-cell range: the ink colour at SEL_ALPHA, painted over
+  // the cells so they show through. Ink flips with the theme, so the wash
+  // darkens in light mode and lightens in dark mode.
   get selFill() {
-    return _token('--surface-gray-3', 'rgba(23, 23, 23, 0.06)')
+    return _token('--ink-gray-9', '#171717')
   },
   get selBorder() {
     return _token('--ink-gray-9', '#171717')
@@ -70,9 +75,6 @@ export const COLORS = {
   },
   get activeHeader() {
     return _token('--surface-gray-4', '#E2E2E2')
-  },
-  get rangeHeader() {
-    return _token('--surface-gray-3', '#EDEDED')
   },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')

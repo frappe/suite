@@ -673,7 +673,7 @@ describe('RoomRegistry', () => {
 						event: 'participant_joined',
 						data: { roomId: 'r1', participantId: 'u-1', userData },
      },
-     { event: 'shared_stage', data: { epoch: expect.any(String), protocolVersion: 1, version: 1, participantIds: ['u-1'], activeSpeakerIds: [] } },
+     { event: 'shared_stage', data: { epoch: expect.any(String), protocolVersion: 1, version: 1, participantIds: ['u-1'], activeSpeakerIds: [], presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['u-1']])) } },
 				],
 			);
 			expect(
@@ -1170,15 +1170,32 @@ it('shares late snapshots, orders updates, removes departures and cancels room r
   registry.emitActiveSpeaker('r1', ['d']); vi.advanceTimersByTime(1000); registry.emitActiveSpeaker('r1', []);
   registry.emitActiveSpeaker('r1', ['c']); vi.advanceTimersByTime(1000); registry.emitActiveSpeaker('r1', []);
   const late = registry.getSharedStageSnapshot('r1');
-  expect(late.participantIds).toEqual(['c','d','a','b']);
+  expect(late.participantIds).toEqual(['c','d','b','a']);
+  expect(late.presentationOrders?.[3]).toEqual(['d','c','b']);
   expect(late.activeSpeakerIds).toEqual([]);
   expect(registry.getRecorderStageSnapshot('r1').shared_stage).toEqual(late);
   registry.emitParticipantEvent('r1', 'participant_left', 'c');
   const current = registry.getSharedStageSnapshot('r1');
-  expect(current.participantIds).toEqual(['d','a','b']);
+  expect(current.participantIds).toEqual(['d','b','a']);
+  expect(current.presentationOrders?.[3]).toEqual(['d','a','b']);
   expect(current.version).toBeGreaterThan(late.version);
   registry.cleanupMediaRoom('r1');
   expect(vi.getTimerCount()).toBe(0);
   expect(registry.getSharedStageSnapshot('r1').epoch).not.toBe(late.epoch);
  } finally { vi.useRealTimers(); }
+});
+
+it('delivers each human self-excluded slot snapshot while retaining the recorder room view', () => {
+ const setup = makeIo(), registry = new RoomRegistry(setup.io);
+ const left = Object.assign(makeSocket('left'), { participantId: 'a' });
+ const right = Object.assign(makeSocket('right'), { participantId: 'b' });
+ vi.spyOn(left, 'emit'); vi.spyOn(right, 'emit');
+ addFullSocket(setup, 'r1', left); addFullSocket(setup, 'r1', right);
+ for (const id of ['a', 'b', 'c']) registry.emitParticipantEvent('r1', 'participant_joined', id, { name: id, video_enabled: true });
+ expect(left.emit).toHaveBeenCalledWith('shared_stage', registry.getSharedStageSnapshot('r1', 'a'));
+ expect(right.emit).toHaveBeenCalledWith('shared_stage', registry.getSharedStageSnapshot('r1', 'b'));
+ expect(registry.getSharedStageSnapshot('r1', 'a').presentationOrders?.[2]).toEqual(['b', 'c']);
+ expect(registry.getSharedStageSnapshot('r1', 'b').presentationOrders?.[2]).toEqual(['a', 'c']);
+ expect(registry.getRecorderStageSnapshot('r1').shared_stage?.presentationOrders?.[3]).toEqual(['a', 'b', 'c']);
+ registry.cleanupMediaRoom('r1');
 });

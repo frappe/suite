@@ -3,6 +3,7 @@ from dataclasses import replace
 from unittest.mock import patch
 
 import frappe
+import pycrdt
 from werkzeug.wrappers import Response
 
 from suite.content.http import routes
@@ -20,6 +21,12 @@ from suite.writer.content.tests.support import (
     read_frame,
     typed_updates,
 )
+
+
+def meta_update(client_id: int, key: str) -> bytes:
+    doc = pycrdt.Doc(client_id=client_id)
+    doc.get("meta", type=pycrdt.Map)[key] = "One"
+    return doc.get_update()
 
 
 class TestWriterCollabRowContent(CollabCase):
@@ -114,6 +121,37 @@ class TestWriterCollabRowContent(CollabCase):
         self.assertEqual((other.status_code, stamped.status_code), (200, 200))
         _, rows = self.open_document(node)
         self.assertEqual(len(rows), 2)
+
+    def test_a_row_setting_an_undeclared_meta_key_is_refused_and_stores_nothing(self):
+        self.set_mode("on")
+        node = self.new_document()
+        header, _ = self.open_document(node)
+        sid, client_id = self.start_session(node)
+        body = push_body(header["lineage"], sid, client_id, 1, 0, meta_update(client_id, "s1:r1:c1"))
+
+        response = call_route(routes.updates_post, node, body=body)
+
+        self.assertEqual((response.status_code, answer(response)), (409, {"collab": "poison"}))
+        _, rows = self.open_document(node)
+        self.assertEqual(rows, [])
+
+    def test_a_push_to_an_open_root_stores_a_runtime_key_and_refuses_one_outside_the_key_rule(self):
+        self.set_mode("on")
+        node = self.new_document()
+        header, _ = self.open_document(node)
+        bodies: list[bytes] = []
+        for key in ("s1:r8f2kq0z:e1", "s1 r1"):
+            sid, client_id = self.start_session(node)
+            bodies.append(push_body(header["lineage"], sid, client_id, 1, 0, meta_update(client_id, key)))
+
+        opened = replace(writer_content.SCHEMA, open_roots=frozenset({"meta"}))
+        with patch.object(writer_content, "EDITOR", replace(writer_content.EDITOR, schema=opened)):
+            fitting, unfitting = (call_route(routes.updates_post, node, body=body) for body in bodies)
+
+        self.assertEqual(fitting.status_code, 200)
+        self.assertEqual((unfitting.status_code, answer(unfitting)), (409, {"collab": "poison"}))
+        _, rows = self.open_document(node)
+        self.assertEqual(len(rows), 1)
 
     def test_a_row_putting_a_type_the_editor_cannot_show_in_the_body_is_refused_and_stores_nothing(self):
         self.set_mode("on")

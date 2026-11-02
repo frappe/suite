@@ -7,7 +7,7 @@ import type {
   NodeCreateCreateFolderInput,
   NodeCreateCreateLinkInput,
 } from './generated'
-import type { DriveNode } from './types'
+import type { DriveBreadcrumb, DriveNode } from './types'
 
 export type CreateNodeInput =
   NodeCreateCreateFolderInput | NodeCreateCreateLinkInput | NodeCreateCreateDocumentInput
@@ -88,4 +88,22 @@ export function nodeContentUrl(
   if (download) query.set('download', '1')
   if (revision) query.set('v', String(revision))
   return `/api/suite/drive/nodes/${encodeURIComponent(node)}/content${query.size ? `?${query}` : ''}`
+}
+
+/** Kinds of node that hold files in a listing. */
+const FOLDER_KINDS = new Set(['folder', 'root'])
+
+/**
+ * The breadcrumbs end at the node's own folder, when the caller can read it.
+ * A picture inside a Writer document or a Slides deck has no folder: the
+ * document is its parent, and a document is never listed as a folder.
+ */
+export function folderOf(node: DriveNode): DriveBreadcrumb | null {
+  const trail = node.breadcrumbs ?? []
+  const parent = trail.at(-1)
+  if (!parent || parent.name !== node.parent_node || !FOLDER_KINDS.has(parent.kind)) {
+    return null
+  }
+
+  return trail.some((step) => step.kind === 'document') ? null : parent
 }

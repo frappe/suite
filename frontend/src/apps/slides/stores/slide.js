@@ -1,5 +1,4 @@
 import { toast } from 'frappe-ui'
-import { v4 as uuid4 } from 'uuid'
 import { computed, reactive, ref } from 'vue'
 
 import { router } from '@/apps/slides/router'
@@ -16,6 +15,7 @@ import {
 import { dirty, saveFailed, saveWithoutDelay } from '@/apps/slides/stores/saving'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { cloneObj } from '@/apps/slides/utils/helpers'
+import { randomId } from '@/platform/random-id'
 
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
 import { inSlideShowMode } from './slideshow'
@@ -82,7 +82,7 @@ const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.va
   }
 
   // override metadata and generate unique IDs for elements
-  slide.clientId = uuid4()
+  slide.clientId = randomId()
   slide.parent = presentationId.value
   if (!toDuplicate) {
     slide.fadeUnmatchedElements = 1

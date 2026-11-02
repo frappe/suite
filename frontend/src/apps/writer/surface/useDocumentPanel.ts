@@ -2,6 +2,7 @@ import { toast } from 'frappe-ui'
 import { reactive } from 'vue'
 
 import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
+import { translate as __ } from '@/platform/translation'
 
 type PanelSession = Pick<DocumentSession, 'comments' | 'versions'>
 
@@ -30,7 +31,7 @@ async function loadVersions(session: PanelSession, lists: PanelLists) {
     lists.versions = page.rows
     lists.versionsCursor = page.next_cursor
   } catch (error) {
-    showError(error, 'Could not load this panel.')
+    showError(error, __('Could not load this panel.'))
   } finally {
     lists.isLoading = false
   }
@@ -48,7 +49,7 @@ async function loadMoreVersions(session: PanelSession, lists: PanelLists) {
     lists.versionsCursor = page.next_cursor
   } catch (error) {
     // A failed next page keeps the rows already shown
-    showError(error, 'Could not load more versions.')
+    showError(error, __('Could not load more versions.'))
   } finally {
     lists.isLoadingMore = false
   }
@@ -80,13 +81,16 @@ function threadActions(session: PanelSession, refreshThreads: () => Promise<void
   const { comments } = session
   return {
     reply: (thread: string, text: string, authorName: string | undefined, clientId: string) =>
-      change(() => comments.reply(thread, text, authorName, clientId), 'Could not add the reply.'),
+      change(
+        () => comments.reply(thread, text, authorName, clientId),
+        __('Could not add the reply.'),
+      ),
     resolve: (thread: string, isResolved: boolean) =>
-      change(() => comments.resolve(thread, isResolved), 'Could not change the thread.'),
+      change(() => comments.resolve(thread, isResolved), __('Could not change the thread.')),
     editComment: (comment: string, text: string) =>
-      change(() => comments.edit(comment, text), 'Could not save the comment.'),
+      change(() => comments.edit(comment, text), __('Could not save the comment.')),
     removeComment: (comment: string) =>
-      change(() => comments.remove(comment), 'Could not delete the comment.'),
+      change(() => comments.remove(comment), __('Could not delete the comment.')),
   }
 }
 
@@ -103,11 +107,11 @@ async function saveVersion(
     await saveFirst()
     await session.versions.create('named', label)
   } catch (error) {
-    showError(error, 'Could not save a version.')
+    showError(error, __('Could not save a version.'))
     return false
   }
 
-  toast.success('Version saved')
+  toast.success(__('Version saved'))
   await loadVersions(session, lists)
   return true
 }
@@ -134,12 +138,12 @@ async function renameVersion(
   } catch (error) {
     // The daily thinner can remove an automatic version while its name box is open
     if ((error as { type?: unknown } | null)?.type === 'DriveNotFound') {
-      toast.error('This version no longer exists.')
+      toast.error(__('This version no longer exists.'))
       await loadVersions(session, lists)
       return null
     }
 
-    showError(error, 'Could not rename the version.')
+    showError(error, __('Could not rename the version.'))
     return null
   }
 

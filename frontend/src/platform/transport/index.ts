@@ -522,7 +522,8 @@ function validateOperation(operation: Operation): void {
   }
 }
 
-function buildUrl(operation: Operation, input: Record<string, unknown>): string {
+/** The url `operation` is requested by for `input`, query included. */
+export function buildUrl(operation: Operation, input: Record<string, unknown>): string {
   let path = operation.path.replace(/\{([^}:]+)(?::path)?\}/g, (_match, name: string) => {
     const value = input[name]
     if (value === undefined || value === null || value === '') {

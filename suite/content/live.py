@@ -13,6 +13,7 @@ import time
 from typing import TypedDict
 
 import frappe
+from frappe.query_builder import Table
 from frappe.utils.password import get_encryption_key
 
 from suite.content.tables import table
@@ -92,8 +93,8 @@ def publish_control(app: str, doc_id: str, lineage: str, **message: str | int) -
 
 def publish_change(app: str, doc_id: str, kind: str) -> None:
     """Tell live tabs of a hold, a release or room a compaction freed, so they pull as a polling tab would."""
-    doc_table = table(app, "doc")
-    lineage_rows = frappe.db.sql(f"SELECT `lineage` FROM `{doc_table}` WHERE `id` = %s", doc_id)
+    doc = Table(table(app, "doc"))
+    lineage_rows = frappe.qb.from_(doc).select(doc.lineage).where(doc.id == doc_id).run()
     if lineage_rows:
         publish_control(app, doc_id, lineage_rows[0][0], kind=kind)
 

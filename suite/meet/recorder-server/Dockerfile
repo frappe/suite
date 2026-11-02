@@ -7,6 +7,7 @@ COPY package.json yarn.lock ./
 COPY frontend/package.json ./frontend/package.json
 RUN yarn install --frozen-lockfile
 COPY frontend ./frontend
+COPY suite/meet/types ./suite/meet/types
 RUN yarn workspace @suite/frontend build:recorder
 
 FROM node:${NODE_VERSION} AS server

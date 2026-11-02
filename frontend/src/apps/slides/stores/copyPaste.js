@@ -1,5 +1,4 @@
 import { toast } from 'frappe-ui'
-import { v4 as uuid4 } from 'uuid'
 import { ref } from 'vue'
 
 import { api, client } from '@/api'
@@ -22,6 +21,7 @@ import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
+import { randomId } from '@/platform/random-id'
 
 const { activeEditor } = useTextEditor()
 
@@ -171,7 +171,7 @@ const handlePastedSlideJSON = async (slideJSON) => {
 
   // Give each paste a fresh identity so repeated pastes don't share ids.
   // refId (cross-slide transition key) is intentionally kept.
-  slideJSON.clientId = uuid4()
+  slideJSON.clientId = randomId()
   slideJSON.elements = remapElementIds(slideJSON.elements || [])
 
   insertSlide(slideJSON, index)
