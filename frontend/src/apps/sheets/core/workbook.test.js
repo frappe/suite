@@ -662,7 +662,8 @@ describe('workbook — the cell scans stop at the last used row', () => {
     const wb = createWorkbook()
     for (let r = 1; r <= 3; r++) setInput(wb, 'Sheet1', r, 1, String(r))
     const stats = () => wb.rangeStats('Sheet1', 1, 1, MAX_ROWS, 1)
-    expect(rowReads(() => expect(stats()).toEqual({ count: 3, numCount: 3, sum: 6 }))).toBe(3)
+    // 3 rows to find where the cells end, then the 3 rows themselves.
+    expect(rowReads(() => expect(stats()).toEqual({ count: 3, numCount: 3, sum: 6 }))).toBe(6)
   })
 
   // C1 spills 1 … 5000; the range starts below C1, inside the spill.
@@ -672,8 +673,19 @@ describe('workbook — the cell scans stop at the last used row', () => {
     setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(E1)')
     const stats = () => wb.rangeStats('Sheet1', 4000, 3, MAX_ROWS, 3)
     // 4000 + 4001 + … + 5000: 1001 numbers averaging 4500.
+    // Row 1 says where the spill ends, then rows 4000 … 5000 are read.
     const sum = 1001 * 4500
-    expect(rowReads(() => expect(stats()).toEqual({ count: 1001, numCount: 1001, sum }))).toBe(5000)
+    expect(rowReads(() => expect(stats()).toEqual({ count: 1001, numCount: 1001, sum }))).toBe(1002)
+  })
+
+  // A1 spills 1 … 100000, though only row 1 holds an input.
+  it('the range stats of a few rows deep inside a long spill', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '=SEQUENCE(100000)')
+    const stats = () => wb.rangeStats('Sheet1', 90000, 1, 90010, 1)
+    // 90000 … 90010: 11 numbers averaging 90005.
+    const sum = 11 * 90005
+    expect(rowReads(() => expect(stats()).toEqual({ count: 11, numCount: 11, sum }))).toBe(12)
   })
 
   it('the range stats of a few rows read only those rows', () => {
@@ -687,7 +699,8 @@ describe('workbook — the cell scans stop at the last used row', () => {
     const wb = createWorkbook()
     setInput(wb, 'Sheet1', 100, 1, 'x')
     setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(10)')
-    expect(wb.rangeStats('Sheet1', 5, 3, 8, 3)).toEqual({ count: 4, numCount: 4, sum: 26 })
+    const stats = () => wb.rangeStats('Sheet1', 5, 3, 8, 3)
+    expect(rowReads(() => expect(stats()).toEqual({ count: 4, numCount: 4, sum: 26 }))).toBe(4)
   })
 
   it('the range stats of a few rows running past the data read only those rows', () => {

@@ -194,20 +194,38 @@ export function createWorkbook({
         const input = model.getCellContent(idx, row, col)
         // A styled but empty cell is listed too.
         if (input === '') continue
-        if (input.startsWith('=')) {
-          const shape = model.getCellArrayStructure(idx, row, col)
-          const size =
-            typeof shape === 'object' &&
-            ('ArrayAnchor' in shape
-              ? shape.ArrayAnchor
-              : 'DynamicAnchor' in shape
-                ? shape.DynamicAnchor
-                : null)
-          if (size) last = Math.min(MAX_ROWS, Math.max(last, row + size[1] - 1))
-        }
+        if (input.startsWith('=')) last = Math.max(last, anchoredEnd(idx, row, col))
         if (visit(row, col, input)) return
       }
     }
+  }
+
+  // The last row of the spill or array a formula cell anchors (0 if none).
+  function anchoredEnd(idx: number, row: number, col: number): number {
+    const shape = model.getCellArrayStructure(idx, row, col)
+    const size =
+      typeof shape === 'object' &&
+      ('ArrayAnchor' in shape
+        ? shape.ArrayAnchor
+        : 'DynamicAnchor' in shape
+          ? shape.DynamicAnchor
+          : null)
+    return size ? Math.min(MAX_ROWS, row + size[1] - 1) : 0
+  }
+
+  // The last row any cell of a sheet can be on: the input bound, or further
+  // down where a spill or array ends. Every formula sits above the bound, so
+  // only the rows up to it are read.
+  function lastCellRow(idx: number): number {
+    const bound = inputRows()
+    let last = bound
+    for (let row = 1; row <= bound; row++) {
+      for (const col of model.getColumnsWithData(idx, row)) {
+        if (model.getCellContent(idx, row, col).startsWith('='))
+          last = Math.max(last, anchoredEnd(idx, row, col))
+      }
+    }
+    return last
   }
 
   function sheetIndex(sheetName: string): number {
@@ -608,11 +626,11 @@ export function createWorkbook({
         })
         return out
       }),
-    // The status bar's Count / Sum / Avg. A range taller than the used rows
-    // (a whole column) goes through scanCells, so it costs the used rows, not
-    // a million reads (ISSUES #89); scanCells starts at row 1 to follow the
-    // spills that reach into the range. A shorter range reads just its own
-    // rows, so a few cells far down, even past the data, stay cheap.
+    // The status bar's Count / Sum / Avg, reading the range's rows. A range
+    // taller than the used rows (a whole column) first finds the sheet's last
+    // cell row and stops there, so it costs the used rows, not a million
+    // reads (ISSUES #89). A shorter one reads just its own rows, so a few
+    // cells far down, even past the data, stay cheap.
     rangeStats: (sheet, r1, c1, r2, c2) =>
       read(() => {
         const idx = sheetIndex(sheet)
@@ -632,16 +650,9 @@ export function createWorkbook({
             stats.sum += n
           }
         }
-        const top = Math.max(1, r1),
-          bottom = Math.min(r2, MAX_ROWS)
-        if (bottom - top + 1 > inputRows()) {
-          scanCells(idx, (row, col) => {
-            if (row > bottom) return true
-            if (row >= top && col >= c1 && col <= c2) add(row, col)
-            return false
-          })
-          return stats
-        }
+        const top = Math.max(1, r1)
+        let bottom = Math.min(r2, MAX_ROWS)
+        if (bottom - top + 1 > inputRows()) bottom = Math.min(bottom, lastCellRow(idx))
         for (let row = top; row <= bottom; row++) {
           for (const col of model.getColumnsWithData(idx, row)) {
             // A styled but empty cell is listed too.
