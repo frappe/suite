@@ -119,6 +119,8 @@ export interface WorkbookClient {
   readCells(args: ReadCellsArgs): Promise<{ cells: CellRead[] }>
   /** Cells whose input contains `query`, row by row (1-based). */
   findCells(args: { sheet: string; query: string }): Promise<{ cells: FoundCell[] }>
+  /** Every formula cell, row by row (1-based). Not capped, unlike findCells. */
+  formulaCells(args: { sheet: string }): Promise<{ cells: FoundCell[] }>
   /** Every non-empty cell as flat [row, col, …] (1-based), row by row. */
   usedCells(args: { sheet: string }): Promise<{ cells: number[] }>
   /** Count / numeric count / sum over a range (1-based, inclusive). */
@@ -417,6 +419,10 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     async findCells(args) {
       await idle()
       return request<{ cells: FoundCell[] }>('findCells', args)
+    },
+    async formulaCells(args) {
+      await idle()
+      return request<{ cells: FoundCell[] }>('formulaCells', args)
     },
     snapshot() {
       if (lastSnapshot?.at === mutations) return lastSnapshot.bytes

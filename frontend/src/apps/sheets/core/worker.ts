@@ -240,6 +240,10 @@ export function createWorkerHost(): WorkerHost {
     return { cells: workbook().findInputs(str(p, 'sheet'), str(p, 'query'), MAX_FIND_RESULTS) }
   }
 
+  function onFormulaCells(p: unknown) {
+    return { cells: workbook().formulaCells(str(p, 'sheet')) }
+  }
+
   function onUsedCells(p: unknown) {
     return { cells: workbook().usedCells(str(p, 'sheet')) }
   }
@@ -284,6 +288,8 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onRangeStats(payload) }
         case 'findCells':
           return { reqId: id, result: onFindCells(payload) }
+        case 'formulaCells':
+          return { reqId: id, result: onFormulaCells(payload) }
         case 'toBytes':
           return { reqId: id, result: onToBytes() }
         default:
