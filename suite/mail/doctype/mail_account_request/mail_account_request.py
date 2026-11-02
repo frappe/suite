@@ -373,7 +373,15 @@ class MailAccountRequest(Document):
         suite_email.send(
             "account-invite",
             self.backup_email,
-            {"inviter": self.invited_by, "link": link},
+            {
+                "inviter": self.invited_by,
+                "link": link,
+                "invited_by_name": inviter,
+                "workspace_name": workspace,
+                "workspace_logo": get_url(invitation["workspace_logo"])
+                if invitation["workspace_logo"]
+                else "",
+            },
             local={
                 "subject": heading,
                 "template": "account_invitation",

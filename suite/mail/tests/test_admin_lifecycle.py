@@ -502,6 +502,33 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertEqual(check_password(user, permanent), user)
         self.assertTrue(self.provider.authenticates(self.address, permanent))
 
+    def test_an_invitation_gives_the_provider_the_workspace_and_inviter(self):
+        frappe.db.set_single_value("Suite Settings", "workspace_name", "Acme")
+        frappe.db.set_single_value("Suite Settings", "workspace_logo", "/files/acme.png")
+        add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+
+        params = self.provider.emails[-1]["params"]
+        self.assertEqual(params["workspace_name"], "Acme")
+        self.assertTrue(params["workspace_logo"].endswith("/files/acme.png"))
+        self.assertTrue(params["workspace_logo"].startswith("http"))
+        self.assertEqual(params["invited_by_name"], frappe.utils.get_fullname(frappe.session.user))
+
+    def test_the_invitation_email_escapes_workspace_and_inviter_names(self):
+        html = frappe.get_template("templates/emails/account_invitation.html").render(
+            workspace_name="<b>Acme</b>",
+            logo_embed="logo.png",
+            heading="<i>Sam</i> invited you",
+            description="",
+            link="https://example.test",
+            button="Accept",
+            note="",
+            footer="Sent for <u>Acme</u>",
+        )
+        self.assertNotIn("<b>Acme", html)
+        self.assertNotIn("<i>Sam", html)
+        self.assertNotIn("<u>Acme", html)
+        self.assertIn("&lt;b&gt;Acme", html)
+
     def test_an_invitation_sent_to_contact_email_uses_a_snapshot_and_replaces_old_links(self):
         from suite.mail.utils.dt import to_utc_z
         from suite.suite_core.storage import set_default
