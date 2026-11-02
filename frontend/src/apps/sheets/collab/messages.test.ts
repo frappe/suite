@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RoomStatus } from '@/platform/collab'
 
-import { bannerFor, editingStateOf, saveStateOf } from './messages'
+import { bannerFor, editingStateOf, hasUnsentWork, saveStateOf } from './messages'
 import { CLEAN } from './test-room'
 
 const status = (patch: Partial<RoomStatus> = {}): RoomStatus => ({ ...CLEAN, ...patch })
@@ -17,6 +17,12 @@ describe('save state', () => {
 
   it("counts another tab's unsent edits on this device as not saved", () => {
     expect(saveStateOf(status({ othersUnsentCount: 2 }))).toBe('unsaved')
+  })
+
+  it("holds this tab's unsent edits only, a push in flight included", () => {
+    expect(hasUnsentWork(status({ saveState: 'saving', unsentCount: 1 }))).toBe(true)
+    expect(hasUnsentWork(status({ saveState: 'unsaved', othersUnsentCount: 2 }))).toBe(false)
+    expect(hasUnsentWork(status())).toBe(false)
   })
 })
 

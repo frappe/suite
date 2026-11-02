@@ -3830,14 +3830,10 @@ defineExpose({
   // it is back, the room takes edits again.
   loseAccess: (lost) => collab.loseAccess(lost),
   regainAccess: (mayEdit) => collab.regainAccess(mayEdit),
-  /** Whether unsent work outlives this tab (the room keeps it on the device). */
-  get keepsUnsentWork() {
-    const status = collab.status.value
-    return !!status && status.isKeptOnDevice && !status.hasCopyFailed
-  },
   // The workbook for a recovery copy, with the cell edit still in progress.
   workbookJson: () => workbookJson(_draftEdit()),
   hasDraft: () => _draftEdit() !== null,
+  hasUnsentWork: () => collab.hasUnsent(),
   goToCell,
   closeNotes: () => {
     notesPanel.open = false
