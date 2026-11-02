@@ -1,14 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { roots } from './schema'
 import { cmd, displays, inputs, storeState, sync, twoTabs, type, type Tab } from './test-tabs'
 import { createUndo, type Selection, type Undo } from './undo'
-
-// Every inputs() / displays() read lists a sheet's cells with usedCells,
-// which walks all 1,048,576 rows of IronCalc: ~150 ms here, ~4x that on CI.
-// A test that checks both tabs converged does 5–10 of them, so 1–1.5 s
-// locally and 3–4 s on CI, too close to the 5 s default (ISSUES #80).
-vi.setConfig({ testTimeout: 20_000 })
 
 // Collab undo on a tab, with a selection the test moves by hand (the editor's grid).
 function withUndo(t: Tab) {
