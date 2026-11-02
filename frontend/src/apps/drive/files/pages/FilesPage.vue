@@ -1138,6 +1138,11 @@ async function openNode(row: DriveNode, newTab = false) {
   await router.push(target)
 }
 
+/** Importing beside a file takes UPLOAD on its folder. Outside that folder's listing the role is not known here, and Drive refuses when asked. */
+function mayUploadBeside(row: DriveNode) {
+  return row.parent_node !== detail.data?.name || !!uploadTargetOf(detail.data)
+}
+
 /** Imports an uploaded .xlsx or .csv into a new spreadsheet beside it, then opens that. */
 async function openRowAsSpreadsheet(row: DriveNode) {
   if (!row.parent_node) return
@@ -1217,7 +1222,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
               },
             ]
           : []),
-        ...(can.copy && opensAsSpreadsheet(row)
+        ...(can.copy && opensAsSpreadsheet(row) && mayUploadBeside(row)
           ? [
               {
                 label: 'Open as spreadsheet',

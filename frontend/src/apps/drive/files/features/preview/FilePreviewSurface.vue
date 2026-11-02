@@ -17,6 +17,7 @@ import DocumentHeader from '../document/DocumentHeader.vue'
 import { nodeActions } from '../nodeActions'
 import { readPresentationPreference, resolvePresentation } from '../presentation'
 import { useTrashActions } from '../trash/useTrashActions'
+import { uploadTargetOf } from '../uploads/queue'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import PreviewFallback from './PreviewFallback.vue'
 import type { FilePreviewSession } from './session'
@@ -61,12 +62,17 @@ const can = computed(() =>
 )
 const parent = computed(() => file.value.parent.value)
 const canReplace = computed(() => !!parent.value && can.value.rename)
-/** An uploaded .xlsx or .csv opens as a new spreadsheet beside it (§10.1). */
+const isSpreadsheetFile = computed(() =>
+  opensAsSpreadsheet({ kind: 'file', title: props.session.title.value }),
+)
+const parentFolder = useQuery(api.drive.nodes.get, () =>
+  parent.value && isSpreadsheetFile.value && can.value.copy
+    ? { node: parent.value, expand: 'access' }
+    : false,
+)
+/** An uploaded .xlsx or .csv opens as a new spreadsheet beside it, which takes UPLOAD on the folder (§10.1). */
 const opensAsSheet = computed(
-  () =>
-    !!parent.value &&
-    can.value.copy &&
-    opensAsSpreadsheet({ kind: 'file', title: props.session.title.value }),
+  () => isSpreadsheetFile.value && can.value.copy && !!uploadTargetOf(parentFolder.data),
 )
 const openingAsSheet = ref(false)
 async function openAsSheet() {
@@ -322,6 +328,14 @@ const source = computed(() =>
             @click="show(next)"
           />
         </template>
+        <!-- A CSV has a text preview, so the "No preview" page never offers this. -->
+        <Button
+          v-if="opensAsSheet && preview.kind === 'text' && !empty"
+          :label="__('Open as spreadsheet')"
+          icon-left="lucide-sheet"
+          :loading="openingAsSheet"
+          @click="openAsSheet"
+        />
         <Button
           v-if="!empty"
           variant="ghost"
