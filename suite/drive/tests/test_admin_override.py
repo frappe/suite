@@ -68,6 +68,13 @@ class TestSuiteAdminOverride(IntegrationTestCase):
         grant(node, self.other, drive.READ, admin)
         self.assertEqual(describe(_node(node), principals_for(self.other))["role"], drive.READ)
 
+    def test_a_commenting_admin_restores_what_they_trashed_themselves(self):
+        node = self._document("Sheet", "Own trash")
+        admin = self._as(self.admin)
+        update(admin, node, state="Trashed")
+        update(admin, node, state="Active")
+        self.assertEqual(_node(node).state, "Active")
+
     def test_an_admin_without_a_grant_administers_what_they_cannot_open(self):
         owner = self._as(self.owner)
         private = store_file(owner, self.owner_root, "private.txt", BytesIO(b"secret"))

@@ -32,6 +32,7 @@ from suite.drive._core.access import (
     describe_page,
     effective_role,
     effective_roles,
+    holds_without_grant,
     require,
     require_from_rows,
     require_link,
@@ -2315,6 +2316,8 @@ def _require_restore_actor(node: dict, principals: Principals) -> str | None:
     Returns the link that supplied the right. A guest counts as the one who
     trashed it only through the same link.
     """
+    if holds_without_grant(MANAGE, principals):
+        return None
     activity = frappe.db.get_value(
         "Drive Activity",
         {"node": node.get("name"), "action": "trash", "at": node.get("trashed_at")},
