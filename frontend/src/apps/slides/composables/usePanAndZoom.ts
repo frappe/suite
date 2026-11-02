@@ -197,6 +197,9 @@ export const usePanAndZoom = (
   const removePanAndZoom = () => {
     if (!containerElement.value) return
     if (wheelTimeout) window.clearTimeout(wheelTimeout)
+    // a gesture cut short must not carry its matrix into the next one
+    transformObj = null
+    isPanningOrZooming.value = false
     moved = false
     baseScale.value = toValue(initialScale)
     transform.value = restingTransform()

@@ -144,5 +144,11 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
 export const mediaFileName = (src) => {
   if (!src) return ''
   const url = isMediaNodeId(src) ? mediaNodeUrl(src) : src
-  return decodeURIComponent(url.split('?')[0].split('/').pop() ?? '')
+  const name = url.split('?')[0].split('/').pop() ?? ''
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    // a legacy name like `100%.png` was never encoded
+    return name
+  }
 }

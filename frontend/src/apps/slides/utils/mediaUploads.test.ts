@@ -83,6 +83,7 @@ describe('the file name the panel shows', () => {
 
     expect(mediaFileName('82gtqds5ao')).toBe('q3 banner.png')
     expect(mediaFileName('/private/files/old-logo.png')).toBe('old-logo.png')
+    expect(mediaFileName('/private/files/100%.png')).toBe('100%.png')
     expect(mediaFileName(undefined)).toBe('')
   })
 })
