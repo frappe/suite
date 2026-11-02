@@ -155,6 +155,8 @@ test.describe("Writer collaboration", () => {
 	}
 
 	test("a document at the cap opens in under three seconds", async ({ owner, testApi }) => {
+		// The budget is set for the suite's own e2e runner; a GitHub-hosted one (a fork's pull request) is slower
+		test.skip(process.env.RUNNER_ENVIRONMENT === "github-hosted", "budget is for the suite's runner");
 		test.setTimeout(120_000);
 		const length = 4 * 2 ** 20 - 64 * 2 ** 10;
 		const outcome = await pushInPieces(owner.page.request, testApi, node, owner.user.user, length);
