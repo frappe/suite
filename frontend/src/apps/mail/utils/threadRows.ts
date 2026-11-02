@@ -9,7 +9,8 @@ function attachmentRow(value: WireMessage['attachments'][number]): Attachment {
     ...value,
     filename: value.filename ?? '',
     disposition: value.disposition ?? '',
-    file_url: value.url,
+    // A received attachment is named by its blob; `url` is only its download link.
+    file_url: null,
   }
 }
 export function mailRow(row: WireMessage): Mail {

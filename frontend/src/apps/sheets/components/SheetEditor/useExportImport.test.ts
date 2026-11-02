@@ -590,3 +590,79 @@ describe('xlsx charts, and importing into a new file', () => {
     expect(back.charts.list()[0]).toMatchObject({ sourceSheet: 'Sales' })
   })
 })
+
+describe('importXLSX of a file with formulas and no cached values', () => {
+  it('keeps the formulas', async () => {
+    const { utils, write } = await import('xlsx')
+    const wb = utils.book_new()
+    // `<f>` with no `<v>`, as openpyxl writes it.
+    utils.book_append_sheet(
+      wb,
+      {
+        '!ref': 'A1:B3',
+        A1: { t: 'n', v: 1 },
+        A2: { t: 'n', v: 2 },
+        A3: { t: 'z', f: 'SUM(A1:A2)' },
+        B3: { t: 'z', f: 'A3/A1' },
+      },
+      'Budget',
+    )
+    const buf = write(wb, { type: 'array', bookType: 'xlsx' })
+    const writes: Record<string, Record<string, string>> = {}
+    const { importXLSX } = useExportImport({
+      cells: {
+        write: (sn: string, map: Record<string, string>) =>
+          (writes[sn] = { ...writes[sn], ...map }),
+        addSheet: vi.fn(),
+        idle: async () => {},
+      },
+      sheetNames: () => ['Sheet1'],
+      currentSheet: { value: 'Sheet1' },
+      getCurrentTitle: () => 't',
+      getFormats: () => null,
+      getMerge: () => null,
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      isDirty: { value: false },
+    })
+    await importXLSX(file(buf))
+    expect(writes.Budget).toEqual({ A1: '1', A2: '2', A3: '=SUM(A1:A2)', B3: '=A3/A1' })
+  })
+})
+
+// An import was not undoable: undo after it skipped back past it. The editor's
+// undo step (`history.push`) commits one step to the room's undo manager.
+describe('Sheets: importing a file', () => {
+  it('records the import as one undo step, once every sheet is added', async () => {
+    const workbook = new Map<string, Record<string, string>>([['Sheet1', {}]])
+    const sheetsAtStep: string[][] = []
+    const io = useExportImport({
+      cells: {
+        write: (sheet: string, map: Record<string, string>) =>
+          Object.assign(workbook.get(sheet)!, map),
+        addSheet: (name: string) => workbook.set(name, {}),
+        idle: async () => {},
+      },
+      sheetNames: () => [...workbook.keys()],
+      currentSheet: { value: 'Sheet1' },
+      getCurrentTitle: () => 'Budget',
+      getFormats: () => null,
+      getMerge: () => null,
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      recordUndoStep: () => sheetsAtStep.push([...workbook.keys()]),
+      isDirty: { value: false },
+    })
+    const { utils, write } = await import('xlsx')
+    const book = utils.book_new()
+    utils.book_append_sheet(book, utils.aoa_to_sheet([['Item', 'Cost']]), 'Q4 Budget')
+    utils.book_append_sheet(book, utils.aoa_to_sheet([['Team']]), 'Headcount')
+    await io.importXLSX(file(write(book, { type: 'array', bookType: 'xlsx' })))
+
+    expect(sheetsAtStep).toEqual([['Sheet1', 'Q4 Budget', 'Headcount']])
+  })
+})

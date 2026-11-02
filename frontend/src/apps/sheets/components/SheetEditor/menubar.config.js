@@ -202,6 +202,7 @@ export function buildMenuBar(a) {
         item(__('Sort and filter this column'), 'lucide-arrow-down-wide-narrow', a.sortColumn, {
           write: true,
         }),
+        item(__('Sort range…'), 'lucide-arrow-up-down', a.sortRange, { write: true }),
         item(
           a.filterOn ? __('Remove filter') : __('Create a filter'),
           'lucide-funnel',

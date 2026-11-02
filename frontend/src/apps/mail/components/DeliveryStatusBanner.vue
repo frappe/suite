@@ -21,14 +21,32 @@
               >{{ serverResponse(recipient) }}</pre>
           </template>
         </div>
+        <!-- A bounce never joins the sent message's thread (it shares no subject or references
+             with it), so the card links back to it instead. -->
+        <div v-if="sentRoute || submissionRoute" class="-ml-2 mt-2 flex flex-wrap gap-1">
+          <Button
+            v-if="sentRoute"
+            variant="ghost"
+            :label="__('Open sent message')"
+            @click="router.push(sentRoute)"
+          />
+          <Button
+            v-if="submissionRoute"
+            variant="ghost"
+            :label="__('Delivery details')"
+            @click="router.push(submissionRoute)"
+          />
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { Button } from 'frappe-ui'
 import { CircleAlert, CircleCheck, Clock } from 'lucide-vue-next'
 import { computed, inject, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import {
@@ -38,15 +56,21 @@ import {
   type DsnRecipient,
 } from '@/apps/mail/utils/deliveryStatus'
 
-const { blobId, account } = defineProps<{ blobId: string; account: string }>()
+// `emailId` is the bounce itself: the report's reasons are partly in its text.
+const { emailId, account, sentMailbox } = defineProps<{
+  emailId: string
+  account: string
+  sentMailbox: string
+}>()
 
 // Tells the thread whether the card took over from the raw MAILER-DAEMON body — false when the
 // part yields no recipients (or can't be fetched), so the original text comes back as fallback.
 const emit = defineEmits<{ loaded: [rendered: boolean] }>()
 
 const dayjs = inject('$dayjs') as any
+const router = useRouter()
 
-const details = useQuery(api.mail.messages.deliveryStatus, () => ({ account, blob_id: blobId }))
+const details = useQuery(api.mail.messages.deliveryStatus, () => ({ account, id: emailId }))
 watch(
   () => [details.data, details.error],
   () => emit('loaded', !!details.data?.recipients.length),
@@ -55,6 +79,23 @@ watch(
 
 const report = computed<DeliveryStatusReport | null>(() =>
   details.data?.recipients?.length ? details.data : null,
+)
+
+const sentRoute = computed(() =>
+  report.value?.sent_thread_id && sentMailbox
+    ? {
+        name: 'mail-mail',
+        params: { accountId: account, mailbox: sentMailbox, threadID: report.value.sent_thread_id },
+      }
+    : null,
+)
+const submissionRoute = computed(() =>
+  report.value?.submission_id
+    ? {
+        name: 'mail-submission',
+        params: { accountId: account, submissionId: report.value.submission_id },
+      }
+    : null,
 )
 
 const action = computed(() => overallDsnAction(report.value?.recipients || []))

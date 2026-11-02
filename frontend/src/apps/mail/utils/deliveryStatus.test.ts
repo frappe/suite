@@ -7,6 +7,7 @@ const recipient = (overrides: Partial<DsnRecipient>): DsnRecipient => ({
   action: 'failed',
   status: '',
   diagnostic_code: '',
+  reason: '',
   remote_mta: '',
   will_retry_until: '',
   ...overrides,
@@ -40,9 +41,9 @@ describe('overallDsnAction', () => {
 })
 
 describe('serverResponse', () => {
-  it('prefers the diagnostic over the status code', () => {
-    expect(serverResponse(recipient({ status: '5.7.26', diagnostic_code: '550 rejected' }))).toBe(
-      '550 rejected',
+  it('prefers the reason over the status code', () => {
+    expect(serverResponse(recipient({ status: '5.0.0', reason: 'no MX record found' }))).toBe(
+      'no MX record found',
     )
   })
 

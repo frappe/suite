@@ -58,7 +58,7 @@
           :key="notification.name"
           type="button"
           class="flex w-full gap-3 border-b border-outline-gray-1 px-3 py-3 text-left hover:bg-surface-gray-2"
-          :class="notification.read ? 'text-ink-gray-7' : 'bg-surface-amber-2 text-ink-gray-8'"
+          :class="notification.read ? 'text-ink-gray-7' : 'text-ink-gray-8'"
           @click="openNotification(notification)"
         >
           <span
@@ -68,13 +68,16 @@
           />
           <span class="min-w-0 flex-1">
             <span
-              class="block truncate"
+              class="line-clamp-2 block break-words"
               :class="notification.read ? 'text-base' : 'text-base-semibold'"
             >
-              {{ notificationTitle(notification) }}
+              {{ notificationSentence(notification) }}
             </span>
-            <span class="mt-1 block truncate text-sm text-ink-gray-6">
-              {{ notificationDescription(notification) }}
+            <span
+              v-if="notificationExcerpt(notification)"
+              class="mt-1 line-clamp-2 block break-words text-sm text-ink-gray-6"
+            >
+              {{ notificationExcerpt(notification) }}
             </span>
             <span class="mt-1 block text-xs text-ink-gray-5">
               {{ notificationTime(notification.creation || notification.activity.at) }}
@@ -102,9 +105,9 @@ import { useRouter } from 'vue-router'
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, loadDriveNodeSummary, type DriveNotification } from '@/apps/drive'
 import {
-  notificationDescription,
+  notificationExcerpt,
+  notificationSentence,
   notificationTime,
-  notificationTitle,
 } from '@/composition/notifications/notificationPresentation'
 import { translate as __ } from '@/platform/translation'
 

@@ -1957,11 +1957,26 @@
                 ],
                 "title": "Avatar"
               },
+              "time_zone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Time Zone"
+              },
               "roles": {
                 "$ref": "#/$defs/AccountRoles"
               },
               "is_jmap_configured": {
                 "title": "Is Jmap Configured",
+                "type": "boolean"
+              },
+              "is_mail_server_configured": {
+                "title": "Is Mail Server Configured",
                 "type": "boolean"
               },
               "must_change_password": {
@@ -1978,8 +1993,10 @@
               "email",
               "full_name",
               "avatar",
+              "time_zone",
               "roles",
               "is_jmap_configured",
+              "is_mail_server_configured",
               "must_change_password",
               "setup_required"
             ],

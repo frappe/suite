@@ -27,6 +27,7 @@ class TestHandlers(UnitTestCase):
             "avatar": None,
             "roles": ["System Manager", "Suite User"],
             "is_jmap_configured": True,
+            "is_mail_server_configured": True,
         }
         result = routes.account_get()
         self.assertEqual(result["roles"], {"system_manager": True, "suite_admin": False})

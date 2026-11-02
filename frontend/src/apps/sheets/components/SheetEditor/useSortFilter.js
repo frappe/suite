@@ -46,6 +46,8 @@ export function useSortFilter({
   captureFormatsRange,
   readEngineFormats,
   resetEngineFormats,
+  sheetExtent,
+  sortDialog,
 }) {
   // Filter panel state. The form itself (mode, operator, checked values) lives
   // in FilterPanel.vue, which is re-created on every open (`seq` is its key).
@@ -339,15 +341,20 @@ export function useSortFilter({
     const range = sortFilter.getRange(sn)
     if (range && rectBlocked(range, sn)) return
     filterPanel.open = false
-    const moveFormats = range && formats && captureFormatsRange && _sortCells(range) <= 50000
+    const rect = range && { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
+    await _sortWithFormats(sn, rect, () => sortFilter.sort(colIdx, dir, sn))
+    applyHiddenRows()
+  }
+
+  // Formats travel with their rows (ISSUES #48). A typed $1.50 or date is
+  // formatted by IronCalc itself; copy that into the side store first so one
+  // map moves (and undoes) every row's look, then reset IronCalc's own
+  // format, which would otherwise stay with the position.
+  async function _sortWithFormats(sn, rect, sort) {
+    const moveFormats = rect && formats && captureFormatsRange && _rectCells(rect) <= 50000
     let beforeFmt = null
     let engineIds = []
     if (moveFormats) {
-      // Formats travel with their rows (ISSUES #48). A typed $1.50 or date
-      // is formatted by IronCalc itself; copy that into the side store first
-      // so one map moves (and undoes) every row's look, then reset
-      // IronCalc's own format, which would otherwise stay with the position.
-      const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
       const engineFmts = (await readEngineFormats?.(rect, sn)) ?? {}
       engineIds = Object.keys(engineFmts)
       for (const id of engineIds) {
@@ -357,25 +364,73 @@ export function useSortFilter({
       }
       beforeFmt = captureFormatsRange(rect, sn)
     }
-    const sorted = await sortFilter.sort(colIdx, dir, sn)
-    if (sorted) {
-      let extra = {}
-      if (beforeFmt) {
-        const moved = formatsAfterSort(sorted.order, sorted.rect, beforeFmt)
-        for (const [id, fmt] of Object.entries(moved)) {
-          formats.clear(id, sn) // set merges; a moved row replaces the look
-          if (fmt) formats.set(id, fmt, sn)
-        }
-        if (engineIds.length) resetEngineFormats?.(engineIds, sn)
-        extra = { beforeFormats: beforeFmt, afterFormats: captureFormatsRange(sorted.rect, sn) }
+    const sorted = await sort()
+    if (!sorted) return
+    let extra = {}
+    if (beforeFmt) {
+      const moved = formatsAfterSort(sorted.order, sorted.rect, beforeFmt)
+      for (const [id, fmt] of Object.entries(moved)) {
+        formats.clear(id, sn) // set merges; a moved row replaces the look
+        if (fmt) formats.set(id, fmt, sn)
       }
-      pushEditOp(sn, sorted.before, sorted.after, 'Sort', extra)
+      if (engineIds.length) resetEngineFormats?.(engineIds, sn)
+      extra = { beforeFormats: beforeFmt, afterFormats: captureFormatsRange(sorted.rect, sn) }
     }
-    applyHiddenRows()
+    pushEditOp(sn, sorted.before, sorted.after, 'Sort', extra)
   }
-  // Data cells a sort of the filter range touches (the header row stays).
-  function _sortCells(range) {
-    return (range.r1 - range.r0) * (range.c1 - range.c0 + 1)
+  function _rectCells(rect) {
+    return (rect.r1 - rect.r0 + 1) * (rect.c1 - rect.c0 + 1)
+  }
+
+  // Sort A→Z / Z→A from the right-click menus, as Google Sheets' "Sort range".
+  // A selection of several rows sorts as it is, by the active cell's column.
+  // A single cell or row, or a whole column (`col`), sorts the data block
+  // around it; its header on top and its totals at the bottom stay there.
+  async function sortRange(dir, col = null) {
+    const target = await _sortTarget(col)
+    if (!target) return
+    const rows = target.asSelected
+      ? {}
+      : await sortFilter.guessSortRows(target.rect, currentSheet.value)
+    await applySort({ rect: target.rect, col: target.col, dir, ...rows })
+  }
+
+  // The same sort with the guesses shown first, so a wrong one can be changed.
+  async function openSortDialog(col = null) {
+    const target = await _sortTarget(col)
+    if (!target) return
+    const rows = await sortFilter.guessSortRows(target.rect, currentSheet.value)
+    sortDialog().open({ rect: target.rect, col: target.col, ...rows })
+  }
+
+  async function applySort({ rect, col, dir, header = false, totals = false }) {
+    const sn = currentSheet.value
+    await _sortWithFormats(sn, rect, () =>
+      sortFilter.sortRows(rect, col, dir, sn, { header, totals }),
+    )
+  }
+
+  async function _sortTarget(col) {
+    const grid = getGrid()
+    if (!grid) return null
+    const sel = grid.getSelection()
+    const active = parseCellId(activeCell.value) ?? { row: sel.r0, col: sel.c0 }
+    const key = col ?? Math.min(Math.max(active.col, sel.c0), sel.c1)
+    const asSelected = col == null && sel.r1 > sel.r0
+    const row = col == null ? active.row : await _firstFilledRow(key)
+    const rect = asSelected ? sel : row != null && (await detectContiguousBlock(row, key))
+    if (!rect || rectBlocked(rect, currentSheet.value)) return null
+    return { rect, col: key, asSelected }
+  }
+
+  // A column header sorts the first data block down that column, wherever it starts.
+  async function _firstFilledRow(c) {
+    const sn = currentSheet.value
+    const extent = await sheetExtent(sn)
+    if (!extent) return null
+    const { inputs } = await readRect(sn, { r0: 0, c0: c, r1: extent.maxRow, c1: c })
+    const row = inputs.findIndex((cells) => (cells[0] ?? '') !== '')
+    return row < 0 ? null : row
   }
 
   return {
@@ -391,5 +446,8 @@ export function useSortFilter({
     applyFilter,
     clearFilterCol,
     doSort,
+    sortRange,
+    openSortDialog,
+    applySort,
   }
 }

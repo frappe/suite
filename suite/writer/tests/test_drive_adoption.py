@@ -434,7 +434,7 @@ class TestWriterInDrive(IntegrationTestCase):
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Writer Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Writer Other", user=OTHER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.person = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
 
     def _remove_fixture_rows(self):
@@ -904,7 +904,7 @@ def _purge_fixture_roots() -> None:
     `USER` and `OTHER` belong to this module alone, so the filter can never
     reach a live account or another test.
     """
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", (USER, OTHER)]}, pluck="name")
     # Purging a document node calls the app's `on_purge`, which Drive reads from
     # the registry, so the purge runs registered even when the caller is not.

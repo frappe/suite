@@ -1,4 +1,9 @@
+import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
+import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
+import { translate as __ } from '@/platform/translation'
+
+import { organizationLabel } from './share/shareModel'
 
 export type PickerMode = 'move' | 'copy' | 'restore'
 
@@ -71,4 +76,58 @@ export function destination(
     return { status: 'refused', reason }
   }
   return { status: 'allowed' }
+}
+
+/** Someone a move gives more access, as the move confirmation lists them. */
+export interface MoveAccessGain {
+  principal: string
+  label: string
+  role: number
+  person?: NodeMovePreviewOutput['gains'][number]['person']
+}
+
+/** What a move changes, for the move confirmation (unified frontend §5.7). */
+export interface MoveAccessChange {
+  /** Strongest access first, each principal once, with the most it gains across the items. */
+  gains: MoveAccessGain[]
+  /** The mover's lowest role after the move, when it drops. `0` is no access. */
+  ownRoleAfter: number | null
+}
+
+/** From each item's move preview. `null` when the move goes ahead without asking. */
+export function moveAccessChange(
+  previews: readonly NodeMovePreviewOutput[],
+): MoveAccessChange | null {
+  const gains = new Map<string, MoveAccessGain>()
+  for (const { principal, role, person } of previews.flatMap((preview) => preview.gains)) {
+    const known = gains.get(principal)
+    if (known && known.role >= role) continue
+    gains.set(principal, {
+      principal,
+      role,
+      person,
+      label: person?.full_name ?? gainLabel(principal),
+    })
+  }
+  const dropped = previews.filter((preview) => preview.role_after < preview.role_now)
+  const ownRoleAfter = dropped.length
+    ? Math.min(...dropped.map((preview) => preview.role_after))
+    : null
+  if (!gains.size && ownRoleAfter === null) return null
+  return { gains: [...gains.values()].sort((a, b) => b.role - a.role), ownRoleAfter }
+}
+
+function gainLabel(principal: string): string {
+  switch (principalKind(principal)) {
+    case 'group':
+      return __('People in {0}', [groupName(principal)])
+    case 'general':
+      return __(organizationLabel())
+    case 'public':
+      return __('Everyone on the web')
+    case 'link':
+      return __('Anyone with a share link')
+    case 'user':
+      return principal
+  }
 }

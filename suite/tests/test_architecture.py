@@ -712,6 +712,7 @@ class TestArchitecture(unittest.TestCase):
                 "list_versions",
                 "node_field",
                 "node_owner",
+                "node_title",
                 "node_url",
                 "personal_root_for",
                 "preview_user_transfer",

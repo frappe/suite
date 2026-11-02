@@ -54,7 +54,7 @@ const ShortcutRedirect = { render: () => null }
 
 export const routes: RouteRecordRaw[] = [
   // --- Public (pre-auth) routes -------------------------------------------
-  // Nested under LoginLayout, which supplies the Frappe Mail logo, the centered
+  // Nested under LoginLayout, which supplies the Suite logo, the centered
   // card and the per-route title. Without it these views render as bare,
   // full-bleed forms.
   {

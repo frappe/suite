@@ -36,7 +36,7 @@ import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import { setElementProperty, useElementProperty } from '@/apps/slides/composables/editProperty'
 import { activeElement } from '@/apps/slides/stores/element'
-import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
+import { handleUploadedMedia, mediaFileName } from '@/apps/slides/utils/mediaUploads'
 
 const setAutoplay = (value) => setElementProperty('autoplay', value)
 const setLoop = (value) => setElementProperty('loop', value)
@@ -48,7 +48,7 @@ const toggleFromRow = (e, property) => {
 
 const playbackRate = useElementProperty('playbackRate')
 
-const fileName = computed(() => decodeURIComponent(activeElement.value?.src.split('/').pop() ?? ''))
+const fileName = computed(() => mediaFileName(activeElement.value?.src))
 
 const filePicker = useTemplateRef('filePicker')
 

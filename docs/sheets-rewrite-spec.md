@@ -400,7 +400,7 @@ same-origin `/collab/`). Keep that split:
 
 | Path | Transport | When |
 |---|---|---|
-| A (default) | Frappe socket.io realtime relay (`collab/realtime-adapter.js`, `collab/frappe-realtime-init.js` shim) carrying `join`/`submit`/`commands` events to the sidecar via server relay | Benches without a reachable sidecar socket |
+| A (default) | Frappe socket.io realtime relay (`collab/realtime-adapter.js` over the shared `@/platform/realtime` socket) carrying `join`/`submit`/`commands` events to the sidecar via server relay | Benches without a reachable sidecar socket |
 | B | Direct websocket to the sidecar at `collab_ws_url` | Benches with the sidecar deployed |
 
 Presence: keep `collab/awareness.js` unchanged. It already speaks

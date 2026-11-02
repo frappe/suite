@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import fnmatch
 import operator
 import re
 from collections import Counter
@@ -77,7 +78,9 @@ def parse_gate(gate: str) -> list[tuple[str, list[str], str]]:
     return branches
 
 
-def route_through_gate(gate: str, sender: str, spamtest: int) -> tuple[str, bool] | None:
+def route_through_gate(
+    gate: str, sender: str, spamtest: int, content_type: str = "text/plain"
+) -> tuple[str, bool] | None:
     """Evaluate the rendered gate for one message with RFC 5228/5231/5235/5232 semantics.
 
     Returns the mailbox the gate files the message into and whether it marks it unscreened, or None
@@ -91,12 +94,17 @@ def route_through_gate(gate: str, sender: str, spamtest: int) -> tuple[str, bool
             # Every member is evaluated, so one this helper can't read fails even after a match.
             results = [evaluate(t) for t in test[test.index("(") + 1 : test.rindex(")")].split(",")]
             return any(results)
+        if test.startswith("allof"):
+            results = [evaluate(t) for t in test[test.index("(") + 1 : test.rindex(")")].split(",")]
+            return all(results)
         if test.startswith("not "):
             return not evaluate(test[4:])
         if match := re.fullmatch(r'address :is "from" "(.+)"', test):
             return sender.lower() == match[1].lower()
         if match := re.fullmatch(r'address :domain :is "from" "(.+)"', test):
             return sender.rpartition("@")[2].lower() == match[1].lower()
+        if match := re.fullmatch(r'header :matches "Content-Type" "(.+)"', test):
+            return fnmatch.fnmatch(content_type.lower(), match[1].lower())
         if match := re.fullmatch(r'spamtest :value "(\w+)" :comparator "i;ascii-numeric" "(\d+)"', test):
             return RELATIONS[match[1]](spamtest, int(match[2]))
         raise AssertionError(f"Unrecognised Sieve test: {test}")
@@ -192,6 +200,27 @@ class IntegrationTestSieveScript(IntegrationTestCase):
                 with self.subTest(shape=shape, spamtest=spamtest):
                     expected = (KEEP, True) if spamtest < 5 else None
                     self.assertEqual(route_through_gate(gate, "stranger@else.example", spamtest), expected)
+
+    def test_screening_gate_keeps_delivery_reports_unmarked(self):
+        """A bounce comes from MAILER-DAEMON, whom nobody accepts, but it is about mail the user sent:
+        it reaches the Inbox unmarked. One the server calls spam - backscatter about mail the user
+        never sent - is still left to the server's filtering."""
+
+        report = 'multipart/report; report-type="delivery-status";\r\n\tboundary="b1"'
+        gates = {
+            "nothing trusted": render_screening_gate([], own_emails=[]),
+            "accepted senders": render_screening_gate(["boss@work.example"]),
+        }
+        for shape, gate in gates.items():
+            for spamtest in range(11):
+                with self.subTest(shape=shape, spamtest=spamtest):
+                    expected = (KEEP, False) if spamtest < 5 else None
+                    routed = route_through_gate(gate, "MAILER-DAEMON@mx.example", spamtest, report)
+                    self.assertEqual(routed, expected)
+
+            # Any other report from a stranger, a read receipt, is screened as usual.
+            receipt = 'multipart/report; report-type="disposition-notification"; boundary="b2"'
+            self.assertEqual(route_through_gate(gate, "stranger@else.example", 1, receipt), (KEEP, True))
 
     def test_screening_gate_delivers_trusted_senders_to_the_inbox(self):
         gate = render_screening_gate(["boss@work.example", "@partner.example"])

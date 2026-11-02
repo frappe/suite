@@ -109,7 +109,7 @@ class TestArchiveRevocation(IntegrationTestCase):
         reader = "archive-reader@example.com"
         ensure_rootless_user(owner, reader)
         self.blobs_before = set(frappe.get_all("File Blob", pluck="name"))
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.reader = Principals(reader, (reader,), ("$PUBLIC",))
         self.root = create_root(kind="Personal", title="Archive test", user=owner)
         self.folder = create_folder(self.admin, self.root.name, "Shared")

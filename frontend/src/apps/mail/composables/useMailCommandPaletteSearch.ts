@@ -234,7 +234,7 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
             ...attachment,
             filename: attachment.filename ?? '',
             disposition: attachment.disposition ?? '',
-            file_url: attachment.url,
+            file_url: null,
           })),
           mailboxes: mail.mailboxes.map((mailbox) => ({
             ...mailbox,

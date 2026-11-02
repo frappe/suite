@@ -43,6 +43,10 @@ SOCIAL_DOMAINS = frozenset(
     }
 )
 
+# The reports (RFC 6522) a server mails back about mail the user sent: a bounce or delay notice
+# (RFC 3464) and a read receipt (RFC 8098).
+REPORTS_ON_SENT_MAIL = ("delivery-status", "disposition-notification")
+
 # Headers only a mailing list manager adds: Mailman, ezmlm and Google Groups.
 DISCUSSION_LIST_HEADERS = ("mailing-list", "x-mailman-version", "x-google-group-id")
 
@@ -114,6 +118,22 @@ class _Headers:
 
         return self._values.get(name, "").partition(";")[0].strip()
 
+    def parameter(self, name: str, parameter: str) -> str:
+        """The value of one `; parameter=value` of the header, unquoted. Empty when it is absent."""
+
+        for pair in self._values.get(name, "").split(";")[1:]:
+            key, _, value = pair.partition("=")
+            if key.strip() == parameter:
+                return value.strip().strip('"')
+        return ""
+
+
+def _reports_on_sent_mail(headers: _Headers) -> bool:
+    # A bounce answers something the user sent, and belongs with it, however automated it is.
+    return headers.value("content-type") == "multipart/report" and (
+        headers.parameter("content-type", "report-type") in REPORTS_ON_SENT_MAIL
+    )
+
 
 def _from_social_network(headers: _Headers) -> bool:
     domain = headers.sender_domain
@@ -137,8 +157,8 @@ def _sent_by_campaign_tool(headers: _Headers) -> bool:
 
 
 def _generated_by_a_system(headers: _Headers) -> bool:
-    # RFC 3834. "auto-replied" is left out on purpose: a vacation reply or a bounce answers
-    # something the user sent, and belongs with the conversation it is part of.
+    # RFC 3834. "auto-replied" is left out on purpose: a vacation reply answers something the
+    # user sent, and belongs with the conversation it is part of.
     return headers.value("auto-submitted") in ("auto-generated", "auto-notified")
 
 
@@ -159,12 +179,15 @@ def _from_automated_sender(headers: _Headers) -> bool:
 
 
 # First match wins, so the order is the argument:
+# - a report on mail the user sent is Primary, though it comes "auto-generated" from a no-reply
+#   address like any system notice;
 # - a social network's mail carries list and bulk headers too, so who sent it is asked first;
 # - a discussion list can be unsubscribed from like a campaign, so it is told apart before one;
 # - a campaign tool marks a promotion however automated the rest of the message looks;
 # - a system notice or a billing address is an update even when it offers an unsubscribe link,
 #   while a bare "noreply" is an update only when nothing says the mail was subscribed to.
 _RULES: tuple[tuple[Category, Callable[[_Headers], bool]], ...] = (
+    (Category.PRIMARY, _reports_on_sent_mail),
     (Category.SOCIAL, _from_social_network),
     (Category.FORUMS, _from_discussion_list),
     (Category.PROMOTIONS, _sent_by_campaign_tool),

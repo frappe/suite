@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
+import { Avatar, Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
 import {
   computed,
   defineAsyncComponent,
@@ -81,6 +81,8 @@ import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 
 import { createSlidesAccess } from './access'
+import { useAutosave } from './autosave'
+import { authorLabel, commentTime, type CommentThread } from './comments'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -99,18 +101,6 @@ type Panel = DocumentPanel
 
 const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
 
-/** `GET nodes/<id>/threads` */
-interface CommentThread {
-  name: string
-  resolved: boolean
-  comments: {
-    name: string
-    content: string
-    author: string | null
-    author_name: string | null
-    creation: string | null
-  }[]
-}
 const props = defineProps<{
   session: DocumentSession
 }>()
@@ -124,7 +114,8 @@ const userSession = useSession()
 const presenting = computed(
   () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
 )
-const presentedSlide = computed(() => Number(route.query.slide) || 1)
+// `?slide=N`: the slide the show presents, and the one the editor opens on.
+const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.slide)) || 1))
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
@@ -144,7 +135,6 @@ const {
 const exporting = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 const isSlideInteractionActive = ref(false)
-let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
@@ -431,8 +421,7 @@ async function load() {
     if (run !== latestLoad) return
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
 
-    const shown = presentedSlide.value
-    setSlideIndex(presenting.value ? shown : 1)
+    setSlideIndex(presentedSlide.value)
     loadTemplates()
     composite.value = !!doc?.is_composite
     if (composite.value) {
@@ -507,6 +496,32 @@ useDocumentLeaveGuard({
   flush,
   retainRecovery,
 })
+useAutosave({
+  editable,
+  interacting: isSlideInteractionActive,
+})
+// The show takes the keyboard: the editor under it is inert, so no editor menu opens over
+// the audience, and focus goes back where it was, or to Present, once the show ends
+const presentControls = ref<InstanceType<typeof PresentButton> | null>(null)
+let focusedBeforeShow: Element | null = null
+watch(
+  presenting,
+  (isPresenting) => {
+    if (isPresenting) focusedBeforeShow = document.activeElement
+  },
+  { flush: 'sync' },
+)
+// After the render, once the editor is no longer inert
+watch(
+  presenting,
+  (isPresenting) => {
+    if (isPresenting) return
+    const before = focusedBeforeShow?.isConnected ? focusedBeforeShow : null
+    const target = before ?? presentControls.value?.$el.querySelector('button')
+    if (target instanceof HTMLElement) target.focus()
+  },
+  { flush: 'post' },
+)
 function warnBeforeUnload(event: Event) {
   resolveDocumentUnload({ state: () => saveState.value, retainRecovery }, event)
 }
@@ -544,18 +559,12 @@ onMounted(() => {
   void load()
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
-  autosaveTimer = window.setInterval(() => {
-    if (editable.value && !isSlideInteractionActive.value) {
-      void saveChanges()
-    }
-  }, 1_000)
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
   void postToServiceWorker('slides-left')
-  if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
@@ -571,7 +580,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base">
+  <div
+    class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base"
+    :inert="presenting"
+  >
     <DriveDocumentHeader
       :session="session"
       title-label="Presentation title"
@@ -608,7 +620,11 @@ onBeforeUnmount(() => {
         />
       </template>
       <template #primary>
-        <PresentButton :is-disabled="deckUnavailable" @start="startSlideShow" />
+        <PresentButton
+          ref="presentControls"
+          :is-disabled="deckUnavailable"
+          @start="startSlideShow"
+        />
       </template>
     </DriveDocumentHeader>
 
@@ -756,11 +772,19 @@ onBeforeUnmount(() => {
             class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
             :class="thread.resolved && 'opacity-60'"
           >
-            <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="text-sm-medium text-ink-gray-8">
+            <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
+              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
+                <Avatar
+                  v-if="comment.person"
+                  :image="comment.person.user_image ?? undefined"
+                  :label="comment.person.full_name"
+                  size="sm"
+                  shape="circle"
+                />
                 <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                  comment.author_name || 'Someone'
+                  authorLabel(comment)
                 }}</DriveCommentAuthor>
+                <span class="flex-1 text-xs text-ink-gray-5">{{ commentTime(comment) }}</span>
               </p>
               <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
             </div>

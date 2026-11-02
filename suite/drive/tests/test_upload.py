@@ -643,6 +643,22 @@ class TestDriveFileAccounting(IntegrationTestCase):
         self.assertTrue(frappe.db.exists("Drive Node", node))
         self.assertFalse(frappe.cache().get_value(_binding_key(opened["upload_id"])))
 
+    def test_a_refused_finish_drops_its_binding_so_a_retry_opens_a_new_session(self):
+        frappe.set_user(USER)
+        damaged = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EO"
+        with storage_v2_on(), frappe.storage.fake():
+            opened = self._open(self.principals, self.root.name, "contract.pdf", len(damaged))
+            upload_chunk(self.principals, opened["upload_id"], 0, damaged)
+            with self.assertRaisesRegex(frappe.ValidationError, "This PDF is damaged"):
+                finish_upload(
+                    self.principals,
+                    opened["upload_id"],
+                    parent_node=self.root.name,
+                    title="contract.pdf",
+                )
+            with self.assertRaises(DriveNotFound):
+                upload_chunk(self.principals, opened["upload_id"], 0, b"")
+
     def test_a_zero_byte_file_uploads_as_an_empty_head(self):
         """An empty file is a file (§7.3), not a session still waiting for bytes."""
         frappe.set_user(USER)
@@ -775,7 +791,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
         bad_path = self._folder("Bad path")
         frappe.db.set_value("Drive Node", bad_root.name, "root", other_root.name)
         frappe.db.set_value("Drive Node", bad_path.name, "path", "/not-canonical/")
-        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True)
         with frappe.storage.fake():
             blob = self._blob(b"position")
             for parent in (bad_root.name, bad_path.name):

@@ -135,6 +135,13 @@ The record of who put a node there. An owner holds no access and pays no
 bytes by being one; the node's Drive Root carries the charge.
 _Avoid_: Creator, Admin, Manager, Payer
 
+**Suite Admin**:
+A person who administers the site. Holds Manage at every node without a
+grant, and nothing below it: a Suite Admin shares, recovers, and offboards,
+but reads, comments, and edits only through grants
+([ADR 0001](docs/adr/0001-suite-admin-administers-but-does-not-edit.md)).
+_Avoid_: Superuser, Site admin, Drive admin
+
 ### Content
 
 **Content Document**:
@@ -297,13 +304,21 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - Every change to a **Grant** leaves a record of who made it, which
   **Principal** it named, and the **Role** before and after. Publishing is
   such a change, not a separate act.
-- Suite Admins reach every node on the site without a grant.
+- A **Suite Admin** holds Manage at every node without a grant: they share,
+  restore what others trashed, and delete for good anywhere. Reading,
+  commenting, uploading, and editing come only from their **Grants**, so an
+  editor shows them their real role.
+- A **Suite Admin** who needs to read private content grants it to themselves.
+  That grant change is recorded like any other.
+- The site's `Administrator` account and Drive's own workflows hold every
+  right at every node. They are not people on the team.
 - **Offboarding** sets a **Personal Root** to archived. It writes no node and
   changes no grant.
 - Everyone a departed user shared with keeps exactly the access they had,
   because their **Grants** are untouched.
-- Content a departed user never shared is reachable by Suite Admins only,
-  because the only grant on it names a user who is gone.
+- Content a departed user never shared is reachable by nobody, because the
+  only grant on it names a user who is gone. A Suite Admin recovers it by
+  transferring it to another root, or by granting access to it.
 - An **Archived Root** is in no folder listing. It is reached through its own
   view, by the people holding grants inside it.
 - An **Archived Root** keeps its departed **Owner** as the record of who put
@@ -372,7 +387,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - An **Activity** is written once and never edited. It goes when its node
   is purged.
 - A **Notification** points at one **Activity** for one person. It carries
-  no message of its own.
+  no message of its own. The list joins the node's current title and the
+  actor's name when it is read; a comment's Activity keeps a short excerpt.
 - A **Favourite** and a **Recent** are one person's own. Nobody else sees
   them, and clearing one never touches the other.
 - Opening a node writes a **Recent**, never an **Activity**.
@@ -386,8 +402,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 > **Domain expert:** "One field. Her Personal Root becomes an Archived Root.
 > No node moves, because a Path is relative to its own root, and no grant
 > changes, because Bob's grant was never about Alice. Bob keeps his folder.
-> Her private files are left to Suite Admins, since the only grant on them
-> names someone who no longer exists."
+> Her private files stay closed, since the only grant on them names someone
+> who no longer exists. A Suite Admin transfers them to whoever takes over."
 
 ## Flagged Ambiguities
 

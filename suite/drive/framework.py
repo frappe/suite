@@ -189,6 +189,7 @@ def principals_for(user: str | None = None) -> Principals:
         open=("$PUBLIC", *links),
         is_admin=is_drive_admin(user),
         link_tickets=tickets,
+        is_system=user == "Administrator",
     )
 
 
@@ -649,8 +650,9 @@ def _node_allows(node: str, role: int, user: str | None) -> bool:
 def _list_predicate(node_column: str, user: str | None) -> str:
     """Return the §5 nearest-wins Read predicate for one node column.
 
-    A Suite Admin holds MANAGE everywhere, so the filter disappears. Otherwise
-    the answer repeats `Acc`: the deepest own grant decides, a deny there wins
+    Drive's own account holds every right, so the filter disappears. Anyone
+    else, a Suite Admin included, reads what their grants give. The answer
+    repeats `Acc`: the deepest own grant decides, a deny there wins
     outright, and an open grant can only add. Two simplifications keep it in
     SQL and both refuse more than the engine, never less: grants at the same
     depth are not ordered by own tier, and a password-protected link grant is
@@ -658,7 +660,7 @@ def _list_predicate(node_column: str, user: str | None) -> str:
     `tests/test_predicate_agreement.py` checks both claims against the engine.
     """
     principals = principals_for(user)
-    if principals.is_admin:
+    if principals.is_system:
         return ""
     if not principals.all():
         return "1=0"

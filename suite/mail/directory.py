@@ -117,12 +117,22 @@ def get_account_metadata() -> dict:
     }
 
 
-def account_exists(email: str) -> bool:
+def find_account(email: str) -> dict | None:
+    """The account at ``email``, or ``None`` when Suite Cloud has none.
+
+    A miss is an answer here, not a refusal: the client's 404 message is dropped so it cannot
+    reach the user ahead of whatever error the caller raises next.
+    """
+
     try:
-        get_client().call("mail.accounts.get_account", email=email)
+        return get_client().call("mail.accounts.get_account", email=email)
     except frappe.DoesNotExistError:
-        return False
-    return True
+        frappe.clear_last_message()
+        return None
+
+
+def account_exists(email: str) -> bool:
+    return find_account(email) is not None
 
 
 def create_account(
@@ -166,14 +176,16 @@ def provision_account(email: str, password: str, *, operation: str, **options) -
     response is recovered by rotating the app credential, never deleting an
     account whose ownership is uncertain or retrieving a previous secret.
     """
-    client = get_client()
-    try:
-        existing = client.call("mail.accounts.get_account", email=email)
-    except frappe.DoesNotExistError:
+    existing = find_account(email)
+    if existing is None:
         return create_account(email, password, operation=operation, **options)
+    client = get_client()
     if existing.get("description") != f"Suite setup {operation}":
         frappe.throw(_("This business address is already claimed by another account"), frappe.ValidationError)
     client.call("mail.accounts.set_password", email=email, password=password)
+    # Minting an app password signs in as the account, which a locked one cannot do. A setup
+    # that failed after locking it left it locked; the caller locks it again once it is done.
+    client.call("mail.accounts.set_account_enabled", email=email, enabled=True)
     return {**existing, **client.call("mail.accounts.rotate_app_password", email=email)}
 
 

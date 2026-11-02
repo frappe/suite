@@ -93,5 +93,7 @@ Each row is a test before it is called done.
 | `=SUM(A:A)` | Column total |
 | Insert a row above a referenced cell | The reference shifts |
 | Sort rows that contain formulas | Formulas move with their rows |
+| Import an XLSX, then delete a sheet, then undo twice | The first undo brings the sheet back; the second removes the import |
+| File → Print… → This sheet or All sheets | A print view of the cells as the grid shows them: number formats, alignment, fills, conditional formatting and merges. Charts are not printed |
 | Fill `=ATAN2(A1,B1)` down | `=ATAN2(A2,B2)` |
 | Type `1,000`, then `=A1*2` | 2000 |
