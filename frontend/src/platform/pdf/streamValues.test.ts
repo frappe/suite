@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { streamValues } from './readableStreamValues'
+import { streamValues } from './streamValues'
 
 // The stand-in is exercised directly rather than through the prototype: every runtime that runs
 // these tests already has async iteration, so the install in the module under test is a no-op here.
