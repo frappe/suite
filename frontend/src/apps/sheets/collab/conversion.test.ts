@@ -252,6 +252,9 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
       [5, 3, 'Grand Total'],
       [5, 4, '15'],
       [1, 1, 'my note'],
+      // The person's own cells touching the table: right of its header, under Grand Total.
+      [2, 5, 'Target'],
+      [6, 3, 'checked'],
     ] as const)
       client.dispatch(glueCommand('setInput', { sheet: 'Sheet1', row, col, input }))
     await client.idle()
@@ -278,7 +281,11 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
     client.terminate()
 
     const tab = await opened((await converted(body)).state)
-    expect(Object.keys(tab.cells).filter((k) => k.startsWith('Sheet1!'))).toEqual(['Sheet1!1:1'])
+    expect(Object.keys(tab.cells).filter((k) => k.startsWith('Sheet1!'))).toEqual([
+      'Sheet1!1:1',
+      'Sheet1!2:5',
+      'Sheet1!6:3',
+    ])
     expect(tab.stores.formats.snapshot().Sheet1?.cells).toEqual({ A1: { italic: true } })
     expect(Object.keys(tab.stores.pivot.snapshot().pivots)).toEqual(['pivot_p1'])
   })

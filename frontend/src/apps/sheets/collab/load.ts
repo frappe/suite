@@ -9,6 +9,7 @@ import type * as Y from 'yjs'
 
 import type { WorkbookClient } from '../core/client'
 import type { BatchCommand, NonBatchCommand } from '../core/commands'
+import { computePivot, parseRangeRect, rangeReader } from '../engine/pivot'
 import { addSheet, axis, cellKey, initDoc, parseCellKey, roots } from './schema'
 import {
   docSheets,
@@ -89,24 +90,48 @@ export interface WriteOptions {
 }
 
 /**
- * Each pivot's output, for a pivot that has not written it this session (an
- * old sheet's, which saved its output as cells): the solid block from its
- * anchor, right along the header row and down the row-label column to the
- * first empty cell, as the editor finds it on open (usePivotIntegration).
+ * Sets the output extent of each pivot that has not written its output this
+ * session (an old sheet's, which saved it as cells): the table the pivot
+ * computes from its source now, at its anchor, as the editor's rebuild writes
+ * it. Cells beside the table are the person's and stay theirs.
  */
-function findPivotOutput(stores: GlueStores, cells: Map<string, CellInput[]>): void {
-  for (const p of stores.pivot?.list() ?? []) {
-    if (p._extent || !p.outputSheet) continue
-    const filled = new Set((cells.get(p.outputSheet) ?? []).map((c) => `${c.row - 1}:${c.col - 1}`))
-    const has = (r: number, c: number) => filled.has(`${r}:${c}`)
+async function setPivotExtents(
+  client: WorkbookClient,
+  stores: GlueStores,
+  cells: Map<string, CellInput[]>,
+): Promise<void> {
+  const pivot = stores.pivot
+  for (const p of pivot?.list() ?? []) {
+    const rect = parseRangeRect(p.sourceRange)
+    const source = p.sourceSheet
+    if (p._extent || !p.outputSheet || !source || !rect) continue
+    // A range like A1:Z1048576 reads only as far as the sheet holds data.
+    let lastRow = -1
+    let lastCol = -1
+    for (const c of cells.get(source) ?? []) {
+      lastRow = Math.max(lastRow, c.row - 1)
+      lastCol = Math.max(lastCol, c.col - 1)
+    }
+    const read = { ...rect, r1: Math.min(rect.r1, lastRow), c1: Math.min(rect.c1, lastCol) }
+    if (read.r1 < read.r0 || read.c1 < read.c0) continue
+    const values: string[][] = []
+    const step = Math.max(1, Math.floor(READ_CHUNK / (read.c1 - read.c0 + 1)))
+    for (let r = read.r0; r <= read.r1; r += step) {
+      const part = await client.readViewport({
+        sheet: source,
+        r1: r + 1,
+        c1: read.c0 + 1,
+        r2: Math.min(r + step - 1, read.r1) + 1,
+        c2: read.c1 + 1,
+      })
+      values.push(...part.values)
+    }
+    const table = computePivot(p, rangeReader(read, values))
+    if (!table.length) continue
     const r0 = p.anchorRow ?? 0
     const c0 = p.anchorCol ?? 0
-    if (!has(r0, c0)) continue
-    let c1 = c0
-    while (has(r0, c1 + 1)) c1++
-    let r1 = r0
-    while (has(r1 + 1, c0)) r1++
-    stores.pivot!.setExtent(p.id, { r0, c0, r1, c1 })
+    const width = (table[0] as unknown[] | undefined)?.length || 1
+    pivot?.setExtent(p.id, { r0, c0, r1: r0 + table.length - 1, c1: c0 + width - 1 })
   }
 }
 
@@ -123,14 +148,14 @@ export async function writeWorkbookToDoc(
   if (docSheets(doc).length) throw new Error('writeWorkbookToDoc needs an empty doc')
   const names = [...client.sheets]
   const cells = await Promise.all(names.map((sheet) => readSheetInputs(client, sheet)))
-  findPivotOutput(stores, new Map(names.map((name, i) => [name, cells[i]!])))
+  await setPivotExtents(client, stores, new Map(names.map((name, i) => [name, cells[i]!])))
   const derived = pivotOutput(stores)
   doc.transact(() => {
     initDoc(doc)
     names.forEach((name, i) => {
       const sheetId = addSheet(doc, name)
       for (const cell of cells[i]!)
-        if (!derived(name, cell.row - 1, cell.col - 1)) putInput(doc, sheetId, cell)
+        if (!derived?.(name, cell.row - 1, cell.col - 1)) putInput(doc, sheetId, cell)
     })
     writeStores(doc, stores, docSheets(doc))
   }, origin)
