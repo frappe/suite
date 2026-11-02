@@ -1,10 +1,11 @@
 /**
  * Slides' local recovery copies: the presentation's slides kept on this device,
  * per person, when unsaved work cannot reach the server. They are never replayed
- * automatically. The person takes one out as a JSON file or dismisses it. A copy
- * kept for lost edit access or by the unload guard is also removed once the
- * presentation saves again with edit access, because it is then stale. A sticky
- * copy, kept when the server refused or a draft was discarded, is not.
+ * automatically. The person takes one out as a JSON file, which removes nothing
+ * since a browser save can't be confirmed, or dismisses it. A copy kept for lost
+ * edit access or by the unload guard is also removed once the presentation saves
+ * again with edit access, because it is then stale. A sticky copy, kept when the
+ * server refused or a draft was discarded, is not.
  */
 import { getCookieSessionUser } from '@/platform/session'
 
@@ -13,6 +14,7 @@ export interface RecoveryCopy {
   /** The editor's slides, as it holds them. */
   slides: unknown[]
   sticky: boolean
+  downloaded?: boolean
 }
 
 function key(node: string) {
@@ -59,11 +61,8 @@ export function keepRecovery(
   const copy = { savedAt: now.toISOString(), slides: [...slides], sticky }
   const same = copies.find((kept) => holds(kept, slides))
   if (same) {
-    if (sticky && !same.sticky) {
-      same.sticky = true
-      writeCopies(node, copies)
-    }
-
+    const moved = { ...same, savedAt: copy.savedAt, sticky: sticky || same.sticky }
+    writeCopies(node, [...copies.filter((kept) => kept !== same), moved])
     return
   }
 
@@ -105,19 +104,29 @@ function saveThroughBrowser(file: File) {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-/** Save the newest recovery copy through the browser, then remove it. False when none is kept. */
+/**
+ * Save the newest copy not yet downloaded through the browser, or the newest once all are.
+ * Removes nothing. False when none is kept.
+ */
 export function downloadRecovery(node: string, title: string): boolean {
-  const copy = readRecovery(node).at(-1)
+  const copies = readRecovery(node)
+  const copy = copies.findLast((kept) => !kept.downloaded) ?? copies.at(-1)
   if (!copy) {
     return false
   }
 
   saveThroughBrowser(recoveryFile(copy, title))
-  removeNewestRecovery(node)
+  copy.downloaded = true
+  try {
+    writeCopies(node, copies)
+  } catch {
+    // the file has already gone out
+  }
+
   return true
 }
 
-/** Save slides no copy could hold through the browser. */
+/** Save the slides on screen through the browser, whatever the copies hold. */
 export function downloadSlides(slides: readonly unknown[], title: string, now = new Date()): void {
   const copy = { savedAt: now.toISOString(), slides: [...slides], sticky: false }
   saveThroughBrowser(recoveryFile(copy, title))

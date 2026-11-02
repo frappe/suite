@@ -32,6 +32,7 @@ function downloadedFiles() {
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks()
   localStorage.clear()
   signIn('me@example.com')
 })
@@ -140,20 +141,78 @@ describe('Slides recovery copy', () => {
     })
   })
 
-  it('downloads one file per click, newest first, until none is left', async () => {
+  it('gives the next older copy per click and removes none, then the newest again', async () => {
     const files = downloadedFiles()
     keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
 
-    expect(downloadRecovery('node-1', 'Plan')).toBe(true)
-    expect(kept()).toEqual([['older', true]])
-    expect(JSON.parse(await files.mock.calls[0][0].text()).slides).toEqual([{ clientId: 'newer' }])
+    async function downloaded() {
+      expect(downloadRecovery('node-1', 'Plan')).toBe(true)
+      const [file] = files.mock.lastCall as [File]
+      return JSON.parse(await file.text()).slides
+    }
 
-    expect(downloadRecovery('node-1', 'Plan')).toBe(true)
-    expect(JSON.parse(await files.mock.calls[1][0].text()).slides).toEqual([{ clientId: 'older' }])
+    expect(await downloaded()).toEqual([{ clientId: 'newer' }])
+    expect(await downloaded()).toEqual([{ clientId: 'older' }])
+    expect(await downloaded()).toEqual([{ clientId: 'newer' }])
+    expect(await downloaded()).toEqual([{ clientId: 'newer' }])
+    expect(kept()).toEqual([
+      ['older', true],
+      ['newer', true],
+    ])
+  })
 
-    expect(kept()).toEqual([])
+  it('has nothing to download with no copy kept', () => {
     expect(downloadRecovery('node-1', 'Plan')).toBe(false)
+  })
+
+  it('counts the download when the store is too full to mark it', () => {
+    const files = downloadedFiles()
+    keepRecovery('node-1', [{ clientId: 'kept' }], { sticky: true })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    expect(downloadRecovery('node-1', 'Plan')).toBe(true)
+
+    expect(files).toHaveBeenCalledTimes(1)
+    expect(kept()).toEqual([['kept', true]])
+  })
+
+  it('lets a landed save remove only the unsticky copy, downloaded or not', () => {
+    downloadedFiles()
+    keepRecovery('node-1', [{ clientId: 'sticky' }], { sticky: true })
+    downloadRecovery('node-1', 'Plan')
+    keepRecovery('node-1', [{ clientId: 'unsticky' }])
+    downloadRecovery('node-1', 'Plan')
+
+    clearStaleRecovery('node-1')
+
+    expect(kept()).toEqual([['sticky', true]])
+  })
+
+  it('moves an identical copy to the end, newly dated, with its download remembered', () => {
+    downloadedFiles()
+    keepRecovery('node-1', [{ clientId: 'same' }], { now: new Date('2026-09-30T10:00:00Z') })
+    downloadRecovery('node-1', 'Plan')
+    keepRecovery('node-1', [{ clientId: 'other' }], {
+      sticky: true,
+      now: new Date('2026-09-30T10:05:00Z'),
+    })
+    keepRecovery('node-1', [{ clientId: 'same' }], {
+      sticky: true,
+      now: new Date('2026-09-30T10:10:00Z'),
+    })
+
+    expect(readRecovery('node-1')).toEqual([
+      { savedAt: '2026-09-30T10:05:00.000Z', slides: [{ clientId: 'other' }], sticky: true },
+      {
+        savedAt: '2026-09-30T10:10:00.000Z',
+        slides: [{ clientId: 'same' }],
+        sticky: true,
+        downloaded: true,
+      },
+    ])
   })
 
   it('removes the newest copy and leaves the older ones', () => {

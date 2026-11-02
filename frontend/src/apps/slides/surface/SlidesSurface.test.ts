@@ -693,8 +693,8 @@ describe('Slides push refused by the server', () => {
     downloadButton()?.click()
     expect(await downloadedSlides()).toHaveLength(3)
     await nextTick()
-    expect(readRecovery('node-1')).toHaveLength(0)
-    expect(downloadButton()).toBeNull()
+    expect(readRecovery('node-1')).toHaveLength(1)
+    expect(downloadButton()).not.toBeNull()
   })
 
   it('finds the copy of a killed tab when the draft goes, beside an older one', async () => {
@@ -744,21 +744,58 @@ describe('Slides push refused by the server', () => {
     expect(dirty.value).toBe(false)
   })
 
-  it('does not add the copy again on a reload after its download', async () => {
-    const refusal = await refused()
+  async function draftDirty() {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const draft = (await getPresentationFromLocalDB(mounted?.docname as string)) as {
+      dirty: boolean
+    }
+    return draft.dirty
+  }
+
+  it('sends the live slides past an older copy when no copy could be stored', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    fillTheStore()
+    const refusal = await refused(REFUSED_UNSTORED)
+
     refusal.action.onClick(new MouseEvent('click', { cancelable: true }))
-    expect(readRecovery('node-1')).toEqual([])
-    const docname = mounted?.docname as string
-    await vi.waitFor(async () => {
-      const draft = (await getPresentationFromLocalDB(docname)) as { dirty: boolean }
-      expect(draft.dirty).toBe(false)
-    })
+
+    expect(await downloadedSlides()).toHaveLength(3)
+    expect(await draftDirty()).toBe(true)
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([[{ clientId: 'older' }]])
+  })
+
+  it('ends nothing with a download in the hold, and a reload adds no second copy', async () => {
+    const refusal = await refused()
+    const before = readRecovery('node-1')
+
+    refusal.action.onClick(new MouseEvent('click', { cancelable: true }))
+
+    expect(await downloadedSlides()).toHaveLength(3)
+    expect(readRecovery('node-1')).toEqual(before)
+    expect(await draftDirty()).toBe(true)
 
     serverMoves()
     await reloaded(refusal)
 
-    expect(readRecovery('node-1')).toEqual([])
-    expect(downloadButton()).toBeNull()
+    const copies = readRecovery('node-1')
+    expect(copies).toHaveLength(1)
+    expect(copies[0].slides).toEqual(before[0].slides)
+    expect(downloadButton()).not.toBeNull()
+  })
+
+  it('leaves a sticky copy after a download outside the hold', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
+    mounted = await openedSurface()
+
+    downloadButton()?.click()
+    expect(await downloadedSlides()).toEqual([{ clientId: 'newer' }])
+    downloadButton()?.click()
+    expect(await downloadedSlides()).toEqual([{ clientId: 'older' }])
+    await nextTick()
+
+    expect(readRecovery('node-1')).toHaveLength(2)
+    expect(downloadButton()).not.toBeNull()
   })
 
   it('removes the newest copy from the menu once the hold is over', async () => {

@@ -566,19 +566,14 @@ function showRefusal() {
 }
 function downloadChanges() {
   const title = props.session.title.value
-  const isDownloaded = downloadRecovery(props.session.nodeId, title)
   if (saveRefused.value) {
-    if (!isDownloaded) {
-      downloadSlides(liveSlides(), title)
-    }
-
-    // these edits are out now, so a reload needn't keep them again
-    void retireDraft(props.session.contentDocname)
-  } else if (!isDownloaded) {
-    toast.error('No recovery copy is kept for this presentation.')
+    downloadSlides(liveSlides(), title)
+    return
   }
 
-  syncHasRecovery()
+  if (!downloadRecovery(props.session.nodeId, title)) {
+    toast.error('No recovery copy is kept for this presentation.')
+  }
 }
 
 async function discardChanges() {
