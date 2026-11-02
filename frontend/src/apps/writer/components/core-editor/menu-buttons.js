@@ -4,7 +4,6 @@ import LucideBrushCleaning from '~icons/lucide/brush-cleaning'
 import LucideHeading from '~icons/lucide/heading'
 import LucidePaintRoller from '~icons/lucide/paint-roller'
 import LucideSeparatorHorizontal from '~icons/lucide/separator-horizontal'
-import LucideSettings from '~icons/lucide/settings'
 import {
   AlignCenter,
   AlignLeft,
@@ -92,7 +91,7 @@ const alignItems = [
   relabel(AlignRight, 'Align right'),
 ]
 
-export function buildMenuButtons({ editor, settings, isPainting, openSettings }) {
+export function buildMenuButtons({ editor, settings, isPainting }) {
   return [
     // Heading type selector — dropdown group
     {
@@ -179,11 +178,7 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
       }),
       action: () => {},
     },
-    {
-      icon: LucideSettings,
-      label: 'Settings',
-      action: openSettings,
-    },
+    // No Settings button until the document settings dialog returns (specs/writer/001-drive-parity.md, 1.1).
     Separator,
     DedentList,
     IndentList,
