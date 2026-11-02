@@ -27,6 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 });
 
@@ -190,6 +191,19 @@ describe("sendRequest", () => {
 			cb({ success: false, error: "nope" }),
 		);
 		await expect(client.sendRequest("test", {})).rejects.toThrow("nope");
+	});
+
+	it("leaves rejected subscription reporting to the recovery caller", async () => {
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+		const client = createClient();
+		client.connected = true;
+		client.signalChannel.emit = vi.fn((_event, _data, cb) =>
+			cb({ success: false, error: "E2EE join handshake not completed" }),
+		);
+		await expect(client.sendRequest("create_consumer", {})).rejects.toThrow(
+			"E2EE join handshake not completed",
+		);
+		expect(errorLog).not.toHaveBeenCalled();
 	});
 
 	it("preserves structured response errors", async () => {
