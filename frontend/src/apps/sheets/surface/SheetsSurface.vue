@@ -23,6 +23,8 @@ interface SheetEditorHandle {
   workbookJson(): Promise<string>
   /** True while the formula bar or the cell editor holds uncommitted text. */
   hasDraft(): boolean
+  /** Live room: this tab holds edits that have not reached the server (other tabs' do not count). */
+  hasUnsentWork(): boolean
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
   /** True while the sheet is in a live room (collab on). */
@@ -32,8 +34,6 @@ interface SheetEditorHandle {
   /** Live room: access went or came back. `mayEdit` is read once the room has sent what it could. */
   loseAccess(lost: 'lost_edit' | 'lost_read'): Promise<void>
   regainAccess(mayEdit: () => boolean): Promise<void>
-  /** Live room: whether unsent work outlives this tab. */
-  readonly keepsUnsentWork: boolean
 }
 const props = defineProps<{
   session: DocumentSession
@@ -45,24 +45,30 @@ const panel = ref<DocumentPanel | null>(null)
 const bodyRevision = ref(0)
 const restoring = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
+// The editor stays mounted while it writes the recovery copy, even once read
+// access is gone: unmounting stops the engine the copy is read from.
+const copying = ref(false)
+// The "Download my changes" toast, closed once the copy it offers is gone.
+let offer: ReturnType<typeof toast.warning> | null = null
 const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
     // Live room: it sends what it can and keeps the rest on this device, and
-    // its strip says the sheet is now view only. Where the browser keeps
-    // nothing, the person gets their changes as a download, as on the old path.
+    // its strip says the sheet is now view only. Edits that did not reach the
+    // server, and text still being typed in a cell, are offered as a download
+    // too: the room replays its copy only if edit access comes back. The copy
+    // is taken first, while the cell edit is still open.
     if (current?.isCollab) {
-      const unsent = current.saveState !== 'clean' || current.hasDraft()
-      if (unsent && !current.keepsUnsentWork) keepForDownload()
+      if (current.hasUnsentWork() || current.hasDraft()) void keepForDownload()
       void current.loseAccess(access.readable.value ? 'lost_edit' : 'lost_read')
       return
     }
     const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
     if (!unsaved) {
-      toast.warning('Editing access changed. This spreadsheet is now view only.')
+      toast.warning(__('Editing access changed. This spreadsheet is now view only.'))
       return
     }
-    keepForDownload()
+    void keepForDownload()
   },
   widened() {
     if (editor.value?.isCollab) {
@@ -71,7 +77,7 @@ const access = createSheetAccess(props.session, {
       return
     }
     bodyRevision.value += 1
-    toast.info('You can edit this spreadsheet again.')
+    toast.info(__('You can edit this spreadsheet again.'))
   },
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
@@ -92,6 +98,8 @@ watch(
       return
     clearRecovery(props.session.nodeId)
     hasRecovery.value = false
+    if (offer !== null) toast.dismiss(offer)
+    offer = null
   },
 )
 
@@ -133,24 +141,34 @@ async function restoreVersion(seq: string) {
   }
 }
 // Keeps the editor's workbook in this browser and offers it as a download.
-function keepForDownload() {
-  retainRecovery()
-  toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
-    duration: Number.POSITIVE_INFINITY,
-    action: {
-      label: __('Download my changes'),
-      onClick: downloadChanges,
+async function keepForDownload() {
+  if (!(await retainRecovery())) return
+  if (offer !== null) toast.dismiss(offer)
+  offer = toast.warning(
+    __('Editing access changed. Your unsaved changes are kept on this device.'),
+    {
+      duration: Number.POSITIVE_INFINITY,
+      action: {
+        label: __('Download my changes'),
+        onClick: downloadChanges,
+      },
     },
-  })
+  )
 }
-async function retainRecovery() {
-  const workbook = await editor.value?.workbookJson()
-  if (!workbook) return
+/** True once the copy is kept. The workbook is read before the first await, while a cell edit is still open. */
+async function retainRecovery(): Promise<boolean> {
+  const reading = editor.value?.workbookJson()
+  if (!reading) return false
+  copying.value = true
   try {
-    keepRecovery(props.session.nodeId, workbook)
+    keepRecovery(props.session.nodeId, await reading)
     hasRecovery.value = true
+    return true
   } catch {
     toast.error('Your latest changes could not be kept on this device.')
+    return false
+  } finally {
+    copying.value = false
   }
 }
 async function downloadChanges() {
@@ -167,14 +185,16 @@ useDocumentLeaveGuard({
   flush: async () => {
     await editor.value?.flushSave()
   },
-  retainRecovery,
+  retainRecovery: async () => {
+    await retainRecovery()
+  },
 })
 </script>
 
 <template>
   <div class="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base">
     <div
-      v-if="!access.readable.value"
+      v-if="!access.readable.value && !copying"
       class="flex h-full flex-col items-center justify-center px-6 text-center"
     >
       <span class="lucide-lock-keyhole size-6 text-ink-gray-5" aria-hidden="true" />

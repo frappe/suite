@@ -20,7 +20,13 @@ import { type CollabSession, type LostAccess, type RoomStatus } from '@/platform
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-import { bannerFor, editingStateOf, saveStateOf, upgradingBanner } from '../../collab/messages'
+import {
+  bannerFor,
+  editingStateOf,
+  hasUnsentWork,
+  saveStateOf,
+  upgradingBanner,
+} from '../../collab/messages'
 import { createPeople } from '../../collab/people'
 import { GUEST_USER, readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
@@ -210,6 +216,8 @@ export function useCollabRoom({
   }
 
   const saveState = computed(() => (status.value ? saveStateOf(status.value) : null))
+  // This tab's own edits the server has not taken; other tabs' are theirs.
+  const hasUnsent = () => !!status.value && hasUnsentWork(status.value)
   const editingState = computed(() => {
     if (waiting.value) return 'closed'
     return status.value ? editingStateOf(status.value) : 'editing'
@@ -306,6 +314,7 @@ export function useCollabRoom({
     canRedo,
     status,
     saveState,
+    hasUnsent,
     editingState,
     banner,
     users,
