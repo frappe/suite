@@ -103,13 +103,17 @@ def history(
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
 ) -> dict:
-    """Page a newest-first node history after checking current Read access.
+    """Page a newest-first node history for a signed-in caller with current Read access.
 
     §11.4's page, the one every Drive listing answers with. Nothing is dropped
     after the SQL window here - the READ check is on the node, once - so the
     window size and the row count always agree.
     """
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
+
+    # It quotes comments and names people and whom a node is shared with; a signed-out caller gets none of it
+    if principals.user == "Guest":
+        raise DriveForbidden(_("Sign in to see this item's history"))
 
     _authorized_node(principals, node)
     window = page_limit(limit)

@@ -797,9 +797,9 @@ def version_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> Ve
 def activity_shape(row: Mapping) -> ActivityShape:
     """Return one activity row as §9.4's columns, times formatted.
 
-    Every link token is masked to the bare `$LINK`. §11.2 answers this history
-    to READ, and a Guest holding a published node can reach it, while the token
-    a `share_add` row names and the `via_link` an ordinary row carries are
+    Every link token is masked to the bare `$LINK`. This history answers any
+    signed-in READ, and a Guest is refused it (`activity.history`), while the
+    token a `share_add` row names and the `via_link` an ordinary row carries are
     bearer secrets that reach EDIT (§6.1). Rotation would not close that: the
     row naming the new token is written to the same history. `GET
     /nodes/<id>/grants` is where a token is shown, and it needs MANAGE.

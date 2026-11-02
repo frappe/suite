@@ -144,6 +144,33 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual(notifications(self.outsider)["rows"], [])
         self.assertEqual(unread_count(self.outsider), 0)
 
+    def test_a_guest_gets_no_history_of_a_public_node(self):
+        from suite.drive.http import routes
+
+        grant(self.node, "$PUBLIC", READ, self.admin)
+        record(
+            self.owner,
+            self.node,
+            "comment",
+            detail={"excerpt": "Secret words", "mentions": [OTHER]},
+        )
+        guest = Principals("Guest", ("Guest",), ("$PUBLIC",))
+
+        with self.assertRaises(DriveForbidden):
+            history(guest, self.node)
+
+        frappe.set_user("Guest")
+        with self.assertRaises(DriveForbidden) as refused:
+            routes.node_activity(node=self.node)
+        frappe.set_user(OTHER)
+        shown = routes.node_activity(node=self.node)["rows"]
+
+        self.assertNotIn("Secret words", str(refused.exception))
+        self.assertNotIn(OWNER, str(refused.exception))
+        self.assertEqual(
+            next(row["detail"] for row in shown if row["action"] == "comment")["mentions"], [OTHER]
+        )
+
     def test_a_notification_names_the_node_and_the_person_who_shared_it(self):
         from suite.drive.http import routes
 

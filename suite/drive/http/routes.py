@@ -1278,7 +1278,7 @@ def comment_delete(comment: Given = None) -> shapes.Count:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
 def node_activity(node: Given = None, limit: Given = None, cursor: Given = None) -> dict:
-    """Page one readable node's history, newest first (§9.4)."""
+    """Page one readable node's history, newest first (§9.4). A Guest is refused with a Drive error."""
     result = activity_core.history(
         _principals(),
         shapes.required_text(node, "node"),
