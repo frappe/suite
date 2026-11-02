@@ -8,6 +8,7 @@ import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { getSessionUser } from '@/boot/session'
 import { appDocumentTitle } from '@/platform/page-meta'
+import { translate } from '@/platform/translation'
 
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'
@@ -37,8 +38,8 @@ const applyReverseTransition = ref(false)
 
 // The open surface binds its owner-selected access context to this deck.
 const documentContexts = new Map()
-const setDocumentContext = (id, context, onRefused) => {
-  const binding = { context, onRefused }
+function setDocumentContext(id, context, onRefused, keepDiscarded) {
+  const binding = { context, onRefused, keepDiscarded }
   documentContexts.set(id, binding)
   return () => {
     if (documentContexts.get(id) === binding) documentContexts.delete(id)
@@ -238,6 +239,21 @@ async function serverAnswers() {
   }
 }
 
+// false leaves the draft in place: with no copy, it is the only place the edits live
+function copyDiscarded(name, content) {
+  const keepDiscarded = documentContexts.get(name)?.keepDiscarded
+  if (!keepDiscarded) {
+    return false
+  }
+
+  try {
+    keepDiscarded(content)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // touches no editor state, so a save during the load still targets what is on screen
 const fetchPresentation = async (name, load) => {
   const doc = structuredClone(await fetchDoc(name))
@@ -257,9 +273,17 @@ const fetchPresentation = async (name, load) => {
   const onOlderBase =
     local?.dirty && !landed && local.baseModified && local.baseModified !== doc.modified
   const keepBase = servedIsStale || (onOlderBase && !(await serverAnswers()))
-  if (keepBase || (local?.dirty && local.baseModified === doc.modified)) {
-    if (keepBase) {
-      doc.modified = local.baseModified
+  const isOnServedBase = local?.dirty && local.baseModified === doc.modified
+  // the draft belongs to the tab that can write, on the presentation it is still opening;
+  // this one neither rewrites nor reports it
+  const isOwnDraft = local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value
+  const isUncopied =
+    isOwnDraft && !landed && !keepBase && !isOnServedBase && !copyDiscarded(name, local.content)
+
+  if (keepBase || isOnServedBase || isUncopied) {
+    if (keepBase || isUncopied) {
+      // a draft with no base gets the empty one: the server refuses it, so the hold takes over
+      doc.modified = local.baseModified ?? ''
     }
 
     const restored = JSON.parse(JSON.stringify(local.content))
@@ -273,10 +297,14 @@ const fetchPresentation = async (name, load) => {
     // server content at baseModified and there is nothing to push
     return { doc, content: restored, dirty: local.dirty || repaired }
   }
-  // the draft belongs to the tab that can write, on the presentation it is still opening;
-  // this one neither rewrites nor reports it
-  if (local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value) {
-    if (!landed) toast.warning('Changes that never reached the server were discarded.')
+
+  if (isOwnDraft) {
+    if (!landed) {
+      toast.warning(
+        translate('Your changes never reached the server. They are kept on this device.'),
+      )
+    }
+
     // left dirty, the same draft is found and discarded again on every load
     await writeDraft({
       ...local,

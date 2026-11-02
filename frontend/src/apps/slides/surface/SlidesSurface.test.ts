@@ -17,6 +17,16 @@ import { translationPlugin } from '@/platform/translation'
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 const saves: unknown[] = []
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
+const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
+let isRefusing = false
+
+interface MenuEntry {
+  label: string
+  condition?: () => boolean
+  onClick: () => void
+  options?: MenuEntry[]
+}
+
 const served = {
   node: 'node-1',
   owner: 'me@example.com',
@@ -74,18 +84,25 @@ vi.mock('frappe-ui', () => {
     Dropdown: {
       props: { options: { type: Array, default: () => [] } },
       setup:
-        (props: { options: { label: string; onClick: () => void }[] }, { slots }: SetupContext) =>
+        (props: { options: MenuEntry[] }, { slots }: SetupContext) =>
         () =>
           h('div', [
             slots.default?.(),
-            ...props.options.map((option) =>
-              h('button', { onClick: option.onClick }, option.label),
-            ),
+            ...props.options
+              .flatMap((entry) => entry.options ?? [entry])
+              .filter((option) => option.condition?.() !== false)
+              .map((option) => h('button', { onClick: option.onClick }, option.label)),
           ]),
     },
     FileUploadHandler: class {},
     dialog: vi.fn(),
-    toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn(), success: vi.fn() },
+    toast: {
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+      success: vi.fn(),
+      dismiss: vi.fn(),
+    },
     useKeyboardShortcut: vi.fn(),
     usePageMeta: vi.fn(),
   }
@@ -121,10 +138,22 @@ vi.mock('@/apps/slides/router', () => ({
 vi.mock('@/apps/drive', () => ({
   GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
+    props: { recoverable: Boolean },
+    emits: ['download-changes', 'update:panel'],
     setup:
-      (_: unknown, { slots }: SetupContext) =>
+      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
       () =>
-        h('header', [slots.actions?.(), slots.primary?.()]),
+        h('header', [
+          slots.actions?.(),
+          slots.primary?.(),
+          slots.icon?.({ icon: '' }),
+          h('button', {
+            'data-download-changes': '',
+            hidden: !props.recoverable,
+            onClick: () => emit('download-changes'),
+          }),
+          h('button', { 'data-versions': '', onClick: () => emit('update:panel', 'versions') }),
+        ]),
   },
   DriveCommentAuthor: { render: () => null },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
@@ -160,11 +189,20 @@ for (const path of [
   '@/apps/slides/components/Toolbar.vue',
   '@/apps/slides/components/LayoutDialog.vue',
   '@/apps/slides/components/ThemeDialog.vue',
-  './SlidesVersionsPanel.vue',
   './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('./SlidesVersionsPanel.vue', () => ({
+  default: {
+    props: { flush: { type: Function, default: null } },
+    setup(props: { flush: () => Promise<void> }) {
+      versionsPanel.flush = props.flush
+      return () => null
+    },
+  },
+}))
 
 vi.doMock('@/apps/slides/components/OfflineCopyButton.vue', () => ({
   default: { render: () => h('button', { 'data-offline-copy': '' }) },
@@ -176,7 +214,16 @@ vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
 }))
 
 const { default: SlidesSurface } = await import('./SlidesSurface.vue')
-const { duplicateSlide, slideIndex } = await import('@/apps/slides/stores/slide')
+const {
+  duplicateSlide,
+  saveSlide,
+  slideIndex,
+  slides: editorSlides,
+} = await import('@/apps/slides/stores/slide')
+const { dirty, getPresentationFromLocalDB, isSaving, saveRefused, writeDraft } =
+  await import('@/apps/slides/stores/saving')
+const { keepRecovery, readRecovery } = await import('./recovery')
+const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 
@@ -206,6 +253,10 @@ async function openedSurface({ path = '', role = 50, slides = served.slides } = 
   const loads: Array<Promise<void>> = []
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.includes('save_slides')) {
+      if (isRefusing) {
+        return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })
+      }
+
       saves.push(JSON.parse(String(init?.body)))
       const version = saves.length + 1
       return answer({ modified: `M${version}` })
@@ -520,5 +571,233 @@ describe('Slides offline copy', () => {
     mounted = null
 
     expect(posted).toEqual(['slides-entered', 'slides-left'])
+  })
+})
+
+describe('Slides push refused by the server', () => {
+  const REFUSED = 'This presentation changed elsewhere. Your changes are kept on this device.'
+  const REFUSED_UNSTORED =
+    'This presentation changed elsewhere. Download your changes before you reload.'
+
+  interface RefusalActions {
+    action: { label: string; onClick: (event: Event) => void }
+    cancel: { label: string; onClick: () => void }
+    duration: number
+  }
+
+  let files: ReturnType<typeof vi.fn<(file: File) => string>>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(toast.warning).mockReturnValue('refusal')
+    localStorage.clear()
+    files = vi.fn((_file: File) => 'blob:recovery')
+
+    URL.createObjectURL = files as unknown as typeof URL.createObjectURL
+    URL.revokeObjectURL = () => {}
+
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"message":"pong"}')),
+    )
+  })
+
+  afterEach(() => {
+    isRefusing = false
+    served.modified = 'M1'
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  function refusalToast(message: string) {
+    const call = vi.mocked(toast.warning).mock.calls.find(([text]) => text === message)
+    const [, actions] = call ?? []
+    return actions as unknown as RefusalActions | undefined
+  }
+
+  async function refused(message = REFUSED) {
+    mounted = await openedSurface()
+    isRefusing = true
+    duplicateSlide()
+    await vi.waitFor(() => expect(refusalToast(message)).toBeDefined(), { timeout: 3000 })
+    return refusalToast(message) as RefusalActions
+  }
+
+  function serverMoves() {
+    isRefusing = false
+    served.modified = 'M2'
+  }
+
+  async function reloaded(toastShown: RefusalActions) {
+    toastShown.cancel.onClick()
+    await vi.waitFor(() => expect(saveRefused.value).toBe(false))
+    await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+  }
+
+  function fillTheStore() {
+    const setItem = Storage.prototype.setItem
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key.startsWith('suite:slides-recovery')) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+
+      setItem.call(this, key, value)
+    })
+  }
+
+  function menuItem(label: string) {
+    const buttons = Array.from(mounted?.root.querySelectorAll('button') ?? [])
+    return buttons.find((button) => button.textContent === label)
+  }
+
+  function downloadButton() {
+    return mounted?.root.querySelector<HTMLButtonElement>('[data-download-changes]:not([hidden])')
+  }
+
+  async function downloadedSlides() {
+    const [file] = files.mock.lastCall as [File]
+    return JSON.parse(await file.text()).slides as unknown[]
+  }
+
+  it('says so in a toast that stays up, and keeps a copy at that moment', async () => {
+    const refusal = await refused()
+
+    expect(refusal.duration).toBe(Number.POSITIVE_INFINITY)
+    expect(refusal.action.label).toBe('Download')
+    expect(refusal.cancel.label).toBe('Reload')
+    const [copy] = readRecovery('node-1')
+    expect(copy.slides).toHaveLength(3)
+    expect(copy.sticky).toBe(true)
+  })
+
+  it('keeps the copy through a reload, an edit and a landed save', async () => {
+    const refusal = await refused()
+
+    serverMoves()
+    await reloaded(refusal)
+    expect(readRecovery('node-1')).toHaveLength(1)
+    expect(toast.dismiss).toHaveBeenCalledWith('refusal')
+
+    duplicateSlide()
+    await vi.waitFor(() => expect(saves).toHaveLength(1), { timeout: 3000 })
+    await vi.waitFor(() => expect(dirty.value || isSaving.value).toBe(false))
+    await nextTick()
+
+    expect(readRecovery('node-1')).toHaveLength(1)
+    downloadButton()?.click()
+    expect(await downloadedSlides()).toHaveLength(3)
+    await nextTick()
+    expect(readRecovery('node-1')).toHaveLength(0)
+    expect(downloadButton()).toBeNull()
+  })
+
+  it('finds the copy of a killed tab when the draft goes, beside an older one', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    const nextOpen = opens + 1
+    await writeDraft({
+      id: `p${nextOpen}`,
+      content: [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
+      dirty: true,
+      updatedAt: 1,
+      baseModified: 'M0',
+    })
+
+    mounted = await openedSurface()
+
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([
+      [{ clientId: 'older' }],
+      [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
+    ])
+    expect(downloadButton()).not.toBeNull()
+  })
+
+  it('offers the live slides when no copy could be stored, and lets the person out', async () => {
+    fillTheStore()
+    const refusal = await refused(REFUSED_UNSTORED)
+    expect(readRecovery('node-1')).toEqual([])
+    expect(downloadButton()).not.toBeNull()
+
+    const click = new MouseEvent('click', { cancelable: true })
+    refusal.action.onClick(click)
+    expect(click.defaultPrevented).toBe(true)
+    expect(await downloadedSlides()).toHaveLength(3)
+
+    serverMoves()
+    const docname = mounted?.docname as string
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    menuItem('Discard my changes')?.click()
+    expect(confirm).toHaveBeenCalledWith("Discard your kept changes? This can't be undone.")
+    expect(saveRefused.value).toBe(true)
+
+    confirm.mockReturnValue(true)
+    menuItem('Discard my changes')?.click()
+    await vi.waitFor(() => expect(saveRefused.value).toBe(false))
+    await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+    const draft = (await getPresentationFromLocalDB(docname)) as { dirty: boolean }
+    expect(draft.dirty).toBe(false)
+    expect(dirty.value).toBe(false)
+  })
+
+  it('does not add the copy again on a reload after its download', async () => {
+    const refusal = await refused()
+    refusal.action.onClick(new MouseEvent('click', { cancelable: true }))
+    expect(readRecovery('node-1')).toEqual([])
+    const docname = mounted?.docname as string
+    await vi.waitFor(async () => {
+      const draft = (await getPresentationFromLocalDB(docname)) as { dirty: boolean }
+      expect(draft.dirty).toBe(false)
+    })
+
+    serverMoves()
+    await reloaded(refusal)
+
+    expect(readRecovery('node-1')).toEqual([])
+    expect(downloadButton()).toBeNull()
+  })
+
+  it('removes the newest copy from the menu once the hold is over', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
+    mounted = await openedSurface()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    menuItem('Discard my changes')?.click()
+    await nextTick()
+
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([[{ clientId: 'older' }]])
+    menuItem('Discard my changes')?.click()
+    await nextTick()
+    expect(readRecovery('node-1')).toEqual([])
+    expect(menuItem('Discard my changes')).toBeUndefined()
+  })
+
+  it('has no discard in the menu with nothing to discard', async () => {
+    mounted = await openedSurface()
+
+    expect(menuItem('Change theme')).toBeDefined()
+    expect(menuItem('Discard my changes')).toBeUndefined()
+  })
+
+  it('asks for a reload on a save shortcut and on a version action', async () => {
+    await refused()
+
+    saveSlide({ preventDefault() {} })
+    await vi.waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'This presentation changed elsewhere. Reload to continue.',
+      ),
+    )
+
+    mounted?.root.querySelector<HTMLButtonElement>('[data-versions]')?.click()
+    await nextTick()
+    await expect(versionsPanel.flush()).rejects.toThrow(
+      'This presentation changed elsewhere. Reload before you do this.',
+    )
   })
 })

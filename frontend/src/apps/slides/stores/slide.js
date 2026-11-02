@@ -13,9 +13,10 @@ import {
   templateList,
   transformElements,
 } from '@/apps/slides/stores/presentation'
-import { dirty, saveFailed, saveWithoutDelay } from '@/apps/slides/stores/saving'
+import { dirty, saveFailed, saveRefused, saveWithoutDelay } from '@/apps/slides/stores/saving'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { cloneObj } from '@/apps/slides/utils/helpers'
+import { translate } from '@/platform/translation'
 
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
 import { inSlideShowMode } from './slideshow'
@@ -118,6 +119,11 @@ const changeSlide = (index, focus = true) => {
 
 const resetAndSave = async () => {
   await resetFocus()
+  if (saveRefused.value) {
+    toast.error(translate('This presentation changed elsewhere. Reload to continue.'))
+    return
+  }
+
   if (!dirty.value) {
     toast.info('No changes to save')
     return

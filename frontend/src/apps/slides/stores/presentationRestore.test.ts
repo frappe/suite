@@ -46,14 +46,25 @@ vi.mock('@/apps/slides/stores/saving', () => ({
 }))
 
 const { lockedElsewhere } = await import('./editLock')
-const { initPresentationDoc, startLoad, presentationId, presentationDoc, inReadonlyMode } =
-  await import('./presentation')
+const {
+  initPresentationDoc,
+  startLoad,
+  presentationId,
+  presentationDoc,
+  inReadonlyMode,
+  setDocumentContext,
+} = await import('./presentation')
 
 const slide = (background: string) => ({ clientId: 'c1', background, elements: [] })
+
+const keepDiscarded = vi.fn()
+let releaseContext: (() => void) | undefined
 
 describe('loading a presentation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    keepDiscarded.mockReset()
+    releaseContext = setDocumentContext('p1', undefined, undefined, keepDiscarded)
     lockedElsewhere.value = false
     saveRefused.value = false
     slides.value = []
@@ -140,6 +151,102 @@ describe('loading a presentation', () => {
     expect(warning).toHaveBeenCalled()
     expect(markClean).toHaveBeenCalled()
     expect(writeDraft).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }))
+  })
+
+  describe('a draft the server has moved past', () => {
+    beforeEach(() => {
+      local = { dirty: true, baseModified: 'M1', content: [slide('#00ff00ff')] }
+      served = { modified: 'M2', slides: [slide('#ff0000ff')] }
+    })
+
+    it('leaves its content as a copy, before the draft goes clean', async () => {
+      const order: string[] = []
+      keepDiscarded.mockImplementation(() => order.push('copy'))
+      writeDraft.mockImplementation(async () => order.push('clean'))
+
+      await initPresentationDoc('p1')
+
+      expect(keepDiscarded).toHaveBeenCalledWith(local.content)
+      expect(order).toEqual(['copy', 'clean'])
+      expect(warning).toHaveBeenCalledWith(
+        'Your changes never reached the server. They are kept on this device.',
+      )
+    })
+
+    it('stays the draft when the copy cannot be stored', async () => {
+      keepDiscarded.mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError')
+      })
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M1')
+      expect(slides.value[0].background).toBe('#00ff00ff')
+      expect(markDirty).toHaveBeenCalled()
+      expect(writeDraft).not.toHaveBeenCalled()
+      expect(warning).not.toHaveBeenCalled()
+    })
+
+    it('stays the draft when no surface took the copy', async () => {
+      releaseContext?.()
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M1')
+      expect(slides.value[0].background).toBe('#00ff00ff')
+      expect(writeDraft).not.toHaveBeenCalled()
+    })
+
+    it('makes no copy in a tab another one holds the lock over', async () => {
+      lockedElsewhere.value = true
+
+      await initPresentationDoc('p1')
+
+      expect(keepDiscarded).not.toHaveBeenCalled()
+    })
+
+    it('makes no copy of a push that landed', async () => {
+      served = {
+        modified: 'M2',
+        modified_by: 'me@example.com',
+        slides: [{ client_id: 'c1', background: '#00ff00ff', elements: '[]' }],
+      }
+
+      await initPresentationDoc('p1')
+
+      expect(keepDiscarded).not.toHaveBeenCalled()
+    })
+
+    it('makes no copy of a draft it restores', async () => {
+      local.baseModified = 'M2'
+
+      await initPresentationDoc('p1')
+
+      expect(keepDiscarded).not.toHaveBeenCalled()
+    })
+
+    it('with no base, offline, leaves a copy too', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      local = { dirty: true, content: [slide('#00ff00ff')] }
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(keepDiscarded).toHaveBeenCalledWith(local.content)
+      expect(doc.modified).toBe('M2')
+    })
+
+    it('with no base and no room for a copy, stays on a base the server refuses', async () => {
+      local = { dirty: true, content: [slide('#00ff00ff')] }
+      keepDiscarded.mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError')
+      })
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('')
+      expect(slides.value[0].background).toBe('#00ff00ff')
+      expect(markDirty).toHaveBeenCalled()
+    })
   })
 
   describe('a dirty draft on an older base than the served document', () => {

@@ -61,9 +61,11 @@ import {
   dirty,
   isSaving,
   resumeWrites,
+  retireDraft,
   saveChanges,
   saveCurrentState,
   saveFailed,
+  saveRefused,
   stopWrites,
 } from '@/apps/slides/stores/saving'
 import {
@@ -79,6 +81,7 @@ import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/s
 import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
+import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
 import {
@@ -92,7 +95,15 @@ import {
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
-import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
+import {
+  clearStaleRecovery,
+  downloadRecovery,
+  downloadSlides,
+  forgetRecovery,
+  keepRecovery,
+  readRecovery,
+  removeNewestRecovery,
+} from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
 type Panel = DocumentPanel
@@ -142,7 +153,9 @@ const {
   take: takeGuestName,
 } = useDriveGuestName()
 const exporting = ref(false)
-const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
+const hasRecovery = ref(readRecovery(props.session.nodeId).length > 0)
+// in the hold the live slides can go out even when no copy could be stored
+const canDownloadChanges = computed(() => hasRecovery.value || saveRefused.value)
 const isSlideInteractionActive = ref(false)
 let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
@@ -191,6 +204,10 @@ const releaseContext = setDocumentContext(
   props.session.contentDocname,
   props.session.credentials.context,
   () => access.refuse(),
+  (content: unknown[]) => {
+    keepRecovery(props.session.nodeId, content, { sticky: true })
+    hasRecovery.value = true
+  },
 )
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
@@ -258,6 +275,12 @@ const presentationMenu = computed(() => [
         },
       },
       { label: 'Shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+      {
+        label: translate('Discard my changes'),
+        icon: 'lucide-trash-2',
+        condition: () => canDownloadChanges.value,
+        onClick: discardChanges,
+      },
     ],
   },
   { group: '', options: driveActions.value.node },
@@ -296,8 +319,19 @@ function showSlide(step: number) {
 // A save that lands with edit access makes the recovery copy stale.
 watch(isSaving, (now, before) => {
   if (!before || now || saveFailed.value || !editable.value || !hasRecovery.value) return
-  clearRecovery(props.session.nodeId)
-  hasRecovery.value = false
+
+  clearStaleRecovery(props.session.nodeId)
+  syncHasRecovery()
+})
+
+let refusalToast: string | number | undefined
+watch(saveRefused, (isRefused) => {
+  if (isRefused) {
+    showRefusal()
+  } else if (refusalToast !== undefined) {
+    toast.dismiss(refusalToast)
+    refusalToast = undefined
+  }
 })
 function showPanel(next: Panel | null) {
   panel.value = next
@@ -320,6 +354,10 @@ async function loadComments() {
 /** Save pending edits, or refuse: a version holds only the saved state. */
 async function flushEdits() {
   await saveChanges()
+  if (saveRefused.value) {
+    throw new Error(translate('This presentation changed elsewhere. Reload before you do this.'))
+  }
+
   if (dirty.value || isSaving.value || saveFailed.value) {
     throw new Error(
       'Your latest changes are not saved yet. Try again when the presentation is saved.',
@@ -491,10 +529,73 @@ function retainRecovery() {
     toast.error('Your latest changes could not be kept on this device.')
   }
 }
+
+function syncHasRecovery() {
+  hasRecovery.value = readRecovery(props.session.nodeId).length > 0
+}
+
+function liveSlides() {
+  return JSON.parse(JSON.stringify(slides.value)) as unknown[]
+}
+
+function showRefusal() {
+  let message = translate(
+    'This presentation changed elsewhere. Your changes are kept on this device.',
+  )
+  try {
+    keepRecovery(props.session.nodeId, liveSlides(), { sticky: true })
+    hasRecovery.value = true
+  } catch {
+    message = translate(
+      'This presentation changed elsewhere. Download your changes before you reload.',
+    )
+  }
+
+  refusalToast = toast.warning(message, {
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: translate('Download'),
+      onClick: (event: Event) => {
+        // the toast stays: Reload is still the way on
+        event.preventDefault()
+        downloadChanges()
+      },
+    },
+    cancel: { label: translate('Reload'), onClick: () => void load() },
+  })
+}
 function downloadChanges() {
-  const downloaded = downloadRecovery(props.session.nodeId, props.session.title.value)
-  hasRecovery.value = false
-  if (!downloaded) toast.error('No recovery copy is kept for this presentation.')
+  const title = props.session.title.value
+  const isDownloaded = downloadRecovery(props.session.nodeId, title)
+  if (saveRefused.value) {
+    if (!isDownloaded) {
+      downloadSlides(liveSlides(), title)
+    }
+
+    // these edits are out now, so a reload needn't keep them again
+    void retireDraft(props.session.contentDocname)
+  } else if (!isDownloaded) {
+    toast.error('No recovery copy is kept for this presentation.')
+  }
+
+  syncHasRecovery()
+}
+
+async function discardChanges() {
+  if (!window.confirm(translate("Discard your kept changes? This can't be undone."))) {
+    return
+  }
+
+  if (saveRefused.value) {
+    forgetRecovery(props.session.nodeId, liveSlides())
+    syncHasRecovery()
+    await retireDraft(props.session.contentDocname)
+    await load()
+    return
+  }
+
+  removeNewestRecovery(props.session.nodeId)
+  syncHasRecovery()
 }
 const saveState = computed<DocumentSaveState>(() =>
   isSaving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
@@ -559,6 +660,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
+  if (refusalToast !== undefined) {
+    toast.dismiss(refusalToast)
+  }
+
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveCurrentState().finally(() => {
@@ -577,7 +682,7 @@ onBeforeUnmount(() => {
       title-label="Presentation title"
       :save-state="saveState"
       :view-only="!editable"
-      :recoverable="hasRecovery"
+      :recoverable="canDownloadChanges"
       :panels="['comments', 'versions']"
       center-title
       :panel="panel"
