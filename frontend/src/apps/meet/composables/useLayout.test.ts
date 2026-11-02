@@ -268,7 +268,7 @@ it("keeps strip slots when a personal pin crosses the canonical prefix", () => {
 	expect(strip()).toEqual(["d", "c"]);
 });
 
-it("preserves personal strip slots through speech, hands, cameras, joins and departures", () => {
+it("preserves personal strip order through priority changes and compacts departures", () => {
 	const { participants, deps } = setupLayout();
 	const pins = ref<PinnedTile[]>([{ type: "participant", id: "e" }]);
 	const layout = useLayout(participants, pins, deps, ref(0));
@@ -291,10 +291,10 @@ it("preserves personal strip slots through speech, hands, cameras, joins and dep
 	delete participants.value.f;
 	expect(strip()).toEqual([["c", 0], ["a", 1]]);
 	delete participants.value.c;
-	expect(strip()).toEqual([["a", 1]]);
-	expect(layout.vacantStripSlots.value).toEqual([0]);
+	expect(strip()).toEqual([["a", 0]]);
+	expect(layout.vacantStripSlots.value).toEqual([]);
 	participants.value.g = { ...participants.value.a, user_id: "g" };
-	expect(strip()).toEqual([["g", 0], ["a", 1]]);
+	expect(strip()).toEqual([["a", 0], ["g", 1]]);
 });
 
 it("keeps multiple pins in pin order and resets personal slots on explicit layout changes", () => {
@@ -341,7 +341,7 @@ it("keeps a small pinned call one column with bounded growth", () => {
 });
 
 
-it("leaves a screen-pinned strip vacancy when a participant departs without replacement", () => {
+it("compacts a screen-pinned strip when a participant departs without replacement", () => {
 	const { participants, deps } = setupLayout();
 	delete participants.value.c;
 	delete participants.value.d;
@@ -349,8 +349,8 @@ it("leaves a screen-pinned strip vacancy when a participant departs without repl
 	const layout = useLayout(participants, ref<PinnedTile[]>([{ type: "screenshare", id: "screen" }]), deps, ref(0));
 	expect(layout.allParticipants.value.map(p => [p.user_id, p.slotIndex])).toEqual([["a", 0], ["b", 1]]);
 	delete participants.value.a;
-	expect(layout.allParticipants.value.map(p => [p.user_id, p.slotIndex])).toEqual([["b", 1]]);
-	expect(layout.vacantStripSlots.value).toEqual([0]);
+	expect(layout.allParticipants.value.map(p => [p.user_id, p.slotIndex])).toEqual([["b", 0]]);
+	expect(layout.vacantStripSlots.value).toEqual([]);
 });
 
 
