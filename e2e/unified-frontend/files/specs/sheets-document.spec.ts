@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
 
 import {
@@ -114,7 +116,7 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	expect(seen.errors).toEqual([]);
 });
 
-test("losing edit access freezes the sheet and stops sending its edits", async ({ page }) => {
+test("losing edit access freezes the sheet, stops sending its edits and offers them as a download", async ({ page }) => {
 	const seen = watchPage(page);
 	await openSheet(page);
 
@@ -139,9 +141,16 @@ test("losing edit access freezes the sheet and stops sending its edits", async (
 	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
 	await page.waitForTimeout(3_000);
 
-	// The room keeps what it could not send on this device, so no download is
-	// offered.
-	await expect(page.locator(".sheets-header").getByRole("button", { name: "Download my changes" })).toHaveCount(0);
+	// What did not reach the server, the text still in the cell editor too, is
+	// offered as a download. SheetJS writes the .xlsx uncompressed, so the
+	// values read straight from its bytes.
+	const download = page.waitForEvent("download");
+	await page.locator(".sheets-header").getByRole("button", { name: "Download my changes" }).click();
+	const file = await download;
+	expect(file.suggestedFilename()).toBe("Sheets journey (recovered).xlsx");
+	const saved = readFileSync(await file.path()).toString("latin1");
+	expect(saved).toContain("4242");
+	expect(saved).toContain("5150");
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 });
 

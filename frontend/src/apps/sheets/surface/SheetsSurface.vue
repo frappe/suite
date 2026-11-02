@@ -32,8 +32,6 @@ interface SheetEditorHandle {
   /** Live room: access went or came back. `mayEdit` is read once the room has sent what it could. */
   loseAccess(lost: 'lost_edit' | 'lost_read'): Promise<void>
   regainAccess(mayEdit: () => boolean): Promise<void>
-  /** Live room: whether unsent work outlives this tab. */
-  readonly keepsUnsentWork: boolean
 }
 const props = defineProps<{
   session: DocumentSession
@@ -49,11 +47,12 @@ const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
     // Live room: it sends what it can and keeps the rest on this device, and
-    // its strip says the sheet is now view only. Where the browser keeps
-    // nothing, the person gets their changes as a download, as on the old path.
+    // its strip says the sheet is now view only. Edits that did not reach the
+    // server, and text still being typed in a cell, are offered as a download
+    // too: the room replays its copy only if edit access comes back. The copy
+    // is taken first, while the cell edit is still open.
     if (current?.isCollab) {
-      const unsent = current.saveState !== 'clean' || current.hasDraft()
-      if (unsent && !current.keepsUnsentWork) keepForDownload()
+      if (current.saveState !== 'clean' || current.hasDraft()) keepForDownload()
       void current.loseAccess(access.readable.value ? 'lost_edit' : 'lost_read')
       return
     }
