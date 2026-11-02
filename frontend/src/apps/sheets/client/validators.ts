@@ -125,6 +125,7 @@ export const operationAiAssist: Validators<AiAssistInput, AiAssistOutput> = {
           name: { title: 'Name', type: 'string' },
           prompt: { title: 'Prompt', type: 'string' },
           selection: { title: 'Selection', type: 'string' },
+          cells: { title: 'Cells', type: 'string' },
         },
         required: ['name', 'prompt', 'selection'],
         additionalProperties: false,

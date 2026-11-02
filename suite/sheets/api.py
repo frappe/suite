@@ -1,11 +1,8 @@
-import json
-
 import frappe
 from frappe import _
 
 from suite import drive
 from suite.sheets import drive as sheets_drive
-from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.drive import DOCTYPE, NODE_FIELD, docname_for_node
 
@@ -135,16 +132,23 @@ def save_ai_settings(api_key: str = "", enabled: int = 0, model: str = "") -> di
 
 
 MAX_PROMPT_LEN = 2000
+# The context cells the editor sends: its top-left block, one row and column
+# past what `ai.context` samples, so it can say the view is partial
+MAX_CONTEXT_CELLS = 2000
+MAX_CONTEXT_VALUE_LEN = 500
 
 
 @frappe.whitelist()
-def ai_assist(name: str, prompt: str, selection: str) -> dict:
+def ai_assist(name: str, prompt: str, selection: str, cells: str = "") -> dict:
     """Turn a plain-language request into a validated spreadsheet action plan.
 
     `selection` is a JSON string describing the active selection
-    ({sheet, r0, c0, r1, c1, active}). The sheet is decoded server-side, a
-    compact context is assembled, and the model is asked for actions — which
-    are validated here before returning. We do NOT mutate the sheet: the
+    ({sheet, r0, c0, r1, c1, active}). `cells` is a JSON object of the
+    selection's sheet as the editor shows it ({cellId: value}): the live room
+    holds the sheet, and only the browser has formula results, so the server
+    never reads `sheets_data` for it. A compact context is assembled from it,
+    and the model is asked for actions — which are validated here before
+    returning. We do NOT mutate the sheet: the
     frontend applies the actions through the engine, as one undoable edit
     the live room saves.
     """
@@ -167,8 +171,7 @@ def ai_assist(name: str, prompt: str, selection: str) -> dict:
         sel = {}
     sheet_name = sel.get("sheet") or "Sheet1"
 
-    data = json.loads(decode_sheets_data(frappe.get_doc("Sheet", name).sheets_data) or "{}")
-    cell_map = unpack_cell_map((data or {}).get("sheet") or {}, sheet_name)
+    cell_map = _context_cells(cells)
 
     from suite.sheets.ai import context as ai_context
     from suite.sheets.ai import heuristics as ai_heuristics
@@ -206,6 +209,21 @@ _DEMO_HINT = (
 
 
 # ── internal helpers ──────────────────────────────────────────────────────────
+
+
+def _context_cells(cells: str) -> dict[str, str]:
+    """The editor's context cells, as {cellId: text}, refused when they aren't that shape."""
+    try:
+        parsed = frappe.parse_json(cells) if cells else {}
+    except ValueError:
+        parsed = None
+    if not isinstance(parsed, dict) or len(parsed) > MAX_CONTEXT_CELLS:
+        frappe.throw(_("The sheet's cells could not be read."))
+    return {
+        str(cid): str(value)[:MAX_CONTEXT_VALUE_LEN]
+        for cid, value in parsed.items()
+        if isinstance(value, str | int | float) and value != ""
+    }
 
 
 def _clean_title(title: str) -> str:

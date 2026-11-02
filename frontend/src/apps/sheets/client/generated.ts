@@ -82,7 +82,7 @@ const operationSaveAiSettings: MutationRef<
   loadValidators: async () => (await import('./validators')).operationSaveAiSettings,
 }
 
-export type AiAssistInput = { name: string; prompt: string; selection: string }
+export type AiAssistInput = { name: string; prompt: string; selection: string; cells?: string }
 
 export type AiAssistOutput = {
   actions: Array<{ [key: string]: unknown }>

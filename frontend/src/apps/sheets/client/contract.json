@@ -208,6 +208,10 @@
           "selection": {
             "title": "Selection",
             "type": "string"
+          },
+          "cells": {
+            "title": "Cells",
+            "type": "string"
           }
         },
         "required": [

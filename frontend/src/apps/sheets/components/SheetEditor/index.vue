@@ -1584,6 +1584,7 @@ const {
   undo,
   // Defined further down (useToolbar, useProtection): resolved at call time.
   refreshActiveFormat: () => refreshActiveFormat(),
+  readRect: _readRect,
   readIds: _readIds,
   writeInputs: _writeInputs,
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),

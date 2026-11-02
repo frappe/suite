@@ -3,6 +3,8 @@ import { onScopeDispose, ref } from 'vue'
 import { api, client } from '@/api'
 import { useRootStore } from '@/stores/root'
 
+import { cellId } from '../../utils/cells.js'
+
 // AI Assist, extracted from SheetEditor/index.vue: the Ask bar state, asking
 // the backend, applying its plan as one undoable op, Keep / Undo, and the AI
 // settings entry in the command palette.
@@ -18,6 +20,7 @@ export function useAiAssist({
   syncFlags,
   undo,
   refreshActiveFormat,
+  readRect,
   readIds: _readIds,
   writeInputs: _writeInputs,
   cellSilentlyProtected: _cellSilentlyProtected,
@@ -66,6 +69,27 @@ export function useAiAssist({
     askAnswer.value = ''
     aiPending.value = null
   }
+  // The context the server builds for the model is the sheet as this editor
+  // shows it: the live room holds the sheet, and only the browser has formula
+  // results. Its top-left block, one row and column past what the server
+  // samples (25 rows, 40 columns: suite/sheets/ai/context.py), so it can say
+  // the view is partial. Typed values keep the column types readable; a
+  // formula sends its result.
+  const CONTEXT_ROWS = 26
+  const CONTEXT_COLS = 41
+  async function _contextCells(sn) {
+    const rect = { r0: 0, c0: 0, r1: CONTEXT_ROWS - 1, c1: CONTEXT_COLS - 1 }
+    const { inputs, displays } = await readRect(sn, rect)
+    const cells = {}
+    inputs.forEach((row, r) =>
+      row.forEach((input, c) => {
+        const value = String(input ?? '').startsWith('=') ? displays[r]?.[c] : input
+        if (value != null && value !== '') cells[cellId(r, c)] = String(value)
+      }),
+    )
+    return cells
+  }
+
   async function onAskSubmit(promptText) {
     askError.value = ''
     askAnswer.value = ''
@@ -90,6 +114,7 @@ export function useAiAssist({
         name: getDocName(),
         prompt: promptText,
         selection,
+        cells: JSON.stringify(await _contextCells(currentSheet.value)),
       })
       const actions = Array.isArray(res?.actions) ? res.actions : []
       const answers = actions.filter((a) => a.type === 'answer')

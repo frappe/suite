@@ -37,6 +37,7 @@ class AssistInput(TypedDict):
     name: str
     prompt: str
     selection: str
+    cells: NotRequired[str]
 
 
 class AssistResult(TypedDict):
