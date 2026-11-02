@@ -378,6 +378,8 @@ export const filePreviewSurface = defineAsyncComponent(
 export interface DriveDialogs {
   /** Opens the folder picker to move `node`. Resolves with the moved node, or `undefined` when cancelled. */
   move(node: string): Promise<DriveNodeSummary | undefined>
+  /** Opens the folder picker to copy `node`. Resolves with the copy, or `undefined` when cancelled. */
+  copy(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
   /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
@@ -395,6 +397,13 @@ export function useDriveDialogs(): DriveDialogs {
         () => import('@/apps/drive/files/features/MoveNodeDialog.vue'),
         { node },
         'moved',
+      ),
+    copy: (node) =>
+      presentDialog<DriveNodeSummary>(
+        context,
+        () => import('@/apps/drive/files/features/CopyNodeDialog.vue'),
+        { node },
+        'copied',
       ),
     showDetails: async (node) => {
       await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), {

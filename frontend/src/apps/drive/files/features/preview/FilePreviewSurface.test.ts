@@ -22,11 +22,26 @@ vi.mock('frappe-ui', async () => ({
     await import('../../../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')
   ).default,
   Spinner: defineComponent({ setup: () => () => h('div', { role: 'status' }) }),
+  // The menu's items show beside its trigger, so a test can choose one.
   Dropdown: defineComponent({
+    props: {
+      options: {
+        type: Array as PropType<Array<{ label: string; onClick: () => unknown }>>,
+        default: () => [],
+      },
+    },
     setup:
-      (_props, { slots }) =>
+      (props, { slots }) =>
       () =>
-        h('div', slots.default?.()),
+        h('div', [
+          slots.default?.(),
+          h(
+            'menu',
+            props.options.map((option) =>
+              h('button', { role: 'menuitem', onClick: option.onClick }, option.label),
+            ),
+          ),
+        ]),
   }),
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }))
@@ -85,10 +100,13 @@ function typeOf(row: Row): string {
   return row.mime?.split('/')[0] ?? ''
 }
 
+const requests = vi.hoisted(() => [] as Array<{ id: string; input: unknown }>)
 vi.mock('@/platform/transport', async (original) => ({
   ...(await original<typeof import('@/platform/transport')>()),
   transport: {
     request: async (operation: Operation, input: { type?: string; node?: string }) => {
+      requests.push({ id: operation.id, input })
+      if (operation.id === 'node_patch.trash') return { name: input.node, state: 'Trashed' }
       if (operation.id === 'node_get') {
         return {
           name: input.node,
@@ -115,6 +133,7 @@ function session(
   mime: string,
   size = 100,
   trashRoot: string | null = null,
+  role = 10,
 ): FilePreviewSession {
   const fields = {
     nodeId,
@@ -125,7 +144,7 @@ function session(
     state: ref(trashRoot ? 'Trashed' : 'Active'),
     root: 'root',
     trashRoot: ref(trashRoot),
-    access: ref({ role: 10 }),
+    access: ref({ role }),
     canShare: ref(false),
     size: ref(size),
     // A trashed folder of its own, so its listing is not the Active one another test read.
@@ -146,7 +165,9 @@ afterEach(() => {
   unmount = null
   folderState = 'Active'
   folderRole = 30
+  requests.length = 0
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
@@ -174,6 +195,10 @@ async function mount(
   return { root, router }
 }
 
+const menuItem = (root: HTMLElement, label: string) =>
+  [...root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === label,
+  )
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }))
 const counter = (root: HTMLElement) => root.querySelector('header span.tabular-nums')?.textContent
 
@@ -272,5 +297,66 @@ describe('file preview', () => {
     opened.value = session('m2', 'notes.markdown', 'application/octet-stream')
     await vi.waitFor(() => expect(root.querySelector('article h1')?.textContent).toBe('Plan'))
     expect(root.querySelector('.cm-content')).toBeNull()
+  })
+
+  describe("the listing's actions", () => {
+    it('lets an editor move the file to Trash, and goes back to its folder with Undo', async () => {
+      const { toast } = await import('frappe-ui')
+      const { root, router } = await mount(
+        session('c', 'c.png', 'image/png', 100, null, 40),
+        '/d/c/c-png?type=image',
+      )
+
+      menuItem(root, 'Move to trash')?.click()
+
+      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/f/folder-1/talks'))
+      expect(router.currentRoute.value.query.type).toBe('image')
+      expect(requests).toContainEqual({
+        id: 'node_patch.trash',
+        input: { node: 'c', state: 'Trashed' },
+      })
+      expect(toast.success).toHaveBeenCalledWith(
+        'Moved “c.png” to Trash',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Undo' }) }),
+      )
+    })
+
+    it('copies the link to the file page', async () => {
+      const writeText = vi.fn(async () => {})
+      vi.stubGlobal('navigator', { clipboard: { writeText } })
+      const { root } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+
+      menuItem(root, 'Copy link')?.click()
+
+      await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(`${location.origin}/d/c/c-png`))
+    })
+
+    it('offers a reader a copy and the link, but not Trash', async () => {
+      const { root } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+
+      expect(menuItem(root, 'Make a copy')).toBeDefined()
+      expect(menuItem(root, 'Copy link')).toBeDefined()
+      expect(menuItem(root, 'Move to trash')).toBeUndefined()
+    })
+
+    it('shows the file fullscreen where the browser allows it', async () => {
+      Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true })
+      const requestFullscreen = vi.fn(async () => {})
+      Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+        value: requestFullscreen,
+        configurable: true,
+      })
+      try {
+        const { root } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+
+        root.querySelector<HTMLButtonElement>('[aria-label="Fullscreen"]')?.click()
+
+        expect(requestFullscreen).toHaveBeenCalledOnce()
+        expect(requestFullscreen.mock.contexts[0]).toBe(root.querySelector('img')?.parentElement)
+      } finally {
+        Reflect.deleteProperty(document, 'fullscreenEnabled')
+        Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen')
+      }
+    })
   })
 })
