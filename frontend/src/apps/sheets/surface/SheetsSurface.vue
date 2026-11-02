@@ -65,7 +65,7 @@ const access = createSheetAccess(props.session, {
     }
     const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
     if (!unsaved) {
-      toast.warning('Editing access changed. This spreadsheet is now view only.')
+      toast.warning(__('Editing access changed. This spreadsheet is now view only.'))
       return
     }
     void keepForDownload()
@@ -77,7 +77,7 @@ const access = createSheetAccess(props.session, {
       return
     }
     bodyRevision.value += 1
-    toast.info('You can edit this spreadsheet again.')
+    toast.info(__('You can edit this spreadsheet again.'))
   },
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
