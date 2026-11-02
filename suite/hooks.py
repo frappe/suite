@@ -255,10 +255,6 @@ doc_events = {
     "DocShare": {
         "validate": ["suite.drive.framework.refuse_governed_share"],
     },
-    # sheets — collaboration stays off until the editor uses the room
-    "Suite Collab Settings": {
-        "validate": ["suite.sheets.content.refuse_turning_on"],
-    },
     "User": {
         "before_save": ["suite.composition.users.before_save"],
         # Roles are assigned before insert so they are present when Frappe's

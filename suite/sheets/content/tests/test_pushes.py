@@ -71,23 +71,13 @@ class TestPushes(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
-        # The editor's wiring allows turning Sheets on
-        ready = patch.object(sheets_content, "EDITOR_READY", True)
-        ready.start()
-        self.addCleanup(ready.stop)
-        saved_mode = log.mode(sheets_content.APP)
-        if saved_mode != "on":
-            log.set_mode(sheets_content.APP, "on")
+        # Always on, so a site that predates it is switched on here and stays on
+        if log.mode(sheets_content.APP) != "on":
+            sheets_content.turn_on()
             frappe.db.commit()
-            self.addCleanup(self.restore_mode, saved_mode)
 
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-
-    def restore_mode(self, mode: str):
-        # Fails while any sheet has a log: one this class left behind
-        log.set_mode(sheets_content.APP, mode)
-        frappe.db.commit()
 
     def new_sheet(self) -> str:
         root = drive.ensure_personal_root(OWNER)
