@@ -105,6 +105,25 @@ describe('glue: cells', { timeout: GLUE_TIMEOUT }, () => {
     expect(await inputs(b)).toEqual({})
   })
 
+  it('a new pivot sheet reaches the doc without its output', async () => {
+    const [a, b] = await twoTabs()
+    a.glue.dispatch(cmd('addSheet', { name: 'Pivot' }))
+    a.glue.localOnly(() =>
+      a.glue.dispatch(cmd('setInput', { sheet: 'Pivot', row: 1, col: 1, input: 'Sum of x' })),
+    )
+    const id = a.stores.pivot.add({
+      sourceSheet: 'Sheet1',
+      sourceRange: 'A1:A3',
+      outputSheet: 'Pivot',
+    })
+    a.stores.pivot.setExtent(id, { r0: 0, c0: 0, r1: 0, c1: 0 })
+    await a.glue.commit()
+    await sync(a, b)
+    expect(docSheets(a.doc).map((s) => s.name)).toEqual(['Sheet1', 'Pivot'])
+    expect(roots(a.doc).inputs.size).toBe(0)
+    expect(await inputs(b)).toEqual({})
+  })
+
   it("a pivot's banding stays out of the next action's commit", async () => {
     const [a, b] = await twoTabs()
     const id = a.stores.pivot.add({

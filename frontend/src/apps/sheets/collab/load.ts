@@ -9,7 +9,8 @@ import type * as Y from 'yjs'
 
 import type { WorkbookClient } from '../core/client'
 import type { BatchCommand, NonBatchCommand } from '../core/commands'
-import { computePivot, parseRangeRect, rangeReader } from '../engine/pivot'
+import { computePivot, parseRangeRect, pivotExtent, rangeReader } from '../engine/pivot'
+import { cellId } from '../utils/cells'
 import { addSheet, axis, cellKey, initDoc, parseCellKey, roots } from './schema'
 import {
   docSheets,
@@ -126,12 +127,12 @@ async function setPivotExtents(
       })
       values.push(...part.values)
     }
-    const table = computePivot(p, rangeReader(read, values))
-    if (!table.length) continue
-    const r0 = p.anchorRow ?? 0
-    const c0 = p.anchorCol ?? 0
-    const width = (table[0] as unknown[] | undefined)?.length || 1
-    pivot?.setExtent(p.id, { r0, c0, r1: r0 + table.length - 1, c1: c0 + width - 1 })
+    // Over the rows read only: past the data every row is empty, and the
+    // pivot leaves empty rows out.
+    const sourceRange = `${cellId(read.r0, read.c0)}:${cellId(read.r1, read.c1)}`
+    const table = computePivot({ ...p, sourceRange }, rangeReader(read, values))
+    const extent = pivotExtent(table, p.anchorRow ?? 0, p.anchorCol ?? 0)
+    if (extent) pivot?.setExtent(p.id, extent)
   }
 }
 

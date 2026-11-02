@@ -306,10 +306,14 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
     for (const c of commands) writeCommand(c)
     const sheets = docSheets(doc)
     const idOf = new Map(sheets.map((s) => [s.name, s.id]))
-    // Sheets this action created: every cell, at the positions it ends with.
+    // Sheets this action created: every cell, at the positions it ends with,
+    // minus pivot output (a new pivot's sheet).
+    const derived = pivotOutput(stores)
     for (const [name, cells] of reads.created) {
       const sheetId = idOf.get(name)
-      if (sheetId) for (const cell of cells) putInput(doc, sheetId, cell)
+      if (!sheetId) continue
+      for (const cell of cells)
+        if (!derived?.(name, cell.row - 1, cell.col - 1)) putInput(doc, sheetId, cell)
     }
     // Formulas IronCalc rewrote for a row/col/sheet change (Q10).
     for (const [name, cells] of reads.formulas ?? []) {
