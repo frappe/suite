@@ -678,6 +678,24 @@ describe('workbook — the cell scans stop at the last used row', () => {
     expect(rowReads(() => expect(stats()).toEqual({ count: 1001, numCount: 1001, sum }))).toBe(1002)
   })
 
+  // A1:A3 is an array formula reaching below the bound (row 1); B1 is a date,
+  // counted but not added up (ISSUES #67).
+  it('the range stats of whole columns with an array formula and a date', () => {
+    const wb = createWorkbook()
+    wb.apply(
+      cmd(CommandTypes.setArrayFormula, {
+        sheet: 'Sheet1',
+        row: 1,
+        col: 1,
+        width: 1,
+        height: 3,
+        input: '=ROW(A1:A3)',
+      }),
+    )
+    setInput(wb, 'Sheet1', 1, 2, '2026-01-15')
+    expect(wb.rangeStats('Sheet1', 1, 1, MAX_ROWS, 2)).toEqual({ count: 4, numCount: 3, sum: 6 })
+  })
+
   // A1 spills 1 … 100000, though only row 1 holds an input.
   it('the range stats of a few rows deep inside a long spill', () => {
     const wb = createWorkbook()
