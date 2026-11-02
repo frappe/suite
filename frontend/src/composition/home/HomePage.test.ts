@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
 import type { CalendarEvent } from '@/apps/calendar'
+import { findDocumentType } from '@/composition/documentRegistry'
 import HomePage from '@/composition/home/HomePage.vue'
 
 const state = vi.hoisted(() => ({
@@ -245,7 +246,7 @@ vi.mock('@/api', async () => ({
 }))
 const cleanups: Array<() => void> = []
 // Creating a document starts loading its editor; the file must not end with that still loading.
-afterAll(() => import('@/apps/writer/opening/OpeningEditor.vue'))
+afterAll(() => findDocumentType('Writer Document')?.loadOpeningEditor?.())
 afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup())
   vi.useRealTimers()

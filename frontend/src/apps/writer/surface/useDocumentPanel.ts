@@ -81,7 +81,12 @@ function threadActions(session: PanelSession, refreshThreads: () => Promise<void
   const { comments } = session
   return {
     // Answers as soon as Drive takes the reply: a slow read of the threads must not hold the box
-    reply: async (thread: string, text: string, authorName: string | undefined, clientId: string) => {
+    reply: async (
+      thread: string,
+      text: string,
+      authorName: string | undefined,
+      clientId: string,
+    ) => {
       const isTaken = await tryChange(
         () => comments.reply(thread, text, authorName, clientId),
         __('Could not add the reply.'),

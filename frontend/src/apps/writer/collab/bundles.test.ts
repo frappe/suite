@@ -79,25 +79,30 @@ function codeFiles(outDir: string) {
   })
 }
 
-const BROWSER_UI = /apps\/drive\/files\/|DriveBrowser|FolderPicker|MentionMenu|platform\/server-state/
+const BROWSER_UI =
+  /apps\/drive\/files\/|DriveBrowser|FolderPicker|MentionMenu|platform\/server-state/
 
 describe('Writer server bundles under --permission', () => {
-  it('the converter is one file with no Drive UI, and converts', { timeout: BUILD_LIMIT_MS }, () => {
-    const outDir = build('converter')
-    const bundle = path.join(outDir, 'converter.cjs')
+  it(
+    'the converter is one file with no Drive UI, and converts',
+    { timeout: BUILD_LIMIT_MS },
+    () => {
+      const outDir = build('converter')
+      const bundle = path.join(outDir, 'converter.cjs')
 
-    const answer = run(bundle, {
-      legacy: { content: null, html: '<p>Hello</p>', collab: 0, ycomments: null },
-      maxState: 10_000_000,
-    })
+      const answer = run(bundle, {
+        legacy: { content: null, html: '<p>Hello</p>', collab: 0, ycomments: null },
+        maxState: 10_000_000,
+      })
 
-    expect(codeFiles(outDir)).toEqual(['converter.cjs'])
-    expect(bundledSources(outDir, 'converter.cjs').filter((file) => BROWSER_UI.test(file))).toEqual(
-      [],
-    )
-    expect(answer).toMatchObject({ kind: 'converted' })
-    expect(run(bundle, {})).toEqual({ version: expect.any(String) })
-  })
+      expect(codeFiles(outDir)).toEqual(['converter.cjs'])
+      expect(
+        bundledSources(outDir, 'converter.cjs').filter((file) => BROWSER_UI.test(file)),
+      ).toEqual([])
+      expect(answer).toMatchObject({ kind: 'converted' })
+      expect(run(bundle, {})).toEqual({ version: expect.any(String) })
+    },
+  )
 
   it('the checker is one file with no Drive UI, and judges', { timeout: BUILD_LIMIT_MS }, () => {
     const outDir = build('checker')
@@ -106,7 +111,9 @@ describe('Writer server bundles under --permission', () => {
     const answer = run(bundle, { mode: 'judge' }, new Uint8Array())
 
     expect(codeFiles(outDir)).toEqual(['checker.cjs'])
-    expect(bundledSources(outDir, 'checker.cjs').filter((file) => BROWSER_UI.test(file))).toEqual([])
+    expect(bundledSources(outDir, 'checker.cjs').filter((file) => BROWSER_UI.test(file))).toEqual(
+      [],
+    )
     expect(answer).toMatchObject({ verdict: 'clean', yjs: expect.any(String) })
   })
 })
