@@ -26,8 +26,9 @@ from suite.mail.utils.dt import to_utc_z
 # is one of these at the reporting host.
 REPORTERS = ("mailer-daemon", "postmaster")
 
-# How many of the newest bounces a lookup reads.
-MAX_BOUNCES = 50
+# A lookup reads the newest bounces a page at a time, up to this many.
+BOUNCE_PAGE = 50
+MAX_BOUNCES = 500
 
 # A bounce can arrive in the very second its send is released, and the server's `after` filter is
 # strict and counts whole seconds, so a lookup starts a little before the earliest send.
@@ -86,20 +87,28 @@ def get_reports(account: str, envelope_ids: list[str], sent_at: str) -> dict[str
             {"operator": "OR", "conditions": [{"from": reporter} for reporter in REPORTERS]},
         ],
     }
-    ids = query_message_ids(account, filter, limit=MAX_BOUNCES)["ids"]
+    reports: dict[str, list[dict]] = {}
+    for position in range(0, MAX_BOUNCES, BOUNCE_PAGE):
+        ids = query_message_ids(account, filter, position=position, limit=BOUNCE_PAGE)["ids"]
+        _collect_reports(account, ids, wanted, reports)
+        if len(ids) < BOUNCE_PAGE or wanted <= reports.keys():
+            break
+    return reports
+
+
+def _collect_reports(account: str, ids: list[str], wanted: set[str], reports: dict[str, list[dict]]) -> None:
+    """Add the reports on `wanted` envelopes from the bounces among messages `ids`."""
+
     bounces = [
         (message, blob_id) for message in get_messages(account, ids) if (blob_id := dsn_blob_id(message))
     ]
     blobs = fetch_blobs(account, [blob_id for _message, blob_id in bounces]) if bounces else {}
-
-    reports: dict[str, list[dict]] = {}
     for message, blob_id in bounces:
         report = read_report(message, blobs[blob_id])
         if report["original_envelope_id"] in wanted:
             reports.setdefault(report["original_envelope_id"], []).append(
                 {**report, "thread_id": message["thread_id"]}
             )
-    return reports
 
 
 def read_report(message: dict, delivery_status: bytes) -> dict:
