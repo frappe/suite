@@ -1061,6 +1061,7 @@ const {
   usedExtent: _usedExtent,
   readWholeSheet: _readWholeSheet,
   sheetExtent: _sheetExtent,
+  usedCells: _usedCells,
   readDisplays: _readDisplays,
   readSourceRange: _readSourceRange,
   clearRect: _clearRect,
@@ -1799,6 +1800,8 @@ const { exportCSV, exportXLSX, print, importCSV, importXLSX } = useExportImport(
     clear: _clearSheet,
     addSheet: (name) => _dispatch(_command('addSheet', { name })),
     extent: _sheetExtent,
+    usedCells: _usedCells,
+    read: _readRect,
     idle: () => (_client() ? _client().idle() : Promise.resolve()),
   },
   // Lazy: useSheetTabs defines sheetNames further down.

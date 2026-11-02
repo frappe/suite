@@ -45,6 +45,11 @@ describe('a number wider than its cell', () => {
     expect(shown).toMatch(/^#+$/)
   })
 
+  it('shows # rather than other digits for a decimal too large to round', () => {
+    const [shown] = paint('123456789012345678901.99', true)
+    expect(shown).toMatch(/^#+$/)
+  })
+
   it('shows # for a formatted number that does not fit', () => {
     const [shown] = paint('$3,135,334,340,000.00', true)
     expect(shown).toMatch(/^#+$/)

@@ -324,6 +324,15 @@ export function useWorkbook({
     return maxRow < 0 ? null : { maxRow, maxCol }
   }
 
+  // A sheet's filled cells as 0-based { row, col }.
+  async function usedCells(sn) {
+    if (!engine) return []
+    const { cells } = await engine.client.usedCells({ sheet: sn })
+    const used = []
+    for (let i = 0; i < cells.length; i += 2) used.push({ row: cells[i] - 1, col: cells[i + 1] - 1 })
+    return used
+  }
+
   // A whole sheet's inputs and displays, A1 to its last used cell.
   async function readWholeSheet(sn, opts = {}) {
     const ext = await sheetExtent(sn)
@@ -389,6 +398,7 @@ export function useWorkbook({
     usedCellIds,
     usedExtent,
     sheetExtent,
+    usedCells,
     readWholeSheet,
     readDisplays,
     readSourceRange,

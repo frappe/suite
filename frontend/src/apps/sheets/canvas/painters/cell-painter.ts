@@ -342,7 +342,10 @@ export function createCellPainter(
   // that fits; otherwise a row of #.
   function _fitNumber(s: string, room: number): string {
     if (ctx.measureText(s).width <= room) return s
-    const decimals = /^-?\d+\.(\d+)$/.exec(s)?.[1]?.length ?? 0
+    // Past the safe integers, rounding through Number would show other digits.
+    const decimals = Number.isSafeInteger(Math.trunc(Number(s)))
+      ? (/^-?\d+\.(\d+)$/.exec(s)?.[1]?.length ?? 0)
+      : 0
     for (let places = decimals - 1; places >= 0; places--) {
       const rounded = Number(s)
         .toFixed(places)

@@ -21,7 +21,7 @@ import {
 } from '../../engine/xlsx-style.js'
 import { cellId, parseCellId } from '../../utils/cells.js'
 import { dateSerialFromShown, parseNumberFmt } from '../../utils/format-number.js'
-import { printHtml } from './printView'
+import { indexRuns, isPrintable, printedGrid, printHtml } from './printView'
 
 // ── private helpers ────────────────────────────────────────────────────────────
 
@@ -148,7 +148,8 @@ function _cellIn(cell) {
  *     from A1 to the last used cell ([] when the sheet is empty);
  *   write(sn, map) writes a {cellId: input} map; clear(sn) → Promise, empties
  *   the sheet's cells; addSheet(name) adds a sheet; extent(sn) → Promise of
- *   its used extent, null when empty; idle() resolves once all of it applied.
+ *   its used extent, null when empty; idle() resolves once all of it applied;
+ *   usedCells(sn) → Promise of its filled cells; read(sn, rect, { numbers }) reads a rect.
  * @param {() => string[]} opts.sheetNames – the tab list
  * @param {() => string}  opts.getCurrentTitle – current document title
  * @param {() => void}    opts.repopulateGrid  – full canvas repaint
@@ -366,33 +367,54 @@ export function useExportImport({
     if (!win) return
     const names = scope === 'all' ? sheetNames() : [currentSheet.value]
     const sheets = []
-    for (const name of names)
-      sheets.push(_printable(name, await cells.readSheet(name, { numbers: true })))
+    for (const name of names) sheets.push(await _printable(name))
     win.document.write(printHtml(getCurrentTitle() || 'Untitled Sheet', sheets))
     win.document.close()
     win.focus()
     win.print()
   }
 
-  function _printable(name, { displays, numbers }) {
+  async function _printable(name) {
     const formats = getFormats?.()
     const merge = getMerge?.()
     const condFormat = getCondFormat?.()
-    const valueOf = (id) => {
-      const p = parseCellId(id)
-      return p ? (displays[p.row]?.[p.col] ?? '') : ''
-    }
+    const mergeAt = (id) => merge?.getMasterInfo(id, name) ?? null
+    const { rows, cols } = printedGrid(await cells.usedCells(name), mergeAt)
+    const { shown, numbers } = isPrintable(rows, cols)
+      ? await _readPrinted(name, rows, cols)
+      : { shown: new Map(), numbers: new Set() }
+    const valueOf = (id) => shown.get(id) ?? ''
     return {
       name,
-      displays,
+      rows,
+      cols,
+      shown: valueOf,
       numbers,
       format: (id, value) => ({
         ...formats?.get(id, name),
         ...condFormat?.getFormatOverride(id, value, name, valueOf),
       }),
-      mergeAt: (id) => merge?.getMasterInfo(id, name) ?? null,
+      mergeAt,
       isCovered: (id) => !!merge?.isSlave(id, name),
     }
+  }
+
+  // One read per block of neighbouring printed rows and columns.
+  async function _readPrinted(name, rows, cols) {
+    const shown = new Map()
+    const numbers = new Set()
+    for (const [r0, r1] of indexRuns(rows)) {
+      for (const [c0, c1] of indexRuns(cols)) {
+        const read = await cells.read(name, { r0, c0, r1, c1 }, { numbers: true })
+        read.displays.forEach((row, r) =>
+          row.forEach((value, c) => {
+            if (value !== '') shown.set(cellId(r0 + r, c0 + c), value)
+          }),
+        )
+        for (const id of read.numbers) numbers.add(id)
+      }
+    }
+    return { shown, numbers }
   }
 
   // ── imports ──────────────────────────────────────────────────────────────────
@@ -697,6 +719,8 @@ export function useExportImport({
       if ((r + 1) % CHUNK_ROWS === 0) await _yield()
     }
     out.flush()
+    // The undo step snapshots the workbook, so the writes must have applied.
+    await cells.idle().catch(() => {})
     recordUndoStep?.()
     syncFlags()
     isDirty.value = true

@@ -2,6 +2,8 @@
 // shows what the grid shows (number formats, alignment, fills, conditional
 // formatting, merges); charts and sparklines are not printed.
 
+import { translate as __ } from '@/platform/translation'
+
 import type { CellFormat } from '../../canvas/types'
 import { cellId } from '../../utils/cells.js'
 import { applyNumberFmt } from '../../utils/format-number.js'
@@ -11,8 +13,11 @@ export type PrintFormat = CellFormat & { numberFormat?: string }
 /** One sheet as the editor's stores describe it. */
 export interface PrintableSheet {
   name: string
-  /** IronCalc's shown values, A1 to the last used cell. */
-  displays: string[][]
+  /** The rows and columns to print, in order. */
+  rows: number[]
+  cols: number[]
+  /** IronCalc's shown value of a cell. */
+  shown(id: string): string
   /** The ids of the cells that hold a number. */
   numbers: Set<string>
   /** The cell's format, with any conditional format for `value` on top. */
@@ -50,7 +55,7 @@ function cellStyle(format: PrintFormat, isNumber: boolean) {
 function cellHtml(sheet: PrintableSheet, r: number, c: number) {
   const id = cellId(r, c)
   if (sheet.isCovered(id)) return ''
-  const shown = sheet.displays[r]?.[c] ?? ''
+  const shown = sheet.shown(id)
   const format = sheet.format(id, shown)
   const isNumber = sheet.numbers.has(id)
   const text = format.numberFormat ? applyNumberFmt(shown, format.numberFormat) : shown
@@ -60,17 +65,67 @@ function cellHtml(sheet: PrintableSheet, r: number, c: number) {
 }
 
 function sheetHtml(sheet: PrintableSheet) {
-  const width = Math.max(0, ...sheet.displays.map((row) => row.length))
-  const rows = sheet.displays.map((_, r) => {
-    const cells = Array.from({ length: width }, (_, c) => cellHtml(sheet, r, c))
+  const heading = `<h2>${escape(sheet.name)}</h2>`
+  if (!isPrintable(sheet.rows, sheet.cols)) {
+    const message = __('This sheet is too large to print. Export it to XLSX instead.')
+    return `<section>${heading}<p>${escape(message)}</p></section>`
+  }
+  const rows = sheet.rows.map((r) => {
+    const cells = sheet.cols.map((c) => cellHtml(sheet, r, c))
     return `<tr>${cells.join('')}</tr>`
   })
-  return `<section><h2>${escape(sheet.name)}</h2><table>${rows.join('')}</table></section>`
+  return `<section>${heading}<table>${rows.join('')}</table></section>`
+}
+
+/** Blank rows or columns up to this many in a row still print, as spacing; longer gaps close up. */
+const LONGEST_PRINTED_GAP = 3
+/** More cells than this freeze the tab that builds the page. */
+const MOST_PRINTED_CELLS = 500_000
+
+/** The rows and columns that hold something, with a merge's whole span, and short gaps kept. */
+export function printedGrid(
+  used: { row: number; col: number }[],
+  mergeAt: (id: string) => { rowSpan: number; colSpan: number } | null,
+) {
+  const rows = new Set<number>()
+  const cols = new Set<number>()
+  for (const { row, col } of used) {
+    const merge = mergeAt(cellId(row, col))
+    for (let r = row; r < row + (merge?.rowSpan ?? 1); r++) rows.add(r)
+    for (let c = col; c < col + (merge?.colSpan ?? 1); c++) cols.add(c)
+  }
+  return { rows: withShortGaps(rows), cols: withShortGaps(cols) }
+}
+
+export function isPrintable(rows: number[], cols: number[]) {
+  return rows.length * cols.length <= MOST_PRINTED_CELLS
+}
+
+/** Sorted indexes as [first, last] runs of neighbours. */
+export function indexRuns(indexes: number[]) {
+  const runs: [number, number][] = []
+  for (const index of indexes) {
+    const run = runs.at(-1)
+    if (run && run[1] === index - 1) run[1] = index
+    else runs.push([index, index])
+  }
+  return runs
+}
+
+function withShortGaps(indexes: Set<number>) {
+  const kept: number[] = []
+  for (const index of [...indexes].sort((a, b) => a - b)) {
+    const previous = kept.at(-1)
+    if (previous !== undefined && index - previous - 1 <= LONGEST_PRINTED_GAP)
+      for (let gap = previous + 1; gap < index; gap++) kept.push(gap)
+    kept.push(index)
+  }
+  return kept
 }
 
 /** The page to print: one table per sheet, each starting on a new page. */
 export function printHtml(title: string, sheets: PrintableSheet[]) {
-  const body = sheets.filter((sheet) => sheet.displays.length).map(sheetHtml)
+  const body = sheets.filter((sheet) => sheet.rows.length).map(sheetHtml)
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>${escape(title)}</title>
 <style>
