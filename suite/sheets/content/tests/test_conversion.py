@@ -1,3 +1,5 @@
+import json
+import struct
 import uuid
 from unittest.mock import patch
 
@@ -6,9 +8,11 @@ import pycrdt
 from bs4 import BeautifulSoup
 from frappe.tests import IntegrationTestCase
 
-from suite import drive
+from suite import content, drive
 from suite.content import capacity, conversions, convert, log, logged, tables
 from suite.content.conversions import ConversionRefused
+from suite.drive._core.access import grant
+from suite.drive.framework import principals_for
 from suite.sheets import content as sheets_content
 from suite.sheets.content import conversion
 from suite.sheets.content.tests.support import (
@@ -23,6 +27,20 @@ from suite.sheets.doctype.sheet.storage import encode_sheets_data
 from suite.tests.utils import ensure_user
 
 OWNER = "sheets-collab-owner@example.com"
+READER = "sheets-collab-reader@example.com"
+SHEETS_ROW = {"parent": "Suite Collab Settings", "parentfield": "apps", "app": sheets_content.APP}
+
+
+def opened_state(frame: bytes) -> str:
+    """Read the state an open frame's header gives."""
+    (length,) = struct.unpack(">I", frame[:4])
+    return json.loads(frame[4 : 4 + length])["state"]
+
+
+def pause_sheets(paused: int) -> None:
+    frappe.db.set_value("Suite Collab App", SHEETS_ROW, "conversion_paused", paused)
+    frappe.clear_document_cache("Suite Collab Settings", "Suite Collab Settings")
+    frappe.db.commit()
 
 
 class TestConverter(IntegrationTestCase):
@@ -128,6 +146,7 @@ class TestConvertDocument(IntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         ensure_user(OWNER)
+        ensure_user(READER)
         logged.ensure_tables()
         frappe.db.commit()
 
@@ -186,6 +205,27 @@ class TestConvertDocument(IntegrationTestCase):
         html = frappe.db.get_value("Sheet", docname, "html")
         self.assertIn("<td>=SUM(B1:B2)</td>", html)
         self.assertEqual(frappe.db.get_value("Sheet", docname, "sheets_data"), stored)
+        self.assertEqual(self.records(node), (("converted", None),))
+
+    def test_a_sheet_a_reader_opens_converts_while_paused(self):
+        node = self.old_sheet(CURRENT_BODY)
+        grant(node, READER, drive.READ, principals_for())
+        frappe.db.commit()
+        self.addCleanup(
+            pause_sheets, frappe.db.get_value("Suite Collab App", SHEETS_ROW, "conversion_paused")
+        )
+        pause_sheets(1)
+        frappe.set_user(READER)
+
+        with patch.object(frappe, "enqueue") as enqueue:
+            first = opened_state(content.open_document(sheets_content.APP, node, can_write=False))
+
+        [queued] = enqueue.call_args_list
+        frappe.get_attr(queued.args[0])(app=queued.kwargs["app"], node=queued.kwargs["node"])
+        frappe.set_user(READER)
+
+        then = opened_state(content.open_document(sheets_content.APP, node, can_write=False))
+        self.assertEqual((first, then), ("unconverted", "live"))
         self.assertEqual(self.records(node), (("converted", None),))
 
     def test_converts_a_develop_sheet(self):
