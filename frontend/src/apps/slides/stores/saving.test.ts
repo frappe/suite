@@ -318,6 +318,43 @@ describe('saveCurrentState', () => {
     expect(local.dirty).toBe(false)
   })
 
+  it("leaves nothing queued by a tick during the refused push's draft write", async () => {
+    markDirty()
+
+    let refuse!: (err: Error) => void
+
+    serverSave = () =>
+      new Promise((_, reject) => {
+        refuse = reject
+      })
+    const stuck = saveCurrentState()
+    await new Promise((resolve) => setTimeout(resolve))
+
+    slides.value[0].background = '#222222ff'
+    markDirty()
+    refuse(conflict())
+    const tick = saveCurrentState()
+    await Promise.all([stuck, tick])
+
+    // the reload clears the hold, and the next push lands after the editor moved on
+    clearSaveFailure()
+    slides.value[0].background = '#333333ff'
+    markDirty()
+    const sent: string[] = []
+    serverSave = async (_id, content) => {
+      sent.push(content[0].background)
+      slides.value = []
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      return 'M2'
+    }
+
+    await saveCurrentState()
+
+    // sent as a tail, the queued edit would overwrite this one
+    expect(sent).toEqual(['#333333ff'])
+  })
+
   it('keeps the tail on the new base when its own push dies', async () => {
     markDirty()
 

@@ -301,6 +301,44 @@ describe('loading a presentation', () => {
       expectDraftKept(await initPresentationDoc('p1'))
     })
 
+    it.each([
+      ['a page that is not JSON', '<html>Sign in</html>'],
+      ['a JSON answer that is not the ping', '{"message":"welcome"}'],
+    ])('stays when the check gets %s', async (_case, body) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(body)),
+      )
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M1')
+      expect(slides.value[0].background).toBe('#00ff00ff')
+      expect(writeDraft).not.toHaveBeenCalled()
+    })
+
+    it('drops the load, the draft untouched, if another starts during the check', async () => {
+      let answer!: (response: Response) => void
+
+      const check = new Promise<Response>((resolve) => {
+        answer = resolve
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => check),
+      )
+
+      const superseded = initPresentationDoc('p1')
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+      startLoad()
+      answer(new Response('{"message":"pong"}'))
+
+      expect(await superseded).toBe(null)
+      expect(writeDraft).not.toHaveBeenCalled()
+      expect(keepDiscarded).not.toHaveBeenCalled()
+      expect(slides.value).toEqual([])
+    })
+
     it('is discarded with the notice when the server answers', async () => {
       await initPresentationDoc('p1')
 

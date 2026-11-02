@@ -262,6 +262,18 @@ const saveDraft = async () => {
   if (snapshot) await writeSnapshot(snapshot)
 }
 
+async function holdRefused(snapshot, epoch) {
+  // the hold turns the editor read-only, so the edits made during the push go in first
+  const latest = takeSnapshot()
+  refusedBase.value = snapshot.baseModified
+  if (latest) {
+    await writeSnapshot(latest, epoch)
+  }
+
+  // a tick during that write queued an edit the hold has already kept
+  queuedSnapshots.delete(snapshot.id)
+}
+
 const saveCurrentState = async () => {
   const snapshot = takeSnapshot()
   if (!snapshot || stopped.has(snapshot.id)) return
@@ -304,10 +316,8 @@ const saveCurrentState = async () => {
     saveFailed.value = true
     if (err?.type === 'TimestampMismatchError') {
       if (presentationId.value !== idAtSnapshot) return
-      // the hold turns the editor read-only, so the edits made during the push go in first
-      const latest = takeSnapshot()
-      if (latest) await writeSnapshot(latest, epoch)
-      refusedBase.value = snapshot.baseModified
+
+      await holdRefused(snapshot, epoch)
     } else {
       retryDelay = Math.min(retryDelay * 2 || 500, MAX_RETRY_MS)
       retryAt = Date.now() + retryDelay

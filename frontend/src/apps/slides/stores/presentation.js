@@ -10,6 +10,7 @@ import { getSessionUser } from '@/boot/session'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { translate } from '@/platform/translation'
 
+import { draftOutcome, needsServerCheck } from './draftOutcome'
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'
 import { commandHistory } from './historyMeta'
@@ -233,7 +234,12 @@ async function serverAnswers() {
       cache: 'no-store',
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     })
-    return response.ok && !response.redirected
+    if (!response.ok || response.redirected) {
+      return false
+    }
+
+    const { message } = await response.json()
+    return message === 'pong'
   } catch {
     return false
   }
@@ -266,19 +272,15 @@ const fetchPresentation = async (name, load) => {
     slide.elements = await transformElements(slide.elements)
   }
 
-  // the worker may replay a document older than the last save; the copy that
-  // save left behind is then the truth, and unsynced edits ride along in it
-  const servedIsStale = local?.baseModified > doc.modified
-  // a newer document may only be a stored copy; the old base gets the push refused
-  const onOlderBase =
-    local?.dirty && !landed && local.baseModified && local.baseModified !== doc.modified
-  const keepBase = servedIsStale || (onOlderBase && !(await serverAnswers()))
-  const isOnServedBase = local?.dirty && local.baseModified === doc.modified
+  const hasServerAnswered = needsServerCheck(local, doc.modified, landed) && (await serverAnswers())
+  const outcome = draftOutcome(local, doc.modified, landed, hasServerAnswered)
+  const keepBase = outcome === 'keep'
+  const isOnServedBase = outcome === 'restore'
   // the draft belongs to the tab that can write, on the presentation it is still opening;
   // this one neither rewrites nor reports it
   const isOwnDraft = local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value
   const isUncopied =
-    isOwnDraft && !landed && !keepBase && !isOnServedBase && !copyDiscarded(name, local.content)
+    outcome === 'discard' && isOwnDraft && !landed && !copyDiscarded(name, local.content)
 
   if (keepBase || isOnServedBase || isUncopied) {
     if (keepBase || isUncopied) {

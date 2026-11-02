@@ -166,10 +166,10 @@ describe('a draft kept against a newer stored document', () => {
     markDirty()
 
     setNetwork({ isOnline: true, isReachable: true })
-    // the refused push reads the document back, which leaves M2 in the worker's cache
     await saveCurrentState()
     expect(saveRefused.value).toBe(true)
 
+    // this mock answers M2 with the network down, standing in for the worker's stored copy
     setNetwork({ isOnline: true, isReachable: false })
     const doc = await reopen()
 
