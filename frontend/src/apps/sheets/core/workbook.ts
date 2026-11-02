@@ -214,8 +214,8 @@ export function createWorkbook({
   }
 
   // The last row any cell of a sheet can be on: the input bound, or further
-  // down where a spill or array ends. Every formula sits above the bound, so
-  // only the rows up to it are read.
+  // down where a spill or array ends. Every formula sits on or above the
+  // bound, so only the rows up to it are read.
   function lastCellRow(idx: number): number {
     const bound = inputRows()
     let last = bound
@@ -635,21 +635,6 @@ export function createWorkbook({
       read(() => {
         const idx = sheetIndex(sheet)
         const stats: RangeStats = { count: 0, numCount: 0, sum: 0 }
-        const add = (row: number, col: number) => {
-          stats.count++
-          if (model.getCellType(idx, row, col) !== NUMBER_CELL) return
-          const shown = model.getFormattedCellValue(idx, row, col)
-          // A date counts but isn't added up: its shown 2026-01-15 read as
-          // the number 2026 (ISSUES #67). Only text that looks like a date
-          // pays for the style read.
-          const dateLike = /\d[-/]\d|[A-Za-z]{3}/.test(shown)
-          if (dateLike && isDateFormat(model.getCellStyle(idx, row, col).style.num_fmt)) return
-          const n = numberFromShown(shown)
-          if (Number.isFinite(n)) {
-            stats.numCount++
-            stats.sum += n
-          }
-        }
         const top = Math.max(1, r1)
         let bottom = Math.min(r2, MAX_ROWS)
         if (bottom - top + 1 > inputRows()) bottom = Math.min(bottom, lastCellRow(idx))
@@ -657,7 +642,19 @@ export function createWorkbook({
           for (const col of model.getColumnsWithData(idx, row)) {
             // A styled but empty cell is listed too.
             if (col < c1 || col > c2 || model.getCellContent(idx, row, col) === '') continue
-            add(row, col)
+            stats.count++
+            if (model.getCellType(idx, row, col) !== NUMBER_CELL) continue
+            const shown = model.getFormattedCellValue(idx, row, col)
+            // A date counts but isn't added up: its shown 2026-01-15 read
+            // as the number 2026 (ISSUES #67). Only text that looks like a
+            // date pays for the style read.
+            const dateLike = /\d[-/]\d|[A-Za-z]{3}/.test(shown)
+            if (dateLike && isDateFormat(model.getCellStyle(idx, row, col).style.num_fmt)) continue
+            const n = numberFromShown(shown)
+            if (Number.isFinite(n)) {
+              stats.numCount++
+              stats.sum += n
+            }
           }
         }
         return stats
