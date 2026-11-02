@@ -381,15 +381,6 @@
         label="Insert slicer"
         @click="emit('slicer')"
       />
-      <hr v-if="showCellHistory" class="sn-ctx-sep" />
-      <Button
-        v-if="showCellHistory"
-        variant="ghost"
-        size="sm"
-        icon-left="lucide-history"
-        :label="`Cell history for ${activeCell}`"
-        @click="emit('cell-history')"
-      />
     </template>
   </div>
 </template>
@@ -420,8 +411,6 @@ defineProps<{
   hasHiddenCols: boolean
   canPaste: boolean
   rangeProtected: boolean
-  showCellHistory: boolean
-  activeCell: string
 }>()
 const emit = defineEmits<{
   'insert-row': [below: boolean]
@@ -452,7 +441,6 @@ const emit = defineEmits<{
   pivot: []
   chart: []
   slicer: []
-  'cell-history': []
 }>()
 </script>
 

@@ -17,19 +17,6 @@ from suite.sheets.content.tests.support import (
 from suite.sheets.drive import SPEC
 
 
-def settings(sheets_mode: str, *, before: str | None):
-    """Suite Collab Settings being saved (never written) with Sheets at `sheets_mode`, after `before` (None: new)."""
-
-    def doc(mode: str):
-        apps = [{"app": "writer", "mode": "on"}, {"app": "sheets", "mode": mode}]
-        return frappe.get_doc({"doctype": "Suite Collab Settings", "apps": apps})
-
-    saving = doc(sheets_mode)
-    previous = doc(before) if before else None
-    saving.get_doc_before_save = lambda: previous
-    return saving
-
-
 class TestRegistration(IntegrationTestCase):
     def test_sheets_registers_on_the_content_layer(self):
         spec = editors.editors()["sheets"]
@@ -47,29 +34,8 @@ class TestRegistration(IntegrationTestCase):
         declared = set(sheets_content.SCHEMA.features)
         self.assertEqual(declared, {*schema_roots(), "schemaVersion"})
 
-    def test_stays_off_until_a_site_turns_it_on(self):
-        self.assertFalse(sheets_content.EDITOR.always_on)
-
-    def test_settings_saves_go_through_the_guard(self):
-        validate = frappe.get_hooks("doc_events")["Suite Collab Settings"]["validate"]
-        self.assertIn("suite.sheets.content.refuse_turning_on", validate)
-
-    @patch.object(sheets_content, "EDITOR_READY", False)
-    def test_refuses_switching_sheets_on_before_the_editor_uses_the_room(self):
-        for before in (None, "off"):
-            with self.subTest(before=before):
-                with self.assertRaises(frappe.ValidationError):
-                    sheets_content.refuse_turning_on(settings("on", before=before))
-
-    @patch.object(sheets_content, "EDITOR_READY", False)
-    def test_a_site_left_on_can_still_change_other_apps(self):
-        sheets_content.refuse_turning_on(settings("on", before="on"))
-        sheets_content.refuse_turning_on(settings("off", before="on"))
-
-    def test_switches_sheets_on_once_the_editor_uses_the_room(self):
-        for before in (None, "off"):
-            with self.subTest(before=before):
-                sheets_content.refuse_turning_on(settings("on", before=before))
+    def test_is_always_on(self):
+        self.assertTrue(sheets_content.EDITOR.always_on)
 
     def test_drive_still_offers_no_export_and_copies_no_pictures(self):
         # The declaration the `drive_content_types` hook registers

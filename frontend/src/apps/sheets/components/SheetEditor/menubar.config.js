@@ -229,7 +229,6 @@ export function buildMenuBar(a) {
       options: [
         item(__('Protect range'), 'lucide-lock', a.protectRange, { write: true }),
         item(__('Remove protection'), 'lucide-lock-open', a.unprotectRange, { write: true }),
-        ...(a.cellHistory ? [item(__('Cell history'), 'lucide-history', a.cellHistory)] : []),
       ],
     },
     ...(a.askAi

@@ -18,7 +18,6 @@ function setup(cells: Record<string, string>, sel: Rect) {
     writeInputs: (_sn: string, map: Record<string, string>) => writes.push(map),
     currentSheet: { value: 'Sheet1' },
     getGrid: () => ({ getSelection: () => sel }),
-    queueOp: vi.fn(),
     getHistory: () => history,
     getIsDirty: () => ({ value: false }),
   })

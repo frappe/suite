@@ -5,7 +5,7 @@ from frappe.model.document import Document
 # meaningful summaries without a per-op switch statement.  Add to this set
 # rather than inventing new values at the call site.
 VALID_OP_TYPES = {
-    # ── Lifecycle (written by versioning.save) ─────────────────────────
+    # ── Lifecycle ─────────────────────────────────────────────────────
     "create",  # initial save when a new Sheet is inserted
     "save",  # subsequent save events advancing the head pointer
     "restore",  # non-destructive restore of a snapshot

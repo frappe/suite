@@ -6,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createChartEngine } from '../../engine/charts.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
 import { createFormatsEngine } from '../../engine/formats.js'
-import { createHistory } from '../../engine/history'
 import { createMergeEngine } from '../../engine/merge.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { useExportImport } from './useExportImport.js'
@@ -633,21 +632,12 @@ describe('importXLSX of a file with formulas and no cached values', () => {
   })
 })
 
-// An import was not undoable: undo after it skipped back past it.
+// An import was not undoable: undo after it skipped back past it. The editor's
+// undo step (`history.push`) commits one step to the room's undo manager.
 describe('Sheets: importing a file', () => {
-  type Workbook = Map<string, Record<string, string>>
-
-  // An editor's workbook, its undo history and its import, wired as the editor wires them.
-  function openWorkbook() {
-    let workbook: Workbook = new Map([['Sheet1', {}]])
-    const currentSheet = { value: 'Sheet1' }
-    const history = createHistory<Workbook>({
-      snapshot: () => structuredClone(workbook),
-      restore: (snap) => {
-        workbook = structuredClone(snap)
-      },
-    })
-    history.init()
+  it('records the import as one undo step, once every sheet is added', async () => {
+    const workbook = new Map<string, Record<string, string>>([['Sheet1', {}]])
+    const sheetsAtStep: string[][] = []
     const io = useExportImport({
       cells: {
         write: (sheet: string, map: Record<string, string>) =>
@@ -656,46 +646,23 @@ describe('Sheets: importing a file', () => {
         idle: async () => {},
       },
       sheetNames: () => [...workbook.keys()],
-      currentSheet,
+      currentSheet: { value: 'Sheet1' },
       getCurrentTitle: () => 'Budget',
       getFormats: () => null,
       getMerge: () => null,
       repopulateGrid: vi.fn(),
       syncNames: vi.fn(),
-      switchSheet: (name: string) => {
-        currentSheet.value = name
-      },
+      switchSheet: vi.fn(),
       syncFlags: vi.fn(),
-      recordUndoStep: () => history.push(),
+      recordUndoStep: () => sheetsAtStep.push([...workbook.keys()]),
       isDirty: { value: false },
     })
-    return {
-      history,
-      sheets: () => [...workbook.keys()],
-      deleteSheet(name: string) {
-        workbook.delete(name)
-        history.push()
-      },
-      async importXlsx(sheets: Record<string, string[][]>) {
-        const { utils, write } = await import('xlsx')
-        const book = utils.book_new()
-        for (const [name, rows] of Object.entries(sheets))
-          utils.book_append_sheet(book, utils.aoa_to_sheet(rows), name)
-        await io.importXLSX(file(write(book, { type: 'array', bookType: 'xlsx' })))
-      },
-    }
-  }
+    const { utils, write } = await import('xlsx')
+    const book = utils.book_new()
+    utils.book_append_sheet(book, utils.aoa_to_sheet([['Item', 'Cost']]), 'Q4 Budget')
+    utils.book_append_sheet(book, utils.aoa_to_sheet([['Team']]), 'Headcount')
+    await io.importXLSX(file(write(book, { type: 'array', bookType: 'xlsx' })))
 
-  it('undoes an import as one step, after the step that followed it', async () => {
-    const editor = openWorkbook()
-    await editor.importXlsx({ 'Q4 Budget': [['Item', 'Cost']], Headcount: [['Team']] })
-    expect(editor.history.canUndo()).toBe(true)
-
-    editor.deleteSheet('Sheet1')
-    editor.history.undo()
-    expect(editor.sheets()).toEqual(['Sheet1', 'Q4 Budget', 'Headcount'])
-
-    editor.history.undo()
-    expect(editor.sheets()).toEqual(['Sheet1'])
+    expect(sheetsAtStep).toEqual([['Sheet1', 'Q4 Budget', 'Headcount']])
   })
 })

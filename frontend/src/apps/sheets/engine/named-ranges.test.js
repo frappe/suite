@@ -67,7 +67,7 @@ describe('names follow row and column edits', () => {
     if (commands.length === 1) t.wb.apply(commands[0])
     else if (commands.length > 1) t.wb.apply(cmd(CommandTypes.batch, { commands }))
   }
-  // A row/column edit as the editor makes it (useHistory applyStructural).
+  // A row/column edit as the editor makes it (index.vue `_structural`).
   const edit = (t, type, at, count = 1, sheet = 'Sheet1') => {
     const rows = type.endsWith('Rows')
     t.wb.apply(cmd(CommandTypes[type], { sheet, count, ...(rows ? { row: at } : { col: at }) }))
@@ -171,8 +171,8 @@ describe('names follow row and column edits', () => {
     expect(shown(t, 12, 3)).toBe('550')
   })
 
-  // A delete's undo restores IronCalc's bytes from before it and the store's
-  // snapshot (useHistory revertStructural), then syncs.
+  // A delete's undo puts back IronCalc's bytes from before it and the store's
+  // snapshot, then syncs.
   it('undo brings back every name, the deleted one included', () => {
     const t = start([
       ['rng', 'A1:A10'],

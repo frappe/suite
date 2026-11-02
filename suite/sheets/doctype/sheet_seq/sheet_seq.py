@@ -1,8 +1,8 @@
 """Sheet Seq — per-sheet monotonic counter for op-log sequence numbers.
 
-One row per sheet. Allocation goes through `versioning.seq.allocate()` which
-takes a row lock to serialise concurrent writers. Controller is a thin
-shell — all logic is in the versioning module.
+One row per sheet. Nothing allocates from it since the content layer keeps a
+sheet's history; its rows stay for Drive's develop migration
+(`suite.drive.patches.build`), which still reads them.
 """
 
 import frappe

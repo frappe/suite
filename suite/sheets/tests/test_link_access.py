@@ -1,18 +1,16 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
-"""The sheet body endpoints on a linked sheet answer through Drive.
+"""The old body endpoint on a linked sheet answers through Drive.
 
 `/d/<node>` opens a sheet with the access the Drive session has, and that
-includes a Guest who holds a share link. So `get_sheet`, `save_sheet` and
-`yjs_relay` must read the request's `X-Drive-Links` header the way Drive does,
-and a trashed sheet must open read-only rather than not at all.
+includes a Guest who holds a share link, whom the live room does not take.
+So `get_sheet` must read the request's `X-Drive-Links` header the way Drive
+does, and a trashed sheet must open read-only rather than not at all.
 """
 
 from __future__ import annotations
 
-import json
 from contextlib import contextmanager
-from unittest import mock
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -29,7 +27,6 @@ OWNER = "sheets-link-owner@example.com"
 STRANGER = "sheets-link-stranger@example.com"
 EDITOR = "sheets-link-editor@example.com"
 DRIVE = "/api/suite/drive"
-BODY = json.dumps({"sheets": [{"name": "Sheet1", "cells": {"A1": {"v": "4242"}}}]})
 REFUSED = (frappe.PermissionError, drive.DriveError)
 
 
@@ -70,9 +67,6 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         frappe.db.commit()
         self.owner_sid = self._session_for(OWNER)
         self.addCleanup(self._drop)
-        publish = mock.patch("suite.sheets.api.frappe.publish_realtime")
-        self.published = publish.start()
-        self.addCleanup(publish.stop)
 
     @staticmethod
     def _session_for(user: str) -> str:
@@ -142,60 +136,26 @@ class TestSheetBodyThroughDrive(IntegrationTestCase):
         with self.assertRaises(REFUSED):
             api.get_sheet(self.name)
 
-    def test_a_guest_with_an_edit_link_saves(self):
+    def test_a_guest_with_an_edit_link_is_told_it_may_write(self):
         code = self._link(drive.EDIT)
         frappe.set_user("Guest")
         with link_header(code):
             self.assertTrue(api.get_sheet(self.name)["can_write"])
-            api.save_sheet("Ignored", BODY, name=self.name)
-        frappe.set_user(OWNER)
-        self.assertIn("4242", json.dumps(api.get_sheet(self.name)["sheets_data"]))
 
-    def test_a_guest_with_a_read_link_cannot_save(self):
-        code = self._link(drive.READ)
-        frappe.set_user("Guest")
-        with link_header(code), self.assertRaises(REFUSED):
-            api.save_sheet("Ignored", BODY, name=self.name)
-
-    def test_a_guest_with_a_read_link_relays_presence_but_not_edits(self):
-        code = self._link(drive.READ)
-        frappe.set_user("Guest")
-        with link_header(code):
-            api.yjs_relay(self.name, "yjs_awareness", "{}")
-            with self.assertRaises(REFUSED):
-                api.yjs_relay(self.name, "yjs_update", "{}")
-        relayed = [call.args[0] for call in self.published.call_args_list if call.args[0].startswith("yjs_")]
-        self.assertEqual(relayed, ["yjs_awareness"])
-
-    def test_a_named_reader_cannot_save_and_a_named_editor_can(self):
+    def test_a_named_reader_may_not_write_and_a_named_editor_may(self):
         self._drive("PUT", f"nodes/{self.node}/grants/{STRANGER}", {"role": drive.READ})
         self._drive("PUT", f"nodes/{self.node}/grants/{EDITOR}", {"role": drive.EDIT})
 
         frappe.set_user(STRANGER)
         self.assertFalse(api.get_sheet(self.name)["can_write"])
-        with self.assertRaises(REFUSED):
-            api.save_sheet("Ignored", BODY, name=self.name)
-        frappe.set_user(OWNER)
-        self.assertNotIn("4242", json.dumps(api.get_sheet(self.name)["sheets_data"]))
-
         frappe.set_user(EDITOR)
-        api.save_sheet("Ignored", BODY, name=self.name)
-        frappe.set_user(OWNER)
-        self.assertIn("4242", json.dumps(api.get_sheet(self.name)["sheets_data"]))
+        self.assertTrue(api.get_sheet(self.name)["can_write"])
 
-    def test_a_trashed_sheet_opens_read_only_and_refuses_a_save(self):
+    def test_a_trashed_sheet_opens_read_only(self):
         self._trash()
         frappe.set_user(OWNER)
         sheet = api.get_sheet(self.name)
         self.assertFalse(sheet["can_write"])
-        with self.assertRaises(REFUSED):
-            api.save_sheet("Ignored", BODY, name=self.name)
-
-    def test_a_relayed_update_goes_to_the_sheet_room_only(self):
-        api.yjs_relay(self.name, "yjs_update", "{}")
-        call = next(call for call in self.published.call_args_list if call.args[0] == "yjs_update")
-        self.assertEqual((call.kwargs.get("doctype"), call.kwargs.get("docname")), ("Sheet", self.name))
-        self.assertIsNone(call.kwargs.get("room"))
 
     def test_only_a_caller_with_drive_access_joins_the_sheet_room(self):
         """The socket server asks `frappe.realtime.has_permission` before a

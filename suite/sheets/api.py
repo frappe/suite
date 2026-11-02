@@ -1,150 +1,12 @@
-import json
-
 import frappe
 from frappe import _
 
 from suite import drive
 from suite.sheets import drive as sheets_drive
-from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.drive import DOCTYPE, NODE_FIELD, docname_for_node
-from suite.sheets.versioning import save as save_mod
 
 MAX_TITLE_LEN = 280
-
-
-# ── Presence ──────────────────────────────────────────────────────────────────
-
-
-@frappe.whitelist()
-def ping_presence(name: str) -> None:
-    """Broadcast caller's identity to all clients watching this sheet."""
-    # Refuse presence for sheets the caller can't read — keeps random
-    # logged-in users from spoofing presence in private sheets they
-    # shouldn't even know exist.
-    frappe.has_permission("Sheet", doc=name, throw=True)
-    user = frappe.session.user
-    identity = _user_identity(user)
-    frappe.publish_realtime(
-        "sheet_presence",
-        {"sheet": name, "user": user, **identity},
-        doctype=DOCTYPE,
-        docname=name,
-        after_commit=False,
-    )
-
-
-# ── Real-time collaboration ───────────────────────────────────────────────────
-#
-# Every event here goes to the sheet's own room, `doc:Sheet/<name>`, never to
-# the site room every signed-in user joins. The socket server lets a client
-# into that room only after `frappe.realtime.has_permission("Sheet", name)`,
-# which Drive answers from the node. That check sees the caller's session, not
-# the link credentials of the page, so a reader who holds only a link does not
-# receive these events.
-#
-# Broadcasts split by whether the event represents a mutation or pure presence:
-#
-#   * mutation-shaped events (`broadcast_op`, `yjs_update`, `yjs_state`) require
-#     *write* permission on the sheet — a read-only sharee must not be able to
-#     push ops or full-state dumps that other clients' tabs will apply locally
-#     to their Yjs document, even though those changes can't be persisted
-#     server-side.
-#
-#   * presence-shaped events (`ping_presence`, `broadcast_cursor`,
-#     `yjs_awareness*`, `yjs_state_request`) require only *read* permission
-#     — viewers showing their avatar / cursor is an intended Google-Docs-style
-#     affordance and forging another user's position is bounded griefing, not
-#     state corruption.
-
-
-@frappe.whitelist()
-def broadcast_op(name: str, op: str) -> None:
-    """Broadcast a cell-op JSON string to all clients watching this sheet."""
-    frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
-    frappe.publish_realtime(
-        "sheet_op",
-        {"sheet": name, "user": frappe.session.user, "op": op},
-        doctype=DOCTYPE,
-        docname=name,
-        after_commit=False,
-    )
-
-
-@frappe.whitelist()
-def broadcast_cursor(name: str, r: int, c: int, sub_sheet: str) -> None:
-    """Broadcast cursor position to all clients watching this sheet."""
-    frappe.has_permission("Sheet", doc=name, throw=True)
-    user = frappe.session.user
-    identity = _user_identity(user)
-    frappe.publish_realtime(
-        "sheet_cursor",
-        {"sheet": name, "user": user, **identity, "r": int(r), "c": int(c), "sub_sheet": sub_sheet},
-        doctype=DOCTYPE,
-        docname=name,
-        after_commit=False,
-    )
-
-
-# ── Yjs realtime relay ────────────────────────────────────────────────────────
-#
-# The frontend ships a Yjs document for CRDT-safe multiplayer editing.
-# These endpoints are pure relays: the server validates permission and
-# republishes the (already-base64-encoded) Y.Doc updates to every client
-# subscribed to the sheet's room. The server never decodes the binary
-# updates — it only sees opaque base64 blobs.
-#
-# Three events sit on the same channel:
-#   yjs_update          — incremental doc update
-#   yjs_state_request   — a newly-joined peer asks for the current state
-#   yjs_state           — another peer's reply carrying a full state dump
-# Plus two awareness events for presence/cursors:
-#   yjs_awareness       — volatile per-client state (cursor, selection, user)
-#   yjs_awareness_bye   — peer is leaving, drop them from presence
-
-
-@frappe.whitelist(allow_guest=True)
-def yjs_relay(name: str, event: str, payload: str) -> None:
-    """Relay a single Yjs realtime event to peers watching this sheet.
-
-    `payload` is an opaque JSON string built by the client (we forward it
-    verbatim so the server stays out of the CRDT protocol). The sender's
-    `from` tag inside the payload is what other clients use to ignore
-    their own echo.
-
-    Mutation-shaped events (``yjs_update``, ``yjs_state``) require write
-    permission so a read-only viewer can't push CRDT updates that other
-    clients will apply locally. Presence and state-request events are
-    read-side affordances.
-
-    Access is Drive's answer, so a Guest holding a link may relay.
-    """
-    if event not in _YJS_EVENTS:
-        frappe.throw(f"Unknown yjs event: {event}")
-    sheets_drive.require_sheet(name, write=event in _YJS_WRITE_EVENTS)
-    frappe.publish_realtime(
-        event,
-        {"sheet": name, "user": frappe.session.user, "payload": payload},
-        doctype=DOCTYPE,
-        docname=name,
-        after_commit=False,
-    )
-
-
-_YJS_EVENTS = frozenset(
-    {
-        "yjs_update",
-        "yjs_state_request",
-        "yjs_state",
-        "yjs_awareness",
-        "yjs_awareness_bye",
-    }
-)
-
-# Events that mutate co-editors' local Yjs document. A read-only sharee
-# may still ask for state (`yjs_state_request`) and emit awareness/presence
-# events, but they must not be able to inject updates or full-state dumps.
-_YJS_WRITE_EVENTS = frozenset({"yjs_update", "yjs_state"})
 
 
 # ── The body ──────────────────────────────────────────────────────────────────
@@ -163,10 +25,10 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
     # as-is — ~1.5MB instead of the ~20MB decoded JSON for a big sheet — and let
     # it decompress. Clients without it (older Safari) get the decoded payload.
     raw = doc.sheets_data
-    # The read guard above only proves the caller can *view* the sheet. Ship an
-    # explicit write flag so the editor can render read-only (dim the toolbar,
-    # lock the grid, hide the save path) instead of letting a viewer type into a
-    # doc they can't persist and only discovering it when save_sheet throws.
+    # The old body, read-only: the editor saves only through the live room
+    # (`suite.sheets.content`), and shows this to a guest on a share link or
+    # while the sheet waits for its conversion. `can_write` says what the
+    # caller may do once the room opens it.
     return {
         "name": doc.name,
         # Drive owns the title (§10.2); the row carries none.
@@ -181,24 +43,6 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
         # `POST /api/suite/drive/nodes/<id>/visit`.
         "node": doc.get(NODE_FIELD),
     }
-
-
-@frappe.whitelist(allow_guest=True)
-def save_sheet(
-    title: str = "",
-    sheets_data: str = "",
-    name: str = "",
-    ops: str = "",
-    request_id: str = "",
-) -> dict:
-    # Delegates to versioning.save — appends a batch of ops + the implicit
-    # save op atomically, advances head_seq, and takes a Drive version when
-    # one is due. Returns {"name": <sheet_id>, "head_seq": <int>} so the
-    # caller knows where its ops landed in the canonical order.
-    #
-    # `title` is accepted and ignored: the editor still sends it with every
-    # save, but Drive owns the title and a rename is a Drive workflow.
-    return save_mod.save_sheet(name, sheets_data, ops or None, request_id=request_id or None)
 
 
 @frappe.whitelist()
@@ -232,33 +76,6 @@ def _home_folder() -> str:
     if not home:
         frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
     return home
-
-
-@frappe.whitelist()
-def record_op(
-    sheet: str,
-    op_type: str,
-    sub_sheet: str = "",
-    cell_refs: str = "",
-    before: str = "",
-    after: str = "",
-    summary: str = "",
-) -> dict:
-    # Append a single op outside the save path. Used by collaboration
-    # broadcasts and any other UI affordance that wants to log an action
-    # without forcing a save.
-    new_seq = save_mod.append_op(
-        sheet,
-        {
-            "op_type": op_type,
-            "sub_sheet": sub_sheet or None,
-            "cell_refs": cell_refs or None,
-            "before": before or None,
-            "after": after or None,
-            "summary": summary,
-        },
-    )
-    return {"seq": new_seq}
 
 
 # ── AI Assist ───────────────────────────────────────────────────────────────
@@ -315,20 +132,27 @@ def save_ai_settings(api_key: str = "", enabled: int = 0, model: str = "") -> di
 
 
 MAX_PROMPT_LEN = 2000
+# The context cells the editor sends: its top-left block, one row and column
+# past what `ai.context` samples, so it can say the view is partial
+MAX_CONTEXT_CELLS = 2000
+MAX_CONTEXT_VALUE_LEN = 500
 
 
 @frappe.whitelist()
-def ai_assist(name: str, prompt: str, selection: str) -> dict:
+def ai_assist(name: str, prompt: str, selection: str, cells: str = "") -> dict:
     """Turn a plain-language request into a validated spreadsheet action plan.
 
     `selection` is a JSON string describing the active selection
-    ({sheet, r0, c0, r1, c1, active}). The sheet is decoded server-side, a
-    compact context is assembled, and the model is asked for actions — which
-    are validated here before returning. We do NOT mutate the sheet: the
-    frontend applies the actions through the engine so they join the existing
-    undo / op-log / autosave pipeline.
+    ({sheet, r0, c0, r1, c1, active}). `cells` is a JSON object of the
+    selection's sheet as the editor shows it ({cellId: value}): the live room
+    holds the sheet, and only the browser has formula results, so the server
+    never reads `sheets_data` for it. A compact context is assembled from it,
+    and the model is asked for actions — which are validated here before
+    returning. We do NOT mutate the sheet: the
+    frontend applies the actions through the engine, as one undoable edit
+    the live room saves.
     """
-    # AI mutates the grid → require write permission, matching save/record_op.
+    # AI mutates the grid → require write permission.
     frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
 
     prompt = (prompt or "").strip()
@@ -347,8 +171,7 @@ def ai_assist(name: str, prompt: str, selection: str) -> dict:
         sel = {}
     sheet_name = sel.get("sheet") or "Sheet1"
 
-    data = json.loads(decode_sheets_data(frappe.get_doc("Sheet", name).sheets_data) or "{}")
-    cell_map = unpack_cell_map((data or {}).get("sheet") or {}, sheet_name)
+    cell_map = _context_cells(cells)
 
     from suite.sheets.ai import context as ai_context
     from suite.sheets.ai import heuristics as ai_heuristics
@@ -388,13 +211,19 @@ _DEMO_HINT = (
 # ── internal helpers ──────────────────────────────────────────────────────────
 
 
-def _user_identity(user: str) -> dict:
-    """Return full_name, initials, and user_image for the given user."""
-    full_name = frappe.db.get_value("User", user, "full_name") or user
-    user_image = frappe.db.get_value("User", user, "user_image") or ""
-    parts = full_name.split()
-    initials = (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
-    return {"full_name": full_name, "initials": initials, "user_image": user_image}
+def _context_cells(cells: str) -> dict[str, str]:
+    """The editor's context cells, as {cellId: text}, refused when they aren't that shape."""
+    try:
+        parsed = frappe.parse_json(cells) if cells else {}
+    except ValueError:
+        parsed = None
+    if not isinstance(parsed, dict) or len(parsed) > MAX_CONTEXT_CELLS:
+        frappe.throw(_("The sheet's cells could not be read."))
+    return {
+        str(cid): str(value)[:MAX_CONTEXT_VALUE_LEN]
+        for cid, value in parsed.items()
+        if isinstance(value, str | int | float) and value != ""
+    }
 
 
 def _clean_title(title: str) -> str:

@@ -31,15 +31,10 @@ from suite.drive.framework import principals_for
 from suite.tests.utils import ensure_user
 
 OWNER = "framework-link-owner@example.com"
-SHEET_BODY = json.dumps({"sheets": [{"name": "Sheet1", "cells": {"A1": {"v": "4242"}}}]})
 
 # Drive answers a caller below Read with 404 and Frappe's row check answers
 # 403. Either one is a refusal.
 REFUSED = (403, 404)
-
-
-def _sheet_save(document: dict) -> tuple[str, dict]:
-    return "/api/method/suite.sheets.api.save_sheet", {"name": document["name"], "sheets_data": SHEET_BODY}
 
 
 def _slides_save(document: dict) -> tuple[str, dict]:
@@ -52,11 +47,10 @@ def _slides_save(document: dict) -> tuple[str, dict]:
 
 # The save each editor sends, given the row it read.
 SAVES = {
-    "Sheet": _sheet_save,
     "Presentation": _slides_save,
 }
-# Writer saves through its log, so its link is checked on open only
-OPENS = ("Writer Document", *SAVES)
+# Writer and Sheets save through their logs, so their links are checked on open only
+OPENS = ("Writer Document", "Sheet", *SAVES)
 
 
 class TestShareLinkOpensContentDocuments(IntegrationTestCase):

@@ -207,7 +207,7 @@ test.describe("Writer collaboration", () => {
 		owner,
 	}) => {
 		await openWriterDocument(owner.page, node);
-		// Text straight away: a first Enter could be sent alone and be all the version holds
+		// Typed into the empty first paragraph: a new paragraph first could be saved, and versioned, on its own
 		await writerEditor(owner.page).click();
 		await owner.page.keyboard.type("First words");
 		await expectSaved(owner.page);

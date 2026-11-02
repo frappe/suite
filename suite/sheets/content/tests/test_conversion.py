@@ -135,22 +135,12 @@ class TestConvertDocument(IntegrationTestCase):
         super().setUp()
         require_converter(self)
         in_job(self)
-        # The layer converts only while Sheets is on, which the editor's wiring allows
-        ready = patch.object(sheets_content, "EDITOR_READY", True)
-        ready.start()
-        self.addCleanup(ready.stop)
-        saved_mode = log.mode(sheets_content.APP)
-        if saved_mode != "on":
-            log.set_mode(sheets_content.APP, "on")
+        # Always on, so a site that predates it is switched on here and stays on
+        if log.mode(sheets_content.APP) != "on":
+            sheets_content.turn_on()
             frappe.db.commit()
-            self.addCleanup(self.restore_mode, saved_mode)
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-
-    def restore_mode(self, mode: str):
-        # Fails while any sheet has a log: one this class left behind
-        log.set_mode(sheets_content.APP, mode)
-        frappe.db.commit()
 
     def old_sheet(self, sheets_data: str) -> str:
         """A sheet made before collab was on: a row with a body and no log."""
