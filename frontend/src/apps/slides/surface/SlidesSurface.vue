@@ -101,6 +101,7 @@ import {
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
+import PreviewCapture from './PreviewCapture.vue'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
 
@@ -916,6 +917,7 @@ onBeforeUnmount(() => {
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
+      <PreviewCapture v-if="editing" :session="session" />
       <Slideshow v-if="presenting" :active-slide-id="presentedSlide" />
     </teleport>
   </div>
