@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, createApp, defineComponent, nextTick, ref, watch } from 'vue'
+import { computed, createApp, defineComponent, nextTick, onUnmounted, ref, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 
@@ -8,9 +8,10 @@ import SheetsSurface from './SheetsSurface.vue'
 
 const toast = vi.hoisted(() => ({
   error: vi.fn(),
-  warning: vi.fn(),
+  warning: vi.fn((_message: string, _options?: { action?: { label: string } }) => 'offer-1'),
   info: vi.fn(),
   success: vi.fn(),
+  dismiss: vi.fn(),
 }))
 vi.mock('frappe-ui', () => ({ toast }))
 vi.mock('@/apps/drive', () => ({ DriveDocumentHeader: { render: () => null } }))
@@ -21,11 +22,17 @@ vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
 type Draft = { sheet: string; cell: string; value: string }
 
 /** The live-room editor as the surface sees it (its `defineExpose`). */
-const editor = vi.hoisted(() => ({
-  saveState: 'clean' as 'clean' | 'saving' | 'unsaved' | 'failed',
-  draft: null as Draft | null,
-  loseAccess: vi.fn(),
-}))
+const editor = await vi.hoisted(async () => {
+  const { reactive } = await import('vue')
+  return reactive({
+    // The header's state: another tab's unsent edits make it 'unsaved' too.
+    saveState: 'clean' as 'clean' | 'saving' | 'unsaved' | 'failed',
+    /** This tab's own edits that have not reached the server. */
+    unsent: false,
+    draft: null as Draft | null,
+    loseAccess: vi.fn(),
+  })
+})
 vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
   default: defineComponent({
     props: { writable: Boolean },
@@ -38,6 +45,9 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
           if (!writable) editor.draft = null
         },
       )
+      // Unmounting stops the engine: a read still waiting for it fails.
+      let stopped = false
+      onUnmounted(() => (stopped = true))
       expose({
         activeCell: 'A1',
         currentSheet: 'Sheet1',
@@ -45,17 +55,23 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         get saveState() {
           return editor.saveState
         },
+        // In Chromium the room keeps unsent work on the device too. The
+        // surface used to offer the download only when it did not.
+        keepsUnsentWork: true,
         loseAccess: async (lost: string) => {
           editor.loseAccess(lost)
           editor.draft = null
         },
         regainAccess: async () => {},
-        // The draft is read when it is called, the bytes after.
-        workbookJson: () => {
+        // The draft is read when it is called, the bytes from the engine after.
+        workbookJson: async () => {
           const draft = editor.draft
-          return Promise.resolve(JSON.stringify({ engine: '', ...(draft ? { draft } : {}) }))
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          if (stopped) throw new Error('worker terminated')
+          return JSON.stringify({ engine: '', ...(draft ? { draft } : {}) })
         },
         hasDraft: () => editor.draft !== null,
+        hasUnsentWork: () => editor.unsent,
         flushSave: async () => {},
         goToCell: () => true,
         closeNotes: () => {},
@@ -83,7 +99,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.value = 'Active'
   role.value = 40
-  Object.assign(editor, { saveState: 'clean', draft: null })
+  Object.assign(editor, { saveState: 'clean', unsent: false, draft: null })
 })
 afterEach(() => unmount?.())
 
@@ -113,7 +129,7 @@ const downloadOffer = () =>
 describe('SheetsSurface losing edit access in the live room', () => {
   it('offers edits that did not reach the server as a download, though the room keeps them too', async () => {
     await mountSurface()
-    editor.saveState = 'unsaved'
+    Object.assign(editor, { saveState: 'unsaved', unsent: true })
 
     role.value = 20
     await settle()
@@ -144,5 +160,45 @@ describe('SheetsSurface losing edit access in the live room', () => {
     expect(downloadOffer()).toBeUndefined()
     expect(readRecovery('node-1')).toBeNull()
     expect(editor.loseAccess).toHaveBeenCalledWith('lost_edit')
+  })
+
+  it('leaves the copy to the tab that holds the unsent edits, not another tab of the sheet', async () => {
+    await mountSurface()
+    editor.saveState = 'unsaved'
+
+    role.value = 20
+    await settle()
+
+    expect(downloadOffer()).toBeUndefined()
+    expect(readRecovery('node-1')).toBeNull()
+  })
+
+  it('keeps the copy when read access goes too, though the editor then closes', async () => {
+    await mountSurface()
+    Object.assign(editor, { saveState: 'unsaved', unsent: true })
+
+    role.value = 0
+    await settle()
+
+    expect(readRecovery('node-1')).not.toBeNull()
+    expect(downloadOffer()).toBeDefined()
+    expect(editor.loseAccess).toHaveBeenCalledWith('lost_read')
+    expect(document.body.textContent).toContain('You no longer have permission to read')
+  })
+
+  it('closes the offer once edit access is back and the edits are saved', async () => {
+    await mountSurface()
+    Object.assign(editor, { saveState: 'unsaved', unsent: true })
+    role.value = 20
+    await settle()
+
+    role.value = 40
+    editor.saveState = 'saving'
+    await settle()
+    editor.saveState = 'clean'
+    await settle()
+
+    expect(readRecovery('node-1')).toBeNull()
+    expect(toast.dismiss).toHaveBeenCalledWith('offer-1')
   })
 })
