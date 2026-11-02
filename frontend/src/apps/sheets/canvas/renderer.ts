@@ -188,13 +188,14 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     cellPainter.drawRegionBorders(r0, c0, r1, c1, cells)
     // The tint goes over the cells, see-through, so they show under it. Only
     // cell mode frames the active cell, so only there can a lone cell skip it.
-    if (!editing)
-      selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
-        cells.getMergeInfo?.(id),
-      )
-    // Cell mode only, like the active frame drawn over it later.
-    if (!editing && fillRange === range)
-      selPainter.drawRangeOutline(range, sel, (id) => cells.getMergeInfo?.(id))
+    // The outline follows the same rule; in cell mode the active frame goes
+    // over it later.
+    if (!editing) {
+      const active = fillRange === range ? sel : null
+      const getMergeInfo = (id: string) => cells.getMergeInfo?.(id)
+      selPainter.drawSelFill(fillRange, active, getMergeInfo)
+      selPainter.drawRangeOutline(fillRange, active, getMergeInfo)
+    }
     if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
     if (pickerRect) selPainter.drawPickerBorder(pickerRect)
     ctx.restore()
