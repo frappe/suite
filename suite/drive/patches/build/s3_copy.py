@@ -57,6 +57,7 @@ ignores `after`.
 
 import hashlib
 import io
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import dataclass
@@ -93,6 +94,9 @@ def copy_legacy_s3_objects(env, prep: StoragePreparation, *, batch_size: int = B
     killed run loses at most the counts of one batch, never a copied object.
     """
     bucket = env.bucket()
+    run = prep.s3_copy_run
+    run.workers = env.copy_workers
+    started = time.monotonic()
     pool = ThreadPoolExecutor(max_workers=env.copy_workers, thread_name_prefix="drive-build-copy")
     try:
         after = ""
@@ -109,6 +113,7 @@ def copy_legacy_s3_objects(env, prep: StoragePreparation, *, batch_size: int = B
             _copy_page(env, bucket, pool, prep, rows)
             after = rows[-1].name
             env.files.commit()
+            run.seconds = round(time.monotonic() - started, 3)
             env.state.put_storage(prep)
             if len(rows) < batch_size:
                 return
@@ -210,10 +215,13 @@ def _legacy_key(prep: StoragePreparation, row) -> str | None:
 def _link(env, bucket, prep: StoragePreparation, item: _Found, placement: _Placement) -> None:
     """Record and link one row whose object is verified at `placement.destination`."""
     digest = item.digest
+    run = prep.s3_copy_run
+    run.bytes_read += digest.size
     _record_copy(env, bucket, item.row, item.legacy_key, placement.destination, digest)
     if placement.blob:
         env.files.link_blob(item.row.name, placement.blob)
         prep.s3_objects_reused += 1
+        run.objects_reused += 1
         return
 
     placement.blob = env.storage.insert_blob(
@@ -226,6 +234,8 @@ def _link(env, bucket, prep: StoragePreparation, item: _Found, placement: _Place
     env.files.link_blob(item.row.name, placement.blob)
     prep.s3_objects_copied += 1
     prep.s3_bytes_copied += digest.size
+    run.objects_copied += 1
+    run.bytes_copied += digest.size
 
 
 def _record_copy(env, bucket, row, legacy_key: str, destination: str, digest) -> None:

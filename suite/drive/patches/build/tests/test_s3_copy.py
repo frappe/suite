@@ -23,6 +23,7 @@ from suite.drive.patches.build.s3_copy import (
     copy_in_bucket,
     copy_legacy_s3_objects,
 )
+from suite.drive.patches.build.state import S3CopyRun, StoragePreparation
 from suite.drive.patches.build.tests.fakes import (
     KEY_PREFIX,
     FakeBucket,
@@ -837,6 +838,48 @@ class TestResumeAfterAKillMidPage(S3CopyCase):
         self.assertTrue(all(files.blob_of(name) for name, _, _ in specs))
         self.assertEqual(prep.s3_objects_copied, 10)
         self.assertEqual({entry.file for entry in ledger.entries()}, set(destinations))
+
+
+class TestTheRunRecord(S3CopyCase):
+    def test_it_counts_this_runs_work(self):
+        files = FakeFiles.with_s3_files(
+            ("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"), ("f3", "team/f3", "c.txt")
+        )
+        bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", BYTES).put("team/f3", OTHER)
+
+        _, prep = self.run_copy(files=files, bucket=bucket, copy_workers=3)
+
+        run = prep.s3_copy_run
+        self.assertEqual((run.workers, run.objects_copied, run.objects_reused), (3, 2, 1))
+        self.assertEqual(run.bytes_read, 2 * len(BYTES) + len(OTHER))
+        self.assertEqual(run.bytes_copied, len(BYTES) + len(OTHER))
+        self.assertGreater(run.seconds, 0)
+
+    def test_the_record_is_saved_with_the_storage_state(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        env, prep = self.run_copy(files=files, bucket=FakeBucket().put("team/f1", BYTES))
+
+        self.assertEqual(env.state.storage().s3_copy_run, prep.s3_copy_run)
+
+    def test_a_new_run_starts_its_own_record(self):
+        prep = StoragePreparation(s3_objects_copied=5, s3_copy_run=S3CopyRun(workers=8, objects_copied=5))
+        prep.begin_run()
+
+        self.assertEqual(prep.s3_copy_run, S3CopyRun())
+        self.assertEqual(prep.s3_objects_copied, 5)
+
+    def test_the_summary_adds_the_rates(self):
+        run = S3CopyRun(workers=8, seconds=4.0, objects_copied=8, objects_reused=2, bytes_read=4096)
+        summary = run.summary()
+
+        self.assertEqual(summary["workers"], 8)
+        self.assertEqual(summary["objects_per_second"], 2.5)
+        self.assertEqual(summary["bytes_read_per_second"], 1024)
+
+    def test_a_run_that_took_no_time_has_no_rate(self):
+        summary = S3CopyRun().summary()
+        self.assertIsNone(summary["objects_per_second"])
+        self.assertIsNone(summary["bytes_read_per_second"])
 
 
 class TestTheWorkersSetting(unittest.TestCase):
