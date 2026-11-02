@@ -9,7 +9,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.drive._core import archive
 from suite.drive._core.access import grant, revoke
-from suite.drive._core.errors import DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveNotFound
 from suite.drive._core.nodes import create_file, create_folder, get, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import NONE, READ
@@ -80,6 +80,21 @@ class TestFolderArchive(UnitTestCase):
         with zipfile.ZipFile(io.BytesIO(captured["bytes"])) as built:
             self.assertEqual(built.read("Folder/report.txt"), b"body")
             self.assertIn(b"URL=https://example.com", built.read("Folder/Site.url"))
+
+    @patch("suite.drive._core.archive._", new=lambda text: text)
+    def test_a_folder_over_the_cap_is_refused_with_the_cap_named(self):
+        folder = frappe._dict(name="folder", title="Folder", kind="folder", root="root", path="", size=0)
+        video = frappe._dict(
+            name="video",
+            parent_node="folder",
+            title="talk.mp4",
+            kind="file",
+            blob="blob-1",
+            size=archive.MAX_ARCHIVE_BYTES + 1,
+        )
+        with self.assertRaises(DriveConflict) as refused:
+            archive._build(self.principals, folder, [folder, video])
+        self.assertIn("larger than 512 MB", str(refused.exception))
 
     def test_download_requires_a_ready_live_private_blob(self):
         folder = frappe._dict(name="folder", title="Folder", kind="folder", state="Active")

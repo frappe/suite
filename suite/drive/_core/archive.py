@@ -130,7 +130,7 @@ def _folder(principals: Principals, node: str) -> frappe._dict:
 def _build(principals: Principals, folder: frappe._dict, rows: list[frappe._dict]) -> tuple[str, int]:
     declared = sum(int(row.size or 0) for row in rows if row.kind == "file")
     if declared > MAX_ARCHIVE_BYTES:
-        raise DriveConflict(_("This Drive folder is too large to archive synchronously"))
+        raise _too_large()
 
     blob_names = tuple({row.blob for row in rows if row.blob})
     blobs = (
@@ -191,9 +191,20 @@ def _write_stream(archive, path: str, stream, written: int) -> int:
         while block := stream.read(1024 * 1024):
             written += len(block)
             if written > MAX_ARCHIVE_BYTES:
-                raise DriveConflict(_("This Drive folder is too large to archive synchronously"))
+                raise _too_large()
             destination.write(block)
     return written
+
+
+def _too_large() -> DriveConflict:
+    """The refusal for a folder over the cap. It names the cap, so the user knows what fits."""
+    limit = f"{MAX_ARCHIVE_BYTES // (1024 * 1024)} MB"
+    return DriveConflict(
+        _(
+            "This folder is larger than {0}, the most Drive can download at once. "
+            "Download the folders inside it one at a time."
+        ).format(limit)
+    )
 
 
 def _cache_key(user: str, node: str) -> str:

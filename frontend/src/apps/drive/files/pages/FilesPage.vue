@@ -268,7 +268,13 @@ import { useSession } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
-import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
+import {
+  announceCopy,
+  announceMove,
+  announceTrash,
+  subject,
+  type MovedItem,
+} from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
 import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
@@ -675,7 +681,8 @@ const trashMutation = useMutation(api.drive.nodes.trash)
 const starMutation = useMutation(api.drive.nodes.star)
 const unstarMutation = useMutation(api.drive.nodes.unstar)
 const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
-const archiveMutation = useMutation(api.drive.archives.start)
+// The download reports its own outcome, in the toast that showed it preparing.
+const archiveMutation = useMutation(api.drive.archives.start, { silent: true })
 const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
@@ -1497,13 +1504,26 @@ async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
 }
 async function download(row: DriveNode) {
-  if (row.kind === 'folder') {
-    const status = await archiveMutation.run({ node: row.name })
-    if (status?.status === 'ready') window.location.assign(archiveDownloadUrl(row.name))
-    else toast.info('The folder archive is being prepared. Try Download again shortly.')
-    return
-  }
+  if (row.kind === 'folder') return downloadFolder(row)
   window.location.assign(nodeContentUrl(row.name, { download: true }))
+}
+/**
+ * Drive zips a folder while the request waits, and refuses one over its size
+ * cap (spec §11.2). One toast follows that request: preparing, then the
+ * download starting, or the server's reason, which names the cap.
+ */
+async function downloadFolder(folder: DriveNode) {
+  const name = subject([itemOf(folder)])
+  const id = toast.loading(`Preparing ${name} for download…`)
+  try {
+    const built = await archiveMutation.run({ node: folder.name })
+    if (built.status !== 'ready') throw new Error(built.error ?? 'The folder could not be zipped.')
+    toast.success(`Downloading ${name}`, { id })
+    window.location.assign(archiveDownloadUrl(folder.name))
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : undefined
+    toast.error(`Could not download ${name}`, { id, description: reason })
+  }
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return

@@ -3,7 +3,7 @@ import { createApp, defineComponent, h, nextTick, type PropType } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
-import type { Operation } from '@/platform/transport'
+import { TransportError, type Operation } from '@/platform/transport'
 
 // A Drive server that keeps the caller's Recent and one folder's children.
 const server = vi.hoisted(() => ({
@@ -223,6 +223,7 @@ beforeEach(() => {
       node('a', 'a.png'),
       node('b', 'b.png'),
       node('c', 'c.png'),
+      node('photos', 'Photos', { kind: 'folder', parent_node: 'folder-5', mime: null }),
     ].map((row) => [row.name, row]),
   )
 })
@@ -386,5 +387,50 @@ describe('Pasting an image', () => {
 
     expect(event.defaultPrevented).toBe(false)
     expect(uploads.upload).not.toHaveBeenCalled()
+  })
+})
+
+describe('Downloading a folder', () => {
+  async function download() {
+    const assign = vi.fn()
+    await mount('/drive/f/folder-5/drafts')
+    await vi.waitFor(() => expect(titles()).toEqual(['Photos']))
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    await menuItem('photos', 'Download')?.onClick()
+    return assign
+  }
+
+  it('shows the folder preparing, then starts the download in the same toast', async () => {
+    server.archive = () => ({ status: 'ready', file_name: 'Photos.zip', size: 10, error: null })
+
+    const assign = await download()
+
+    expect(assign).toHaveBeenCalledWith('/api/suite/drive/nodes/photos/archive/download')
+    const [preparing, started] = feedback.toasts
+    expect(preparing).toMatchObject({
+      kind: 'loading',
+      message: 'Preparing “Photos” for download…',
+    })
+    expect(started).toMatchObject({ kind: 'success', message: 'Downloading “Photos”' })
+    expect(started?.options?.id).toBe(1)
+    expect(feedback.toasts).toHaveLength(2)
+  })
+
+  it('replaces the toast with the reason when the folder is too large', async () => {
+    const reason = 'This folder is larger than 512 MB, the most Drive can download at once.'
+    server.archive = () => {
+      throw new TransportError({ type: 'DriveConflict', status: 409, message: reason, details: {} })
+    }
+
+    const assign = await download()
+
+    expect(assign).not.toHaveBeenCalled()
+    expect(feedback.toasts.slice(1)).toEqual([
+      {
+        kind: 'error',
+        message: 'Could not download “Photos”',
+        options: { id: 1, description: reason },
+      },
+    ])
   })
 })
