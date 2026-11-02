@@ -208,7 +208,6 @@ const moduleGraphDebtGroups = [
       'sheets/components/SheetEditor/index.vue|@/composables/useThemeMenuOption',
       'sheets/components/SheetEditor/index.vue|@/utils/confirmLeave',
       'sheets/components/SheetEditor/useAiAssist.js|@/stores/root',
-      'sheets/components/SheetEditor/useCollaboration.js|@/boot/session',
     ],
   },
   {

@@ -190,10 +190,8 @@ useDocumentLeaveGuard({
       embedded
       :writable="editorWritable"
       :title="session.title.value"
-      :credential-fetch="session.credentials.fetch"
       :request-context="session.credentials.context"
       :collab-session="session"
-      @access-refused="access.refuse()"
       @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >

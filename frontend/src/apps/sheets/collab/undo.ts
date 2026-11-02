@@ -1,5 +1,5 @@
 // Undo and redo for a collab tab: only this tab's own steps, never anyone
-// else's (COLLAB-DESIGN Oct 14, Q17). Replaces useHistory.js when collab is on.
+// else's (COLLAB-DESIGN Oct 14, Q17).
 //
 //   glue.commit() ──localOrigin──▶ Y.Doc ──▶ Yjs UndoManager: one step per commit
 //   undo() ──▶ UndoManager writes the reverse into the doc ──▶ the glue applies

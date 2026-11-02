@@ -20,8 +20,6 @@ export function useAiAssist({
   refreshActiveFormat,
   readIds: _readIds,
   writeInputs: _writeInputs,
-  queueOp: _queueOp,
-  popLastOp: _popLastOp,
   cellSilentlyProtected: _cellSilentlyProtected,
   flashProtected: _flashProtected,
   refitRowsFor,
@@ -29,9 +27,8 @@ export function useAiAssist({
   //
   // One primitive: select → ask in plain words → see it applied → Keep or Undo.
   // The backend returns a validated action plan; the model emits formulas, the
-  // engine computes. Applying goes through the same pushOp + _queueOp path that
-  // fill/paste use, so a single Undo reverts the whole batch and the change
-  // joins the existing op-log / autosave / collab pipeline.
+  // engine computes. Applying ends in one pushOp, as fill/paste do, so it is
+  // one commit to the room and a single Undo reverts the whole batch.
 
   const aiEnabled = ref(!!window.frappe?.boot?.ai_assist_enabled)
   const askOpen = ref(false)
@@ -135,7 +132,7 @@ export function useAiAssist({
     // Rows with wrapped text refit to what the AI wrote, like a typed edit.
     const rowH = refitRowsFor?.(sn, after)
 
-    // Undo (op-based, like fill) + server sync (op-log on next save).
+    // One undo step, like fill.
     history.pushOp({
       opType: 'ai_assist',
       subSheet: sn,
@@ -144,14 +141,6 @@ export function useAiAssist({
       after,
       ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
     })
-    _queueOp({
-      opType: 'ai_assist',
-      subSheet: sn,
-      cellRefs: refs,
-      before,
-      after,
-      summary: `AI: ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
-    })
     getGrid()?.render()
     refreshActiveFormat()
     syncFlags()
@@ -159,14 +148,12 @@ export function useAiAssist({
     return refs.length
   }
   function onAskKeep() {
-    // Already applied + queued; just dismiss and close.
+    // Already applied and saved; just dismiss and close.
     closeAskBar()
   }
   function onAskUndo() {
-    // Reverts the whole batch in one step (single op). Drop the still-queued
-    // op so a stale ai_assist entry isn't persisted on the next save.
+    // Reverts the whole batch in one step (single op).
     undo()
-    _popLastOp('ai_assist')
     aiPending.value = null
   }
 

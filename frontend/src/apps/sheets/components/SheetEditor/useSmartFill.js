@@ -27,7 +27,6 @@ export function useSmartFill({
   writeInputs,
   currentSheet,
   getGrid,
-  queueOp,
   getHistory,
   getIsDirty,
 }) {
@@ -99,7 +98,7 @@ export function useSmartFill({
     if (writtenIds.length === 0) return { ok: false, reason: 'no-fills' }
     writeInputs(sheetName, after)
 
-    // Op log + history.
+    // History.
     const op = {
       opType: 'fill', // existing op type — Smart Fill is conceptually a fill
       subSheet: sheetName,
@@ -108,7 +107,6 @@ export function useSmartFill({
       after,
       summary: `Smart Fill (${pattern.type}, ${writtenIds.length} cells)`,
     }
-    queueOp?.(op)
     history?.pushOp?.(op)
     if (isDirty) isDirty.value = true
     return { ok: true, filled: writtenIds.length, pattern }
