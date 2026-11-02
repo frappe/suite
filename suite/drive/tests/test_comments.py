@@ -11,7 +11,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime, get_system_timezone
 
 from suite import drive
-from suite.drive._core import comments
+from suite.drive._core import activity, comments
 from suite.drive._core.access import grant
 from suite.drive._core.comments import (
     _locked_comment,
@@ -55,7 +55,7 @@ class TestCommentWorkflows(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.owner = Principals(OWNER, (OWNER,), ())
         self.commenter = Principals(COMMENTER, (COMMENTER,), ())
         self.outsider = Principals(OUTSIDER, (OUTSIDER,), ())
@@ -716,6 +716,32 @@ class TestCommentWorkflows(IntegrationTestCase):
             "Drive Notification", filters={"activity": ["in", activity]}, pluck="to_user"
         )
         self.assertEqual((mentions, notified), ([], [OWNER]))
+
+    def test_a_comment_activity_quotes_the_comment_as_plain_text(self):
+        text = f"<p>Can you check &amp; sign, @[{MENTIONED}]?</p>" + " more" * 60
+        create_thread(self.commenter, self.document.name, "anchor", text)
+        detail = frappe.parse_json(
+            frappe.db.get_value("Drive Activity", {"node": self.document.name, "action": "comment"}, "detail")
+        )
+        self.assertTrue(detail["excerpt"].startswith("Can you check & sign, @drive-mentioned? more more"))
+        self.assertEqual(len(detail["excerpt"]), comments.EXCERPT_LENGTH)
+        self.assertTrue(detail["excerpt"].endswith("…"))
+
+    def test_a_notification_quotes_the_comment_as_it_is_now(self):
+        grant(self.document.name, MENTIONED, READ, self.admin)  # A notification needs Read to be listed
+        thread = create_thread(self.commenter, self.document.name, "anchor", f"First @[{MENTIONED}]").name
+        comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
+        mentioned = Principals(MENTIONED, (MENTIONED,), ())
+
+        def quotes():
+            rows = activity.notifications(mentioned)["rows"]
+            return [row.activity.detail.get("excerpt") for row in rows if row.activity.action == "comment"]
+
+        self.assertEqual(quotes(), [f"First @{MENTIONED.split('@')[0]}"])
+        edit_comment(self.commenter, comment, f"Second @[{MENTIONED}]")
+        self.assertEqual(quotes(), [f"Second @{MENTIONED.split('@')[0]}"])
+        delete_comment(self.commenter, comment)
+        self.assertEqual(quotes(), [None])
 
     def test_an_edit_notifies_only_the_people_it_adds(self):
         thread = create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]").name

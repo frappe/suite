@@ -63,12 +63,20 @@ class TestBuildThenCleanupAreRegistered(unittest.TestCase):
         self.assertGreater(lines.index(PATCH_NAME), lines.index("[post_model_sync]"))
         self.assertGreater(lines.index(CLEANUP_NAME), lines.index("[post_model_sync]"))
 
-    def test_draw_adoption_runs_between_build_and_cleanup_and_cleanup_runs_last(self):
+    def test_draw_adoption_runs_between_build_and_cleanup(self):
         # Build reads the legacy tables and Cleanup drops them. Every patch
         # that reshapes those tables must finish before Build. Draw adoption
-        # must link its bodies before Cleanup validates the registry.
+        # must link its bodies before Cleanup validates the registry. A later
+        # patch sees only the new model, so it may follow Cleanup.
         lines = patch_lines()
-        self.assertEqual(lines[-3:], [PATCH_NAME, DRAW_ADOPTION_NAME, CLEANUP_NAME])
+        start = lines.index(PATCH_NAME)
+        self.assertEqual(lines[start : start + 3], [PATCH_NAME, DRAW_ADOPTION_NAME, CLEANUP_NAME])
+
+    def test_the_admin_creator_grants_run_after_build_made_the_nodes(self):
+        lines = patch_lines()
+        self.assertGreater(
+            lines.index("suite.drive.patches.grant_admin_creators_edit"), lines.index(PATCH_NAME)
+        )
 
     def test_both_packages_export_an_entry_point(self):
         self.assertTrue(callable(build.execute))

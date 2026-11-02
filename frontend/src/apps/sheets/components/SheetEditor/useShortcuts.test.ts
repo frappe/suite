@@ -34,6 +34,8 @@ function makeActions(overrides = {}) {
     openHyperlinkDialog: vi.fn(),
     openCommentPanel: vi.fn(),
     openQuickFilterForActive: vi.fn(),
+    contextMenu: { open: false },
+    tabMenu: { open: false },
     commentPanel: { open: false },
     dropdownPanel: { open: false },
     splitText: { open: false },
@@ -236,6 +238,22 @@ describe('e.code shortcuts (onGlobalKey)', () => {
 // ── Residual onGlobalKey: Escape cascade ─────────────────────────────────────
 
 describe('escape cascade (onGlobalKey)', () => {
+  it('Escape closes the cell menu before anything else', () => {
+    const a = makeActions()
+    a.contextMenu.open = true
+    a.commentPanel.open = true
+    const { onGlobalKey } = useShortcuts(a)
+    onGlobalKey(key({ key: 'Escape' }))
+    expect(a.contextMenu.open).toBe(false)
+    expect(a.commentPanel.open).toBe(true)
+  })
+  it('Escape closes the sheet tab menu', () => {
+    const a = makeActions()
+    a.tabMenu.open = true
+    const { onGlobalKey } = useShortcuts(a)
+    onGlobalKey(key({ key: 'Escape' }))
+    expect(a.tabMenu.open).toBe(false)
+  })
   it('Escape closes commentPanel when open', () => {
     const a = makeActions()
     a.commentPanel.open = true

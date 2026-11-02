@@ -228,8 +228,21 @@ class TestVersionShape(UnitTestCase):
     def test_the_shape_publishes_exactly_the_declared_fields(self):
         self.assertEqual(
             sorted(shapes.version_shape(VERSION)),
-            sorted(["name", "node", "seq", "kind", "label", "pinned", "actor", "size", "creation"]),
+            sorted(["name", "node", "seq", "kind", "label", "pinned", "actor", "person", "size", "creation"]),
         )
+
+    def test_whoever_took_a_version_is_published_as_a_person(self):
+        answer = shapes.version_shape(VERSION, {"a@example.com": ADA})
+        self.assertEqual(answer["person"]["full_name"], "Ada Lovelace")
+
+    def test_a_page_looks_everyone_who_took_a_version_up_once(self):
+        rows = [
+            frappe._dict({**VERSION, "seq": seq, "actor": actor}) for seq, actor in ((1, "a@x"), (2, "b@x"))
+        ]
+        with patch.object(shapes, "people", side_effect=fake_people) as lookup:
+            answers = shapes.version_shapes(rows)
+        self.assertEqual(lookup.call_count, 1)
+        self.assertEqual([answer["person"]["id"] for answer in answers], ["a@x", "b@x"])
 
     def test_the_shape_withholds_the_storage_id(self):
         # The bytes are reached through the version content route, never by name.
@@ -283,24 +296,30 @@ class TestActivityShape(UnitTestCase):
         self.assertEqual(detail["principal"], "$LINK:" + "a" * 22)
 
 
-class TestNotificationShape(UnitTestCase):
-    def test_the_shape_withholds_the_recipient(self):
-        # The route is scoped to the caller, so `to_user` can only be the caller.
-        row = frappe._dict({"name": "no1", "to_user": "a@example.com", "activity": ACTIVITY})
-        self.assertNotIn("to_user", shapes.notification_shape(row))
+NOTIFICATION = frappe._dict(
+    {
+        "name": "no1",
+        "to_user": "b@example.com",
+        "read": 0,
+        "creation": datetime(2026, 1, 2, 3, 4, 5),
+        "activity": ACTIVITY,
+        "node_title": "Beacon deck",
+        "node_kind": "document",
+    }
+)
 
-    def test_the_activity_is_nested_through_the_activity_shape(self):
-        row = frappe._dict(
-            {"name": "no1", "read": 0, "creation": datetime(2026, 1, 2, 3, 4, 5), "activity": ACTIVITY}
-        )
-        answer = shapes.notification_shape(row)
+
+class TestNotificationShape(UnitTestCase):
+    def test_a_notification_names_its_node_and_the_person_who_acted(self):
+        with patch("suite.drive.http.shapes.people", return_value={"a@example.com": ADA}):
+            (answer,) = shapes.notification_shapes([NOTIFICATION])
+        self.assertEqual(answer["node_title"], "Beacon deck")
+        self.assertEqual(answer["node_kind"], "document")
+        self.assertEqual(answer["actor"], ADA)
         self.assertEqual(answer["activity"], shapes.activity_shape(ACTIVITY))
         self.assertEqual(answer["creation"], "2026-01-01T21:34:05Z")
-
-    def test_a_missing_activity_still_yields_a_mapping(self):
-        answer = shapes.notification_shape(frappe._dict({"name": "no1", "activity": None}))
-        self.assertIsInstance(answer["activity"], dict)
-        self.assertIsNone(answer["activity"]["node"])
+        # The route is scoped to the caller, so `to_user` can only be the caller.
+        self.assertNotIn("to_user", answer)
 
 
 class TestGrantShape(UnitTestCase):

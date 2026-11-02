@@ -22,6 +22,7 @@ import { useKeyboardShortcut } from 'frappe-ui'
  *   showFindReplace: import('vue').Ref<boolean>,
  *   openHyperlinkDialog: () => void,
  *   openCommentPanel: () => void, openQuickFilterForActive: () => void,
+ *   contextMenu: { open: boolean }, tabMenu: { open: boolean },
  *   commentPanel: { open: boolean },
  *   dropdownPanel: { open: boolean },
  *   splitText: { open: boolean },
@@ -63,6 +64,8 @@ export function useShortcuts(actions) {
     openHyperlinkDialog,
     openCommentPanel,
     openQuickFilterForActive,
+    contextMenu,
+    tabMenu,
     commentPanel,
     dropdownPanel,
     splitText,
@@ -393,6 +396,11 @@ export function useShortcuts(actions) {
     // it's a cascade, not a single action; while editing a cell the canvas owns
     // Escape (cancel edit) and focus is in the editor, so inInput short-circuits.
     if (e.key === 'Escape' && !inInput) {
+      if (contextMenu.open || tabMenu.open) {
+        contextMenu.open = false
+        tabMenu.open = false
+        return
+      }
       if (commentPanel.open) {
         commentPanel.open = false
         return

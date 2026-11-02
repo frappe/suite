@@ -1,15 +1,13 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-import dayjs from '@/apps/mail/utils/dayjs'
-
 import type { RecipientState, SubmissionDetails } from './submission'
 
-vi.mock('@/apps/mail/stores/user', () => ({
-  userStore: () => ({ userResource: { data: { time_zone: 'UTC' } } }),
-}))
+vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => ({ userResource: { data: {} } }) }))
 
 // Times below are asserted in UTC, whatever zone the machine running the tests is in.
-vi.spyOn(dayjs.tz, 'guess').mockReturnValue('UTC')
+vi.mock('@/platform/session', () => ({
+  useSession: () => ({ user: { value: { timeZone: 'UTC' } } }),
+}))
 
 // `__` is installed on window by the translation plugin at app boot; the helpers format their
 // arguments through it, so the stand-in must substitute {n} placeholders too.

@@ -713,6 +713,7 @@ class TestArchitecture(unittest.TestCase):
                 "list_versions",
                 "node_field",
                 "node_owner",
+                "node_title",
                 "node_url",
                 "people_on",
                 "personal_root_for",

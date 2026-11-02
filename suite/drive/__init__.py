@@ -399,6 +399,13 @@ def node_owner(node: str) -> str:
     return _node_owner(node)
 
 
+def node_title(node: str) -> str:
+    """Answer the title of one node. No role is checked; an unknown node raises `DriveNotFound`."""
+    from suite.drive._core.nodes import node_title as _node_title
+
+    return _node_title(node)
+
+
 def legacy_node(old_id: str) -> str:
     """Answer the node id a pre-migration Drive id names now.
 
@@ -613,6 +620,7 @@ __all__ = (
     "list_versions",
     "node_field",
     "node_owner",
+    "node_title",
     "node_url",
     "people_on",
     "personal_root_for",

@@ -76,6 +76,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -450,6 +454,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -809,6 +817,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -1181,6 +1193,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -1721,6 +1737,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -2068,6 +2088,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -2424,6 +2448,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -2777,6 +2805,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -3134,6 +3166,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -3486,6 +3522,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -3774,6 +3814,124 @@
       "bytes": false
     },
     {
+      "id": "node_move_preview",
+      "kind": "query",
+      "publicName": "nodes.previewMove",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "nodes/{node}/move-preview",
+      "pathParams": [
+        "node"
+      ],
+      "query": {
+        "properties": {
+          "parent_node": {
+            "title": "Parent Node",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_node"
+        ],
+        "title": "MovePreviewQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "AccessGainShape": {
+            "properties": {
+              "principal": {
+                "title": "Principal",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "person": {
+                "$ref": "#/$defs/Person"
+              }
+            },
+            "required": [
+              "principal",
+              "role"
+            ],
+            "title": "AccessGainShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
+        "description": "`GET /nodes/<id>/move-preview`: who a move would give access to (UF \u00a75.7).",
+        "properties": {
+          "gains": {
+            "items": {
+              "$ref": "#/$defs/AccessGainShape"
+            },
+            "title": "Gains",
+            "type": "array"
+          },
+          "role_now": {
+            "title": "Role Now",
+            "type": "integer"
+          },
+          "role_after": {
+            "title": "Role After",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gains",
+          "role_now",
+          "role_after"
+        ],
+        "title": "MovePreviewShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "node_purge",
       "kind": "mutation",
       "publicName": "nodes.purge",
@@ -3900,6 +4058,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -4280,6 +4442,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -4832,6 +4998,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -5582,6 +5752,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -5907,6 +6081,19 @@
                 "type": "string"
               },
               "action": {
+                "enum": [
+                  "create",
+                  "rename",
+                  "move",
+                  "edit",
+                  "comment",
+                  "trash",
+                  "restore",
+                  "delete",
+                  "share_add",
+                  "share_edit",
+                  "share_remove"
+                ],
                 "title": "Action",
                 "type": "string"
               },
@@ -7190,6 +7377,10 @@
                   }
                 ],
                 "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
               }
             },
             "title": "AccessShape",
@@ -7571,6 +7762,36 @@
       "body": null,
       "output": {
         "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
           "VersionShape": {
             "properties": {
               "name": {
@@ -7608,6 +7829,9 @@
                 "title": "Actor",
                 "type": "string"
               },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -7632,6 +7856,7 @@
               "label",
               "pinned",
               "actor",
+              "person",
               "size",
               "creation"
             ],
@@ -7711,6 +7936,38 @@
         "type": "object"
       },
       "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
         "properties": {
           "name": {
             "title": "Name",
@@ -7747,6 +8004,9 @@
             "title": "Actor",
             "type": "string"
           },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -7771,6 +8031,7 @@
           "label",
           "pinned",
           "actor",
+          "person",
           "size",
           "creation"
         ],
@@ -7820,6 +8081,38 @@
         "type": "object"
       },
       "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
         "properties": {
           "name": {
             "title": "Name",
@@ -7856,6 +8149,9 @@
             "title": "Actor",
             "type": "string"
           },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -7880,6 +8176,7 @@
           "label",
           "pinned",
           "actor",
+          "person",
           "size",
           "creation"
         ],
@@ -7992,6 +8289,36 @@
       },
       "output": {
         "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
           "VersionShape": {
             "properties": {
               "name": {
@@ -8029,6 +8356,9 @@
                 "title": "Actor",
                 "type": "string"
               },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -8053,6 +8383,7 @@
               "label",
               "pinned",
               "actor",
+              "person",
               "size",
               "creation"
             ],
@@ -9401,6 +9732,19 @@
                 "type": "string"
               },
               "action": {
+                "enum": [
+                  "create",
+                  "rename",
+                  "move",
+                  "edit",
+                  "comment",
+                  "trash",
+                  "restore",
+                  "delete",
+                  "share_add",
+                  "share_edit",
+                  "share_remove"
+                ],
                 "title": "Action",
                 "type": "string"
               },
@@ -9483,15 +9827,59 @@
               },
               "activity": {
                 "$ref": "#/$defs/ActivityShape"
+              },
+              "node_title": {
+                "title": "Node Title",
+                "type": "string"
+              },
+              "node_kind": {
+                "title": "Node Kind",
+                "type": "string"
+              },
+              "actor": {
+                "$ref": "#/$defs/Person"
               }
             },
             "required": [
               "name",
               "read",
               "creation",
-              "activity"
+              "activity",
+              "node_title",
+              "node_kind",
+              "actor"
             ],
             "title": "NotificationShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
             "type": "object"
           }
         },

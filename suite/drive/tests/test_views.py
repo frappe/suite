@@ -95,7 +95,7 @@ class TestListingContract(UnitTestCase):
             [],
             [],
         ]
-        principals = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        principals = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
         page = children(principals, "root", limit=500)
 
@@ -120,7 +120,7 @@ class TestListingContract(UnitTestCase):
             [],
             [],
         ]
-        principals = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        principals = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
         children(principals, "root", cursor=encode_cursor(7))
 

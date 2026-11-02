@@ -17,24 +17,49 @@ export async function createNode(input: CreateNodeInput): Promise<DriveNode> {
   return client.mutation(api.drive.nodes.createDocument, input)
 }
 
+/** Creates a document; `from_node` imports an uploaded file's contents into it (§10.1). */
 export async function createDocument(input: {
   parent_node: string
   content_doctype: string
+  title?: string
+  from_node?: string
 }): Promise<DriveNode> {
   const title =
-    input.content_doctype === 'Sheet'
+    input.title ??
+    (input.content_doctype === 'Sheet'
       ? 'Untitled spreadsheet'
       : input.content_doctype === 'Presentation'
         ? 'Untitled presentation'
         : input.content_doctype === 'Drawing'
           ? 'Untitled drawing'
-          : 'Untitled document'
+          : 'Untitled document')
   // A sibling with the same title, such as an older "Untitled document", makes this one "(2)"
   return client.mutation(api.drive.nodes.createDocument, {
     ...input,
     title,
     kind: 'document',
     deduplicate_title: true,
+  })
+}
+
+const SPREADSHEET_FILE = /\.(xlsx|csv)$/i
+
+/** Whether a file is an uploaded .xlsx or .csv that can open as a new spreadsheet. */
+export function opensAsSpreadsheet(node: Pick<DriveNode, 'kind' | 'title'>): boolean {
+  return node.kind === 'file' && SPREADSHEET_FILE.test(node.title)
+}
+
+/** A new spreadsheet beside the file, holding its workbook. The file stays as it is. */
+export function openAsSpreadsheet(file: {
+  name: string
+  title: string
+  parent_node: string
+}): Promise<DriveNode> {
+  return createDocument({
+    parent_node: file.parent_node,
+    content_doctype: 'Sheet',
+    title: file.title.replace(SPREADSHEET_FILE, ''),
+    from_node: file.name,
   })
 }
 

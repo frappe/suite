@@ -77,7 +77,7 @@ Drive owns versions. Sheets answers Drive through the callbacks in `suite/sheets
 | `version_bytes` | Returns the current snapshot envelope. A snapshot is written first if the log has moved past `snapshot_seq` |
 | `restore_version` | Writes the version's envelope back to `sheets_data`, sets `snapshot_seq` to the new head, and writes a `restore` op |
 | `used_nodes` | Reports media named in the body (A) or in `features` only (B: engine bytes are not scanned). Sheets has no media today |
-| `import_from_file` | Out of scope here. xlsx import is a separate spec |
+| `import_from_file` | Makes a sheet from an uploaded .xlsx (every worksheet) or .csv (one sheet of its values). Drive's file menu and the "No preview" page offer it as "Open as spreadsheet". The editor converts the body on first open and saves it, with no "Before upgrade" version: the file stays in Drive. On that open a notice headed "Imported from &lt;file&gt;" lists any problems (`#NAME?` formulas, renamed sheets, cells left out), or says the conversion failed and the sheet is read-only. With no problems there is no notice. A CSV may use a comma, semicolon, tab or pipe, in UTF-8 or Windows-1252 |
 
 ## Constraints
 

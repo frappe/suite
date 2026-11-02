@@ -756,7 +756,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Sheets Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Sheets Other", user=OTHER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.person = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
 
     def _remove_fixture_rows(self):
@@ -899,6 +899,70 @@ class TestSheetsInDrive(IntegrationTestCase):
         self._as(OTHER)
         with self.assertRaises((DriveNotFound, DriveForbidden)):
             drive.import_document(self.other_root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
+
+    def test_a_csv_becomes_one_sheet_of_its_values(self):
+        source = self._xlsx_node(b'Item,Cost\r\nRent,900\r\n"Food, drink",120\r\n', title="q4.csv")
+        node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
+        body = json.loads(self._body(node))
+        sheet = body["sheet"]
+        # Named so the editor says where it came from and offers no "Before upgrade" version.
+        self.assertEqual(body["imported_from"], "q4.csv")
+        self.assertEqual(sheet["current"], "Sheet1")
+        self.assertEqual(
+            sheet["sheets"]["Sheet1"]["rows"],
+            {"0": ["Item", "Cost"], "1": ["Rent", "900"], "2": ["Food, drink", "120"]},
+        )
+
+    def _csv_rows(self, raw: bytes) -> dict:
+        return json.loads(sheets._workbook_from_csv(raw))["sheet"]["sheets"]["Sheet1"]["rows"]
+
+    def test_a_csv_is_read_with_the_separator_it_uses(self):
+        expected = {"0": ["Item", "Cost"], "1": ["Rent", "1,50"], "2": ["Food", "2,75"]}
+        cases = {
+            "semicolon with decimal commas": b"Item;Cost\nRent;1,50\nFood;2,75\n",
+            "no final line break": b"Item;Cost\nRent;1,50\nFood;2,75",
+            "tab": b"Item\tCost\nRent\t1,50\nFood\t2,75\n",
+            "pipe": b"Item|Cost\nRent|1,50\nFood|2,75\n",
+            "comma with quotes": b'Item,Cost\nRent,"1,50"\nFood,"2,75"\n',
+        }
+        for label, raw in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self._csv_rows(raw), expected)
+
+    def test_a_comma_csv_with_semicolons_in_a_column_stays_split_on_commas(self):
+        self.assertEqual(
+            self._csv_rows(b"Name,Note\nAda,x;y\nGrace,z;w\n"),
+            {"0": ["Name", "Note"], "1": ["Ada", "x;y"], "2": ["Grace", "z;w"]},
+        )
+
+    def test_rows_of_uneven_length_still_find_their_separator(self):
+        self.assertEqual(
+            self._csv_rows(b"a;b;c\n1;2\n3;4;5\n"),
+            {"0": ["a", "b", "c"], "1": ["1", "2"], "2": ["3", "4", "5"]},
+        )
+
+    def test_a_csv_that_is_not_utf8_is_read_as_windows_1252(self):
+        self.assertEqual(
+            self._csv_rows("Café;Prix\nThé;2,50 €\n".encode("cp1252")),
+            {"0": ["Café", "Prix"], "1": ["Thé", "2,50 €"]},
+        )
+
+    def test_utf8_wins_over_windows_1252(self):
+        self.assertEqual(
+            self._csv_rows("\ufeffCafé,Prix\nThé,2\n".encode()),
+            {"0": ["Café", "Prix"], "1": ["Thé", "2"]},
+        )
+
+    def test_a_single_column_or_free_text_is_still_not_a_table(self):
+        cases = {
+            "one column": b"Names\nAda\nGrace\n",
+            "prose": b"Dear reader\nThis is a note\nThe end\n",
+            "a stray semicolon": b"Dear reader; hello\nThis is a note\n",
+            "binary": b"\x81\x8d\x8f\x90\x9d",
+        }
+        for label, raw in cases.items():
+            with self.subTest(label), self.assertRaises(sheets.UnreadableWorkbook):
+                sheets._workbook_from_csv(raw)
 
     def test_a_file_that_is_not_a_workbook_is_refused_and_leaves_no_node(self):
         source = self._xlsx_node(b"not a spreadsheet", title="notes.txt")
@@ -1337,7 +1401,7 @@ def _purge_fixture_roots(users: tuple[str, ...] = (USER, OTHER)) -> None:
     reach a live account or another test. A `User` insert provisions a Personal
     root of its own, so this also runs before a fixture creates one.
     """
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", users]}, pluck="name")
     # Purging a document node calls the app's `on_purge`, which Drive reads from
     # the registry, so the purge runs against a cache built for this request.

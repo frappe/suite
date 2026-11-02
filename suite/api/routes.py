@@ -58,8 +58,10 @@ class Account(TypedDict):
     email: str
     full_name: str
     avatar: str | None
+    time_zone: str | None
     roles: AccountRoles
     is_jmap_configured: bool
+    is_mail_server_configured: bool
     must_change_password: bool
     setup_required: bool
 

@@ -2,8 +2,6 @@
   <!-- the slide's containing block, clipped so OverflowContentOverlay's mask stays on the canvas;
 	     clip, not hidden: a hidden box still scrolls when a caret lands past its edge -->
   <div ref="slideContainer" class="relative flex size-full overflow-clip" @dragenter="showOverlay">
-    <!-- when mounting place slide directly in the center of the visible container -->
-    <!-- 1/2 width of viewport + 1/2 width of offset caused due to thinner navigation panel -->
     <div
       ref="slideRef"
       :style="slideStyles"
@@ -76,6 +74,7 @@ import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SnapGuides from '@/apps/slides/components/SnapGuides.vue'
 import { useCornerRadius } from '@/apps/slides/composables/useCornerRadius'
 import { useDragAndDrop } from '@/apps/slides/composables/useDragAndDrop'
+import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { usePanAndZoom } from '@/apps/slides/composables/usePanAndZoom'
 import { useResizer } from '@/apps/slides/composables/useResizer'
 import { useRotator } from '@/apps/slides/composables/useRotator'
@@ -179,32 +178,54 @@ const { activeGuides, snapForDrag, snapForResize } = useSnapping(
 )
 
 // Elements are stored in a fixed 960x540 coordinate space, so the slide keeps
-// that authored size and is only scaled down to DISPLAY_WIDTH for display —
-// shrinking the authored width instead would shift every existing element.
+// that authored size and is only scaled for display — shrinking the authored
+// width instead would shift every existing element.
 const SLIDE_WIDTH = 960
 const SLIDE_HEIGHT = 540
-const DISPLAY_WIDTH = 900
-
-const {
-  allowPanAndZoom,
-  transform: pannedTransform,
-  transformOrigin: pannedTransformOrigin,
-} = usePanAndZoom(slideContainerRef, slideRef, DISPLAY_WIDTH / SLIDE_WIDTH)
+const MAX_EDIT_SCALE = 900 / SLIDE_WIDTH
 
 const FIT_MARGIN = 16
+// the editor also keeps clear of the floating toolbar below the slide
+const EDIT_MARGIN_X = 32
+const EDIT_MARGIN_Y = 80
+// the panels float over the canvas; keep in sync with NavigationPanel (w-56) and PropertiesPanel (w-72)
+const NAVIGATION_PANEL_WIDTH = 224
+const PROPERTIES_PANEL_WIDTH = 288
+
+const { isNavigationPanelOpen } = useNavigationPanel()
 const containerSize = ref({ width: 0, height: 0 })
 useResizeObserver(slideContainerRef, ([entry]) => {
   containerSize.value = { width: entry.contentRect.width, height: entry.contentRect.height }
 })
 
-const fitScale = computed(() => {
+// the part of the canvas the panels leave visible
+const visibleArea = computed(() => {
   const { width, height } = containerSize.value
-  if (!width || !height) return DISPLAY_WIDTH / SLIDE_WIDTH
+  if (props.fit) return { left: 0, width, height }
+  const left = isNavigationPanelOpen.value ? NAVIGATION_PANEL_WIDTH : 0
+  const right = inReadonlyMode.value ? 0 : PROPERTIES_PANEL_WIDTH
+  return { left, width: width - left - right, height }
+})
+
+const scaleToFit = (marginX, marginY) => {
+  const { width, height } = visibleArea.value
+  if (!width || !height) return MAX_EDIT_SCALE
   return Math.max(
     0.1,
-    Math.min((width - FIT_MARGIN * 2) / SLIDE_WIDTH, (height - FIT_MARGIN * 2) / SLIDE_HEIGHT),
+    Math.min((width - marginX * 2) / SLIDE_WIDTH, (height - marginY * 2) / SLIDE_HEIGHT),
   )
-})
+}
+
+const fitScale = computed(() => scaleToFit(FIT_MARGIN, FIT_MARGIN))
+// the editor fits the slide to the visible area, never past its usual 900px
+const editScale = computed(() => Math.min(scaleToFit(EDIT_MARGIN_X, EDIT_MARGIN_Y), MAX_EDIT_SCALE))
+
+const {
+  allowPanAndZoom,
+  baseScale,
+  transform: pannedTransform,
+  transformOrigin: pannedTransformOrigin,
+} = usePanAndZoom(slideContainerRef, slideRef, editScale)
 
 // `fit` alone decides pan and zoom; nothing else writes `allowPanAndZoom`, so
 // fit mode cannot be zoomed out of its centred layout.
@@ -221,13 +242,13 @@ const transform = computed(() =>
 )
 const transformOrigin = computed(() => (props.fit ? '0 0' : pannedTransformOrigin.value))
 
-// the fitted slide is centered in px; the panned slide by the position classes below
-const fitPosition = computed(() => {
-  if (!props.fit) return {}
-  const { width, height } = containerSize.value
+// centred in the visible area at the scale the slide rests at
+const slidePosition = computed(() => {
+  const scale = props.fit ? fitScale.value : baseScale.value
+  const { left, width, height } = visibleArea.value
   return {
-    left: `${(width - SLIDE_WIDTH * fitScale.value) / 2}px`,
-    top: `${(height - SLIDE_HEIGHT * fitScale.value) / 2}px`,
+    left: `${left + (width - SLIDE_WIDTH * scale) / 2}px`,
+    top: `${(height - SLIDE_HEIGHT * scale) / 2}px`,
   }
 })
 
@@ -244,15 +265,7 @@ const slideClasses = computed(() => {
 
   const outlineClasses = mediaDragOver.value ? ['outline', 'outline-2'] : []
 
-  // Offsets center the scaled slide (900x506.25), shifted for the side panels
-  // (edit: nav + properties; readonly: nav only). Recompute if widths change.
-  const positionClasses = props.fit
-    ? []
-    : inReadonlyMode.value
-      ? ['left-[calc(50%-354.5px)]', 'top-[calc(50%-253.125px)]']
-      : ['left-[calc(50%-482px)]', 'top-[calc(50%-253.125px)]']
-
-  return [...classes, outlineClasses, positionClasses]
+  return [...classes, outlineClasses]
 })
 
 const isSelecting = ref(false)
@@ -274,7 +287,7 @@ const highlightElement = (element) => {
 }
 
 const slideStyles = computed(() => ({
-  ...fitPosition.value,
+  ...slidePosition.value,
   transformOrigin: transformOrigin.value,
   transform: transform.value,
   backgroundColor: currentSlide.value?.background || '#ffffff',
@@ -674,6 +687,9 @@ watch(
     handleSlideTransform()
   },
 )
+
+// a panel opening or closing moves the slide without changing its transform
+watch(slidePosition, handleSlideTransform)
 
 watch(
   () => positionDelta.value,

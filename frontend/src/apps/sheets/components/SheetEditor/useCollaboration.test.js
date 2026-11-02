@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createRealtime } from '@/platform/realtime'
+
 import { useCollaboration } from './useCollaboration.js'
 
 /**
@@ -9,14 +11,20 @@ import { useCollaboration } from './useCollaboration.js'
  */
 function fakeRelay() {
   const handlers = new Map()
-  const realtime = {
+  const socket = {
+    connected: true,
     on: (event, handler) => {
       if (!handlers.has(event)) handlers.set(event, new Set())
       handlers.get(event).add(handler)
+      return socket
     },
-    off: (event, handler) => handlers.get(event)?.delete(handler),
-    emit: () => {},
+    off: (event, handler) => {
+      handlers.get(event)?.delete(handler)
+      return socket
+    },
+    emit: () => socket,
   }
+  const realtime = createRealtime({ io: () => socket, siteName: 'suite.localhost', window })
   const callFn = async (method, { name, event, payload }) => {
     if (method !== 'suite.sheets.api.yjs_relay') throw new Error(`unexpected ${method}`)
     handlers.get(event)?.forEach((handler) => handler({ sheet: name, payload }))

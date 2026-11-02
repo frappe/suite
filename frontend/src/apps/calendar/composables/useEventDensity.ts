@@ -6,6 +6,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { userTimeZone } from '@/platform/time-zone'
 
 /**
  * The density behind the sidebar's mini month.
@@ -64,7 +65,7 @@ export const useEventDensity = (
       account: store.accountId,
       from_date: first.subtract(7, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
       to_date: first.endOf('month').add(7, 'day').utc().format('YYYY-MM-DD[T]HH:mm:ss[Z]'),
-      time_zone: dayjs.tz.guess(),
+      time_zone: userTimeZone(),
     }
   })
 

@@ -24,6 +24,8 @@ export interface DriveAccess {
   via_link?: string | null
   source_node?: string | null
   source_principal?: string | null
+  /** Manage checks pass here: the role is MANAGE, or the caller is a Suite Admin (Drive ADR 0001). */
+  can_manage?: boolean
 }
 
 export interface DriveBreadcrumb {
@@ -96,4 +98,9 @@ export interface DriveRoots {
 
 export function hasRole(node: Pick<DriveNode, 'access'> | null | undefined, role: number): boolean {
   return (node?.access?.role ?? 0) >= role
+}
+
+/** Whether the caller may share, restore what others trashed, and delete for good. Not a content right. */
+export function canManage(node: Pick<DriveNode, 'access'> | null | undefined): boolean {
+  return node?.access?.can_manage ?? hasRole(node, DRIVE_ROLES.manage)
 }

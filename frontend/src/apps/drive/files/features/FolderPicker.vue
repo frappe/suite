@@ -57,11 +57,16 @@
           theme="gray"
           :label="ACTIONS[mode]"
           :disabled="target.status !== 'allowed'"
-          :loading="busy"
+          :loading="busy || checking"
           @click="choose"
         />
       </div>
     </div>
+    <MoveAccessDialog
+      v-model:open="reviewingAccess"
+      :change="accessChange"
+      @confirm="confirmMove"
+    />
   </Dialog>
 </template>
 
@@ -69,7 +74,7 @@
 import { Button, Dialog } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { api, useQuery } from '@/api'
+import { api, client, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
@@ -78,10 +83,13 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
+  moveAccessChange,
   startingFolder,
+  type MoveAccessChange,
   type PickedItem,
   type PickerMode,
 } from './folderPicker'
+import MoveAccessDialog from './MoveAccessDialog.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -124,8 +132,34 @@ const target = computed(() =>
     : { status: 'unknown' as const },
 )
 
-function choose() {
-  if (!current.value || target.value.status !== 'allowed' || props.busy) return
-  emit('choose', current.value.node, current.value.label)
+/** The move preview is loading, before the confirmation or the move. */
+const checking = ref(false)
+const accessChange = ref<MoveAccessChange | null>(null)
+const reviewingAccess = ref(false)
+let confirmMove = () => {}
+async function choose() {
+  if (!current.value || target.value.status !== 'allowed' || props.busy || checking.value) return
+  const { node, label } = current.value
+  accessChange.value = props.mode === 'move' ? await previewAccessChange(node) : null
+  if (!accessChange.value) {
+    emit('choose', node, label)
+    return
+  }
+  confirmMove = () => emit('choose', node, label)
+  reviewingAccess.value = true
+}
+/** A move that gives someone access, or lowers the mover's own role, asks first (unified frontend §5.7). */
+async function previewAccessChange(folder: string): Promise<MoveAccessChange | null> {
+  checking.value = true
+  try {
+    const previews = await Promise.all(
+      props.items.map((item) =>
+        client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
+      ),
+    )
+    return moveAccessChange(previews)
+  } finally {
+    checking.value = false
+  }
 }
 </script>

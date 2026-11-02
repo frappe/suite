@@ -14,7 +14,6 @@ import { userStore } from '@/apps/calendar/stores/user'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { toTitleCase } from '@/apps/calendar/utils/format'
 import {
   MOBILE_VIEWS,
   routeDate,
@@ -124,7 +123,7 @@ const subtitle = computed(() => {
   // A user with no personal account and no stored id leaves `accountId` empty,
   // and the find unmatched — as mail's sidebar already allows for.
   const currentAccount = user.data.accounts.find((a) => a.id === store.accountId)
-  if (!currentAccount || currentAccount.is_personal) return toTitleCase(user.data.full_name)
+  if (!currentAccount || currentAccount.is_personal) return user.data.full_name
   return currentAccount._name
 })
 
