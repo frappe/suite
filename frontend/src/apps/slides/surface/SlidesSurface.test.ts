@@ -44,6 +44,7 @@ const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { setActiveElements } = await import('@/apps/slides/stores/element')
+const { useKeyboardShortcut } = await import('frappe-ui')
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
@@ -80,6 +81,63 @@ describe('Slides autosave', () => {
 
     expect(clean.defaultPrevented).toBe(false)
     expect(unsaved.defaultPrevented).toBe(true)
+  })
+})
+
+describe('Slides editing a deck another tab holds', () => {
+  // frappe-ui's dispatcher: a shortcut runs only while it is enabled
+  async function press(combo: string) {
+    const [shortcuts] = vi.mocked(useKeyboardShortcut).mock.lastCall as [
+      { combo: string; enabled?: () => boolean; handler: (event: KeyboardEvent) => void }[],
+    ]
+    const shortcut = shortcuts.find((entry) => entry.combo === combo)!
+    if (shortcut.enabled?.() ?? true) shortcut.handler(new KeyboardEvent('keydown'))
+    await nextTick()
+  }
+
+  function banner() {
+    return document.querySelector('[role="alert"]')
+  }
+
+  // the Button stand-in keeps its label as an attribute
+  function action(label: string) {
+    return document.querySelector<HTMLElement>(`[role="alert"] [label="${label}"]`)!
+  }
+
+  function toolbar() {
+    return document.querySelector('[data-toolbar]')
+  }
+
+  afterEach(() => {
+    delete (navigator as { locks?: unknown }).locks
+  })
+
+  it('opens read-only while another tab edits the deck, and edits here on request', async () => {
+    // another tab holds every deck: only a steal is granted
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: async (
+          name: string,
+          options: { steal?: boolean },
+          hold: (lock: { name: string } | null) => unknown,
+        ) => hold(options.steal ? { name } : null),
+      },
+    })
+    mounted = await openedSurface()
+
+    await vi.waitFor(() =>
+      expect(banner()?.textContent).toContain('open for editing in another tab'),
+    )
+    expect(toolbar()).toBeNull()
+    await press('Mod+D')
+    expect(thumbnails(mounted.root)).toHaveLength(2)
+
+    action('Edit here').click()
+    await vi.waitFor(() => expect(banner()).toBeNull())
+    expect(toolbar()).not.toBeNull()
+    await press('Mod+D')
+    expect(thumbnails(mounted.root)).toHaveLength(3)
   })
 })
 
