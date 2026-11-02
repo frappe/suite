@@ -1238,7 +1238,13 @@ export class SFUClient {
 								response.code,
 								response.details,
 							);
-							console.error(`SFU request failed (${event}):`, response.error);
+							// Consumer failures may be retried or cancelled during E2EE
+							// reconfiguration. The subscription owner reports exhaustion.
+							if (event === "create_consumer") {
+								console.debug(`SFU request failed (${event}):`, response.error);
+							} else {
+								console.error(`SFU request failed (${event}):`, response.error);
+							}
 							reject(error);
 						}
 					});

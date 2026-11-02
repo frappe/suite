@@ -181,7 +181,30 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(2);
 	});
 
+	it.each([
+		"E2EE join handshake not completed",
+		"Producer old-producer not found",
+		"Transport old-transport not found",
+	])("recovers from %s without reporting a terminal error", async (message) => {
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const { mediaManager, transportManager } = createManager();
+			transportManager.createConsumer.mockRejectedValueOnce(new Error(message));
+			const subscription = mediaManager.subscribeToRemoteProducer({
+				producerId: "producer-1",
+				participantId: "remote-1",
+				isScreen: false,
+			});
+			await vi.advanceTimersByTimeAsync(250);
+			await expect(subscription).resolves.toMatchObject({ id: "new-c1" });
+			expect(errorLog).not.toHaveBeenCalled();
+		} finally {
+			errorLog.mockRestore();
+		}
+	});
+
 	it("exhausts one automatic retry chain", async () => {
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
 		const { mediaManager, transportManager } = createManager();
 		const onRecoveryExhausted = vi.fn();
 		mediaManager.setEventHandlers({ onRecoveryExhausted });
@@ -198,6 +221,11 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		await expect(subscription).rejects.toThrow("server down");
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
 		expect(onRecoveryExhausted).toHaveBeenCalledOnce();
+		expect(errorLog).toHaveBeenCalledWith(
+			"Giving up on remote consumer subscription",
+			expect.objectContaining({ producerId: "producer-1", participantId: "remote-1" }),
+		);
+		errorLog.mockRestore();
 	});
 
 	it("discards an in-flight subscription when its producer closes", async () => {
