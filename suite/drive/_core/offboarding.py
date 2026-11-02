@@ -55,7 +55,7 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
     ]
     reserved_bytes = sum(row["reserved_bytes"] for row in rows)
     stored_bytes = sum(row["stored_bytes"] for row in rows)
-    mail_bytes = 0
+    mail_bytes: int | None = 0
     cap = next(row["effective_quota_bytes"] for row in rows if row["name"] == target_root.name) or None
     buffer_bytes = 0
     configured = is_suite_cloud_configured()

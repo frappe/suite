@@ -10,6 +10,7 @@ from suite.suite_core.administration import guard_user_change, list_users, requi
 from suite.suite_core.storage import (
     check_addition,
     effective_limit,
+    personal_mail_usage,
     set_default,
     state,
     update_limits,
@@ -229,3 +230,13 @@ class TestAdministrationAccess(IntegrationTestCase):
     def test_recovery_administrator_can_administer_without_mail_configuration(self):
         with self.set_user("Administrator"):
             self.assertEqual(require_admin(), "Administrator")
+
+
+class TestPersonalMailUsage(TestCase):
+    def test_usage_is_unknown_until_a_refresh_has_measured_the_mailbox(self):
+        self.assertIsNone(personal_mail_usage({}, "a@example.test"))
+        self.assertIsNone(personal_mail_usage({"personal": {"a@example.test": None}}, "a@example.test"))
+
+    def test_a_user_the_refresh_does_not_list_has_no_mailbox(self):
+        self.assertEqual(personal_mail_usage({"personal": {"a@example.test": 7}}, "b@example.test"), 0)
+        self.assertEqual(personal_mail_usage({"personal": {"a@example.test": 7}}, "a@example.test"), 7)
