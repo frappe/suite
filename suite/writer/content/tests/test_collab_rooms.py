@@ -10,6 +10,7 @@ from suite.content.http import routes
 from suite.drive._core.access import grant, revoke
 from suite.drive._core.principals import Principals
 from suite.writer import content as writer_content
+from suite.writer.content.tests.drive_callback_case import move_as_writer
 from suite.writer.content.tests.support import (
     READER,
     WRITER,
@@ -51,6 +52,22 @@ class TestWriterCollabRooms(CollabCase):
         self.assertEqual(len({*opened["keys"], *later["keys"], *elsewhere["keys"]}), 5)
         for key in opened["keys"]:
             self.assertRegex(key, r"^sc:[A-Za-z0-9_-]{32}$")
+
+    def test_moving_a_document_to_another_folder_moves_its_rooms(self):
+        self.set_mode("on")
+        node = self.new_document()
+        folder = drive.ensure_folder(drive.personal_root_for(WRITER), f"Rooms {uuid.uuid4().hex[:8]}")
+        frappe.db.commit()
+        one_epoch = Mock(time=Mock(return_value=150 * 3000 + 10))
+
+        with patch.object(live, "time", one_epoch):
+            before = self.open_document(node)[0]["rooms"]["keys"]
+            with patch("frappe.publish_realtime"):
+                move_as_writer(node, folder)
+                frappe.db.commit()
+            after = self.open_document(node)[0]["rooms"]["keys"]
+
+        self.assertFalse({*before} & {*after})
 
     def test_turning_web_access_off_moves_the_rooms_so_an_open_guest_tab_hears_no_more(self):
         self.set_mode("on")

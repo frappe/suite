@@ -25,6 +25,7 @@ from suite.drive._core.access import (
     _admin_description,
     _describe_rows,
     add_creator_grant,
+    announce_access,
     chain_ids,
     chain_roles,
     check,
@@ -1640,6 +1641,7 @@ def _move(
         moved = _node(current.name)
         activity_link = source_link or destination_link
         _add_mover_grant(moved, principals, destination_link=destination_link)
+        announce_access(moved)
         _record_activity(
             moved.name,
             "move",

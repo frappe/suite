@@ -25,7 +25,7 @@ _CURSOR_DIGITS = 9
 # test, not `user_type`: it does not open Desk, so a Suite user is a Website
 # User like any signed-up visitor. Administrator and Guest are system
 # identities, not people.
-_PEOPLE = """
+_USERS = """
     SELECT 'user' AS kind, name, IF(IFNULL(full_name, '') = '', name, full_name) AS label
     FROM `tabUser`
     WHERE enabled = 1
@@ -35,6 +35,10 @@ _PEOPLE = """
         )
         AND name NOT IN ('Administrator', 'Guest')
         AND (full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)
+"""
+
+_PEOPLE = f"""
+    {_USERS}
     UNION ALL
     SELECT 'group' AS kind, name, name AS label
     FROM `tabUser Group`
@@ -117,8 +121,12 @@ def search(query: str | None = None, cursor: str | None = None, node: str | None
 
 def _search_on(node: str, query: str) -> PeoplePage:
     pattern = _contains(query)
-    found = frappe.db.sql(_PEOPLE, {"pattern": pattern, "limit": PAGE_SIZE, "offset": 0}, as_dict=True)
-    labels = {row.name: row.label for row in found if row.kind == "user"}
+    found = frappe.db.sql(
+        f"{_USERS} ORDER BY label, name LIMIT %(limit)s",
+        {"pattern": pattern, "limit": PAGE_SIZE},
+        as_dict=True,
+    )
+    labels = {row.name: row.label for row in found}
     access = drive.people_on(node, labels)
     named = [user for user in access if user not in labels]
     if named:
