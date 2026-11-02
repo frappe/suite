@@ -265,6 +265,7 @@ import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
 import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
+import { openAreaShortcuts } from '@/platform/shortcuts'
 import { TransportError } from '@/platform/transport'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
@@ -301,6 +302,11 @@ import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
 import { copyLink } from '../features/share/shareFormat'
+import {
+  menuCommand,
+  useListingShortcuts,
+  type ListingView,
+} from '../features/shortcuts/useListingShortcuts'
 import TemplatePicker from '../features/TemplatePicker.vue'
 import { useTrashActions } from '../features/trash/useTrashActions'
 import {
@@ -692,7 +698,6 @@ onMounted(() => {
   stopRealtime = () => {}
   syncSavedViewQuery()
   if (presentation.value.view === 'grid') startPreviewObservation()
-  window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('popstate', onMobileBack)
   window.addEventListener('paste', onPaste)
 })
@@ -700,7 +705,6 @@ onBeforeUnmount(() => {
   narrowMedia?.removeEventListener('change', onNarrowChange)
   stopRealtime?.()
   stopPreviews?.()
-  window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('popstate', onMobileBack)
   window.removeEventListener('paste', onPaste)
 })
@@ -883,6 +887,18 @@ const moreOptions = computed<DropdownItem[]>(() => [
         },
       ]
     : []),
+  // A phone has no keyboard to list.
+  ...(narrow.value
+    ? []
+    : [
+        {
+          group: 'Help',
+          hideLabel: true,
+          options: [
+            { label: 'Keyboard shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+          ],
+        },
+      ]),
 ])
 /** What a selection of several items offers, in the toolbar and on right-click. */
 // An action is enabled only when every selected row allows it (spec §5.8).
@@ -1009,6 +1025,36 @@ const newOptions = computed<DropdownItem[]>(() => {
   ]
 })
 
+// A shortcut runs the option a menu shows for it, so it is refused where the menu is.
+useListingShortcuts(
+  () => {
+    const [only, ...others] = selectedRows.value
+    const rowMenu = only && !others.length ? rowMenuOptions(only) : []
+    const selected = selectionMode.value ? bulkActions.value : []
+    const createMenu = canCreate.value ? newOptions.value : []
+    return {
+      selectAll: menuCommand(moreOptions.value, 'Select all'),
+      clearSelection: selectionMode.value ? { onClick: clearSelected } : undefined,
+      move: menuCommand(selected, 'Move'),
+      remove: menuCommand(selected, trashActions.value ? 'Delete forever' : 'Move to trash'),
+      openInNewTab: menuCommand(rowMenu, 'Open in new tab'),
+      share: menuCommand(rowMenu, 'Share'),
+      upload: menuCommand(createMenu, 'Files', 'Upload'),
+      newFolder: menuCommand(createMenu, 'Folder', 'Create'),
+    }
+  },
+  { enabled: () => signedIn.value, open: openView },
+)
+function openView(view: ListingView) {
+  const path = {
+    personal: '/drive',
+    organization: discovered.data?.organization ? '/drive/organization' : null,
+    shared: '/drive/shared-with-me',
+    recent: '/drive/recent',
+    starred: '/drive/starred',
+  }[view]
+  if (path) void router.push(path)
+}
 function setPresentation(change: PresentationChange) {
   clearSelected()
   void replacePresentation(router, userPresentation.value, change)
@@ -1063,9 +1109,6 @@ function selectAll() {
 }
 function clearSelected() {
   selectionState.value = clearSelection()
-}
-function onWindowKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && selectionMode.value) clearSelected()
 }
 /** A pasted image, such as a screenshot, uploads into the open folder as a picked file would. */
 function onPaste(event: ClipboardEvent) {

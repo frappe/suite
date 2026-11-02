@@ -168,6 +168,7 @@ vi.mock('frappe-ui', () => ({
   PageHeaderMobile: quiet(),
   TabButtons: quiet(),
   TextInput: quiet(),
+  useKeyboardShortcut: () => {},
 }))
 for (const part of [
   '../features/ViewSettings.vue',
