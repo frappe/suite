@@ -2150,7 +2150,10 @@ class TestConversion(DriveCallbackCase):
         )
         self.addCleanup(frappe.db.set_value, "Suite Collab App", row, "mode", "on")
         frappe.db.set_value("Suite Collab App", row, "mode", "off")
+        # Only Writer: Sheets is always on and queues its own job
+        writer_only = {writer_content.APP: spec_of(writer_content.APP)}
         with (
+            patch.object(jobs, "editors", return_value=writer_only),
             patch.object(frappe, "enqueue") as enqueue,
             patch.object(conversions, "run_pending") as running,
         ):
