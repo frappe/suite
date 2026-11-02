@@ -144,7 +144,9 @@
           @click="session.share()"
         />
       </template>
-      <slot name="primary" />
+      <div v-if="$slots.primary" class="ml-1 flex">
+        <slot name="primary" />
+      </div>
     </div>
   </header>
 </template>
