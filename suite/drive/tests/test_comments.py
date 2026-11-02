@@ -711,15 +711,14 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertTrue(detail["excerpt"].endswith("…"))
 
     def test_a_notification_quotes_the_comment_as_it_is_now(self):
+        grant(self.document.name, MENTIONED, READ, self.admin)  # A notification needs Read to be listed
         thread = create_thread(self.commenter, self.document.name, "anchor", f"First @[{MENTIONED}]").name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
         mentioned = Principals(MENTIONED, (MENTIONED,), ())
 
         def quotes():
             rows = activity.notifications(mentioned)["rows"]
-            return [
-                row.activity.detail.get("excerpt") for row in rows if row.activity.node == self.document.name
-            ]
+            return [row.activity.detail.get("excerpt") for row in rows if row.activity.action == "comment"]
 
         self.assertEqual(quotes(), [f"First @{MENTIONED.split('@')[0]}"])
         edit_comment(self.commenter, comment, f"Second @[{MENTIONED}]")

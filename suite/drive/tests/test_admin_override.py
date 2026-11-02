@@ -68,10 +68,13 @@ class TestSuiteAdminOverride(IntegrationTestCase):
         grant(node, self.other, drive.READ, admin)
         self.assertEqual(describe(_node(node), principals_for(self.other))["role"], drive.READ)
 
-    def test_a_commenting_admin_restores_what_they_trashed_themselves(self):
+    def test_an_admin_restores_what_they_trashed_after_their_grant_was_lowered(self):
         node = self._document("Sheet", "Own trash")
+        grant(node, self.admin, drive.EDIT, self._as(self.owner))
         admin = self._as(self.admin)
         update(admin, node, state="Trashed")
+        frappe.db.set_value("Drive Grant", {"node": node, "principal": self.admin}, "role", drive.COMMENT)
+
         update(admin, node, state="Active")
         self.assertEqual(_node(node).state, "Active")
 
