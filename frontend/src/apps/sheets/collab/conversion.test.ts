@@ -229,6 +229,68 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
       expect(doc.getMap(name).size, name).toBeGreaterThan(0)
   })
 
+  it("leaves a pivot's output out of the doc: each tab rebuilds it", async () => {
+    const client = await inProcessClient(null)
+    client.dispatch(glueCommand('addSheet', { name: 'Data' }))
+    for (const [row, col, input] of [
+      [1, 1, 'Region'],
+      [1, 2, 'Sales'],
+      [2, 1, 'North'],
+      [2, 2, '10'],
+      [3, 1, 'South'],
+      [3, 2, '5'],
+    ] as const)
+      client.dispatch(glueCommand('setInput', { sheet: 'Data', row, col, input }))
+    // The output the old editor wrote, at C2, and a note of the person's beside it.
+    for (const [row, col, input] of [
+      [2, 3, 'Region'],
+      [2, 4, 'Sum of Sales'],
+      [3, 3, 'North'],
+      [3, 4, '10'],
+      [4, 3, 'South'],
+      [4, 4, '5'],
+      [5, 3, 'Grand Total'],
+      [5, 4, '15'],
+      [1, 1, 'my note'],
+      // The person's own cells touching the table: right of its header, under Grand Total.
+      [2, 5, 'Target'],
+      [6, 3, 'checked'],
+    ] as const)
+      client.dispatch(glueCommand('setInput', { sheet: 'Sheet1', row, col, input }))
+    await client.idle()
+    const formats = createFormatsEngine()
+    formats.applyToRange(['C2', 'D2', 'C5', 'D5'], { bold: true }, 'Sheet1')
+    formats.applyToRange(['A1'], { italic: true }, 'Sheet1')
+    const pivot = {
+      id: 'pivot_p1',
+      sourceSheet: 'Data',
+      // Whole columns: the pivot reads only as far as the sheet holds data.
+      sourceRange: 'A1:Z1048576',
+      outputSheet: 'Sheet1',
+      anchorRow: 1,
+      anchorCol: 2,
+      rows: ['Region'],
+      cols: [],
+      values: [{ field: 'Sales', agg: 'sum' }],
+    }
+    const body = JSON.stringify({
+      engine: bytesToBase64(await client.snapshot()),
+      engine_version: ENGINE_VERSION,
+      formats: formats.snapshot(),
+      pivot: { pivots: { pivot_p1: pivot } },
+    })
+    client.terminate()
+
+    const tab = await opened((await converted(body)).state)
+    expect(Object.keys(tab.cells).filter((k) => k.startsWith('Sheet1!'))).toEqual([
+      'Sheet1!1:1',
+      'Sheet1!2:5',
+      'Sheet1!6:3',
+    ])
+    expect(tab.stores.formats.snapshot().Sheet1?.cells).toEqual({ A1: { italic: true } })
+    expect(Object.keys(tab.stores.pivot.snapshot().pivots)).toEqual(['pivot_p1'])
+  })
+
   it('refuses a doc bigger than the room allows', async () => {
     expect(await convertSheetsData(await currentBody(), 64)).toEqual({
       kind: 'failed',

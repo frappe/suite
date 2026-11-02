@@ -24,6 +24,10 @@
 //
 // writeStores writes only keys whose value differs from the doc's, so writing
 // back what a remote change just restored writes nothing.
+//
+// A pivot's output is derived: each tab writes it locally on rebuild, inputs
+// and header/total banding alike. Neither goes into the doc, and restoring the
+// doc's formats keeps the banding this tab wrote.
 
 import * as Y from 'yjs'
 
@@ -120,6 +124,19 @@ export function docSheets(doc: Y.Doc): SheetRef[] {
   return out
 }
 
+/** Whether a cell (0-based) is inside the output a pivot last wrote. */
+export type PivotOutput = (sheet: string, row: number, col: number) => boolean
+
+/** The cells the pivots last wrote; null while none has written any. */
+export function pivotOutput(stores: GlueStores): PivotOutput | null {
+  const out = (stores.pivot?.list() ?? []).flatMap((p) =>
+    p._extent && p.outputSheet ? [{ sheet: p.outputSheet, ...p._extent }] : [],
+  )
+  if (!out.length) return null
+  return (sheet, row, col) =>
+    out.some((e) => e.sheet === sheet && row >= e.r0 && row <= e.r1 && col >= e.c0 && col <= e.c1)
+}
+
 // ---- entries ----
 
 type EntryRoot =
@@ -199,20 +216,28 @@ function byCell(
   root: EntryRoot,
   snap: Record<string, Record<string, unknown>> | undefined,
   out: Entry[],
+  skip: PivotOutput | null = null,
 ): void {
   for (const [sheet, cells] of Object.entries(snap ?? {})) {
     for (const [id, value] of Object.entries(cells ?? {})) {
       const p = parseCellId(id)
-      if (p) out.push(entry(root, { sheet, row: p.row, col: p.col, value }))
+      if (p && !skip?.(sheet, p.row, p.col))
+        out.push(entry(root, { sheet, row: p.row, col: p.col, value }))
     }
   }
 }
 
-/** Every entry the given stores hold now. */
-export function storeEntries(stores: GlueStores): Entry[] {
+/**
+ * Every entry the given stores hold now, minus format cells inside `derived`.
+ * A caller passing only some stores passes the pivot output of all of them.
+ */
+export function storeEntries(
+  stores: GlueStores,
+  derived: PivotOutput | null = pivotOutput(stores),
+): Entry[] {
   const out: Entry[] = []
   for (const [sheet, fs] of Object.entries(stores.formats?.snapshot() ?? {})) {
-    byCell('formats', { [sheet]: fs.cells }, out)
+    byCell('formats', { [sheet]: fs.cells }, out, derived)
     for (const [r, value] of Object.entries(fs.rows ?? {}))
       out.push(entry('rowFormats', { sheet, row: Number(r), value }))
     for (const [c, value] of Object.entries(fs.cols ?? {}))
@@ -314,24 +339,40 @@ function owns(root: EntryRoot, key: string, present: Set<StoreName>): boolean {
  * value differs, delete the keys a store no longer has. Stores left out of
  * `stores` are not touched. Runs in one transaction (the caller's, if any).
  */
-export function writeStores(doc: Y.Doc, stores: GlueStores, sheets: SheetRef[]): void {
+export function writeStores(
+  doc: Y.Doc,
+  stores: GlueStores,
+  sheets: SheetRef[],
+  derived: PivotOutput | null = pivotOutput(stores),
+): void {
   const present = new Set(STORE_NAMES.filter((s) => stores[s]))
   const owned = new Set([...present].flatMap((s) => ROOTS_OF[s]))
   const idOf = new Map(sheets.map((s) => [s.name, s.id]))
+  const nameOf = new Map(sheets.map((s) => [s.id, s.name]))
   const r = roots(doc) as unknown as Record<EntryRoot, Y.Map<unknown>>
   doc.transact(() => {
     const ax = axisCache(doc)
+    // A doc format key inside the pivot output is not this tab's to delete:
+    // another tab may have put it there before it saw the pivot.
+    const inOutput = (root: EntryRoot, key: string) => {
+      const k = root === 'formats' && derived ? parseCellKey(key) : null
+      const sheet = k ? nameOf.get(k.sheetId) : undefined
+      if (!k || sheet === undefined) return false
+      const row = ax(k.sheetId, 'rows').posOf(k.rowId)
+      const col = ax(k.sheetId, 'cols').posOf(k.colId)
+      return row >= 0 && col >= 0 && !!derived?.(sheet, row, col)
+    }
     const want = new Map<EntryRoot, Map<string, unknown>>(
       [...owned].map((root) => [root, new Map()]),
     )
-    for (const e of storeEntries(stores)) {
+    for (const e of storeEntries(stores, derived)) {
       const kv = docKeyValue(e, idOf, ax)
       if (kv) want.get(e.root)?.set(kv[0], kv[1])
     }
     for (const [root, keys] of want) {
       const map = r[root]
       for (const key of [...map.keys()]) {
-        if (!keys.has(key) && owns(root, key, present)) map.delete(key)
+        if (!keys.has(key) && owns(root, key, present) && !inOutput(root, key)) map.delete(key)
       }
       for (const [key, value] of keys) {
         if (!map.has(key) || canon(map.get(key)) !== canon(value)) map.set(key, value)
@@ -443,6 +484,13 @@ export function restoreStores(stores: GlueStores, entries: Entry[], only?: Set<S
     for (const e of of('formats')) sheet(e.sheet).cells[cellId(e.row, e.col)] = e.value as Format
     for (const e of of('rowFormats')) sheet(e.sheet).rows[e.row] = e.value as Format
     for (const e of of('colFormats')) sheet(e.sheet).cols[e.col] = e.value as Format
+    const derived = pivotOutput(stores)
+    for (const [name, fs] of Object.entries(derived ? stores.formats.snapshot() : {})) {
+      for (const [id, format] of Object.entries(fs.cells ?? {})) {
+        const p = parseCellId(id)
+        if (p && derived?.(name, p.row, p.col)) sheet(name).cells[id] = format
+      }
+    }
     stores.formats.restore(snap)
   }
   if (stores.comments && want('comments'))

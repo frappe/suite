@@ -61,6 +61,7 @@ import {
 } from './schema'
 import {
   docSheets,
+  pivotOutput,
   readEntries,
   restoreStores,
   STORE_NAMES,
@@ -211,28 +212,12 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
       await buildWorkbookFromDoc(doc, client, stores)
     } else {
       await client.idle()
-      await writeWorkbookToDoc(doc, client, stores, { origin: localOrigin, skip: pivotOutput() })
+      await writeWorkbookToDoc(doc, client, stores, { origin: localOrigin })
     }
     mirror = readMirror()
     markSynced(STORE_NAMES)
     loaded = true
     flushHeld()
-  }
-
-  // Whether a cell (1-based) is inside the last output of a pivot.
-  function pivotOutput(): (sheet: string, row: number, col: number) => boolean {
-    const out = (stores.pivot?.list() ?? []).flatMap((p) =>
-      p._extent && p.outputSheet ? [{ sheet: p.outputSheet, ...p._extent }] : [],
-    )
-    return (sheet, row, col) =>
-      out.some(
-        (e) =>
-          e.sheet === sheet &&
-          row - 1 >= e.r0 &&
-          row - 1 <= e.r1 &&
-          col - 1 >= e.c0 &&
-          col - 1 <= e.c1,
-      )
   }
 
   // ---- out: local → doc ----
@@ -321,10 +306,14 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
     for (const c of commands) writeCommand(c)
     const sheets = docSheets(doc)
     const idOf = new Map(sheets.map((s) => [s.name, s.id]))
-    // Sheets this action created: every cell, at the positions it ends with.
+    // Sheets this action created: every cell, at the positions it ends with,
+    // minus pivot output (a new pivot's sheet).
+    const derived = pivotOutput(stores)
     for (const [name, cells] of reads.created) {
       const sheetId = idOf.get(name)
-      if (sheetId) for (const cell of cells) putInput(doc, sheetId, cell)
+      if (!sheetId) continue
+      for (const cell of cells)
+        if (!derived?.(name, cell.row - 1, cell.col - 1)) putInput(doc, sheetId, cell)
     }
     // Formulas IronCalc rewrote for a row/col/sheet change (Q10).
     for (const [name, cells] of reads.formulas ?? []) {
@@ -333,7 +322,9 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
     }
     reconcileSheetOrder()
     const moved = commands.some((c) => STRUCTURAL.has(c.type))
-    writeStores(doc, changedStores(moved), docSheets(doc))
+    // Only the changed stores, but the pivot output of all: a rebuild changes
+    // the banding without changing the pivot store's snapshot.
+    writeStores(doc, changedStores(moved), docSheets(doc), pivotOutput(stores))
   }
 
   function writeCommand(c: NonBatchCommand): void {
