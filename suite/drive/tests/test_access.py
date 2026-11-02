@@ -8,7 +8,7 @@ from frappe.tests import UnitTestCase
 from suite.drive._core.access import Acc, chain_ids, effective_role, require
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, ROLES, UPLOAD
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, ROLES, UPLOAD
 
 
 class TestAccessAccumulator(UnitTestCase):
@@ -103,9 +103,22 @@ class TestPointAccess(UnitTestCase):
         self.assertEqual(effective_role(owned_node, self.principals), NONE)
 
     @patch("suite.drive._core.access.frappe.db.sql")
-    def test_suite_admin_precedes_grant_lookup(self, sql):
-        admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
-        self.assertEqual(effective_role(self.node, admin), MANAGE)
+    def test_system_precedes_grant_lookup(self, sql):
+        system = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True)
+        self.assertEqual(effective_role(self.node, system), MANAGE)
+        require(self.node, EDIT, system)
+        sql.assert_not_called()
+
+    @patch("suite.drive._core.access._point_state", return_value=(COMMENT, [], {}, {}))
+    def test_suite_admin_holds_manage_but_edits_through_grants(self, _point_state):
+        # ADR 0001. Was `test_suite_admin_precedes_grant_lookup`: the admin
+        # override answered every role; it now answers Manage alone.
+        admin = Principals("admin@example.com", ("admin@example.com",), ("$PUBLIC",), is_admin=True)
+        self.assertEqual(effective_role(self.node, admin), COMMENT)
+        self.assertIsNone(require(self.node, MANAGE, admin))
+        require(self.node, COMMENT, admin)
+        with self.assertRaises(DriveForbidden):
+            require(self.node, EDIT, admin)
 
     @patch("suite.drive._core.access._point_state", return_value=(NONE, [], {}, {}))
     def test_unreadable_is_not_found(self, _point_state):

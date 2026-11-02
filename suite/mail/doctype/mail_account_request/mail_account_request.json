@@ -20,6 +20,10 @@
   "aliases",
    "quota_gb",
    "combined_cap_bytes",
+   "first_name",
+   "last_name",
+   "locale",
+   "time_zone",
   "membership_details_section",
   "groups",
   "membership_details_column_break",
@@ -41,6 +45,34 @@
     "label": "Combined personal cap (bytes)",
     "description": "Creation-time combined cap. Zero means uncapped; never a Mail quota.",
     "default": "0"
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "first_name",
+    "fieldtype": "Data",
+    "label": "First Name",
+    "read_only": 1
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "last_name",
+    "fieldtype": "Data",
+    "label": "Last Name",
+    "read_only": 1
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "locale",
+    "fieldtype": "Data",
+    "label": "Language",
+    "read_only": 1
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "time_zone",
+    "fieldtype": "Data",
+    "label": "Time Zone",
+    "read_only": 1
    },
   {
    "fieldname": "account_details_column_break",
@@ -240,7 +272,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-07 13:20:00.000000",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Account Request",

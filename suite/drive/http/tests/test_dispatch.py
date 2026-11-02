@@ -139,6 +139,9 @@ NOTIFICATION_SHAPE_FIELDS = {
     "read",
     "creation",
     "activity",
+    "node_title",
+    "node_kind",
+    "actor",
 }
 
 # The seven names 11.2 freezes, in table order. A view outside this tuple is a
@@ -214,7 +217,9 @@ class DriveHTTPCase(IntegrationTestCase):
         ensure_user(OWNER)
         ensure_user(STRANGER)
         drop_personal_root(OWNER)
-        cls.admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        cls.admin = Principals(
+            "Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True
+        )
         cls.owner = Principals(OWNER, (OWNER, "$GENERAL"), ("$PUBLIC",))
         cls.stranger = Principals(STRANGER, (STRANGER, "$GENERAL"), ("$PUBLIC",))
 
@@ -497,7 +502,9 @@ class TestNodeShape(DriveHTTPCase):
 
     def test_the_access_expansion_reports_the_role_and_its_source(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.file}", query={"expand": "access"}))
-        self.assertEqual(set(answer["access"]), {"role", "via_link", "source_node", "source_principal"})
+        self.assertEqual(
+            set(answer["access"]), {"role", "via_link", "source_node", "source_principal", "can_manage"}
+        )
         self.assertGreaterEqual(answer["access"]["role"], READ)
 
     def test_the_breadcrumb_expansion_runs_root_first_and_stops_at_the_parent(self):

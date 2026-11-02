@@ -29,6 +29,7 @@ from frappe import _
 from pydantic import with_config
 
 from suite.drive._core import nodes, times
+from suite.drive._core.activity import ActivityAction
 from suite.drive._core.people import Person, people
 
 EXPANSIONS = ("access", "breadcrumbs", "preview")
@@ -48,6 +49,8 @@ class AccessShape(TypedDict, total=False):
     via_link: str | None
     source_node: str | None
     source_principal: str | None
+    # Manage checks pass: `role` is MANAGE, or a Suite Admin's override (ADR 0001).
+    can_manage: bool
 
 
 class BreadcrumbShape(TypedDict):
@@ -96,7 +99,7 @@ class NodeShape(TypedDict):
 class ActivityShape(TypedDict):
     name: str
     node: str
-    action: str
+    action: ActivityAction
     actor: str
     at: str | None
     via_link: str | None
@@ -109,6 +112,10 @@ class NotificationShape(TypedDict):
     read: int
     creation: str | None
     activity: ActivityShape
+    # The node as it is now and who acted, joined when the list is read (§9.5).
+    node_title: str
+    node_kind: str
+    actor: Person
 
 
 class Page[T](TypedDict):
@@ -478,6 +485,28 @@ class GrantsQuery(TypedDict, total=False):
     principal: str
 
 
+class MovePreviewQuery(TypedDict):
+    # The folder or root the node would move into, as `Move.parent_node`.
+    parent_node: str
+
+
+class AccessGainShape(TypedDict):
+    # A user, group, `$GENERAL` or `$PUBLIC`; `$LINK` for every share link.
+    principal: str
+    role: int
+    # Only when the principal is a user.
+    person: NotRequired[Person]
+
+
+class MovePreviewShape(TypedDict):
+    """`GET /nodes/<id>/move-preview`: who a move would give access to (UF §5.7)."""
+
+    gains: list[AccessGainShape]
+    # The mover's own role on the node now, and after the move.
+    role_now: int
+    role_after: int
+
+
 class RevokeQuery(TypedDict, total=False):
     # `?below=1` also removes the principal's grants under the node (§5.10).
     below: bool
@@ -789,17 +818,27 @@ def _masked_detail(detail: Mapping) -> dict:
     return answer
 
 
-def notification_shape(row: Mapping) -> NotificationShape:
+def notification_shapes(rows: list[Mapping]) -> list[NotificationShape]:
+    """Shape a page of notifications with one lookup of the people who acted."""
+    known = people({row["activity"].get("actor") for row in rows})
+    return [notification_shape(row, known) for row in rows]
+
+
+def notification_shape(row: Mapping, known: Mapping[str, Person]) -> NotificationShape:
     """Return one notification pointer with the activity it renders from.
 
     `to_user` is withheld: §11.2 scopes this route to the caller, so the only
     value it could ever carry is the caller's own address.
     """
+    activity = row["activity"]
     return {
         "name": row.get("name"),
         "read": int(row.get("read") or 0),
         "creation": stamp(row.get("creation")),
-        "activity": activity_shape(row.get("activity") or {}),
+        "activity": activity_shape(activity),
+        "node_title": row["node_title"],
+        "node_kind": row["node_kind"],
+        "actor": known[activity["actor"]],
     }
 
 
@@ -847,6 +886,19 @@ def grant_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> Gran
     if row.get("url"):
         answer["url"] = row["url"]
     return answer
+
+
+def move_preview_shape(preview: Mapping) -> MovePreviewShape:
+    """Return a move preview with every user it names published as a person."""
+    gains = preview["gains"]
+    known = people(gain["principal"] for gain in gains if _is_user_principal(gain["principal"]))
+    shaped: list[AccessGainShape] = []
+    for gain in gains:
+        row: AccessGainShape = {"principal": gain["principal"], "role": gain["role"]}
+        if gain["principal"] in known:
+            row["person"] = known[gain["principal"]]
+        shaped.append(row)
+    return {"gains": shaped, "role_now": preview["role_now"], "role_after": preview["role_after"]}
 
 
 def _is_user_principal(principal: str) -> bool:

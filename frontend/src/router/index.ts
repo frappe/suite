@@ -138,11 +138,7 @@ router.beforeEach(async (to, from) => {
   if (session.user.value?.must_change_password === true) {
     return to.path === '/suite/change-password' ? true : '/suite/change-password'
   }
-  if (session.user.value?.setup_required === true && !session.capabilities.value.suiteAdmin) {
-    return to.path === '/suite/account-unavailable' ? true : '/suite/account-unavailable'
-  }
-  if (to.path === '/suite/change-password' || to.path === '/suite/account-unavailable')
-    return '/home'
+  if (to.path === '/suite/change-password') return '/home'
 
   // A shared item opens on a site that is not set up yet. Area routes still
   // go to setup (spec §10.10, ask S3).

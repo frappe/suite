@@ -4,7 +4,7 @@ from frappe.utils import get_datetime, now_datetime
 
 from suite import drive, mail
 from suite.suite_core.administration import list_users, require_admin
-from suite.suite_core.storage import effective_limit, state
+from suite.suite_core.storage import effective_limit, personal_mail_usage, state
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
@@ -20,7 +20,7 @@ def report() -> dict:
         personal = [row for row in roots if row["user"] == user["name"] and row["kind"] == "Personal"]
         stored = sum(row["stored_bytes"] for row in personal)
         reserved = sum(row["reserved_bytes"] for row in personal)
-        mail_bytes = cached.get("personal", {}).get(user["name"]) if cloud else 0
+        mail_bytes = personal_mail_usage(cached, user["name"]) if cloud else 0
         limit = policy.get("users", {}).get(user["name"], {})
         timestamp = (
             cached.get("entries", {}).get(user.get("account"), {}).get("fetched_at") if cloud else None

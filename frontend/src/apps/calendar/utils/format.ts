@@ -52,15 +52,6 @@ const getNthLabel = (n: number): string => {
   return `${n}${suffix}`
 }
 
-export const toTitleCase = (str: string) =>
-  str
-    ?.toLowerCase()
-    .split(' ')
-    .map(function (word: string) {
-      return word.charAt(0).toUpperCase().concat(word.substr(1))
-    })
-    .join(' ') || ''
-
 export const extractNameFromEmail = (email: string) =>
   isEmail(email)
     ? email

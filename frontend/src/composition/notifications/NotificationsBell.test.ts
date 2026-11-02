@@ -63,6 +63,7 @@ vi.mock('vue-router', () => ({
   }),
 }))
 vi.mock('@/apps/drive', () => ({
+  DRIVE_ROLES: { read: 10, comment: 20, upload: 30, edit: 40, manage: 50 },
   driveNodeRoute: (node: { name: string }) => `/d/${node.name}/item`,
   driveNotifications: () => ({
     test: 'feed',
@@ -88,7 +89,7 @@ vi.mock('@/api', async () => ({
     error: null,
   }),
   useInfiniteQuery: () => ({
-    rows: [notification()],
+    rows: [shareNotification(), mentionNotification()],
     status: 'success',
     error: null,
     hasNext: false,
@@ -110,6 +111,23 @@ afterEach(() => {
   state.loadNode.mockReset()
 })
 describe('Notifications bell', () => {
+  it('reads each notification as a sentence naming the person and the item', () => {
+    const rows = notificationRows(mount())
+    expect(rows[0]?.textContent).toContain(
+      'Theo Williams shared "Beacon deck" with you (can comment)',
+    )
+    expect(rows[1]?.textContent).toContain('Theo Williams mentioned you in "Q4 Roadmap"')
+    expect(rows[1]?.textContent).toContain('Can you check the numbers, @Maya Chen?')
+    for (const row of rows) {
+      expect(row.textContent).not.toMatch(/share_add|share add|theo@northwind\.test/)
+    }
+  })
+  it('marks an unread row with the dot and a bold sentence, not a coloured fill', () => {
+    const [row] = notificationRows(mount())
+    expect(row?.className).not.toMatch(/bg-surface-amber/)
+    expect(row?.querySelector('.text-base-semibold')?.textContent).toContain('Beacon deck')
+    expect(row?.querySelector('.bg-surface-amber-7')).not.toBeNull()
+  })
   it('does not mark anything read when opened', async () => {
     const root = mount()
     const bell = root.querySelector('[aria-label="Notifications"]') as HTMLButtonElement
@@ -128,7 +146,7 @@ describe('Notifications bell', () => {
     })
     const root = mount()
     const row = [...root.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('Project plan'),
+      button.textContent?.includes('Beacon deck'),
     )
     row?.click()
     await nextTick()
@@ -173,22 +191,52 @@ function mount(): HTMLElement {
   })
   return root
 }
-function notification() {
+function notificationRows(root: HTMLElement): HTMLButtonElement[] {
+  return [
+    ...root.querySelectorAll<HTMLButtonElement>('[data-testid="notifications-popover"] button'),
+  ].filter((button) => button.textContent?.includes('"'))
+}
+function shareNotification() {
+  return notification('notice-1', 'share_add', 'Beacon deck', {
+    principal: 'maya@northwind.test',
+    old_role: null,
+    new_role: 20,
+  })
+}
+function mentionNotification() {
+  return notification('notice-2', 'comment', 'Q4 Roadmap', {
+    thread: 'thread-1',
+    comment: 'comment-1',
+    resolved: false,
+    excerpt: 'Can you check the numbers, @Maya Chen?',
+  })
+}
+function notification(
+  name: string,
+  action: string,
+  title: string,
+  detail: Record<string, unknown>,
+) {
   return {
-    name: 'notice-1',
+    name,
     read: 0,
     creation: new Date().toISOString(),
+    node_title: title,
+    node_kind: 'document',
+    actor: {
+      id: 'theo@northwind.test',
+      full_name: 'Theo Williams',
+      user_image: null,
+    },
     activity: {
-      name: 'activity-1',
+      name: `activity-${name}`,
       node: 'node-1',
-      action: 'shared',
-      actor: 'Faris',
+      action,
+      actor: 'theo@northwind.test',
       at: new Date().toISOString(),
       via_link: null,
       client: null,
-      detail: {
-        title: 'Project plan',
-      },
+      detail,
     },
   }
 }

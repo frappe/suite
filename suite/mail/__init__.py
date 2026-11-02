@@ -16,6 +16,13 @@ def is_configured() -> bool:
     return is_suite_cloud_configured()
 
 
+def is_server_configured() -> bool:
+    """Return whether this site knows its mail server, so people can have Mail accounts at all."""
+    from suite.mail.utils import is_jmap_server_configured
+
+    return is_jmap_server_configured()
+
+
 def send_email(email_type: str, recipient: str, params: Mapping[str, Any], request_key: str) -> None:
     """Ask Suite Cloud to send one first-party email from its named template."""
     import frappe

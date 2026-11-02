@@ -258,7 +258,7 @@ def _webp(payload: bytes) -> Image.Image:
 
 
 class TestPreviewContract(UnitTestCase):
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
     def test_schema_is_one_row_per_node_and_both_blobs_are_gc_references(self):
         schema_path = Path(__file__).parents[1] / "doctype" / "drive_node_preview" / "drive_node_preview.json"
@@ -592,7 +592,7 @@ class TestPreviews(IntegrationTestCase):
         self.root = create_root(kind="Personal", title="Preview Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Preview Other", user=OTHER)
         self.root_ids = (self.root.name, self.other_root.name)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         # The sweep pages through every file on the site from a cursor. Start
         # it where this test starts, so older files on the site that lack a
         # preview stay out of the page, and put the site's own cursor back after.

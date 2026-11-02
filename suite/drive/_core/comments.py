@@ -1,5 +1,6 @@
 """Authorized comment threads attached to Drive content-document nodes."""
 
+import html
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -10,7 +11,7 @@ import frappe
 from bs4 import BeautifulSoup, NavigableString, Tag
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import get_system_timezone, now_datetime
+from frappe.utils import get_system_timezone, now_datetime, strip_html_tags
 
 from suite.drive._core import content
 from suite.drive._core.access import effective_role, require
@@ -22,6 +23,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive._core.nodes import MAX_PAGE_SIZE, node_owner
+from suite.drive._core.people import people
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ
 
@@ -31,6 +33,8 @@ _DATA_MENTION = re.compile(r"data-(?:id|user)=[\"']([^\"'\r\n]{1,140})[\"']")
 _CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 # The most a comment holds, in UTF-8 bytes, as the old Text column did
 MAX_COMMENT_BYTES = 65_535
+# The characters of a comment its activity keeps, for the notification to quote
+EXCERPT_LENGTH = 140
 # The most an old Drive commenter's name holds, as the old Data column did
 MAX_AUTHOR_NAME_CHARS = 140
 
@@ -67,7 +71,7 @@ def insert_thread(
         principals,
         node_row.name,
         "comment",
-        detail={"thread": thread.name, "comment": comment, "resolved": False},
+        detail={"thread": thread.name, "comment": comment, "resolved": False, "excerpt": excerpt(text)},
         via_link=via_link,
     )
     notify_users(activity, mentions)
@@ -144,6 +148,7 @@ def insert_reply(
             "thread": thread_row.name,
             "comment": comment,
             "resolved": bool(thread_row.resolved),
+            "excerpt": excerpt(text),
         },
         via_link=via_link,
     )
@@ -453,6 +458,7 @@ def write_comment_edit(
             "thread": comment_row.thread,
             "comment": comment_row.name,
             "resolved": bool(thread.resolved),
+            "excerpt": excerpt(text),
         },
         via_link=via_link,
     )
@@ -862,6 +868,18 @@ def link_text(text: str, href: str | None) -> str:
 def mentioned_users(ids: list[str], user_name: Callable[[str], str | None]) -> list[str]:
     """Answer the stored name of each User in `ids` once, in first-seen order."""
     return list(dict.fromkeys(filter(None, map(user_name, ids))))
+
+
+def excerpt(text: str) -> str:
+    """Answer a comment as one short line of plain text, each mention by name."""
+    plain = html.unescape(strip_html_tags(text))
+    named = people(_BRACKET_MENTION.findall(plain) + _EMAIL_MENTION.findall(plain))
+    for pattern in (_BRACKET_MENTION, _EMAIL_MENTION):
+        plain = pattern.sub(lambda match: f"@{named[match.group(1)]['full_name']}", plain)
+    words = " ".join(plain.split())
+    if len(words) <= EXCERPT_LENGTH:
+        return words
+    return words[: EXCERPT_LENGTH - 1].rstrip() + "…"
 
 
 def _mentions(text: str) -> list[str]:
