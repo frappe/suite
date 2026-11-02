@@ -1975,6 +1975,10 @@
                 "title": "Is Jmap Configured",
                 "type": "boolean"
               },
+              "is_mail_server_configured": {
+                "title": "Is Mail Server Configured",
+                "type": "boolean"
+              },
               "must_change_password": {
                 "title": "Must Change Password",
                 "type": "boolean"
@@ -1992,6 +1996,7 @@
               "time_zone",
               "roles",
               "is_jmap_configured",
+              "is_mail_server_configured",
               "must_change_password",
               "setup_required"
             ],

@@ -578,6 +578,7 @@ export type AccountGetOutputAccount = {
   time_zone: string | null
   roles: AccountGetOutputAccountRoles
   is_jmap_configured: boolean
+  is_mail_server_configured: boolean
   must_change_password: boolean
   setup_required: boolean
 }

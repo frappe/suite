@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils.caching import redis_cache
 
+from suite.mail.utils import is_jmap_server_configured
 from suite.mail.utils.user import can_use_mail
 from suite.suite_core.administration import require_admin
 from suite.suite_core.setup import build_setup_args, uses_suite_setup_wizard
@@ -190,4 +191,6 @@ def get_logged_in_user() -> dict | None:
         "time_zone": user_doc.time_zone or None,
         "roles": [role.role for role in user_doc.roles],
         "is_jmap_configured": can_use_mail(user),
+        # Tells "this site has no mail" apart from "this user has no mailbox" (spec 001 §4.1).
+        "is_mail_server_configured": is_jmap_server_configured(),
     }
