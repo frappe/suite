@@ -26,3 +26,4 @@ pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL('./worker.ts', import.
 })
 
 export { pdfjs }
+export type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'

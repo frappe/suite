@@ -21,6 +21,7 @@ import { copyLink } from '../share/shareFormat'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import { uploadTargetOf } from '../uploads/queue'
+import PdfPreview from './PdfPreview.vue'
 import PreviewFallback from './PreviewFallback.vue'
 import type { FilePreviewSession } from './session'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
@@ -441,11 +442,11 @@ const source = computed(() =>
         controls
         class="m-auto max-h-full min-h-0 max-w-full"
       />
-      <iframe
+      <PdfPreview
         v-else-if="preview.kind === 'pdf'"
         :src="contentUrl"
+        :download="downloadUrl"
         :title="session.title.value"
-        class="min-h-0 flex-1 border-0 bg-surface-base"
       />
       <PreviewFallback
         v-else-if="opensAsSheet"
