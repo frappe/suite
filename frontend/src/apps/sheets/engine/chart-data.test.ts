@@ -1,3 +1,12 @@
+import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
+import {
+  GridComponent,
+  LegendComponent,
+  TitleComponent,
+  TooltipComponent,
+} from 'echarts/components'
+import { init, use } from 'echarts/core'
+import { SVGRenderer } from 'echarts/renderers'
 import { describe, expect, it, vi } from 'vitest'
 
 import { buildOption } from './chart-data.js'
@@ -65,12 +74,10 @@ describe('buildOption — formatted numbers', () => {
 })
 
 describe('buildOption — rendering', () => {
-  it('renders every chart kind without an ECharts console notice', async () => {
-    const { BarChart, LineChart, PieChart, ScatterChart } = await import('echarts/charts')
-    const { GridComponent, LegendComponent, TitleComponent, TooltipComponent } =
-      await import('echarts/components')
-    const { init, use } = await import('echarts/core')
-    const { SVGRenderer } = await import('echarts/renderers')
+  // ECharts is imported at the top of the file, while the file loads: a cold
+  // import inside the test counted against its 5 s timeout and could run past
+  // it under a full run's load (ISSUES #82).
+  it('renders every chart kind without an ECharts console notice', () => {
     use([BarChart, LineChart, PieChart, ScatterChart, GridComponent, LegendComponent])
     use([TitleComponent, TooltipComponent, SVGRenderer])
 
