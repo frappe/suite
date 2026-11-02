@@ -2,6 +2,7 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -548,6 +549,28 @@ class SuiteJMAPClient(JMAPClient):
         store_cached_session(self.user, self.session, sync_owed_after=owed_after)
 
 
+# Recreating a deleted mailbox keeps its Suite user disabled (admin spec §4.3), yet the new account
+# still needs its folders and filters. Only the setup of that one account may act as the user.
+_provisioned_user: ContextVar[str | None] = ContextVar("mail_provisioned_user", default=None)
+
+
+@contextmanager
+def provisioning(user: str) -> Iterator[None]:
+    """Let the setup of ``user``'s new Mail account reach the mail server while the user is disabled."""
+
+    token = _provisioned_user.set(user)
+    try:
+        yield
+    finally:
+        _provisioned_user.reset(token)
+
+
+def is_provisioning(user: str) -> bool:
+    """Whether ``user``'s Mail account is being set up in this context (see ``provisioning``)."""
+
+    return _provisioned_user.get() == user
+
+
 @request_cache
 def get_jmap_client(
     user: str,
@@ -561,7 +584,8 @@ def get_jmap_client(
     Cached per request so the many helpers that resolve a client for the same user reuse one
     instance (and skip the repeated password decryption / session parsing).
     ``allow_disabled`` is for server-side cleanup that must still reach the mail server on
-    behalf of a user who has just been disabled; requests never pass it.
+    behalf of a user who has just been disabled; requests never pass it. Account setup reaches
+    a disabled user's new account through ``provisioning`` instead.
     """
 
     if not ignore_permissions:
@@ -574,7 +598,7 @@ def get_jmap_client(
             )
 
     enabled = frappe.get_cached_value("User", user, "enabled")
-    if enabled is None or (not enabled and not allow_disabled):
+    if enabled is None or (not enabled and not allow_disabled and not is_provisioning(user)):
         frappe.throw(_("User {0} does not exist or is disabled.").format(frappe.bold(user)))
 
     settings = frappe.db.exists("User Settings", {"user": user, "username": ["!=", None]})

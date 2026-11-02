@@ -11,7 +11,7 @@ from frappe.utils.password import remove_encrypted_password
 from frappe.utils.password import update_password as set_local_password
 
 from suite.mail.directory import get_active_domain_names, provision_account, set_account_enabled
-from suite.mail.jmap import clear_jmap_session
+from suite.mail.jmap import clear_jmap_session, provisioning
 from suite.mail.suite_cloud import get_client
 from suite.suite_core.account_state import read, write
 from suite.suite_core.administration import require_admin
@@ -53,7 +53,10 @@ def provision(user: str, address: str, *, password: str, operation: str, **optio
         settings = frappe.get_doc("User Settings", {"user": user})
         settings.username = address
         settings.app_password = account["app_password"]
-        settings.save(ignore_permissions=True)
+        # Saving sets up the new account's folders and filters as the user, who stays
+        # disabled while an Admin recreates their Mail account (§4.3).
+        with provisioning(user):
+            settings.save(ignore_permissions=True)
     finally:
         client.call("mail.accounts.set_account_enabled", email=address, enabled=False)
     clear_jmap_session(user)
