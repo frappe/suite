@@ -55,8 +55,10 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         get saveState() {
           return editor.saveState
         },
-        // In Chromium the room keeps unsent work on the device too. The
-        // surface used to offer the download only when it did not.
+        // What the editor reported before the surface offered the download
+        // regardless: in Chromium the room keeps unsent work on the device
+        // too. The surface no longer reads it; it is kept so the old gate
+        // fails here.
         keepsUnsentWork: true,
         loseAccess: async (lost: string) => {
           editor.loseAccess(lost)
@@ -199,6 +201,21 @@ describe('SheetsSurface losing edit access in the live room', () => {
     await settle()
 
     expect(readRecovery('node-1')).toBeNull()
+    expect(toast.dismiss).toHaveBeenCalledWith('offer-1')
+  })
+
+  it('replaces the offer when edit access goes again before the edits save', async () => {
+    await mountSurface()
+    Object.assign(editor, { saveState: 'unsaved', unsent: true })
+    role.value = 20
+    await settle()
+    role.value = 40
+    await settle()
+
+    role.value = 20
+    await settle()
+
+    expect(toast.warning).toHaveBeenCalledTimes(2)
     expect(toast.dismiss).toHaveBeenCalledWith('offer-1')
   })
 })

@@ -3833,12 +3833,7 @@ defineExpose({
   // The workbook for a recovery copy, with the cell edit still in progress.
   workbookJson: () => workbookJson(_draftEdit()),
   hasDraft: () => _draftEdit() !== null,
-  // This tab's own edits that have not reached the server; other tabs' are
-  // theirs to offer.
-  hasUnsentWork: () => {
-    const status = collab.status.value
-    return !!status && (status.saveState !== 'clean' || status.unsentCount > 0)
-  },
+  hasUnsentWork: () => collab.hasUnsent(),
   goToCell,
   closeNotes: () => {
     notesPanel.open = false

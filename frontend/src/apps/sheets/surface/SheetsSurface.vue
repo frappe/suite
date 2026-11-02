@@ -143,6 +143,7 @@ async function restoreVersion(seq: string) {
 // Keeps the editor's workbook in this browser and offers it as a download.
 async function keepForDownload() {
   if (!(await retainRecovery())) return
+  if (offer !== null) toast.dismiss(offer)
   offer = toast.warning(
     __('Editing access changed. Your unsaved changes are kept on this device.'),
     {
