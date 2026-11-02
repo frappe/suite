@@ -155,22 +155,34 @@ const {
 } = useDriveGuestName()
 const exporting = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId).length > 0)
-// in the hold the live slides can go out even when no copy could be stored
-const canDownloadChanges = computed(() => hasRecovery.value || saveRefused.value)
+// access narrowed and no copy could be stored: the slides on screen are the only copy
+const isOnlyCopy = ref(false)
+let onlyCopyToast: string | number | undefined
+// in the hold, or as the only copy, the live slides can go out with nothing stored
+const canDownloadChanges = computed(
+  () => hasRecovery.value || saveRefused.value || isOnlyCopy.value,
+)
 const isSlideInteractionActive = ref(false)
 let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
     // also cancels a save under way and retires the draft, so it never replays.
-    const unsaved = dirty.value || isSaving.value || saveFailed.value
+    const unsaved = dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value
     viewOnly.value = true
     void stopWrites(props.session.contentDocname)
     if (!unsaved) {
       toast.warning('Editing access changed. This presentation is now view only.')
       return
     }
-    retainRecovery()
+
+    isOnlyCopy.value = !retainRecovery()
+
+    if (isOnlyCopy.value) {
+      showOnlyCopy(translate('Editing access changed. Download your changes before you reload.'))
+      return
+    }
+
     toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
       duration: Number.POSITIVE_INFINITY,
       action: {
@@ -180,10 +192,16 @@ const access = createSlidesAccess(props.session, {
     })
   },
   widened() {
-    // The server copy is the truth now: reload it rather than replay anything.
-    resumeWrites(props.session.contentDocname)
-    toast.info('You can edit this presentation again.')
-    void load()
+    if (isOnlyCopy.value && !retainRecovery()) {
+      showOnlyCopy(
+        translate('You can edit this presentation again. Download your changes before you reload.'),
+        { label: translate('Reload'), onClick: loadAfterAccessBack },
+      )
+      return
+    }
+
+    isOnlyCopy.value = false
+    loadAfterAccessBack()
   },
 })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
@@ -334,6 +352,11 @@ watch(saveRefused, (isRefused) => {
     refusalToast = undefined
   }
 })
+watch(isOnlyCopy, (isOnly) => {
+  if (!isOnly) {
+    dismissOnlyCopy()
+  }
+})
 function showPanel(next: Panel | null) {
   panel.value = next
   if (next === 'comments') void loadComments()
@@ -468,6 +491,12 @@ async function load() {
       !access.writable.value || composite.value,
     )
     if (run !== latestLoad) return
+
+    // the server copy replaced the slides on screen
+    if (doc) {
+      isOnlyCopy.value = false
+    }
+
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
 
     const shown = presentedSlide.value
@@ -522,13 +551,30 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
   }
 }
 function retainRecovery() {
-  if (!slides.value?.length) return
+  if (!slides.value?.length) {
+    return true
+  }
+
   try {
     keepRecovery(props.session.nodeId, JSON.parse(JSON.stringify(slides.value)) as unknown[])
     hasRecovery.value = true
+    return true
   } catch {
+    return false
+  }
+}
+
+function retainOrWarn() {
+  if (!retainRecovery()) {
     toast.error('Your latest changes could not be kept on this device.')
   }
+}
+
+// the server copy is the truth now: reload it rather than replay anything
+function loadAfterAccessBack() {
+  resumeWrites(props.session.contentDocname)
+  toast.info('You can edit this presentation again.')
+  void load()
 }
 
 function syncHasRecovery() {
@@ -554,25 +600,47 @@ function showRefusal() {
 
   refusalToast = toast.warning(message, {
     duration: Number.POSITIVE_INFINITY,
-    action: {
-      label: translate('Download'),
-      onClick: (event: Event) => {
-        // the toast stays: Reload is still the way on
-        event.preventDefault()
-        downloadChanges()
-      },
-    },
+    action: stayingDownload(),
     cancel: { label: translate('Reload'), onClick: () => void load() },
   })
 }
+
+function stayingDownload() {
+  return {
+    label: translate('Download'),
+    onClick: (event: Event) => {
+      // the toast stays: a download can't be confirmed, and Reload is still the way on
+      event.preventDefault()
+      downloadChanges()
+    },
+  }
+}
+
+function dismissOnlyCopy() {
+  if (onlyCopyToast !== undefined) {
+    toast.dismiss(onlyCopyToast)
+    onlyCopyToast = undefined
+  }
+}
+
+function showOnlyCopy(message: string, cancel?: { label: string; onClick: () => void }) {
+  dismissOnlyCopy()
+  onlyCopyToast = toast.warning(message, {
+    duration: Number.POSITIVE_INFINITY,
+    action: stayingDownload(),
+    cancel,
+  })
+}
+
 function downloadChanges() {
   const title = props.session.title.value
-  if (saveRefused.value) {
+  if (saveRefused.value || isOnlyCopy.value) {
     downloadSlides(liveSlides(), title)
     return
   }
 
   if (!downloadRecovery(props.session.nodeId, title)) {
+    syncHasRecovery()
     toast.error('No recovery copy is kept for this presentation.')
   }
 }
@@ -590,6 +658,15 @@ async function discardChanges() {
     return
   }
 
+  if (isOnlyCopy.value) {
+    if (access.writable.value) {
+      resumeWrites(props.session.contentDocname)
+    }
+
+    await load()
+    return
+  }
+
   removeNewestRecovery(props.session.nodeId)
   syncHasRecovery()
 }
@@ -602,10 +679,10 @@ async function flush() {
 useDocumentLeaveGuard({
   state: () => saveState.value,
   flush,
-  retainRecovery,
+  retainRecovery: retainOrWarn,
 })
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: () => saveState.value, retainRecovery }, event)
+  resolveDocumentUnload({ state: () => saveState.value, retainRecovery: retainOrWarn }, event)
 }
 function setOnline() {
   online.value = true
@@ -665,6 +742,7 @@ onBeforeUnmount(() => {
     toast.dismiss(refusalToast)
   }
 
+  dismissOnlyCopy()
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveCurrentState().finally(() => {

@@ -128,6 +128,7 @@ describe('a navigation', () => {
     localStorage.setItem('slides-caches-user', 'a@example.com')
     state.user = 'b@example.com'
     let release = () => {}
+
     const held = new Promise<void>((resolve) => {
       release = resolve
     })

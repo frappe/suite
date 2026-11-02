@@ -845,6 +845,150 @@ describe('Slides push refused by the server', () => {
     expect(downloadButton()).not.toBeNull()
   })
 
+  it('drops only the newest copy on a discard after a download', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
+    mounted = await openedSurface()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    downloadButton()?.click()
+    menuItem('Discard my changes')?.click()
+    await nextTick()
+
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([[{ clientId: 'older' }]])
+  })
+
+  it('hides the download once another tab has emptied the list', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    mounted = await openedSurface()
+    expect(downloadButton()).not.toBeNull()
+
+    localStorage.clear()
+    downloadButton()?.click()
+    await nextTick()
+
+    expect(toast.error).toHaveBeenCalledWith('No recovery copy is kept for this presentation.')
+    expect(downloadButton()).toBeNull()
+  })
+
+  describe('edit access lost with unsaved edits', () => {
+    const KEPT = 'Editing access changed. Your unsaved changes are kept on this device.'
+    const UNSTORED = 'Editing access changed. Download your changes before you reload.'
+    const BACK_UNSTORED =
+      'You can edit this presentation again. Download your changes before you reload.'
+
+    async function narrowedWithEdits(afterOpening = () => {}) {
+      mounted = await openedSurface()
+      afterOpening()
+      duplicateSlide()
+      expect(editorSlides.value).toHaveLength(3)
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+    }
+
+    function widen() {
+      if (mounted) {
+        mounted.access.value = { role: 50 }
+      }
+    }
+
+    it('says the copy is kept when it is', async () => {
+      await narrowedWithEdits()
+
+      expect(refusalToast(KEPT)).toBeDefined()
+      expect(refusalToast(UNSTORED)).toBeUndefined()
+      expect(readRecovery('node-1')).toHaveLength(1)
+    })
+
+    it('says to download, and nothing else, when the store is full', async () => {
+      await narrowedWithEdits(fillTheStore)
+
+      expect(refusalToast(UNSTORED)?.duration).toBe(Number.POSITIVE_INFINITY)
+      expect(refusalToast(KEPT)).toBeUndefined()
+      expect(toast.error).not.toHaveBeenCalled()
+    })
+
+    it('sends the live slides past an older copy', async () => {
+      await narrowedWithEdits(() => {
+        keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+        fillTheStore()
+      })
+
+      refusalToast(UNSTORED)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      expect(await downloadedSlides()).toHaveLength(3)
+
+      await nextTick()
+      downloadButton()?.click()
+      expect(await downloadedSlides()).toHaveLength(3)
+    })
+
+    it('offers the download with no copy at all', async () => {
+      await narrowedWithEdits(fillTheStore)
+      await nextTick()
+
+      expect(downloadButton()).not.toBeNull()
+    })
+
+    it('leaves the slides on screen when access returns and the store is still full', async () => {
+      await narrowedWithEdits(fillTheStore)
+      const reads = server.fetch.mock.calls.length
+
+      widen()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(editorSlides.value).toHaveLength(3)
+      expect(server.fetch.mock.calls.length).toBe(reads)
+      const back = refusalToast(BACK_UNSTORED)
+      expect(back?.action.label).toBe('Download')
+      expect(back?.cancel.label).toBe('Reload')
+
+      back?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      expect(await downloadedSlides()).toHaveLength(3)
+    })
+
+    it('saves nothing while the slides wait, and Reload loads the server copy', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+
+      expect(saves).toEqual([])
+
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+      await nextTick()
+
+      expect(downloadButton()).toBeNull()
+      expect(toast.dismiss).toHaveBeenCalled()
+    })
+
+    it('keeps a copy and then loads when access returns with room', async () => {
+      await narrowedWithEdits(fillTheStore)
+
+      vi.mocked(Storage.prototype.setItem).mockRestore()
+      widen()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      expect(refusalToast(BACK_UNSTORED)).toBeUndefined()
+      const [copy] = readRecovery('node-1')
+      expect(copy.slides).toHaveLength(3)
+    })
+
+    it('a discard loads the server copy and leaves an older copy alone', async () => {
+      await narrowedWithEdits(() => {
+        keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+        fillTheStore()
+      })
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await nextTick()
+
+      menuItem('Discard my changes')?.click()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([[{ clientId: 'older' }]])
+    })
+  })
+
   it('leaves a sticky copy after a download outside the hold', async () => {
     keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
