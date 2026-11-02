@@ -92,7 +92,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
             with patch.object(move_file_media_to_drive, "convert_deck", fail_for_one_deck):
                 self.assertRaises(frappe.ValidationError, execute)
             healthy_src = frappe.parse_json(frappe.db.get_value("Slide", healthy_slide, "elements"))[0]["src"]
-            self.assertEqual(frappe.db.get_value("Drive Node", healthy_src, "parent_node"), healthy.node)
+            self.assertEqual(frappe.db.get_value("Drive Node", healthy_src, "parent_node"), node_of(healthy.name))
             self.assertEqual(self.body()[1][0]["src"], self.file.file_url)
 
             execute()
