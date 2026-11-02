@@ -337,6 +337,8 @@ test.describe("Writer collaboration comments", () => {
 		await row.getByLabel("Reply", { exact: true }).fill("Sent twice");
 		await page.keyboard.press("Enter");
 		await answerLost;
+		// The box ignores Enter until the first send has finished; its failure shows then
+		await expect(page.locator('[data-sonner-toast][data-type="error"]')).toBeVisible();
 		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("Sent twice");
 
 		await page.unroute("**/api/suite/drive/threads/*/comments", loseAnswer);

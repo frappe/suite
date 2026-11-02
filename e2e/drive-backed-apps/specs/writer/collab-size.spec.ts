@@ -176,6 +176,8 @@ test.describe("Writer collaboration", () => {
 			.toContain(length);
 		const openMs = Date.now() - started;
 
+		// In the CI log on passing runs too, so a slow drift shows before the budget fails
+		console.log(`A document at the cap opened in ${openMs}ms`);
 		expect(openMs).toBeLessThan(3000);
 	});
 
