@@ -302,7 +302,7 @@ const saveCurrentState = async () => {
     // keep dirty so autosave retries; log once per outage
     if (!saveFailed.value) console.error('Save failed: ', err)
     saveFailed.value = true
-    if (err?.exc_type === 'TimestampMismatchError') {
+    if (err?.type === 'TimestampMismatchError') {
       if (presentationId.value !== idAtSnapshot) return
       // the hold turns the editor read-only, so the edits made during the push go in first
       const latest = takeSnapshot()

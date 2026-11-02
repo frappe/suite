@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { TransportError } from '@/platform/transport'
+
 const presentationId = ref('p1')
 const presentationDoc = ref<any>({ modified: 'M1' })
 const inReadonlyMode = ref(false)
@@ -44,7 +46,8 @@ const {
   resumeWrites,
 } = await import('./saving')
 
-const conflict = () => Object.assign(new Error('stale'), { exc_type: 'TimestampMismatchError' })
+const conflict = () =>
+  new TransportError({ type: 'TimestampMismatchError', message: 'stale', status: 417 })
 
 describe('saveCurrentState', () => {
   // a refused base is held for good, so each test opens on a version of its own
