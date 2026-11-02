@@ -161,9 +161,11 @@ describe('range outline', () => {
 
   // Whole rows, columns and the whole sheet are outlined too, around the
   // full-width / full-height range the tint covers.
-  function lineOutlines(selMode: 'row' | 'col' | 'all', selEnd: Cell) {
+  function lineOutlines(selMode: 'row' | 'col' | 'all', selEnd: Cell, frozenCols = 0) {
     const { ctx, strokes } = recordingCtx()
-    createRenderer(ctx as never, createMockGeo() as never).render({
+    const geo = createMockGeo()
+    geo.frozenW = vi.fn(() => frozenCols * 100)
+    createRenderer(ctx as never, geo as never).render({
       cssW: 600,
       cssH: 300,
       getValue: () => '',
@@ -172,7 +174,7 @@ describe('range outline', () => {
       selEnd,
       selMode,
       editing: false,
-      freeze: { rows: 0, cols: 0 },
+      freeze: { rows: 0, cols: frozenCols },
       getDiffFor: null,
       marchAnts: null,
       marchPhase: 0,
@@ -186,6 +188,15 @@ describe('range outline', () => {
   it('outlines a whole-row selection across every column', () => {
     // Rows 2–3, columns A … Z (26 × 100px from x 50): x 50 … 2650.
     expect(lineOutlines('row', { r: 2, c: 1 })).toEqual([[50.5, 48.5, 2600, 48]])
+  })
+
+  it('outlines a whole row in each pane when columns are frozen', () => {
+    // Column A frozen: the frozen and the scrolling pane each stroke the
+    // row's outline inside their own clip, so it reads as one line.
+    expect(lineOutlines('row', { r: 2, c: 1 }, 1)).toEqual([
+      [50.5, 48.5, 2600, 48],
+      [50.5, 48.5, 2600, 48],
+    ])
   })
 
   it('outlines a single selected column down every row', () => {
