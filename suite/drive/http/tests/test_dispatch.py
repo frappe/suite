@@ -110,6 +110,7 @@ VERSION_SHAPE_FIELDS = {
     "actor",
     "size",
     "creation",
+    "person",
 }
 
 ACTIVITY_SHAPE_FIELDS = {

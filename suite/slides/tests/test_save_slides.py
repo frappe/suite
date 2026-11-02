@@ -1,6 +1,7 @@
 """`save_slides` keeps the deck's history: autosaves take throttled automatic versions."""
 
 from datetime import timedelta
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -38,8 +39,8 @@ class TestSaveSlidesTakesAutomaticVersions(IntegrationTestCase):
         self.save("#000000ff")
         close_together = len(self.automatic_versions())
 
-        older = now_datetime() - timedelta(seconds=AUTO_VERSION_SECS + 5)
-        frappe.db.set_value("Drive Node Version", {"node": self.node}, "creation", older)
-        self.save("#ff0000ff")
+        later = now_datetime() + timedelta(seconds=AUTO_VERSION_SECS + 5)
+        with patch("suite.slides.api.slides.now_datetime", return_value=later):
+            self.save("#ff0000ff")
 
         self.assertEqual([close_together, len(self.automatic_versions())], [1, 2])
