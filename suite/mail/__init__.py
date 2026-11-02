@@ -50,6 +50,13 @@ def storage_measurements(previous: dict, *, refresh: bool = False) -> dict:
     return measurements(previous, refresh=refresh)
 
 
+def refresh_storage() -> None:
+    """Measure Mail usage and the site allowance that are due, and save them for Drive admission."""
+    from suite.mail.storage import refresh
+
+    refresh()
+
+
 def require_account_ready(user: str, *, onboarding: bool = False) -> None:
     """Refuse activation without a configured, provisioned business Mail account."""
     import frappe

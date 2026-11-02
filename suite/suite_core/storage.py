@@ -14,9 +14,8 @@ def state(*, lock: bool = False):
         frappe.get_doc(
             {"doctype": "Suite Storage State", "site_key": "site", "policy": "{}", "measurements": "{}"}
         ).insert(ignore_permissions=True)
-    if lock:
-        frappe.db.get_value("Suite Storage State", "site", "name", for_update=True)
-    doc = frappe.get_doc("Suite Storage State", "site")
+    # A locking read sees the latest row, which a plain read in an older snapshot may not.
+    doc = frappe.get_doc("Suite Storage State", "site", for_update=lock or None)
     return doc, json.loads(doc.policy or "{}"), json.loads(doc.measurements or "{}")
 
 

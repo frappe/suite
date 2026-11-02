@@ -147,6 +147,8 @@ def recreate(user: str, address: str) -> dict:
 def invalidate_measurements(user: str, address: str) -> None:
     import json
 
+    from suite.mail.storage import queue_refresh
+
     doc, _policy, measurements = state(lock=True)
     measurements.get("entries", {}).pop(address, None)
     # None, not removed: a user the refresh doesn't list has no mailbox (`personal_mail_usage`).
@@ -154,6 +156,7 @@ def invalidate_measurements(user: str, address: str) -> None:
     measurements.update(site_mail=None, stale=True)
     doc.measurements = json.dumps(measurements)
     doc.save(ignore_permissions=True)
+    queue_refresh()
 
 
 def complete_password_change(user: str, password: str, *, allow_expired: bool = False) -> None:

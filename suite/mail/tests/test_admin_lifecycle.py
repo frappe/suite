@@ -1,6 +1,7 @@
 """Business account outcomes against an independent provider/JMAP boundary."""
 
 import json
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
@@ -33,6 +34,7 @@ from suite.mail.events import update_password
 from suite.mail.http.invites import send_invite, update_invite
 from suite.suite_core.account_state import read, require_temporary_valid, write
 from suite.suite_core.administration import update_user
+from suite.suite_core.storage import state, update_limits
 from suite.tests.utils import ensure_user
 
 
@@ -53,6 +55,7 @@ class Provider:
         self.emails = []
         self.created = 0
         self.fail = None
+        self.used_bytes = {}
 
     def call(self, method, **args):
         # Refusals come back like the real client's: thrown, so each leaves a message behind.
@@ -72,6 +75,13 @@ class Provider:
                 "locales": [{"value": "en-US", "label": "English"}],
                 "time_zones": [{"value": "UTC", "label": "UTC"}],
             }
+        if method == "mail.accounts.list_accounts":
+            emails = list(self.accounts)[args["start"] : args["start"] + args["limit"]]
+            return {"items": [{"email": email} for email in emails], "total": len(self.accounts)}
+        if method == "mail.groups.list_groups":
+            return {"items": [], "total": 0}
+        if method == "mail.accounts.get_quotas":
+            return {email: {"used_disk_bytes": self.used_bytes.get(email, 0)} for email in args["emails"]}
         email = args.get("email")
         if method == "mail.accounts.create_account":
             if email in self.accounts:
@@ -119,6 +129,7 @@ class TestAdminLifecycle(IntegrationTestCase):
             "suite.mail.directory.get_client",
             "suite.mail.account_lifecycle.get_client",
             "suite.mail.suite_cloud.get_client",
+            "suite.mail.storage.get_client",
         ):
             self.enterContext(patch(target, return_value=self.provider))
         for target in (
@@ -199,6 +210,41 @@ class TestAdminLifecycle(IntegrationTestCase):
             check_addition(policy, measurements, user=result["user"], **addition)
         # Everyone the refresh did not list still has no mailbox, so nothing to wait for.
         check_addition(policy, measurements, user="no-mailbox@example.test", **addition)
+
+    def commit_and_run_jobs(self):
+        """Stand in for the commit and a worker: run the after-commit pushes, then the jobs they queued."""
+        queued = []
+        with patch("frappe.enqueue", side_effect=lambda method, **_options: queued.append(method)):
+            frappe.db.after_commit.run()
+        for method in queued:
+            frappe.get_attr(method)()
+
+    def test_a_new_member_can_add_drive_files_as_soon_as_the_change_is_committed(self):
+        from suite import drive
+
+        mail.refresh_storage()
+        self.provider.used_bytes[self.address] = 300
+        user = self.create()["user"]
+        self.commit_and_run_jobs()
+
+        root = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+        with self.set_user(user):
+            drive.store_file(root, "first-day.txt", BytesIO(b"uploaded right after joining"))
+        _doc, _policy, measurements = state()
+        self.assertEqual(measurements["personal"][user], 300)
+
+    def test_the_measured_mailbox_still_counts_against_a_new_members_cap(self):
+        from suite import drive
+
+        mail.refresh_storage()
+        self.provider.used_bytes[self.address] = 10_900
+        user = self.create()["user"]
+        update_limits([user], 10_000)
+        self.commit_and_run_jobs()
+
+        root = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+        with self.set_user(user), self.assertRaisesRegex(drive.DriveOverQuota, "user's storage cap"):
+            drive.store_file(root, "too-big.txt", BytesIO(b"x" * 200))
 
     def test_failed_provisioning_retry_keeps_the_creation_time_cap_snapshot(self):
         from suite.suite_core.storage import set_default, state
