@@ -211,7 +211,7 @@
       </SheetToolbar>
 
       <SheetUpgradeBanner
-        v-if="legacyUpgrade && !legacyUpgrade.imported && !upgradeBannerClosed"
+        v-if="legacyUpgrade && !upgradeBannerClosed"
         :upgrade="legacyUpgrade"
         :read-only="readOnly"
         @close="upgradeBannerClosed = true"
