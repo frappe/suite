@@ -994,6 +994,10 @@ class TestNodeLifecycle(IntegrationTestCase):
         with self.assertRaises(DriveNotFound):
             drive.node_owner("drive-node-that-does-not-exist")
 
+    def test_the_title_of_a_missing_node_is_not_found(self):
+        with self.assertRaises(DriveNotFound):
+            drive.node_title("drive-node-that-does-not-exist")
+
 
 def _row(node_id: str):
     return frappe.db.get_value("Drive Node", node_id, "*", as_dict=True)

@@ -64,6 +64,7 @@ import csv
 import dataclasses
 import datetime
 import io
+import itertools
 import json
 import re
 import zipfile
@@ -113,6 +114,8 @@ MEDIA_ID = re.compile(r"[A-Za-z0-9_-]{1,140}")
 # counts bound the parse itself.
 MAX_IMPORT_BYTES = 40 * 1024 * 1024
 MAX_IMPORT_CELLS = 2_000_000
+CSV_SAMPLE_ROWS = 20
+CSV_SEPARATORS = (";", "\t", "|", ",")
 MAX_IMPORT_SHEETS = 200
 
 # The xlsx package is a zip of XML, and every one of those three layers expands.
@@ -194,7 +197,8 @@ def import_from_file(file_node: str, node: str) -> str:
     from SheetJS and this does not is a workbook-level style sheet, so borders,
     fills, and fonts are dropped. Losing decoration is recoverable; losing a
     formula or a merge is not, and neither is dropped here. A CSV becomes one
-    sub-sheet of its values, as the browser's CSV import types them in.
+    sub-sheet of its values, as the browser's CSV import types them in. The body
+    names the file it came from, for the editor's notice after the first open.
     """
     stream, _mime = drive.read_file(file_node)
     try:
@@ -204,7 +208,8 @@ def import_from_file(file_node: str, node: str) -> str:
     # An xlsx is a zip. The stored mime cannot tell a CSV apart: the upload
     # sniffs the bytes, and a CSV has no signature to sniff.
     is_xlsx = zipfile.is_zipfile(io.BytesIO(raw))
-    workbook = _workbook_from_xlsx(raw) if is_xlsx else _workbook_from_csv(raw)
+    source_title = drive.node_title(file_node)
+    workbook = _workbook_from_xlsx(raw, source_title) if is_xlsx else _workbook_from_csv(raw, source_title)
     return _insert_sheet(node, workbook, op_type="import", summary="Imported from a spreadsheet file")
 
 
@@ -521,7 +526,7 @@ def _validate_package(raw: bytes) -> None:
 _DTD_PROBE_BYTES = 8192
 
 
-def _workbook_from_xlsx(raw: bytes) -> str:
+def _workbook_from_xlsx(raw: bytes, source_title: str = "") -> str:
     """Parse one xlsx into the workbook JSON the client reads.
 
     openpyxl is loaded read-only, so the whole workbook is never materialised in
@@ -557,10 +562,10 @@ def _workbook_from_xlsx(raw: bytes) -> str:
     finally:
         book.close()
 
-    return _workbook_json(packed, formats, merged)
+    return _workbook_json(packed, formats, merged, source_title)
 
 
-def _workbook_from_csv(raw: bytes) -> str:
+def _workbook_from_csv(raw: bytes, source_title: str = "") -> str:
     """Parse one CSV into the workbook JSON the client reads: one sub-sheet, every value as typed.
 
     Text with no row of two or more values is not a table, and binary is not
@@ -570,7 +575,8 @@ def _workbook_from_csv(raw: bytes) -> str:
     if b"\0" in raw:
         raise unreadable
     try:
-        records = csv.reader(io.StringIO(raw.decode("utf-8-sig"), newline=""))
+        text = _decode_csv(raw)
+        records = csv.reader(io.StringIO(text, newline=""), delimiter=_csv_separator(text))
         rows: dict[str, list] = {}
         seen = 0
         is_table = False
@@ -590,10 +596,36 @@ def _workbook_from_csv(raw: bytes) -> str:
         raise unreadable from error
     if not is_table:
         raise unreadable
-    return _workbook_json({DEFAULT_SUB_SHEET: {"rows": rows}}, {}, {})
+    return _workbook_json({DEFAULT_SUB_SHEET: {"rows": rows}}, {}, {}, source_title)
 
 
-def _workbook_json(packed: dict[str, dict], formats: dict[str, dict], merged: dict[str, dict]) -> str:
+def _decode_csv(raw: bytes) -> str:
+    """UTF-8 if it is valid, else Windows-1252, which is what Excel saves. Strict, so binary still fails."""
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252")
+
+
+def _csv_separator(text: str) -> str:
+    """The separator that gives the first rows the most columns in every row; a comma if none splits them all.
+
+    Every row must split, so one column or free text stays with the comma. A
+    semicolon file often has decimal commas, so on a tie the comma comes last.
+    """
+    sample = list(itertools.islice(io.StringIO(text, newline=""), CSV_SAMPLE_ROWS))
+    best, most = ",", 1
+    for separator in CSV_SEPARATORS:
+        rows = [row for row in csv.reader(sample, delimiter=separator) if any(row)]
+        columns = min((len(row) for row in rows), default=0)
+        if columns > most:
+            best, most = separator, columns
+    return best
+
+
+def _workbook_json(
+    packed: dict[str, dict], formats: dict[str, dict], merged: dict[str, dict], source_title: str = ""
+) -> str:
     """The `sheets_data` JSON for imported sub-sheets, refused over the workbook limit."""
     workbook = {
         "sheet": {
@@ -605,7 +637,7 @@ def _workbook_json(packed: dict[str, dict], formats: dict[str, dict], merged: di
         "merge": merged or None,
         # The editor converts this body on first open like a develop sheet,
         # but there is no earlier body to offer back.
-        "imported": True,
+        "imported_from": source_title,
     }
     plain = json.dumps(workbook)
     if len(plain.encode("utf-8")) > MAX_SHEETS_DATA_BYTES:
