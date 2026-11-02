@@ -23,7 +23,7 @@ from suite.drive.patches.build.docshare_journal import DOCSHARE_COLUMNS, row_val
 from suite.drive.patches.build.docshare_journal import (
     JournalConflictError as DocShareJournalConflictError,
 )
-from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.environment import DEFAULT_COPY_WORKERS, BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -352,6 +352,7 @@ def build_environment(
     make_id=None,
     make_token=None,
     accept_skips=False,
+    copy_workers=DEFAULT_COPY_WORKERS,
 ):
     """A `BuildEnvironment` wired to fakes, with its state file and copy ledger in `tmp_path`."""
     bucket = bucket if bucket is not None else FakeBucket()
@@ -404,6 +405,7 @@ def build_environment(
         copy_ledger=CopyLedger(tmp_path / "drive-build-copied-objects.jsonl"),
         markers=drive,
         accept_skips=accept_skips,
+        copy_workers=copy_workers,
         tree=tree,
         drive=drive,
         content=content,

@@ -39,6 +39,16 @@ there, under whatever filename it was copied with, and overwrites an
 incomplete one in place. A folder therefore holds at most one object, and a
 rerun leaves no orphan behind.
 
+Each page is worked in four stages. The workers read every object of the
+page at once; this thread claims existing blobs, which reads the database;
+the workers place each distinct content at once; and this thread, in row
+order, writes the ledger, the blob rows and the links. So
+nothing that records progress happens before the copy it records has been
+verified, and every database call stays on the thread that owns
+`frappe.db`. A failure in any worker stops the page before any of it is
+recorded; the resumed run finds the objects that did land and does not
+copy them again.
+
 The loop ends on an empty or short page. Rows that cannot be linked stay in
 the query, so the keyset cursor is what carries the loop past them; the
 stall guard below is a belt on those braces, for a `LegacyFiles` that
@@ -47,7 +57,9 @@ ignores `after`.
 
 import hashlib
 import io
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from dataclasses import dataclass
 
 from frappe.storage.blob import sniff_mime
 
@@ -62,6 +74,7 @@ from suite.drive.patches.build.layout import (
     private_key,
 )
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, storage_key
+from suite.drive.patches.build.ports import ClaimedBlob, LegacyRow
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
 
 # Read size while hashing a legacy object. Big enough that a multi-GB object
@@ -80,64 +93,137 @@ def copy_legacy_s3_objects(env, prep: StoragePreparation, *, batch_size: int = B
     killed run loses at most the counts of one batch, never a copied object.
     """
     bucket = env.bucket()
-    after = ""
-    previous_page = None
-    while True:
-        rows = env.files.s3_rows_without_blob(after, batch_size)
-        if not rows:
-            return
-        # Two identical pages mean the cursor stopped moving, and a
-        # migration that hangs is worse than one that stops.
-        if rows[0].name == previous_page:
-            raise RuntimeError(f"the File cursor stalled at {rows[0].name!r}; refusing to loop")
-        previous_page = rows[0].name
-        for row in rows:
-            _copy_one(env, bucket, prep, row)
-        after = rows[-1].name
-        env.files.commit()
-        env.state.put_storage(prep)
-        if len(rows) < batch_size:
-            return
+    pool = ThreadPoolExecutor(max_workers=env.copy_workers, thread_name_prefix="drive-build-copy")
+    try:
+        after = ""
+        previous_page = None
+        while True:
+            rows = env.files.s3_rows_without_blob(after, batch_size)
+            if not rows:
+                return
+            # Two identical pages mean the cursor stopped moving, and a
+            # migration that hangs is worse than one that stops.
+            if rows[0].name == previous_page:
+                raise RuntimeError(f"the File cursor stalled at {rows[0].name!r}; refusing to loop")
+            previous_page = rows[0].name
+            _copy_page(env, bucket, pool, prep, rows)
+            after = rows[-1].name
+            env.files.commit()
+            env.state.put_storage(prep)
+            if len(rows) < batch_size:
+                return
+    finally:
+        # A failed page must not wait for the rest of its queued reads.
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
-def _copy_one(env, bucket, prep: StoragePreparation, row) -> None:
+class _Digest:
+    __slots__ = ("checksum", "mime_type", "size")
+
+    def __init__(self, checksum: str, size: int, mime_type: str):
+        self.checksum = checksum
+        self.size = size
+        self.mime_type = mime_type
+
+
+@dataclass
+class _Found:
+    """A row whose legacy object was read."""
+
+    row: LegacyRow
+    legacy_key: str
+    digest: _Digest
+
+
+@dataclass
+class _Placement:
+    """One distinct content in a page, and where its object ends up.
+
+    The first row that reaches the content supplies the legacy key and the
+    filename, as it would have copied alone. `blob` is the claimed blob, or
+    for new content the one its first row inserts; every other row reuses it.
+    """
+
+    first: _Found
+    claimed: ClaimedBlob | None
+    destination: str = ""
+    blob: str | None = None
+
+    def __post_init__(self):
+        if self.claimed:
+            self.blob = self.claimed.name
+
+    def place(self, bucket, key_prefix: str) -> str:
+        """Make the object whole at its key and verify it. Runs on a worker."""
+        found = self.first
+        size = found.digest.size
+        if self.claimed:
+            # The row survives the object: GC deletes the bytes first and the
+            # row second (`frappe/storage/gc.py`), and a failed row delete
+            # leaves a Ready blob with nothing behind it. Linking to that
+            # would hand Cleanup a File pointing at no bytes at all.
+            destination = private_key(self.claimed.key)
+            _place_object(bucket, found.legacy_key, destination, size)
+            return destination
+        name = blob_name(found.digest.checksum)
+        key = _place_new_object(bucket, found.legacy_key, key_prefix, name, found.row.file_name, size)
+        return private_key(key)
+
+
+def _copy_page(env, bucket, pool: ThreadPoolExecutor, prep: StoragePreparation, rows) -> None:
+    wanted = [(row, key) for row in rows if (key := _legacy_key(prep, row))]
+    digests = list(pool.map(lambda pair: _read_if_present(bucket, pair[1]), wanted))
+    found: list[_Found] = []
+    for (row, legacy_key), digest in zip(wanted, digests, strict=True):
+        if digest is None:
+            _missing(prep, row, f"no object at {legacy_key} in {bucket.bucket}")
+        else:
+            found.append(_Found(row, legacy_key, digest))
+
+    placements: dict[str, _Placement] = {}
+    for item in found:
+        checksum = item.digest.checksum
+        if checksum not in placements:
+            placements[checksum] = _Placement(item, env.storage.claim_blob(checksum))
+    key_prefix = env.storage.key_prefix()
+    destinations = pool.map(lambda placement: placement.place(bucket, key_prefix), placements.values())
+    for placement, destination in zip(placements.values(), destinations, strict=True):
+        placement.destination = destination
+
+    for item in found:
+        _link(env, bucket, prep, item, placements[item.digest.checksum])
+
+
+def _legacy_key(prep: StoragePreparation, row) -> str | None:
+    """The bucket key this row names, or `None` when there is nothing to read."""
     prep.s3_rows_seen += 1
-
     if not row.file_url.startswith(S3_URL_PREFIX):
-        return _missing(prep, row, "file_url is not a Drive S3 fetch URL")
+        _missing(prep, row, "file_url is not a Drive S3 fetch URL")
+        return None
     legacy_key = storage_key(row.file_url)
     if not legacy_key:
-        return _missing(prep, row, "the S3 fetch URL carries no object path")
+        _missing(prep, row, "the S3 fetch URL carries no object path")
+        return None
+    return legacy_key
 
-    try:
-        digest = _read_once(bucket, legacy_key)
-    except FileNotFoundError:
-        return _missing(prep, row, f"no object at {legacy_key} in {bucket.bucket}")
 
-    claimed = env.storage.claim_blob(digest.checksum)
-    if claimed:
-        # The row survives the object: GC deletes the bytes first and the row
-        # second (`frappe/storage/gc.py`), and a failed row delete leaves a
-        # Ready blob with nothing behind it. Linking to that would hand
-        # Cleanup a File pointing at no bytes at all.
-        _place_object(bucket, legacy_key, private_key(claimed.key), digest.size)
-        _record_copy(env, bucket, row, legacy_key, private_key(claimed.key), digest)
-        env.files.link_blob(row.name, claimed.name)
+def _link(env, bucket, prep: StoragePreparation, item: _Found, placement: _Placement) -> None:
+    """Record and link one row whose object is verified at `placement.destination`."""
+    digest = item.digest
+    _record_copy(env, bucket, item.row, item.legacy_key, placement.destination, digest)
+    if placement.blob:
+        env.files.link_blob(item.row.name, placement.blob)
         prep.s3_objects_reused += 1
         return
 
-    name = blob_name(digest.checksum)
-    key = _place_new_object(bucket, legacy_key, env.storage.key_prefix(), name, row.file_name, digest.size)
-    _record_copy(env, bucket, row, legacy_key, private_key(key), digest)
-
-    blob = env.storage.insert_blob(
-        name=name,
-        key=key,
+    placement.blob = env.storage.insert_blob(
+        name=blob_name(digest.checksum),
+        key=placement.destination.removeprefix(PRIVATE_NAMESPACE),
         checksum=digest.checksum,
         size=digest.size,
         mime_type=digest.mime_type,
     )
-    env.files.link_blob(row.name, blob)
+    env.files.link_blob(item.row.name, placement.blob)
     prep.s3_objects_copied += 1
     prep.s3_bytes_copied += digest.size
 
@@ -203,13 +289,12 @@ def copy_in_bucket(bucket, source_key: str, destination_key: str, size: int) -> 
         bucket.copy_object(source_key, destination_key)
 
 
-class _Digest:
-    __slots__ = ("checksum", "mime_type", "size")
-
-    def __init__(self, checksum: str, size: int, mime_type: str):
-        self.checksum = checksum
-        self.size = size
-        self.mime_type = mime_type
+def _read_if_present(bucket, key: str) -> _Digest | None:
+    """`_read_once`, or `None` when the object is not there. Runs on a worker."""
+    try:
+        return _read_once(bucket, key)
+    except FileNotFoundError:
+        return None
 
 
 def _read_once(bucket, key: str) -> _Digest:

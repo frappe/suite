@@ -7,6 +7,7 @@ talking to a bucket or to a dictionary.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 
 from suite.drive.patches.build.copy_ledger import CopyLedger
 from suite.drive.patches.build.ports import (
@@ -35,6 +36,31 @@ BACKFILL_BATCH_SIZE = 500
 # Site config key an operator sets after reading `private/drive-build-skipped.json`
 # to let Build finish with rows it could not convert (§14.9).
 ACCEPT_SKIPS_CONFIG_KEY = "drive_build_accept_skips"
+
+# Site config key for how many threads read and copy legacy S3 objects at once.
+COPY_WORKERS_CONFIG_KEY = "drive_build_copy_workers"
+DEFAULT_COPY_WORKERS = 8
+MAX_COPY_WORKERS = 32
+
+
+def copy_workers(value) -> int:
+    """The copy thread count `drive_build_copy_workers` asks for.
+
+    Unset means the default. Anything that is not a whole number from 1 to
+    `MAX_COPY_WORKERS` stops the migrate before it starts, rather than
+    quietly running with a number the operator did not choose."""
+    if value is None or value == "":
+        return DEFAULT_COPY_WORKERS
+    try:
+        workers = int(str(value).strip())
+    except ValueError:
+        workers = 0
+    if isinstance(value, bool) or not 1 <= workers <= MAX_COPY_WORKERS:
+        raise ValueError(
+            f"site config `{COPY_WORKERS_CONFIG_KEY}` is {value!r}; set a whole number from 1 to "
+            f"{MAX_COPY_WORKERS}, or remove it to use {DEFAULT_COPY_WORKERS}."
+        )
+    return workers
 
 
 @dataclass(frozen=True)
@@ -76,6 +102,8 @@ class BuildEnvironment:
     # Whether an operator has accepted this run's skipped rows in site config
     # (`drive_build_accept_skips`). Unset, Build refuses to finish with any.
     accept_skips: bool = False
+    # Threads the S3 copy reads and copies with (`drive_build_copy_workers`).
+    copy_workers: int = DEFAULT_COPY_WORKERS
     # Steps 4 to 6. Left optional so the storage step, and every test of it,
     # keeps building the same environment it always did.
     tree: LegacyTree | None = None
@@ -125,6 +153,7 @@ class BuildEnvironment:
         from suite.drive.patches.database_marker import SiteDatabaseMarkers
 
         refuse_below_upgrade_floor()
+        workers = copy_workers(frappe.conf.get(COPY_WORKERS_CONFIG_KEY))
         return cls(
             storage=SiteStorage(),
             files=SiteFiles(S3_URL_PREFIX),
@@ -133,9 +162,10 @@ class BuildEnvironment:
             copy_ledger=CopyLedger.for_site(),
             markers=SiteDatabaseMarkers(),
             accept_skips=bool(frappe.conf.get(ACCEPT_SKIPS_CONFIG_KEY)),
+            copy_workers=workers,
             # Deferred: building the driver constructs a boto3 client, and the
             # gate must be able to refuse a misconfigured site first.
-            open_bucket=BotoBucket.from_site,
+            open_bucket=partial(BotoBucket.from_site, connections=workers),
             tree=SiteTree(),
             drive=SiteDrive(),
             content=SiteContentSource(),

@@ -225,7 +225,14 @@ class SiteFiles:
                 *filters,
                 *self.filters,
             ],
-            fields=["name", "file_url", "file_name", "file_type", "file_size", *status],
+            fields=[
+                "name",
+                "file_url",
+                "file_name",
+                "file_type",
+                "file_size",
+                *status,
+            ],
             order_by="name asc",
             limit=limit,
         )
@@ -266,6 +273,30 @@ class SiteFiles:
             frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
 
 
+# botocore's default `max_pool_connections`.
+BOTOCORE_POOL_CONNECTIONS = 10
+
+# `storage_driver_config` keys, and the boto3 client argument each one sets,
+# exactly as `frappe.storage.s3_driver.S3Driver` reads them.
+DRIVER_CLIENT_ARGUMENTS = (
+    ("region", "region_name"),
+    ("endpoint_url", "endpoint_url"),
+    ("access_key_id", "aws_access_key_id"),
+    ("secret_access_key", "aws_secret_access_key"),
+)
+
+
+def _s3_client(client, connections: int):
+    """A second client for the driver's bucket, with a larger connection pool."""
+    import boto3
+    from botocore.config import Config
+
+    config = frappe.conf.storage_driver_config or {}
+    arguments = {argument: config[key] for key, argument in DRIVER_CLIENT_ARGUMENTS if config.get(key)}
+    pool = Config(max_pool_connections=connections)
+    return boto3.client("s3", config=client.meta.config.merge(pool), **arguments)
+
+
 class BotoBucket:
     """`S3Bucket` over the framework S3 driver's own client and bucket.
 
@@ -274,16 +305,25 @@ class BotoBucket:
     needs both keys reachable from one set of credentials.
     """
 
-    def __init__(self, driver):
+    def __init__(self, driver, client=None):
         self.driver = driver
         self.bucket = driver.bucket
-        self.client = driver.client
+        self.client = client or driver.client
 
     @classmethod
-    def from_site(cls) -> BotoBucket:
+    def from_site(cls, connections: int | None = None) -> BotoBucket:
+        """The site's S3 driver, with room for `connections` concurrent requests.
+
+        botocore keeps `BOTOCORE_POOL_CONNECTIONS` connections per client and
+        drops any extra one after each request, so a copy with more threads
+        than that gets its own client, built the way the driver builds its own.
+        """
         from frappe.storage.driver import get_driver
 
-        return cls(get_driver("s3"))
+        driver = get_driver("s3")
+        if not connections or connections <= BOTOCORE_POOL_CONNECTIONS:
+            return cls(driver)
+        return cls(driver, _s3_client(driver.client, connections))
 
     def open(self, key: str) -> IO[bytes]:
         try:
