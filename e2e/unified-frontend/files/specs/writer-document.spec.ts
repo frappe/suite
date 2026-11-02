@@ -138,7 +138,9 @@ test("losing edit access freezes the editor and cancels the pending save", async
 test("a toolbar-only change is saved before leaving the document", async ({ page }) => {
 	const editor = await openDocument(page);
 	await editor.click();
-	await page.getByRole("button", { name: /bullet list/i }).click();
+	await page.getByRole("button", { name: "Lists" }).click();
+	await page.getByRole("menuitem", { name: "Bulleted list" }).click();
+	await expect(editor.locator("ul")).toBeVisible();
 
 	let asked = "";
 	page.once("dialog", async (dialog) => {

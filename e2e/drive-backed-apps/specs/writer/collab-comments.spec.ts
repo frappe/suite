@@ -105,7 +105,8 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row.getByText("A reply, edited", { exact: true })).toBeVisible();
 		await row.getByRole("button", { name: "Resolve" }).click();
 		await expect(row).toHaveCount(0);
-		await page.getByRole("button", { name: "Undo" }).click();
+		// The toast's Undo; the toolbar has one of its own
+		await page.getByRole("region", { name: /^Notifications/ }).getByRole("button", { name: "Undo" }).click();
 		await expect(row).toHaveCount(1);
 		await row.hover();
 		await row.getByRole("button", { name: "Resolve" }).click();

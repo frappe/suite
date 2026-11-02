@@ -107,8 +107,8 @@ test.describe("Writer collaboration", () => {
 		await expect(page.getByText("Version restored")).toBeVisible();
 		const restored = await expectConverged(testApi, node, [page, collaborator.page], ["Kept in the version"]);
 		expect(restored.filter(Boolean)).toEqual(["Kept in the version"]);
-		await expect(panel.getByRole("button", { name: /^Before restoring version \d+/ })).toHaveCount(1);
-		await panel.getByRole("button", { name: /^Before restoring version \d+/ }).click();
+		await expect(panel.getByRole("button", { name: /^Before restoring “Draft one”/ })).toHaveCount(1);
+		await panel.getByRole("button", { name: /^Before restoring “Draft one”/ }).click();
 		await expect(page.getByLabel("Version preview")).toContainText("Typed after the version");
 		await panel.getByRole("button", { name: "Current version", exact: true }).click();
 
