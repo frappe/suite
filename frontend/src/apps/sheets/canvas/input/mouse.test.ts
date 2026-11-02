@@ -298,4 +298,13 @@ describe('wheel', () => {
     h.canvas.dispatchEvent(new WheelEvent('wheel', { deltaX: 10, deltaY: 100, cancelable: true }))
     expect(h.opts.scrollBy).toHaveBeenCalledWith(5, 50)
   })
+
+  it('leaves Ctrl+wheel and trackpad pinch to the browser, which zooms the page', () => {
+    // A pinch arrives as a wheel event with ctrlKey set.
+    const h = setup()
+    const e = new WheelEvent('wheel', { deltaY: 100, ctrlKey: true, cancelable: true })
+    h.canvas.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(false)
+    expect(h.opts.scrollBy).not.toHaveBeenCalled()
+  })
 })

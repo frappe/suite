@@ -20,7 +20,11 @@ const HANDLE_RING = 1
 
 export interface SelectionPainter {
   drawSelFill(range: CellBlock, sel: Cell | null, getMergeInfo: CellProvider['getMergeInfo']): void
-  drawRangeOutline(range: CellBlock, sel: Cell, getMergeInfo: CellProvider['getMergeInfo']): void
+  drawRangeOutline(
+    range: CellBlock,
+    sel: Cell | null,
+    getMergeInfo: CellProvider['getMergeInfo'],
+  ): void
   drawSelectionBorder(
     sel: Cell,
     range: CellBlock,
@@ -67,17 +71,21 @@ export function createSelectionPainter(
 
   // Drawn per pane with the tint (the renderer clips each pane), so a range
   // that crosses a freeze line is outlined in both panes and never over one.
+  // Like the tint, a selection that is just the active cell `sel` gets none;
+  // with no `sel` (row, column, whole sheet) the range is always outlined.
   function drawRangeOutline(
     range: CellBlock,
-    sel: Cell,
+    sel: Cell | null,
     getMergeInfo: CellProvider['getMergeInfo'],
   ): void {
-    const { w: aw, h: ah } = _activeSize(sel, getMergeInfo)
     const x = colX(range.c0),
       y = rowY(range.r0)
     const w = colX(range.c1) + cw(range.c1) - x
     const h = rowY(range.r1) + rh(range.r1) - y
-    if (w <= aw && h <= ah) return
+    if (sel) {
+      const { w: aw, h: ah } = _activeSize(sel, getMergeInfo)
+      if (w <= aw && h <= ah) return
+    }
     ctx.save()
     ctx.strokeStyle = COLORS.selBorder
     ctx.lineWidth = OUTLINE_W
