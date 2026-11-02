@@ -105,6 +105,26 @@ describe('glue: cells', { timeout: GLUE_TIMEOUT }, () => {
     expect(await inputs(b)).toEqual({})
   })
 
+  it("a pivot's banding stays out of the next action's commit", async () => {
+    const [a, b] = await twoTabs()
+    const id = a.stores.pivot.add({
+      sourceSheet: 'Sheet1',
+      sourceRange: 'A1:B3',
+      outputSheet: 'Sheet1',
+      anchorCol: 4,
+    })
+    await a.glue.commit()
+    await sync(a, b)
+    // A rebuild: the extent is render state, so the pivot store reads unchanged.
+    a.stores.pivot.setExtent(id, { r0: 0, c0: 4, r1: 2, c1: 5 })
+    a.stores.formats.applyToRange(['E1', 'F1', 'E3', 'F3'], { bold: true }, 'Sheet1')
+    await type(a, 'Sheet1', 'A1', 'next action')
+    await sync(a, b)
+    expect(roots(a.doc).formats.size).toBe(0)
+    expect(b.stores.formats.snapshot().Sheet1?.cells ?? {}).toEqual({})
+    expect(a.stores.formats.snapshot().Sheet1?.cells?.E1).toEqual({ bold: true })
+  })
+
   it('holds a remote update while a local action is not committed yet', async () => {
     const [a, b] = await twoTabs()
     await type(a, 'Sheet1', 'A1', 'top')

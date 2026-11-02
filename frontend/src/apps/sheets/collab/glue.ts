@@ -61,6 +61,7 @@ import {
 } from './schema'
 import {
   docSheets,
+  pivotOutput,
   readEntries,
   restoreStores,
   STORE_NAMES,
@@ -317,7 +318,9 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
     }
     reconcileSheetOrder()
     const moved = commands.some((c) => STRUCTURAL.has(c.type))
-    writeStores(doc, changedStores(moved), docSheets(doc))
+    // Only the changed stores, but the pivot output of all: a rebuild changes
+    // the banding without changing the pivot store's snapshot.
+    writeStores(doc, changedStores(moved), docSheets(doc), pivotOutput(stores))
   }
 
   function writeCommand(c: NonBatchCommand): void {
