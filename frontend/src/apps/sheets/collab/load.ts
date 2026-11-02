@@ -10,7 +10,14 @@ import type * as Y from 'yjs'
 import type { WorkbookClient } from '../core/client'
 import type { BatchCommand, NonBatchCommand } from '../core/commands'
 import { addSheet, axis, cellKey, initDoc, parseCellKey, roots } from './schema'
-import { docSheets, readEntries, restoreStores, writeStores, type GlueStores } from './stores'
+import {
+  docSheets,
+  pivotOutput,
+  readEntries,
+  restoreStores,
+  writeStores,
+  type GlueStores,
+} from './stores'
 
 /** One cell as IronCalc holds it: 1-based position and typed input. */
 export interface CellInput {
@@ -79,26 +86,51 @@ export function putInput(doc: Y.Doc, sheetId: string, cell: CellInput): void {
 export interface WriteOptions {
   /** The transaction origin (the glue's local origin, so the writes go out). */
   origin?: unknown
-  /** Cells to leave out: pivot output, which every tab rebuilds itself (Q8). Positions 1-based. */
-  skip?: (sheet: string, row: number, col: number) => boolean
 }
 
-/** Fill an empty doc from a running workbook and its side stores, in one transaction. */
+/**
+ * Each pivot's output, for a pivot that has not written it this session (an
+ * old sheet's, which saved its output as cells): the solid block from its
+ * anchor, right along the header row and down the row-label column to the
+ * first empty cell, as the editor finds it on open (usePivotIntegration).
+ */
+function findPivotOutput(stores: GlueStores, cells: Map<string, CellInput[]>): void {
+  for (const p of stores.pivot?.list() ?? []) {
+    if (p._extent || !p.outputSheet) continue
+    const filled = new Set((cells.get(p.outputSheet) ?? []).map((c) => `${c.row - 1}:${c.col - 1}`))
+    const has = (r: number, c: number) => filled.has(`${r}:${c}`)
+    const r0 = p.anchorRow ?? 0
+    const c0 = p.anchorCol ?? 0
+    if (!has(r0, c0)) continue
+    let c1 = c0
+    while (has(r0, c1 + 1)) c1++
+    let r1 = r0
+    while (has(r1 + 1, c0)) r1++
+    stores.pivot!.setExtent(p.id, { r0, c0, r1, c1 })
+  }
+}
+
+/**
+ * Fill an empty doc from a running workbook and its side stores, in one
+ * transaction. Pivot output stays out: every tab rebuilds it itself (Q8).
+ */
 export async function writeWorkbookToDoc(
   doc: Y.Doc,
   client: WorkbookClient,
   stores: GlueStores,
-  { origin, skip }: WriteOptions = {},
+  { origin }: WriteOptions = {},
 ): Promise<void> {
   if (docSheets(doc).length) throw new Error('writeWorkbookToDoc needs an empty doc')
   const names = [...client.sheets]
   const cells = await Promise.all(names.map((sheet) => readSheetInputs(client, sheet)))
+  findPivotOutput(stores, new Map(names.map((name, i) => [name, cells[i]!])))
+  const derived = pivotOutput(stores)
   doc.transact(() => {
     initDoc(doc)
     names.forEach((name, i) => {
       const sheetId = addSheet(doc, name)
       for (const cell of cells[i]!)
-        if (!skip?.(name, cell.row, cell.col)) putInput(doc, sheetId, cell)
+        if (!derived(name, cell.row - 1, cell.col - 1)) putInput(doc, sheetId, cell)
     })
     writeStores(doc, stores, docSheets(doc))
   }, origin)

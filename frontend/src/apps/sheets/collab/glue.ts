@@ -211,28 +211,12 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
       await buildWorkbookFromDoc(doc, client, stores)
     } else {
       await client.idle()
-      await writeWorkbookToDoc(doc, client, stores, { origin: localOrigin, skip: pivotOutput() })
+      await writeWorkbookToDoc(doc, client, stores, { origin: localOrigin })
     }
     mirror = readMirror()
     markSynced(STORE_NAMES)
     loaded = true
     flushHeld()
-  }
-
-  // Whether a cell (1-based) is inside the last output of a pivot.
-  function pivotOutput(): (sheet: string, row: number, col: number) => boolean {
-    const out = (stores.pivot?.list() ?? []).flatMap((p) =>
-      p._extent && p.outputSheet ? [{ sheet: p.outputSheet, ...p._extent }] : [],
-    )
-    return (sheet, row, col) =>
-      out.some(
-        (e) =>
-          e.sheet === sheet &&
-          row - 1 >= e.r0 &&
-          row - 1 <= e.r1 &&
-          col - 1 >= e.c0 &&
-          col - 1 <= e.c1,
-      )
   }
 
   // ---- out: local → doc ----
