@@ -681,6 +681,20 @@ describe('workbook — the cell scans stop at the last used row', () => {
     for (let r = 1; r <= 50; r++) setInput(wb, 'Sheet1', r, 1, '1')
     expect(rowReads(() => expect(wb.rangeStats('Sheet1', 40, 1, 42, 1).sum).toBe(3))).toBe(3)
   })
+
+  // C1 spills 1 … 10; A100 keeps the range C5:C8 on its own rows.
+  it('the range stats of a few rows inside a spill from above', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 100, 1, 'x')
+    setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(10)')
+    expect(wb.rangeStats('Sheet1', 5, 3, 8, 3)).toEqual({ count: 4, numCount: 4, sum: 26 })
+  })
+
+  it('the range stats of a few rows running past the data read only those rows', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 50; r++) setInput(wb, 'Sheet1', r, 1, '1')
+    expect(rowReads(() => expect(wb.rangeStats('Sheet1', 48, 1, 60, 1).sum).toBe(3))).toBe(13)
+  })
 })
 
 describe('workbook — snapshots', () => {

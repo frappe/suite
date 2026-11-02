@@ -608,11 +608,11 @@ export function createWorkbook({
         })
         return out
       }),
-    // The status bar's Count / Sum / Avg. A range reaching below the last
-    // input row (a whole column) goes through scanCells, so it costs the used
-    // rows, not a million reads (ISSUES #89); scanCells starts at row 1 to
-    // follow the spills that reach into the range. Any other range reads just
-    // its own rows, so a few cells far down stay cheap.
+    // The status bar's Count / Sum / Avg. A range taller than the used rows
+    // (a whole column) goes through scanCells, so it costs the used rows, not
+    // a million reads (ISSUES #89); scanCells starts at row 1 to follow the
+    // spills that reach into the range. A shorter range reads just its own
+    // rows, so a few cells far down, even past the data, stay cheap.
     rangeStats: (sheet, r1, c1, r2, c2) =>
       read(() => {
         const idx = sheetIndex(sheet)
@@ -634,7 +634,7 @@ export function createWorkbook({
         }
         const top = Math.max(1, r1),
           bottom = Math.min(r2, MAX_ROWS)
-        if (bottom > inputRows()) {
+        if (bottom - top + 1 > inputRows()) {
           scanCells(idx, (row, col) => {
             if (row > bottom) return true
             if (row >= top && col >= c1 && col <= c2) add(row, col)
