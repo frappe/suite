@@ -20,6 +20,15 @@ describe('calendar datetime helpers', () => {
     expect(formatDateTime('2026-07-28T09:02:30Z')).toBe('Jul 28 2026, 2:32 PM')
   })
 
+  it('measures a dragged event in the Settings zone, across a clock change', async () => {
+    const { draggedDuration } = await load()
+    expect(draggedDuration('2026-07-28T10:00:00', '2026-07-28T11:30:00')).toBe('PT1H30M')
+    // New York's clocks jump from 02:00 to 03:00 on this date, so this is one hour.
+    expect(draggedDuration('2026-03-08T01:30:00', '2026-03-08T03:30:00', 'America/New_York')).toBe(
+      'PT1H',
+    )
+  })
+
   it('reads an alert wall clock back as UTC', async () => {
     const { fromWallClock } = await load()
     expect(fromWallClock('2026-07-28T14:32')).toBe('2026-07-28T09:02:00Z')

@@ -28,6 +28,14 @@ export const formatDateTime = (value?: string | null, format = 'MMM D YYYY, h:mm
  * no offset) into the UTC timestamp the APIs take. Blank stays blank so callers can tell
  * "unset" from a time.
  */
+/** How long a dragged event lasts, its wall clocks read in the Settings time zone. */
+export const draggedDuration = (from: string, to: string, zone = userTimeZone()): string => {
+  const length = dayjs.duration(dayjs.tz(to, zone).diff(dayjs.tz(from, zone)))
+  return dayjs
+    .duration({ hours: Math.floor(length.asHours()), minutes: length.minutes() })
+    .toISOString()
+}
+
 export const fromWallClock = (value?: string | null): string =>
   value ? dayjs.tz(value, userTimeZone()).utc().format(UTC_FORMAT) : ''
 

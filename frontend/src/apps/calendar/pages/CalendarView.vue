@@ -29,7 +29,7 @@ import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalenda
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { canEditEvent, calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
-import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
+import { draggedDuration, fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
 import { eventRowId, sameEvent, serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
@@ -405,8 +405,7 @@ watch(
 // Asked again as the date turns: a list of today's events fetched yesterday is
 // yesterday's, and the clock the list already runs on says when.
 // The events themselves changed, as opposed to the window over them moving. The
-// sidebar's mini month draws from its own density call, so it has no way to hear
-// about a save or a delete unless it is told to forget what it has.
+// sidebar's mini month needs no call here: each event write invalidates its density read.
 const reloadEvents = () => {
   events.refetch().catch(() => {})
   todayEvents.refetch().catch(() => {})
@@ -1083,12 +1082,10 @@ const submitEvent = (sendEmail: boolean) => {
     // The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
     // same numbers would be reinterpreted in the event's original zone.
     eventToBeUpdated.time_zone = userTimeZone()
-    const start = dayjs(eventToBeUpdated.fromDateTime)
-    const end = dayjs(eventToBeUpdated.toDateTime)
-    const diff = dayjs.duration(end.diff(start))
-    const hours = Math.floor(diff.asHours())
-    const minutes = diff.minutes()
-    eventToBeUpdated.duration = dayjs.duration({ hours, minutes }).toISOString()
+    eventToBeUpdated.duration = draggedDuration(
+      eventToBeUpdated.fromDateTime,
+      eventToBeUpdated.toDateTime,
+    )
   }
 
   // One occurrence moved on its own: the series keeps its rule and this date gets an
