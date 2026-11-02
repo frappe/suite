@@ -35,7 +35,8 @@
                     :should-show="shouldShowBubbleMenu"
                     @comment="addComment"
                   />
-                  <LinkPopover v-if="editor && editable" :editor />
+                  <!-- Stays mounted: BubbleMenu detaches its root, which Vue cannot then remove or patch beside -->
+                  <LinkPopover v-if="editor" :editor />
                   <TableControls v-if="editor && editable" :editor />
                   <EditorDropZone :editor :disabled="isReadOnly" class="grow flex flex-col">
                     <EditorContent

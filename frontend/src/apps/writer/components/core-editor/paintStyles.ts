@@ -43,7 +43,10 @@ export function watchPaintTarget(editor: Editor): () => void {
     if (styleClipboard.painting && !editor.state.selection.empty) editor.commands.applyStyles()
   }
   // The browser settles a double-click's selection after mouseup
-  const afterMouseUp = () => setTimeout(paint)
+  const afterMouseUp = () => {
+    clearTimeout(pending)
+    pending = setTimeout(paint)
+  }
   const onKeyDown = (event: KeyboardEvent) => (event.shiftKey ? clearTimeout(pending) : paint())
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.key === 'Shift' || !event.shiftKey) pending = setTimeout(paint, PAINT_PAUSE_MS)

@@ -26,6 +26,16 @@ afterEach(() => {
 })
 
 describe('paint styles', () => {
+  it('does not paint after the editor closes straight after a mouse release', () => {
+    const target = open('<p>plain</p>')
+    vi.useFakeTimers()
+    target.view.dom.dispatchEvent(new MouseEvent('mouseup'))
+    stopWatching()
+    target.destroy()
+
+    expect(() => vi.runAllTimers()).not.toThrow()
+  })
+
   it('copies the word at the caret and paints a keyboard selection', () => {
     const target = open('<p><strong>Bold</strong> plain</p>')
     target.commands.setTextSelection(3)
