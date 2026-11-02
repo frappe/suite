@@ -259,8 +259,7 @@ const moduleGraphDebtGroups = [
     owner: 'Writer frontend owner',
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
-    entries: [
-    ],
+    entries: [],
   },
 ]
 const unstableFrappeUIDebtGroups = [

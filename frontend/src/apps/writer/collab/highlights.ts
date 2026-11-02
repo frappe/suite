@@ -1,5 +1,11 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection, type EditorState, type StateField } from '@tiptap/pm/state'
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type StateField,
+} from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 
 import type { DocumentThread } from '@/apps/drive'
