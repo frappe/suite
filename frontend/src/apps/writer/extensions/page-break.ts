@@ -3,7 +3,7 @@ import type { NodeType } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 
 import { selectEmptyLineAfter } from '@/apps/writer/extensions/empty-line-after'
-import { translate as __ } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation/translate'
 
 interface PageBreakRuleOptions {
   HTMLAttributes: Record<string, any>

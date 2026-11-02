@@ -1,14 +1,14 @@
 import { Extension, type Editor, type JSONContent } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
-import { driveNodeRoute, nodeContentUrl, type DriveNodeSummary } from '@/apps/drive'
-import { translate as __ } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation/translate'
 
-/** A file or document picked from Drive. */
-export type DriveFile = Pick<DriveNodeSummary, 'name' | 'title' | 'kind' | 'mime'>
-
-/** Opens Drive's file picker. Resolves with the picked file, or `undefined` when cancelled. */
-export type PickDriveFile = () => Promise<DriveFile | undefined>
+/**
+ * Opens Drive's file picker. Resolves with the picked file as document content, or
+ * `undefined` when cancelled. The caller supplies it because this extension is in the
+ * server's converter bundle, which must not load Drive's interface.
+ */
+export type PickDriveFile = () => Promise<JSONContent | undefined>
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -21,23 +21,8 @@ declare module '@tiptap/core' {
 
 const CONTENT_URL = /^\/api\/suite\/drive\/nodes\/[^/?#]+\/content$/
 
-/**
- * How a Drive file goes into a document. A picture or a video shows the file
- * itself, through Drive's content URL, so each reader loads it with their own
- * Drive access. Anything else is a link to the file, named by its title.
- */
-export function driveFileContent(file: DriveFile): JSONContent {
-  const src = nodeContentUrl(file.name)
-  const media = file.kind === 'file' ? file.mime?.split('/')[0] : undefined
-  if (media === 'image') return { type: 'image', attrs: { src, alt: file.title } }
-  if (media === 'video') return { type: 'video', attrs: { src, title: file.title } }
-  const href = driveNodeRoute(file).path
-  return { type: 'text', text: file.title, marks: [{ type: 'link', attrs: { href } }] }
-}
-
-/** Inserts `file` at the selection. A link to it wraps selected text instead of adding its title. */
-export function insertDriveFile(editor: Editor, file: DriveFile): boolean {
-  const content = driveFileContent(file)
+/** Inserts `content` at the selection. A link to a file wraps selected text instead of adding its title. */
+function insertDriveFile(editor: Editor, content: JSONContent): boolean {
   const link = content.marks?.[0]
   if (link && !editor.state.selection.empty)
     return editor
@@ -66,7 +51,8 @@ export const DriveFiles = Extension.create<{ pickFile: PickDriveFile | null }>({
         ({ editor, dispatch }) => {
           const pickFile = this.options.pickFile
           if (!pickFile) return false
-          if (dispatch) void pickFile().then((file) => file && insertDriveFile(editor, file))
+          if (dispatch)
+            void pickFile().then((content) => content && insertDriveFile(editor, content))
           return true
         },
     }

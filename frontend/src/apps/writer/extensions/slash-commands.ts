@@ -3,7 +3,7 @@ import { SlashCommands, type CommandItem } from 'frappe-ui/editor'
 
 import { BLOCK_STYLES, type BlockStyle } from '@/apps/writer/components/core-editor/formatting'
 import { INSERTS, type Insert } from '@/apps/writer/components/core-editor/inserts'
-import { translate as __ } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation/translate'
 
 const LISTS = ['bulletList', 'orderedList', 'taskList']
 

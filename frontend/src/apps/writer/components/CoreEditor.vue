@@ -98,10 +98,12 @@ import {
 } from '@/apps/writer/utils/editor-layout'
 
 import { bubbleMenuShouldShow } from './core-editor/bubble-menu'
+import { driveFileContent } from './core-editor/driveFileContent'
 import LinkPopover from './core-editor/LinkPopover.vue'
 import TableControls from './core-editor/table/TableControls.vue'
 import WriterBubbleMenu from './core-editor/WriterBubbleMenu.vue'
 import WriterToolbar from './core-editor/WriterToolbar.vue'
+import MentionMenu from './MentionMenu.vue'
 import ToC from './ToC.vue'
 import ToCMobile from './ToCMobile.vue'
 
@@ -196,8 +198,14 @@ const writerEditorOptions = {
   },
   scrollParent: () => scrollParent.value!,
   media: inject(DOCUMENT_MEDIA, null),
-  pickDriveFile: () =>
-    driveDialogs.pickFile({ title: __('Insert from Drive'), action: __('Insert') }),
+  mentionMenu: MentionMenu,
+  pickDriveFile: async () => {
+    const file = await driveDialogs.pickFile({
+      title: __('Insert from Drive'),
+      action: __('Insert'),
+    })
+    return file && driveFileContent(file)
+  },
 }
 
 const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]

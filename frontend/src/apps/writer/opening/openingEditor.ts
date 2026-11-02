@@ -4,6 +4,7 @@ import { toast } from 'frappe-ui'
 import { setPlaceholder } from 'frappe-ui/editor'
 import { shallowRef } from 'vue'
 
+import MentionMenu from '@/apps/writer/components/MentionMenu.vue'
 import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import { EDITOR_TEXT_CLASS, editorTextStyle } from '@/apps/writer/utils/editor-layout'
 import { translate as __ } from '@/platform/translation'
@@ -85,6 +86,7 @@ function createOpening(node: string): Opening {
   const editor = new Editor({
     element,
     extensions: writerEditorExtensions({
+      mentionMenu: MentionMenu,
       isCollaborative: false,
       onCommentActivated: () => {},
       onAnchors: () => {},

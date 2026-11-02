@@ -3,6 +3,7 @@ import { getHierarchicalIndexes } from '@tiptap/extension-table-of-contents'
 import { LineHeight } from '@tiptap/extension-text-style'
 import { CharacterCount } from '@tiptap/extensions'
 import { Heading, ImageGroup, ImageViewer, type StarterKitOptions } from 'frappe-ui/editor'
+import type { Component } from 'vue'
 
 import { BlockLayout } from '@/apps/writer/extensions/block-layout'
 import { BlurredSelection } from '@/apps/writer/extensions/blurred-selection'
@@ -22,7 +23,7 @@ import { ListJoin } from '@/apps/writer/extensions/list-join'
 import MediaDownload from '@/apps/writer/extensions/media-download'
 import { MediaInsert } from '@/apps/writer/extensions/media-insert'
 import { Image, Video } from '@/apps/writer/extensions/media-sizes'
-import { MentionMenuExtension } from '@/apps/writer/extensions/mention-menu'
+import { mentionMenuExtension } from '@/apps/writer/extensions/mention-menu'
 import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
 import { WriterPaste } from '@/apps/writer/extensions/paste'
@@ -50,6 +51,8 @@ export interface WriterEditorOptions {
   media: DocumentMedia | null
   /** Opens Drive's file picker for "From Drive". Without it, the command is off. */
   pickDriveFile?: PickDriveFile
+  /** The `@` menu. Without it, `@` is plain text. */
+  mentionMenu?: Component
 }
 
 const MEDIA_EXTENSIONS: AnyExtension[] = [Image, ImageGroup, ImageViewer, Video]
@@ -115,7 +118,7 @@ export function writerEditorExtensions(options: WriterEditorOptions): AnyExtensi
   return [
     writerKit(options),
     ...MEDIA_EXTENSIONS,
-    MentionMenuExtension,
+    ...(options.mentionMenu ? [mentionMenuExtension(options.mentionMenu)] : []),
     ...EDITING_EXTENSIONS,
     OldCommentExtension.configure({ onCommentActivated: options.onCommentActivated }),
     KeptFormatting,

@@ -43,7 +43,7 @@ import { useEventListener } from '@vueuse/core'
 import { Popover } from 'frappe-ui'
 import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 
-import { translate as __ } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation/translate'
 
 import type { Box } from './selectionRing'
 

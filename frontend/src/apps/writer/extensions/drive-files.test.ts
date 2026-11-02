@@ -1,8 +1,8 @@
 import { Editor } from '@tiptap/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { driveFileContent, type DriveFile } from '../components/core-editor/driveFileContent'
 import { writerEditorExtensions } from '../editor-extensions'
-import type { DriveFile, PickDriveFile } from './drive-files'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
@@ -23,7 +23,7 @@ afterEach(() => {
   editor = undefined
 })
 
-function writerEditor(content: string, pickDriveFile?: PickDriveFile) {
+function writerEditor(content: string, picked?: () => Promise<DriveFile | undefined>) {
   editor = new Editor({
     element: document.createElement('div'),
     content,
@@ -33,7 +33,12 @@ function writerEditor(content: string, pickDriveFile?: PickDriveFile) {
       onAnchors: () => {},
       scrollParent: () => window,
       media: null,
-      pickDriveFile,
+      pickDriveFile:
+        picked &&
+        (async () => {
+          const file = await picked()
+          return file && driveFileContent(file)
+        }),
     }),
   })
   return editor

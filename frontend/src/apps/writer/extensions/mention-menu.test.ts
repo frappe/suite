@@ -5,9 +5,10 @@ import Text from '@tiptap/extension-text'
 import { Mention } from 'frappe-ui/editor'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import MentionMenu from '@/apps/writer/components/MentionMenu.vue'
 import type { WriterUser } from '@/apps/writer/drive'
 
-import { MentionMenuExtension } from './mention-menu'
+import { mentionMenuExtension } from './mention-menu'
 
 const asked = vi.hoisted(() => [] as string[])
 
@@ -57,7 +58,13 @@ it('offers people with their email and access, asks the server as you type, and 
   document.body.append(element)
   editor = new Editor({
     element,
-    extensions: [Document, Paragraph, Text, Mention.configure({}), MentionMenuExtension],
+    extensions: [
+      Document,
+      Paragraph,
+      Text,
+      Mention.configure({}),
+      mentionMenuExtension(MentionMenu),
+    ],
     content: '<p>Ping</p>',
   })
   editor.commands.focus('end')
