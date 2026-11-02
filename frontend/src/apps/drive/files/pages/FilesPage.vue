@@ -309,6 +309,7 @@ import DriveUploads from '../features/uploads/DriveUploads.vue'
 import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
 import DropOverlay from '../features/uploads/DropOverlay.vue'
 import { uploadTargetOf } from '../features/uploads/queue'
+import { pastedImages } from '../features/uploads/sources'
 import ViewSettings from '../features/ViewSettings.vue'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { LOCATION_LABELS, locationTitle, trashLocation } from '../internal/locations'
@@ -686,6 +687,7 @@ onMounted(() => {
   if (presentation.value.view === 'grid') startPreviewObservation()
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('popstate', onMobileBack)
+  window.addEventListener('paste', onPaste)
 })
 onBeforeUnmount(() => {
   narrowMedia?.removeEventListener('change', onNarrowChange)
@@ -693,6 +695,7 @@ onBeforeUnmount(() => {
   stopPreviews?.()
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('popstate', onMobileBack)
+  window.removeEventListener('paste', onPaste)
 })
 
 watch(
@@ -1056,6 +1059,15 @@ function clearSelected() {
 }
 function onWindowKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && selectionMode.value) clearSelected()
+}
+/** A pasted image, such as a screenshot, uploads into the open folder as a picked file would. */
+function onPaste(event: ClipboardEvent) {
+  const target = uploadTarget.value
+  if (!target || isTextField(event.target)) return
+  const files = pastedImages(event.clipboardData)
+  if (!files.length) return
+  event.preventDefault()
+  void uploads.value?.upload({ files, folders: [] }, target)
 }
 function onNarrowChange(event: MediaQueryListEvent) {
   narrow.value = event.matches

@@ -26,8 +26,19 @@ vi.mock('@/platform/transport', async (original) => {
         switch (operation.id) {
           case 'roots_discover':
             return { personal: { node: 'root', title: 'My files' }, organization: null }
+          // Any other id is a folder of its own, so no test reads an answer another test cached.
           case 'node_get':
-            return { ...node(input.node), access: { role: server.folderRole } }
+            return {
+              ...(node(input.node) ?? {
+                name: input.node,
+                title: 'Drafts',
+                kind: 'folder',
+                parent_node: 'root',
+                root: 'root',
+                state: 'Active',
+              }),
+              access: { role: server.folderRole },
+            }
           case 'node_children':
             return {
               rows: [...server.nodes.values()].filter((row) => row.parent_node === input.node),
@@ -298,5 +309,71 @@ describe('Recent', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(menuItem('a', 'Remove from Recent')).toBeUndefined()
+  })
+})
+
+/** A paste as the browser sends it, carrying `items` from the clipboard. */
+function paste(
+  items: Array<{ kind: string; type: string; file?: File }>,
+  on: EventTarget = window,
+) {
+  const event = Object.assign(new Event('paste', { bubbles: true, cancelable: true }), {
+    clipboardData: {
+      items: items.map((item) => ({ ...item, getAsFile: () => item.file ?? null })),
+    },
+  })
+  on.dispatchEvent(event)
+  return event
+}
+const screenshot = () => new File(['png'], 'image.png', { type: 'image/png' })
+
+/** Waits until the page has read the folder's details, which say whether it takes uploads. */
+async function opened(folder: string) {
+  await vi.waitFor(() =>
+    expect(server.calls.some((call) => call.id === 'node_get' && call.input.node === folder)).toBe(
+      true,
+    ),
+  )
+  await new Promise((resolve) => setTimeout(resolve))
+}
+
+describe('Pasting an image', () => {
+  it('uploads it into the open folder', async () => {
+    await mount('/drive/f/folder-2/drafts')
+    await opened('folder-2')
+
+    const image = screenshot()
+    const event = paste([
+      { kind: 'string', type: 'text/plain' },
+      { kind: 'file', type: 'image/png', file: image },
+    ])
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(uploads.upload).toHaveBeenCalledWith(
+      { files: [{ file: image }], folders: [] },
+      { parent: 'folder-2', root: 'root' },
+    )
+  })
+
+  it('leaves text, and a paste into a field, alone', async () => {
+    const { root } = await mount('/drive/f/folder-3/drafts')
+    await opened('folder-3')
+
+    paste([{ kind: 'string', type: 'text/plain' }])
+    const field = root.appendChild(document.createElement('input'))
+    paste([{ kind: 'file', type: 'image/png', file: screenshot() }], field)
+
+    expect(uploads.upload).not.toHaveBeenCalled()
+  })
+
+  it('uploads nothing into a folder the user cannot upload to', async () => {
+    server.folderRole = 10
+    await mount('/drive/f/folder-4/drafts')
+    await opened('folder-4')
+
+    const event = paste([{ kind: 'file', type: 'image/png', file: screenshot() }])
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(uploads.upload).not.toHaveBeenCalled()
   })
 })
