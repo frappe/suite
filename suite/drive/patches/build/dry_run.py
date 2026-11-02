@@ -48,6 +48,7 @@ from suite.drive.patches.build.preflight import (
     NO_GO,
     DiskSettings,
     PreflightReport,
+    ServerFacts,
     accepted_defects_path,
     legacy_schema_present,
     preflight,
@@ -204,10 +205,13 @@ def dry_run(
     disk: DiskSettings | None = None,
     batch_size: int = BUILD_BATCH_SIZE,
     accepted_defects: Path | None = None,
+    server: ServerFacts | None = None,
 ) -> DryRun:
     """Preflight, census, one JSON file."""
     disk = disk or DiskSettings()
-    flight = preflight(env, disk=disk, batch_size=batch_size, accepted_defects=accepted_defects)
+    flight = preflight(
+        env, disk=disk, batch_size=batch_size, accepted_defects=accepted_defects, server=server
+    )
     census = take_census(env, root_folder=disk.root_folder, batch_size=batch_size)
     report = {
         "generated_at": env.now(),
@@ -233,6 +237,7 @@ def run() -> None:
         disk=DiskSettings.for_site(),
         directory=Path(frappe.get_site_path("private")),
         accepted_defects=accepted_defects_path(),
+        server=ServerFacts.for_site(),
     )
     print(result.render())
     print(f"\nSaved as JSON: {result.path}")

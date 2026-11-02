@@ -11,7 +11,7 @@ keys in several layouts (`legacy.KEY_SHAPES`), and a key layout the bucket
 no longer serves would surface as thousands of nodes with no blob, after
 the framework backfill had already committed.
 
-So this module answers three questions, in this order:
+So this module answers four questions, in this order:
 
 1. Does the site agree with itself? Storage v2 on, the S3 driver on when
    Drive Disk Settings has S3 on, one bucket at one endpoint on both sides,
@@ -26,6 +26,11 @@ So this module answers three questions, in this order:
 3. Which blobless rows will Build never reach? The same classification
    `legacy_bytes.record_unreachable_rows` makes, so the operator sees the
    rows the §14.9 report would list as missing bytes before the run.
+4. Does the server have what the migration needs? MariaDB's
+   `max_allowed_packet` at 64 MiB or more, for the large rows Build writes,
+   and Node 22.13 or newer, for the document converter that runs after the
+   migration. `check()` reads both (`ServerFacts`); a caller that passes no
+   `ServerFacts` gets no server checks.
 
 ## Which defects block
 
@@ -64,6 +69,8 @@ prints and returns None, so `bench execute` prints nothing of its own.
 """
 
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -100,6 +107,19 @@ BLOCKING = "blocking"
 ACCEPTED = "accepted"
 NOT_MIGRATED = "not_migrated"
 
+MIB = 1024**2
+
+# Build inserts rows larger than MariaDB's default packet limit, Writer bodies
+# among them, and the server refuses a statement past it. The rehearsals ran
+# with this limit (`rehearsal-runbook.md`, step 12).
+PACKET_MIN = 64 * MIB
+
+# The oldest Node the document converter runs on once the migration is done.
+# The same floor as `NODE_MIN` in the content layer's converter (`convert.py`),
+# repeated because Drive may not import the content layer
+# (`suite/tests/test_architecture.py`).
+NODE_MIN = (22, 13)
+
 
 @dataclass(frozen=True)
 class DiskSettings:
@@ -127,6 +147,40 @@ class DiskSettings:
             flat=bool(cint(legacy_single_value("Drive Disk Settings", "flat"))),
             thumbnail_prefix=legacy_single_value("Drive Disk Settings", "thumbnail_prefix") or "",
         )
+
+
+@dataclass(frozen=True)
+class ServerFacts:
+    """What the database server and this host give the migration, read once.
+
+    `max_allowed_packet` is None when the server has no such variable, and
+    `node_version` (`node --version`, such as `v22.13.0`) is None when this
+    host has no Node on the PATH."""
+
+    max_allowed_packet: int | None = None
+    node_version: str | None = None
+
+    @classmethod
+    def for_site(cls) -> ServerFacts:
+        # The global value: the migrate opens its own connection, which
+        # takes the global value at connect time.
+        [[packet]] = frappe.db.sql("SELECT @@global.max_allowed_packet")
+        return cls(
+            max_allowed_packet=int(packet) if packet is not None else None, node_version=_node_version()
+        )
+
+
+def _node_version() -> str | None:
+    node = shutil.which("node")
+    if not node:
+        return None
+    try:
+        completed = subprocess.run(
+            [node, "--version"], capture_output=True, text=True, timeout=10, check=True
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return completed.stdout.strip() or None
 
 
 @dataclass
@@ -378,14 +432,18 @@ def preflight(
     sample_size: int | None = SAMPLE_PER_SHAPE,
     batch_size: int = BUILD_BATCH_SIZE,
     accepted_defects: Path | None = None,
+    server: ServerFacts | None = None,
 ) -> PreflightReport:
     """Run every check against `env` and answer the report. Reads only.
 
     `sample_size=None` heads every legacy object instead of a sample.
     `accepted_defects` is the operator's list (see the module docstring).
+    `server` adds the packet limit and Node checks.
     """
     disk = disk or DiskSettings()
     checks = [_gate_check(env)]
+    if server is not None:
+        checks += [_packet_check(server.max_allowed_packet), _node_check(server.node_version)]
     accepted = _accepted_entries(accepted_defects, checks)
     blobless, by_shape, empty_paths = _classify_blobless_rows(env, disk.root_folder, batch_size)
     listed = {entry.file for entry in accepted.values()}
@@ -431,6 +489,7 @@ def check(every_object: bool = False) -> None:
         disk=DiskSettings.for_site(),
         sample_size=None if every_object else SAMPLE_PER_SHAPE,
         accepted_defects=accepted_defects_path(),
+        server=ServerFacts.for_site(),
     )
     print(report.render())
 
@@ -522,6 +581,46 @@ def _gate_check(env) -> Check:
     except Exception as error:  # a diagnostic tool reports, it does not crash
         return Check(name, False, f"{type(error).__name__}: {error}")
     return Check(name, True)
+
+
+def _packet_check(packet: int | None) -> Check:
+    name = f"MariaDB max_allowed_packet is at least {PACKET_MIN // MIB} MiB"
+    if packet is not None and packet >= PACKET_MIN:
+        return Check(name, True, f"{packet} bytes")
+    found = "not reported by the server" if packet is None else f"{packet} bytes ({packet / MIB:.0f} MiB)"
+    return Check(
+        name,
+        False,
+        f"max_allowed_packet is {found}. Build writes rows larger than that, such as Writer "
+        "bodies, and the migrate fails on the first one. As the database root user, run "
+        f"`SET GLOBAL max_allowed_packet={PACKET_MIN}` and set it in the server configuration "
+        "so a restart keeps it, then check again.",
+    )
+
+
+def _node_check(version: str | None) -> Check:
+    floor = ".".join(str(part) for part in NODE_MIN)
+    name = f"Node {floor} or newer on this server"
+    found = _version_tuple(version)
+    if found is not None and found >= NODE_MIN:
+        return Check(name, True, version or "")
+    what = f"Node {version}" if version else "no `node` on the PATH"
+    return Check(
+        name,
+        False,
+        f"Found {what}. After the migration, the converter that makes legacy documents "
+        f"collaborative, Sheets among them, runs on Node {floor} or newer; without it no "
+        f"document converts. Install Node {floor} or newer for the bench user, then check again.",
+    )
+
+
+def _version_tuple(version: str | None) -> tuple[int, int] | None:
+    """`v22.13.0` as `(22, 13)`; None for anything that is not a version."""
+    major, _, rest = (version or "").strip().lstrip("v").partition(".")
+    minor = rest.partition(".")[0]
+    if not (major.isdigit() and minor.isdigit()):
+        return None
+    return int(major), int(minor)
 
 
 @dataclass(frozen=True)

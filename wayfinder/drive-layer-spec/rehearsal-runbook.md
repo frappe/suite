@@ -313,6 +313,13 @@ chmod 600 sites/$SITE/private/preflight-run-<n>.txt
 
 The output names real files, so it stays in `private/`.
 
+The preflight also checks the server. MariaDB's global
+`max_allowed_packet` must be at least 64 MiB, and Node 22.13 or newer must
+be on the `PATH` of the bench user. Raise the packet limit before this step,
+as step 14 shows, and keep it raised until after step 14. The bucket names
+must match exactly. The two endpoints can differ only by a trailing slash or
+by the case of the scheme and host.
+
 A defect is `missing` (no object at the key), `size_differs` (the object
 is not the size in `File.file_size`), or `no_object_path` (the URL names no
 key). A defect on a Removed row never blocks. A defect on an Active or

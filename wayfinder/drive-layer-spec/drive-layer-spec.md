@@ -4351,9 +4351,20 @@ Drive patch at all is a fresh install and passes.
 
 Two read-only checks run before the migrate, by hand:
 `bench --site X execute suite.drive.patches.build.preflight.check` (GO /
-NO-GO on storage config, bucket reach, the floor and the legacy objects)
-and `bench --site X execute suite.drive.patches.build.dry_run.run` (the
-census of rows Build would write and skip). Neither writes.
+NO-GO on storage config, bucket reach, the floor, the legacy objects and
+the server) and `bench --site X execute suite.drive.patches.build.dry_run.run`
+(the census of rows Build would write and skip). Neither writes.
+
+The storage check compares the two bucket names exactly. It compares the two
+endpoints after it removes a trailing slash and puts the scheme and host in
+lower case, so a different host, port or path is still a different bucket.
+
+**Preflight: the server.** MariaDB's global `max_allowed_packet` must be at
+least 64 MiB: Build inserts rows larger than the default limit, Writer
+bodies among them. Node 22.13 or newer must be on the bench user's `PATH`:
+after the migration, the converter that makes legacy documents
+collaborative runs on it. Either one missing is NO-GO, with the fix in the
+message.
 
 **Preflight: legacy objects.** The preflight groups every blobless S3
 `File` row by key layout and heads 25 objects per layout, chosen the same

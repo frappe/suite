@@ -24,6 +24,7 @@ from suite.drive.patches.build.preflight import (
     NOT_MIGRATED,
     SIZE_DIFFERS,
     DiskSettings,
+    ServerFacts,
     preflight,
 )
 from suite.drive.patches.build.tests.fakes import FakeBucket, FakeFiles, FakeStorage, build_environment
@@ -272,6 +273,51 @@ class GateFailures(PreflightCase):
 
         self.assertEqual(report.verdict, GO)
         self.assertEqual(report.shapes, [])
+
+
+class ServerChecks(PreflightCase):
+    """Two things the migration needs from the server, beyond the site's config."""
+
+    ROOMY = 64 * 1024**2
+
+    def checked(self, server):
+        report = preflight(self.site(KEYS.values()), disk=self.disk, server=server)
+        failed = [check for check in report.checks if not check.ok]
+        return report, failed
+
+    def test_a_64_mib_packet_limit_and_node_22_13_are_go(self):
+        report, failed = self.checked(ServerFacts(max_allowed_packet=self.ROOMY, node_version="v22.13.0"))
+        self.assertEqual(report.verdict, GO)
+        self.assertEqual(failed, [])
+        self.assertIn("Node 22.13 or newer on this server", report.render())
+
+    def test_a_smaller_packet_limit_is_no_go_and_says_how_to_raise_it(self):
+        for packet in (16 * 1024**2, self.ROOMY - 1, None):
+            with self.subTest(packet=packet):
+                report, failed = self.checked(ServerFacts(max_allowed_packet=packet, node_version="v24.11.1"))
+                self.assertEqual(report.verdict, NO_GO)
+                self.assertEqual(len(failed), 1)
+                self.assertIn("max_allowed_packet", failed[0].name)
+                self.assertIn("SET GLOBAL max_allowed_packet=67108864", failed[0].detail)
+
+    def test_node_older_than_22_13_or_absent_is_no_go(self):
+        for version in ("v22.12.1", "v20.18.0", "", None, "not a version"):
+            with self.subTest(version=version):
+                report, failed = self.checked(
+                    ServerFacts(max_allowed_packet=self.ROOMY, node_version=version)
+                )
+                self.assertEqual(report.verdict, NO_GO)
+                self.assertEqual(len(failed), 1)
+                self.assertIn("Node 22.13", failed[0].name)
+                self.assertIn("Install Node 22.13 or newer", failed[0].detail)
+
+    def test_any_newer_node_is_go(self):
+        for version in ("v22.13.0", "v22.20.0", "v23.0.0", "v24.11.1"):
+            with self.subTest(version=version):
+                report, _failed = self.checked(
+                    ServerFacts(max_allowed_packet=self.ROOMY, node_version=version)
+                )
+                self.assertEqual(report.verdict, GO)
 
 
 class NothingIsWritten(PreflightCase):
