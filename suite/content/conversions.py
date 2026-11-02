@@ -3,7 +3,9 @@
 `run_pending` is the scheduled job's loop: it pages through the app's documents that have no log, newest
 first, and hands each to `convert_document`, which converts one document. It passes over a document this
 converter refused unless the row changed after the refused attempt began. `run_one` takes one document the
-same way, for the job an import queues.
+same way, for the job an import queues. Pausing an app's conversion stops those runs only: `convert_opened`
+converts a document someone opened, paused or not, so a migrated site's documents become editable as people
+open them while the rest wait for the loop.
 
 `convert_document` runs the app's converter on the old body the app's `read_old` answers, and installs
 the answer in one transaction under the row's lock: the app's `check` refuses before the first write,
@@ -99,6 +101,12 @@ def run_one(app: str, conversion: Conversion, node: str) -> None:
         convert_node(app, node)
 
 
+def convert_opened(app: str, node: str) -> None:
+    """Convert `node` now because someone opened it, even while the app's conversion is paused."""
+    if has_prerequisites(app) and converter_runs(app, conversion_of(app)):
+        convert_node(app, node, opened=True)
+
+
 def has_prerequisites(app: str) -> bool:
     """Whether the site has what the app's conversion needs; logs what it lacks."""
     missing = convert.missing_prerequisite(app)
@@ -127,14 +135,17 @@ def convert_page(app: str, page: list[frappe._dict], deadline: float) -> bool:
     return True
 
 
-def convert_node(app: str, node: str) -> bool:
-    """Convert one document, logging what fails on it; False once the app pauses or the converter changes."""
+def convert_node(app: str, node: str, *, opened: bool = False) -> bool:
+    """Convert one document, logging what fails on it; False once the app pauses or the converter changes.
+
+    `opened` is for a document someone opened, which converts while the app's conversion is paused.
+    """
     # Locks the app row before read_old's document row; run_converter's or mark_checked's commit releases it
-    if not convert.may_convert(app, lock=True):
+    if not convert.may_convert(app, lock=True, opened=opened):
         return False
 
     try:
-        convert_document(app, node)
+        convert_document(app, node, opened=opened)
     except convert.ConverterChanged as changed:
         convert.log_reason(app, str(changed))
         return False
@@ -145,8 +156,11 @@ def convert_node(app: str, node: str) -> bool:
     return True
 
 
-def convert_document(app: str, node: str) -> str | None:
-    """Convert `node`'s old body, reading it again if it changes; the outcome, or None to leave it to the next run."""
+def convert_document(app: str, node: str, *, opened: bool = False) -> str | None:
+    """Convert `node`'s old body, reading it again if it changes; the outcome, or None to leave it to the next run.
+
+    `opened` is for a document someone opened, which converts while the app's conversion is paused.
+    """
     conversion = conversion_of(app)
     started = now_datetime()
     for _attempt in range(ATTEMPTS):
@@ -173,7 +187,7 @@ def convert_document(app: str, node: str) -> str | None:
             return outcome
 
         # drop_attempt's commit let go of the app row, so an off-save may have landed since
-        if not convert.may_convert(app, lock=True):
+        if not convert.may_convert(app, lock=True, opened=opened):
             return None
 
     return None
@@ -290,6 +304,12 @@ def keep_old_version(node: str) -> None:
         drive.take_version(node, kind="milestone", label=_("Before collaboration"))
     except drive.DriveOverQuota:
         raise ConversionRefused("over_quota") from None
+
+
+def is_waiting(app: str, node: str) -> bool:
+    """Whether `node`'s body waits for a conversion: this converter has not refused it."""
+    held = held_attempt(app, node, conversion_of(app).read_fingerprint(node))
+    return held is None or held.outcome in {None, "converted"}
 
 
 def conversion_status(app: str, node: str) -> ConversionStatus:

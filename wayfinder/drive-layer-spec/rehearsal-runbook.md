@@ -564,6 +564,100 @@ other preview.
 - for each failed MP4, whether its index comes after the video data
   (see "Known open issues")
 
+## Sheets and Writer conversion
+
+The same steps apply to the production cutover.
+
+A Sheet or Writer document made before collaboration has no log. It must
+be converted before anyone can edit it. On the migrate that first turns
+collaboration on for an app, the patches
+`suite.sheets.patches.turn_collaboration_on` and
+`suite.writer.patches.turn_collaboration_on` also set **Pause
+conversion** for the app in Suite Collab Settings. The pause
+stops only the background run, which converts every old document. A
+document that someone opens is converted at once, paused or not.
+
+### Prerequisites
+
+Check these on the server, as the user that runs the workers:
+
+```bash
+node --version    # v22.13 or newer, on the workers' PATH
+bench build --app suite
+ls -l apps/suite/suite/sheets/content/dist/converter.cjs apps/suite/suite/writer/content/dist/converter.cjs
+```
+
+`bench build --app suite` runs `yarn build` in the app. That build makes
+the converters, with `vite build --mode converter` in `frontend/`. A
+converter is used only when it holds the version in
+`suite/<app>/content/converter-version.json`, so build again after every
+update.
+
+Without Node or a converter, nothing converts: not the background run,
+and not a document that someone opens. Each `bench migrate` prints
+`Collaborative documents can't be upgraded: ...` when Node or the
+scheduler is missing. System Managers get one notification for each
+cause. A missing or old converter is not printed. It shows only as the
+Error Log in "Watch the backlog".
+
+Conversion runs as background jobs. A document that someone opens needs
+a worker for the `collab` queue, or the `default` queue when the bench
+has no `collab` worker. The background run needs the scheduler and a
+`long` worker.
+
+### What people see
+
+- A document that is not converted opens read-only. A Sheet shows the
+  banner "This spreadsheet is being upgraded for editing together. It is
+  read-only until then."
+- Opening it queues its conversion. A small sheet converts in a few
+  seconds after the job starts. A Sheet tab checks again every five
+  seconds; a Writer tab is told by a realtime event. Both become editable
+  without a reload.
+- While a document waits, opens queue it at most once a minute. So a
+  document that cannot convert yet, for example with no converter, costs
+  one job a minute while someone has it open.
+- A document that the converter refused stays read-only, and opening it
+  does not queue it again. A Sheet still shows the banner above; find
+  these documents with the outcomes query below.
+
+### Clear the pause
+
+After `bench build`, the restart, and a check that some opened documents
+converted, clear the pause. In Desk, open Suite Collab Settings and clear
+**Pause conversion** on the `sheets` and `writer` rows. Then the
+scheduler converts the rest of the backlog, newest first, about every
+four minutes, for up to ten minutes for each run.
+
+Keep the pause set if the server cannot take the load of the background
+run during working hours. Documents that people open still convert.
+
+### Watch the backlog
+
+Documents that wait for conversion:
+
+```sql
+SELECT COUNT(*) FROM `tabSheet` s
+JOIN `tabDrive Node` n ON n.name = s.node AND n.state = 'Active'
+LEFT JOIN `__sheets_content_doc` d ON d.node = s.node AND d.mode != 'purged'
+WHERE d.id IS NULL;
+```
+
+Outcomes so far, and the refusals to explain:
+
+```sql
+SELECT outcome, reason, COUNT(*) FROM `__sheets_content_conversion`
+GROUP BY outcome, reason;
+```
+
+For Writer, use `tabWriter Document`, `__writer_content_doc` and
+`__writer_content_conversion`. A run that did not start leaves an Error
+Log titled `Collab conversion: <app> did not run`, once an hour for each
+reason.
+
+**Pass:** the waiting count falls to the refusals only. Every refusal has
+a known cause.
+
 ## Browser checks
 
 ### 17. Open the site in the browser
