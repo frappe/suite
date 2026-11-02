@@ -325,8 +325,6 @@ scheduler_events = {
         "suite.drive.jobs.thin_versions",
         "suite.drive.jobs.sweep_missing_previews",
         "suite.drive.jobs.sweep_unused_document_media",
-        # sheets
-        "suite.sheets.versioning.tasks.truncate_op_log",
         # mail
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",

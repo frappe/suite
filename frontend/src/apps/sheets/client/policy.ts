@@ -1,9 +1,6 @@
 import type { OwnerRegistration } from '@/platform/server-state'
 
 const effects = {
-  save_sheet: {
-    invalidates: ['get_sheet', 'ops_for_cell', 'drive.node_versions', 'drive.view_list'],
-  },
   save_ai_settings: { invalidates: ['get_ai_settings'] },
 } as const
 

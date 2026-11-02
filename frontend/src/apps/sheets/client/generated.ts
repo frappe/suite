@@ -30,68 +30,6 @@ const operationGetSheet: QueryRef<GetSheetInput, GetSheetOutput, GetSheetError> 
   loadValidators: async () => (await import('./validators')).operationGetSheet,
 }
 
-export type SaveSheetInput = {
-  name: string
-  sheets_data: string
-  title?: string
-  ops?: string
-  request_id?: string
-}
-
-export type SaveSheetOutput = { name: string; head_seq: number }
-
-export type SaveSheetError = never
-
-const operationSaveSheet: MutationRef<SaveSheetInput, SaveSheetOutput, SaveSheetError> = {
-  id: 'save_sheet',
-  owner: 'sheets',
-  kind: 'mutation',
-  publicName: 'documents.save',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.sheets.api.save_sheet',
-  prefix: '/api/suite/sheets/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationSaveSheet,
-}
-
-export type OpsForCellOutputCellOperation = {
-  id: string
-  seq: number
-  sub_sheet: string | null
-  op_type: string | null
-  summary: string | null
-  actor: string | null
-  creation: string | null
-  before: unknown
-  after: unknown
-}
-
-export type OpsForCellInput = { sheet: string; cell_id: string; sub_sheet?: string; limit?: number }
-
-export type OpsForCellOutput = Array<OpsForCellOutputCellOperation>
-
-export type OpsForCellError = never
-
-const operationOpsForCell: QueryRef<OpsForCellInput, OpsForCellOutput, OpsForCellError> = {
-  id: 'ops_for_cell',
-  owner: 'sheets',
-  kind: 'query',
-  publicName: 'history.cell',
-  envelope: 'message',
-  method: 'GET',
-  path: '/api/method/suite.sheets.versioning.api.ops_for_cell',
-  prefix: '/api/suite/sheets/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationOpsForCell,
-}
-
 export type GetAiSettingsInput = Record<string, never>
 
 export type GetAiSettingsOutput = { enabled: boolean; model: string; keyIsSet: boolean }
@@ -208,10 +146,6 @@ const operationGetLinkPreview: QueryRef<
 export const api = {
   documents: {
     get: operationGetSheet,
-    save: operationSaveSheet,
-  },
-  history: {
-    cell: operationOpsForCell,
   },
   assistant: {
     settings: operationGetAiSettings,
