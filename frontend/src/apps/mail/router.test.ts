@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RouteLocationNormalized } from 'vue-router'
+import { createMemoryHistory, createRouter, type RouteLocationNormalized } from 'vue-router'
 
 import { mailGuard } from './router'
+import { routes } from './routes'
 
 const state = vi.hoisted(() => ({
   user: {} as Record<string, unknown> | undefined,
@@ -10,6 +11,8 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('@/router', () => ({ default: {} }))
+// Installs the guard on the suite router; the tests below install it on their own.
+vi.mock('@/apps/mail/runtime', () => ({}))
 vi.mock('@/boot/session', () => ({ useSessionStore: () => ({ isLoggedIn: true }) }))
 vi.mock('@/platform/session', () => ({
   registerAccountReader: vi.fn(),
@@ -147,5 +150,53 @@ describe('what a navigation waits for', () => {
     state.mailboxes = undefined
     await mailGuard(thread)
     expect(state.fetched).toEqual(['user', 'mailboxes'])
+  })
+})
+
+describe('where /mail lands', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+    state.user = { is_jmap_configured: true }
+  })
+
+  /**
+   * The route a navigation settles on, with Mail's routes the only area routes registered, as
+   * when Mail is the first area opened. A probe stops it there, so no page loads.
+   */
+  async function land(path: string): Promise<RouteLocationNormalized | undefined> {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/mail', component: { render: () => null }, children: routes }],
+    })
+    router.beforeEach(mailGuard)
+    let landed: RouteLocationNormalized | undefined
+    router.beforeEach((to) => {
+      landed = to
+      return false
+    })
+    await router.push(path)
+    return landed
+  }
+
+  it('the first folder, when the account has one', async () => {
+    state.mailboxes = [{ id: 'inbox' }]
+    const landed = await land('/mail')
+    expect([landed?.name, landed?.params]).toEqual([
+      'mail-mailbox',
+      { accountId: 'acc', mailbox: 'inbox' },
+    ])
+  })
+
+  it.each([
+    ['has no folders yet', []],
+    ['could not list its folders', undefined],
+  ])('a page saying the mailbox is not ready, when the account %s', async (_case, mailboxes) => {
+    state.mailboxes = mailboxes
+    expect((await land('/mail'))?.fullPath).toBe('/mail/not-ready')
+  })
+
+  it('the first folder again, once the mailbox is ready', async () => {
+    state.mailboxes = [{ id: 'inbox' }]
+    expect((await land('/mail/not-ready'))?.name).toBe('mail-mailbox')
   })
 })
