@@ -89,7 +89,7 @@ Risks 1 to 4 of the first review (no save while a slide was focused, the "Unsave
 
 ## Open questions for the reviewer
 
-Questions 1 to 4 of the first review were answered by T3-1: no slide blocks a save, the local copy is written on every tick, and the tab asks before it closes with unsaved edits.
+Proposed answers to questions 1 to 4 of the first review, from T3-1, for the reviewer to confirm: no slide blocks a save, the local copy is written on every tick, and the tab asks before it closes with unsaved edits.
 
 5. Should a save while typing be allowed? Today it can run mid-edit. Is that safe for the text editor?
 6. Is "second editor is refused and becomes read only" acceptable, or should Slides merge by slide, or show who else is editing?
