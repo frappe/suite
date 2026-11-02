@@ -2,7 +2,7 @@
 
 The case that matters is the public link: a guest who can read the deck must
 get a signed URL for every picture it shows (T3-21). The refusals pin who may
-add media at all.
+add media at all. A still PNG or JPEG is stored as WebP; other media as uploaded.
 """
 
 from contextlib import contextmanager
@@ -10,6 +10,7 @@ from io import BytesIO
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from PIL import Image
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
@@ -37,6 +38,25 @@ def upload_request(content: bytes, filename: str, mimetype: str = "image/png"):
         del frappe.local.request
 
 
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
+
+
+def gradient_png() -> bytes:
+    """A 256px photo-like PNG, the kind of picture a deck shows."""
+    image = Image.new("RGB", (256, 256))
+    image.putdata([(x, y, (x + y) // 2) for y in range(256) for x in range(256)])
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def animated_gif() -> bytes:
+    frames = [Image.new("RGB", (8, 8), colour) for colour in ("red", "blue")]
+    output = BytesIO()
+    frames[0].save(output, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    return output.getvalue()
+
+
 class TestSlidesMedia(IntegrationTestCase):
     @classmethod
     def setUpClass(cls):
@@ -55,15 +75,41 @@ class TestSlidesMedia(IntegrationTestCase):
             return media.add(self.deck.name)
 
     def test_a_public_link_guest_can_read_an_uploaded_picture(self):
-        content = unique_bytes(PNG_1PX)
-        picture = self.upload(content=content)["file_url"]
+        picture = self.upload(content=unique_bytes(PNG_1PX))["file_url"]
+        stored = drive.read_file(picture)[0].read()
         make_public(self.deck.name)
 
         frappe.set_user("Guest")
         stream, mime = drive.read_file(picture)
 
-        self.assertEqual(stream.read(), content)
-        self.assertEqual(mime, "image/png")
+        self.assertEqual(stream.read(), stored)
+        self.assertEqual(mime, "image/webp")
+
+    def test_a_png_is_stored_as_a_smaller_webp(self):
+        png = gradient_png()
+        answer = self.upload("photo.png", content=png)
+
+        stream, mime = drive.read_file(answer["file_url"])
+        stored = stream.read()
+
+        self.assertEqual(mime, "image/webp")
+        self.assertEqual((stored[:4], stored[8:12]), (b"RIFF", b"WEBP"))
+        self.assertLess(len(stored), len(png))
+        self.assertEqual(answer["file_name"], "photo.webp")
+        self.assertEqual(frappe.db.get_value("Drive Node", answer["file_url"], "title"), "photo.webp")
+
+    def test_an_svg_or_an_animated_gif_is_stored_as_uploaded(self):
+        for filename, mimetype, content in (
+            ("logo.svg", "image/svg+xml", SVG),
+            ("spinner.gif", "image/gif", animated_gif()),
+        ):
+            with self.subTest(filename):
+                answer = self.upload(filename, mimetype, content)
+                stream, mime = drive.read_file(answer["file_url"])
+
+                self.assertEqual(stream.read(), content)
+                self.assertEqual(mime, mimetype)
+                self.assertEqual(answer["file_name"], filename)
 
     def test_the_picture_lives_below_the_deck_and_counts_as_used_once_shown(self):
         picture = self.upload()["file_url"]
