@@ -51,22 +51,11 @@
       <!-- Bar 1 · Identity. The status chips and the app actions are defined once
          and placed in either top bar. -->
       <DefineTopbarStatus>
-        <template v-if="saveError">
-          <span class="sn-save-error">
-            <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
-              <span class="truncate">{{ saveError }}</span>
-            </Badge>
-          </span>
-          <Button
-            aria-label="Retry save"
-            variant="ghost"
-            size="sm"
-            icon="lucide-refresh-cw"
-            tooltip="Retry save"
-            :loading="isSaving"
-            @click="onRetrySave"
-          />
-        </template>
+        <span v-if="saveError" class="sn-save-error">
+          <Badge class="max-w-full" theme="red" variant="subtle" size="sm" :tooltip="saveError">
+            <span class="truncate">{{ saveError }}</span>
+          </Badge>
+        </span>
         <Badge
           v-if="protectionNotice"
           theme="gray"
@@ -116,8 +105,8 @@
         :is-title-editing="isTitleEditing"
         :sheet-breadcrumbs="sheetBreadcrumbs"
         :sheet-home-breadcrumbs="sheetHomeBreadcrumbs"
-        :is-saving="isSaving"
-        :just-saved="justSaved"
+        :is-saving="saveState === 'saving'"
+        :just-saved="false"
         :read-only="readOnly"
         :user-initial="userInitial"
         :user-image="userImage"
@@ -210,13 +199,6 @@
         </template>
       </SheetToolbar>
 
-      <SheetUpgradeBanner
-        v-if="legacyUpgrade && !upgradeBannerClosed"
-        :upgrade="legacyUpgrade"
-        :read-only="readOnly"
-        @close="upgradeBannerClosed = true"
-      />
-
       <!-- Saving, offline, full, lost access (collab/messages.ts), as Writer's strip -->
       <div
         v-if="collab.banner.value"
@@ -254,7 +236,7 @@
         <canvas ref="canvasRef" />
 
         <!-- Initial-load shim. The canvas is mounted (so grid.resize / event
-           wiring works) but blank until loadSheet/autoCreate finishes —
+           wiring works) but blank until the workbook has loaded —
            without this overlay the first paint looks like a deleted sheet
            for the first 100–500 ms on slow networks. -->
         <div v-if="isInitialLoad" class="sn-canvas-loading" aria-busy="true">
@@ -296,14 +278,6 @@
           @close="notesPanel.open = false"
           @add="addNoteFromPanel"
           @jump="jumpToNote"
-        />
-
-        <CellHistoryPopover
-          v-model="cellHistory.open"
-          :cell-ref="cellHistory.cell"
-          :entries="cellHistory.entries"
-          :loading="cellHistory.loading"
-          :error="cellHistory.error"
         />
 
         <SplitTextPopover
@@ -498,8 +472,6 @@
         :has-hidden-cols="manualHiddenCols.size > 0"
         :can-paste="clipboardHas"
         :range-protected="selectionHasProtectedRange()"
-        :show-cell-history="props.id !== 'new' && !collabOn"
-        :active-cell="activeCell"
         @insert-row="doInsertRow"
         @insert-col="doInsertCol"
         @insert-many="(kind) => openInsertMany(kind, false)"
@@ -537,7 +509,6 @@
         @pivot="openPivotDialog()"
         @chart="openChartDialog()"
         @slicer="insertSlicer()"
-        @cell-history="openCellHistory()"
       />
 
       <!-- Pivot dialog -->
@@ -844,16 +815,7 @@ import {
   usePageMeta,
 } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import {
-  computed,
-  customRef,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  reactive,
-  ref,
-  watch,
-} from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
 import { useCurrentUser, useSessionStore } from '@/boot/session'
@@ -882,7 +844,6 @@ import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { numFmtFromEngine } from '../../engine/xlsx-io.js'
-import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
 import { FONT_FAMILY_STACK } from '../../utils/font-stacks.js'
 import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/format-number.js'
@@ -893,7 +854,6 @@ import { userInitials } from '../../utils/session.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import AISettingsDialog from './AISettingsDialog.vue'
 import AskBar from './AskBar.vue'
-import CellHistoryPopover from './CellHistoryPopover.vue'
 import ChartDialog from './ChartDialog.vue'
 import ChartOverlay from './ChartOverlay.vue'
 import ConditionalFormatDialog from './ConditionalFormatDialog.vue'
@@ -912,7 +872,6 @@ import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
 import SheetTopbar from './SheetTopbar.vue'
 import SheetTopbarActions from './SheetTopbarActions.vue'
-import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SortDialog from './SortDialog.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
@@ -920,14 +879,12 @@ import { buildAlignOptions, buildBorderOptions } from './toolbar.config.js'
 import { useAiAssist } from './useAiAssist.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import { useClipboard } from './useClipboard.js'
-import { useCollaboration } from './useCollaboration.js'
 import { useCollabRoom } from './useCollabRoom'
 import { useContextMenu } from './useContextMenu.js'
 import { useEditOps } from './useEditOps.js'
 import { useExportImport } from './useExportImport.js'
 import { useFill } from './useFill.js'
 import { AC_FUNS, useFormulaAutocomplete } from './useFormulaAutocomplete.js'
-import { useHistory } from './useHistory.js'
 import { useLinkCard } from './useLinkCard.js'
 import { useNotesPanel } from './useNotesPanel.js'
 import { usePersistence } from './usePersistence.js'
@@ -946,7 +903,7 @@ import ValidationDialog from './ValidationDialog.vue'
 const props = defineProps({
   id: {
     type: String,
-    default: 'new',
+    default: '',
   },
   // Mounted by the /d/ surface. The surface fills the `header` and
   // `side-panel` slots, owns the title, sharing and the leave guard, and its
@@ -957,39 +914,30 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  // The surface's access verdict. False freezes the editor and cancels every
-  // pending save, retries included.
+  // The surface's access verdict. False freezes the editor.
   writable: {
     type: Boolean,
     default: true,
   },
-  // The Drive title while embedded. Saves carry it, so it must follow a rename.
+  // The Drive title while embedded; it follows a rename.
   title: {
     type: String,
     default: null,
-  },
-  // The Drive session's fetch while embedded. Load, save and the collaboration
-  // relay go through it, so a caller who holds a share link reaches the sheet.
-  credentialFetch: {
-    type: Function,
-    default: undefined,
   },
   requestContext: {
     type: Object,
     default: undefined,
   },
-  // The Drive session while embedded. With it the editor opens the sheet's
-  // live room when the site's Sheets collaboration is on (useCollabRoom.ts);
-  // otherwise, or without it, the old save path runs.
+  // The Drive session while embedded: the editor opens the sheet's live room
+  // with it (useCollabRoom.ts). Without one the sheet opens read-only.
   collabSession: {
     type: Object,
     default: null,
   },
 })
-// `access-refused`: the server refused a save, or the collaboration relay
-// refused a write. `notes-opened`: the notes panel took the right edge.
-// `reopen`: the live room asks for the editor to be opened again.
-const emit = defineEmits(['close', 'saved', 'access-refused', 'notes-opened', 'reopen'])
+// `notes-opened`: the notes panel took the right edge. `reopen`: the live
+// room asks for the editor to be opened again.
+const emit = defineEmits(['close', 'notes-opened', 'reopen'])
 // The top bar's status chips and app actions, drawn in the editor's own bar or
 // handed to the surface's header when embedded.
 const [DefineTopbarStatus, ReuseTopbarStatus] = createReusableTemplate()
@@ -1144,7 +1092,6 @@ const { runSmartFill: _runSmartFill } = useSmartFill({
   writeInputs: (sn, map) => _writeInputs(sn, map),
   currentSheet,
   getGrid: () => grid,
-  queueOp: (...a) => _queueOp(...a),
   getHistory: () => history,
   getIsDirty: () => isDirty,
 })
@@ -1168,10 +1115,10 @@ async function runSmartFill() {
 }
 
 // ── Collaboration (collab v1) ─────────────────────────────────────────────────
-// The sheet's live room while the site's Sheets collaboration is on
-// (useCollabRoom.ts). 'pending' until the load asks the server; 'disabled'
-// runs the old save path; 'unconverted' shows the old body read-only until the
-// server has converted it.
+// The sheet's live room (useCollabRoom.ts): every edit is saved through it.
+// 'pending' until the load asks the server. A sheet the room can't open shows
+// its old body read-only: 'unconverted' until the server has converted it,
+// 'disabled' for a guest on a share link (the room takes signed-in people only).
 const collabState = ref(props.collabSession ? 'pending' : 'disabled')
 const collabOn = computed(() => collabState.value === 'live')
 const collab = useCollabRoom({
@@ -1263,62 +1210,20 @@ async function _recomputeAllPivots() {
   _pivotRebuild = null
 }
 
-// Undo/redo (see useHistory.js).
-const {
-  history: _oldHistory,
-  undo: _oldUndo,
-  redo: _oldRedo,
-  structural: _structural,
-} = useHistory({
-  currentSheet,
-  engines: {
-    formats,
-    merge,
-    sortFilter,
-    slicers,
-    comments,
-    validation,
-    protection,
-    condFormat,
-    pivot,
-    charts,
-    namedRanges,
-  },
-  getGrid: () => grid,
-  engineClient: _client,
-  command: _command,
-  dispatch: (cmd) => _dispatch(cmd),
-  writeInputs: _writeInputs,
-  syncDefinedNames: _syncDefinedNames,
-  addSheet: (name) => _addSheet(name),
-  deleteSheet: (name) => _deleteSheet(name),
-  getLocalTouches: () => _drainCollabLocalTouches(),
-  syncFlags: () => syncFlags(),
-  markDirty: () => {
-    isDirty.value = true
-  },
-  afterStructural: (sn) => _afterStructural(sn),
-  afterNavigate: (id) => _afterHistoryNavigate(id),
-})
-
-// Every history.push()/pushOp() marks the end of a user action. With collab
-// on, the action is committed to the doc instead, and that commit is the undo
-// step (collab/undo.ts).
+// Every history.push()/pushOp() marks the end of a user action: the action is
+// committed to the doc, and that commit is the undo step (collab/undo.ts). The
+// op a caller passes is not kept.
 const history = {
-  push: () => (collabOn.value ? void collab.commit() : _oldHistory.push()),
-  pushOp: (op) => (collabOn.value ? void collab.commit() : _oldHistory.pushOp(op)),
-  canUndo: () => (collabOn.value ? collab.canUndo.value : _oldHistory.canUndo()),
-  canRedo: () => (collabOn.value ? collab.canRedo.value : _oldHistory.canRedo()),
-  init: () => _oldHistory.init(),
-  reset: () => _oldHistory.reset(),
+  push: () => void collab.commit(),
+  pushOp: () => void collab.commit(),
+  canUndo: () => collab.canUndo.value,
+  canRedo: () => collab.canRedo.value,
 }
 function undo() {
-  if (collabOn.value) void _collabStep('undo')
-  else _oldUndo()
+  void _collabStep('undo')
 }
 function redo() {
-  if (collabOn.value) void _collabStep('redo')
-  else _oldRedo()
+  void _collabStep('redo')
 }
 // Selects what the step was made with (switching sheet if needed); the toast
 // for a refused step comes from useCollabRoom.
@@ -1335,15 +1240,6 @@ async function _collabStep(which) {
   _afterHistoryNavigate(grid?.getActiveCell?.() || 'A1')
 }
 watch([collab.canUndo, collab.canRedo], () => syncFlags())
-
-// Forward-declaration: `useCollaboration` (further down the script) sets
-// `_collabDrainLocalTouches` to its real implementation once the binding
-// is up. Before that, the history degrades cleanly to full-restore by
-// returning an empty set.
-let _collabDrainLocalTouches = () => new Set()
-function _drainCollabLocalTouches() {
-  return _collabDrainLocalTouches()
-}
 
 // ── Vue state ─────────────────────────────────────────────────────────────────
 
@@ -1395,28 +1291,17 @@ const insertMany = reactive({
 const hasActiveHyperlink = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas = ref(false)
 const selectionStats = ref(null)
-let _dirtyRevision = 0
-const isDirty = customRef((track, trigger) => {
-  let value = false
-  return {
-    get() {
-      track()
-      return value
-    },
-    set(next) {
-      // Collab saves as it goes: an edit marking the sheet dirty is the end of
-      // a user action, and the action is committed (useCollabRoom.ts).
-      if (collabOn.value) {
-        if (next) void collab.commit()
-        return
-      }
-      if (next) _dirtyRevision += 1
-      if (next === value) return
-      value = next
-      trigger()
-    },
-  }
-})
+// The room saves as it goes, so the sheet is never dirty: an edit setting
+// `isDirty` is the end of a user action, and the action is committed
+// (useCollabRoom.ts).
+const isDirty = {
+  get value() {
+    return false
+  },
+  set value(next) {
+    if (next) void collab.commit()
+  },
+}
 const isPaintingFormat = ref(false)
 
 // ── Comment UI state ──────────────────────────────────────────────────────────
@@ -1441,18 +1326,10 @@ const dropdownPanel = reactive({
   y: 0,
   w: 120,
 })
-const cellHistory = reactive({
-  open: false,
-  cell: '',
-  loading: false,
-  error: '',
-  entries: [],
-})
 const borderColor = ref('#000000')
 const borderStyle = ref('thin')
 const freezeRows = ref(0)
 const freezeCols = ref(0)
-const justSaved = ref(false)
 
 // Short keys keep the select narrow; the full CSS stack lives in FONT_FAMILY_STACK
 // (utils/font-stacks.ts) so the persisted format value is still a complete
@@ -1726,33 +1603,19 @@ const {
   undo,
   // Defined further down (useToolbar, useProtection): resolved at call time.
   refreshActiveFormat: () => refreshActiveFormat(),
+  readRect: _readRect,
   readIds: _readIds,
   writeInputs: _writeInputs,
-  queueOp: _queueOp,
-  popLastOp: _popLastOp,
   cellSilentlyProtected: (id, sn) => _cellSilentlyProtected(id, sn),
   flashProtected: (sn) => _flashProtected(sn),
   refitRowsFor: _refitRowsFor,
 })
 
-// Remove the most recently queued op of a given type (used when an AI change
-// is undone before it has been flushed to the server).
-function _popLastOp(opType) {
-  for (let i = _opQueue.length - 1; i >= 0; i--) {
-    if (_opQueue[i].opType === opType) {
-      _opQueue.splice(i, 1)
-      return
-    }
-  }
-}
-
 // After a write ({cellId: value}), the rows it touched fit their wrapped or
 // multi-line text unless sized by hand, like Google Sheets: they grow or
-// shrink with the new values. Returns the height change, which the write puts
-// on its history op (beforeRowH / afterRowH) so undo/redo restores it;
-// _queueOp destructures only the known keys, so server sync is unaffected.
-// Row heights live in the open sheet's canvas view, so a write to another
-// sheet doesn't refit.
+// shrink with the new values. Returns the height change, which callers put on
+// their history op (beforeRowH / afterRowH). Row heights live in the open
+// sheet's canvas view, so a write to another sheet doesn't refit.
 function _refitRowsFor(sn, writes) {
   if (sn !== currentSheet.value) return null
   return grid?.refitRowsFor?.(writes) ?? null
@@ -2265,7 +2128,6 @@ const menuBar = computed(() =>
     smartFill: () => runSmartFill(),
     protectRange: () => protectSelection(),
     unprotectRange: () => unprotectSelection(),
-    cellHistory: props.id !== 'new' ? () => openCellHistory() : null,
     askAi: aiEnabled.value ? () => openAskBar() : null,
   }),
 )
@@ -2278,21 +2140,12 @@ const formatMenuOptions = computed(
 // hidden rows / column widths / etc. follow each tab independently. usePersistence
 // is constructed before useSheetTabs, so the get/apply callbacks late-bind via
 // `_sheetTabs` once that hook returns its API. The `grid?.viewSnapshot/Restore`
-// fallbacks only cover the impossible window where someone saves before
-// useSheetTabs has finished initializing.
+// fallbacks only cover the impossible window where someone reads the view
+// before useSheetTabs has finished initializing.
 let _sheetTabs = null
-const {
-  isSaving,
-  saveError,
-  canWrite,
-  loadError,
-  legacyUpgrade,
-  loadSheet,
-  autoCreate,
-  saveExisting,
-  retrySave,
-  workbookJson,
-} = usePersistence({
+// A notice in the top bar (a rejected value, a Smart Fill hint).
+const saveError = ref('')
+const { loadError, legacyCurrent, loadSheet, workbookJson } = usePersistence({
   engine: {
     start: _startEngine,
     toBytes: _engineBytes,
@@ -2316,50 +2169,20 @@ const {
     else grid?.viewRestore?.(s)
   },
   currentTitle,
-  emit,
-  isWritable: () => props.writable,
-  onRefused: () => emit('access-refused'),
   recordVisits: !props.embedded,
   requestContext: props.requestContext,
 })
 
-// View-only mode: the loaded sheet is shared with the current user at read
-// (not write) permission. Everything that mutates the doc keys off this — the
-// grid edit gate, the toolbar/formula-bar disable, the context menu, and the
-// autosave path all no-op so a viewer is never misled into editing a doc they
-// can't persist (and never triggers the server's PermissionError on save).
+// View-only mode. Everything that mutates the doc keys off this — the grid
+// edit gate, the toolbar/formula-bar disable, the context menu. Only the live
+// room saves, so a sheet outside it (still loading, waiting for its
+// conversion, a guest's) is view only too, as is a viewer's or one the room
+// stopped taking edits for (offline too long, full, access lost).
 const readOnly = computed(
-  () => !canWrite.value || !props.writable || collab.editingState.value !== 'editing',
+  () => !props.writable || !collabOn.value || collab.editingState.value !== 'editing',
 )
 // Where the workbook's edits are: clean, saving, unsaved or failed.
-const saveState = computed(() => {
-  if (collabOn.value) return collab.saveState.value ?? 'clean'
-  return isSaving.value
-    ? 'saving'
-    : saveError.value
-      ? 'failed'
-      : isDirty.value
-        ? 'unsaved'
-        : 'clean'
-})
-
-// Losing write access drops every pending edit from the save path: the queued
-// autosave, the failed-save watchdog, the op queue, and a failed batch. The
-// surface keeps those edits as its recovery copy instead. A save already in
-// flight stops before its next retry, and `_accessEpoch` disowns its result.
-// When access comes back the surface remounts the editor, so it reloads the
-// server workbook before editing resumes.
-let _accessEpoch = 0
-watch(readOnly, (frozen) => {
-  if (!frozen) return
-  _accessEpoch += 1
-  clearTimeout(_autoSaveTimer)
-  clearTimeout(_saveWatchdogTimer)
-  _opQueue.length = 0
-  _pendingSaveBatch = null
-  isDirty.value = false
-  saveError.value = ''
-})
+const saveState = computed(() => collab.saveState.value ?? 'clean')
 if (props.embedded) {
   watch(
     () => props.title,
@@ -2516,32 +2339,10 @@ const {
   getGrid: () => grid,
 })
 
-// Collaboration — placed here because currentSheet comes from useSheetTabs above.
-const {
-  presentUsers: _relayUsers,
-  remoteCursors: _relayCursors,
-  broadcastCellChange,
-  broadcastBatchChange,
-  broadcastCursor: _relayCursor,
-  drainLocalTouches,
-} = useCollaboration({
-  // The old presence relay, only while the sheet isn't in a live room.
-  sheetId: computed(() =>
-    props.collabSession && collabState.value !== 'disabled' ? null : props.id,
-  ),
-  currentSheet,
-  repopulateGrid: _repopulateGrid,
-  onRefused: () => emit('access-refused'),
-  credentialFetch: props.credentialFetch,
-})
-// Wire the binding's per-segment touch-tracking into the history we declared
-// up top — undo() will now revert only this client's writes from the undone
-// segment, leaving any remote-applied cells alone.
-_collabDrainLocalTouches = drainLocalTouches
-const presentUsers = computed(() => (collabOn.value ? collab.users.value : _relayUsers.value))
-const remoteCursors = computed(() => (collabOn.value ? collab.cursors.value : _relayCursors.value))
+// Who else is here and what they have selected (collab/presence.ts).
+const presentUsers = collab.users
+const remoteCursors = collab.cursors
 function broadcastCursor(row, col, subSheet, range) {
-  if (!collabOn.value) return _relayCursor(row, col, subSheet, range)
   const r = range ?? { r0: row, c0: col, r1: row, c1: col }
   collab.shareSelection({ sheet: subSheet, ...r })
 }
@@ -2942,10 +2743,6 @@ function _setupGridInstance() {
           })
         }
         if (before !== value) {
-          // The same op shape feeds both server sync (_queueOp drains on
-          // autosave) and undo history (pushOp keeps it on the local stack).
-          // Op-based history replaces the old markEdited → snapshot path:
-          // ~750 ms (deep-clone every engine) → ~10 µs (push the op object).
           const op = {
             opType: 'edit',
             subSheet: writeSheet,
@@ -2963,9 +2760,7 @@ function _setupGridInstance() {
             op.beforeRowH = rowH.before
             op.afterRowH = rowH.after
           }
-          _queueOp(op)
           history.pushOp(op)
-          broadcastCellChange(writeSheet, id, value)
         }
         // Outside the changed-guard: re-committing an unchanged URL text (e.g.
         // pre-existing "frappe.io" data) still picks up its link.
@@ -3060,15 +2855,7 @@ function _setupGridInstance() {
             op.beforeRowH = rowH.before
             op.afterRowH = rowH.after
           }
-          _queueOp(op)
           history.pushOp(op)
-          broadcastBatchChange(
-            currentSheet.value,
-            refs.map((id) => ({
-              id,
-              value: after[id],
-            })),
-          )
         }
         _maybeAutoLink(
           cells.map(({ id, value }) => ({
@@ -3166,9 +2953,9 @@ watch(currentSheet, (sn) => {
   }
 })
 
-// Opens the sheet's live room into a fresh workbook. False when the old path
-// loads it instead: Sheets collaboration is off on this site, or the sheet
-// still waits for its conversion (shown read-only meanwhile).
+// Opens the sheet's live room into a fresh workbook. False when the room
+// can't open it (a guest's, or one still waiting for its conversion): the
+// old body is shown read-only instead.
 async function _openCollab() {
   await _startEngine()
   let state
@@ -3191,7 +2978,7 @@ async function _openCollab() {
   return true
 }
 
-// The workbook is loaded (old path or live room): show it as it was left.
+// The workbook is loaded (live room or read-only body): show it as it was left.
 function _afterWorkbookLoaded() {
   // sheet.restore() now fires onCellsChanged → _repopulateGrid() as a
   // single bulk pass, so the explicit call here was duplicating work
@@ -3216,55 +3003,38 @@ function _afterWorkbookLoaded() {
   // so a saved filter still shows its hidden rows on first load.
   _applyHiddenRows()
   syncNames()
-  // Reopen the tab this browser had open last (a converted develop sheet:
-  // the one that editor had open).
-  const last = _lastTab() ?? legacyUpgrade.value?.current
+  // Reopen the tab this browser had open last (a develop body: the one that
+  // editor had open).
+  const last = _lastTab() ?? legacyCurrent.value
   if (last && last !== currentSheet.value && sheetNames.value.includes(last)) switchSheet(last)
   _rememberTab = true
   activeCell.value = 'A1'
   _showInputInFormulaBar('A1')
   refreshActiveFormat()
   _syncNumberFormat('A1')
-  // Re-baseline history to the loaded state. The pre-load init() above
-  // seeded an EMPTY snapshot; a plain init() here is a no-op (stack already
-  // seeded), which would leave the empty snapshot as the undo baseline and
-  // blank the sheet on the first snapshot-based undo (e.g. insert column).
-  history.reset()
   syncFlags()
 }
 
 async function _loadInitialData() {
-  history.init()
   syncFlags()
-  if (props.collabSession && props.id && props.id !== 'new' && (await _openCollab())) return
-  if (props.id && props.id !== 'new') {
+  if (props.collabSession && props.id && (await _openCollab())) return
+  if (props.id) {
     await loadSheet(props.id)
     if (props.embedded && props.title != null) currentTitle.value = props.title
     _afterWorkbookLoaded()
-    // A develop sheet converted on open is saved in the IronCalc format.
-    if (legacyUpgrade.value?.save && !readOnly.value) isDirty.value = true
   } else {
-    // A new sheet starts as an empty workbook.
+    // No sheet: an empty workbook.
     await _startEngine()
-    history.reset() // the baseline holds the engine's bytes, which init() could not
     syncFlags()
     _rememberTab = true
-    if (props.id === 'new') {
-      // Google-Sheets model: create the doc immediately so there is never an
-      // "unsaved" state.  The parent swaps the URL to ?id=<name> via onSaved.
-      const name = await autoCreate(currentTitle.value || 'Untitled Sheet')
-      if (name) emit('saved', name)
-    }
   }
 }
 
 // Drives the canvas loading overlay (sn-canvas-loading). True until
-// _loadInitialData has either populated the engines from get_sheet or
-// surfaced a load error — flipped in a finally so a thrown exception
-// never strands the editor with a permanent spinner.
+// _loadInitialData has either opened the workbook or surfaced a load error —
+// flipped in a finally so a thrown exception never strands the editor with a
+// permanent spinner.
 const isInitialLoad = ref(true)
-// The develop-sheet upgrade banner, closed by its ×.
-const upgradeBannerClosed = ref(false)
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
@@ -3282,25 +3052,12 @@ onMounted(async () => {
 let _unmounted = false
 onBeforeUnmount(() => {
   _unmounted = true
-  clearTimeout(_autoSaveTimer)
-  // CRITICAL: flush any pending debounced save before the component dies.
-  // Without this, navigating away within ~2s of an edit (the autosave
-  // debounce window) silently drops the most recent changes — exactly the
-  // "data is lost when I come back" report. Unmount only happens on in-app
-  // navigation, where the page lives on and the request completes, so no
-  // `keepalive`: it would cap the body at 64 KB and skip the retries.
-  const lastSave =
-    isDirty.value && !readOnly.value && props.id && props.id !== 'new'
-      ? saveExisting(props.id, currentTitle.value).catch(() => {})
-      : null
   // The room sends what it can and keeps the rest on the device; the glue
-  // reads the workbook until then.
+  // reads the workbook until then, so the engine stops only after.
   const closing = props.collabSession
     ? collab.close().then(() => (collabState.value = 'closed'))
     : null
-  // That save reads the workbook from the worker, so stop it only after.
-  if (lastSave) void lastSave.finally(_stopEngine)
-  else if (closing) void closing.finally(_stopEngine)
+  if (closing) void closing.finally(_stopEngine)
   else _stopEngine()
   gridWrapRef.value?.removeEventListener('scroll', _pinGridWrapScroll)
   ro?.disconnect()
@@ -3317,22 +3074,16 @@ onBeforeUnmount(() => {
 })
 
 // ── Save ──────────────────────────────────────────────────────────────────────
+// The live room saves every action as it is committed (useCollabRoom.ts).
 
-let _autoSaveTimer = null
-let _savePromise = null
-let _pendingSaveBatch = null
 function hasUnsavedChanges() {
-  // Collab: unsent work the browser keeps is sent on the next open.
-  if (collabOn.value) return saveState.value !== 'clean' && !collab.status.value?.isKeptOnDevice
-  return isDirty.value || isSaving.value
+  // Unsent work the browser keeps is sent on the next open.
+  return saveState.value !== 'clean' && !collab.status.value?.isKeptOnDevice
 }
-// The IronCalc worker died. The cells lived in it, so nothing more can be
-// saved: drop the pending save and show the crash screen, whose Reload
-// opens the last saved copy (at most one autosave's worth of edits behind).
+// The IronCalc worker died. The cells lived in it, so nothing more reaches the
+// room: show the crash screen, whose Reload opens the room again.
 function _onEngineCrash(reason) {
   console.error('[sheets] IronCalc worker crashed:', reason)
-  clearTimeout(_autoSaveTimer)
-  isDirty.value = false
   loadError.value = { kind: 'crashed', message: reason }
 }
 function reloadPage() {
@@ -3344,58 +3095,28 @@ const confirmUnsavedNavigation = () => {
   if (!hasUnsavedChanges() || readOnly.value) return true
   return confirmLeave()
 }
-// Reload / tab close with unsaved edits: start the save now and ask the
-// browser to confirm leaving. A save can't be finished during unload (it reads
-// the workbook from the worker first), so staying gives it time to land and
-// leaving is the user's informed choice.
+// Reload / tab close with unsent edits: send them now and ask the browser to
+// confirm leaving, so staying gives them time to land.
 function _onBeforeUnload(e) {
   if (!hasUnsavedChanges() || readOnly.value) return
-  _flushSoon()
+  void flushSave().catch(() => {})
   e.preventDefault()
   e.returnValue = '' // older browsers need it set to show the prompt
 }
 // Tab hidden (switch, minimise, phone backgrounded; also the start of a
-// close): save now instead of waiting out the autosave debounce. On phones
-// this is the last event that reliably fires before the page is killed.
+// close): send what is waiting now. On phones this is the last event that
+// reliably fires before the page is killed.
 function _saveWhenHidden() {
-  if (document.visibilityState === 'hidden' && isDirty.value) _flushSoon()
-}
-// Not for a doc that has no id yet: _doAutoSave skips it without clearing
-// isDirty, so flushSave would loop forever.
-function _flushSoon() {
-  if (readOnly.value || !props.id || props.id === 'new') return
-  void flushSave().catch(() => {})
+  if (document.visibilityState === 'hidden' && !readOnly.value) void flushSave().catch(() => {})
 }
 onBeforeRouteLeave(confirmUnsavedNavigation)
 onBeforeRouteUpdate((to, from) => {
   if (to.params.id === from.params.id) return true
   return confirmUnsavedNavigation()
 })
-
-// Operation queue — populated by _queueOp() at write sites (paste, fill,
-// import, cell edit, etc.).  Flushed after each successful save so each
-// op is hard-linked to the Version row it produced.  See versions.py
-// record_op + list_versions for the consumer side.
-const _opQueue = []
-function _queueOp({
-  opType,
-  cellRefs = null,
-  before = null,
-  after = null,
-  summary = '',
-  subSheet = '',
-}) {
-  if (props.id === 'new') return // pre-save doc has no version yet
-  // Collab saves through the room, never this queue's saves: kept, it would only grow.
-  if (collabOn.value) return
-  _opQueue.push({
-    opType,
-    cellRefs,
-    before,
-    after,
-    summary,
-    subSheet,
-  })
+/** Every action so far committed and sent (or kept on the device). */
+function flushSave() {
+  return collab.flush()
 }
 
 // Snapshot {id → format} for the rect. Used by paste/fill ops so undo
@@ -3559,170 +3280,19 @@ function _diffRefs(before, after) {
   return [...ids].filter((id) => before?.[id] !== after?.[id])
 }
 
-// Per-op cap on the serialized before/after JSON. Anything larger drops
-// the heavy fields and falls back to a lightweight summary — the new state
-// still lives in sheets_data, and the prior state can be reconstructed from
-// the preceding snapshot, so we lose nothing audit-wise. Without this, a
-// large CSV import builds a 20+ MB op that blows past nginx's body cap and
-// the server returns an HTML 413 instead of JSON.
-const _MAX_OP_PAYLOAD_BYTES = 64 * 1024
-
-// Snapshot the queue without removing entries. They are removed only after the
-// save succeeds, so a failed save can retry without losing operation history.
-function _opsForSave() {
-  if (!_opQueue.length || props.id === 'new')
-    return {
-      ops: [],
-      count: 0,
-    }
-  const batch = _opQueue.slice()
-  return {
-    ops: batch.map(_serialiseOp),
-    count: batch.length,
-  }
-}
-function _serialiseOp(op) {
-  const cellRefsJson = op.cellRefs ? JSON.stringify(op.cellRefs) : undefined
-  const beforeJson = op.before ? JSON.stringify(op.before) : undefined
-  const afterJson = op.after ? JSON.stringify(op.after) : undefined
-  const heavy = (beforeJson?.length || 0) + (afterJson?.length || 0)
-  const truncated = heavy > _MAX_OP_PAYLOAD_BYTES
-  return {
-    op_type: op.opType,
-    sub_sheet: op.subSheet || undefined,
-    cell_refs: cellRefsJson,
-    before: truncated ? undefined : beforeJson,
-    after: truncated ? undefined : afterJson,
-    summary: truncated ? _truncatedSummary(op) : op.summary || undefined,
-  }
-}
-function _truncatedSummary(op) {
-  const base = op.summary || op.opType || 'bulk edit'
-  const count = Array.isArray(op.cellRefs) ? op.cellRefs.length : 0
-  return count ? `${base} (${count} cells, details truncated)` : base
-}
-function _triggerAutoSave() {
-  clearTimeout(_autoSaveTimer)
-  _autoSaveTimer = setTimeout(_doAutoSave, 2000)
-}
-async function _doAutoSave() {
-  if (_savePromise) await _savePromise.catch(() => {})
-  if (!isDirty.value) return
-  // Backstop: a viewer should never reach save_sheet (which would throw
-  // PermissionError). The input layer already blocks their edits, so isDirty
-  // stays false — but guard here too in case a mutation path is ever missed.
-  if (readOnly.value) return
-  // Bootstrap is handled by _loadInitialData's autoCreate(); calling
-  // saveExisting('new') would explode with "Sheet new not found". If the
-  // bootstrap save failed for any reason, leave it to a subsequent reload
-  // rather than spamming the server on every typed character.
-  if (props.id === 'new') return
-  isDirty.value = false
-  const epoch = _accessEpoch
-  // Drain queued ops BEFORE the save so the batch lands atomically with the
-  // implicit `save` op and keeps the canonical user-action ordering intact.
-  const batch = _pendingSaveBatch || {
-    ..._opsForSave(),
-    revision: _dirtyRevision,
-  }
-  _pendingSaveBatch = batch
-  _savePromise = _pendingSaveBatch.failed
-    ? retrySave()
-    : saveExisting(props.id, currentTitle.value, {
-        ops: batch.ops,
-      })
-  try {
-    await _savePromise
-  } catch (error) {
-    batch.failed = true
-    if (epoch === _accessEpoch) isDirty.value = true
-    throw error
-  } finally {
-    _savePromise = null
-  }
-  // Access narrowed while this save was out. Its edits left the save path.
-  if (epoch !== _accessEpoch) {
-    saveError.value = ''
-    return
-  }
-  if (saveError.value) {
-    batch.failed = true
-    isDirty.value = true
-    return
-  }
-  _opQueue.splice(0, batch.count)
-  _pendingSaveBatch = null
-  isDirty.value = _dirtyRevision > batch.revision
-  justSaved.value = true
-  setTimeout(() => {
-    justSaved.value = false
-  }, 2500)
-}
-async function flushSave() {
-  if (collabOn.value) return collab.flush()
-  clearTimeout(_autoSaveTimer)
-  do {
-    await _doAutoSave()
-  } while (isDirty.value && !saveError.value)
-}
-
-// Manual retry handler — bound to the refresh button next to the
-// save-error chip. Routes through _doAutoSave (rather than calling
-// retrySave directly) so freshly-queued ops since the last failure
-// also ride along, and so the dirty/justSaved flags are managed in
-// one place. If somehow the user clicked retry from a sheet that
-// isn't dirty (rare race), still try once via retrySave.
-async function onRetrySave() {
-  if (isSaving.value || readOnly.value) return
-  if (isDirty.value && props.id && props.id !== 'new') {
-    await _doAutoSave()
-  } else {
-    await retrySave().catch(() => {})
-  }
-}
-
-// Watchdog: when a save has failed but we still have unsaved work,
-// nudge another attempt after 30 s without waiting for the user to
-// type something else. Catches the "user stepped away during a flaky
-// network blip and came back to find their last change lost" case.
-let _saveWatchdogTimer = null
-watch(saveError, (msg) => {
-  clearTimeout(_saveWatchdogTimer)
-  if (!msg) return
-  _saveWatchdogTimer = setTimeout(() => {
-    if (saveError.value && isDirty.value && !isSaving.value && props.id && props.id !== 'new') {
-      void _doAutoSave().catch(() => {})
-    }
-  }, 30_000)
-})
-
-// Watch for any dirty change → schedule auto-save
-watch(isDirty, (dirty) => {
-  if (dirty) _triggerAutoSave()
-})
-
-// Title focus/blur — mark `isDirty` when the value changed during the focus
-// session so `_doAutoSave` doesn't bail on its `!isDirty` guard. Without
-// this, a rename-then-save flow (no cell edit in between) silently dropped
-// the new title because `flushSave` exited early. Snapshotting on focus avoids spurious saves
-// when the user just clicks into and out of the field without typing.
-let _titleAtFocus = ''
+// The title box of the standalone top bar. Embedded, Drive's header names
+// and renames the sheet.
 function startTitleEditing() {
-  _titleAtFocus = currentTitle.value
   isTitleEditing.value = true
 }
 function finishTitleEditing() {
-  if (!isTitleEditing.value) return
-  if (currentTitle.value !== _titleAtFocus) isDirty.value = true
   isTitleEditing.value = false
-  _triggerAutoSave()
 }
 function cancelTitleEditing() {
-  currentTitle.value = _titleAtFocus
   isTitleEditing.value = false
 }
 function onSave() {
-  void _doAutoSave().catch(() => {})
+  void flushSave().catch(() => {})
 }
 
 // ── Formula bar ───────────────────────────────────────────────────────────────
@@ -3820,9 +3390,7 @@ function _commitFormulaBar() {
       op.beforeRowH = rowH.before
       op.afterRowH = rowH.after
     }
-    _queueOp(op)
     history.pushOp(op)
-    broadcastCellChange(targetSheet, targetId, value)
     syncFlags()
     isDirty.value = true
   }
@@ -3879,7 +3447,6 @@ const {
   captureFormatsRange: _captureFormatsRange,
   captureValidationRange: _captureValidationRange,
   diffRefs: _diffRefs,
-  queueOp: _queueOp,
   rectBlocked: _rectBlocked,
   refitRowsFor: _refitRowsFor,
   readEngineFormats: _readEngineFormats,
@@ -3979,7 +3546,6 @@ const {
   flashProtected: _flashProtected,
   showInput: _showInputInFormulaBar,
   readInputs: _readInputs,
-  queueOp: _queueOp,
   pasteAffectedRects: _pasteAffectedRects,
   cutSourceElsewhere: _cutSourceElsewhere,
   captureFormatsRange: _captureFormatsRange,
@@ -4338,13 +3904,6 @@ async function _applyValidation(rule) {
     afterValidation,
     summary: 'Insert checkboxes',
   }
-  if (blanks.length) {
-    _queueOp(op)
-    broadcastBatchChange(
-      sn,
-      blanks.map((id) => ({ id, value: 'FALSE' })),
-    )
-  }
   history.pushOp(op)
   grid?.render()
   syncFlags()
@@ -4405,28 +3964,6 @@ function _onCfChanged() {
   syncFlags()
   grid?.render()
   isDirty.value = true
-}
-
-// ── Cell edit history ─────────────────────────────────────────────────────────
-
-async function openCellHistory() {
-  contextMenu.open = false
-  if (props.id === 'new') return
-  const id = activeCell.value
-  cellHistory.cell = id
-  cellHistory.open = true
-  cellHistory.loading = true
-  cellHistory.error = ''
-  cellHistory.entries = []
-  try {
-    cellHistory.entries = await fetchCellHistory(props.id, id, currentSheet.value, {
-      context: props.requestContext,
-    })
-  } catch (err) {
-    cellHistory.error = err.message || 'Failed to load cell history'
-  } finally {
-    cellHistory.loading = false
-  }
 }
 
 // ── Find & Replace ────────────────────────────────────────────────────────────
@@ -4597,7 +4134,38 @@ function _onDocMouseDown(e) {
 }
 
 // ── Row / column insert, delete, move ──────────────────────────────────────
-// The op machinery (side-engine remap, undo, redo) is in useHistory.js.
+// IronCalc moves the cells and rewrites formulas pointing at them. Every side
+// engine remaps its own state with the same index map, as does the grid's
+// view metadata (sizes, hidden rows/cols). The glue writes the moved rows and
+// columns to the doc; undo is the room's (collab/undo.ts).
+function _structural(axis, map, forward) {
+  const sn = currentSheet.value
+  _dispatch(_command(forward.type, { sheet: sn, ...forward.payload }))
+  const engines = [
+    formats,
+    merge,
+    comments,
+    validation,
+    protection,
+    condFormat,
+    sortFilter,
+    namedRanges,
+    charts,
+    pivot,
+  ]
+  if (axis === 'row') {
+    for (const e of engines) e.remapRows(map, sn)
+    grid.remapRowsMeta(map)
+  } else {
+    // Slicers are column-bound only.
+    for (const e of [...engines, slicers]) e.remapCols(map, sn)
+    grid.remapColsMeta(map)
+  }
+  _syncDefinedNames()
+  history.push()
+  syncFlags()
+  _afterStructural(sn)
+}
 
 function _afterStructural(sn) {
   _repopulateGrid()
@@ -4609,12 +4177,10 @@ function _afterStructural(sn) {
 function doInsertRow(below = false, count = 1) {
   contextMenu.open = false
   const atRow = contextMenu.targetRow + (below ? 1 : 0)
-  _structural(
-    'row',
-    insertMap(atRow, count),
-    { type: 'insertRows', payload: { row: atRow + 1, count } },
-    { type: 'deleteRows', payload: { row: atRow + 1, count } },
-  )
+  _structural('row', insertMap(atRow, count), {
+    type: 'insertRows',
+    payload: { row: atRow + 1, count },
+  })
 }
 
 // ── Zoom ──────────────────────────────────────────────────────────────────────
@@ -4810,7 +4376,6 @@ async function confirmHyperlink({ text, url: rawUrl }) {
     afterFormats: { [id]: fmtOf() },
     summary: 'Insert link',
   }
-  _queueOp(op)
   history.pushOp(op)
   refreshActiveFormat()
   grid?.render()
@@ -4901,12 +4466,10 @@ function doDeleteRow() {
 function doInsertCol(right = false, count = 1) {
   contextMenu.open = false
   const atCol = contextMenu.targetCol + (right ? 1 : 0)
-  _structural(
-    'col',
-    insertMap(atCol, count),
-    { type: 'insertColumns', payload: { col: atCol + 1, count } },
-    { type: 'deleteColumns', payload: { col: atCol + 1, count } },
-  )
+  _structural('col', insertMap(atCol, count), {
+    type: 'insertColumns',
+    payload: { col: atCol + 1, count },
+  })
 }
 function doDeleteCol() {
   contextMenu.open = false
@@ -4932,12 +4495,10 @@ function doMoveCol(fromCol, toCol, count = 1) {
   if (toCol >= fromCol && toCol <= fromCol + count) return
   const dest = toCol <= fromCol ? toCol : toCol - count
   const delta = dest - fromCol
-  _structural(
-    'col',
-    moveMap(fromCol, toCol, count),
-    { type: 'moveColumns', payload: { col: fromCol + 1, count, delta } },
-    { type: 'moveColumns', payload: { col: dest + 1, count, delta: -delta } },
-  )
+  _structural('col', moveMap(fromCol, toCol, count), {
+    type: 'moveColumns',
+    payload: { col: fromCol + 1, count, delta },
+  })
   // Keep the moved column(s) selected at their new home (Google behaviour), so
   // the header highlight and the status-bar summary track the data that moved.
   grid.setSelection({
@@ -5212,8 +4773,6 @@ function markEdited() {
 const { pushEditOp: _pushEditOp } = useEditOps({
   currentSheet,
   history,
-  queueOp: _queueOp,
-  broadcastBatchChange: (sn, cells) => broadcastBatchChange(sn, cells),
   syncFlags,
   isDirty,
   refitRowsFor: _refitRowsFor,

@@ -734,9 +734,8 @@ class TestMigratedHistory(BuildContentCase):
             "Writer Document", self.prefix + "wdoc", ["content", "html", "collab"], as_dict=True
         )
         self.assertEqual((restored.content, restored.html, restored.collab), ("AAA=", html, 0))
-        sheet = frappe.db.get_value("Sheet", self.prefix + "sheet", ["sheets_data", "head_seq"], as_dict=True)
-        self.assertEqual(json.loads(decode_sheets_data(sheet.sheets_data)), workbook)
-        self.assertEqual(sheet.head_seq, 1)
+        sheets_data = frappe.db.get_value("Sheet", self.prefix + "sheet", "sheets_data")
+        self.assertEqual(json.loads(decode_sheets_data(sheets_data)), workbook)
 
     def test_an_interrupted_version_run_resumes_without_duplicates(self):
         """A stopped batch leaves its written rows; the next run adds the rest."""

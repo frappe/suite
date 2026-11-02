@@ -25,7 +25,6 @@ function setup(
     return out
   }
   const history = { pushOp: vi.fn() }
-  const queueOp = vi.fn()
   const fill = useFill({
     getGrid: () => ({ getSelection: () => selection }),
     currentSheet: { value: 'Sheet1' },
@@ -51,7 +50,6 @@ function setup(
     captureValidationRange: () => ({}),
     diffRefs: (a: Record<string, string>, b: Record<string, string>) =>
       [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((id) => a[id] !== b[id]),
-    queueOp,
     rectBlocked: () => false,
     refitRowsFor,
     readEngineFormats: async (rect: Rect) => {
@@ -65,7 +63,6 @@ function setup(
     cells,
     formatStore,
     history,
-    queueOp,
     refitRowsFor,
     select: (rect: Rect) => (selection = rect),
   }
@@ -111,7 +108,6 @@ describe('Ctrl+D / Ctrl+R', () => {
     const op = t.history.pushOp.mock.calls[0]?.[0]
     expect(op.beforeFormats.A2).toBeNull()
     expect(op.afterFormats.A2).toEqual(bold)
-    expect(t.queueOp.mock.calls[0]?.[0].summary).toBe('Fill down')
   })
 })
 

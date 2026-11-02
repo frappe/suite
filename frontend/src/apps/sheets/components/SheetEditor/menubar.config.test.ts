@@ -74,7 +74,6 @@ function actions(overrides: Record<string, unknown> = {}) {
       'smartFill',
       'protectRange',
       'unprotectRange',
-      'cellHistory',
       'askAi',
       'file',
       'numberFormats',
@@ -185,7 +184,6 @@ describe('buildMenuBar', () => {
       'Remove protection',
       'Split text to columns',
       'Slicer',
-      'Cell history',
     ])
       expect(all).toContain(label)
   })
@@ -238,7 +236,7 @@ describe('buildMenuBar', () => {
 
   it('leaves viewers only what reads the sheet', () => {
     const menus: Menu[] = buildMenuBar(actions({ readOnly: true }).args)
-    expect(menus.map((m) => m.label)).toEqual(['File', 'Edit', 'View', 'Data'])
+    expect(menus.map((m) => m.label)).toEqual(['File', 'Edit', 'View'])
     expect(labels(menu(menus, 'Edit'))).toEqual(['Find and replace'])
     expect(labels(menu(menus, 'View'))).toEqual([
       'Zoom in',
@@ -248,7 +246,6 @@ describe('buildMenuBar', () => {
       'Notes (2)',
       'Keyboard shortcuts',
     ])
-    expect(labels(menu(menus, 'Data'))).toEqual(['Cell history'])
   })
 
   it('disables what cannot run yet and drops what is not there', () => {
@@ -259,7 +256,6 @@ describe('buildMenuBar', () => {
         frozenRows: 0,
         hasHiddenRows: false,
         askAi: null,
-        cellHistory: null,
         filterOn: true,
       }).args,
     )

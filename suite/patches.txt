@@ -56,6 +56,9 @@ suite.meet.patches.migrate_document_method_rate_limits
 # --- writer ---
 # After model sync, which makes the Suite Collab Settings tables on an old site
 suite.writer.patches.turn_collaboration_on
+# --- sheets ---
+# After Writer's, for the same reason
+suite.sheets.patches.turn_collaboration_on
 # --- mail ---
 suite.mail.patches.create_push_subscriptions
 suite.mail.patches.rename_user_settings

@@ -4,18 +4,15 @@ import { useEditOps } from './useEditOps.js'
 
 function setup(refitRowsFor?: (sn: string, writes: Record<string, string>) => unknown) {
   const history = { pushOp: vi.fn() }
-  const queueOp = vi.fn()
   const isDirty = { value: false }
   const { pushEditOp } = useEditOps({
     currentSheet: { value: 'Sheet1' },
     history,
-    queueOp,
-    broadcastBatchChange: vi.fn(),
     syncFlags: vi.fn(),
     isDirty,
     refitRowsFor,
   })
-  return { pushEditOp, history, queueOp, isDirty }
+  return { pushEditOp, history, isDirty }
 }
 
 describe('pushEditOp', () => {
@@ -31,7 +28,6 @@ describe('pushEditOp', () => {
       summary: 'Fill down',
     })
     expect(h.history.pushOp).toHaveBeenCalledWith(op)
-    expect(h.queueOp).toHaveBeenCalledWith(op)
     expect(h.isDirty.value).toBe(true)
   })
 
