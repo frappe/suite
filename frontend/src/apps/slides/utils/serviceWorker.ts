@@ -1,10 +1,17 @@
 import { adoptLegacyDrafts } from '@/apps/slides/utils/drafts'
-import { RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
+import {
+  RECORD_PREFIX,
+  USER_CACHE_NAMES,
+  VISITED_CACHE_NAME,
+} from '@/apps/slides/utils/slidesCaches'
+
+export function slidesWorkerEnabled() {
+  return import.meta.env.PROD || import.meta.env.VITE_SLIDES_SW === '1'
+}
 
 // only for someone who opened a presentation; the kill switch takes the worker out
 export async function registerSlidesWorker() {
-  const isEnabled = import.meta.env.PROD || import.meta.env.VITE_SLIDES_SW === '1'
-  if (!('serviceWorker' in navigator) || !isEnabled) return
+  if (!('serviceWorker' in navigator) || !slidesWorkerEnabled()) return
 
   if (window.disable_slides_service_worker) {
     const registration = await navigator.serviceWorker.getRegistration('/').catch(() => null)
@@ -49,6 +56,12 @@ export const clearSlidesUserData = async () => {
     .forEach((k) => localStorage.removeItem(k))
   if (!('caches' in window)) return
   await Promise.all(USER_CACHE_NAMES.map((name) => caches.delete(name)))
+}
+
+export async function clearVisitedCopies() {
+  if ('caches' in window) {
+    await caches.delete(VISITED_CACHE_NAME)
+  }
 }
 
 let hasAdoptedDrafts = false

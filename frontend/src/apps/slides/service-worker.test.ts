@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PINNED_CACHE_NAME } from './utils/slidesCaches'
+import { API_CACHE_NAME, PINNED_CACHE_NAME, VISITED_CACHE_NAME } from './utils/slidesCaches'
 
 vi.mock('workbox-range-requests', () => ({
   createPartialResponse: async (_request: Request, response: Response) => response,
@@ -8,6 +8,7 @@ vi.mock('workbox-range-requests', () => ({
 
 const listeners = new Map<string, (event: any) => void>()
 const pinned = new Map<string, Response>()
+const visited = new Map<string, Response>()
 const opened = new Map<string, Map<string, Response>>()
 let respond: (url: string) => Promise<Response>
 let online: boolean
@@ -28,14 +29,22 @@ const PINNED_KEY = '/private/files/a.png'
 
 beforeEach(() => {
   pinned.clear()
+  visited.clear()
   opened.clear()
   fetches = []
   online = true
   networkFails = false
   Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online })
   vi.stubGlobal('caches', {
-    match: async (key: string, { cacheName }: { cacheName: string }) =>
-      cacheName === PINNED_CACHE_NAME ? pinned.get(key) : undefined,
+    match: async (key: string, { cacheName }: { cacheName: string }) => {
+      if (cacheName === PINNED_CACHE_NAME) {
+        return pinned.get(key)
+      }
+
+      if (cacheName === VISITED_CACHE_NAME) {
+        return visited.get(key)
+      }
+    },
     open: async (name: string) => {
       const entries = opened.get(name) ?? new Map<string, Response>()
       opened.set(name, entries)
@@ -227,7 +236,7 @@ describe('a pinned presentation offline', () => {
     },
   )
 
-  it('fails like the network for a node nobody pinned, a Writer one included', async () => {
+  it('fails like the network for a node with nothing stored, a Writer one included', async () => {
     await expect(dispatch(navigation('/d/n2/notes'))).rejects.toThrow()
     expect(fetches).toEqual([`${location.origin}/d/n2/notes`])
   })
@@ -289,5 +298,191 @@ describe('a pinned presentation offline', () => {
       'picture',
     )
     expect(dispatch(get(API))).toBeNull()
+  })
+})
+
+// DESIGN-slides-visited-offline §7: read offline only, after the pins
+describe('a presentation opened online, offline', () => {
+  type FakeRequest = Pick<Request, 'url' | 'method' | 'mode' | 'headers' | 'referrer'>
+
+  function dispatch(request: FakeRequest, clientId = 'never-posted') {
+    let responded: Promise<Response> | null = null
+    listeners.get('fetch')!({
+      request,
+      clientId,
+      respondWith: (value: Promise<Response>) => {
+        responded = value
+      },
+      waitUntil: () => {},
+    })
+    return responded as Promise<Response> | null
+  }
+
+  function fakeRequest(path: string, mode: RequestMode, headers = new Headers()): FakeRequest {
+    return { url: `${location.origin}${path}`, method: 'GET', mode, headers, referrer: '' }
+  }
+
+  function navigation(path: string) {
+    return fakeRequest(path, 'navigate')
+  }
+
+  function get(path: string) {
+    return fakeRequest(path, 'cors')
+  }
+
+  function pinGet(path: string) {
+    return fakeRequest(path, 'cors', new Headers({ 'x-slides-pin': '1' }))
+  }
+
+  function text(label: string, type = 'text/html') {
+    return new Response(label, { status: 200, headers: { 'Content-Type': type } })
+  }
+
+  const SHELL = '/slides-visited-shell'
+  const API = '/api/suite/drive/nodes/n1?expand=access%2Cpreview%2Cbreadcrumbs'
+  const SLIDES_API =
+    '/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=p1'
+  const ASSET = '/assets/suite/frontend/assets/SlidesSurface-abc123.js'
+
+  beforeEach(() => {
+    online = false
+    networkFails = true
+    vi.stubGlobal('clients', { claim: async () => {}, matchAll: async () => [] })
+    visited.set(SHELL, text('shared shell'))
+    visited.set('/d/n1', new Response(null, { status: 200 }))
+    visited.set(API, text('{"visited":1}', 'application/json'))
+    visited.set(ASSET, text('chunk', 'text/javascript'))
+  })
+
+  it.each(['/d/n1', '/d/n1/quarterly-plan', '/d/n1/present'])(
+    'opens %s from the shared shell',
+    async (path) => {
+      const response = await dispatch(navigation(path))
+
+      expect(await response!.text()).toBe('shared shell')
+      expect(fetches).toEqual([])
+    },
+  )
+
+  it('fails like the network for a node with no marker while others have one', async () => {
+    await expect(dispatch(navigation('/d/n2/notes'))).rejects.toThrow()
+    expect(fetches).toEqual([`${location.origin}/d/n2/notes`])
+  })
+
+  it('fails like the network when the marker has lost its shell', async () => {
+    visited.delete(SHELL)
+
+    await expect(dispatch(navigation('/d/n1/quarterly-plan'))).rejects.toThrow()
+    expect(fetches).toEqual([`${location.origin}/d/n1/quarterly-plan`])
+  })
+
+  it('lets a pin win over a marker', async () => {
+    pinned.set('/d/n1', text('pinned shell'))
+    pinned.set(API, text('{"pinned":1}', 'application/json'))
+
+    expect(await (await dispatch(navigation('/d/n1')))!.text()).toBe('pinned shell')
+    expect(await (await dispatch(get(API)))!.text()).toBe('{"pinned":1}')
+  })
+
+  it('answers the data and file GETs of a tab that never posted', async () => {
+    expect(await (await dispatch(get(API)))!.text()).toBe('{"visited":1}')
+    expect(await (await dispatch(get(ASSET)))!.text()).toBe('chunk')
+    expect(fetches).toEqual([])
+  })
+
+  it('still answers once the browser restarts the worker', async () => {
+    vi.resetModules()
+    await import('./service-worker')
+
+    expect(await (await dispatch(navigation('/d/n1')))!.text()).toBe('shared shell')
+    expect(await (await dispatch(get(API)))!.text()).toBe('{"visited":1}')
+  })
+
+  it('never answers a plain GET of a node with the marker or the shell', async () => {
+    await expect(dispatch(get('/d/n1'))).rejects.toThrow()
+    await expect(dispatch(get('/d/n1/quarterly-plan'))).rejects.toThrow()
+    expect(fetches).toHaveLength(2)
+  })
+
+  it('falls back to slides-api when the document misses the visited copy', async () => {
+    const stored = text('{"api":1}', 'application/json')
+    opened.set(API_CACHE_NAME, new Map([[`${location.origin}${SLIDES_API}`, stored]]))
+    const page = { ...get(SLIDES_API), referrer: `${location.origin}/slides/p1` }
+
+    const response = await dispatch(page)
+
+    expect(await response!.text()).toBe('{"api":1}')
+  })
+
+  it('never answers from the visited copy online', async () => {
+    online = true
+    networkFails = false
+
+    expect(dispatch(navigation('/d/n1/quarterly-plan'))).toBeNull()
+    expect(dispatch(get(API))).toBeNull()
+    expect(dispatch(get(ASSET))).toBeNull()
+  })
+
+  it('leaves every request a capture or a pin makes to the network', async () => {
+    expect(dispatch(pinGet(API))).toBeNull()
+    expect(dispatch(pinGet(ASSET))).toBeNull()
+    expect(dispatch(pinGet('/d/n1'))).toBeNull()
+  })
+})
+
+describe('what a capture or a pin leaves in the caches', () => {
+  function dispatch(request: Request | Record<string, unknown>) {
+    const pending: Promise<unknown>[] = []
+    let responded: Promise<Response> | null = null
+    listeners.get('fetch')!({
+      request,
+      clientId: 'c1',
+      respondWith: (value: Promise<Response>) => {
+        responded = value
+      },
+      waitUntil: (work: Promise<unknown>) => pending.push(work),
+    })
+    return { responded: responded as Promise<Response> | null, pending }
+  }
+
+  function get(path: string, headers: Record<string, string> = {}) {
+    return {
+      url: `${location.origin}${path}`,
+      method: 'GET',
+      mode: 'cors',
+      headers: new Headers(headers),
+      referrer: `${location.origin}/slides/p1`,
+    }
+  }
+
+  const SLIDES_API = '/api/method/suite.slides.documents.get?name=p1'
+  const ASSET = '/assets/suite/frontend/assets/index-a1.js'
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', async () => {
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+  })
+
+  async function settle({ responded, pending }: ReturnType<typeof dispatch>) {
+    await responded
+    await Promise.all(pending)
+  }
+
+  it('writes no slides-api for a marked GET, and still does for a plain one', async () => {
+    await settle(dispatch(get(SLIDES_API, { 'x-slides-pin': '1' })))
+    expect(opened.get(API_CACHE_NAME)?.size ?? 0).toBe(0)
+
+    await settle(dispatch(get(SLIDES_API)))
+    expect(opened.get(API_CACHE_NAME)?.size).toBe(1)
+  })
+
+  it('writes no slides-assets for a marked file GET', async () => {
+    await settle(dispatch(get(ASSET, { 'x-slides-pin': '1' })))
+
+    expect(opened.get('slides-assets')?.size ?? 0).toBe(0)
   })
 })

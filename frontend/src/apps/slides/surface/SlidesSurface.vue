@@ -76,10 +76,11 @@ import {
   slides,
 } from '@/apps/slides/stores/slide'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
+import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { useHideRail } from '@/platform/rail'
-import { useSession } from '@/platform/session'
+import { getCookieSessionUser, useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate } from '@/platform/translation'
 
@@ -635,6 +636,10 @@ watch([slides, () => presentationDoc.value?.modified], () => {
       console.warn('Slides offline copy refresh failed:', err),
     )
   }
+
+  if (access.readable.value && getCookieSessionUser()) {
+    void rememberVisit(presentationId.value)
+  }
 })
 onMounted(() => {
   void load()
@@ -650,6 +655,7 @@ onMounted(() => {
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
+  cancelVisit()
   void postToServiceWorker('slides-left')
   if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)

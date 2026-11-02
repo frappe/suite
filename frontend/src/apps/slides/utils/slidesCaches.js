@@ -4,8 +4,12 @@ export const API_CACHE_NAME = 'slides-api'
 export const ASSETS_CACHE_NAME = 'slides-assets'
 export const SHELL_CACHE_NAME = 'slides-shell'
 export const PINNED_CACHE_NAME = 'slides-pinned'
+export const VISITED_CACHE_NAME = 'slides-visited'
 
 export const PIN_HEADER = 'x-slides-pin'
+
+// every visited presentation opens this one shell, see stores/visitedCopies.js
+export const VISITED_SHELL_KEY = '/slides-visited-shell'
 
 // localStorage: one offline copy record per presentation
 export const RECORD_PREFIX = 'slides-offline-copy:'
@@ -23,4 +27,5 @@ export const USER_CACHE_NAMES = [
   API_CACHE_NAME,
   MEDIA_CACHE_NAME,
   PINNED_CACHE_NAME,
+  VISITED_CACHE_NAME,
 ]

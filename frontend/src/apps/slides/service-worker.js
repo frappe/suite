@@ -9,6 +9,8 @@ import {
   // outside CACHE_MAX_AGE: a pinned copy must survive the sweep
   PINNED_CACHE_NAME,
   SHELL_CACHE_NAME,
+  VISITED_CACHE_NAME,
+  VISITED_SHELL_KEY,
 } from './utils/slidesCaches'
 import { getRequestType, isBundleAsset, isCacheable, shellKey } from './utils/slidesRequests'
 
@@ -183,9 +185,6 @@ const getPinnedResponse = async (event) => {
 // a pin is a request to present without the network, so it wins even online;
 // the user-switch clear and unpinning are what bound it
 const getMediaResponse = async (event) => {
-  // the pin action stores the body itself
-  if (event.request.headers.has(PIN_HEADER)) return fetch(event.request)
-
   const pinned = await getPinnedResponse(event)
   if (pinned) return pinned
 
@@ -220,7 +219,29 @@ function pinnedKey(request, url) {
   return canonicalMediaKey(url.href) ?? `${url.pathname}${url.search}`
 }
 
-// slides-pinned only ever holds this user's own pins, so offline it may answer any tab
+function matchVisited(key) {
+  return caches.match(key, { cacheName: VISITED_CACHE_NAME }).catch(() => null)
+}
+
+// a marker's empty body answers nothing; it only lets a navigation have the shared shell
+async function getVisitedResponse(request, url) {
+  const marker = shellKey(url.pathname)
+  if (request.mode !== 'navigate') {
+    if (marker) {
+      return null
+    }
+
+    return matchVisited(`${url.pathname}${url.search}`)
+  }
+
+  if (marker && (await matchVisited(marker))) {
+    return matchVisited(VISITED_SHELL_KEY)
+  }
+
+  return null
+}
+
+// both caches only ever hold this user's own copies, so offline they may answer any tab
 async function getOfflineResponse(event, type, url) {
   const key = pinnedKey(event.request, url)
   const pinned =
@@ -228,6 +249,11 @@ async function getOfflineResponse(event, type, url) {
 
   if (pinned) {
     return respondFromCache(event, pinned)
+  }
+
+  const visited = await getVisitedResponse(event.request, url)
+  if (visited) {
+    return respondFromCache(event, visited)
   }
 
   if (type === 'other' || type === 'shell') {
@@ -243,6 +269,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
 
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
+
+  // a capture or pin stores the body itself
+  if (request.headers.has(PIN_HEADER)) return
 
   const requestType = getRequestType(request, slidesClientState.get(event.clientId))
   if (!self.navigator.onLine) {

@@ -132,6 +132,15 @@ vi.mock('@/apps/slides/stores/offlineCopy', async (importOriginal) => {
 
   return { ...store, warmOfflineCopyAssets }
 })
+const visits = vi.hoisted(() => ({
+  remember: vi.fn((_id: string) => Promise.resolve()),
+  cancel: vi.fn(),
+}))
+vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/apps/slides/stores/visitedCopies')>()),
+  rememberVisit: visits.remember,
+  cancelVisit: visits.cancel,
+}))
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
@@ -560,6 +569,59 @@ describe('Slides offline copy', () => {
 
     expect(warms).toHaveLength(refreshed.length)
     expect(fetched.filter((url) => url.startsWith('/d/'))).toEqual(refreshed)
+  })
+
+  describe('a presentation opened online', () => {
+    function signOut() {
+      document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+    }
+
+    beforeEach(() => {
+      visits.remember.mockReset()
+      visits.remember.mockImplementation(() => Promise.resolve())
+      visits.cancel.mockClear()
+      document.cookie = 'user_id=me@example.com'
+    })
+
+    afterEach(signOut)
+
+    it.each([
+      ['an editor', 50],
+      ['a viewer', 10],
+    ])('is remembered for %s', async (_label, role) => {
+      signedIn.user = 'someone@example.com'
+      const next = opens + 1
+      const docname = `p${next}`
+      mounted = await openedSurface({ role })
+
+      await vi.waitFor(() => expect(visits.remember).toHaveBeenCalledWith(docname))
+    })
+
+    it('is not remembered for a guest', async () => {
+      signOut()
+      mounted = await openedSurface()
+      await nextTick()
+
+      expect(visits.remember).not.toHaveBeenCalled()
+    })
+
+    it('loads without waiting for the copy', async () => {
+      visits.remember.mockImplementation(() => new Promise(() => {}))
+      mounted = await openedSurface()
+
+      await vi.waitFor(() => expect(visits.remember).toHaveBeenCalled())
+      expect(offlineCopyButton()).not.toBeNull()
+    })
+
+    it('stops the copy when the surface goes away', async () => {
+      mounted = await openedSurface()
+
+      mounted.app.unmount()
+      mounted.root.remove()
+      mounted = null
+
+      expect(visits.cancel).toHaveBeenCalledOnce()
+    })
   })
 
   it('tells the worker when the presentation opens and closes', async () => {
