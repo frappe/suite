@@ -264,7 +264,8 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
     const pivot = {
       id: 'pivot_p1',
       sourceSheet: 'Data',
-      sourceRange: 'A1:B3',
+      // Whole columns: the pivot reads only as far as the sheet holds data.
+      sourceRange: 'A1:Z1048576',
       outputSheet: 'Sheet1',
       anchorRow: 1,
       anchorCol: 2,
