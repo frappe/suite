@@ -21,7 +21,8 @@ const suite_handlers = (socket) => {
 				return;
 			}
 			acknowledge(currentValidation);
-		} catch {
+		} catch (error) {
+			console.error("[suite realtime] guest subscribe failed", error);
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
@@ -42,7 +43,8 @@ const suite_handlers = (socket) => {
 				ok: true,
 				...(validation.status && { status: validation.status }),
 			});
-		} catch {
+		} catch (error) {
+			console.error("[suite realtime] guest unsubscribe failed", error);
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
@@ -92,7 +94,8 @@ const validate_guest = async (socket, payload) => {
 		return bodyData?.data?.valid === true
 			? { ok: true, ...(status && { status }) }
 			: { ok: false, error: "unauthorized", ...(status && { status }) };
-	} catch {
+	} catch (error) {
+		console.error("[suite realtime] guest validation failed", error);
 		return { ok: false, error: "validation_failed" };
 	}
 };
