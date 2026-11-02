@@ -124,6 +124,7 @@ def history(
     )
     for row in rows:
         row.detail = _json_value(row.detail, {})
+    _quote_comments_as_they_are(rows)
     return page_of(rows, offset, len(rows), window)
 
 
@@ -522,7 +523,26 @@ def _visible_notifications(
         activity.detail = _json_value(activity.detail, {})
         row.activity = activity
         visible.append(row)
+    _quote_comments_as_they_are([row.activity for row in visible])
     return visible, len(rows)
+
+
+def _quote_comments_as_they_are(activities: Sequence[frappe._dict]) -> None:
+    """Replace each stored excerpt with the comment's current text, or drop it if the comment is gone."""
+    from suite.drive._core.comments import excerpt
+
+    quoting = [activity for activity in activities if activity.detail.get("excerpt")]
+    if not quoting:
+        return
+    wanted = [activity.detail.get("comment") for activity in quoting]
+    found = frappe.get_all("Drive Comment", filters={"name": ["in", wanted]}, fields=["name", "content"])
+    contents = {comment.name: comment.content for comment in found}
+    for activity in quoting:
+        text = contents.get(activity.detail.get("comment"))
+        if text is None:
+            del activity.detail["excerpt"]
+        else:
+            activity.detail["excerpt"] = excerpt(text)
 
 
 def unread_count(principals: Principals) -> int:
