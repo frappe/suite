@@ -122,4 +122,20 @@ describe('document threads', () => {
 
     expect(drive.reads).toHaveLength(2)
   })
+
+  it('gives up on a read that never answers, so later reads go out and a late answer changes nothing', async () => {
+    vi.useFakeTimers()
+    const drive = driveThreads()
+    const { threads, refresh } = openThreads(drive.session)
+    void refresh()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(drive.reads).toHaveLength(2)
+
+    drive.reads[1]!.answer(['fresh'])
+    await vi.advanceTimersByTimeAsync(0)
+    drive.reads[0]!.answer(['hung'])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(names(threads.value)).toEqual(['fresh'])
+  })
 })

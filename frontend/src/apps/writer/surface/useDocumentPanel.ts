@@ -55,36 +55,43 @@ async function loadMoreVersions(session: PanelSession, lists: PanelLists) {
   }
 }
 
-// Whether the change went in; the threads are read again after it does
-async function changeThreads(
-  change: () => Promise<unknown>,
-  refreshThreads: () => Promise<void>,
-  fallback: string,
-) {
+// Whether Drive took the change
+async function tryChange(change: () => Promise<unknown>, fallback: string) {
   try {
     await change()
+    return true
   } catch (error) {
     showError(error, fallback)
     return false
   }
-
-  await refreshThreads()
-  return true
 }
 
 /** Replies to, resolves, edits and deletes the document's comments. */
 function threadActions(session: PanelSession, refreshThreads: () => Promise<void>) {
-  function change(action: () => Promise<unknown>, fallback: string) {
-    return changeThreads(action, refreshThreads, fallback)
+  // The threads are read again after a change goes in
+  async function change(action: () => Promise<unknown>, fallback: string) {
+    const isTaken = await tryChange(action, fallback)
+    if (isTaken) {
+      await refreshThreads()
+    }
+
+    return isTaken
   }
 
   const { comments } = session
   return {
-    reply: (thread: string, text: string, authorName: string | undefined, clientId: string) =>
-      change(
+    // Answers as soon as Drive takes the reply: a slow read of the threads must not hold the box
+    reply: async (thread: string, text: string, authorName: string | undefined, clientId: string) => {
+      const isTaken = await tryChange(
         () => comments.reply(thread, text, authorName, clientId),
         __('Could not add the reply.'),
-      ),
+      )
+      if (isTaken) {
+        void refreshThreads()
+      }
+
+      return isTaken
+    },
     resolve: (thread: string, isResolved: boolean) =>
       change(() => comments.resolve(thread, isResolved), __('Could not change the thread.')),
     editComment: (comment: string, text: string) =>

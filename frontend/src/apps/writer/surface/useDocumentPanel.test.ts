@@ -114,6 +114,18 @@ describe('changing a thread from the panel', () => {
     ])
   })
 
+  it('answers a reply once Drive takes it, while the read of the threads hangs', async () => {
+    const session = {
+      comments: { reply: vi.fn(() => Promise.resolve()) },
+      versions: { list: vi.fn() },
+    } as unknown as Pick<DocumentSession, 'comments' | 'versions'>
+    const hung = vi.fn(() => new Promise<void>(() => {}))
+
+    const isTaken = await useDocumentPanel(session, hung).reply('thread-1', 'Agreed', 'Asha', 'r1')
+
+    expect([isTaken, hung.mock.calls.length]).toEqual([true, 1])
+  })
+
   it('says why a change was refused and keeps the threads as they are', async () => {
     const { session, calls } = commentsSession('You can only delete your own comments.')
     async function refresh() {
