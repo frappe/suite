@@ -20,6 +20,7 @@ cannot reach it. These helpers raise `frappe.ValidationError`, which the route
 boundary maps to 400.
 """
 
+import json
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import Literal, NotRequired, TypedDict
@@ -1188,6 +1189,20 @@ def name_list(value, name: str) -> tuple[str, ...]:
         if item not in answer:
             answer.append(item)
     return tuple(answer)
+
+
+def query_name_list(value, name: str) -> tuple[str, ...]:
+    """Accept `name_list` from a query string, where a client sends a list as JSON text.
+
+    A DELETE carries its arguments in the query string (§11.2), and the
+    generated client writes an array there as JSON.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            _refuse(name)
+    return name_list(value, name)
 
 
 def identifiers(value, name: str) -> tuple[str, ...]:

@@ -14,6 +14,7 @@ connection's snapshot is dropped, which `reread` does.
 """
 
 import io
+import json
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -2411,6 +2412,16 @@ class TestViewRoutes(DriveHTTPCase):
             with self.subTest(type=unknown):
                 answer = self.as_owner("GET", f"{PREFIX}/views/recents", query={"type": unknown})
                 self.refusal(answer, 400, "DriveError")
+
+    def test_named_recents_are_removed_from_the_query_string_and_the_rest_stay(self):
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.folder}/visit", body={}))
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        # The generated client sends a list in a query string as JSON text.
+        answer = self.data(
+            self.as_owner("DELETE", f"{PREFIX}/views/recents", query={"nodes": json.dumps([self.file])})
+        )
+        self.assertEqual(answer, {"count": 1})
+        self.assertEqual([row["name"] for row in self.view("recents")["rows"]], [self.folder])
 
     def test_every_node_view_filters_by_type_and_the_root_views_refuse_it(self):
         # B46: `?type=` means the same on every node view. `templates` lists

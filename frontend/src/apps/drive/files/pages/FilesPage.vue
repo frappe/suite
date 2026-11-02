@@ -629,6 +629,8 @@ function dismissOutcome() {
 }
 // Search replaces the Trash listing, so its rows get no Trash actions.
 const trashActions = computed(() => props.destination === 'trash' && !isSearching.value)
+// The same holds for Recent: a search result can only leave Recent from Recent.
+const recentActions = computed(() => props.destination === 'recent' && !isSearching.value)
 const uploads = ref<InstanceType<typeof DriveUploads> | null>(null)
 // Uploads follow the server's UPLOAD role on the open folder (spec §6.7, §10.13). Saved views and search take none.
 const uploadTarget = computed(() =>
@@ -673,6 +675,7 @@ const starMutation = useMutation(api.drive.nodes.star)
 const unstarMutation = useMutation(api.drive.nodes.unstar)
 const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
 const archiveMutation = useMutation(api.drive.archives.start)
+const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
   narrowMedia = window.matchMedia('(max-width: 767px)')
@@ -903,6 +906,16 @@ const bulkActions = computed(() => {
           disabled: !allow('trash'),
           onClick: runBulkTrash,
         },
+        ...(recentActions.value
+          ? [
+              {
+                label: 'Remove from Recent',
+                icon: 'lucide-list-x',
+                disabled: clearRecentMutation.isPending,
+                onClick: () => removeFromRecent(selectedRows.value),
+              },
+            ]
+          : []),
       ]
 })
 /** A menu row led by the type icon the listing shows for what it creates. */
@@ -1277,6 +1290,15 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       hideLabel: true,
       options: [
         { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
+        ...(recentActions.value
+          ? [
+              {
+                label: 'Remove from Recent',
+                icon: 'lucide-list-x',
+                onClick: () => removeFromRecent([row]),
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -1444,6 +1466,11 @@ async function runBatch(
   } catch {
     return null
   }
+}
+/** Forgets that the user opened the items. Recent is read again, so their rows leave it. */
+async function removeFromRecent(rows: readonly DriveNode[]) {
+  await clearRecentMutation.run({ nodes: rows.map((row) => row.name) })
+  clearSelected()
 }
 async function toggleStar(row: DriveNode) {
   const starred = !row.favourite

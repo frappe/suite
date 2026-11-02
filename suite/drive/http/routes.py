@@ -1026,7 +1026,7 @@ def _view_filters(name: str, root: Given, content_doctype: Given, term: Given, l
 @_route
 def view_clear_recents(nodes: Given = None) -> shapes.Count:
     """Clear the caller's own recents, and never their favourites (§9.5)."""
-    named = None if nodes is None else shapes.name_list(nodes, "nodes")
+    named = None if nodes is None else shapes.query_name_list(nodes, "nodes")
     return {"count": activity_core.clear_recents(_principals(), named)}
 
 
