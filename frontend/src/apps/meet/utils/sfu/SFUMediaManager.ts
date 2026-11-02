@@ -418,7 +418,6 @@ export class SFUMediaManager {
 
 			return enhancedConsumer;
 		} catch (error) {
-			// Retried and cancelled attempts are not terminal subscription failures.
 			console.debug(`Failed to subscribe to producer ${producerId}:`, error);
 			throw error;
 		}

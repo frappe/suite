@@ -1238,7 +1238,6 @@ export class SFUClient {
 								response.code,
 								response.details,
 							);
-							// Consumer recovery reports errors after retries are exhausted.
 							const log = event === "create_consumer" ? console.debug : console.error;
 							log(`SFU request failed (${event}):`, response.error);
 							reject(error);
