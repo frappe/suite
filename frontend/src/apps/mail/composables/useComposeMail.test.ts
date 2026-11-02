@@ -112,6 +112,14 @@ describe('saving a draft', () => {
     expect(composer.isSaveFailed.value).toBe(false)
   })
 
+  it('does not start a second save while one is under way', async () => {
+    const composer = compose()
+    server.updateDraft.mockResolvedValueOnce({ id: 'draft-2', status: 'Drafted', error: null })
+    composer.mail.html_body = '<p>See the brief. Edited.</p>'
+    await Promise.all([composer.saveDraft(), composer.saveDraft()])
+    expect(server.updateDraft).toHaveBeenCalledOnce()
+  })
+
   it('keeps the draft dirty when the server answers with an error', async () => {
     const composer = compose()
     server.updateDraft.mockResolvedValueOnce({ id: 'draft-1', status: 'Draft', error: 'Refused' })

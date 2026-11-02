@@ -302,7 +302,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const formerIds = new Set<string>()
   let pendingSave: Promise<void> | undefined
   const saveDraft = async () => {
-    if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
+    if (pendingSave || discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value)
+      return
     isSavingDraft.value = true
     pendingSave = mail.id
       ? updateDraftSubmit({
