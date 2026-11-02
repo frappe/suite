@@ -249,7 +249,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.provider.fail = None
         return result, frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
 
-    def test_a_failed_direct_creation_reports_its_reason_and_waits_in_users_not_invitations(self):
+    def test_a_failed_direct_creation_reports_its_reason_and_is_listed_under_failed(self):
         result, name = self.failed_creation()
         self.assertFalse(result["success"])
         self.assertIn("did not accept the change", result["error"])
@@ -258,7 +258,8 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertNotIn("did not accept", printed)  # it travels in `error`, not as a toast
         logged = frappe.get_all("Error Log", pluck="method", order_by="creation desc", limit=5)
         self.assertIn(f"[Mail] Account setup failed for {self.address}", logged)
-        self.assertNotIn(name, [r["name"] for r in get_account_requests(search=self.username)["items"]])
+        self.assertIn(name, [r["name"] for r in get_account_requests(search=self.username)["items"]])
+        self.assertEqual(get_account_requests(search=self.username, status="Pending")["items"], [])
         failed = get_account_requests(search=self.username, status="Setup failed")["items"]
         self.assertEqual([(r["name"], r["status"]) for r in failed], [(name, "Setup failed")])
 
@@ -270,6 +271,37 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertEqual(self.provider.created, 1)
         self.assertEqual(frappe.db.get_value("User", retried["user"], "first_name"), "Employee")
         self.assertEqual(get_account_requests(search=self.username, status="Setup failed")["items"], [])
+
+    def test_a_retry_after_an_early_failure_keeps_what_the_admin_chose(self):
+        # Fails before any Suite user exists, the case nothing else can recover the choices from.
+        with patch(
+            "suite.mail.doctype.mail_account_request.mail_account_request.is_jmap_server_configured",
+            side_effect=frappe.ValidationError("The JMAP server is not configured."),
+        ):
+            result = add_member(
+                self.username,
+                "company.frappe.cloud",
+                False,
+                False,
+                "",
+                first_name="Nisha",
+                last_name="Patel",
+                locale="en-US",
+                time_zone="Asia/Kolkata",
+            )
+        self.assertFalse(result["success"], result)
+        self.assertFalse(frappe.db.exists("User", self.address))
+        name = frappe.db.get_value("Mail Account Request", {"account": self.address}, "name")
+        listed = get_account_requests(search=self.username, status="Setup failed")["items"]
+        self.assertEqual([row["name"] for row in listed], [name])
+
+        retried = retry_account_creation(name)
+
+        self.assertTrue(retried["success"], retried)
+        user = frappe.db.get_value("User", retried["user"], ["first_name", "last_name", "time_zone"])
+        self.assertEqual(user, ("Nisha", "Patel", "Asia/Kolkata"))
+        account = self.provider.accounts[self.address]
+        self.assertEqual((account.get("locale"), account.get("time_zone")), ("en-US", "Asia/Kolkata"))
 
     def test_a_creation_that_failed_after_locking_its_account_can_be_retried(self):
         self.provider.fail = "mail.accounts.set_account_enabled"

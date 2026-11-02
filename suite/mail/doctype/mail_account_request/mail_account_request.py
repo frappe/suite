@@ -63,16 +63,20 @@ class MailAccountRequest(Document):
         backup_email: DF.Data
         disable_receiving: DF.Check
         expires_at: DF.Datetime | None
+        first_name: DF.Data | None
         groups: DF.SmallText | None
         invited_by: DF.Link | None
         ip_address: DF.Data | None
         is_admin: DF.Check
         is_verified: DF.Check
+        last_name: DF.Data | None
+        locale: DF.Data | None
         mailing_lists: DF.SmallText | None
         quota_gb: DF.Float
         request_key: DF.Data | None
         roles: DF.SmallText | None
         send_invite: DF.Check
+        time_zone: DF.Data | None
     # end: auto-generated types
 
     # The freshly generated signup OTP, stashed by `set_otp` for the very next

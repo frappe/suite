@@ -20,7 +20,7 @@
     v-model:selection="selectedInvites"
     selectable
     class="-mx-3 list-row-px-3"
-    :columns="['minmax(0,1fr)', 'minmax(0,1fr)', 'minmax(0,1fr)', '8rem', '3rem']"
+    :columns="['minmax(0,1fr)', 'minmax(0,1fr)', 'minmax(0,1fr)', '8rem', '10rem']"
     :row-height="56"
   >
     <ListHeader>
@@ -65,7 +65,13 @@
           <Badge :label="invite.status" :theme="getTheme(invite.status)" />
         </ListCell>
         <ListCell class="justify-end" @click.stop>
+          <FailedCreationActions
+            v-if="invite.status === 'Setup failed'"
+            :request="invite"
+            @settled="reloadInvites"
+          />
           <Button
+            v-else
             variant="ghost"
             icon="lucide-pencil"
             :label="__('Edit invite for {0}', [invite.account])"
@@ -114,14 +120,13 @@ import { useRoute } from 'vue-router'
 import { api, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import EditInviteModal from '@/apps/mail/components/Modals/EditInviteModal.vue'
+import FailedCreationActions from '@/apps/mail/pages/dashboard/FailedCreationActions.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardSkeletonText } from '@/platform/dashboard'
 
-// Setup failed is never listed here (those rows are users, see AdminUsersView), but the row type
-// shares the status field with that list.
 type InviteStatusLabel = 'Pending' | 'Accepted' | 'Expired' | 'Setup failed'
-type InviteStatus = 'All' | Exclude<InviteStatusLabel, 'Setup failed'>
+type InviteStatus = 'All' | InviteStatusLabel
 type InviteRow = {
   name: string
   account: string
@@ -134,7 +139,7 @@ type InviteRow = {
 const search = ref('')
 // The overview links here with ?status=Expired; the filter follows the query on arrival.
 const route = useRoute()
-const STATUSES: InviteStatus[] = ['All', 'Pending', 'Accepted', 'Expired']
+const STATUSES: InviteStatus[] = ['All', 'Pending', 'Accepted', 'Expired', 'Setup failed']
 const statusFromQuery = (): InviteStatus =>
   STATUSES.find((value) => value === route.query.status) || 'All'
 const status = ref<InviteStatus>(statusFromQuery())
@@ -236,6 +241,10 @@ const STATUS_OPTIONS = [
   {
     label: __('Expired'),
     value: 'Expired',
+  },
+  {
+    label: __('Failed'),
+    value: 'Setup failed',
   },
 ]
 const getTheme = (status: InviteStatusLabel) =>

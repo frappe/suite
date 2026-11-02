@@ -105,8 +105,7 @@ const failedCreations = useQuery(api.mail.admin.invites.list, () => ({
 function failedCreation(account: string) {
   return failedCreations.data?.items.find((request) => request.account === account)
 }
-const reloadUsers = () =>
-  Promise.all([users.refetch(), failedCreations.refetch()]).catch(() => {})
+const reloadUsers = () => Promise.all([users.refetch(), failedCreations.refetch()]).catch(() => {})
 const tabs = [
   { value: 'users', label: __('Users') },
   { value: 'invitations', label: __('Invitations') },

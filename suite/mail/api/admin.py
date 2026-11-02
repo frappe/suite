@@ -672,6 +672,11 @@ def add_member(
     account_request.invited_by = frappe.session.user
     account_request.backup_email = backup_email
     account_request.send_invite = cint(send_invite)
+    # A retry must make the same account, including after a failure before any User existed.
+    account_request.first_name = first_name
+    account_request.last_name = last_name
+    account_request.locale = locale
+    account_request.time_zone = time_zone
     # Arrives as UTC like every other timestamp; the doctype field holds system time.
     account_request.expires_at = from_utc_z(expires_at)
     if account_request.is_new():
@@ -761,8 +766,11 @@ def retry_account_creation(name: str) -> dict:
         if request.suite_user
         else None
     )
-    first_name, last_name = names or (request.account.split("@", 1)[0], None)
-    return create_account_now(request, first_name, last_name, None, None)
+    first_name, last_name = names or (
+        request.first_name or request.account.split("@", 1)[0],
+        request.last_name,
+    )
+    return create_account_now(request, first_name, last_name, request.locale, request.time_zone)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1039,13 +1047,10 @@ def get_account_requests(
         query = query.where(failed)
     elif status == "Accepted":
         query = query.where(ACC_REQ.is_verified == 1)
-    else:
-        # A failed direct creation is listed with Users, never as an invitation (spec 001 §4.1).
-        query = query.where(~failed)
-    if status == "Pending":
-        query = query.where((ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at > frappe.utils.now()))
+    elif status == "Pending":
+        query = query.where(~failed & (ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at > frappe.utils.now()))
     elif status == "Expired":
-        query = query.where((ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at <= frappe.utils.now()))
+        query = query.where(~failed & (ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at <= frappe.utils.now()))
     total = frappe.qb.from_(query.as_("requests")).select(Count("*")).run()[0][0]
     return {"items": query.limit(page_length).offset(start).run(as_dict=True), "total": total}
 
