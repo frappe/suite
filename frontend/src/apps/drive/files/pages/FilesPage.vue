@@ -1265,6 +1265,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.download
           ? [{ label: 'Download', icon: 'lucide-download', onClick: () => download(row) }]
           : []),
+        { label: 'Details', icon: 'lucide-info', onClick: () => dialogs.showDetails(row.name) },
       ],
     },
     {

@@ -312,6 +312,17 @@ describe('Recent', () => {
   })
 })
 
+describe('Details', () => {
+  it('opens from a row menu', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    await menuItem('b', 'Details')?.onClick()
+
+    expect(dialogs.showDetails).toHaveBeenCalledWith('b')
+  })
+})
+
 /** A paste as the browser sends it, carrying `items` from the clipboard. */
 function paste(
   items: Array<{ kind: string; type: string; file?: File }>,
