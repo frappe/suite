@@ -6,7 +6,8 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite import drive
+from suite import content, drive
+from suite.content.http.routes import authorize_node
 from suite.drive._core.access import grant
 from suite.drive._core.nodes import _node
 from suite.drive.framework import principals_for
@@ -15,7 +16,6 @@ from suite.slides.api.slides import save_slides
 from suite.tests.utils import ensure_user
 
 REFUSED = (frappe.PermissionError, drive.DriveError)
-SHEET_BODY = json.dumps({"sheets": [{"name": "Sheet1", "cells": {"A1": {"v": "admin"}}}]})
 
 
 class TestAdminEditorRefusals(IntegrationTestCase):
@@ -43,8 +43,10 @@ class TestAdminEditorRefusals(IntegrationTestCase):
         sheet = self._commentable_document("Sheet", "Budget")
         frappe.set_user(self.admin)
         self.assertFalse(sheets_api.get_sheet(sheet)["can_write"])
-        with self.assertRaises(REFUSED):
-            sheets_api.save_sheet("Ignored", SHEET_BODY, name=sheet)
+        # A sheet saves only through its room, and a push there needs EDIT on the node
+        node = frappe.db.get_value("Sheet", sheet, "node")
+        with self.assertRaises(content.Refusal):
+            authorize_node(node, drive.EDIT, self.admin)
 
     def test_a_writer_save_is_refused(self):
         writer = self._commentable_document("Writer Document", "Plan")
