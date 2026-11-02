@@ -39,13 +39,26 @@ def local_time(stored: datetime) -> str:
 
 
 def notice(version: dict | None) -> dict:
-    """What other tabs are told once the restore lands: who ran it and which version it brought back."""
+    """What other tabs learn from their pull once the restore lands: who ran it and which version."""
     restored = None
     if version is not None:
         taken_at = site_aware(version["creation"]).astimezone(UTC).isoformat(timespec="seconds")
         restored = {"seq": version["seq"], "label": version["label"], "taken_at": taken_at}
 
     return {"by": frappe.session.user, "version": restored}
+
+
+def for_reader(notice: dict | None, node: str) -> dict:
+    """A pull's field naming the last restore, only for someone who may read the node's versions."""
+    if not notice:
+        return {}
+
+    try:
+        drive.check_history_reader(node)
+    except drive.DriveForbidden:
+        return {}
+
+    return {"restored": notice}
 
 
 def site_aware(stored: datetime) -> datetime:

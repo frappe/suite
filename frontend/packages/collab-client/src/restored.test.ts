@@ -353,6 +353,9 @@ describe("this tab's restore", () => {
   })
 })
 
+// Long enough, in a room this small, for the pull a control message sets off
+const PULL_SPREAD_MS = 2_000
+
 describe("another tab's restore", () => {
   it('a live tab is told who restored which version', async () => {
     fakeTime()
@@ -363,7 +366,7 @@ describe("another tab's restore", () => {
 
     const version = { seq: 2, label: null, taken_at: '2026-10-22T05:12:00+00:00' }
     server.landRestore(restoreTo(server, 'old'), undefined, { by: 'amira@example.com', version })
-    await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(PULL_SPREAD_MS)
 
     expect(versionRestored.mock.calls).toEqual([
       [
@@ -373,6 +376,19 @@ describe("another tab's restore", () => {
         },
       ],
     ])
+  })
+
+  it('a reader the server gives no notice is told nothing', async () => {
+    fakeTime()
+    const server = await serverWith('draft')
+    const versionRestored = vi.fn()
+    const room = await join(server.endpoints(), { socket: server.socket(), versionRestored })
+    await vi.advanceTimersByTimeAsync(0)
+
+    server.landRestore(restoreTo(server, 'old'))
+    await vi.advanceTimersByTimeAsync(PULL_SPREAD_MS)
+
+    expect([text(room), versionRestored.mock.calls]).toEqual(['old', []])
   })
 
   it('only the other tabs are told, not the one that restored', async () => {
@@ -388,7 +404,7 @@ describe("another tab's restore", () => {
     await vi.advanceTimersByTimeAsync(0)
 
     const result = await restorer.restoreVersion(3, becomes(restorer, 'old'))
-    await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(PULL_SPREAD_MS)
 
     expect([result.outcome, toldRestorer.mock.calls.length, toldOther.mock.calls]).toEqual([
       'landed',

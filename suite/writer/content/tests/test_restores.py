@@ -13,6 +13,7 @@ from frappe.utils import get_system_timezone, now_datetime
 
 from suite import drive
 from suite.content.http import routes
+from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
 from suite.writer.content.tests.support import (
@@ -213,7 +214,10 @@ class TestRestoreFence(CheckpointCase):
             (control_event, control["kind"], control["restore_rev"]), ("suite_collab_ctl", "restored", 3)
         )
 
-    def test_live_tabs_are_told_who_restored_which_version(self):
+    def test_who_restored_what_reaches_a_pull_and_never_the_room_or_a_public_reader(self):
+        owner = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+        grant(self.node, "$PUBLIC", drive.READ, owner)
+        frappe.db.commit()
         seq = drive.take_version(self.node, kind="named", label="Draft for review")
         taken = frappe.db.get_value("Drive Node Version", {"node": self.node, "seq": seq}, "creation")
         restoring = self.open_tab()
@@ -221,12 +225,24 @@ class TestRestoreFence(CheckpointCase):
         with patch("frappe.publish_realtime") as publish:
             self.push_word(restoring, "old ", restore=fence["token"])
 
-        control = publish.call_args_list[-1].args[1]
-        taken_at = datetime.fromisoformat(control["version"]["taken_at"])
+        heard_in_room = json.dumps([call.args for call in publish.call_args_list])
+        restored = read_frame(call_route(routes.updates_get, self.node).get_data())[0]["restored"]
+        frappe.set_user("Guest")
+        public_pull = read_frame(call_route(routes.updates_get, self.node).get_data())[0]
+        frappe.set_user(WRITER)
+        taken_at = datetime.fromisoformat(restored["version"]["taken_at"])
 
+        self.assertNotIn(WRITER, heard_in_room)
+        self.assertNotIn("Draft for review", heard_in_room)
+        self.assertNotIn("restored", public_pull)
         self.assertEqual(
-            (control["by"], control["version"]["seq"], control["version"]["label"]),
-            (WRITER, seq, "Draft for review"),
+            (
+                restored["by"],
+                restored["version"]["seq"],
+                restored["version"]["label"],
+                restored["restore_rev"],
+            ),
+            (WRITER, seq, "Draft for review", 3),
         )
         self.assertEqual(
             taken_at.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None),

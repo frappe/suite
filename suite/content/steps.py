@@ -109,7 +109,8 @@ def pull_rows(app: str, node: str, since_rev: str | None, q_epoch: str | None) -
 
     rows = rows_after(app, doc.id, max(after_rev, 0))
     scheduling.request_if_due(app, doc.id, jobs.COMPACT)
-    return encode_frame(pull_header(app, doc, epoch), rows)
+    notice = restore_notice.for_reader(restores.latest_notice(app, doc.id), node)
+    return encode_frame({**pull_header(app, doc, epoch), **notice}, rows)
 
 
 def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tuple[int, dict]:

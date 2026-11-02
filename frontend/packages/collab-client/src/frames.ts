@@ -53,6 +53,8 @@ interface UnavailableOpenHeader extends DocumentHeader {
 export type OpenHeader = LiveOpenHeader | UnavailableOpenHeader
 
 export interface PullHeader extends DocumentHeader {
+  // Who ran the last restore and what it brought back, for a reader who may see the versions
+  restored?: Record<string, unknown>
   // `rebuild`: the tab may hold a change quarantined since
   state: 'live' | 'rebuild'
   // Rises with every verdict on a suspect document; `verdict` is the last one

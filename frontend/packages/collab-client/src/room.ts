@@ -53,6 +53,8 @@ export class Room implements CollabRoom {
   private restoreToken: string | null = null
   // This tab's last restore, so its own notice isn't told as another tab's
   private ownRestoreRev = 0
+  // Another tab's restore whose notice, if this reader may see it, comes with a pull
+  private noticeAwaited: number | null = null
   limits: Limits | null = null
   needsRebuild = false
   readonly lineage: string
@@ -460,13 +462,21 @@ export class Room implements CollabRoom {
       const isOwn = !!this.restoreToken || heard.restore_rev === this.ownRestoreRev
       this.followRestore(heard.restore_rev)
       this.fence.lift()
-      if (!isOwn) {
-        this.options.versionRestored?.(readRestored(heard))
+      if (!isOwn && typeof heard.restore_rev === 'number') {
+        this.noticeAwaited = heard.restore_rev
       }
     } else if (heard.kind === 'restore_ended') {
       this.fence.lift()
     } else if (heard.kind === 'threads') {
       this.options.threadsChanged?.()
+    }
+  }
+
+  // The control message names no one, as public readers hear it; the pull it sets off does, to those allowed
+  noticeHeard(notice: Record<string, unknown> | undefined) {
+    if (notice && notice.restore_rev === this.noticeAwaited) {
+      this.noticeAwaited = null
+      this.options.versionRestored?.(readRestored(notice))
     }
   }
 

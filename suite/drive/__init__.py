@@ -519,6 +519,14 @@ def take_version(node: str, *, kind: str = "auto", label: str | None = None, act
     return _take_version(_principals(), node, kind=kind, label=label, actor=actor)
 
 
+def check_history_reader(node: str) -> None:
+    """Raise unless the caller may read the node's versions; a public reader may not."""
+    from suite.drive._core.nodes import _node
+    from suite.drive._core.versions import require_history_reader
+
+    require_history_reader(_node(node), _principals())
+
+
 def get_version(node: str, seq: int) -> dict:
     """Answer one version of a node the caller can read: its seq, kind, label, actor and creation."""
     from suite.drive._core.versions import get_version as _get_version

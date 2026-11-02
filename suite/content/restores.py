@@ -21,6 +21,8 @@ from suite.content.tables import table
 from suite.content.wire import busy_refusal
 
 FENCE_SECONDS = 120
+# Long enough for the pull a tab makes on hearing a restore landed, polling included
+NOTICE_SECONDS = 300
 # One restore per document per minute (Q127)
 RESTORE_EVERY_SECONDS = 60
 RESTORING_RETRY_MS = 1_000
@@ -134,9 +136,23 @@ def notice_key(app: str, doc_id: str, token: str) -> str:
     return f"suite_content_restore_notice:{app}:{doc_id}:{token}"
 
 
-def landed_notice(app: str, doc_id: str, token: str) -> dict:
-    """What `begin` was told to tell other tabs about the restore under `token`; empty once it lapsed."""
-    return frappe.cache.get_value(notice_key(app, doc_id, token)) or {}
+def keep_landed_notice(app: str, doc_id: str, token: str, rev: int) -> None:
+    """Keep the notice of the restore under `token` for the pulls its control message sets off.
+
+    It stays out of the room's messages, which public readers' sockets hear. Empty once it lapsed.
+    """
+    notice = frappe.cache.get_value(notice_key(app, doc_id, token)) or {}
+    landed = {**notice, "restore_rev": rev}
+    frappe.cache.set_value(latest_notice_key(app, doc_id), landed, expires_in_sec=NOTICE_SECONDS)
+
+
+def latest_notice(app: str, doc_id: str) -> dict | None:
+    """The notice of the document's last restore, for a few minutes after it landed."""
+    return frappe.cache.get_value(latest_notice_key(app, doc_id))
+
+
+def latest_notice_key(app: str, doc_id: str) -> str:
+    return f"suite:collab-restore-notice:{app}:{doc_id}"
 
 
 def landed(app: str, doc_id: str, rev: int, now: datetime) -> None:

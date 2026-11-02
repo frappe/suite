@@ -390,8 +390,8 @@ def push_locked(app: str, doc_id: str, doc: frappe._dict, incoming: Incoming, us
         app, doc_id, doc.lineage, rev, unsent.header.schema, unsent.payload, restore=token is not None
     )
     if token is not None:
-        notice = restores.landed_notice(app, doc_id, token)
-        live.publish_control(app, doc_id, doc.lineage, kind="restored", restore_rev=rev, **notice)
+        restores.keep_landed_notice(app, doc_id, token, rev)
+        live.publish_control(app, doc_id, doc.lineage, kind="restored", restore_rev=rev)
 
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": unsent.header.seq_to, "pace_ms": PACE_MS}
 

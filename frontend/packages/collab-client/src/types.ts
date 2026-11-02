@@ -71,7 +71,8 @@ export interface OpenOptions {
   threadsChanged?: () => void
   // Given the room before it applies anything, so a watcher sees the opening rows and the work it takes on
   watch?: (room: CollabRoom) => void
-  // Told when another tab's restore lands, by a live notice; a polling tab is not told
+  // Told when another tab's restore lands, by a live notice and the pull after it, if this reader may
+  // see the versions; a polling tab is not told
   versionRestored?: (restored: VersionRestored) => void
 }
 

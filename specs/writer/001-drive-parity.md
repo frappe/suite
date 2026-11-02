@@ -137,6 +137,8 @@ The Versions panel says "No versions yet" on a document that has been edited. Ba
 These decisions apply to a signed-out reader of a document shared as "Anyone on the internet can view".
 
 - **The reader sees the document only.** Comments, version history and live presence are hidden. The server enforces this: a Guest needs Comment access to read threads and Edit access to read versions (`suite/drive/_core/comments.py`, `suite/drive/_core/versions.py`). The document payload leaves out comments for such a Guest (`suite/writer/http/routes.py`).
+- **A Guest gets no activity history.** Activity rows hold comment excerpts, mentions and email addresses, so `nodes.activity` refuses a Guest with a Drive 403 (`suite/drive/_core/activity.py`).
+- **Who restored a version stays out of the room.** A public socket hears the same room messages as everyone else, so the `restored` message carries only the restore's number. The name and version come in the next pull, and only for a reader allowed to see versions (`suite/content/restore_notice.py`). A public reader gets no restore notice.
 - **Guests get no presence.** The realtime service sends a Guest the document's changes but no roster, carets or join and leave events. Other people do not see the Guest (`realtime/collab.js`).
 - **Turning web access off stops live updates.** Any grant or link change calls the content type's `access_changed`. Writer then moves the document's rooms to new keys and tells the old room to pull again. A tab that has lost access is refused and stops (`suite/content/live.py`, `close_rooms`).
 - **The page follows the reader's system theme.** A Guest has no saved theme, so the page uses `prefers-color-scheme` and changes when the system theme changes (`suite/www/suite.py`).
