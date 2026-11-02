@@ -1,6 +1,6 @@
 # Sheets: when a sheet is saved
 
-Status: proposed
+Status: superseded. A sheet is now saved only through the Drive content layer's room (`suite/sheets/content/`, `frontend/src/apps/sheets/collab/room.ts`, `SheetEditor/useCollabRoom.ts`): every action is committed to the sheet's Y.Doc and pushed as it happens, and versions are the content layer's. `sheets_data` is only read, for a sheet the server has not converted yet and for a guest on a share link. The save path below (`save_sheet`, `Sheet Op Log`, `Sheet Seq`) has been removed; its tables stay for Drive's develop migration.
 
 Scope: what Sheets stores, when it saves, what happens to edits that have not been saved, and how versions work. It assumes the calculation core in [001](001-calculation-core.md). Saving while several people edit at once is in [003](003-collaboration.md).
 
