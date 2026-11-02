@@ -1,5 +1,5 @@
 import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
-import { groupName, principalKind, roleLabel } from '@/apps/drive/client/grants'
+import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
