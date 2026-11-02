@@ -100,6 +100,8 @@ def readable_file(url: str, docname: str) -> str | None:
         fields=["name", "attached_to_name"],
         order_by="creation",
     )
+    if not rows:
+        return None
     holders = [row.attached_to_name for row in rows]
     templates = frappe.get_all(
         "Presentation", filters={"name": ("in", holders), "is_template": 1}, pluck="name", order_by=None
