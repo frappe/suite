@@ -13,7 +13,7 @@ from suite.drive._core.nodes import _move, _node, _subtree_charge
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import _check_combined, administration_usage, preflight, root_for_node
 from suite.drive._core.roots import validate_root_pair
-from suite.suite_core.storage import effective_limit, state
+from suite.suite_core.storage import effective_limit, personal_mail_usage, state
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
@@ -64,7 +64,7 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
         limit = policy.get("users", {}).get(target_root.user, {}) if personal else {}
         cap = limit.get("cap")
         buffer_bytes = cap // 10 if cap is not None else 0
-        mail_bytes = measurements.get("personal", {}).get(target_root.user) if personal else 0
+        mail_bytes = personal_mail_usage(measurements, target_root.user) if personal else 0
     threshold = effective_limit(cap) if configured else cap
     current_bytes = stored_bytes + reserved_bytes + mail_bytes if mail_bytes is not None else None
     projected_bytes = current_bytes + charge if current_bytes is not None else None

@@ -74,6 +74,17 @@ class TestCombinedStorage(TestCase):
             delta=GB,
         )
 
+    def test_a_site_never_measured_has_unknown_mail_usage_not_zero(self):
+        with self.assertRaisesRegex(frappe.ValidationError, "Mail usage is unavailable"):
+            check_addition(
+                {"users": {"alice": {"cap": 10 * GB}}},
+                {"allowance": 100 * GB, "site_mail": 0},
+                user="alice",
+                site_drive=0,
+                personal_drive=0,
+                delta=GB,
+            )
+
     def test_cleanup_does_not_require_a_measurement(self):
         check_addition({}, {}, user="alice", site_drive=0, personal_drive=0, delta=0)
 
@@ -139,10 +150,14 @@ class TestAdministrationAccess(IntegrationTestCase):
                 self.assertRaises(frappe.PermissionError, set_default, GB)
 
     def test_a_suite_member_without_desk_access_can_be_promoted(self):
-        self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")
+        # Its own user: promoting the shared normal user would leak Suite Admin into later tests.
+        member = f"promoted-{frappe.generate_hash(length=8)}@example.test"
+        with self.set_user("Administrator"):
+            ensure_user(member)
+        self.assertEqual(frappe.db.get_value("User", member, "user_type"), "Website User")
         with self.set_user(self.admin):
-            update_user(self.normal, is_admin=True)
-        self.assertIn("Suite Admin", frappe.get_roles(self.normal))
+            update_user(member, is_admin=True)
+        self.assertIn("Suite Admin", frappe.get_roles(member))
 
     def test_a_suite_member_without_desk_access_can_be_capped(self):
         self.assertEqual(frappe.db.get_value("User", self.normal, "user_type"), "Website User")

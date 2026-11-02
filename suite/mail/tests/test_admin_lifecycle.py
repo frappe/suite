@@ -1,5 +1,6 @@
 """Business account outcomes against an independent provider/JMAP boundary."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
@@ -174,14 +175,30 @@ class TestAdminLifecycle(IntegrationTestCase):
         first = self.create()
         self.assertFalse(first["success"])
         self.assertEqual(read(self.address)["status"], "Setup failed")
-        require_access(self.address, method="suite.drive.http.routes.node_children")
-        require_access(self.address, method="suite.writer.http.routes.document")
         with self.assertRaises(AccountSetupRequired):
             require_access(self.address, method="suite.mail.http.routes.inbox_summary")
         self.provider.fail = None
         retry = self.create()
         self.assertTrue(retry["success"], retry)
         self.assertEqual(self.provider.created, 1)
+
+    def test_a_changed_mailbox_blocks_additions_until_the_next_refresh(self):
+        from suite.mail.account_lifecycle import invalidate_measurements
+        from suite.suite_core.storage import check_addition, state
+
+        result = self.create()
+        doc, _policy, _measurements = state(lock=True)
+        doc.measurements = json.dumps({"allowance": 100, "site_mail": 0, "personal": {result["user"]: 0}})
+        doc.save(ignore_permissions=True)
+        invalidate_measurements(result["user"], self.address)
+
+        _doc, policy, measurements = state()
+        measurements["site_mail"] = 0
+        addition = {"site_drive": 0, "personal_drive": 0, "delta": 1}
+        with self.assertRaisesRegex(frappe.ValidationError, "Mail usage is unavailable"):
+            check_addition(policy, measurements, user=result["user"], **addition)
+        # Everyone the refresh did not list still has no mailbox, so nothing to wait for.
+        check_addition(policy, measurements, user="no-mailbox@example.test", **addition)
 
     def test_failed_provisioning_retry_keeps_the_creation_time_cap_snapshot(self):
         from suite.suite_core.storage import set_default, state

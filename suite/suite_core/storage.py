@@ -25,6 +25,17 @@ def effective_limit(cap: int | None) -> int | None:
     return None if cap is None else cap + cap // 10
 
 
+def personal_mail_usage(measurements: Mapping, user: str) -> int | None:
+    """A user's Mail bytes: None while unknown, 0 when the last refresh found no mailbox.
+
+    A refresh writes `personal` with every mailbox, None for one it could not measure, and a
+    mailbox change marks its user None. So a site without `personal` was never measured, and a
+    user `personal` doesn't list has no mailbox.
+    """
+    personal = measurements.get("personal")
+    return None if personal is None else personal.get(user, 0)
+
+
 def validate_cap(value) -> int | None:
     if value is None:
         return None
@@ -102,10 +113,7 @@ def check_addition(
         frappe.throw(_("Combined Mail and Drive usage exceeds the site allowance"))
     if user is None:
         return
-    # The refresh lists every user with a mailbox, None while its usage is unknown. A user it
-    # doesn't list has no mailbox, so no Mail usage.
-    personal = measurements.get("personal", {})
-    mail = personal.get(user, 0)
+    mail = personal_mail_usage(measurements, user)
     if mail is None:
         frappe.throw(_("This user's Mail usage is unavailable; refresh storage before adding Drive files"))
     cap = effective_limit(policy.get("users", {}).get(user, {}).get("cap"))

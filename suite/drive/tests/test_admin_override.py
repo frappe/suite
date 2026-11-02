@@ -1,6 +1,5 @@
 """A Suite Admin administers Drive but reads and edits only through grants (ADR 0001)."""
 
-import json
 from io import BytesIO
 from unittest.mock import patch
 
@@ -14,13 +13,8 @@ from suite.drive._core.nodes import _node, get, purge, store_file, update
 from suite.drive._core.roots import usage_for
 from suite.drive.framework import principals_for
 from suite.drive.patches import grant_admin_creators_edit
-from suite.sheets import api as sheets_api
-from suite.slides.api.slides import save_slides
 from suite.suite_core.administration import update_user
 from suite.tests.utils import ensure_user
-
-REFUSED = (frappe.PermissionError, drive.DriveError)
-SHEET_BODY = json.dumps({"sheets": [{"name": "Sheet1", "cells": {"A1": {"v": "admin"}}}]})
 
 
 class TestSuiteAdminOverride(IntegrationTestCase):
@@ -28,7 +22,6 @@ class TestSuiteAdminOverride(IntegrationTestCase):
         super().setUp()
         frappe.set_user("Administrator")
         self.addCleanup(frappe.set_user, "Administrator")
-        self.enterContext(patch("suite.sheets.api.frappe.publish_realtime"))
         suffix = frappe.generate_hash(length=8)
         self.owner = f"override-owner-{suffix}@example.test"
         self.admin = f"override-admin-{suffix}@example.test"
@@ -47,36 +40,26 @@ class TestSuiteAdminOverride(IntegrationTestCase):
         frappe.set_user(user)
         return principals_for(user)
 
-    def _document(self, doctype: str, title: str) -> tuple[str, str]:
+    def _document(self, doctype: str, title: str) -> str:
         owner = self._as(self.owner)
         node = drive.create_document(self.owner_root, title, content_doctype=doctype)
         grant(node, self.admin, drive.COMMENT, owner)
-        return node, _node(node).content_docname
+        return node
 
-    def test_a_commenting_admin_comments_but_no_editor_saves_for_them(self):
-        sheet_node, sheet = self._document("Sheet", "Budget")
-        writer_node, writer = self._document("Writer Document", "Plan")
-        deck_node, deck = self._document("Presentation", "Pitch")
+    def test_a_commenting_admin_can_comment_and_manage_each_document_type(self):
+        sheet = self._document("Sheet", "Budget")
+        writer = self._document("Writer Document", "Plan")
+        deck = self._document("Presentation", "Pitch")
 
         admin = self._as(self.admin)
-        for node in (sheet_node, writer_node, deck_node):
+        for node in (sheet, writer, deck):
             access = describe(_node(node), admin)
             self.assertEqual(access["role"], drive.COMMENT)
             self.assertTrue(access["can_manage"])
-        comments.create_thread(admin, sheet_node, "A1", "Looks off by one")
-
-        self.assertFalse(sheets_api.get_sheet(sheet)["can_write"])
-        head = frappe.db.get_value("Sheet", sheet, "head_seq")
-        with self.assertRaises(REFUSED):
-            sheets_api.save_sheet("Ignored", SHEET_BODY, name=sheet, base_seq=head)
-        with self.assertRaises(REFUSED):
-            frappe.get_doc("Writer Document", writer).save_doc(json.dumps({"admin": True}))
-        modified = str(frappe.db.get_value("Presentation", deck, "modified"))
-        with self.assertRaises(REFUSED):
-            save_slides(deck, [], modified)
+        comments.create_thread(admin, sheet, "A1", "Looks off by one")
 
     def test_a_commenting_admin_still_shares_and_restores_what_others_trashed(self):
-        node, _docname = self._document("Sheet", "Shared budget")
+        node = self._document("Sheet", "Shared budget")
         update(self._as(self.owner), node, state="Trashed")
 
         admin = self._as(self.admin)

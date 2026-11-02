@@ -271,6 +271,16 @@ def rename_own_identities(user: str, old_name: str | None, new_name: str) -> Non
     A display name the user chose themselves, or another address's identity, is left alone.
     """
 
+    # The JMAP calls act as the session user, so the job runs as the user and hands the session back.
+    previous_user = frappe.session.user
+    frappe.set_user(user)
+    try:
+        _rename_identities(user, old_name, new_name)
+    finally:
+        frappe.set_user(previous_user)
+
+
+def _rename_identities(user: str, old_name: str | None, new_name: str) -> None:
     from suite.mail.doctype.identity.identity import update_identity
     from suite.mail.doctype.participant_identity.participant_identity import update_participant_identity
     from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
@@ -280,7 +290,6 @@ def rename_own_identities(user: str, old_name: str | None, new_name: str) -> Non
         invalidate_jmap_identities_cache,
     )
 
-    frappe.set_user(user)
     email = (frappe.db.get_value("User", user, "email") or user).lower()
     old_name = old_name or ""
 

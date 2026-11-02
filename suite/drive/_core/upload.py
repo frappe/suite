@@ -216,14 +216,7 @@ def finish_upload(
     if int(binding.get("declared_size") or 0) == 0:
         blob = _store_empty_file(upload_id, filename=title or binding["filename"], checksum=checksum)
     else:
-        try:
-            blob = finish_upload_to_blob(upload_id, checksum=checksum)
-        except Exception:
-            # Storage drops a session it claimed even when the finish fails, so
-            # the binding goes too and a retry opens a new session.
-            if read_session_meta(get_session_paths(upload_id)[0]) is None:
-                frappe.cache().delete_value(_binding_key(upload_id))
-            raise
+        blob = _finish_stored_upload(upload_id, checksum)
     frappe.cache().delete_value(_binding_key(upload_id))
 
     if replaces:
@@ -250,6 +243,23 @@ def finish_upload(
         content_modified=normalized_content_time,
         _via_link=binding.get("via_link"),
     )
+
+
+def _finish_stored_upload(upload_id: str, checksum: str | None):
+    """Finish a session in storage, refusing a damaged PDF with the words the upload dialog shows."""
+    from pypdf.errors import PyPdfError
+
+    try:
+        return finish_upload_to_blob(upload_id, checksum=checksum)
+    except Exception as error:
+        # Storage drops a session it claimed even when the finish fails, so
+        # the binding goes too and a retry opens a new session.
+        if read_session_meta(get_session_paths(upload_id)[0]) is None:
+            frappe.cache().delete_value(_binding_key(upload_id))
+        # Not every Frappe version turns the PDF scan's parse error into a refusal.
+        if isinstance(error, PyPdfError):
+            frappe.throw(_("This PDF is damaged and can't be uploaded."), frappe.ValidationError)
+        raise
 
 
 def _store_empty_file(upload_id: str, *, filename: str, checksum: str | None):
