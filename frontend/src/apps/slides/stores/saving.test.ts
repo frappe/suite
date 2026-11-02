@@ -46,8 +46,9 @@ const {
   resumeWrites,
 } = await import('./saving')
 
-const conflict = () =>
-  new TransportError({ type: 'TimestampMismatchError', message: 'stale', status: 417 })
+function conflict() {
+  return new TransportError({ type: 'TimestampMismatchError', message: 'stale', status: 417 })
+}
 
 describe('saveCurrentState', () => {
   // a refused base is held for good, so each test opens on a version of its own

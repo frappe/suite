@@ -62,6 +62,11 @@ describe('loading a presentation', () => {
     requests = []
     docs.clear()
     holds.clear()
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"message":"pong"}')),
+    )
   })
 
   it('fetches over GET with the url and param order the offline copy pins', async () => {
@@ -135,6 +140,143 @@ describe('loading a presentation', () => {
     expect(warning).toHaveBeenCalled()
     expect(markClean).toHaveBeenCalled()
     expect(writeDraft).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }))
+  })
+
+  describe('a dirty draft on an older base than the served document', () => {
+    function expectDraftKept(doc: { modified: string }) {
+      expect(slides.value[0].background).toBe('#00ff00ff')
+      expect(doc.modified).toBe('M1')
+      expect(markDirty).toHaveBeenCalled()
+      expect(warning).not.toHaveBeenCalled()
+      expect(writeDraft).not.toHaveBeenCalled()
+    }
+
+    beforeEach(() => {
+      local = { dirty: true, baseModified: 'M1', content: [slide('#00ff00ff')] }
+      served = { modified: 'M2', slides: [slide('#ff0000ff')] }
+    })
+
+    it('stays dirty and on its base offline, without asking the network', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+
+      expectDraftKept(await initPresentationDoc('p1'))
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('stays when onLine is true but the server cannot be reached', async () => {
+      vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'))
+
+      expectDraftKept(await initPresentationDoc('p1'))
+    })
+
+    it('stays when the server answers with an error', async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response('', { status: 502 }))
+
+      expectDraftKept(await initPresentationDoc('p1'))
+    })
+
+    it('stays when a captive portal redirects the check', async () => {
+      const portal = new Response('<html></html>')
+      Object.defineProperty(portal, 'redirected', { value: true })
+      vi.mocked(fetch).mockResolvedValue(portal)
+
+      expectDraftKept(await initPresentationDoc('p1'))
+    })
+
+    it('stays when the check hangs, and the load goes on', async () => {
+      vi.mocked(fetch).mockImplementation(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason))
+          }),
+      )
+
+      expectDraftKept(await initPresentationDoc('p1'))
+    })
+
+    it('is discarded with the notice when the server answers', async () => {
+      await initPresentationDoc('p1')
+
+      expect(slides.value[0].background).toBe('#ff0000ff')
+      expect(warning).toHaveBeenCalled()
+      expect(writeDraft).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }))
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/method/ping',
+        expect.objectContaining({ cache: 'no-store' }),
+      )
+    })
+
+    it('goes clean offline when it already landed in the served document', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      served = {
+        modified: 'M2',
+        modified_by: 'me@example.com',
+        slides: [{ client_id: 'c1', background: '#00ff00ff', elements: '[]' }],
+      }
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M2')
+      expect(warning).not.toHaveBeenCalled()
+      expect(writeDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ dirty: false, baseModified: 'M2' }),
+      )
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('is treated as today when it has no base to hold', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      local = { dirty: true, content: [slide('#00ff00ff')] }
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M2')
+      expect(slides.value[0].background).toBe('#ff0000ff')
+      expect(fetch).not.toHaveBeenCalled()
+    })
+
+    it('stays untouched by a tab another one holds the lock over, offline', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      lockedElsewhere.value = true
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M1')
+      expect(slides.value[0].background).toBe('#00ff00ff')
+      expect(warning).not.toHaveBeenCalled()
+      expect(writeDraft).not.toHaveBeenCalled()
+    })
+
+    it('is not read by a read-only load, offline', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+
+      const doc = await initPresentationDoc('p1', true)
+
+      expect(doc.modified).toBe('M2')
+      expect(slides.value[0].background).toBe('#ff0000ff')
+      expect(writeDraft).not.toHaveBeenCalled()
+    })
+  })
+
+  it('shows the served document offline over a clean draft on an older base', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    local = { dirty: false, baseModified: 'M1', content: [slide('#00ff00ff')] }
+    served = { modified: 'M2', slides: [slide('#ff0000ff')] }
+
+    const doc = await initPresentationDoc('p1')
+
+    expect(doc.modified).toBe('M2')
+    expect(slides.value[0].background).toBe('#ff0000ff')
+    expect(markDirty).not.toHaveBeenCalled()
+  })
+
+  it('asks the network nothing for a draft on the served version', async () => {
+    local = { dirty: true, baseModified: 'M1', content: [slide('#00ff00ff')] }
+    served = { modified: 'M1', slides: [slide('#ff0000ff')] }
+
+    await initPresentationDoc('p1')
+
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('exposes advance_after as advanceAfter', async () => {

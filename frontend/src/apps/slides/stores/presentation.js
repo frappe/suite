@@ -219,6 +219,25 @@ const isLatestLoad = (load) => load === latestLoad
 const fetchDoc = (name) =>
   client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
 
+const PROBE_TIMEOUT_MS = 2000
+
+// ping isn't a slides request, so none of the worker's stored answers can stand in for it
+async function serverAnswers() {
+  if (!navigator.onLine) {
+    return false
+  }
+
+  try {
+    const response = await fetch('/api/method/ping', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    })
+    return response.ok && !response.redirected
+  } catch {
+    return false
+  }
+}
+
 // touches no editor state, so a save during the load still targets what is on screen
 const fetchPresentation = async (name, load) => {
   const doc = structuredClone(await fetchDoc(name))
@@ -234,8 +253,15 @@ const fetchPresentation = async (name, load) => {
   // the worker may replay a document older than the last save; the copy that
   // save left behind is then the truth, and unsynced edits ride along in it
   const servedIsStale = local?.baseModified > doc.modified
-  if (servedIsStale || (local?.dirty && local.baseModified === doc.modified)) {
-    if (servedIsStale) doc.modified = local.baseModified
+  // a newer document may only be a stored copy; the old base gets the push refused
+  const onOlderBase =
+    local?.dirty && !landed && local.baseModified && local.baseModified !== doc.modified
+  const keepBase = servedIsStale || (onOlderBase && !(await serverAnswers()))
+  if (keepBase || (local?.dirty && local.baseModified === doc.modified)) {
+    if (keepBase) {
+      doc.modified = local.baseModified
+    }
+
     const restored = JSON.parse(JSON.stringify(local.content))
     // local content skips the load pipeline; migrate + dedup it here too
     for (const slide of restored) {

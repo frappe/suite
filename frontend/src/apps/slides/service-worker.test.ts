@@ -250,6 +250,16 @@ describe('a pinned presentation offline', () => {
     expect(fetches).toEqual([])
   })
 
+  it('never answers the reachability check a load relies on', async () => {
+    enter('c1')
+
+    await expect(dispatch(get('/api/method/ping'))).rejects.toThrow()
+    expect(fetches).toEqual([`${location.origin}/api/method/ping`])
+
+    online = true
+    expect(dispatch(get('/api/method/ping'))).toBeNull()
+  })
+
   it('still serves the pin once the browser restarts the worker', async () => {
     enter('c1')
     vi.resetModules()
