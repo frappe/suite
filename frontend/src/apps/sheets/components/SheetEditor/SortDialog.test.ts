@@ -6,7 +6,8 @@ import SortDialog from './SortDialog.vue'
 vi.mock('frappe-ui', () => ({
   Dialog: {
     props: ['open'],
-    setup: (props: { open: boolean }, { slots }: { slots: Record<string, () => unknown> }) =>
+    setup:
+      (props: { open: boolean }, { slots }: { slots: Record<string, () => unknown> }) =>
       () =>
         props.open ? h('div', [slots.default?.(), slots.actions?.()]) : null,
   },
@@ -14,8 +15,10 @@ vi.mock('frappe-ui', () => ({
   Button: {
     inheritAttrs: false,
     props: ['label'],
-    setup: (props: { label: string }, { attrs }: { attrs: Record<string, unknown> }) => () =>
-      h('button', { onClick: attrs.onClick }, props.label),
+    setup:
+      (props: { label: string }, { attrs }: { attrs: Record<string, unknown> }) =>
+      () =>
+        h('button', { onClick: attrs.onClick }, props.label),
   },
   Checkbox: {
     props: ['modelValue', 'label'],

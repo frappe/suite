@@ -329,7 +329,8 @@ export function useWorkbook({
     if (!engine) return []
     const { cells } = await engine.client.usedCells({ sheet: sn })
     const used = []
-    for (let i = 0; i < cells.length; i += 2) used.push({ row: cells[i] - 1, col: cells[i + 1] - 1 })
+    for (let i = 0; i < cells.length; i += 2)
+      used.push({ row: cells[i] - 1, col: cells[i + 1] - 1 })
     return used
   }
 

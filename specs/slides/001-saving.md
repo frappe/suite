@@ -5,7 +5,7 @@ Review: Gursheen (pending)
 
 Scope: how the Slides editor saves a presentation, what happens to edits that have not been saved, and what other people see while a deck is being edited. This spec records today's behaviour. Faris decided to keep it and have it reviewed ("keep slides behaviour and document it"). The T3-1 fix (October 2026) removed the slide-focus block, added tab-close protection and wrote the local copy on every tick; the sections below describe the behaviour after that fix.
 
-Code: `frontend/src/apps/slides/surface/autosave.ts` (the timer and the tab-close guard), `frontend/src/apps/slides/stores/saving.js` (the save), `frontend/src/apps/slides/stores/presentation.js` (the request), `suite/slides/api/slides.py` (`save_slides`).
+Code: `frontend/src/apps/slides/surface/autosave.ts` (the timer and the local copy on `pagehide`), `frontend/src/apps/slides/surface/SlidesSurface.vue` (the tab-close prompt), `frontend/src/apps/slides/stores/saving.js` (the save), `frontend/src/apps/slides/stores/presentation.js` (the request), `suite/slides/api/slides.py` (`save_slides`).
 
 ## Behaviour
 

@@ -127,18 +127,44 @@ describe('sorting a range without a filter', () => {
       createSortFilter(makeCells(inputs, displays)).guessSortRows(block, 'Sheet1')
 
     it('finds one over formatted numbers', async () => {
-      const inputs = { A1: 'Item', B1: 'Cost', A2: 'Rent', B2: '1', A3: 'Food', B3: '2', A4: 'Fuel', B4: '3' }
+      const inputs = {
+        A1: 'Item',
+        B1: 'Cost',
+        A2: 'Rent',
+        B2: '1',
+        A3: 'Food',
+        B3: '2',
+        A4: 'Fuel',
+        B4: '3',
+      }
       const displays = { B2: '$1.50', B3: '1,000', B4: '12%' }
       expect((await guess(inputs, displays)).header).toBe(true)
     })
 
     it('finds one with an empty cell', async () => {
-      const inputs = { B1: 'Cost', A2: 'Rent', B2: '900', A3: 'Food', B3: '120', A4: 'Fuel', B4: '60' }
+      const inputs = {
+        B1: 'Cost',
+        A2: 'Rent',
+        B2: '900',
+        A3: 'Food',
+        B3: '120',
+        A4: 'Fuel',
+        B4: '60',
+      }
       expect((await guess(inputs)).header).toBe(true)
     })
 
     it('does not take a first row of amounts for one', async () => {
-      const inputs = { A1: 'Rent', B1: '$1.50', A2: 'Food', B2: '$2.50', A3: 'Fuel', B3: '1,000', A4: 'Tax', B4: '3' }
+      const inputs = {
+        A1: 'Rent',
+        B1: '$1.50',
+        A2: 'Food',
+        B2: '$2.50',
+        A3: 'Fuel',
+        B3: '1,000',
+        A4: 'Tax',
+        B4: '3',
+      }
       expect((await guess(inputs)).header).toBe(false)
     })
   })

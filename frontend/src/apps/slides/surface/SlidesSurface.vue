@@ -33,7 +33,6 @@ import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
-import { router } from '@/apps/slides/router'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { resetFocus } from '@/apps/slides/stores/element'
 import {

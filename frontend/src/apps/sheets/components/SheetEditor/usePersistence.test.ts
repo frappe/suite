@@ -382,7 +382,11 @@ describe('Sheets persistence: opening a develop sheet', () => {
   })
 
   it('saves a sheet Drive imported from a file without a "Before upgrade" version', async () => {
-    answerWith(developSheet({ sheets_data: JSON.stringify({ ...DEVELOP_BODY, imported_from: 'Forecast.xlsx' }) }))
+    answerWith(
+      developSheet({
+        sheets_data: JSON.stringify({ ...DEVELOP_BODY, imported_from: 'Forecast.xlsx' }),
+      }),
+    )
     const saved = persistence({ engine: realEngine() })
     await saved.loadSheet('old-1')
     expect(saved.legacyUpgrade.value).toMatchObject({
