@@ -84,8 +84,9 @@
 }
 
 /* ── Bar 1 · Identity / topbar ───────────────────────────────────────────── */
-/* The bar itself is SheetTopbar.vue and its actions SheetTopbarActions.vue;
-   the status chips stay here because the editor renders them. */
+/* The bar itself is the Drive header (SheetsSurface.vue) and its actions
+   SheetTopbarActions.vue; the status chips stay here because the editor
+   renders them. */
 .sn-save-error {
   display: inline-flex;
   min-width: 0;

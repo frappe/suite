@@ -100,8 +100,7 @@ function moveBetweenMenus(event: KeyboardEvent) {
 .sn-menubar-narrow {
   display: none;
 }
-/* Both headers (the Drive one on /d/ and the editor's own) are the
-   `sn-topbar` container. */
+/* The Drive header on /d/ (SheetsSurface.vue) is the `sn-topbar` container. */
 @container sn-topbar (max-width: 640px) {
   .sn-menubar-wide {
     display: none;

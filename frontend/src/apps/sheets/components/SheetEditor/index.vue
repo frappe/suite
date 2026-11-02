@@ -91,34 +91,12 @@
       <!-- On /d/ the surface draws the Drive document header: title, Comments,
          Versions and Share. The editor fills its status, menus and actions. -->
       <slot
-        v-if="embedded"
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
         :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
       />
-      <SheetTopbar
-        v-else
-        v-model:title="currentTitle"
-        :brand-menu-options="brandMenuOptions"
-        :is-title-editing="isTitleEditing"
-        :sheet-breadcrumbs="sheetBreadcrumbs"
-        :sheet-home-breadcrumbs="sheetHomeBreadcrumbs"
-        :is-saving="saveState === 'saving'"
-        :just-saved="false"
-        :read-only="readOnly"
-        :user-initial="userInitial"
-        :user-image="userImage"
-        :user-full-name="userFullName"
-        :user-email="userEmail"
-        @finish-title="finishTitleEditing"
-        @cancel-title="cancelTitleEditing"
-      >
-        <template #status><ReuseTopbarStatus /></template>
-        <template #menus><ReuseTopbarMenus /></template>
-        <template #actions><ReuseTopbarActions /></template>
-      </SheetTopbar>
 
       <!-- Row 2 · tools around the formula bar (SheetToolbar.vue) -->
       <SheetToolbar
@@ -812,18 +790,12 @@ import {
   KeyboardShortcutsDialog,
   Spinner,
   Tooltip,
-  usePageMeta,
 } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
-import { useCurrentUser, useSessionStore } from '@/boot/session'
-import { useSettingsMenuOption } from '@/composables/useSettingsMenuOption'
-import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
-import { appPageMeta } from '@/platform/page-meta'
+import { useCurrentUser } from '@/boot/session'
 import { translate as __ } from '@/platform/translation'
-import { confirmLeave } from '@/utils/confirmLeave'
 
 import { chipColor } from '../../canvas/chip-geometry'
 import { createGrid } from '../../canvas/index'
@@ -850,7 +822,6 @@ import { applyNumberFmt, buildNumberFmt, parseNumberFmt } from '../../utils/form
 import { AC_FUN_KEYS } from '../../utils/formula-ac.js'
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import { nameBoxLabel, parseNameBox } from '../../utils/name-box.js'
-import { userInitials } from '../../utils/session.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import AISettingsDialog from './AISettingsDialog.vue'
 import AskBar from './AskBar.vue'
@@ -870,7 +841,6 @@ import SheetMenuBar from './SheetMenuBar.vue'
 import SheetTabMenu from './SheetTabMenu.vue'
 import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
-import SheetTopbar from './SheetTopbar.vue'
 import SheetTopbarActions from './SheetTopbarActions.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SortDialog from './SortDialog.vue'
@@ -900,26 +870,22 @@ import { useToolbar } from './useToolbar.js'
 import { useWorkbook } from './useWorkbook.js'
 import ValidationDialog from './ValidationDialog.vue'
 
+// Mounted by the /d/ surface (SheetsSurface.vue). The surface fills the
+// `header` and `side-panel` slots, owns the title, sharing and the leave
+// guard, and its Drive session records the visit. The `header` slot receives
+// `viewOnly`, and the editor's `status` and `actions` as components to place;
+// the save state is on the exposed handle.
 const props = defineProps({
   id: {
     type: String,
     default: '',
-  },
-  // Mounted by the /d/ surface. The surface fills the `header` and
-  // `side-panel` slots, owns the title, sharing and the leave guard, and its
-  // Drive session records the visit. The `header` slot receives `viewOnly`,
-  // and the editor's `status` and `actions` as components to place; the save
-  // state is on the exposed handle.
-  embedded: {
-    type: Boolean,
-    default: false,
   },
   // The surface's access verdict. False freezes the editor.
   writable: {
     type: Boolean,
     default: true,
   },
-  // The Drive title while embedded; it follows a rename.
+  // The Drive title; it follows a rename.
   title: {
     type: String,
     default: null,
@@ -928,7 +894,7 @@ const props = defineProps({
     type: Object,
     default: undefined,
   },
-  // The Drive session while embedded: the editor opens the sheet's live room
+  // The Drive session: the editor opens the sheet's live room
   // with it (useCollabRoom.ts). Without one the sheet opens read-only.
   collabSession: {
     type: Object,
@@ -938,47 +904,9 @@ const props = defineProps({
 // `notes-opened`: the notes panel took the right edge. `reopen`: the live
 // room asks for the editor to be opened again.
 const emit = defineEmits(['close', 'notes-opened', 'reopen'])
-// The top bar's status chips and app actions, drawn in the editor's own bar or
-// handed to the surface's header when embedded.
+// The top bar's status chips and app actions, handed to the surface's header.
 const [DefineTopbarStatus, ReuseTopbarStatus] = createReusableTemplate()
 const [DefineTopbarActions, ReuseTopbarActions] = createReusableTemplate()
-const sessionStore = useSessionStore()
-const themeMenuOption = useThemeMenuOption()
-const settingsMenuOption = useSettingsMenuOption()
-const isTitleEditing = ref(false)
-const sheetHomeBreadcrumbs = computed(() => [
-  // A path, not the route name: in the unified shell the Sheets routes register
-  // only once /sheets is first visited, so the name does not resolve yet.
-  {
-    label: 'Sheets',
-    route: '/sheets',
-  },
-])
-const sheetBreadcrumbs = computed(() => [
-  ...sheetHomeBreadcrumbs.value,
-  {
-    label: currentTitle.value || 'Untitled Sheet',
-    onClick: startTitleEditing,
-  },
-])
-const brandMenuOptions = computed(() => [
-  {
-    group: '',
-    options: [
-      settingsMenuOption,
-      themeMenuOption,
-      ...(sessionStore.isLoggedIn
-        ? [
-            {
-              label: 'Log out',
-              icon: 'lucide-log-out',
-              onClick: () => sessionStore.logout.submit(),
-            },
-          ]
-        : []),
-    ],
-  },
-])
 
 // ── Engine instances ──────────────────────────────────────────────────────────
 
@@ -1255,8 +1183,6 @@ const formulaValue = ref('')
 const canUndo = ref(false)
 const canRedo = ref(false)
 const currentTitle = ref('Untitled Sheet')
-// Embedded, the document host names the tab like every other document.
-if (!props.embedded) usePageMeta(() => appPageMeta(currentTitle.value, 'Sheets'))
 const activeNumberFormat = ref('')
 
 // Cross-sheet picker: when the user starts a `=…` edit in the top formula
@@ -1649,12 +1575,8 @@ const hAlignIcon = computed(() => {
   return 'lucide-align-left'
 })
 
-// The logged-in user for the top-right avatar, from the shared suite session
-// store (cookie-backed, refreshed by userResource — see @/boot/session). The
-// old window.frappe.session reads only worked on the standalone www page; the
-// suite shell never sets window.frappe, so the avatar collapsed to "U".
-const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
-const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
+// The signed-in user, who writes comment replies.
+const { user: userEmail, fullName: userFullName } = useCurrentUser()
 
 const { exportCSV, exportXLSX, print, importCSV, importXLSX } = useExportImport({
   cells: {
@@ -2169,7 +2091,6 @@ const { loadError, legacyCurrent, loadSheet, workbookJson } = usePersistence({
     else grid?.viewRestore?.(s)
   },
   currentTitle,
-  recordVisits: !props.embedded,
   requestContext: props.requestContext,
 })
 
@@ -2183,17 +2104,15 @@ const readOnly = computed(
 )
 // Where the workbook's edits are: clean, saving, unsaved or failed.
 const saveState = computed(() => collab.saveState.value ?? 'clean')
-if (props.embedded) {
-  watch(
-    () => props.title,
-    (title) => {
-      if (title != null) currentTitle.value = title
-    },
-    {
-      immediate: true,
-    },
-  )
-}
+watch(
+  () => props.title,
+  (title) => {
+    if (title != null) currentTitle.value = title
+  },
+  {
+    immediate: true,
+  },
+)
 _sheetTabs = useSheetTabs({
   names: () => _client()?.sheets ?? [currentSheet.value],
   run: (type, payload) => _dispatch(_command(type, payload)),
@@ -3020,7 +2939,7 @@ async function _loadInitialData() {
   if (props.collabSession && props.id && (await _openCollab())) return
   if (props.id) {
     await loadSheet(props.id)
-    if (props.embedded && props.title != null) currentTitle.value = props.title
+    if (props.title != null) currentTitle.value = props.title
     _afterWorkbookLoaded()
   } else {
     // No sheet: an empty workbook.
@@ -3089,12 +3008,6 @@ function _onEngineCrash(reason) {
 function reloadPage() {
   window.location.reload()
 }
-const confirmUnsavedNavigation = () => {
-  // Embedded, the surface's leave guard flushes and keeps a recovery copy.
-  if (props.embedded) return true
-  if (!hasUnsavedChanges() || readOnly.value) return true
-  return confirmLeave()
-}
 // Reload / tab close with unsent edits: send them now and ask the browser to
 // confirm leaving, so staying gives them time to land.
 function _onBeforeUnload(e) {
@@ -3109,11 +3022,6 @@ function _onBeforeUnload(e) {
 function _saveWhenHidden() {
   if (document.visibilityState === 'hidden' && !readOnly.value) void flushSave().catch(() => {})
 }
-onBeforeRouteLeave(confirmUnsavedNavigation)
-onBeforeRouteUpdate((to, from) => {
-  if (to.params.id === from.params.id) return true
-  return confirmUnsavedNavigation()
-})
 /** Every action so far committed and sent (or kept on the device). */
 function flushSave() {
   return collab.flush()
@@ -3280,17 +3188,6 @@ function _diffRefs(before, after) {
   return [...ids].filter((id) => before?.[id] !== after?.[id])
 }
 
-// The title box of the standalone top bar. Embedded, Drive's header names
-// and renames the sheet.
-function startTitleEditing() {
-  isTitleEditing.value = true
-}
-function finishTitleEditing() {
-  isTitleEditing.value = false
-}
-function cancelTitleEditing() {
-  isTitleEditing.value = false
-}
 function onSave() {
   void flushSave().catch(() => {})
 }
