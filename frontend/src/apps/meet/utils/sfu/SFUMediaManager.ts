@@ -453,7 +453,7 @@ export class SFUMediaManager {
 
       return enhancedConsumer
     } catch (error) {
-      console.error(`Failed to subscribe to producer ${producerId}:`, error)
+      console.debug(`Failed to subscribe to producer ${producerId}:`, error)
       throw error
     }
   }
@@ -595,7 +595,7 @@ export class SFUMediaManager {
       }
     }
 
-    console.warn('Giving up on remote consumer subscription', {
+    console.error('Giving up on remote consumer subscription', {
       participantId: request.participantId,
       producerId: request.producerId,
       attempts: SFUMediaManager.MAX_RESUBSCRIBE_ATTEMPTS,
