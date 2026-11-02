@@ -55,6 +55,7 @@ import {
   resetEditorState,
   setDocumentContext,
   slidesLength,
+  startLoad,
   viewOnly,
 } from '@/apps/slides/stores/presentation'
 import {
@@ -179,6 +180,7 @@ const access = createSlidesAccess(props.session, {
     isOnlyCopy.value = !retainRecovery()
 
     if (isOnlyCopy.value) {
+      cancelRunningLoad()
       showOnlyCopy(translate('Editing access changed. Download your changes before you reload.'))
       return
     }
@@ -520,6 +522,13 @@ async function load() {
     }
   }
 }
+
+function cancelRunningLoad() {
+  latestLoad++
+  startLoad()
+  loading.value = false
+}
+
 function normalizeCompositeSlide(value: unknown) {
   const slide: Record<string, unknown> = {
     ...(value as Record<string, unknown>),
@@ -565,9 +574,12 @@ function retainRecovery() {
 }
 
 function retainOrWarn() {
-  if (!retainRecovery()) {
+  const isKept = retainRecovery()
+  if (!isKept) {
     toast.error('Your latest changes could not be kept on this device.')
   }
+
+  return isKept
 }
 
 // the server copy is the truth now: reload it rather than replay anything
@@ -670,16 +682,26 @@ async function discardChanges() {
   removeNewestRecovery(props.session.nodeId)
   syncHasRecovery()
 }
-const saveState = computed<DocumentSaveState>(() =>
-  isSaving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
-)
+
+const saveState = computed<DocumentSaveState>(() => {
+  if (isSaving.value) {
+    return 'saving'
+  }
+
+  if (saveFailed.value) {
+    return 'failed'
+  }
+
+  // only the screen holds the slides, whatever the save flags say
+  return dirty.value || isOnlyCopy.value ? 'unsaved' : 'clean'
+})
 async function flush() {
   await saveChanges()
 }
 useDocumentLeaveGuard({
   state: () => saveState.value,
   flush,
-  retainRecovery: retainOrWarn,
+  retainRecovery,
 })
 function warnBeforeUnload(event: Event) {
   resolveDocumentUnload({ state: () => saveState.value, retainRecovery: retainOrWarn }, event)

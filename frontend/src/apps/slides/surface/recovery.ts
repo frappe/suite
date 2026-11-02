@@ -71,10 +71,11 @@ export function keepRecovery(
 
 /** A save landed: only a sticky copy outlives it. */
 export function clearStaleRecovery(node: string): void {
-  writeCopies(
-    node,
-    readRecovery(node).filter((copy) => copy.sticky),
-  )
+  const copies = readRecovery(node)
+  const sticky = copies.filter((copy) => copy.sticky)
+  if (sticky.length < copies.length) {
+    writeCopies(node, sticky)
+  }
 }
 
 export function removeNewestRecovery(node: string): void {

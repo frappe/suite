@@ -871,6 +871,74 @@ describe('Slides push refused by the server', () => {
     expect(downloadButton()).toBeNull()
   })
 
+  describe('leaving with unsaved edits', () => {
+    const KEPT = 'Your latest changes are kept as a recovery copy. Leave this presentation?'
+    const NOT_KEPT =
+      'Your latest changes could not be kept on this device. Leave this presentation anyway?'
+
+    async function leavingAsks(afterOpening = () => {}) {
+      mounted = await openedSurface()
+      afterOpening()
+      duplicateSlide()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await mounted.router.push('/d/node-2')
+      return confirm
+    }
+
+    it('says the copy is kept when it is', async () => {
+      const confirm = await leavingAsks()
+
+      expect(confirm).toHaveBeenCalledWith(KEPT)
+      expect(readRecovery('node-1')).toHaveLength(1)
+    })
+
+    it('says it could not be kept when the store is full, with no toast', async () => {
+      const confirm = await leavingAsks(fillTheStore)
+
+      expect(confirm).toHaveBeenCalledWith(NOT_KEPT)
+      expect(toast.error).not.toHaveBeenCalled()
+      expect(mounted?.router.currentRoute.value.params.node).toBe('node-1')
+    })
+
+    it('still warns when the browser unloads with the store full', async () => {
+      mounted = await openedSurface()
+      fillTheStore()
+      duplicateSlide()
+      const unload = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(unload)
+
+      expect(unload.defaultPrevented).toBe(true)
+      expect(toast.error).toHaveBeenCalledWith(
+        'Your latest changes could not be kept on this device.',
+      )
+    })
+
+    it('holds through a refusal', async () => {
+      await refused()
+      const unload = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(unload)
+
+      expect(unload.defaultPrevented).toBe(true)
+    })
+  })
+
+  it('keeps a sticky copy when a save lands on a full store', async () => {
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    fillTheStore()
+    mounted = await openedSurface()
+    const errors = vi.fn()
+    mounted.app.config.errorHandler = errors
+
+    duplicateSlide()
+    await vi.waitFor(() => expect(saves).toHaveLength(1), { timeout: 3000 })
+    await vi.waitFor(() => expect(dirty.value || isSaving.value).toBe(false))
+    await nextTick()
+
+    expect(errors).not.toHaveBeenCalled()
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([[{ clientId: 'older' }]])
+    expect(downloadButton()).not.toBeNull()
+  })
+
   describe('edit access lost with unsaved edits', () => {
     const KEPT = 'Editing access changed. Your unsaved changes are kept on this device.'
     const UNSTORED = 'Editing access changed. Download your changes before you reload.'
@@ -972,6 +1040,69 @@ describe('Slides push refused by the server', () => {
       expect(refusalToast(BACK_UNSTORED)).toBeUndefined()
       const [copy] = readRecovery('node-1')
       expect(copy.slides).toHaveLength(3)
+    })
+
+    it('asks before leaving when the save landed just as access went', async () => {
+      mounted = await openedSurface()
+      fillTheStore()
+      const put = IDBObjectStore.prototype.put
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        record: { dirty?: boolean },
+        key?: IDBValidKey,
+      ) {
+        if (record.dirty === false && mounted?.access.value.role === 50) {
+          mounted.access.value = { role: 10 }
+        }
+
+        return put.call(this, record, key)
+      })
+
+      duplicateSlide()
+      await vi.waitFor(() => expect(refusalToast(UNSTORED)).toBeDefined(), { timeout: 3000 })
+      await vi.waitFor(() => expect(dirty.value || isSaving.value).toBe(false))
+      await nextTick()
+      expect(downloadButton()).not.toBeNull()
+
+      const unload = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(unload)
+      expect(unload.defaultPrevented).toBe(true)
+
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await mounted.router.push('/d/node-2')
+      expect(confirm).toHaveBeenCalled()
+      expect(mounted.router.currentRoute.value.params.node).toBe('node-1')
+    })
+
+    it('does not let a load already running land over the slides', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      let release!: () => void
+      mounted?.loads.push(
+        new Promise((resolve) => {
+          release = resolve
+        }),
+      )
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await vi.waitFor(() =>
+        expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
+      )
+
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(editorSlides.value).toHaveLength(3)
+      expect(downloadButton()).not.toBeNull()
+      expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).toBeNull()
+      expect(thumbnails(mounted?.root as Element)).toHaveLength(3)
+
+      widen()
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
     })
 
     it('a discard loads the server copy and leaves an older copy alone', async () => {

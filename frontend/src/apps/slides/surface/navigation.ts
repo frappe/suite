@@ -5,15 +5,20 @@ export type DocumentSaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 interface LeaveGuardOptions {
   state: () => DocumentSaveState
   flush: () => Promise<void>
-  retainRecovery: () => void | Promise<void>
+  retainRecovery: () => boolean | Promise<boolean>
 }
 
 export async function resolveDocumentLeave(options: LeaveGuardOptions): Promise<boolean> {
   if (options.state() === 'clean') return true
   if (options.state() === 'saving') await options.flush()
   if (options.state() === 'clean') return true
-  await options.retainRecovery()
-  return window.confirm('Your latest changes are kept as a recovery copy. Leave this presentation?')
+
+  const isKept = await options.retainRecovery()
+  return window.confirm(
+    isKept
+      ? 'Your latest changes are kept as a recovery copy. Leave this presentation?'
+      : 'Your latest changes could not be kept on this device. Leave this presentation anyway?',
+  )
 }
 
 // A closing tab can't wait for a save, so it keeps a recovery copy and asks the browser to confirm

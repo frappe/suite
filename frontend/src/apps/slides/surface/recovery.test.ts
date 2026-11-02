@@ -100,6 +100,18 @@ describe('Slides recovery copy', () => {
     expect(kept()).toEqual([['discarded', true]])
   })
 
+  it('writes nothing once a save lands if only sticky copies are kept', () => {
+    keepRecovery('node-1', [{ clientId: 'sticky' }], { sticky: true })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    expect(() => clearStaleRecovery('node-1')).not.toThrow()
+    vi.restoreAllMocks()
+
+    expect(kept()).toEqual([['sticky', true]])
+  })
+
   it('shows one person nothing another kept in the same browser', () => {
     keepRecovery('node-1', [{ clientId: 'mine' }], { sticky: true })
 
