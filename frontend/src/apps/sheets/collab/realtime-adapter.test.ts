@@ -65,16 +65,11 @@ describe('Sheets realtime adapter', () => {
       callFn: vi.fn(async () => {}),
     })
     const received: unknown[] = []
-    const saved: unknown[] = []
     adapter.on('yjs_update', (message: unknown) => received.push(message))
-    adapter.onSheet('sheet_saved', (message: unknown) => saved.push(message))
 
     socket.fire('yjs_update', { sheet: 'SH-2', payload: JSON.stringify({ n: 2 }) })
     socket.fire('yjs_update', { sheet: 'SH-1', payload: JSON.stringify({ n: 1 }) })
-    socket.fire('sheet_saved', { sheet: 'SH-2', head_seq: 4 })
-    socket.fire('sheet_saved', { sheet: 'SH-1', head_seq: 9 })
     expect(received).toEqual([{ n: 1 }])
-    expect(saved).toEqual([{ sheet: 'SH-1', head_seq: 9 }])
   })
 
   it('says once, loudly, when the socket cannot connect', () => {

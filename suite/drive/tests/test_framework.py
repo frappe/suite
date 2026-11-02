@@ -44,11 +44,7 @@ def _writer_save(document: dict) -> tuple[str, dict]:
 
 
 def _sheet_save(document: dict) -> tuple[str, dict]:
-    return "/api/method/suite.sheets.api.save_sheet", {
-        "name": document["name"],
-        "sheets_data": SHEET_BODY,
-        "base_seq": document["head_seq"],
-    }
+    return "/api/method/suite.sheets.api.save_sheet", {"name": document["name"], "sheets_data": SHEET_BODY}
 
 
 def _slides_save(document: dict) -> tuple[str, dict]:

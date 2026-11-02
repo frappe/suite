@@ -12,14 +12,6 @@ import {
 import { applyLegacyPlan, planLegacySheet, unknownFunctionCells } from '../../utils/legacy-sheet'
 import { isRefusal } from '../../utils/relay.js'
 import { recordVisit } from './driveVisit'
-import {
-  applyFormatChanges,
-  describeEdits,
-  formatChanges,
-  hasFormatChanges,
-  isReplayable,
-  sheetsOf,
-} from './unsentCommands'
 
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /
@@ -33,12 +25,10 @@ import {
 //     surface passes false: its Drive session records the visit itself.
 //   - `requestContext` — use the open document's Drive access scope. The `/d/`
 //     surface passes the Drive session's, which adds its link credentials.
-//   - `unsent` — the log of commands no landed save carries yet
-//     (unsentCommands.ts). With it, `rebase()` and the local draft work.
 export function usePersistence({
-  // IronCalc: start(bytes | null) builds the workbook, toBytes() reads it back
-  // as of the commands dispatched before the call, client() is the running
-  // workbook client, syncDefinedNames() sends it the named ranges.
+  // IronCalc: start(bytes | null) builds the workbook, toBytes() reads it back,
+  // client() is the running workbook client, syncDefinedNames() sends it the
+  // named ranges.
   engine,
   formats,
   merge,
@@ -58,7 +48,6 @@ export function usePersistence({
   onRefused = () => {},
   recordVisits = true,
   requestContext,
-  unsent = null,
 }) {
   const isSaving = ref(false)
   const saveError = ref('')
@@ -80,13 +69,6 @@ export function usePersistence({
   // says the converted sheet will be saved (the caller may write); `unknown`
   // lists the formulas IronCalc shows as #NAME?. Null for any other sheet.
   const legacyUpgrade = ref(null)
-  // The head of the op log the workbook here is at. Each save names it as
-  // `base_seq`; the server refuses any other (specs/sheets/002).
-  const headSeq = ref(0)
-  // Another editor saved first and this workbook's edits could not be put on
-  // top of theirs, so it can no longer be saved. The editor sets it; loading
-  // the sheet again clears it.
-  const isStale = ref(false)
   const sideStores = [
     merge,
     comments,
@@ -99,39 +81,11 @@ export function usePersistence({
     charts,
     namedRanges,
   ]
-  // Every store beside the cells and formats, by its key in `sheets_data`.
-  const featureStores = {
-    merge,
-    comments,
-    validation,
-    protection,
-    condFormat,
-    sortFilter,
-    slicers,
-    pivot,
-    charts,
-    namedRanges,
-  }
-  // The side state (formats, feature stores, view) the server holds: as loaded,
-  // then as each landed save sent it. A rebase writes over the stored copy
-  // only what changed here since.
-  let _synced = null
   // Runs once before the next save is sent: keeps the develop body as a
   // Drive version. Cleared when it succeeds.
   let _beforeFirstSave = null
-  // One load at a time replaces the workbook: a load asked for while another
-  // runs starts after it.
-  let _loading = Promise.resolve()
-  function loadSheet(name, options) {
-    const load = _loading.then(() => _load(name, options))
-    _loading = load.catch(() => {})
-    return load
-  }
-  // `beforeOpen` runs once the stored copy has arrived, just before it
-  // replaces the workbook here. With `rethrow`, a failure is the caller's to
-  // report and the page-level `loadError` is left alone.
-  async function _load(name, { visit = recordVisits, beforeOpen = null, rethrow = false } = {}) {
-    if (!rethrow) loadError.value = null
+  async function loadSheet(name) {
+    loadError.value = null
     try {
       const canGz = isDecompressionSupported()
       const doc = await client.query(
@@ -145,11 +99,10 @@ export function usePersistence({
         },
       )
       // A sheet Drive owns has a node; a legacy sheet has none and no Recents row.
-      if (visit && doc.node) recordVisit(doc.node).catch(() => {})
+      if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
       const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved = JSON.parse(plain || '{}')
       const mayWrite = doc.can_write !== false
-      if (beforeOpen) await beforeOpen()
       if (saved.formats) formats.restore(saved.formats)
       await _startEngine(saved)
       // A sheet last saved by the develop editor: its cells are typed into
@@ -191,19 +144,12 @@ export function usePersistence({
       const keepsBefore = legacyUpgrade.value?.save && !legacyUpgrade.value.imported && doc.node
       _beforeFirstSave = keepsBefore ? () => _keepBeforeUpgrade(doc.node) : null
       currentTitle.value = doc.title
-      headSeq.value = doc.head_seq
-      isStale.value = false
-      _synced = _sideState()
-      // Loading dispatched the stored copy's own setup (defined names, a
-      // develop sheet's cells); none of it is an edit made here.
-      unsent?.clear()
       // Older backends predate `can_write`; treat its absence as writable so we
       // never lock out an editor on a stale server. A develop sheet IronCalc
       // could not take opens read-only, so no save replaces its old body.
       canWrite.value = mayWrite && converted?.ok !== false
       sheetOwner.value = doc.owner || ''
     } catch (err) {
-      if (rethrow) throw err
       console.error('Load failed:', err)
       const t = err?.type || ''
       const kind =
@@ -319,8 +265,8 @@ export function usePersistence({
   let _lastSaveArgs = null
   async function retrySave() {
     if (!_lastSaveArgs) return null
-    const { args, keepalive, sent } = _lastSaveArgs
-    return _send(args, keepalive, sent)
+    const { args, keepalive } = _lastSaveArgs
+    return _send(args, keepalive)
   }
   async function _persist(name, title, { keepalive = false, ops } = {}) {
     isSaving.value = true
@@ -328,17 +274,12 @@ export function usePersistence({
     // snapshots could pick up mid-edit state that arrived between
     // attempts, racing with the user's keystrokes.
     let args
-    let sent
     try {
-      // Synchronous with the bytes request, so `mark` is exactly what they hold.
-      const mark = unsent?.mark() ?? 0
-      const bytes = await engine.toBytes()
-      sent = { mark, side: _sideState() }
-      const payload = await encodeForUpload(_workbookJson(bytes, null, sent.side))
+      const sheetsData = _workbookJson(await engine.toBytes())
+      const payload = await encodeForUpload(sheetsData)
       args = {
         title,
         sheets_data: payload,
-        base_seq: headSeq.value,
         request_id: randomId(),
         ...(name
           ? {
@@ -359,9 +300,8 @@ export function usePersistence({
     _lastSaveArgs = {
       args,
       keepalive,
-      sent,
     }
-    return _send(args, keepalive, sent)
+    return _send(args, keepalive)
   }
 
   // The whole workbook as the JSON `sheets_data` stores. The surface keeps it
@@ -371,22 +311,26 @@ export function usePersistence({
   async function workbookJson(draft = null) {
     return _workbookJson(await engine.toBytes(), draft)
   }
-  function _workbookJson(bytes, draft = null, side = _sideState()) {
+  function _workbookJson(bytes, draft = null) {
     return JSON.stringify({
       engine: bytesToBase64(bytes),
       engine_version: ENGINE_VERSION,
       ...(draft ? { draft } : {}),
-      ...side,
+      formats: formats.snapshot(),
+      merge: merge?.snapshot?.() ?? null,
+      comments: comments?.snapshot?.() ?? null,
+      validation: validation?.snapshot?.() ?? null,
+      protection: protection?.snapshot?.() ?? null,
+      condFormat: condFormat?.snapshot?.() ?? null,
+      sortFilter: sortFilter?.snapshot?.() ?? null,
+      slicers: slicers?.snapshot?.() ?? null,
+      pivot: pivot?.snapshot?.() ?? null,
+      charts: charts?.snapshot?.() ?? null,
+      namedRanges: namedRanges?.snapshot?.() ?? null,
+      view: getViewState?.() ?? null,
     })
   }
-  function _sideState() {
-    const side = { formats: formats.snapshot() }
-    for (const [key, store] of Object.entries(featureStores))
-      side[key] = store?.snapshot?.() ?? null
-    side.view = getViewState?.() ?? null
-    return side
-  }
-  async function _send(args, keepalive, sent = null) {
+  async function _send(args, keepalive) {
     isSaving.value = true
     // keepalive saves fire from onBeforeUnmount — the browser may kill
     // the page before any backoff finishes, so don't retry them.
@@ -426,20 +370,9 @@ export function usePersistence({
           // First success clears any sticky error from a previous failure.
           saveError.value = ''
           _lastSaveArgs = null
-          headSeq.value = result.head_seq
-          if (sent) {
-            unsent?.confirm(sent.mark)
-            _synced = sent.side
-          }
           return result.name
         } catch (err) {
           lastErr = err
-          // Another editor saved first. The caller rebases (`rebase()`); this
-          // payload is built on the old head and is never sent again.
-          if (err?.type === 'TimestampMismatchError') {
-            _lastSaveArgs = null
-            throw err
-          }
           if (isRefusal(err)) onRefused()
           if (!_isTransientSaveError(err)) break
         }
@@ -456,132 +389,6 @@ export function usePersistence({
       isSaving.value = false
     }
   }
-  // ── Rebase ───────────────────────────────────────────────────────────────
-  //
-  // Another editor saved first (specs/sheets/002, "Unsaved edits"). Load the
-  // stored copy and put this editor's unsent edits on top of it: commands are
-  // dispatched again, formats changed here are written per cell, and a feature
-  // store changed here replaces the stored one. Per cell and per feature the
-  // last writer wins. The caller saves afterwards, on the new head.
-  //
-  // Answers { rebased, notApplied, workbook }. `rebased` is false when an edit
-  // moved cells or sheets: nothing is loaded and the workbook here is kept.
-  // `notApplied` lists the edits that could not be put on top; `workbook` is
-  // this editor's workbook from before, for a recovery copy, when any were.
-  async function rebase(name) {
-    const pending = unsent?.edits() ?? []
-    if (!pending.every(isReplayable)) {
-      return { rebased: false, notApplied: describeEdits(pending), workbook: await workbookJson() }
-    }
-    const base = _synced
-    const title = currentTitle.value
-    let mine = null
-    try {
-      await loadSheet(name, {
-        visit: false,
-        rethrow: true,
-        async beforeOpen() {
-          const bytes = await engine.toBytes()
-          // Nothing awaits between here and the stored copy replacing this one.
-          mine = { edits: unsent?.take() ?? [], side: _sideState(), bytes }
-        },
-      })
-    } catch (err) {
-      if (mine) await _reopen(mine)
-      throw err
-    } finally {
-      currentTitle.value = title
-    }
-    const skipped = _putOnTop(mine.edits, formatChanges(base?.formats ?? {}, mine.side.formats))
-    _restoreChangedFeatures(base, mine.side)
-    return {
-      rebased: true,
-      notApplied: describeEdits(skipped),
-      workbook: skipped.length ? _workbookJson(mine.bytes, null, mine.side) : null,
-    }
-  }
-
-  // The stored copy failed to open after this workbook was taken: open this
-  // one again, with its edits still unsent.
-  async function _reopen(mine) {
-    formats.restore(mine.side.formats)
-    await engine.start(mine.bytes)
-    for (const [key, store] of Object.entries(featureStores)) store?.restore?.(mine.side[key])
-    engine.syncDefinedNames?.()
-    if (applyViewState && mine.side.view) applyViewState(mine.side.view)
-    for (const edit of mine.edits) unsent?.record(edit)
-  }
-
-  // Dispatch the commands and write the format changes on the workbook now
-  // loaded. Answers the commands that name a sheet it does not have.
-  function _putOnTop(commands, formatsChanged) {
-    const sheets = new Set(engine.client()?.sheets ?? [])
-    const skipped = []
-    for (const command of commands) {
-      if (sheetsOf(command).every((sheet) => sheets.has(sheet))) engine.client().dispatch(command)
-      else skipped.push(command)
-    }
-    applyFormatChanges(formats, formatsChanged, sheets)
-    return skipped
-  }
-
-  function _restoreChangedFeatures(base, mine) {
-    const changed = (key) =>
-      JSON.stringify(base?.[key] ?? null) !== JSON.stringify(mine[key] ?? null)
-    for (const [key, store] of Object.entries(featureStores)) {
-      if (store?.restore && changed(key)) store.restore(mine[key])
-    }
-    if (changed('namedRanges')) engine.syncDefinedNames?.()
-    if (applyViewState && mine.view && changed('view')) applyViewState(mine.view)
-  }
-
-  // ── Local draft ──────────────────────────────────────────────────────────
-  //
-  // The unsent cell and format edits, kept in this tab's sessionStorage on
-  // every edit and when the page goes away. A reload inside the autosave delay
-  // finds them and puts them on top of the stored copy (`restoreDraft`).
-  // Edits that move cells or sheets are not kept: the leave prompt covers them.
-  const draftKey = (name) => `suite:sheets-draft:${name}`
-
-  function keepDraft(name) {
-    if (!unsent || !name || name === 'new') return
-    try {
-      const edits = unsent.edits()
-      const changes = _synced ? formatChanges(_synced.formats, formats.snapshot()) : {}
-      if (!edits.every(isReplayable) || (!edits.length && !hasFormatChanges(changes))) {
-        sessionStorage.removeItem(draftKey(name))
-        return
-      }
-      sessionStorage.setItem(
-        draftKey(name),
-        JSON.stringify({ base_seq: headSeq.value, commands: edits, formats: changes }),
-      )
-    } catch (err) {
-      console.error('[sheets] could not keep the local draft', err)
-    }
-  }
-
-  function dropDraft(name) {
-    sessionStorage.removeItem(draftKey(name))
-  }
-
-  // Put the draft a reload left behind on top of the sheet just loaded. True
-  // when it held edits; the caller saves them.
-  function restoreDraft(name) {
-    try {
-      const draft = JSON.parse(sessionStorage.getItem(draftKey(name)) ?? 'null')
-      const commands = Array.isArray(draft?.commands) ? draft.commands.filter(isReplayable) : []
-      const changes = draft?.formats ?? {}
-      if (!commands.length && !hasFormatChanges(changes)) return false
-      _putOnTop(commands, changes)
-      return true
-    } catch (err) {
-      console.error('[sheets] could not restore the local draft', err)
-      sessionStorage.removeItem(draftKey(name))
-      return false
-    }
-  }
-
   return {
     isSaving,
     saveError,
@@ -589,16 +396,10 @@ export function usePersistence({
     sheetOwner,
     loadError,
     legacyUpgrade,
-    headSeq,
-    isStale,
     loadSheet,
     autoCreate,
     saveExisting,
     retrySave,
     workbookJson,
-    rebase,
-    keepDraft,
-    dropDraft,
-    restoreDraft,
   }
 }

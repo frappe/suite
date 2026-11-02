@@ -10,8 +10,7 @@
 // What reacts to the workbook stays with the editor and comes in as
 // callbacks: syncNames when its sheet list changes, onVersion after every
 // applied edit, onUsedExtent when the open sheet's data extent is read,
-// onCrash(reason) if the worker dies (the workbook is lost with it), and
-// onEdit(command | 'restore') for every change sent to the workbook.
+// onCrash(reason) if the worker dies (the workbook is lost with it).
 
 import { createCellProvider } from '../../core/cell-provider'
 import { createWorkbookClient } from '../../core/client'
@@ -29,9 +28,8 @@ export function useWorkbook({
   onVersion,
   onUsedExtent,
   onCrash,
-  onEdit = () => {},
 }) {
-  // { client, provider, offSheets, offVersion, offCrash, offEdit } once started (see startEngine).
+  // { client, provider, offSheets, offVersion, offCrash } once started (see startEngine).
   let engine = null
 
   async function startEngine(snapshotBytes = null) {
@@ -50,8 +48,7 @@ export function useWorkbook({
     const offSheets = client.onSheets(() => syncNames())
     const offVersion = client.onVersion(() => onVersion())
     const offCrash = client.onCrash((reason) => onCrash(reason))
-    const offEdit = client.onEdit((edit) => onEdit(edit))
-    engine = { client, provider, offSheets, offVersion, offCrash, offEdit }
+    engine = { client, provider, offSheets, offVersion, offCrash }
     // Nothing is sent yet: the next sync sends every name. A load restores
     // the names after this and syncs then (usePersistence).
     namesInEngine = new Map()
@@ -65,7 +62,6 @@ export function useWorkbook({
     engine?.offSheets()
     engine?.offVersion()
     engine?.offCrash()
-    engine?.offEdit()
     engine?.provider.dispose()
     engine?.client.terminate()
     engine = null
@@ -76,10 +72,9 @@ export function useWorkbook({
     return engine?.client ?? null
   }
 
-  // The workbook as of the commands dispatched so far; later ones are not in it.
   function engineBytes() {
     if (!engine) return Promise.reject(new Error('IronCalc is not running'))
-    return engine.client.snapshot()
+    return engine.client.toBytes()
   }
 
   let commandSeq = 0

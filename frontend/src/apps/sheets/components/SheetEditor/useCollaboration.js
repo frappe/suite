@@ -100,7 +100,6 @@ function _throttle(fn, wait) {
  *   getSheet?:      () => object | null,  the engine cell sync binds to; none
  *                   means presence and cursors only
  *   repopulateGrid: () => void,
- *   onRemoteSave?:  (headSeq: number) => void,  another editor saved the sheet
  *   _self?:         string,
  *   _realtime?:     import('@/platform/realtime').Realtime,
  *   _watch?:        typeof watch,
@@ -115,7 +114,6 @@ export function useCollaboration({
   // A collaboration verdict: the relay refused this client's write. The
   // editor narrows access.
   onRefused = () => {},
-  onRemoteSave = () => {},
   // Send relay calls through this fetch. The `/d/` surface passes the Drive
   // session's, which adds its link credentials.
   credentialFetch,
@@ -142,7 +140,6 @@ export function useCollaboration({
   let _awareness = null
   let _binding = null
   let _adapter = null // holds the sheet-room subscription
-  let _stopSaveWatch = null
   let _sheetId = null
 
   // ── Outbound API (kept for backwards-compatibility with index.vue) ──────────
@@ -262,7 +259,6 @@ export function useCollaboration({
       realtime: _realtime,
       callFn: _relay,
     }))
-    _stopSaveWatch = adapter.onSheet('sheet_saved', (msg) => onRemoteSave(msg.head_seq))
     _provider = createFrappeProvider({ doc: _doc, sheetId: _sheetId, realtime: adapter })
     _awareness = createAwareness({
       sheetId: _sheetId,
@@ -276,12 +272,11 @@ export function useCollaboration({
 
   function _stop() {
     _binding?.dispose()
-    _stopSaveWatch?.()
     _awareness?.destroy()
     _provider?.destroy()
     _adapter?.close()
     _doc?.destroy()
-    _binding = _awareness = _provider = _adapter = _doc = _stopSaveWatch = null
+    _binding = _awareness = _provider = _adapter = _doc = null
     _sheetId = null
     presentUsers.value = []
     remoteCursors.value = new Map()

@@ -55,15 +55,9 @@ export function createRealtimeAdapter({ sheetId, realtime = sharedRealtime, call
     })
   }
 
-  // Messages for this sheet only, as sent; the room can carry other events.
-  function onSheet(event, cb) {
-    return realtime.subscribe(event, (msg) => {
-      if (msg?.sheet === sheetId) cb(msg)
-    })
-  }
-
   function on(event, cb) {
-    const unsubscribe = onSheet(event, (msg) => {
+    const unsubscribe = realtime.subscribe(event, (msg) => {
+      if (msg?.sheet !== sheetId) return
       let inner = null
       try {
         inner = msg.payload ? JSON.parse(msg.payload) : null
@@ -82,12 +76,11 @@ export function createRealtimeAdapter({ sheetId, realtime = sharedRealtime, call
     bucket?.delete(cb)
   }
 
-  return { publish, on, off, onSheet, close }
+  return { publish, on, off, close }
 }
 
-// Without a socket, co-editors never see each other's saves and only the
-// save conflict check stops an overwrite. Say so once, instead of failing
-// silently the way the old page-local shim did.
+// Without a socket, co-editors see no presence or cursors. Say so once,
+// instead of failing silently the way the old page-local shim did.
 function reportConnectionFailure(socket, sheetId) {
   let reported = false
   const report = (err) => {
