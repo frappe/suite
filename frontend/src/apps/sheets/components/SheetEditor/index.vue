@@ -873,8 +873,8 @@ import ValidationDialog from './ValidationDialog.vue'
 // Mounted by the /d/ surface (SheetsSurface.vue). The surface fills the
 // `header` and `side-panel` slots, owns the title, sharing and the leave
 // guard, and its Drive session records the visit. The `header` slot receives
-// `viewOnly`, and the editor's `status` and `actions` as components to place;
-// the save state is on the exposed handle.
+// `viewOnly`, and the editor's `status`, `menus` and `actions` as components
+// to place; the save state is on the exposed handle.
 const props = defineProps({
   id: {
     type: String,
@@ -1575,7 +1575,8 @@ const hAlignIcon = computed(() => {
   return 'lucide-align-left'
 })
 
-// The signed-in user, who writes comment replies.
+// The signed-in user: the author of new comment replies, and of the ones they
+// may delete.
 const { user: userEmail, fullName: userFullName } = useCurrentUser()
 
 const { exportCSV, exportXLSX, print, importCSV, importXLSX } = useExportImport({
