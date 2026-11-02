@@ -46,6 +46,10 @@ export type SortFilterSnapshot = Record<string, SheetFilter>
 
 export type SortFilter = ReturnType<typeof createSortFilter>
 
+// =SUM(B2:B9) and its kin; SUBTOTAL takes a function number first.
+const TOTALS_FORMULA =
+  /^=\s*(?:SUM|SUBTOTAL|AVERAGE|COUNT|COUNTA|MIN|MAX|PRODUCT)\(\s*(?:\d+\s*,\s*)?\$?([A-Z]+)\$?(\d+)\s*:\s*\$?([A-Z]+)\$?(\d+)\s*\)\s*$/i
+
 export function createSortFilter(cells: CellPort) {
   const _byShet: SortFilterSnapshot = {} // { [sheetName]: { range, byCol } }
   // { [sheetName]: { rect, rows: string[][] } } display values
@@ -117,11 +121,22 @@ export function createSortFilter(cells: CellPort) {
     const range = getRange(sheetName)
     if (!range || range.r1 <= range.r0) return null
     const rect = { r0: range.r0 + 1, c0: range.c0, r1: range.r1, c1: range.c1 }
-    return sortRows(rect, colIndex, dir, sheetName)
+    const { inputs } = await cells.read(sheetName, rect)
+    return sortRows(rect, colIndex, dir, sheetName, { totals: _isTotalsRow(inputs, rect) })
+  }
+
+  // What the rows of `rect` look like: the sort dialog's starting answers, and
+  // what a sort from the right-click menu goes by.
+  async function guessSortRows(rect: Rect, sheetName: string) {
+    const { inputs, displays } = await cells.read(sheetName, rect)
+    return {
+      header: _looksLikeHeader(inputs[0], displays.slice(1)),
+      totals: _isTotalsRow(inputs, rect),
+    }
   }
 
   // Sort the rows of `rect` by their displayed values in column `colIndex`.
-  // With `detectHeader`, a first row that looks like a header stays on top.
+  // A `header` row stays on top and a `totals` row stays at the bottom.
   // Formulas move with their row and shift their references by the distance
   // moved. Returns the {cellId: input} maps of the rows before and after, for
   // undo, and the order and rect it used; null when nothing to sort.
@@ -130,14 +145,15 @@ export function createSortFilter(cells: CellPort) {
     colIndex: number,
     dir: 'asc' | 'desc',
     sheetName: string,
-    { detectHeader = false } = {},
+    { header = false, totals = false } = {},
   ) {
     if (!_inCols(colIndex, rect) || rect.r1 < rect.r0) return null
     const read = await cells.read(sheetName, rect, { numFmts: true })
-    const skip = detectHeader && _looksLikeHeader(read.inputs[0], read.displays.slice(1)) ? 1 : 0
-    const inputs = read.inputs.slice(skip)
-    const displays = read.displays.slice(skip)
-    const numFmts = read.numFmts?.slice(skip)
+    const skip = header ? 1 : 0
+    const end = read.inputs.length - (totals ? 1 : 0)
+    const inputs = read.inputs.slice(skip, end)
+    const displays = read.displays.slice(skip, end)
+    const numFmts = read.numFmts?.slice(skip, end)
     const r0 = rect.r0 + skip
     if (inputs.length < 2) return null
     const key = colIndex - rect.c0
@@ -161,16 +177,40 @@ export function createSortFilter(cells: CellPort) {
     cells.write(sheetName, after)
     // `order[to] = from`: the data row each sorted row came from, so the
     // caller can move the rows' formats the same way (formatsAfterSort).
-    return { before, after, order, rect: { ...rect, r0 } }
+    return { before, after, order, rect: { ...rect, r0, r1: r0 + inputs.length - 1 } }
   }
 
-  // A header row is all labels: every cell filled with text, none a number or
-  // formula, over a column that shows a number below it.
+  // A header row is all labels, with at most one cell empty: none a number or
+  // formula, over a labelled column that shows a number below it.
   function _looksLikeHeader(first: string[] | undefined, below: string[][]) {
-    const isNumber = (v: string) => v.trim() !== '' && Number.isFinite(Number(v))
     if (!first || !below.length) return false
-    if (!first.every((v) => v !== '' && !v.startsWith('=') && !isNumber(v))) return false
-    return first.some((_, c) => below.some((row) => isNumber(row[c] ?? '')))
+    if (first.filter((v) => v === '').length > 1) return false
+    if (first.some((v) => v.startsWith('=') || _isShownNumber(v))) return false
+    return first.some((v, c) => v !== '' && below.some((row) => _isShownNumber(row[c] ?? '')))
+  }
+
+  // $1.50, 1,000 and 12% are numbers too.
+  function _isShownNumber(value: string) {
+    return value.trim() !== '' && !isNaN(displayNumber(value))
+  }
+
+  // A totals row is the last of at least three, with a sum-style formula over
+  // its own column down to the row above, and otherwise only labels or blanks.
+  function _isTotalsRow(inputs: string[][], rect: Rect) {
+    const last = inputs.at(-1)
+    if (!last || inputs.length < 3) return false
+    const isTotal = (v: string, i: number) => _totalsColumn(v) === cellId(rect.r1 - 1, rect.c0 + i)
+    if (!last.some(isTotal)) return false
+    return last.every((v, i) => isTotal(v, i) || !(v.startsWith('=') || _isShownNumber(v)))
+  }
+
+  // The cell a sum-style formula's single-column range ends on, as `B4`.
+  function _totalsColumn(input: string) {
+    const match = TOTALS_FORMULA.exec(input)
+    if (!match) return null
+    const [, firstColumn = '', , lastColumn = '', lastRow] = match
+    const sameColumn = firstColumn.toUpperCase() === lastColumn.toUpperCase()
+    return sameColumn ? `${lastColumn.toUpperCase()}${lastRow}` : null
   }
 
   function _cmp(av: string | number, bv: string | number, dir: 'asc' | 'desc') {
@@ -391,6 +431,7 @@ export function createSortFilter(cells: CellPort) {
     refresh,
     sort,
     sortRows,
+    guessSortRows,
     setFilter,
     clearFilter,
     clearAll,

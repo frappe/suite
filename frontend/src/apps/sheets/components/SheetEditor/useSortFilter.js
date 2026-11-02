@@ -46,6 +46,8 @@ export function useSortFilter({
   captureFormatsRange,
   readEngineFormats,
   resetEngineFormats,
+  sheetExtent,
+  sortDialog,
 }) {
   // Filter panel state. The form itself (mode, operator, checked values) lives
   // in FilterPanel.vue, which is re-created on every open (`seq` is its key).
@@ -383,20 +385,52 @@ export function useSortFilter({
   // Sort A→Z / Z→A from the right-click menus, as Google Sheets' "Sort range".
   // A selection of several rows sorts as it is, by the active cell's column.
   // A single cell or row, or a whole column (`col`), sorts the data block
-  // around it, and a header row on top of that block stays there.
+  // around it; its header on top and its totals at the bottom stay there.
   async function sortRange(dir, col = null) {
-    const grid = getGrid()
-    if (!grid) return
+    const target = await _sortTarget(col)
+    if (!target) return
+    const rows = target.asSelected
+      ? {}
+      : await sortFilter.guessSortRows(target.rect, currentSheet.value)
+    await applySort({ rect: target.rect, col: target.col, dir, ...rows })
+  }
+
+  // The same sort with the guesses shown first, so a wrong one can be changed.
+  async function openSortDialog(col = null) {
+    const target = await _sortTarget(col)
+    if (!target) return
+    const rows = await sortFilter.guessSortRows(target.rect, currentSheet.value)
+    sortDialog().open({ rect: target.rect, col: target.col, ...rows })
+  }
+
+  async function applySort({ rect, col, dir, header = false, totals = false }) {
     const sn = currentSheet.value
+    await _sortWithFormats(sn, rect, () =>
+      sortFilter.sortRows(rect, col, dir, sn, { header, totals }),
+    )
+  }
+
+  async function _sortTarget(col) {
+    const grid = getGrid()
+    if (!grid) return null
     const sel = grid.getSelection()
     const active = parseCellId(activeCell.value) ?? { row: sel.r0, col: sel.c0 }
     const key = col ?? Math.min(Math.max(active.col, sel.c0), sel.c1)
     const asSelected = col == null && sel.r1 > sel.r0
-    const rect = asSelected ? sel : await detectContiguousBlock(col == null ? active.row : 0, key)
-    if (!rect || rectBlocked(rect, sn)) return
-    await _sortWithFormats(sn, rect, () =>
-      sortFilter.sortRows(rect, key, dir, sn, { detectHeader: !asSelected }),
-    )
+    const row = col == null ? active.row : await _firstFilledRow(key)
+    const rect = asSelected ? sel : row != null && (await detectContiguousBlock(row, key))
+    if (!rect || rectBlocked(rect, currentSheet.value)) return null
+    return { rect, col: key, asSelected }
+  }
+
+  // A column header sorts the first data block down that column, wherever it starts.
+  async function _firstFilledRow(c) {
+    const sn = currentSheet.value
+    const extent = await sheetExtent(sn)
+    if (!extent) return null
+    const { inputs } = await readRect(sn, { r0: 0, c0: c, r1: extent.maxRow, c1: c })
+    const row = inputs.findIndex((cells) => (cells[0] ?? '') !== '')
+    return row < 0 ? null : row
   }
 
   return {
@@ -413,5 +447,7 @@ export function useSortFilter({
     clearFilterCol,
     doSort,
     sortRange,
+    openSortDialog,
+    applySort,
   }
 }

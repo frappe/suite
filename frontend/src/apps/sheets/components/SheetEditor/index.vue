@@ -524,6 +524,11 @@
               sortRange(dir, contextMenu.mode === 'colHeader' ? contextMenu.targetCol : null),
             )
         "
+        @sort-range="
+          fromContextMenu(() =>
+            openSortDialog(contextMenu.mode === 'colHeader' ? contextMenu.targetCol : null),
+          )
+        "
         @validation="fromContextMenu(openValidationDialog)"
         @cond-format="fromContextMenu(() => openCfDialog(null))"
         @protect="protectSelection()"
@@ -597,6 +602,8 @@
         @close="closeFindReplace"
         @navigate-to="onNavigateTo"
       />
+
+      <SortDialog ref="sortDialogRef" @apply="applySort" />
 
       <!-- Hyperlink dialog (Ctrl+L) — HyperlinkDialog.vue -->
       <HyperlinkDialog
@@ -893,6 +900,7 @@ import ConditionalFormatDialog from './ConditionalFormatDialog.vue'
 import FilterPanel from './FilterPanel.vue'
 import FindReplace from './FindReplace.vue'
 import HyperlinkDialog from './HyperlinkDialog.vue'
+import SortDialog from './SortDialog.vue'
 import LinkPreviewCard from './LinkPreviewCard.vue'
 import { buildMenuBar } from './menubar.config.js'
 import NamedRangesDialog from './NamedRangesDialog.vue'
@@ -2245,6 +2253,7 @@ const menuBar = computed(() =>
     toggleFormatPainter,
     clearFormatting,
     sortColumn: () => openQuickFilterForActive(),
+    sortRange: () => openSortDialog(),
     filterOn: showSortFilter.value,
     toggleFilter: toggleSortFilter,
     openValidation: () => openValidationDialog(),
@@ -2676,6 +2685,7 @@ function doAddMoreRows() {
 }
 
 // ── Sort & Filter ─────────────────────────────────────────────────────────────
+const sortDialogRef = ref(null)
 // The filter, its overlay geometry and the filter panel (see useSortFilter.js).
 const {
   filterPanel,
@@ -2691,7 +2701,11 @@ const {
   clearFilterCol,
   doSort,
   sortRange,
+  openSortDialog,
+  applySort,
 } = useSortFilter({
+  sortDialog: () => sortDialogRef.value,
+  sheetExtent: _sheetExtent,
   sortFilter,
   currentSheet,
   activeCell,

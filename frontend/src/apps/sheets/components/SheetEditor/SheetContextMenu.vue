@@ -78,6 +78,13 @@
         :label="__('Sort Z → A')"
         @click="emit('sort', 'desc')"
       />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-wide-narrow"
+        :label="__('Sort range…')"
+        @click="emit('sort-range')"
+      />
       <hr class="sn-ctx-sep" />
       <Button
         variant="ghost"
@@ -306,6 +313,13 @@
         :label="__('Sort Z → A')"
         @click="emit('sort', 'desc')"
       />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-wide-narrow"
+        :label="__('Sort range…')"
+        @click="emit('sort-range')"
+      />
       <hr class="sn-ctx-sep" />
       <Button
         variant="ghost"
@@ -429,6 +443,7 @@ const emit = defineEmits<{
   'unfreeze-cols': []
   'paste-special': [kind: 'values' | 'formats' | 'formulas']
   sort: [dir: 'asc' | 'desc']
+  'sort-range': []
   validation: []
   'cond-format': []
   protect: []

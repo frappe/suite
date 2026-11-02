@@ -18,6 +18,8 @@
 import { Alert } from 'frappe-ui'
 import { computed } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import type { UnknownFormula } from '../../utils/legacy-sheet'
 
 const props = defineProps<{

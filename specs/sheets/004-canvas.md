@@ -85,7 +85,9 @@ While a formula is typed, a click or arrow key inserts a reference **only where 
 | --- | --- |
 | Escape with the cell, column or sheet tab menu open | Closes the menu; nothing else happens |
 | Sort A → Z or Z → A from the cell menu, several rows selected | Sorts the selected rows by the active cell's column |
-| Sort A → Z or Z → A from the cell menu with one cell or row selected, or from a column header | Sorts the data block around it by that column. A first row of labels over a column of numbers stays on top as the header |
+| Sort A → Z or Z → A from the cell menu with one cell or row selected | Sorts the data block around it by that column. A first row of labels over a column of numbers stays on top as the header, and a last row of totals (only sum-style formulas over their own column, and labels) stays at the bottom |
+| Sort A → Z or Z → A from a column header | The same, for the first data block down that column, wherever it starts |
+| Sort range… from either menu, or the Data menu | Opens a dialog with the same range: column, order, "Data has a header row" and, when there is a totals row, "Leave the last row of totals out", both ticked by the same guess. For several selected rows it starts from the guess too |
 
 A sort is one undo step and is refused over a protected range, as the filter's sort is.
 

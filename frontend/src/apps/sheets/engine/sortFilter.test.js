@@ -86,7 +86,7 @@ describe('sorting a range without a filter', () => {
       B4: '60',
     })
     const sf = createSortFilter(cells)
-    await sf.sortRows(block, 1, 'asc', 'Sheet1', { detectHeader: true })
+    await sf.sortRows(block, 1, 'asc', 'Sheet1', await sf.guessSortRows(block, 'Sheet1'))
     expect(cells.writes[0][1]).toEqual({
       A2: 'Fuel',
       B2: '60',
@@ -109,7 +109,7 @@ describe('sorting a range without a filter', () => {
       B4: '4',
     })
     const sf = createSortFilter(cells)
-    await sf.sortRows(block, 0, 'desc', 'Sheet1', { detectHeader: true })
+    await sf.sortRows(block, 0, 'desc', 'Sheet1', await sf.guessSortRows(block, 'Sheet1'))
     expect(cells.writes[0][1]).toEqual({
       A1: 'd',
       B1: '4',
@@ -119,6 +119,99 @@ describe('sorting a range without a filter', () => {
       B3: '2',
       A4: 'a',
       B4: '1',
+    })
+  })
+
+  describe('guessing a header row', () => {
+    const guess = (inputs, displays) =>
+      createSortFilter(makeCells(inputs, displays)).guessSortRows(block, 'Sheet1')
+
+    it('finds one over formatted numbers', async () => {
+      const inputs = { A1: 'Item', B1: 'Cost', A2: 'Rent', B2: '1', A3: 'Food', B3: '2', A4: 'Fuel', B4: '3' }
+      const displays = { B2: '$1.50', B3: '1,000', B4: '12%' }
+      expect((await guess(inputs, displays)).header).toBe(true)
+    })
+
+    it('finds one with an empty cell', async () => {
+      const inputs = { B1: 'Cost', A2: 'Rent', B2: '900', A3: 'Food', B3: '120', A4: 'Fuel', B4: '60' }
+      expect((await guess(inputs)).header).toBe(true)
+    })
+
+    it('does not take a first row of amounts for one', async () => {
+      const inputs = { A1: 'Rent', B1: '$1.50', A2: 'Food', B2: '$2.50', A3: 'Fuel', B3: '1,000', A4: 'Tax', B4: '3' }
+      expect((await guess(inputs)).header).toBe(false)
+    })
+  })
+
+  describe('a last row of totals', () => {
+    const budget = {
+      A1: 'Item',
+      B1: 'Cost',
+      C1: 'Spent',
+      A2: 'Rent',
+      B2: '900',
+      C2: '800',
+      A3: 'Food',
+      B3: '120',
+      C3: '100',
+      A4: 'Total',
+      B4: '=SUM(B2:B3)',
+      C4: '=SUM(C2:C3)',
+    }
+    const rect = { r0: 0, c0: 0, r1: 3, c1: 2 }
+
+    it('stays at the bottom when the sort leaves it out, so its formulas still add up', async () => {
+      const cells = makeCells(budget)
+      const sf = createSortFilter(cells)
+      const rows = await sf.guessSortRows(rect, 'Sheet1')
+      const res = await sf.sortRows(rect, 1, 'asc', 'Sheet1', rows)
+
+      expect(rows).toEqual({ header: true, totals: true })
+      expect(cells.writes[0][1]).toEqual({
+        A2: 'Food',
+        B2: '120',
+        C2: '100',
+        A3: 'Rent',
+        B3: '900',
+        C3: '800',
+      })
+      expect(res.rect).toEqual({ r0: 1, c0: 0, r1: 2, c1: 2 })
+    })
+
+    it('stays at the bottom of a filter sort too', async () => {
+      const cells = makeCells(budget)
+      const sf = createSortFilter(cells)
+      sf.setRange(rect, 'Sheet1')
+      await sf.sort(1, 'asc', 'Sheet1')
+
+      expect(cells.writes[0][1]).toMatchObject({ A2: 'Food', A3: 'Rent' })
+      expect(cells.writes[0][1]).not.toHaveProperty('A4')
+    })
+
+    it.each([
+      ['a sum of another column', { B4: '=SUM(C2:C3)' }],
+      ['a sum that stops early', { B4: '=SUM(B2:B2)' }],
+      ['a formula that is not a total', { B4: '=B2+B3' }],
+      ['a number among the totals', { C4: '1000' }],
+    ])('is not guessed from %s', async (_, change) => {
+      const sf = createSortFilter(makeCells({ ...budget, ...change }))
+      expect((await sf.guessSortRows(rect, 'Sheet1')).totals).toBe(false)
+    })
+
+    it.each(['=sum(B$2:B$3)', '=SUBTOTAL(9,B2:B3)', '=AVERAGE(B2:B3)'])(
+      'is guessed from %s',
+      async (formula) => {
+        const sf = createSortFilter(makeCells({ ...budget, B4: formula }))
+        expect((await sf.guessSortRows(rect, 'Sheet1')).totals).toBe(true)
+      },
+    )
+
+    it('sorts into the rows when told it is not a total', async () => {
+      const cells = makeCells(budget)
+      const sf = createSortFilter(cells)
+      await sf.sortRows(rect, 0, 'asc', 'Sheet1', { header: true })
+
+      expect(cells.writes[0][1]).toMatchObject({ A2: 'Food', A3: 'Rent', A4: 'Total' })
     })
   })
 
