@@ -24,6 +24,10 @@
 //
 // writeStores writes only keys whose value differs from the doc's, so writing
 // back what a remote change just restored writes nothing.
+//
+// A pivot's output is derived: each tab writes it locally on rebuild, inputs
+// and header/total banding alike. Neither goes into the doc, and restoring the
+// doc's formats keeps the banding this tab wrote.
 
 import * as Y from 'yjs'
 
@@ -120,6 +124,17 @@ export function docSheets(doc: Y.Doc): SheetRef[] {
   return out
 }
 
+/** Whether a cell (0-based) is inside the output a pivot last wrote. */
+export function pivotOutput(
+  stores: GlueStores,
+): (sheet: string, row: number, col: number) => boolean {
+  const out = (stores.pivot?.list() ?? []).flatMap((p) =>
+    p._extent && p.outputSheet ? [{ sheet: p.outputSheet, ...p._extent }] : [],
+  )
+  return (sheet, row, col) =>
+    out.some((e) => e.sheet === sheet && row >= e.r0 && row <= e.r1 && col >= e.c0 && col <= e.c1)
+}
+
 // ---- entries ----
 
 type EntryRoot =
@@ -211,8 +226,13 @@ function byCell(
 /** Every entry the given stores hold now. */
 export function storeEntries(stores: GlueStores): Entry[] {
   const out: Entry[] = []
+  const derived = pivotOutput(stores)
   for (const [sheet, fs] of Object.entries(stores.formats?.snapshot() ?? {})) {
-    byCell('formats', { [sheet]: fs.cells }, out)
+    const cells = Object.entries(fs.cells ?? {}).filter(([id]) => {
+      const p = parseCellId(id)
+      return !p || !derived(sheet, p.row, p.col)
+    })
+    byCell('formats', { [sheet]: Object.fromEntries(cells) }, out)
     for (const [r, value] of Object.entries(fs.rows ?? {}))
       out.push(entry('rowFormats', { sheet, row: Number(r), value }))
     for (const [c, value] of Object.entries(fs.cols ?? {}))
@@ -443,6 +463,13 @@ export function restoreStores(stores: GlueStores, entries: Entry[], only?: Set<S
     for (const e of of('formats')) sheet(e.sheet).cells[cellId(e.row, e.col)] = e.value as Format
     for (const e of of('rowFormats')) sheet(e.sheet).rows[e.row] = e.value as Format
     for (const e of of('colFormats')) sheet(e.sheet).cols[e.col] = e.value as Format
+    const derived = pivotOutput(stores)
+    for (const [name, fs] of Object.entries(stores.formats.snapshot())) {
+      for (const [id, format] of Object.entries(fs.cells ?? {})) {
+        const p = parseCellId(id)
+        if (p && derived(name, p.row, p.col)) sheet(name).cells[id] = format
+      }
+    }
     stores.formats.restore(snap)
   }
   if (stores.comments && want('comments'))
