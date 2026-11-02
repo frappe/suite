@@ -1079,14 +1079,16 @@ def attachment_rows(attachments: list[dict] | None, held: dict | None = None) ->
 
     On an update, a row whose ``cid`` is in ``held``, the draft's current attachments, keeps the
     draft's own bytes: each save replaces the draft, so a blob id the composer read from an earlier
-    version may no longer exist. Any other row names its bytes once: a blob already on the mail
+    version may no longer exist. A new upload under a held ``cid`` replaces them. Any other row names its bytes once: a blob already on the mail
     server (``blob_id``: a forwarded attachment) or a site file just uploaded (``file_url``). A
     blob wins over a file URL, so a download link riding along is never read as an upload.
     """
 
     rows = []
     for d in attachments or []:
-        if existing := (held or {}).get(d.get("cid")):
+        is_new_upload = d.get("file_url") and not d.get("blob_id")
+        existing = (held or {}).get(d.get("cid"))
+        if existing and not is_new_upload:
             d = {**existing.as_dict(), "cid": d["cid"]}
         elif not (d.get("blob_id") or d.get("file_url")):
             frappe.throw(_("Attachment with cid {0} not found in the current draft.").format(d.get("cid")))
