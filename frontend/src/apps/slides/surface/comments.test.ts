@@ -22,6 +22,12 @@ describe('a comment in the Slides panel', () => {
     expect(authorLabel(signedIn)).toBe('Maya Chen')
   })
 
+  it('names a guest by the name they typed', () => {
+    const guest = comment({ author: 'Guest', author_name: 'Sam' })
+
+    expect(authorLabel(guest)).toBe('Sam')
+  })
+
   it('shows when it was posted, and nothing when Drive sent no time', () => {
     const posted = comment({ creation: '2026-10-21T09:30:00Z' })
 

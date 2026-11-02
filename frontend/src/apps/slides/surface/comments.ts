@@ -18,9 +18,9 @@ export interface CommentThread {
   comments: ThreadComment[]
 }
 
-/** A signed-in author by the name Drive sends; a guest is labelled by `DriveCommentAuthor`. */
+/** A guest by the name they typed, a signed-in author by the name Drive sends. */
 export function authorLabel(comment: ThreadComment): string {
-  return comment.person?.full_name || comment.author || 'Someone'
+  return comment.author_name || comment.person?.full_name || comment.author || 'Someone'
 }
 
 /** When the comment was posted, as a short local label. */
