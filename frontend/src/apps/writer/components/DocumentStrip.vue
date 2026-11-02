@@ -5,7 +5,7 @@ import { computed } from 'vue'
 const props = withDefaults(defineProps<{ tone?: 'gray' | 'blue' | 'amber' }>(), { tone: 'gray' })
 
 const TONES = {
-  gray: 'border-outline-elevation-2 text-ink-gray-7',
+  gray: 'border-outline-gray-1 text-ink-gray-7',
   blue: 'border-outline-gray-1 bg-surface-blue-2 text-ink-blue-7',
   amber: 'border-outline-gray-1 bg-surface-amber-2 text-ink-amber-7',
 }

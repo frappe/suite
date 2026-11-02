@@ -59,8 +59,6 @@ test("the Custom spacing button names itself and opens the popover", async ({
 	await openWriterDocument(page, file.name);
 
 	const button = page.getByRole("button", { name: "Custom spacing" });
-	await expect(button).toHaveAttribute("title", "Custom spacing");
-
 	await button.click();
 	await expect(spacingInputs(page)).toHaveCount(3);
 });

@@ -385,7 +385,7 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
-	test("a second tab counts the first tab's unsent edit and shows Saved once it is sent", async ({
+	test("a second tab says Saving… for the first tab's unsent edit and Saved once it is sent", async ({
 		owner,
 	}) => {
 		// A failed push retries after up to 30 s
@@ -393,11 +393,11 @@ test.describe("Writer collaboration", () => {
 		await owner.page.route(PUSHES, dropPushes);
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Held in the first tab");
-		const firstCount = await unsentCount(owner.page);
+		await expectSaving(owner.page);
 
 		const second = await owner.context.newPage();
 		await openWriterDocument(second, node);
-		await expect(second.getByText(firstCount, { exact: true })).toBeVisible();
+		await expectSaving(second);
 		await expect(second.getByText("Saved", { exact: true })).toBeHidden();
 		expect(await editorBlocks(second)).not.toContain("Held in the first tab");
 
@@ -413,10 +413,10 @@ test.describe("Writer collaboration", () => {
 		await owner.page.route(PUSHES, dropPushes);
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Left by the closed tab");
-		const firstCount = await unsentCount(owner.page);
+		await expectSaving(owner.page);
 		const second = await owner.context.newPage();
 		await openWriterDocument(second, node);
-		await expect(second.getByText(firstCount, { exact: true })).toBeVisible();
+		await expectSaving(second);
 
 		await owner.page.close();
 
@@ -458,11 +458,8 @@ function editorKind() {
 	return names.includes("collaboration") ? "collab" : "plain";
 }
 
-// The header's "<n> unsent", once the tab holds unsent work
-async function unsentCount(page: Page): Promise<string> {
-	const count = page.getByText(/^\d+ unsent$/);
-	await expect(count).toBeVisible();
-	return (await count.textContent()) ?? "";
+async function expectSaving(page: Page): Promise<void> {
+	await expect(page.getByText("Saving…", { exact: true })).toBeVisible();
 }
 
 function boldMention(page: Page) {

@@ -97,7 +97,8 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row.getByRole("button", { name: "Send reply" })).toHaveCount(0);
 		await expect(threadHeader(row)).toHaveAttribute("aria-expanded", "true");
 		await row.getByText("A reply", { exact: true }).hover();
-		await row.getByRole("button", { name: "More comment actions" }).click();
+		// The thread's own actions come first, then the reply's
+		await row.getByRole("button", { name: "More comment actions" }).last().click();
 		await page.getByRole("menuitem", { name: "Edit" }).click();
 		await row.getByLabel("Edit comment").fill("A reply, edited");
 		await row.getByRole("button", { name: "Save" }).click();
@@ -180,7 +181,7 @@ test.describe("Writer collaboration comments", () => {
 		await box.pressSequentially(`Ask @${handle}`);
 		const option = panel.getByRole("option");
 		await expect(option).toHaveCount(1);
-		const name = (await option.locator(":scope > span").last().textContent())?.trim() ?? "";
+		const name = (await option.locator("span.truncate").first().textContent())?.trim() ?? "";
 		await page.keyboard.press("Enter");
 		await expect(box).toHaveValue(`Ask @${name} `);
 		await box.pressSequentially("to check");
@@ -216,7 +217,7 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row).toContainText("sentence");
 	});
 
-	test("after a comment on selected text, the bubble hides and a double-click starts the next comment on the clicked word", async ({
+	test("after a comment on selection, the bubble hides and a double-click starts the next comment", async ({
 		owner,
 	}) => {
 		const { page } = owner;

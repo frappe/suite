@@ -207,7 +207,9 @@ test.describe("Writer collaboration", () => {
 		owner,
 	}) => {
 		await openWriterDocument(owner.page, node);
-		await typeParagraph(owner.page, "First words");
+		// Text straight away: a first Enter could be sent alone and be all the version holds
+		await writerEditor(owner.page).click();
+		await owner.page.keyboard.type("First words");
 		await expectSaved(owner.page);
 
 		await owner.page
@@ -579,13 +581,17 @@ async function pictureInVersion(page: Page, node: string): Promise<string> {
 async function openRestoreDialog(page: Page): Promise<Locator> {
 	const panel = await openVersions(page);
 	await panel.getByRole("button", { name: /^With a picture/ }).click();
-	await panel.getByRole("button", { name: "Restore this version" }).click();
+	await previewBar(page, "With a picture").getByRole("button", { name: "Restore this version" }).click();
 	return page.getByRole("dialog");
 }
 
 async function restoreFromPreview(page: Page, panel: Locator, label: string) {
 	await panel.getByRole("button", { name: new RegExp(`^${label}`) }).click();
 	await expect(page.getByText(`Viewing ${label}`)).toBeVisible();
-	await panel.getByRole("button", { name: "Restore this version" }).click();
+	await previewBar(page, label).getByRole("button", { name: "Restore this version" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
+}
+
+function previewBar(page: Page, label: string) {
+	return page.getByRole("status").filter({ hasText: `Viewing ${label}` });
 }
