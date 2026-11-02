@@ -135,10 +135,15 @@ class SourceTest(ReportCase):
         )
 
     def test_the_evidence_carries_the_copy_throughput(self):
-        self.put(storage={"s3_copy_run": {"workers": 8, "seconds": 10.0, "objects_copied": 40}})
+        self.put(
+            storage={
+                "s3_copy_run": {"workers": 8, "seconds": 10.0, "objects_copied": 40, "removed_skipped": 3}
+            }
+        )
         summary = build_report(self.env)["evidence"]["s3_copy"]
         self.assertEqual(summary["workers"], 8)
         self.assertEqual(summary["objects_per_second"], 4.0)
+        self.assertEqual(summary["removed_skipped"], 3)
 
     def test_the_evidence_carries_the_removed_file_documents(self):
         # §14.9 names no key for them, so they ride in the evidence block

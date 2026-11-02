@@ -115,6 +115,7 @@ class S3CopyRun:
     objects_reused: int = 0
     bytes_read: int = 0
     bytes_copied: int = 0
+    removed_skipped: int = 0
 
     def summary(self) -> dict:
         """The record plus the two rates a rehearsal compares across runs."""

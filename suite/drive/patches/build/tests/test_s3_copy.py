@@ -840,17 +840,60 @@ class TestResumeAfterAKillMidPage(S3CopyCase):
         self.assertEqual({entry.file for entry in ledger.entries()}, set(destinations))
 
 
+class TestRowsCleanupDeletes(S3CopyCase):
+    """A Removed row gets no node and Cleanup deletes it, so its object is not copied."""
+
+    def setUp(self):
+        super().setUp()
+        self.files = (
+            FakeFiles()
+            .add("f1", get_s3_url("team/removed"), "gone.txt", status="Removed")
+            .add("f2", get_s3_url("team/trashed"), "bin.txt", status="Trashed")
+            .add("f3", get_s3_url("team/avatar"), "me.png", status="Removed", attached_to_doctype="User")
+            .add("f4", get_s3_url("team/live"), "live.txt", status="Active")
+            .add("f5", get_s3_url("team/purged"), "purged.txt", status="Removed")
+        )
+        self.bucket = FakeBucket()
+        for key in ("team/removed", "team/trashed", "team/avatar", "team/live"):
+            self.bucket.put(key, key.encode())
+        self.env, self.prep = self.run_copy(files=self.files, bucket=self.bucket)
+
+    def test_a_removed_row_is_neither_read_nor_copied_nor_linked(self):
+        self.assertNotIn("team/removed", self.bucket.opened)
+        self.assertNotIn("team/removed", {source for _, source, _ in self.bucket.copies})
+        self.assertIsNone(self.files.blob_of("f1"))
+        self.assertNotIn("team/removed", {entry.legacy_key for entry in self.env.ledger().entries()})
+
+    def test_removed_rows_are_counted_and_not_reported_missing(self):
+        # f5's object is already gone, the way legacy Drive left it.
+        self.assertEqual(self.prep.s3_copy_run.removed_skipped, 2)
+        self.assertEqual(self.prep.s3_rows_seen, 5)
+        self.assertEqual(self.prep.missing_bytes, [])
+
+    def test_a_trashed_row_is_copied_for_the_trash_view(self):
+        self.assertIsNotNone(self.files.blob_of("f2"))
+
+    def test_a_removed_row_a_document_still_names_is_copied(self):
+        # Cleanup keeps a Home copy of a framework attachment, with its blob.
+        self.assertIsNotNone(self.files.blob_of("f3"))
+
+    def test_an_active_row_is_copied(self):
+        self.assertIsNotNone(self.files.blob_of("f4"))
+
+
 class TestTheRunRecord(S3CopyCase):
     def test_it_counts_this_runs_work(self):
         files = FakeFiles.with_s3_files(
             ("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"), ("f3", "team/f3", "c.txt")
-        )
+        ).add("f4", get_s3_url("team/f4"), "d.txt", status="Removed")
         bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", BYTES).put("team/f3", OTHER)
 
         _, prep = self.run_copy(files=files, bucket=bucket, copy_workers=3)
 
         run = prep.s3_copy_run
-        self.assertEqual((run.workers, run.objects_copied, run.objects_reused), (3, 2, 1))
+        self.assertEqual(
+            (run.workers, run.objects_copied, run.objects_reused, run.removed_skipped), (3, 2, 1, 1)
+        )
         self.assertEqual(run.bytes_read, 2 * len(BYTES) + len(OTHER))
         self.assertEqual(run.bytes_copied, len(BYTES) + len(OTHER))
         self.assertGreater(run.seconds, 0)

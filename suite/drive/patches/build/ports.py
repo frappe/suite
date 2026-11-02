@@ -35,6 +35,9 @@ class LegacyRow:
     # truncated object is measured against. Build's writing steps ignore them.
     status: str | None = None
     file_size: int | None = None
+    # A Removed row is copied anyway while a document still names it: see
+    # `s3_copy.is_removed_for_good`.
+    attached_to_doctype: str | None = None
 
 
 @dataclass(frozen=True)
@@ -231,6 +234,7 @@ class SiteFiles:
                 "file_name",
                 "file_type",
                 "file_size",
+                "attached_to_doctype",
                 *status,
             ],
             order_by="name asc",
@@ -244,6 +248,7 @@ class SiteFiles:
                 r.file_type,
                 status=r.get("status"),
                 file_size=r.file_size,
+                attached_to_doctype=r.attached_to_doctype,
             )
             for r in rows
         ]

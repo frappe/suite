@@ -164,7 +164,18 @@ class FakeFiles:
             ]
         )
 
-    def add(self, name, file_url, file_name=None, blob=None, file_type=None, *, status=None, file_size=None):
+    def add(
+        self,
+        name,
+        file_url,
+        file_name=None,
+        blob=None,
+        file_type=None,
+        *,
+        status=None,
+        file_size=None,
+        attached_to_doctype=None,
+    ):
         self.rows[name] = {
             "name": name,
             "file_url": file_url,
@@ -173,6 +184,7 @@ class FakeFiles:
             "file_type": file_type,
             "status": status,
             "file_size": file_size,
+            "attached_to_doctype": attached_to_doctype,
         }
         self.committed[name] = dict(self.rows[name])
         return self
@@ -192,6 +204,7 @@ class FakeFiles:
                 row.get("file_type"),
                 status=row.get("status"),
                 file_size=row.get("file_size"),
+                attached_to_doctype=row.get("attached_to_doctype"),
             )
             for name, row in sorted(self.rows.items())
             if name > after and not row["blob"] and matches(row)

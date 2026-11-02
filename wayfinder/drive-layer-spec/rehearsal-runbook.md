@@ -474,6 +474,7 @@ migrate that continues a matching state file prints
 | `bytes_copied` | Bytes of the new objects. The copy runs inside the bucket, so these bytes do not pass through the bench. |
 | `objects_per_second` | `objects_copied` plus `objects_reused`, divided by `seconds`. |
 | `bytes_read_per_second` | `bytes_read` divided by `seconds`. |
+| `removed_skipped` | Rows with status Removed that no document names. Legacy Drive deleted their objects, Build makes no node for them and Cleanup deletes the rows, so Build does not read or copy them. They are not in `missing_bytes`. |
 
 Use `seconds` to estimate the production downtime of the copy: scale it
 by the production object count and bytes. The read is the main cost. If

@@ -133,7 +133,7 @@ def build_report(env) -> dict:
         "settings": settings.as_dict(),
         "usage": usage.as_dict(),
         # The last run's copy throughput: workers, wall time, objects and
-        # bytes. The rehearsal runbook reads it.
+        # bytes, and the rows skipped as Removed. The rehearsal runbook reads it.
         "s3_copy": storage.s3_copy_run.summary(),
     }
     # Serialize once here so a secret is refused at the moment the report is

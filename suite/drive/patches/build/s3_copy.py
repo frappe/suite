@@ -39,6 +39,12 @@ there, under whatever filename it was copied with, and overwrites an
 incomplete one in place. A folder therefore holds at most one object, and a
 rerun leaves no orphan behind.
 
+Rows whose own status is Removed, and that no document names, are skipped
+and counted (`is_removed_for_good`): legacy Drive deleted the object when
+it removed the row, Build gives the row no node (§14.4), and Cleanup
+deletes the row (§14.10). Trashed rows are copied: they become Trashed
+nodes, and the trash view and a restore need their bytes.
+
 Each page is worked in four stages. The workers read every object of the
 page at once; this thread claims existing blobs, which reads the database;
 the workers place each distinct content at once; and this thread, in row
@@ -75,7 +81,7 @@ from suite.drive.patches.build.layout import (
     private_key,
 )
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, storage_key
-from suite.drive.patches.build.ports import ClaimedBlob, LegacyRow
+from suite.drive.patches.build.ports import REMOVED, ClaimedBlob, LegacyRow
 from suite.drive.patches.build.state import MissingBytes, StoragePreparation
 
 # Read size while hashing a legacy object. Big enough that a multi-GB object
@@ -120,6 +126,15 @@ def copy_legacy_s3_objects(env, prep: StoragePreparation, *, batch_size: int = B
     finally:
         # A failed page must not wait for the rest of its queued reads.
         pool.shutdown(wait=True, cancel_futures=True)
+
+
+def is_removed_for_good(row) -> bool:
+    """Whether this row's bytes have no use after the migration.
+
+    A Removed row that a document still names is copied anyway: Cleanup
+    keeps a `Home` copy of a framework attachment, and Slides media becomes
+    a node, whatever the row's Drive status says."""
+    return row.status == REMOVED and not row.attached_to_doctype
 
 
 class _Digest:
@@ -202,6 +217,9 @@ def _copy_page(env, bucket, pool: ThreadPoolExecutor, prep: StoragePreparation, 
 def _legacy_key(prep: StoragePreparation, row) -> str | None:
     """The bucket key this row names, or `None` when there is nothing to read."""
     prep.s3_rows_seen += 1
+    if is_removed_for_good(row):
+        prep.s3_copy_run.removed_skipped += 1
+        return None
     if not row.file_url.startswith(S3_URL_PREFIX):
         _missing(prep, row, "file_url is not a Drive S3 fetch URL")
         return None
