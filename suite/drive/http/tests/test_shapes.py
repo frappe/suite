@@ -228,8 +228,21 @@ class TestVersionShape(UnitTestCase):
     def test_the_shape_publishes_exactly_the_declared_fields(self):
         self.assertEqual(
             sorted(shapes.version_shape(VERSION)),
-            sorted(["name", "node", "seq", "kind", "label", "pinned", "actor", "size", "creation"]),
+            sorted(["name", "node", "seq", "kind", "label", "pinned", "actor", "person", "size", "creation"]),
         )
+
+    def test_whoever_took_a_version_is_published_as_a_person(self):
+        answer = shapes.version_shape(VERSION, {"a@example.com": ADA})
+        self.assertEqual(answer["person"]["full_name"], "Ada Lovelace")
+
+    def test_a_page_looks_everyone_who_took_a_version_up_once(self):
+        rows = [
+            frappe._dict({**VERSION, "seq": seq, "actor": actor}) for seq, actor in ((1, "a@x"), (2, "b@x"))
+        ]
+        with patch.object(shapes, "people", side_effect=fake_people) as lookup:
+            answers = shapes.version_shapes(rows)
+        self.assertEqual(lookup.call_count, 1)
+        self.assertEqual([answer["person"]["id"] for answer in answers], ["a@x", "b@x"])
 
     def test_the_shape_withholds_the_storage_id(self):
         # The bytes are reached through the version content route, never by name.

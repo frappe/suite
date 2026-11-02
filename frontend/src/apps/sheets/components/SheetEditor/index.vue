@@ -518,6 +518,17 @@
         @unfreeze-rows="doUnfreezeRows()"
         @unfreeze-cols="doUnfreezeCols()"
         @paste-special="doPasteSpecial"
+        @sort="
+          (dir) =>
+            fromContextMenu(() =>
+              sortRange(dir, contextMenu.mode === 'colHeader' ? contextMenu.targetCol : null),
+            )
+        "
+        @sort-range="
+          fromContextMenu(() =>
+            openSortDialog(contextMenu.mode === 'colHeader' ? contextMenu.targetCol : null),
+          )
+        "
         @validation="fromContextMenu(openValidationDialog)"
         @cond-format="fromContextMenu(() => openCfDialog(null))"
         @protect="protectSelection()"
@@ -591,6 +602,8 @@
         @close="closeFindReplace"
         @navigate-to="onNavigateTo"
       />
+
+      <SortDialog ref="sortDialogRef" @apply="applySort" />
 
       <!-- Hyperlink dialog (Ctrl+L) — HyperlinkDialog.vue -->
       <HyperlinkDialog
@@ -901,6 +914,7 @@ import SheetTopbar from './SheetTopbar.vue'
 import SheetTopbarActions from './SheetTopbarActions.vue'
 import SheetUpgradeBanner from './SheetUpgradeBanner.vue'
 import SlicerPanel from './SlicerPanel.vue'
+import SortDialog from './SortDialog.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
 import { buildAlignOptions, buildBorderOptions } from './toolbar.config.js'
 import { useAiAssist } from './useAiAssist.js'
@@ -1047,6 +1061,7 @@ const {
   usedExtent: _usedExtent,
   readWholeSheet: _readWholeSheet,
   sheetExtent: _sheetExtent,
+  usedCells: _usedCells,
   readDisplays: _readDisplays,
   readSourceRange: _readSourceRange,
   clearRect: _clearRect,
@@ -1630,13 +1645,17 @@ const fileDropdownOptions = computed(() => [
       },
       {
         label: 'Export as XLSX',
+        description: __("Charts and conditional formatting aren't exported yet."),
         icon: 'lucide-download',
         onClick: () => exportXLSX(),
       },
       {
-        label: 'Export as PDF',
+        label: __('Print…'),
         icon: 'lucide-printer',
-        onClick: () => exportPDF(),
+        submenu: [
+          { label: __('This sheet'), onClick: () => print('sheet') },
+          { label: __('All sheets'), onClick: () => print('all') },
+        ],
       },
     ],
   },
@@ -1774,13 +1793,15 @@ const hAlignIcon = computed(() => {
 const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
 const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
 
-const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImport({
+const { exportCSV, exportXLSX, print, importCSV, importXLSX } = useExportImport({
   cells: {
     readSheet: _readWholeSheet,
     write: _writeInputs,
     clear: _clearSheet,
     addSheet: (name) => _dispatch(_command('addSheet', { name })),
     extent: _sheetExtent,
+    usedCells: _usedCells,
+    read: _readRect,
     idle: () => (_client() ? _client().idle() : Promise.resolve()),
   },
   // Lazy: useSheetTabs defines sheetNames further down.
@@ -1802,6 +1823,7 @@ const { exportCSV, exportXLSX, exportPDF, importCSV, importXLSX } = useExportImp
   syncNames: () => syncNames(),
   switchSheet: (n) => switchSheet(n),
   syncFlags,
+  recordUndoStep: () => history.push(),
   isDirty,
 })
 
@@ -2234,6 +2256,7 @@ const menuBar = computed(() =>
     toggleFormatPainter,
     clearFormatting,
     sortColumn: () => openQuickFilterForActive(),
+    sortRange: () => openSortDialog(),
     filterOn: showSortFilter.value,
     toggleFilter: toggleSortFilter,
     openValidation: () => openValidationDialog(),
@@ -2665,6 +2688,7 @@ function doAddMoreRows() {
 }
 
 // ── Sort & Filter ─────────────────────────────────────────────────────────────
+const sortDialogRef = ref(null)
 // The filter, its overlay geometry and the filter panel (see useSortFilter.js).
 const {
   filterPanel,
@@ -2679,7 +2703,12 @@ const {
   applyFilter,
   clearFilterCol,
   doSort,
+  sortRange,
+  openSortDialog,
+  applySort,
 } = useSortFilter({
+  sortDialog: () => sortDialogRef.value,
+  sheetExtent: _sheetExtent,
   sortFilter,
   currentSheet,
   activeCell,
@@ -3903,6 +3932,8 @@ const { onGlobalKey } = useShortcuts({
   openHyperlinkDialog,
   openCommentPanel,
   openQuickFilterForActive,
+  contextMenu,
+  tabMenu,
   commentPanel,
   dropdownPanel,
   splitText,

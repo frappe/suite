@@ -1939,6 +1939,8 @@ const operationViewList: PageRef<
   loadValidators: async () => (await import('./validators')).operationViewList,
 }
 
+export type NodeVersionsOutputPerson = { id: string; full_name: string; user_image: string | null }
+
 export type NodeVersionsOutputVersionShape = {
   name: string
   node: string
@@ -1947,6 +1949,7 @@ export type NodeVersionsOutputVersionShape = {
   label: string | null
   pinned: number
   actor: string
+  person: NodeVersionsOutputPerson
   size: number
   creation: string | null
 }
@@ -1982,6 +1985,12 @@ const operationNodeVersions: PageRef<
   loadValidators: async () => (await import('./validators')).operationNodeVersions,
 }
 
+export type NodeVersionCreateOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
 export type NodeVersionCreateInput = {
   kind?: 'auto' | 'named' | 'milestone'
   label?: string
@@ -1996,6 +2005,7 @@ export type NodeVersionCreateOutput = {
   label: string | null
   pinned: number
   actor: string
+  person: NodeVersionCreateOutputPerson
   size: number
   creation: string | null
 }
@@ -2022,6 +2032,12 @@ const operationNodeVersionCreate: MutationRef<
   loadValidators: async () => (await import('./validators')).operationNodeVersionCreate,
 }
 
+export type NodeVersionPatchOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
 export type NodeVersionPatchInput = { label?: string; pinned?: boolean; node: string; seq: string }
 
 export type NodeVersionPatchOutput = {
@@ -2032,6 +2048,7 @@ export type NodeVersionPatchOutput = {
   label: string | null
   pinned: number
   actor: string
+  person: NodeVersionPatchOutputPerson
   size: number
   creation: string | null
 }
@@ -2111,6 +2128,12 @@ const operationNodeVersionContent: QueryRef<
   loadValidators: async () => (await import('./validators')).operationNodeVersionContent,
 }
 
+export type NodeVersionRestoreOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
 export type NodeVersionRestoreOutputVersionShape = {
   name: string
   node: string
@@ -2119,6 +2142,7 @@ export type NodeVersionRestoreOutputVersionShape = {
   label: string | null
   pinned: number
   actor: string
+  person: NodeVersionRestoreOutputPerson
   size: number
   creation: string | null
 }

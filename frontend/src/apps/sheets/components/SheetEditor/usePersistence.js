@@ -146,11 +146,14 @@ export function usePersistence({
         // can be out of date (one whose cells were deleted: ISSUES #74).
         engine.syncDefinedNames?.()
       }
-      legacyUpgrade.value = plan ? await _legacyUpgrade(plan, converted, mayWrite) : null
+      legacyUpgrade.value = plan
+        ? await _legacyUpgrade(plan, converted, mayWrite, saved.imported_from)
+        : null
       // Before the first save of a converted sheet, Drive keeps the develop
-      // body as a version to go back to.
-      _beforeFirstSave =
-        legacyUpgrade.value?.save && doc.node ? () => _keepBeforeUpgrade(doc.node) : null
+      // body as a version to go back to. A file Drive just imported has no
+      // earlier body: the file it came from stays in Drive.
+      const keepsBefore = legacyUpgrade.value?.save && !legacyUpgrade.value.importedFrom && doc.node
+      _beforeFirstSave = keepsBefore ? () => _keepBeforeUpgrade(doc.node) : null
       currentTitle.value = doc.title
       // Older backends predate `can_write`; treat its absence as writable so we
       // never lock out an editor on a stale server. A develop sheet IronCalc
@@ -189,10 +192,12 @@ export function usePersistence({
     }
   }
 
-  async function _legacyUpgrade(plan, converted, mayWrite) {
+  async function _legacyUpgrade(plan, converted, mayWrite, importedFrom) {
     const upgrade = {
       ok: converted.ok,
       save: converted.ok && mayWrite,
+      // The file Drive made this body from (sheets/drive.py), if it did.
+      importedFrom,
       current: plan.current,
       renamed: plan.renamed,
       skipped: plan.skipped,

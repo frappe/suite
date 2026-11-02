@@ -7758,6 +7758,36 @@
       "body": null,
       "output": {
         "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
           "VersionShape": {
             "properties": {
               "name": {
@@ -7795,6 +7825,9 @@
                 "title": "Actor",
                 "type": "string"
               },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -7819,6 +7852,7 @@
               "label",
               "pinned",
               "actor",
+              "person",
               "size",
               "creation"
             ],
@@ -7898,6 +7932,38 @@
         "type": "object"
       },
       "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
         "properties": {
           "name": {
             "title": "Name",
@@ -7934,6 +8000,9 @@
             "title": "Actor",
             "type": "string"
           },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -7958,6 +8027,7 @@
           "label",
           "pinned",
           "actor",
+          "person",
           "size",
           "creation"
         ],
@@ -8007,6 +8077,38 @@
         "type": "object"
       },
       "output": {
+        "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          }
+        },
         "properties": {
           "name": {
             "title": "Name",
@@ -8043,6 +8145,9 @@
             "title": "Actor",
             "type": "string"
           },
+          "person": {
+            "$ref": "#/$defs/Person"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -8067,6 +8172,7 @@
           "label",
           "pinned",
           "actor",
+          "person",
           "size",
           "creation"
         ],
@@ -8179,6 +8285,36 @@
       },
       "output": {
         "$defs": {
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
           "VersionShape": {
             "properties": {
               "name": {
@@ -8216,6 +8352,9 @@
                 "title": "Actor",
                 "type": "string"
               },
+              "person": {
+                "$ref": "#/$defs/Person"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -8240,6 +8379,7 @@
               "label",
               "pinned",
               "actor",
+              "person",
               "size",
               "creation"
             ],

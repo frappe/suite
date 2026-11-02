@@ -21,18 +21,19 @@ function setup({
   })
   const vp = { ensureVisible: vi.fn() }
   const render = vi.fn()
-  const act = createGridActions({
+  const options = {
     vm,
     sel,
     cells,
     host,
     render,
-    geo: { rh: (r) => (vm.hiddenRows.has(r) ? 0 : 24), cw: () => 100 },
+    geo: { rh: (r: number) => (vm.hiddenRows.has(r) ? 0 : 24), cw: () => 100 },
     vp,
-    getValue: (id) => values[id],
+    getValue: (id: string) => values[id],
     cellIds: () => Object.keys(values),
-  })
-  return { vm, sel, act, vp, render }
+  } as Parameters<typeof createGridActions>[0]
+  const act = createGridActions(options)
+  return { vm, sel, act, vp, render, options }
 }
 
 describe('selection moves', () => {
@@ -98,6 +99,18 @@ describe('lookups', () => {
     const h = setup({ values: { A1: 'x', A2: 'x', A3: 'x', C7: 'y' } })
     expect(h.act.lastUsedCell()).toEqual({ r: 6, c: 2 })
     expect(h.act.jumpEdge(0, 0, 1, 0)).toEqual({ r: 2, c: 0 })
+  })
+
+  it('jumps to the end of the data, past the cells read for the screen', () => {
+    const filled = Array.from({ length: 300 }, (_, i) => `A${i + 1}`)
+    const h = setup({ values: { A1: 'x', A2: 'x' } })
+    const act = createGridActions({
+      ...h.options,
+      getValue: (id) => (id === 'A1' || id === 'A2' ? 'x' : ''),
+      cellIds: () => filled,
+    })
+    expect(act.jumpEdge(0, 0, 1, 0)).toEqual({ r: 299, c: 0 })
+    expect(act.jumpEdge(299, 0, -1, 0)).toEqual({ r: 0, c: 0 })
   })
 
   it('a protected cell makes the block uneditable', () => {

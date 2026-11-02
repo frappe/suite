@@ -397,6 +397,14 @@ def node_owner(node: str) -> str:
     return owner
 
 
+def node_title(node: str) -> str:
+    """Answer the title of one node. No role is checked."""
+    title = frappe.db.get_value("Drive Node", node, "title")
+    if title is None:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    return title
+
+
 def legacy_node(old_id: str) -> str:
     """Answer the node id a pre-migration Drive id names now (Drive spec §3.15).
 

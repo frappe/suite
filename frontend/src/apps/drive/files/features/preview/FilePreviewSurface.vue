@@ -6,9 +6,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { nodeContentUrl } from '@/apps/drive/client/nodes'
+import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 import { trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
@@ -17,6 +18,7 @@ import { nodeActions } from '../nodeActions'
 import { readPresentationPreference, resolvePresentation } from '../presentation'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
+import { uploadTargetOf } from '../uploads/queue'
 import PreviewFallback from './PreviewFallback.vue'
 import type { FilePreviewSession } from './session'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
@@ -60,6 +62,31 @@ const can = computed(() =>
 )
 const parent = computed(() => file.value.parent.value)
 const canReplace = computed(() => !!parent.value && can.value.rename)
+const isSpreadsheetFile = computed(() =>
+  opensAsSpreadsheet({ kind: 'file', title: props.session.title.value }),
+)
+const parentFolder = useQuery(api.drive.nodes.get, () =>
+  parent.value && isSpreadsheetFile.value && can.value.copy
+    ? { node: parent.value, expand: 'access' }
+    : false,
+)
+/** An uploaded .xlsx or .csv opens as a new spreadsheet beside it, which takes UPLOAD on the folder (§10.1). */
+const opensAsSheet = computed(
+  () => isSpreadsheetFile.value && can.value.copy && !!uploadTargetOf(parentFolder.data),
+)
+const openingAsSheet = ref(false)
+async function openAsSheet() {
+  if (!parent.value) return
+  openingAsSheet.value = true
+  // A refusal is reported where the spreadsheet is created.
+  const sheet = await openAsSpreadsheet({
+    name: props.session.nodeId,
+    title: props.session.title.value,
+    parent_node: parent.value,
+  }).catch(() => null)
+  openingAsSheet.value = false
+  if (sheet) await router.push(driveNodeRoute(sheet))
+}
 /** The file is in a trashed folder, so it steps through what was trashed with it. */
 const inTrashedFolder = computed(
   () => trashed.value && file.value.trashRoot.value !== props.session.nodeId,
@@ -135,6 +162,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 })
 
 const menu = computed(() => [
+  ...(opensAsSheet.value
+    ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
+    : []),
   ...(can.value.rename
     ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
     : []),
@@ -298,6 +328,14 @@ const source = computed(() =>
             @click="show(next)"
           />
         </template>
+        <!-- A CSV has a text preview, so the "No preview" page never offers this. -->
+        <Button
+          v-if="opensAsSheet && preview.kind === 'text' && !empty"
+          :label="__('Open as spreadsheet')"
+          icon-left="lucide-sheet"
+          :loading="openingAsSheet"
+          @click="openAsSheet"
+        />
         <Button
           v-if="!empty"
           variant="ghost"
@@ -350,6 +388,20 @@ const source = computed(() =>
       :title="session.title.value"
       class="min-h-0 flex-1 border-0 bg-surface-base"
     />
+    <PreviewFallback
+      v-else-if="opensAsSheet"
+      :title="__('No preview')"
+      :message="__('Open this file as a spreadsheet to view and edit it. The file stays as it is.')"
+      :download="downloadUrl"
+    >
+      <Button
+        variant="solid"
+        :label="__('Open as spreadsheet')"
+        icon-left="lucide-sheet"
+        :loading="openingAsSheet"
+        @click="openAsSheet"
+      />
+    </PreviewFallback>
     <PreviewFallback
       v-else
       title="No preview"

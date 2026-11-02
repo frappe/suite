@@ -19,6 +19,7 @@ RETIRED = {
     "save_presentation_thumbnail": "kept until end-of-PR check (Q180)",
     "get_presentations": "kept until end-of-PR check (Q180)",
     "get_media_file": "live: media URLs point at it directly (MEDIA_PROXY_PATH), not through a route",
+    "add": "live: the editor uploads to it directly (MEDIA_UPLOAD_ENDPOINT), as multipart, not through a route",
     "documents.access": "Drive's session gives the role; only the offline-copy warm list asks it",
     "documents.isComposite": "documents.get returns is_composite",
 }
