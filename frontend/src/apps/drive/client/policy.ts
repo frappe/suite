@@ -101,6 +101,7 @@ export const mutationEffects: Readonly<Record<string, Effects | 'none'>> = {
   node_version_delete: { invalidates: ['node_versions', 'root_usage'] },
   node_version_restore: { touches: node, invalidates: [...STORAGE, 'node_versions', 'node_media'] },
   node_thread_create: { invalidates: ['node_threads'] },
+  node_threads_reanchor: { invalidates: ['node_threads'] },
   thread_patch: { invalidates: ['node_threads'] },
   thread_comment_create: { invalidates: ['node_threads'] },
   comment_patch: { invalidates: ['node_threads'] },

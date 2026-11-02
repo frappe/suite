@@ -40,6 +40,7 @@ from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Conf
 from suite.drive.patches.build.ports import (
     ACTIVE,
     REMOVED,
+    SiteContentSource,
     SiteDrive,
     SiteTree,
     TreeRow,
@@ -610,6 +611,11 @@ class TestLookupWiring(BuildTreeCase):
         legacy = SiteTree()
         self.assertIsNone(legacy.user_enabled(self.prefix + "@nowhere.test"))
         self.assertIs(legacy.user_enabled("Administrator"), True)
+
+    def test_user_name_answers_the_stored_name_in_any_case(self):
+        content = SiteContentSource()
+        self.assertEqual(content.user_name("ADMINISTRATOR"), "Administrator")
+        self.assertIsNone(content.user_name(self.prefix + "@nowhere.test"))
 
     def test_group_exists_compiles(self):
         self.assertFalse(SiteTree().group_exists(self.prefix + "-no-group"))

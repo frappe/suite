@@ -220,18 +220,16 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
       transportManager: this.transportManager,
       meetingId: () => this.connectionManager?.meetingId ?? null,
       schedule: (operation) => this.connectionManager.serializeTransportRecovery(operation),
-      onStarted: (reason) =>
+      onStarted: (reason) => {
+        this.mediaHealthMonitor?.beginRecovery('both', reason)
         this.connectionManager?.reportRecoveryState(
           reason.includes('send') ? 'recovering_send' : 'recovering_receive',
           reason,
-        ),
-      onRecovered: async (reason) => {
-        this.connectionManager?.reportRecoveryState('healthy', reason)
+        )
       },
       onFailed: async (_reason, result) => {
         try {
           await this.connectionManager.recoverFailedTransports(_reason, result)
-          this.connectionManager?.reportRecoveryState('healthy', _reason)
         } catch (error) {
           this.connectionManager?.reportRecoveryState('failed', _reason)
           void this.connectionManager
@@ -286,6 +284,16 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     })
 
     this.mediaHealthMonitor = new MediaHealthMonitor({
+      isSignalingConnected: () => this.sfuClient.isConnected(),
+      onRecoveryVerified: (reason) => this.connectionManager.completeTransportRecovery(reason),
+      hasMissingExpectedReceiveMedia: () => this.connectionManager.hasMissingExpectedReceiveMedia(),
+      hasExpectedSendMedia: () =>
+        Boolean(
+          this.mediaManager.mediaHandler.localStream
+            ?.getTracks()
+            .some((track) => track.enabled && track.readyState === 'live') ||
+          this.screenPublicationTrack?.readyState === 'live',
+        ),
       getTransportStats: () => this.transportManager.getTransportStats(),
       getNetworkStats: () => this.transportManager.getNetworkStats(),
       getConsumers: () => this.consumerManager.getAllConsumers(),
@@ -682,6 +690,9 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     if (typeof producer.replaceTrack !== 'function') {
       throw new Error(`${kind} producer cannot replace its track`)
     }
+    if (track.kind === 'video' && 'contentHint' in track) {
+      track.contentHint = kind === 'screen' ? 'detail' : 'motion'
+    }
     await producer.replaceTrack({ track })
     return true
   }
@@ -768,6 +779,9 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
       } else if (producer.track !== track) {
         if (typeof producer.replaceTrack !== 'function') {
           throw new Error(`${kind} producer cannot replace its track`)
+        }
+        if (track.kind === 'video' && 'contentHint' in track) {
+          track.contentHint = kind === 'screen' ? 'detail' : 'motion'
         }
         await producer.replaceTrack({ track })
         if (!isCurrent()) {
@@ -957,8 +971,14 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 
   async sampleRTCStats(): Promise<RTCStatsSample> {
     const transports = [
-      { direction: 'send' as const, transport: this.transportManager.sendTransport },
-      { direction: 'receive' as const, transport: this.transportManager.recvTransport },
+      {
+        direction: 'send' as const,
+        transport: this.transportManager.sendTransport,
+      },
+      {
+        direction: 'receive' as const,
+        transport: this.transportManager.recvTransport,
+      },
     ].filter((entry) => !!entry.transport)
     const producers = (['audio', 'video', 'screen'] as const).flatMap((kind) => {
       const producer = this.getLocalProducer(kind)

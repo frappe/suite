@@ -3,7 +3,9 @@ import type { App, Plugin } from 'vue'
 import { transport } from '@/platform/transport'
 import { api } from '@/platform/transport/api'
 
-export type Replacement = Array<string | number> | Record<string, string | number>
+import { format, type Replacement } from './format'
+
+export type { Replacement } from './format'
 export type TranslationCatalog = Record<string, string>
 export type TranslationFunction = (
   message: string,
@@ -58,14 +60,6 @@ export const translationPlugin: Plugin = {
 export function installTranslation(app: App): Promise<void> {
   app.use(translationPlugin)
   return ready
-}
-
-function format(message: string, replace?: Replacement): string {
-  if (!replace || typeof replace !== 'object') return message
-  return message.replace(/\{([^}]+)\}/g, (match, key: string) => {
-    const value = Array.isArray(replace) ? replace[Number(key)] : replace[key]
-    return value === undefined ? match : String(value)
-  })
 }
 
 export default translationPlugin

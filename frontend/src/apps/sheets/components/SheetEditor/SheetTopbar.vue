@@ -1,6 +1,7 @@
 <template>
   <!-- The editor's own top bar (outside Drive's /d/ surface): the Sheets menu,
-  the title, save state and the slots for status chips and actions. -->
+  the title, save state and the slots for status chips, the menu bar and
+  actions. -->
   <div class="sn-topbar">
     <div class="sn-topbar-left">
       <div class="sn-identity">
@@ -61,6 +62,7 @@
         <span class="sn-save-label">Saved</span>
       </span>
       <slot name="status" />
+      <slot name="menus" />
       <!-- View-only indicator — shown up front so a viewer knows they can't
          edit before they try. Neutral gray (not an error) because read
          access is expected, not a failure. Uses the Frappe UI Badge so it
@@ -135,10 +137,10 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 48px;
+  height: 40px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--outline-elevation-1);
-  background: var(--surface-elevation-1);
+  border-bottom: 1px solid var(--sn-bar-line);
+  background: var(--sn-bar-bg);
   flex-shrink: 0;
 }
 /* Left cluster groups: brand+title tight (gap:4); status chips sit further away
@@ -163,8 +165,8 @@ const emit = defineEmits<{
 }
 
 .sn-app-icon {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   display: block;
 }
@@ -213,8 +215,7 @@ const emit = defineEmits<{
 .sn-save-spin {
   animation: sn-spin 0.9s linear infinite;
 }
-/* A narrow bar drops the save label and the view-only label (the matching
-   rules for the actions live in SheetTopbarActions.vue). */
+/* A narrow bar drops the save label and the view-only label. */
 @container sn-topbar (max-width: 640px) {
   .sn-save-label,
   .sn-view-only-label {

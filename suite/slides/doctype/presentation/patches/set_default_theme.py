@@ -1,15 +1,15 @@
 import frappe
 
-from suite.slides.doctype.presentation.presentation import default_theme
+from suite.slides.drive import light_template
 
 
 def execute():
-    """Name the default theme on decks Drive created blank before `before_insert` did.
+    """Name the Light theme on decks Drive created blank before `create_empty` did.
 
     A deck with no `theme` cannot add a slide: the layout picker finds no
     template. Templates keep their empty theme by rule.
     """
-    theme = default_theme()
+    theme = light_template()
     if not theme:
         return
 

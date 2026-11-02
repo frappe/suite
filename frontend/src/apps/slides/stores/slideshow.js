@@ -1,5 +1,6 @@
 import { computed, nextTick, ref } from 'vue'
 
+import { router } from '@/apps/slides/router'
 import { applyReverseTransition } from '@/apps/slides/stores/presentation'
 import {
   currentSlide,
@@ -63,14 +64,16 @@ const releaseWakeLock = () => {
   wakeLock = null
 }
 
-// the slideshow is drawn over the editor (`SlidesSurface.vue`), so the deck's
-// document session, and the pictures it signs, stay open while presenting
 const startSlideShow = ({ loop = false, fromStart = false } = {}) => {
   onLoop.value = loop
   requestFullscreen()
-  // a loop plays the whole presentation every time round
-  if (fromStart || loop) slideIndex.value = 0
-  inSlideShowMode.value = true
+  const current = slideIndex.value + 1
+  router.replace({
+    name: 'slides-slideshow',
+    params: { node: router.currentRoute.value.params.node },
+    // a loop plays the whole presentation every time round
+    query: { ...router.currentRoute.value.query, slide: fromStart || loop ? 1 : current },
+  })
 }
 
 const resetSlideShowState = () => {
@@ -86,6 +89,11 @@ const endSlideShow = () => {
   focusedSlide.value = null
   const slide = slideIndex.value == slides.value.length ? slides.value.length : slideIndex.value + 1
   setSlideIndex(slide)
+  router.replace({
+    name: 'document-host',
+    params: { node: router.currentRoute.value.params.node },
+    query: { ...router.currentRoute.value.query, slide },
+  })
 }
 
 const showSlideshowEndScreen = computed(() => {
@@ -295,7 +303,11 @@ const changeSlideInSlideshow = (index) => {
   }
 
   nextTick(() => {
-    slideIndex.value = index
+    router.replace({
+      name: 'slides-slideshow',
+      params: { node: router.currentRoute.value.params.node },
+      query: { ...router.currentRoute.value.query, slide: index + 1 },
+    })
 
     // Prefetch next slide assets after navigation
     setTimeout(() => {

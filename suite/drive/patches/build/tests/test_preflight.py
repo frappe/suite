@@ -99,6 +99,17 @@ class HealthySite(PreflightCase):
         self.assertEqual(report.blobless.unreachable_rows, [("file-odd", "/somewhere/else.bin")])
         self.assertIn("file-odd  /somewhere/else.bin", report.render())
 
+    def test_a_local_row_is_linked_only_when_its_file_is_on_disk(self):
+        env = self.site(KEYS.values(), storage=FakeStorage(missing_local={"/private/files/gone.pdf"}))
+        env.files.add("file-here", "/private/files/here.pdf", "here.pdf")
+        env.files.add("file-gone", "/private/files/gone.pdf", "gone.pdf")
+
+        report = preflight(env, disk=self.disk)
+
+        self.assertEqual(report.verdict, GO)
+        self.assertEqual((report.blobless.local, report.blobless.unreachable), (1, 1))
+        self.assertEqual(report.blobless.unreachable_rows, [("file-gone", "/private/files/gone.pdf")])
+
 
 class MissingObjects(PreflightCase):
     def test_a_sampled_leading_slash_key_without_an_object_is_no_go_and_named(self):

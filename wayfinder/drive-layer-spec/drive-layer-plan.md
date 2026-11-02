@@ -180,7 +180,7 @@ Composite indexes go in `on_doctype_update()` (§3).
 | Path | Owner | Change |
 |---|---|---|
 | `suite/writer/drive.py` | writer | **new.** `SPEC` built with `from suite import drive`, plus `create_empty`, `duplicate`, `export`, `version_bytes`, `restore_version`, `on_purge`, `used_nodes` |
-| `suite/writer/doctype/writer_document/writer_document.json` | writer | Adds `node`; drops `ycomments` and `versions` (with its `Writer Doc Version` child table) |
+| `suite/writer/doctype/writer_document/writer_document.json` | writer | Adds `node`; drops `versions` (with its `Writer Doc Version` child table); keeps `ycomments` for Writer's conversion |
 | `suite/writer/doctype/writer_document/writer_document.py` | writer | Adds `drive.DriveContent` through the public interface; deletes `new_version` (:40), `update_file` (:100), `save_comments` (:110) |
 | `suite/writer/overrides/__init__.py` | writer | Deletes `filter_templates`, `template_has_permission`, `version_has_permission`, `document_query_conditions`, `version_query_conditions` |
 | `suite/slides/drive.py` | slides | **new.** `SPEC` built with the public contract, with `pushes_preview=True` and a `Slide` satellite |

@@ -135,6 +135,12 @@ export function nodeIconTint(node: TypedNode): string {
   return fileTypeTint(fileType(node))
 }
 
+/** A document type's icon and ink, as Drive draws its documents. */
+export function documentIcon(contentDoctype: string) {
+  const type = CONTENT_TYPES[contentDoctype] ?? 'file'
+  return [fileTypeIcon(type), fileTypeTint(type)]
+}
+
 export function nodeTypeLabel(node: TypedNode): string {
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'link') return 'Link'

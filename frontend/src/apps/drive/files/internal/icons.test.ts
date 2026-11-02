@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { nodeIcon, nodeIconTint } from './icons'
+import { documentIcon, nodeIcon, nodeIconTint } from './icons'
 
 const unsniffed = 'application/octet-stream'
 const file = (title: string, mime: string | null) =>
@@ -43,5 +43,11 @@ describe('file type icons', () => {
       'text-ink-gray-6',
     ])
     expect(drawn(file('firmware.bin', unsniffed))).toEqual(['file-icon-file', 'text-ink-gray-6'])
+  })
+
+  it('draws a document type as Drive draws its documents', () => {
+    expect(documentIcon('Writer Document')).toEqual(['file-icon-doc', 'text-ink-blue-6'])
+    expect(documentIcon('Presentation')).toEqual(['file-icon-slides', 'text-ink-orange-6'])
+    expect(documentIcon('Something New')).toEqual(['file-icon-file', 'text-ink-gray-6'])
   })
 })

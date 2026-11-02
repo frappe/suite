@@ -25,6 +25,8 @@ function mockedIceRestart(manager: TransportManager) {
 
 function mockSfuClient(getCodecStrategy?: () => string) {
   return {
+    on: vi.fn(),
+    off: vi.fn(),
     getCodecStrategy: getCodecStrategy ?? (() => 'svc'),
     getE2EEMode: vi.fn(() => 'none'),
     isE2EERequired: vi.fn(() => false),
@@ -709,7 +711,7 @@ describe('getNetworkStats', () => {
     expect(stats.isValid).toBe(true)
   })
 
-  it('calculates packet loss percentage from inbound-rtp', async () => {
+  it('keeps loss unknown until two inbound samples establish a recent interval', async () => {
     const manager = createManager()
     manager.recvTransport = {
       id: 'r',
@@ -729,8 +731,142 @@ describe('getNetworkStats', () => {
     } as never
     manager.sendTransport = null
     const stats = await manager.getNetworkStats()
-    expect(stats.packetLoss).toBe(20)
+    expect(stats.downlink?.packetLoss).toBeNull()
     expect(stats.isValid).toBe(true)
+  })
+
+  it('separates send loss from recent receive loss, including recovery and counter resets', async () => {
+    const manager = createManager()
+    let received = 900,
+      lost = 100
+    manager.sendTransport = {
+      id: 'send',
+      connectionState: 'connected',
+      getStats: async () =>
+        new Map([
+          [
+            'remote',
+            {
+              id: 'remote',
+              type: 'remote-inbound-rtp',
+              fractionLost: 0.25,
+              roundTripTime: 0.05,
+            },
+          ],
+        ]),
+    } as never
+    manager.recvTransport = {
+      id: 'recv',
+      connectionState: 'connected',
+      getStats: async () =>
+        new Map([
+          [
+            'in',
+            {
+              id: 'in',
+              type: 'inbound-rtp',
+              packetsReceived: received,
+              packetsLost: lost,
+              jitter: 0.01,
+            },
+          ],
+        ]),
+    } as never
+    const first = await manager.getNetworkStats()
+    expect(first.uplink?.packetLoss).toBe(25)
+    expect(first.downlink?.packetLoss).toBeNull()
+    received = 980
+    lost = 120
+    const bad = await manager.getNetworkStats()
+    expect(bad.downlink?.packetLoss).toBe(20)
+    expect(bad.downlink?.jitter).toBe(10)
+    received = 1080
+    const recovered = await manager.getNetworkStats()
+    expect(recovered.downlink?.packetLoss).toBe(0)
+    expect(recovered.uplink?.packetLoss).toBe(25)
+    received = 10
+    lost = 0
+    expect((await manager.getNetworkStats()).downlink?.packetLoss).toBeNull()
+  })
+
+  it('ignores retransmission-stream jitter and loss after media recovers', async () => {
+    const manager = createManager()
+    let received = 100
+    manager.recvTransport = {
+      id: 'recv',
+      connectionState: 'connected',
+      getStats: async () =>
+        new Map([
+          ['codec', { id: 'codec', type: 'codec', mimeType: 'video/rtx' }],
+          ['vp8', { id: 'vp8', type: 'codec', mimeType: 'video/VP8' }],
+          [
+            'rtx',
+            {
+              id: 'rtx',
+              type: 'inbound-rtp',
+              codecId: 'codec',
+              packetsReceived: 100,
+              packetsLost: 100,
+              jitter: 0.5,
+            },
+          ],
+          [
+            'video',
+            {
+              id: 'video',
+              type: 'inbound-rtp',
+              codecId: 'vp8',
+              packetsReceived: received,
+              packetsLost: 0,
+              jitter: 0.01,
+            },
+          ],
+        ]),
+    } as never
+    await manager.getNetworkStats()
+    received += 100
+    const stats = await manager.getNetworkStats()
+    expect(stats.downlink?.jitter).toBe(10)
+    expect(stats.downlink?.packetLoss).toBe(0)
+  })
+
+  it('excludes unbound probation SSRCs from quality measurements', async () => {
+    const manager = createManager()
+    let received = 100
+    manager.recvTransport = {
+      id: 'recv',
+      connectionState: 'connected',
+      getStats: async () =>
+        new Map([
+          ['codec', { id: 'codec', type: 'codec', mimeType: 'video/VP8' }],
+          [
+            'probation',
+            {
+              id: 'probation',
+              type: 'inbound-rtp',
+              packetsReceived: received,
+              packetsLost: 50,
+              jitter: 0.5,
+            },
+          ],
+          [
+            'video',
+            {
+              id: 'video',
+              type: 'inbound-rtp',
+              codecId: 'codec',
+              packetsReceived: received,
+              packetsLost: 0,
+              jitter: 0.01,
+            },
+          ],
+        ]),
+    } as never
+    await manager.getNetworkStats()
+    received += 100
+    const stats = await manager.getNetworkStats()
+    expect(stats.downlink?.jitter).toBe(10)
+    expect(stats.downlink?.packetLoss).toBe(0)
   })
 
   it('includes remote-inbound-rtp RTT in average', async () => {
@@ -851,6 +987,121 @@ describe('getNetworkStats', () => {
   })
 })
 
+function senderPolicyFixture(kind: string, setParameters = vi.fn().mockResolvedValue(undefined)) {
+  const manager = createManager()
+  manager.initialize(mockSfuClient() as never)
+  manager.device = {
+    canProduce: () => true,
+    rtpCapabilities: { codecs: [] },
+  } as never
+  vi.mocked(resolveCodecStrategy).mockReturnValue({
+    strategy: 'simulcast',
+    scalabilityMode: null,
+    didDowngrade: false,
+    requested: 'simulcast',
+  })
+  const parameters = {
+    encodings: [
+      { rid: 'tiny', maxBitrate: 87000 },
+      { rid: 'large', maxBitrate: 920000 },
+    ],
+  }
+  manager.sendTransport = {
+    produce: vi.fn().mockResolvedValue({
+      id: 'p',
+      rtpSender: {
+        getParameters: vi.fn().mockImplementation(() => ({
+          ...structuredClone(parameters),
+          transactionId: String(setParameters.mock.calls.length),
+        })),
+        setParameters,
+      },
+    }),
+  } as never
+  const track = {
+    kind,
+    contentHint: '',
+    readyState: 'live',
+  } as MediaStreamTrack
+  return { manager, track, setParameters }
+}
+
+describe('congested media sender policy', () => {
+  it.each([
+    {
+      kind: 'video',
+      type: 'camera',
+      hint: 'motion',
+      degradation: 'maintain-framerate',
+      priority: 'low',
+    },
+    {
+      kind: 'video',
+      type: 'screen',
+      hint: 'detail',
+      degradation: 'maintain-resolution',
+      priority: 'low',
+    },
+    {
+      kind: 'audio',
+      type: 'microphone',
+      hint: '',
+      degradation: undefined,
+      priority: 'high',
+    },
+  ])(
+    'sets $type preferences while preserving browser-provided encoding limits',
+    async ({ kind, type, hint, degradation, priority }) => {
+      const { manager, track, setParameters } = senderPolicyFixture(kind)
+      await manager.createProducer(track, { type })
+      expect(track.contentHint).toBe(hint)
+      expect(setParameters).toHaveBeenCalledWith({
+        transactionId: '0',
+        ...(degradation ? { degradationPreference: degradation } : {}),
+        encodings: [
+          {
+            rid: 'tiny',
+            maxBitrate: 87000,
+            priority,
+            networkPriority: priority,
+          },
+          {
+            rid: 'large',
+            maxBitrate: 920000,
+            priority,
+            networkPriority: priority,
+          },
+        ],
+      })
+    },
+  )
+
+  it('keeps camera motion preference when a browser rejects sender priority hints', async () => {
+    const rejected = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('priority unsupported'))
+      .mockResolvedValue(undefined)
+    const { manager, track, setParameters } = senderPolicyFixture('video', rejected)
+    await manager.createProducer(track, { type: 'camera' })
+    expect(setParameters).toHaveBeenCalledTimes(2)
+    expect(setParameters).toHaveBeenLastCalledWith({
+      transactionId: '1',
+      degradationPreference: 'maintain-framerate',
+      encodings: [
+        { rid: 'tiny', maxBitrate: 87000 },
+        { rid: 'large', maxBitrate: 920000 },
+      ],
+    })
+  })
+
+  it('provides a camera base layer below 150 kbps without imposing a low frame rate', () => {
+    const { manager } = senderPolicyFixture('video')
+    const config = manager.getVideoEncodingConfig('camera')
+    expect(config.encodings[0]?.maxBitrate).toBeLessThanOrEqual(150000)
+    expect(config.encodings[0]).not.toHaveProperty('maxFramerate')
+  })
+})
+
 describe('consumer creation disposal', () => {
   it.each([false, true])(
     'closes server resources after failed or stale consume (stale: %s)',
@@ -860,9 +1111,11 @@ describe('consumer creation disposal', () => {
       const localClose = vi.fn()
       manager.sfuClient = {
         ...mockSfuClient(),
-        createConsumer: vi
-          .fn()
-          .mockResolvedValue({ id: 'server-consumer', kind: 'video', producerId: 'camera' }),
+        createConsumer: vi.fn().mockResolvedValue({
+          id: 'server-consumer',
+          kind: 'video',
+          producerId: 'camera',
+        }),
         closeConsumer,
       } as never
       manager.device = { rtpCapabilities: {} } as never
@@ -881,4 +1134,163 @@ describe('consumer creation disposal', () => {
       expect(localClose).toHaveBeenCalledTimes(stale ? 1 : 0)
     },
   )
+})
+
+describe('receiver-ready video handshake', () => {
+  function setup(kind = 'video', paused = true) {
+    const manager = createManager()
+    const consumer = {
+      id: 'fresh-consumer',
+      kind,
+      closed: false,
+      rtpReceiver: {},
+      close: vi.fn(),
+    }
+    const client = {
+      ...mockSfuClient(),
+      createConsumer: vi.fn().mockResolvedValue({
+        id: consumer.id,
+        producerId: 'camera',
+        kind,
+        paused,
+      }),
+      resumeConsumer: vi.fn().mockResolvedValue({ success: true, resumed: true }),
+      closeConsumer: vi.fn().mockResolvedValue(undefined),
+      requestConsumerKeyFrame: vi.fn().mockResolvedValue({}),
+    }
+    manager.sfuClient = client as never
+    manager.device = { rtpCapabilities: {} } as never
+    manager.recvTransport = {
+      id: 'recv',
+      closed: false,
+      close: vi.fn(),
+      consume: vi.fn().mockResolvedValue(consumer),
+    } as never
+    return { manager, consumer, client }
+  }
+
+  it('keeps the server paused until consume finishes', async () => {
+    const { manager, consumer, client } = setup()
+    let finishConsume!: (consumer: unknown) => void
+    vi.mocked(manager.recvTransport!.consume).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishConsume = resolve
+        }) as never,
+    )
+    const creation = manager.createConsumer('camera')
+    await vi.waitFor(() => expect(finishConsume).toBeTypeOf('function'))
+    expect(client.createConsumer).toHaveBeenCalledWith('recv', 'camera', {}, true)
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    finishConsume(consumer)
+    expect(await creation).toBe(consumer)
+    expect(client.resumeConsumer).toHaveBeenCalledExactlyOnceWith('fresh-consumer')
+  })
+
+  it.each(['audio', 'video'])(
+    'does not acknowledge an already running %s consumer',
+    async (kind) => {
+      const { manager, client } = setup(kind, false)
+      await manager.createConsumer('camera')
+      expect(client.resumeConsumer).not.toHaveBeenCalled()
+    },
+  )
+
+  it('installs the decryptor before acknowledging readiness and cancels after transport teardown', async () => {
+    const { manager, consumer, client } = setup()
+    let finishTransform!: (ready: boolean) => void
+    vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+    vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishTransform = resolve
+        }),
+    )
+    const creation = manager.createConsumer('camera')
+    await vi.waitFor(() => expect(finishTransform).toBeTypeOf('function'))
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    manager.closeReceiveTransport()
+    finishTransform(true)
+    await expect(creation).rejects.toThrow('replaced')
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled()
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+
+  it('acknowledges after decryptor installation and stops keyframe retries after teardown', async () => {
+    vi.useFakeTimers()
+    try {
+      const { manager, consumer, client } = setup()
+      vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+      vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform').mockImplementation(async () => {
+        expect(client.resumeConsumer).not.toHaveBeenCalled()
+        return true
+      })
+      await manager.createConsumer('camera')
+      expect(client.resumeConsumer).toHaveBeenCalledExactlyOnceWith(consumer.id)
+      expect(client.requestConsumerKeyFrame).toHaveBeenCalledExactlyOnceWith(consumer.id)
+      consumer.closed = true
+      manager.cleanup()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(client.requestConsumerKeyFrame).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not resume an encrypted consumer when its decryptor cannot be installed', async () => {
+    const { manager, consumer, client } = setup()
+    vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+    vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform').mockResolvedValue(false)
+    await expect(manager.createConsumer('camera')).rejects.toThrow('Failed to install')
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+    expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled()
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+
+  it.each([true, false])('handles a missing encrypted receiver with paused=%s', async (paused) => {
+    const { manager, consumer, client } = setup('video', paused)
+    Object.assign(consumer, { rtpReceiver: undefined })
+    vi.spyOn(manager.e2eePolicy, 'transformsEnabled', 'get').mockReturnValue(true)
+    const install = vi.spyOn(manager.e2eePolicy, 'setupReceiverTransform')
+    if (paused) {
+      await expect(manager.createConsumer('camera')).rejects.toThrow('Failed to install')
+      expect(consumer.close).toHaveBeenCalledOnce()
+      expect(client.closeConsumer).toHaveBeenCalledExactlyOnceWith(consumer.id)
+      expect(client.requestConsumerKeyFrame).not.toHaveBeenCalled()
+    } else {
+      await expect(manager.createConsumer('camera')).resolves.toBe(consumer)
+      manager.cleanup()
+    }
+    expect(install).not.toHaveBeenCalled()
+    expect(client.resumeConsumer).not.toHaveBeenCalled()
+  })
+
+  it('disposes both consumers if the readiness acknowledgement fails', async () => {
+    const { manager, consumer, client } = setup()
+    client.resumeConsumer.mockRejectedValue(new Error('resume failed'))
+    await expect(manager.createConsumer('camera')).rejects.toThrow('resume failed')
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
+
+  it('disposes a consumer if teardown occurs while its acknowledgement is pending', async () => {
+    const { manager, consumer, client } = setup()
+    let finishResume!: (result: { success: boolean; resumed: boolean }) => void
+    client.resumeConsumer.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishResume = resolve
+        }),
+    )
+    const creation = manager.createConsumer('camera')
+    await vi.waitFor(() => expect(finishResume).toBeTypeOf('function'))
+    manager.closeReceiveTransport()
+    finishResume({ success: true, resumed: true })
+    await expect(creation).rejects.toThrow('replaced')
+    expect(consumer.close).toHaveBeenCalledOnce()
+    expect(client.closeConsumer).toHaveBeenCalledWith(consumer.id)
+  })
 })

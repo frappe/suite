@@ -40,8 +40,8 @@ export interface ViewSnapshot {
 /** Maps an old row/column index to its new one; null or negative drops it. */
 export type IndexMap = (i: number) => number | null | undefined
 
-export const DEFAULT_COL_W = 100
-export const DEFAULT_ROW_H = 24
+export const DEFAULT_COL_W = 120
+export const DEFAULT_ROW_H = 28
 export const DEFAULT_TOTAL_ROWS = 1000
 export const DEFAULT_TOTAL_COLS = 26
 export const MIN_COL_W = 30

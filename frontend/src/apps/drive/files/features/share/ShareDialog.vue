@@ -69,13 +69,13 @@ import { BottomSheet, Button, Dialog } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
+import { driveNodeRoute } from '@/apps/drive'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
-import { slugify } from '../../internal/slugify'
 import ShareBody from './ShareBody.vue'
 import { copyLink } from './shareFormat'
 import { useShare } from './useShare'
@@ -109,9 +109,9 @@ const state = useShare(props.node, {
 const address = computed(() => {
   const current = state.node.value
   if (!current) return null
-  const base = current.kind === 'folder' || current.kind === 'root' ? '/drive/f' : '/d'
-  const slug = slugify(current.title)
-  return `${base}/${encodeURIComponent(current.name)}${slug ? `/${slug}` : ''}`
+
+  const { name, title, kind } = current
+  return driveNodeRoute(name, title, kind === 'root' ? 'folder' : kind).path
 })
 
 onMounted(() => void state.load())

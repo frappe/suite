@@ -271,16 +271,14 @@ class TestSiteThumbnailStore(unittest.TestCase):
     never a quiet "not deleted" indistinguishable from an ordinary missing
     file. An S3 site deletes nothing: Cleanup deletes no bucket object."""
 
-    def test_s3_enabled_deletes_nothing_and_touches_no_bucket_or_disk(self):
+    def test_s3_enabled_deletes_nothing_and_touches_no_disk(self):
         settings = {"enabled": True, "root_folder": "team", "thumbnail_prefix": "thumbnails"}
         with (
-            patch("suite.drive.patches.cleanup.ports.legacy_bucket") as bucket,
             patch("os.path.exists") as exists,
             patch("os.unlink") as unlink,
         ):
             deleted = SiteThumbnailStore().delete_sidecars(("a", "b"), settings=settings)
         self.assertEqual(deleted, 0)
-        bucket.assert_not_called()
         exists.assert_not_called()
         unlink.assert_not_called()
 

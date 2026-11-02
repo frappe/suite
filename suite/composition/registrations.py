@@ -16,6 +16,7 @@ SUITE_RESOURCES = (
     "storage",
     "admin",
     "onboarding",
+    "errors",
 )
 
 
@@ -34,6 +35,7 @@ HTTP_OWNERS = {
     "draw": "suite.draw.http.framework.HTTP",
     "mail": "suite.mail.http.framework.HTTP",
     "calendar": "suite.calendar.http.framework.HTTP",
+    "content": "suite.content.http.framework.HTTP",
     "writer": "suite.writer.http.framework.HTTP",
     "sheets": "suite.sheets.http.framework.HTTP",
     "slides": "suite.slides.http.framework.HTTP",

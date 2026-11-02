@@ -376,6 +376,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A **Favourite** and a **Recent** are one person's own. Nobody else sees
   them, and clearing one never touches the other.
 - Opening a node writes a **Recent**, never an **Activity**.
+- When the web app rereads a node's access and the server answers 408 or
+  429, it keeps the access it last read.
 
 ## Example Dialogue
 

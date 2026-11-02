@@ -59,6 +59,7 @@ GUEST_ROUTES = frozenset(
         "node_version_restore",
         "node_threads",
         "node_thread_create",
+        "node_threads_reanchor",
         "thread_patch",
         "thread_comment_create",
         "comment_patch",
@@ -214,6 +215,7 @@ class TestTranslator(HttpConformanceMixin, UnitTestCase):
             ),
             ("GET", "/api/suite/drive/nodes/n1/threads", "node_threads", {"node": "n1"}),
             ("POST", "/api/suite/drive/nodes/n1/threads", "node_thread_create", {"node": "n1"}),
+            ("PATCH", "/api/suite/drive/nodes/n1/threads", "node_threads_reanchor", {"node": "n1"}),
             ("PATCH", "/api/suite/drive/threads/t9", "thread_patch", {"thread": "t9"}),
             (
                 "POST",

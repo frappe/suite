@@ -20,6 +20,9 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
 
 - **Writer → Drive**: a Writer document has a Drive Node standing for it, and
   its embedded images are Drive Nodes beneath that node.
+- **Writer → content layer**: Writer keeps its update log, checkpoints and
+  live state through `suite/content`, which reaches the node through
+  `suite.drive`.
 - **Slides → Drive**: a deck has a Drive Node standing for it. Its media are
   framework attachments today, authorized by their own endpoint. Moving them
   under the deck node is decided but not built.

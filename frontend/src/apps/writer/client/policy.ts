@@ -1,10 +1,8 @@
 import type { OwnerRegistration } from '@/platform/server-state'
 
 const effects = {
-  save_doc: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
-  save_html: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
-  save_comments: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
-  update_settings: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
+  document_settings: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
+  convert_version: 'none',
 } as const
 
 export const registration: OwnerRegistration = {

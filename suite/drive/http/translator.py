@@ -504,6 +504,17 @@ _DECLARED = (
     ),
     Route(
         "PATCH",
+        "nodes/{node}/threads",
+        "node_threads_reanchor",
+        body=shapes.ThreadReanchor,
+        errors=(DriveNotFound, DriveForbidden, DriveConflict),
+        allow_guest=True,
+        output=shapes.ThreadList,
+        kind="mutation",
+        public_name="threads.reanchor",
+    ),
+    Route(
+        "PATCH",
         "threads/{thread}",
         "thread_patch",
         body=shapes.ThreadResolve,

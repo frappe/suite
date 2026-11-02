@@ -33,6 +33,7 @@
     "src/apps/drive/files/**/*.vue",
     "src/apps/drive/client/**/*.ts",
     "src/apps/drive/client/**/*.vue",
+    "src/apps/writer/collab/**/*.ts",
     "src/apps/*/surface/**/*.ts",
     "src/apps/*/surface/**/*.vue"
   ]

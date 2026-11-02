@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, reactive, watchEffect } from 'vue'
 
 import { E2EEMeeting } from '../../media/E2EEMeeting'
 import { ParticipantManager } from '../../media/ParticipantManager'
@@ -74,6 +75,71 @@ function createManager({ e2eeRequired = false } = {}) {
 describe('ParticipantConnection', () => {
   afterEach(() => {
     E2EEMeeting.instance.wipeMeetingContext()
+    vi.useRealTimers()
+  })
+
+  it('batches reactive health refreshes and keeps the latest observation', async () => {
+    vi.useFakeTimers()
+    const { handlers, manager, participantManager } = createManager()
+    const health = reactive<Record<string, string | undefined>>({ alice: 'good', bob: 'good' })
+    manager.initialize(
+      'room',
+      { user_id: 'me' },
+      {
+        onParticipantUpdated: (id, participant) => {
+          health[id] = participant.networkQuality
+        },
+      },
+    )
+    await manager.connect('token')
+    for (const id of ['alice', 'bob']) participantManager.addParticipant({ participantId: id })
+    const refresh = vi.fn()
+    const stop = watchEffect(() => refresh(Object.values(health).join('/')))
+    try {
+      const receive = handlers.get('network_quality_update')!
+      receive({ participantId: 'alice', quality: 'poor' })
+      await nextTick()
+      vi.advanceTimersByTime(2)
+      const bobAt = Date.now()
+      receive({ participantId: 'bob', quality: 'critical' })
+      await nextTick()
+      vi.advanceTimersByTime(2)
+      const aliceAt = Date.now()
+      receive({ participantId: 'alice', quality: 'good' })
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(20)
+      await nextTick()
+      expect(refresh).toHaveBeenLastCalledWith('good/critical')
+      expect(participantManager.getParticipant('alice')?.networkQualityUpdatedAt).toBe(aliceAt)
+      expect(participantManager.getParticipant('bob')?.networkQualityUpdatedAt).toBe(bobAt)
+      expect(refresh).toHaveBeenCalledTimes(2) // Initial state and one batched refresh.
+    } finally {
+      stop()
+      await manager.disconnect()
+    }
+  })
+
+  it('discards queued health observations when the connection stops', async () => {
+    vi.useFakeTimers()
+    const { handlers, manager, participantManager } = createManager()
+    const updated = vi.fn()
+    manager.initialize(
+      'room',
+      { user_id: 'me' },
+      {
+        onNetworkQualityUpdated: updated,
+      },
+    )
+    await manager.connect('token')
+    participantManager.addParticipant({ participantId: 'alice' })
+    handlers.get('network_quality_update')?.({
+      participantId: 'alice',
+      quality: 'poor',
+    })
+    await manager.disconnect()
+    await vi.advanceTimersByTimeAsync(20)
+    expect(updated).not.toHaveBeenCalled()
+    expect(participantManager.getParticipant('alice')?.networkQuality).toBeUndefined()
   })
 
   it('buffers producers during rejoin until the replacement receive side is synchronized', async () => {

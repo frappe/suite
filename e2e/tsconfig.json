@@ -14,5 +14,6 @@
       "@/*": ["../frontend/src/*"]
     }
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "meet/network/**"]
 }

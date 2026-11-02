@@ -69,8 +69,18 @@ BUILD_STAMP = "2026-01-01 00:00:00.000000"
 class FakeStorage:
     """`StorageGateway` over dictionaries."""
 
-    def __init__(self, *, enabled=True, driver="s3", config=None, backfill=None, key_prefix=KEY_PREFIX):
+    def __init__(
+        self,
+        *,
+        enabled=True,
+        driver="s3",
+        config=None,
+        backfill=None,
+        missing_local=(),
+        key_prefix=KEY_PREFIX,
+    ):
         self._enabled = enabled
+        self._missing_local = set(missing_local)
         self._key_prefix = key_prefix
         self._driver = driver
         self._config = config if config is not None else {"bucket": "drive-bucket"}
@@ -93,6 +103,9 @@ class FakeStorage:
     def run_backfill(self, batch_size):
         self.backfill_calls.append(batch_size)
         return self._backfill
+
+    def has_local_file(self, file_url):
+        return file_url not in self._missing_local
 
     def add_blob(self, name, *, key, checksum, status="Ready", driver="s3", is_private=1):
         """A blob row that some other writer left behind."""
@@ -822,7 +835,15 @@ class FakeContent:
         return [row for row in sorted(self.share_rows, key=lambda row: row.name) if row.name > after][:limit]
 
     def user_enabled(self, user):
-        return self.users.get(user)
+        name = self.user_name(user)
+        if name is None:
+            return None
+
+        return self.users[name]
+
+    def user_name(self, user):
+        # The site's User lookup ignores case
+        return next((name for name in self.users if name.lower() == user.lower()), None)
 
     def site_timezone(self):
         return self.timezone

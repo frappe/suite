@@ -640,9 +640,8 @@ class TestPreviews(IntegrationTestCase):
         )
 
     def _broken_image(self, title: str) -> str:
-        """A PNG cut short: its header reads, its pixels never decode."""
-        content = _png()
-        return self._file(title, content[: len(content) // 2])
+        """A PNG signature over chunks Pillow cannot parse, whatever its truncated-image setting."""
+        return self._file(title, b"\x89PNG\r\n\x1a\n" + bytes(64))
 
     def _has_current_preview(self, node: str) -> bool:
         head = frappe.db.get_value("Drive Node", node, "blob")

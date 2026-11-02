@@ -355,7 +355,6 @@ def phase_content_history(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> Phase
     _verify_gone(env.content.governed_docshares_remaining(), "the governed DocShare rows")
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_4)
     _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_4), "the step-4 doctypes")
-    result.ycomments_cleared = env.content.clear_writer_ycomments()
     result.sheet_comments_stripped = env.content.strip_sheet_comments(batch_size=batch_size)
     result.completed = True
     return result

@@ -1,3 +1,7 @@
+import { api } from '@/api'
+import { documentSessionUrls } from '@/apps/drive'
+import { buildUrl } from '@/platform/transport'
+
 type MediaElement = { type?: string; src?: string; poster?: string }
 type Slide = { elements?: MediaElement[] }
 
@@ -27,31 +31,31 @@ export const collectMediaSources = (slides: Slide[]): MediaSource[] => {
   return sources
 }
 
-export type LoadRequest = { url: string; params: Record<string, string> }
-
-const PRESENTATION_METHOD = 'suite.slides.doctype.presentation.presentation'
-
-// same urls and param order as the load path, so the cache keys match
-export const presentationLoadRequests = (
+// the reads a /d/<node> page starts with, by the urls the client requests them by
+export function startupUrls(
+  node: string,
   presentationId: string,
   { readonly, composite }: { readonly: boolean; composite: boolean },
-): LoadRequest[] => {
-  const requests: LoadRequest[] = [
-    {
-      url: `${PRESENTATION_METHOD}.get_editor_access`,
-      params: { doctype: 'Presentation', presentation_id: presentationId },
-    },
-    {
-      url: `${PRESENTATION_METHOD}.get_public_presentation`,
-      params: { name: presentationId },
-    },
-  ]
+): string[] {
+  const urls = [buildUrl(api.slides.documents.get, { name: presentationId })]
   // an editable deck is never composite; the viewer then renders the referenced decks
   if (readonly && composite) {
-    requests.push({
-      url: `${PRESENTATION_METHOD}.get_composite_presentation`,
-      params: { name: presentationId },
-    })
+    urls.push(buildUrl(api.slides.documents.composite, { name: presentationId }))
   }
-  return requests
+
+  urls.push(...documentSessionUrls(node))
+  return urls
+}
+
+const ENTRY_ASSETS = 'script[type="module"][src], link[rel="modulepreload"], link[rel="stylesheet"]'
+
+// the shell's own script, preloads and styles, from the same build as the shell
+export function entryAssets(html: string): string[] {
+  return [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll(ENTRY_ASSETS)]
+    .map(
+      (element) =>
+        new URL(element.getAttribute('src') ?? element.getAttribute('href') ?? '', location.origin),
+    )
+    .filter((url) => url.origin === location.origin)
+    .map((url) => url.pathname)
 }

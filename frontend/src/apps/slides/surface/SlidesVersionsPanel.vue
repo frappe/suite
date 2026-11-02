@@ -111,7 +111,7 @@ onMounted(() => load())
           v-if="writable"
           size="sm"
           label="Save version"
-          icon-left="lucide-bookmark-plus"
+          icon-left="lucide-bookmark"
           @click="saveVersion"
         />
         <Button

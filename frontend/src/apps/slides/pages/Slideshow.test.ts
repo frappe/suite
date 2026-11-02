@@ -3,11 +3,15 @@ import { createApp, nextTick, type App } from 'vue'
 
 vi.mock('frappe-ui', async (original) => ({
   ...(await original<Record<string, unknown>>()),
+  usePageMeta: () => undefined,
   useKeyboardShortcut: (
     await import('../../../../../node_modules/frappe-ui/src/composables/useKeyboardShortcut')
   ).useKeyboardShortcut,
 }))
-vi.mock('@/apps/slides/router', () => ({ router: { replace: () => undefined } }))
+const replace = vi.fn(() => Promise.resolve())
+vi.mock('@/apps/slides/router', () => ({
+  router: { replace, currentRoute: { value: { params: { node: 'n1' }, query: {} } } },
+}))
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
 const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
@@ -24,7 +28,7 @@ async function present() {
   startSlideShow()
   const host = document.createElement('div')
   document.body.append(host)
-  app = createApp(Slideshow)
+  app = createApp(Slideshow, { activeSlideId: 2 })
   app.mount(host)
   await nextTick()
   return trigger
@@ -83,9 +87,13 @@ describe('presenting', () => {
     await present()
 
     await press('End')
-    const afterEnd = slideIndex.value
-    await press('Home')
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: 'slides-slideshow', query: { slide: 3 } }),
+    )
 
-    expect([afterEnd, slideIndex.value]).toEqual([2, 0])
+    await press('Home')
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: 'slides-slideshow', query: { slide: 1 } }),
+    )
   })
 })

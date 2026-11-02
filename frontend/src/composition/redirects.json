@@ -133,7 +133,7 @@
     {
       "old": "/slides/slideshow/:docname",
       "new": null,
-      "lookup": "presentation"
+      "lookup": "slideshow"
     },
     {
       "old": "/sheets/new",

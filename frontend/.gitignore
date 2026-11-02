@@ -1,5 +1,6 @@
 node_modules
 dist
+!/packages/collab-prosemirror/dist
 .DS_Store
 *.local
 auto-imports.d.ts

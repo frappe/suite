@@ -105,7 +105,7 @@
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze up to this column"
         @click="emit('freeze-col')"
       />
@@ -113,7 +113,7 @@
         v-if="freezeCols > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze columns"
         @click="emit('unfreeze-cols')"
       />
@@ -176,7 +176,7 @@
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze up to this row"
         @click="emit('freeze-row')"
       />
@@ -184,7 +184,7 @@
         v-if="freezeRows > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze rows"
         @click="emit('unfreeze-rows')"
       />
@@ -264,7 +264,7 @@
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze rows to here"
         @click="emit('freeze-row')"
       />
@@ -272,14 +272,14 @@
         v-if="freezeRows > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze rows"
         @click="emit('unfreeze-rows')"
       />
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze cols to here"
         @click="emit('freeze-col')"
       />
@@ -287,7 +287,7 @@
         v-if="freezeCols > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze cols"
         @click="emit('unfreeze-cols')"
       />

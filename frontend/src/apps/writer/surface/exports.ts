@@ -1,5 +1,6 @@
 /**
- * Writer's downloads: the document as a Word file or as Markdown. The
+ * Writer's downloads: the document as a Word file or as Markdown, and a
+ * version as HTML. The
  * converters load on first use, so opening a document does not pay for them.
  */
 import type { Editor } from '@tiptap/core'
@@ -33,6 +34,13 @@ export interface MarkdownExport {
 
 export function exportHTML(editor: Editor, scope: ExportScope): string {
   return scope === 'tab' ? currentTabHTML(editor) : editor.getHTML()
+}
+
+/** Saves `html` as `<name>.html`. */
+export async function downloadHTML(html: string, name: string): Promise<void> {
+  const { saveAs } = await import('file-saver')
+  const stem = fileStem(name)
+  saveAs(new Blob([html], { type: 'text/html;charset=utf-8' }), `${stem}.html`)
 }
 
 /** A file name stem without the characters a file system refuses. */

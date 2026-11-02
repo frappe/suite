@@ -18,6 +18,7 @@ import dataclasses
 import frappe
 from frappe import _
 from frappe.core.doctype.permission_type.permission_type import get_doctype_ptype_map
+from frappe.model.document import Document
 from frappe.utils import now, validate_email_address
 
 from suite.composition.http import HttpOwner
@@ -385,6 +386,34 @@ def satellite_query_conditions(user: str | None = None, doctype: str | None = No
         f"SELECT `drive_content_owner`.`name` FROM `tab{spec.doctype}` `drive_content_owner` "
         f"WHERE {predicate})"
     )
+
+
+def own_row_has_permission(
+    doc: Document, ptype: str | None = "read", user: str | None = None, debug: bool = False
+) -> bool:
+    """Allow a `Drive Settings`, `Drive Favourite` or `Drive Recent` row to its own user only."""
+    user = user or frappe.session.user
+    if is_drive_admin(user):
+        return True
+
+    if user == "Guest":
+        return False
+
+    # A save is checked on the posted values, so a saved row also answers by its stored user
+    if not doc.is_new() and frappe.db.get_value(doc.doctype, doc.name, "user") != user:
+        return False
+
+    return doc.get("user") == user
+
+
+def own_row_query_conditions(user: str | None = None, doctype: str | None = None) -> str:
+    """Filter a list of one of those doctypes to the caller's own rows."""
+    user = user or frappe.session.user
+    if not doctype or is_drive_admin(user):
+        return ""
+
+    escaped = frappe.db.escape(user)
+    return f"`tab{doctype}`.`user` = {escaped}"
 
 
 def refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | None) -> None:

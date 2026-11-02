@@ -33,31 +33,46 @@ import {
 } from '@/apps/drive'
 import { documentTypes } from '@/composition/documentRegistry'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
+import { describeFailure } from '@/platform/open-failure'
 import { openingTitle as historyOpeningTitle, usePageTitle } from '@/platform/page-meta'
+import { getCookieSessionUser } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
 const route = useRoute()
 const router = useRouter()
+
 const session = shallowRef<DocumentSession | null>(null)
 const surface = shallowRef<Component | null>(null)
 const loading = shallowRef(true)
 const error = shallowRef('')
+
 // A password link answered `401 DriveLocked`: the unlock screen shows in place (spec §10.2).
 const locked = shallowRef(false)
+
 // Present only in the guest frame, where a refused node shows the Sign-in screen (spec §10.8).
 const guestFrame = inject(GUEST_FRAME_KEY, null)
+
 const reopen = shallowRef(0)
+
+const FORBIDDEN = 403
+const NOT_FOUND = 404
+const GONE = 410
+const REFUSAL_STATUSES = [FORBIDDEN, NOT_FOUND, GONE]
 let opening = 0
 
 const nodeId = computed(() => String(route.params.node ?? ''))
+
 // Until the session answers, the tab keeps the route's title: the name the
 // opener put on this history entry, otherwise "Opening…". The skeleton header
 // shows the same name. The entry is current once the route is.
 const openingTitle = computed(() =>
   nodeId.value ? historyOpeningTitle(router.options.history.state) : null,
 )
+
 usePageTitle(() => session.value?.title.value ?? '')
+
 const downloadUrl = computed(() => nodeContentUrl(nodeId.value, { download: true }))
+
 const refused = computed(
   () => session.value?.state.value === 'Refused' || (session.value?.access.value.role ?? 0) < 10,
 )
@@ -114,7 +129,16 @@ watch(
         guestFrame.requireSignIn()
         return
       }
-      error.value = reason instanceof Error ? reason.message : 'This document could not be opened.'
+
+      if (
+        reason instanceof TransportError &&
+        REFUSAL_STATUSES.includes(reason.status) &&
+        getCookieSessionUser()
+      ) {
+        forgetNode(node)
+      }
+
+      error.value = failureMessage(reason)
     } finally {
       if (request === opening) loading.value = false
     }
@@ -136,6 +160,7 @@ watch(
     const lockedAgain = await isDriveNodeLocked(lapsed.nodeId)
     if (request !== opening) return
     if (!lockedAgain) {
+      forgetNode(lapsed.nodeId)
       guestFrame?.requireSignIn()
       return
     }
@@ -147,12 +172,12 @@ watch(
 )
 
 // A kept file preview is not the route's node, so its renames leave the route alone.
-watch(
-  () => session.value?.title.value,
-  () => {
-    if (session.value?.nodeId === nodeId.value) void replaceDecorativeSlug(session.value)
-  },
-)
+// Coming back from the slideshow puts the slug back
+watch([() => session.value?.title.value, () => route.name], () => {
+  if (session.value?.nodeId === nodeId.value) {
+    void replaceDecorativeSlug(session.value)
+  }
+})
 
 /**
  * Shows `next` with its surface in one step, so a surface never renders
@@ -165,7 +190,34 @@ function present(next: DocumentSession | null, nextSurface: Component | null) {
   if (previous !== next) previous?.dispose()
 }
 
+// only on a refusal: an offline or failed open says nothing about access
+function forgetNode(node: string) {
+  for (const type of documentTypes) {
+    type.forgetNode?.(node)
+  }
+}
+
+function failureMessage(reason: unknown) {
+  if (reason instanceof TransportError) {
+    const statusMessage = describeFailure(reason.status)
+    if (statusMessage) {
+      return statusMessage
+    }
+  }
+
+  if (reason instanceof Error) {
+    return reason.message
+  }
+
+  return 'This document could not be opened.'
+}
+
+function handleRetry() {
+  reopen.value += 1
+}
+
 async function replaceDecorativeSlug(opened: DocumentSession) {
+  if (route.name !== 'document-host') return
   const destination = { ...driveNodeRoute(opened.nodeId, opened.title.value), query: route.query }
   if (router.resolve(destination).path !== route.path) await router.replace(destination)
 }
@@ -188,6 +240,7 @@ onBeforeUnmount(() => {
       <span class="lucide-circle-alert mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <h1 class="mt-3 text-lg-semibold">Could not open this document</h1>
       <p class="mt-1 text-p-sm text-ink-gray-6">{{ error }}</p>
+      <Button v-if="nodeId" class="mt-4" :label="__('Try again')" @click="handleRetry" />
     </div>
 
     <div v-else-if="refused" class="m-auto max-w-md px-6 text-center">

@@ -2,7 +2,7 @@
   <div
     ref="root"
     tabindex="-1"
-    class="absolute left-0 top-0 h-full w-full overflow-clip bg-black outline-none"
+    class="fixed inset-0 z-50 overflow-clip bg-black outline-none"
     :class="{ 'slideshow-hide-cursor': cursorHidden }"
   >
     <div class="flex h-screen w-full items-center justify-center" :style="slideContainerStyles">
@@ -11,7 +11,7 @@
         class="flex h-full w-full items-center justify-center bg-black"
         @click="endSlideShow()"
       >
-        <SlideshowEndScreen @restartSlideShow="changeSlideInSlideshow(0)" />
+        <SlideshowEndScreen @restart-slide-show="changeSlideInSlideshow(0)" />
       </div>
 
       <div
@@ -29,7 +29,7 @@
             mode="slideshow"
             :element="element"
             :data-index="element.id"
-            :transitionStyles="transitionStyles"
+            :transition-styles="transitionStyles"
             :style="getElementTransitionStyles(element)"
             class="forward-transition"
           />
@@ -63,16 +63,20 @@
 </template>
 
 <script setup>
-import { toast, useKeyboardShortcut } from 'frappe-ui'
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { useKeyboardShortcut, usePageMeta } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 
 import FadeElementTransition from '@/apps/slides/components/FadeElementTransition.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
 import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGuard'
 import { resetFocus } from '@/apps/slides/stores/element'
-import { applyReverseTransition, inReadonlyMode } from '@/apps/slides/stores/presentation'
-import { currentSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
+import {
+  applyReverseTransition,
+  inReadonlyMode,
+  pageTitle,
+} from '@/apps/slides/stores/presentation'
+import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
 import {
   cancelAdvance,
   changeSlideInSlideshow,
@@ -93,6 +97,14 @@ import {
   showSlideshowEndScreen,
 } from '@/apps/slides/stores/slideshow'
 import { getTransitionKey } from '@/apps/slides/stores/transition'
+import { appPageMeta, usePageTitle } from '@/platform/page-meta'
+
+const props = defineProps({
+  activeSlideId: {
+    type: Number,
+    required: true,
+  },
+})
 
 const root = ref(null)
 const transition = ref('none')
@@ -286,8 +298,9 @@ const initFullscreenMode = async () => {
   const inFullscreen = Boolean(document.fullscreenElement) || (await requestFullscreen())
   if (!active) return exitFullscreen()
   if (!inFullscreen) {
-    toast.error('Could not enter fullscreen mode')
-    endSlideShow()
+    // a load or a reload has no click to grant fullscreen, so the show fills the window
+    inSlideShowMode.value = true
+    requestWakeLock()
     return
   }
 
@@ -308,6 +321,9 @@ const updateWindowSize = () => {
   windowHeight.value = window.innerHeight
 }
 
+// the title goes through the platform's page meta
+usePageTitle(pageTitle)
+usePageMeta(() => ({ icon: appPageMeta(pageTitle(), 'Slides').icon }))
 useBrowserZoomGuard()
 
 onMounted(() => {
@@ -328,7 +344,7 @@ onMounted(() => {
   }, 500)
 })
 
-onBeforeUnmount(() => {
+onUnmounted(() => {
   active = false
   document.removeEventListener('focusout', takeFocusBack)
   document.removeEventListener('fullscreenchange', handleFullScreenChange)
@@ -339,10 +355,22 @@ onBeforeUnmount(() => {
   releaseWakeLock()
   releaseVideoWarmers()
 
-  // leaving the deck mid-show would otherwise strand the next page in fullscreen
+  // leaving by any route other than endSlideShow would strand the editor in fullscreen
   resetSlideShowState()
   exitFullscreen()
 })
+
+watch(
+  () => props.activeSlideId,
+  (index) => {
+    setSlideIndex(index)
+    // Prefetch next slide when current slide changes
+    setTimeout(() => {
+      prefetchNextSlide()
+    }, 200)
+  },
+  { immediate: true },
+)
 
 // any change of slide, by hand, by the timer, or by the load, restarts the wait
 // the slide the show opens on, or loads into, waits only its delay
@@ -355,7 +383,6 @@ provide('inReadonlyMode', inReadonlyMode)
 provide('inSlideShowMode', inSlideShowMode)
 
 useKeyboardShortcut([
-  { combo: 'Escape', description: 'End', group: 'Slideshow', handler: endSlideShow },
   { combo: 'ArrowRight', description: 'Next step', group: 'Slideshow', handler: performNextStep },
   { combo: 'ArrowDown', description: 'Next step', group: 'Slideshow', handler: performNextStep },
   { combo: 'Space', description: 'Next step', group: 'Slideshow', handler: performNextStep },
@@ -389,6 +416,17 @@ useKeyboardShortcut([
     description: 'Last slide',
     group: 'Slideshow',
     handler: () => changeSlideInSlideshow(slides.value.length - 1),
+  },
+  {
+    combo: 'Escape',
+    description: 'End slideshow',
+    group: 'Slideshow',
+    // in fullscreen, Esc leaves it and the change ends the show
+    handler: () => {
+      if (!document.fullscreenElement) {
+        endSlideShow()
+      }
+    },
   },
   {
     combo: 'F5',

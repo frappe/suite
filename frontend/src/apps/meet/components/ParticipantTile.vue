@@ -15,7 +15,9 @@
       :data-participant-id="participant.user_id"
       class="block w-full h-full remote-video"
       :class="[videoObjectFitClass, videoBackgroundClass]"
-      :style="{ transform: isLocal ? 'scaleX(-1) translateZ(0)' : 'translateZ(0)' }"
+      :style="{
+        transform: isLocal ? 'scaleX(-1) translateZ(0)' : 'translateZ(0)',
+      }"
       autoplay
       muted
       playsinline
@@ -51,11 +53,11 @@
       <template v-if="showAudioState">
         <AudioIndicator
           v-if="isAudioEnabled && audioStream"
-          :mediaStream="audioStream"
-          :isActive="true"
-          :maxHeight="12"
+          :media-stream="audioStream"
+          :is-active="true"
+          :max-height="12"
           :sensitivity="3.0"
-          activeColorClass="bg-white"
+          active-color-class="bg-white"
         />
         <lucide-mic-off v-else-if="!isAudioEnabled" class="w-3 h-3 shrink-0 text-white" />
       </template>
@@ -81,15 +83,15 @@
       <lucide-hand class="w-4 h-4" :class="{ wave: isAnimating }" />
     </div>
 
-    <Tooltip
-      v-if="showNetworkState && showNetworkIndicator"
-      :text="networkQualityMessage"
-      class="contents"
-    >
-      <div class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800">
-        <WifiAlertIcon class="w-4 h-4 text-white" />
-      </div>
-    </Tooltip>
+    <NetworkIndicator
+      v-if="showNetworkState"
+      class="absolute top-2 right-2"
+      :health="isLocal ? meetingCtx?.networkHealth?.value : undefined"
+      :quality="isLocal ? meetingCtx?.localNetworkQuality.value : participant.networkQuality"
+      :updated-at="participant.networkQualityUpdatedAt"
+      :participant-name="resolvedDisplayName"
+      :is-local="isLocal"
+    />
 
     <!-- Participant action toolbar -->
     <div
@@ -149,17 +151,17 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Tooltip } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { computed, inject, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
-import WifiAlertIcon from '../icons/WifiAlertIcon.vue'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
 import KickParticipantDialog from './KickParticipantDialog.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
+import NetworkIndicator from './NetworkIndicator.vue'
 
 type TileSize = 'xs' | 'sm' | 'md'
 type TilePosition = 'bottom-left' | 'top-left' | 'top-right' | 'bottom-right'
@@ -242,35 +244,6 @@ const resolvedDisplayName = computed(() => {
   return (
     props.displayName || props.participant.user_name || (props.participant.is_guest ? 'Guest' : '')
   )
-})
-
-const computedNetworkQuality = computed(() => {
-  if (props.isLocal) {
-    return meetingCtx?.localNetworkQuality.value ?? 'good'
-  }
-  return props.participant.networkQuality || 'good'
-})
-
-const showNetworkIndicator = computed(() => {
-  return computedNetworkQuality.value !== 'good'
-})
-
-const networkQualityMessage = computed(() => {
-  const quality = computedNetworkQuality.value
-  const isLocal = props.isLocal
-  const name = resolvedDisplayName.value || 'This participant'
-
-  if (quality === 'critical') {
-    return isLocal
-      ? 'Your internet connection is unstable. Video and audio might lag or drop.'
-      : `${name}'s internet connection is unstable.`
-  }
-  if (quality === 'poor') {
-    return isLocal
-      ? 'Your internet connection is weak. You might notice some lag.'
-      : `${name}'s internet connection is weak.`
-  }
-  return ''
 })
 
 const currentReaction = computed(() => {

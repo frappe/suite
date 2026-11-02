@@ -34,7 +34,6 @@ import {
   updateSelectionBounds,
 } from '@/apps/slides/stores/slide'
 import {
-  changeSlideInSlideshow,
   performNextStep,
   performPreviousStep,
   startSlideShow,
@@ -383,56 +382,56 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
     {
       combo: 'ArrowUp',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowUp,
     },
     {
       combo: 'ArrowDown',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowDown,
     },
     {
       combo: 'ArrowLeft',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowLeft,
     },
     {
       combo: 'ArrowRight',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowRight,
     },
     {
       combo: 'Shift+ArrowUp',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px up or down',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowUp,
     },
     {
       combo: 'Shift+ArrowDown',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px up or down',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowDown,
     },
     {
       combo: 'Shift+ArrowLeft',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px left or right',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowLeft,
     },
     {
       combo: 'Shift+ArrowRight',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px left or right',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowRight,
     },
@@ -481,48 +480,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       group: 'Slideshow',
       handler: () => {
         if (inEditMode() || inReadonly()) startSlideShow()
-      },
-    },
-    {
-      combo: 'F5',
-      description: 'Restart',
-      group: 'Slideshow',
-      enabled: inSlideShow,
-      handler: () => changeSlideInSlideshow(0),
-    },
-    {
-      combo: 'ArrowLeft',
-      description: 'Previous step',
-      group: 'Slideshow',
-      handler: handleArrowLeft,
-    },
-    {
-      combo: 'PageUp',
-      description: 'Previous step',
-      group: 'Slideshow',
-      handler: () => {
-        if (inSlideShow()) performPreviousStep()
-      },
-    },
-    {
-      combo: 'Space',
-      description: 'Next step',
-      group: 'Slideshow',
-      enabled: inSlideShow,
-      handler: () => performNextStep(),
-    },
-    {
-      combo: 'ArrowRight',
-      description: 'Next step',
-      group: 'Slideshow',
-      handler: handleArrowRight,
-    },
-    {
-      combo: 'PageDown',
-      description: 'Next step',
-      group: 'Slideshow',
-      handler: () => {
-        if (inSlideShow()) performNextStep()
       },
     },
   ]

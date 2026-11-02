@@ -1,12 +1,13 @@
 import { toast } from 'frappe-ui'
 import tinycolor from 'tinycolor2'
-import { v4 as uuid4 } from 'uuid'
 import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { getSessionUser } from '@/boot/session'
+import { appDocumentTitle } from '@/platform/page-meta'
+import { randomId } from '@/platform/random-id'
 
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'
@@ -178,7 +179,7 @@ const ensureUniqueClientIds = (slides) => {
   let repaired = false
   for (const slide of slides) {
     if (seen.has(slide.clientId)) {
-      slide.clientId = uuid4()
+      slide.clientId = randomId()
       repaired = true
     }
     seen.add(slide.clientId)
@@ -190,7 +191,7 @@ const normalizeSlideDoc = (doc) => {
   for (const slide of doc.slides || []) {
     slide.background = normalizeColor(slide.background)
     slide.elements = parseElements(slide.elements, slide)
-    slide.clientId = slide.client_id || uuid4()
+    slide.clientId = slide.client_id || randomId()
     slide.transitionDuration = slide.transition_duration
     slide.fadeUnmatchedElements = slide.fade_unmatched_elements
     slide.advanceAfter = slide.advance_after
@@ -404,6 +405,7 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
   return loaded.doc
 }
 
+/** @type {import('vue').Ref<import('@/apps/slides/client/generated').GetTemplatesOutput>} */
 const templateList = ref([])
 
 const loadTemplates = async () => {
@@ -415,9 +417,20 @@ const loadTemplates = async () => {
   }
 }
 
+// a presentation with no theme, or one the caller can't read, adds slides from Light
 const presentationTheme = computed(() => {
-  return presentationDoc.value?.theme
+  const theme = presentationDoc.value?.theme
+  if (templateList.value.some((template) => template.name === theme)) {
+    return theme
+  }
+
+  return templateList.value.find((template) => template.title === 'Light')?.name
 })
+
+const pageTitle = () => {
+  const title = presentationDoc.value?.title
+  return appDocumentTitle(title, 'Slides')
+}
 
 const resetEditorState = () => {
   // a load in flight would commit over the blank editor
@@ -447,6 +460,7 @@ export {
   initPresentationDoc,
   startLoad,
   resetEditorState,
+  pageTitle,
   setDocumentContext,
   contextFor,
 }

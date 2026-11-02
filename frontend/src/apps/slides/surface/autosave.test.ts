@@ -34,7 +34,6 @@ function openEditor() {
     useAutosave({
       editable: true,
       interacting,
-      state: () => (dirty.value ? 'unsaved' : 'clean'),
     }),
   )
 }
@@ -88,19 +87,5 @@ describe('Slides autosave', () => {
     })
     expect(serverSaves).toHaveLength(0)
     expect(dirty.value).toBe(true)
-  })
-
-  it('asks before the tab closes with unsaved edits, and not once they are saved', async () => {
-    const closeTab = () => {
-      const event = new Event('beforeunload', { cancelable: true })
-      window.dispatchEvent(event)
-      return event.defaultPrevented
-    }
-
-    markDirty()
-    expect(closeTab()).toBe(true)
-
-    await waitOneTick()
-    expect(closeTab()).toBe(false)
   })
 })

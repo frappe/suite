@@ -421,7 +421,7 @@ find the cause, and start again from step 6 after a fix.
   `grant_rows_dropped`, `links_minted`, `creator_grants_minted`,
   `creator_denies_overridden`, `docshare_rows_dropped`,
   `orphan_content_docs_adopted`, `media_nodes_created`,
-  `slide_elements_rewritten`, `template_nodes_created`,
+  `slide_elements_rewritten`, `deck_previews_skipped`, `template_nodes_created`,
   `writer_templates_converted`
 - from the report's `evidence.content` section: `writer_media_copied` and
   `borrowed_duplicates_collapsed` (B112), `writer_images_wrapped` (B113),

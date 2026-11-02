@@ -10,6 +10,7 @@ from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 
+from suite import drive
 from suite.drive._core import nodes as node_workflows
 from suite.drive._core.access import effective_role, grant
 from suite.drive._core.errors import (
@@ -988,6 +989,10 @@ class TestNodeLifecycle(IntegrationTestCase):
             {left: 1, right: 1},
         )
         self.assertEqual(node_workflows.readable_child_counts(other, []), {})
+
+    def test_the_owner_of_a_missing_node_is_not_found(self):
+        with self.assertRaises(DriveNotFound):
+            drive.node_owner("drive-node-that-does-not-exist")
 
 
 def _row(node_id: str):

@@ -387,6 +387,14 @@ def node_url(node: str) -> str:
     return f"/drive/f/{node}" if kind in FOLDER_KINDS else f"/d/{node}"
 
 
+def node_owner(node: str) -> str:
+    """Answer the user who owns one node. No role is checked."""
+    owner = frappe.db.get_value("Drive Node", node, "owner")
+    if owner is None:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    return owner
+
+
 def legacy_node(old_id: str) -> str:
     """Answer the node id a pre-migration Drive id names now (Drive spec §3.15).
 

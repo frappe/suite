@@ -10,7 +10,7 @@ import {
   PINNED_CACHE_NAME,
   SHELL_CACHE_NAME,
 } from './utils/slidesCaches'
-import { getRequestType, isBundleAsset, isCacheable } from './utils/slidesRequests'
+import { getRequestType, isBundleAsset, isCacheable, shellKey } from './utils/slidesRequests'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -211,6 +211,32 @@ const getResponseForRequest = async (event, type, url) => {
   return networkFirst(event, 'api', cache)
 }
 
+// the store keys a pin by these, see stores/offlineCopy.js
+function pinnedKey(request, url) {
+  if (request.mode === 'navigate') {
+    return shellKey(url.pathname)
+  }
+
+  return canonicalMediaKey(url.href) ?? `${url.pathname}${url.search}`
+}
+
+// slides-pinned only ever holds this user's own pins, so offline it may answer any tab
+async function getOfflineResponse(event, type, url) {
+  const key = pinnedKey(event.request, url)
+  const pinned =
+    key && (await caches.match(key, { cacheName: PINNED_CACHE_NAME }).catch(() => null))
+
+  if (pinned) {
+    return respondFromCache(event, pinned)
+  }
+
+  if (type === 'other' || type === 'shell') {
+    return fetch(event.request)
+  }
+
+  return getResponseForRequest(event, type, url)
+}
+
 // respondWith must be called synchronously, so nothing here may await
 self.addEventListener('fetch', (event) => {
   const request = event.request
@@ -219,9 +245,13 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
   const requestType = getRequestType(request, slidesClientState.get(event.clientId))
+  if (!self.navigator.onLine) {
+    event.respondWith(getOfflineResponse(event, requestType, url))
+    return
+  }
   // the shell document is the whole suite's, not slides': a stored copy would
-  // keep serving old code after a flip or a deploy, so it always comes from
-  // the network (unified frontend spec §14.9)
+  // keep serving old code after a flip or a deploy, so online it always comes
+  // from the network (unified frontend spec §14.9)
   if (requestType === 'other' || requestType === 'shell') return
 
   event.respondWith(getResponseForRequest(event, requestType, url))

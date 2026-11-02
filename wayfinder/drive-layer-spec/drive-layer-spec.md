@@ -410,6 +410,7 @@ The one 512 px WebP beside a node. One row per node [006 §1].
 |---|---|---|---|---|
 | `node` | Link | Drive Node | reqd 1 | The content document node. |
 | `anchor` | Data | | reqd 1, length 255 | Opaque, app-defined. Writer: the comment id in the body. Sheets: sheet plus cell id [011 §11]. Drive stores and returns it; the app resolves it [005 §3]. |
+| `client_id` | Data | | length 64, read_only | The writing client's own id for the thread, if it sent one (§9.3). |
 | `resolved` | Check | | default 0 | |
 | `resolved_by` | Link | User | | |
 | `resolved_at` | Datetime | | | |
@@ -417,6 +418,7 @@ The one 512 px WebP beside a node. One row per node [006 §1].
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `thread_node (node, resolved)` | `add_index` | Open threads of one document: `node = ? AND resolved = 0`. Also the purge cascade's delete by node. |
+| `thread_node_client (node, client_id)` | `add_unique` | A resent create finds the thread its first send made. Rows without a client id don't collide. |
 
 ### 3.7 `Drive Comment`
 
@@ -428,10 +430,12 @@ The one 512 px WebP beside a node. One row per node [006 §1].
 | `author` | Link | User | reqd 1 | The server sets it. `Guest` for a link visitor [008 §6]. |
 | `author_name` | Data | | | The display name a guest typed. The client never sets `author` [008 §6]. |
 | `mentions` | JSON | | | User ids mentioned in `content`. |
+| `client_id` | Data | | length 64, read_only | The writing client's own id for a reply, if it sent one (§9.3). A thread's first comment has none. |
 
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `comment_thread (thread, creation)` | `add_index` | One thread in order. |
+| `comment_node_client (node, client_id)` | `add_unique` | A resent reply finds the comment its first send made. |
 | `node` | `search_index: 1` | Comment count per node, and the purge cascade. |
 
 ### 3.8 `Drive Activity`
@@ -2526,12 +2530,13 @@ refusals.
 `Drive Comment`.
 
 ```python
-def create_thread(p: Principals, node: str, anchor: str, text: str, *, author_name: str | None = None) -> str: ...
-def reply(p: Principals, thread: str, text: str, *, author_name: str | None = None) -> str: ...
+def create_thread(p: Principals, node: str, anchor: str, text: str, *, author_name: str | None = None, client_id: str | None = None) -> str: ...
+def reply(p: Principals, thread: str, text: str, *, author_name: str | None = None, client_id: str | None = None) -> str: ...
 def resolve(p: Principals, thread: str, resolved: bool = True) -> None: ...
 def edit_comment(p: Principals, comment: str, text: str) -> None: ...
 def delete_comment(p: Principals, comment: str) -> None: ...
 def threads(p: Principals, node: str, *, resolved: bool | None = None) -> list[dict]: ...
+def reanchor_threads(p: Principals, node: str, anchors: dict[str, str]) -> list[dict]: ...
 ```
 
 - The anchor is opaque. Drive stores it and lists it; the app resolves it on
@@ -2545,6 +2550,24 @@ def threads(p: Principals, node: str, *, resolved: bool | None = None) -> list[d
   [008 §6].
 - Mentions go into the comment's `mentions` field and produce one
   `Drive Notification` each.
+- A create or a reply may carry a `client_id` (1 to 64 letters, digits,
+  `-` or `_`), unique per node. A resend with the same id, after its answer
+  was lost, writes nothing and answers the thread or comment the first send
+  made: no second row, activity or notification. A reply id already used in
+  another thread is refused with a conflict. A write without one is never
+  matched.
+- Each create, reply, resolve, edit or delete that changes a row calls the
+  node's content type `threads_changed(node)` (§10.1) once the request
+  commits, so the app can tell the document's open tabs to read the threads
+  again. A resend or a resolve that changes nothing calls nothing. A failing
+  callback is logged and never undoes the write.
+- `reanchor_threads` gives threads of one document new anchors, as when the
+  app's text came back under new ids after a restore. It needs EDIT and
+  takes the node's lock. It moves at most 200 threads, all or none: a thread
+  of another node refuses the whole call. Only `anchor` changes; resolved
+  state, authors, timestamps and modified-by stay. An empty map writes
+  nothing and calls nothing; otherwise `threads_changed(node)` follows the
+  commit.
 
 ### 9.4 Activity
 
@@ -2691,6 +2714,11 @@ class ContentTypeSpec:
 	# media sweep. (docname) -> the node ids the body still names. Only the
 	# app can read its own body, so only the app can answer [012 §5].
 	used_nodes: Callable[[str], set[str]] | None = None
+
+	# comments. (node) -> None, after a comment write on the node commits
+	# (§9.3). The app tells the document's open tabs to read the threads
+	# again; a failure is logged and never undoes the write.
+	threads_changed: Callable[[str], None] | None = None
 ```
 
 Every callable takes and returns names, never documents. `create_empty`,
@@ -3319,9 +3347,10 @@ one union for the page. There is no per-row access or breadcrumb query.
 | GET | `/nodes/<id>/versions/<seq>/content` | READ | none | 302 to a signed `/f/` URL |
 | POST | `/nodes/<id>/versions/<seq>/restore` | EDIT | none | the version taken of the head first, so the client can offer the way back; `null` when a zero-byte head left nothing to capture |
 | GET | `/nodes/<id>/threads` | READ | `?resolved=` | `{threads: [...]}` |
-| POST | `/nodes/<id>/threads` | COMMENT | `{anchor, text, author_name?}` | thread row, its first comment inside |
+| POST | `/nodes/<id>/threads` | COMMENT | `{anchor, text, author_name?, client_id?}` | thread row, its first comment inside |
+| PATCH | `/nodes/<id>/threads` | EDIT | `{anchors: {<thread>: <anchor>}}` | `{threads: [...]}`, the moved threads |
 | PATCH | `/threads/<id>` | COMMENT | `{resolved}` | thread row |
-| POST | `/threads/<id>/comments` | COMMENT | `{text, author_name?}` | comment row |
+| POST | `/threads/<id>/comments` | COMMENT | `{text, author_name?, client_id?}` | comment row |
 | PATCH | `/comments/<id>` | EDIT or author | `{text}` | comment row |
 | DELETE | `/comments/<id>` | EDIT or author | none | `{count}` |
 
@@ -4654,6 +4683,7 @@ Printed and saved as JSON under the site's private directory [011].
   "personal_roots_created_for_reservations": 0,
   "media_nodes_created": 0, "media_duplicates_collapsed": 0,
   "slide_elements_rewritten": 0, "deck_previews_created": 0,
+  "deck_previews_skipped": 0,
   "template_nodes_created": 0, "writer_templates_converted": 0,
   "composite_rows_dropped": 0 }
 ```
@@ -4738,8 +4768,8 @@ Then, in order:
   becomes required.
 - Check that no `DocShare` row remains on a governed doctype (Build deleted
   them); drop `Writer Version`, `Writer Doc Version`, `Writer Template`, and
-  `Sheet Snapshot`; clear `ycomments`; strip cell comments from
-  `sheets_data`.
+  `Sheet Snapshot`; keep `ycomments` (Writer's conversion places old comments
+  from it, then clears it); strip cell comments from `sheets_data`.
 - Drop the title and trashed columns on content doctypes; `user_folder` and
   `quota` on `Drive Settings`; `quota`, `root_folder`, `thumbnail_prefix`,
   `flat` and the S3 fields on `Drive Disk Settings`; `storage_owner` on

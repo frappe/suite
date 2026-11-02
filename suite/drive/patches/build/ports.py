@@ -63,6 +63,9 @@ class StorageGateway(Protocol):
     def run_backfill(self, batch_size: int) -> dict:
         """`frappe.storage.backfill.run()`. Idempotent; links local bytes in place."""
 
+    def has_local_file(self, file_url: str) -> bool:
+        """Whether the backfill would find a file on disk for this local URL."""
+
     def claim_blob(self, checksum: str) -> ClaimedBlob | None:
         """A ready private S3 blob for this content, held against GC.
 
@@ -137,6 +140,23 @@ class SiteStorage:
         from frappe.storage import backfill
 
         return backfill.run(batch_size=batch_size)
+
+    def has_local_file(self, file_url: str) -> bool:
+        """Whether the backfill would read a file on disk for this local URL."""
+        from frappe.storage.backfill import locate
+        from frappe.utils import get_files_path
+
+        found = locate(file_url)
+        if not found:
+            return False
+
+        try:
+            # path comes from locate(), which rejects absolute paths and any '..' segment
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+            with open(get_files_path(found[1], is_private=found[0]), "rb"):
+                return True
+        except OSError:
+            return False
 
     def claim_blob(self, checksum: str) -> ClaimedBlob | None:
         from frappe.storage.blob import revive_blob
@@ -829,6 +849,9 @@ class LegacyContent(Protocol):
     def content_shares(self, after: str, limit: int) -> list[ContentShareRow]: ...
 
     def user_enabled(self, user: str) -> bool | None: ...
+
+    def user_name(self, user: str) -> str | None:
+        """Answer the User's stored name for `user`, matched as the database matches it; None when there's no row."""
 
     def site_timezone(self) -> str: ...
 
@@ -1676,6 +1699,10 @@ class SiteContentSource:
     def user_enabled(self, user: str) -> bool | None:
         found = frappe.db.get_value("User", user, ["name", "enabled"], as_dict=True)
         return bool(found.enabled) if found else None
+
+    def user_name(self, user: str) -> str | None:
+        """Answer the User's stored name for `user`, matched as the database matches it; None when there's no row."""
+        return frappe.db.get_value("User", user, "name")
 
     def site_timezone(self) -> str:
         from frappe.utils import get_system_timezone

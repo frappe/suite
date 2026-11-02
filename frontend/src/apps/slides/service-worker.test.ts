@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { MEDIA_CACHE_NAME, PINNED_CACHE_NAME } from './utils/slidesCaches'
+import { PINNED_CACHE_NAME } from './utils/slidesCaches'
 
 vi.mock('workbox-range-requests', () => ({
   createPartialResponse: async (_request: Request, response: Response) => response,
@@ -8,7 +8,7 @@ vi.mock('workbox-range-requests', () => ({
 
 const listeners = new Map<string, (event: any) => void>()
 const pinned = new Map<string, Response>()
-const media = new Map<string, Response>()
+const opened = new Map<string, Map<string, Response>>()
 let respond: (url: string) => Promise<Response>
 let online: boolean
 let networkFails: boolean
@@ -28,7 +28,7 @@ const PINNED_KEY = '/private/files/a.png'
 
 beforeEach(() => {
   pinned.clear()
-  media.clear()
+  opened.clear()
   fetches = []
   online = true
   networkFails = false
@@ -37,10 +37,11 @@ beforeEach(() => {
     match: async (key: string, { cacheName }: { cacheName: string }) =>
       cacheName === PINNED_CACHE_NAME ? pinned.get(key) : undefined,
     open: async (name: string) => {
-      if (name !== MEDIA_CACHE_NAME) throw new Error(`unexpected cache ${name}`)
+      const entries = opened.get(name) ?? new Map<string, Response>()
+      opened.set(name, entries)
       return {
-        match: async (request: Request) => media.get(request.url),
-        put: async (request: Request, response: Response) => media.set(request.url, response),
+        match: async (request: Request) => entries.get(request.url),
+        put: async (request: Request, response: Response) => entries.set(request.url, response),
         keys: async () => [],
         delete: async () => true,
       }
@@ -49,7 +50,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', async (request: Request) => {
     fetches.push(request.url)
     if (networkFails) throw new TypeError('Failed to fetch')
-    return new Response('denied', { status: 403 })
+
+    return new Response('network', { status: 200, headers: { 'Content-Type': 'text/plain' } })
   })
 
   respond = (url) => {
@@ -149,5 +151,133 @@ describe('the shell document', () => {
     await activation
 
     expect(deleted).toEqual(['slides-shell'])
+  })
+})
+
+// offline, any same-origin GET the user pinned is answered from the pin, so a
+// pinned presentation opens at /d/<node> without the network
+describe('a pinned presentation offline', () => {
+  type FakeRequest = Pick<Request, 'url' | 'method' | 'mode' | 'headers' | 'referrer'>
+
+  function dispatch(request: FakeRequest, clientId = 'c1') {
+    let responded: Promise<Response> | null = null
+    listeners.get('fetch')!({
+      request,
+      clientId,
+      respondWith: (value: Promise<Response>) => {
+        responded = value
+      },
+      waitUntil: () => {},
+    })
+    return responded as Promise<Response> | null
+  }
+
+  function navigation(path: string): FakeRequest {
+    return {
+      url: `${location.origin}${path}`,
+      method: 'GET',
+      mode: 'navigate',
+      headers: new Headers(),
+      referrer: '',
+    }
+  }
+
+  function get(path: string, referrer = `${location.origin}/d/n1/deck`): FakeRequest {
+    return {
+      url: `${location.origin}${path}`,
+      method: 'GET',
+      mode: 'cors',
+      headers: new Headers(),
+      referrer,
+    }
+  }
+
+  function text(label: string, type = 'text/html') {
+    return new Response(label, { status: 200, headers: { 'Content-Type': type } })
+  }
+
+  function enter(clientId: string) {
+    listeners.get('message')!({
+      data: 'slides-entered',
+      source: { id: clientId },
+      ports: [],
+      waitUntil: () => {},
+    })
+  }
+
+  const API = '/api/suite/drive/nodes/n1?expand=access%2Cpreview%2Cbreadcrumbs'
+  const ASSET = '/assets/suite/frontend/assets/SlidesSurface-abc123.js'
+
+  beforeEach(() => {
+    online = false
+    networkFails = true
+    vi.stubGlobal('clients', { claim: async () => {}, matchAll: async () => [] })
+    pinned.set('/d/n1', text('shell'))
+    pinned.set(API, text('{}', 'application/json'))
+    pinned.set(ASSET, text('chunk', 'text/javascript'))
+    pinned.set(PINNED_KEY, body('picture'))
+  })
+
+  it.each(['/d/n1', '/d/n1/quarterly-plan', '/d/n1/present'])(
+    'opens %s from the pinned shell',
+    async (path) => {
+      const response = await dispatch(navigation(path))
+
+      expect(await response!.text()).toBe('shell')
+    },
+  )
+
+  it('fails like the network for a node nobody pinned, a Writer one included', async () => {
+    await expect(dispatch(navigation('/d/n2/notes'))).rejects.toThrow()
+    expect(fetches).toEqual([`${location.origin}/d/n2/notes`])
+  })
+
+  it.each([
+    ['a tab that never said it is slides', undefined],
+    ['a tab that did', 'c2'],
+  ])('serves the pinned start-up requests to %s', async (_label, entered) => {
+    if (entered) {
+      enter(entered)
+    }
+
+    const clientId = entered ?? 'c3'
+
+    expect(await (await dispatch(get(API), clientId))!.text()).toBe('{}')
+    expect(await (await dispatch(get(ASSET), clientId))!.text()).toBe('chunk')
+    expect(
+      await (await dispatch(get(MEDIA_URL.slice(location.origin.length)), clientId))!.text(),
+    ).toBe('picture')
+    expect(fetches).toEqual([])
+  })
+
+  it('still serves the pin once the browser restarts the worker', async () => {
+    enter('c1')
+    vi.resetModules()
+    await import('./service-worker')
+
+    const response = await dispatch(get(ASSET))
+
+    expect(await response!.text()).toBe('chunk')
+  })
+
+  it('finds a picture whose signed url has expired', async () => {
+    const signed = '/private/files/a.png?e=1700000000&s=abc'
+
+    const response = await dispatch(get(signed, ''))
+
+    expect(await response!.text()).toBe('picture')
+  })
+
+  it('leaves the pin alone online, apart from typed pinned media', async () => {
+    online = true
+    networkFails = false
+    enter('c1')
+
+    expect(dispatch(navigation('/d/n1/quarterly-plan'))).toBeNull()
+    expect(await (await dispatch(get(ASSET)))!.text()).toBe('network')
+    expect(await (await dispatch(get(MEDIA_URL.slice(location.origin.length))))!.text()).toBe(
+      'picture',
+    )
+    expect(dispatch(get(API))).toBeNull()
   })
 })

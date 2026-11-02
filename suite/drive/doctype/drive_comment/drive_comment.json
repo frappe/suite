@@ -9,7 +9,8 @@
   "content",
   "author",
   "author_name",
-  "mentions"
+  "mentions",
+  "client_id"
  ],
  "fields": [
   {
@@ -29,7 +30,7 @@
   },
   {
    "fieldname": "content",
-   "fieldtype": "Text",
+   "fieldtype": "Code",
    "label": "Content",
    "reqd": 1
   },
@@ -49,6 +50,14 @@
    "fieldname": "mentions",
    "fieldtype": "JSON",
    "label": "Mentions"
+  },
+  {
+   "description": "The writing client's own id for this write, so a resend returns the first answer",
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client ID",
+   "length": 64,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,

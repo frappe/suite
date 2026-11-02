@@ -39,7 +39,8 @@ async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
-	await useNewMenu(page, "Folder");
+	await page.getByRole("button", { name: "New", exact: true }).click();
+	await page.locator('[data-slot="group"]', { hasText: "Create" }).getByRole("menuitem", { name: "Folder", exact: true }).click();
 
 	const dialog = page.getByRole("dialog", { name: "New folder" });
 	await dialog.getByRole("textbox").fill("made-in-the-browser");
@@ -91,7 +92,7 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 	expect(created?.content_doctype).toBe("Presentation");
 });
 
-test("New offers Upload files and then Upload folder", async ({ page }) => {
+test("New offers Files and then Folder under Upload", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
 	const menu = page.getByRole("menu", { name: "New" });

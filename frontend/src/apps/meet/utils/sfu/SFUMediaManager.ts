@@ -453,7 +453,7 @@ export class SFUMediaManager {
 
       return enhancedConsumer
     } catch (error) {
-      console.error(`Failed to subscribe to producer ${producerId}:`, error)
+      console.debug(`Failed to subscribe to producer ${producerId}:`, error)
       throw error
     }
   }
@@ -595,7 +595,7 @@ export class SFUMediaManager {
       }
     }
 
-    console.warn('Giving up on remote consumer subscription', {
+    console.error('Giving up on remote consumer subscription', {
       participantId: request.participantId,
       producerId: request.producerId,
       attempts: SFUMediaManager.MAX_RESUBSCRIBE_ATTEMPTS,
@@ -844,6 +844,17 @@ export class SFUMediaManager {
         for (const cameraConsumer of allCameraConsumers) {
           await this.attachVideoConsumer(cameraConsumer.participantId, cameraConsumer)
         }
+      }
+
+      // Camera attachment can outlive a departing sharer or a receive-side reset.
+      // Never announce a screen whose consumer was removed during that await.
+      if (
+        this.consumerManager.getConsumer(consumer.id) !== consumer ||
+        consumer.consumer.closed ||
+        track.readyState === 'ended'
+      ) {
+        this.isScreenShareActive = this.consumerManager.getScreenShareConsumers().length > 0
+        return
       }
 
       const screenStream = new MediaStream([track])

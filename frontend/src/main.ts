@@ -6,7 +6,9 @@ import { createApp, type App as VueApp } from 'vue'
 import App from '@/App.vue'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
+import { watchBuild } from '@/platform/build'
 import { initializeCursor } from '@/platform/cursor'
+import { installErrorLog } from '@/platform/error-log'
 import { installApiErrorHandler } from '@/platform/server-state'
 import { useSession } from '@/platform/session'
 import { initializeTheme } from '@/platform/theme'
@@ -14,6 +16,7 @@ import { translationPlugin, ready as translationsReady } from '@/platform/transl
 import router from '@/router'
 
 initializeCursor()
+watchBuild()
 
 const app = createApp(App)
 
@@ -28,6 +31,7 @@ await Promise.all([
   import('@/boot/config'),
 ])
 
+installErrorLog(app)
 installApiErrorHandler(app)
 
 app.use(createPinia())

@@ -88,6 +88,7 @@ SLIDE_FIELDS = (
     "slide_elements_rewritten",
     "slide_elements_repaired",
     "deck_previews_created",
+    "deck_previews_skipped",
     "blobless_nodes",
     "slides_deferred",
 )
@@ -177,7 +178,8 @@ def _convert_deck(env, deck, batch_size, result):
         # §14.7 asks for both conversions. A File a slide body names is deck
         # media whatever else it is, so it becomes a child node and the body
         # holds that node id, while the same File still builds the preview.
-        # Every excluded row carries the chosen blob, so the group is one node.
+        # A chosen thumbnail's rows share its blob, so the group is one node;
+        # an ambiguous tier's rows do not, and `_bind` refuses the deck
         excluded = set()
     media = [row for row in files if row.name not in excluded]
     _refuse_unreachable_children(deck, deck_node)
@@ -194,7 +196,7 @@ def _convert_deck(env, deck, batch_size, result):
         )
     mapping.update(borrowed)
     writer.flush()
-    preview_created = _preview(env, deck, thumbnail)
+    preview_created = _preview(env, deck, thumbnail, result)
     target.commit()
     # §13 counts a validated non-null `(deck node, blob)` outcome once, whether
     # a local group, an adopted reference, or a node an earlier run already
@@ -641,9 +643,14 @@ def _thumbnail_file(deck, files, result, host=""):
     `/private/files/x.webp`, and neither the exact nor the canonical tier
     matches that pair. `_path_variants` does.
 
-    An unmatched thumbnail is reported, not raised. A preview is derived data:
-    §14.7 hands media previews to the daily gap sweep, and the deck, its media,
-    and every other deck on the site are worth more than one refusal.
+    An unmatched, blobless or ambiguous thumbnail is reported, not raised. A
+    preview is derived data: §14.7 hands media previews to the daily gap
+    sweep, and the deck, its media, and every other deck on the site are worth
+    more than one refusal. A blobless thumbnail row gets no node; the storage step already
+    lists it as missing bytes. Nor does an ambiguous tier: as media its rows
+    would share one URL across different blobs, which the mapping refuses. A
+    slide body naming one of them still sends the tier to the mapping, so that
+    deck is refused.
     """
     value = deck.thumbnail
     if not value or _never_media(value, host):
@@ -658,26 +665,39 @@ def _thumbnail_file(deck, files, result, host=""):
     variant = [row for row in files if _path_variants(row.file_url or "", host) & wanted]
     tier = exact or canonical or variant
     if not tier:
-        result.record_issue(
-            f"Presentation:{deck.name}",
-            f"thumbnail {value!r} matches no File row; no preview was built",
-            phase="slides",
-        )
+        skip_preview(result, deck, f"thumbnail {value!r} matches no File row")
         return None, set()
     marked = [row for row in tier if row.attached_to_field == "thumbnail"]
-    winning = marked or tier
-    blobs = {row.blob for row in winning}
-    if len(blobs) != 1 or None in blobs:
-        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is ambiguous or blobless")
+    winning = [row for row in marked or tier if row.blob]
+    blobless = {row.name for row in tier if not row.blob}
+    if not winning:
+        skip_preview(result, deck, f"thumbnail {value!r} has no bytes")
+        return None, blobless
+
+    candidates = len({row.blob for row in winning})
+    if candidates != 1:
+        rows = len(tier)
+        skip_preview(
+            result,
+            deck,
+            f"thumbnail {value!r} matches {candidates} different blobs; its {rows} File rows get no media node",
+        )
+        return None, {row.name for row in tier}
+
     chosen = min(winning, key=lambda row: (str(row.creation or ""), row.name))
-    return chosen, {row.name for row in files if row.blob == chosen.blob and row in tier}
+    return chosen, blobless | {row.name for row in files if row.blob == chosen.blob and row in tier}
 
 
-def _preview(env, deck, source):
+def skip_preview(result, deck, reason):
+    """Count a deck left without a preview and record why."""
+    result.deck_previews_skipped += 1
+    result.record_issue(f"Presentation:{deck.name}", f"{reason}; no preview was built", phase="slides")
+
+
+def _preview(env, deck, source, result):
     if source is None:
         return 0
     target = env.content_target
-    blob = _ready_blob(target, source.blob)
     found = target.preview(deck.node)
     if found:
         # §13 validates a stored row rather than rewriting it. `put_private_blob`
@@ -685,32 +705,12 @@ def _preview(env, deck, source):
         # blob after any encoder change and refuse the deck for good.
         _validate_preview(target, deck, source, found)
         return 1
-    raw = target.read_blob(blob.name)
-    # Probe the declared size before any decode, the way `previews.py:181-198`
-    # does. `Image.DecompressionBombError` derives from `Exception`, not
-    # `OSError`, so a bomb reaches neither handler below.
     try:
-        with Image.open(io.BytesIO(raw)) as probe:
-            width, height = probe.size
-    except Exception as error:
-        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is unreadable") from error
-    if width * height > MAX_IMAGE_PIXELS:
-        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is oversized")
-    try:
-        with Image.open(io.BytesIO(raw)) as image:
-            with _refusing_truncated_images():
-                image.load()
-            image = ImageOps.exif_transpose(image)
-            reusable = bool(blob.is_private and blob.mime_type == "image/webp" and max(image.size) <= 512)
-            if reusable:
-                preview_blob = blob
-            else:
-                image.thumbnail((512, 512))
-                output = io.BytesIO()
-                image.convert("RGB").save(output, "WEBP")
-                preview_blob = target.put_private_blob(output.getvalue(), f"{source.name}.webp")
-    except (Image.UnidentifiedImageError, OSError) as error:
-        raise InvalidLegacyContent(f"Presentation {deck.name} thumbnail is unreadable") from error
+        preview_blob = thumbnail_preview(target, source)
+    except UnusableThumbnail as error:
+        skip_preview(result, deck, str(error))
+        return 0
+
     if (
         not preview_blob
         or preview_blob.status != "Ready"
@@ -727,6 +727,46 @@ def _preview(env, deck, source):
     }
     target.insert_previews([planned])
     return 1
+
+
+class UnusableThumbnail(Exception):
+    """A thumbnail no preview can be built from."""
+
+
+def thumbnail_preview(target, source):
+    """Return the private WebP blob a deck preview stores, reused or re-encoded."""
+    blob = target.blob(source.blob)
+    if not blob or blob.status != "Ready":
+        raise UnusableThumbnail(f"thumbnail blob {source.blob} is not Ready")
+
+    raw = target.read_blob(blob.name)
+    # Probe the declared size before any decode, the way `previews.py:181-198`
+    # does. `Image.DecompressionBombError` derives from `Exception`, not
+    # `OSError`. Pillow's decoders also raise `SyntaxError` and `ValueError`,
+    # so both handlers catch `Exception`
+    try:
+        with Image.open(io.BytesIO(raw)) as probe:
+            width, height = probe.size
+    except Exception as error:
+        raise UnusableThumbnail(f"thumbnail is unreadable ({type(error).__name__})") from error
+
+    if width * height > MAX_IMAGE_PIXELS:
+        raise UnusableThumbnail("thumbnail is oversized")
+
+    try:
+        with Image.open(io.BytesIO(raw)) as image, _refusing_truncated_images():
+            image.load()
+            image = ImageOps.exif_transpose(image)
+            if blob.is_private and blob.mime_type == "image/webp" and max(image.size) <= 512:
+                return blob
+
+            image.thumbnail((512, 512))
+            output = io.BytesIO()
+            image.convert("RGB").save(output, "WEBP")
+    except Exception as error:
+        raise UnusableThumbnail(f"thumbnail is unreadable ({type(error).__name__})") from error
+
+    return target.put_private_blob(output.getvalue(), f"{source.name}.webp")
 
 
 @contextmanager

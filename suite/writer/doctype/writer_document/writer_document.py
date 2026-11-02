@@ -4,12 +4,11 @@
 import frappe
 from frappe.model.document import Document
 
-from suite import drive
+from suite import content, drive
+from suite.writer.content import APP
 
-COLLISION_ERRORS = (
-    frappe.exceptions.QueryDeadlockError,
-    frappe.exceptions.TimestampMismatchError,
-)
+# A document with a log keeps these through it, so nothing else writes them
+LOGGED_FIELDS = ("content", "html", "ycomments", "collab")
 
 
 class WriterDocument(drive.DriveContent, Document):
@@ -21,44 +20,26 @@ class WriterDocument(drive.DriveContent, Document):
     nothing here mirrors a field Drive owns (§10.2). Every write asks Drive for
     EDIT on the node first.
 
-    Collaboration is the editor's: it syncs peer to peer over WebRTC and posts
-    the merged body here.
-
-    The editor's saves admit Guest: a share link's holder has no session, and
-    `drive_check` answers for the link the request carries (§4.6).
+    The editor saves through the document's log, not through this row.
     """
-
-    @frappe.whitelist(methods=["POST"], allow_guest=True)
-    def save_doc(self, data: str, html: str | None = None):
-        """Store the merged collaborative body."""
-        self.drive_check(drive.EDIT)
-        values = {"content": data}
-        if html is not None:
-            values["html"] = html
-        try:
-            frappe.db.set_value("Writer Document", self.name, values, update_modified=False)
-            self.drive_touch()
-        except COLLISION_ERRORS:
-            pass
-
-    @frappe.whitelist(methods=["POST"])
-    def take_version(self, label: str | None = None):
-        """Store the saved body as one immutable Drive version.
-
-        Drive reads the body itself, so the caller saves first and passes no
-        bytes. An automatic version's retention is Drive's ladder (§9.1).
-        """
-        return self.drive_take_version(kind="named" if label else "auto", label=label)
 
     @frappe.whitelist(methods=["POST"])
     def update_settings(self, data: str):
         self.drive_check(drive.EDIT)
-        self.settings = data
-        self.save()
+        # settings only; save() would rewrite the logged body
+        self.db_set("settings", data)
 
-    @frappe.whitelist(methods=["POST"], allow_guest=True)
-    def save_html(self, html: str):
-        """Store the rendered body of a non-collaborative document."""
-        self.drive_check(drive.EDIT)
-        frappe.db.set_value("Writer Document", self.name, "html", html, update_modified=False)
-        self.drive_touch()
+    def validate(self) -> None:
+        """Refuse a generic save that changes a logged field of a logged document."""
+        if (
+            not self.is_new()
+            and any(self.has_value_changed(field) for field in LOGGED_FIELDS)
+            and content.find(APP, self.node, for_update=True)
+        ):
+            raise drive.DriveConflict(frappe._("This document saves as you edit; reload it to keep editing"))
+
+    def apply_fieldlevel_read_permissions(self) -> None:
+        """Hide the row's body of a logged document, which may be behind the edits after it."""
+        super().apply_fieldlevel_read_permissions()
+        if content.find(APP, self.node):
+            self.content = None
