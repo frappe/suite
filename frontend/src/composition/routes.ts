@@ -3,6 +3,7 @@ import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 
 import { RECOVERY_COPIES_TITLE } from '@/apps/drive'
 import type { PhoneChromeOwner, ShellFrame } from '@/platform/contracts'
+import AppLoadErrorView from '@/shell/AppLoadErrorView.vue'
 
 const RouteLoading = defineComponent({
   name: 'RouteLoading',
@@ -150,6 +151,14 @@ export const routes: RouteRecordRaw[] = [
       scroll: 'content',
       title: 'Set up Frappe Suite',
     },
+  },
+  // Where a page whose code failed to load lands (`@/platform/load-failure`).
+  // Imported eagerly: after a deploy, a lazy chunk of this view is gone too.
+  {
+    path: '/suite/load-error',
+    name: 'app-load-error',
+    component: AppLoadErrorView,
+    meta: { frame: 'none', scroll: 'content', allowGuest: true, title: 'Frappe Suite' },
   },
   {
     path: '/:pathMatch(.*)*',

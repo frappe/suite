@@ -40,7 +40,9 @@ app.use(createPinia())
 app.use(router)
 app.use(translationPlugin)
 
-Promise.all([router.isReady(), installLegacySprite(app)]).then(() => {
+// A first navigation that fails still mounts the app: the router has sent it
+// on to the page that says so (`@/platform/load-failure`).
+Promise.all([router.isReady().catch(() => {}), installLegacySprite(app)]).then(() => {
   app.mount('#app')
 })
 
