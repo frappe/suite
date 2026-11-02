@@ -47,3 +47,21 @@ it('inserts a table of the size picked on the grid, with a header row', async ()
   expect(table.firstChild?.firstChild?.type.name).toBe('tableHeader')
   expect(document.querySelector('[data-slot="table-size-picker"]')).toBeNull()
 })
+
+it('closes on Tab, and Enter then goes where focus is', async () => {
+  const element = document.body.appendChild(document.createElement('div'))
+  editor = new Editor({ element, extensions: writerSchema(), content: '<p>Intro</p>' })
+  vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ left: 0, right: 0, top: 0, bottom: 16 })
+  openTableSizePicker(editor)
+  await vi.waitFor(() => {
+    if (!document.querySelector('[data-slot="table-size-picker"]')) throw new Error('Not open')
+  })
+
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+  await vi.waitFor(() => {
+    if (document.querySelector('[data-slot="table-size-picker"]')) throw new Error('Still open')
+  })
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+  expect(editor.getHTML()).toBe('<p>Intro</p>')
+})

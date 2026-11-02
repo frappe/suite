@@ -57,6 +57,12 @@ export class TableShape {
     return [...cells].sort((a, b) => a - b)
   }
 
+  /** A copy of a line is one wide only when no cell in the line spans across that direction */
+  canDuplicate(doc: PMNode, axis: Axis, index: number) {
+    const span = axis === 'row' ? 'rowspan' : 'colspan'
+    return this.lineCells(axis, index).every((pos) => doc.nodeAt(pos)?.attrs[span] === 1)
+  }
+
   /** How many leading rows hold only header cells */
   get headerRows() {
     let rows = 0

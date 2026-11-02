@@ -30,6 +30,13 @@ export const WriterPaste = Extension.create({
             isPlain = isPlainPaste(event)
             return false
           },
+          handleDOMEvents: {
+            // A paste comes before the keys are released; one that never came must not mark the next
+            keyup: () => {
+              isPlain = false
+              return false
+            },
+          },
           handlePaste: (view, _event, slice) => {
             if (!isPlain) return false
             isPlain = false

@@ -170,6 +170,19 @@ describe('pasting', () => {
     paste(editor, { 'text/plain': text })
     expect(blocks(editor)?.slice(0, 2)).toEqual(['bulletList:item', 'orderedList:step'])
   })
+
+  it('does not paste as it is after a Mod-Shift-v that pasted nothing', () => {
+    const editor = writerEditor('<p></p>')
+    editor.commands.setTextSelection(1)
+    editor.view.dom.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'V', ctrlKey: true, shiftKey: true, bubbles: true }),
+    )
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keyup', { key: 'V', bubbles: true }))
+
+    paste(editor, { 'text/plain': '- item\n1. step' })
+
+    expect(blocks(editor)?.slice(0, 2)).toEqual(['bulletList:item', 'orderedList:step'])
+  })
 })
 
 describe('putting in blocks', () => {

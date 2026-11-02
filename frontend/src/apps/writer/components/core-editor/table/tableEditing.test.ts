@@ -92,6 +92,23 @@ describe('table editing', () => {
     expect(grid(editor)[1]).toEqual(['Ann', 'Dev', 'Core', 'Core'])
   })
 
+  it('offers Duplicate only for lines a copy keeps the grid square', () => {
+    const { editor, table } = open()
+    expect(table.canDuplicateLine('column', 0)).toBe(true)
+    const shape = table.shape
+    editor.commands.setCellSelection({
+      anchorCell: shape?.cellPos(1, 0) ?? 0,
+      headCell: shape?.cellPos(1, 1) ?? 0,
+    })
+    editor.commands.mergeCells()
+    const merged = editing(editor)
+
+    expect(merged.canDuplicateLine('column', 0)).toBe(false)
+    expect(merged.canDuplicateLine('column', 1)).toBe(false)
+    expect(merged.canDuplicateLine('column', 2)).toBe(true)
+    expect(merged.canDuplicateLine('row', 1)).toBe(true)
+  })
+
   it('adds a row and a column at the end', () => {
     const { editor, table } = open()
     table.addLineAtEnd('row')

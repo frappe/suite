@@ -139,11 +139,15 @@ function splitItem(table: TableEditing): ActionOption {
 
 function lineItems(table: TableEditing, line: { axis: Axis; index: number }): DropdownOptions {
   return [
-    {
-      label: __('Duplicate'),
-      icon: 'lucide-copy',
-      onClick: () => table.duplicateLine(line.axis, line.index),
-    },
+    ...(table.canDuplicateLine(line.axis, line.index)
+      ? [
+          {
+            label: __('Duplicate'),
+            icon: 'lucide-copy',
+            onClick: () => table.duplicateLine(line.axis, line.index),
+          },
+        ]
+      : []),
     {
       label: __('Clear content'),
       icon: 'lucide-eraser',

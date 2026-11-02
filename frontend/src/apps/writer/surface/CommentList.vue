@@ -298,10 +298,10 @@ async function postDraft(draft: ShownDraft) {
     return
   }
 
-  emit('sent')
   const thread = await props.drafts.post(draft, takeGuestName())
   if (thread) {
     openThread.value = thread
+    emit('sent')
   }
 }
 

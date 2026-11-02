@@ -94,6 +94,11 @@ function setSize(row: number, column: number) {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  // Tab moves on, and the keys below must not follow focus out of the grid
+  if (event.key === 'Tab') {
+    emit('close')
+    return
+  }
   const step = STEPS[event.key]
   if (step || event.key === 'Enter' || event.key === 'Escape') {
     event.preventDefault()

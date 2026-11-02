@@ -43,6 +43,10 @@ export class TableEditing {
     if (shape) this.insertLine(axis, shape.count(axis) - 1, 'after')
   }
 
+  canDuplicateLine(axis: Axis, index: number) {
+    return !!this.shape?.canDuplicate(this.editor.state.doc, axis, index)
+  }
+
   duplicateLine(axis: Axis, index: number) {
     this.run((chain) =>
       chain.command(({ tr }) => {
