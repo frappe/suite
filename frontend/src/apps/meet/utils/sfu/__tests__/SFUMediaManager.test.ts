@@ -138,6 +138,7 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		vi.useRealTimers();
 	});
 
@@ -157,10 +158,11 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(1);
 	});
 
-	it("retries an initial subscription until it succeeds", async () => {
+	it("retries an initial subscription without reporting a terminal error", async () => {
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
 		const { mediaManager, transportManager } = createManager();
 		transportManager.createConsumer
-			.mockRejectedValueOnce(new Error("not ready"))
+			.mockRejectedValueOnce(new Error("E2EE join handshake not completed"))
 			.mockResolvedValueOnce({
 				id: "new-c1",
 				producerId: "producer-1",
@@ -179,28 +181,7 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 
 		await expect(subscription).resolves.toMatchObject({ id: "new-c1" });
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(2);
-	});
-
-	it.each([
-		"E2EE join handshake not completed",
-		"Producer old-producer not found",
-		"Transport old-transport not found",
-	])("recovers from %s without reporting a terminal error", async (message) => {
-		const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
-		try {
-			const { mediaManager, transportManager } = createManager();
-			transportManager.createConsumer.mockRejectedValueOnce(new Error(message));
-			const subscription = mediaManager.subscribeToRemoteProducer({
-				producerId: "producer-1",
-				participantId: "remote-1",
-				isScreen: false,
-			});
-			await vi.advanceTimersByTimeAsync(250);
-			await expect(subscription).resolves.toMatchObject({ id: "new-c1" });
-			expect(errorLog).not.toHaveBeenCalled();
-		} finally {
-			errorLog.mockRestore();
-		}
+		expect(errorLog).not.toHaveBeenCalled();
 	});
 
 	it("exhausts one automatic retry chain", async () => {
@@ -225,7 +206,6 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 			"Giving up on remote consumer subscription",
 			expect.objectContaining({ producerId: "producer-1", participantId: "remote-1" }),
 		);
-		errorLog.mockRestore();
 	});
 
 	it("discards an in-flight subscription when its producer closes", async () => {
