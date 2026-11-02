@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { initSync } from '@ironcalc/wasm'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
@@ -9,11 +11,13 @@ import { bytesToBase64, ENGINE_VERSION } from '../core/snapshot-codec'
 import { createCondFormatEngine } from '../engine/cond-format'
 import { createFormatsEngine } from '../engine/formats'
 import { createMergeEngine } from '../engine/merge'
-import { createNamedRanges } from '../engine/named-ranges'
+import { createNamedRanges, definedNameChanges } from '../engine/named-ranges'
 import { createSlicerEngine } from '../engine/slicers'
+import { parseCellId } from '../utils/cells'
+import { applyNumberFmt } from '../utils/format-number'
 import { convertSheetsData, inProcessClient, OPEN_KEY } from './conversion'
 import { docToHtml } from './html'
-import { buildWorkbookFromDoc, glueCommand, readSheetInputs } from './load'
+import { buildWorkbookFromDoc, glueBatch, glueCommand, readSheetInputs } from './load'
 import { ROOT, roots } from './schema'
 import { docSheets } from './stores'
 import { makeStores } from './test-tabs'
@@ -312,5 +316,97 @@ describe('convertSheetsData: an old sheet becomes a collab doc', { timeout: TIME
         kind: 'failed',
         reason: 'check',
       })
+  })
+})
+
+// Bodies saved before this editor, frozen in core/ironcalc-gate/. The develop
+// one was made by develop's own editor code (origin/develop f3f31d63a:
+// sheet-codec packSheet and the formats, merge and named-ranges engines), in
+// the shape its usePersistence saved. Develop never ran IronCalc, so its
+// bodies hold no IronCalc bytes and IronCalc's version cannot matter to them.
+const SAVED = path.join(path.dirname(fileURLToPath(import.meta.url)), '../core/ironcalc-gate')
+const savedBody = (name: string) => fs.readFileSync(path.join(SAVED, name), 'utf8')
+
+describe('convertSheetsData: a body saved before IronCalc 0.9.0', { timeout: TIMEOUT }, () => {
+  // A tab on the converted doc, with the defined names sent as the editor sends them.
+  async function shown(state: Uint8Array) {
+    const tab = await opened(state)
+    const client = await inProcessClient(null)
+    const stores = makeStores()
+    await buildWorkbookFromDoc(tab.doc, client, stores)
+    const { changes } = definedNameChanges(new Map(), stores.namedRanges.list(), client.sheets)
+    client.dispatch(glueBatch(changes.map((c) => glueCommand(c.type, c.payload))))
+    const read = async (sheet: string, a1: string[]) => {
+      const cells = a1.map((id) => {
+        const { row, col } = parseCellId(id)!
+        return { row: row + 1, col: col + 1 }
+      })
+      const res = await client.readCells({ sheet, cells, what: ['display'] })
+      return res.cells.map((c, i) => {
+        const format = stores.formats.get(a1[i]!, sheet).numberFormat
+        return format ? applyNumberFmt(c.display, format) : c.display
+      })
+    }
+    const out = {
+      budget: await read('Budget', ['B2', 'B3', 'B4', 'C2', 'C3']),
+      summary: await read('Summary', ['B1', 'B2', 'B3']),
+    }
+    client.terminate()
+    return { ...tab, shown: out }
+  }
+
+  it('a develop body keeps its cells, formulas, names, formats, merges and view', async () => {
+    const answer = await converted(savedBody('saved-body-develop.json'))
+    const tab = await shown(answer.state)
+    expect(answer.dropped).toEqual([])
+    expect(tab.sheets).toEqual(['Budget', 'Summary'])
+    expect(tab.cells).toEqual({
+      'Budget!1:1': 'Item',
+      'Budget!1:2': 'Amount',
+      'Budget!1:3': 'Share',
+      'Budget!2:1': 'Rent',
+      'Budget!2:2': '1200',
+      'Budget!2:3': '=B2/B$4',
+      'Budget!3:1': 'Food',
+      'Budget!3:2': '350.5',
+      'Budget!3:3': '=B3/B$4',
+      'Budget!4:1': 'Total',
+      'Budget!4:2': '=SUM(B2:B3)',
+      'Budget!6:1': 'Paid on the 1st of each month',
+      'Summary!1:1': 'Total ×2',
+      'Summary!1:2': '=Budget!B4*2',
+      'Summary!2:1': 'Costs',
+      'Summary!2:2': '=SUM(Costs)',
+      'Summary!3:1': 'Code',
+      'Summary!3:2': "'007",
+    })
+    // What develop's own renderer showed for these cells.
+    expect(tab.shown).toEqual({
+      budget: ['$1,200.00', '$350.50', '$1,550.50', '77.4%', '22.6%'],
+      summary: ['3101', '1550.5', '007'],
+    })
+    const formats = tab.stores.formats
+    expect(formats.get('A1', 'Budget')).toEqual({ bold: true, backgroundColor: '#FFEE00' })
+    expect(formats.get('A4', 'Budget')).toEqual({ italic: true, color: '#1F6FEB', align: 'right' })
+    expect(tab.stores.merge.getMasterInfo('A6', 'Budget')).toMatchObject({ rowSpan: 1, colSpan: 3 })
+    expect(tab.stores.namedRanges.list()).toEqual([
+      { name: 'Costs', sheet: 'Budget', range: 'B2:B3' },
+    ])
+    const views = [...roots(tab.doc).sheetState.entries()].filter(([k]) => k.endsWith(':view'))
+    expect(views.map(([, v]) => v)).toEqual([
+      expect.objectContaining({ colW: { 0: 160 }, rowH: { 5: 36 }, freezeRows: 1 }),
+    ])
+  })
+
+  it('a body saved by IronCalc 0.8.4 is refused, never converted to an empty sheet', async () => {
+    // 0.9.0 cannot read 0.8.4's bytes ("bitcode error"). Only this branch's
+    // editor saved them, before it moved to 0.9.0; the sheet keeps its body
+    // and opens on the error screen that names both versions.
+    const body = JSON.parse(savedBody('saved-body-0.8.4.json')) as { engine_version: string }
+    expect(body.engine_version).toBe('0.8.4')
+    expect(await convertSheetsData(JSON.stringify(body), MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
   })
 })
