@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getRequestType, isCacheable } from '@/apps/slides/utils/slidesRequests'
+import { getRequestType, isCacheable, shellKey } from '@/apps/slides/utils/slidesRequests'
 
 const ORIGIN = 'https://suite.localhost'
 
@@ -15,12 +15,6 @@ const bundleChunk = '/assets/suite/frontend/assets/chunk-abc123.js'
 describe('getRequestType', () => {
   it.each([
     ['a slides navigation', request('/slides/p1', { mode: 'navigate' }), undefined, 'shell'],
-    [
-      'the pin action storing the shell',
-      request('/slides/p1', { headers: { 'x-slides-pin': 'shell' } }),
-      undefined,
-      'shell',
-    ],
     ['a drive navigation', request('/drive', { mode: 'navigate' }), undefined, 'other'],
     [
       'owner media with the marker',
@@ -85,8 +79,27 @@ describe('getRequestType', () => {
       'asset',
     ],
     ['a source map', request(`${bundleChunk}.map`), undefined, 'other'],
+    ['a document navigation', request('/d/n1/deck', { mode: 'navigate' }), 'entered', 'other'],
+    [
+      'a drive api read from a slides tab',
+      request('/api/suite/drive/nodes/n1?expand=access', { referrer: `${ORIGIN}/d/n1/deck` }),
+      'entered',
+      'other',
+    ],
   ])('types %s', (_name, req, clientState, expected) => {
     expect(getRequestType(req, clientState)).toBe(expected)
+  })
+})
+
+describe('shellKey', () => {
+  it.each([
+    ['/d/n1', '/d/n1'],
+    ['/d/n1/quarterly-plan', '/d/n1'],
+    ['/d/n1/present', '/d/n1'],
+    ['/slides/p1', null],
+    ['/drive', null],
+  ])('keys %s as %s', (path, key) => {
+    expect(shellKey(path)).toBe(key)
   })
 })
 

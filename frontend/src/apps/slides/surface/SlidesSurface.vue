@@ -1,21 +1,35 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { Button, Skeleton, TextInput, toast } from 'frappe-ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { api, client } from '@/api'
 import {
   DriveCommentAuthor,
   DriveDocumentHeader,
   GUEST_NAME_LIMIT,
+  useDriveDocumentActions,
   useDriveGuestName,
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
+import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
+import PresentButton from '@/apps/slides/components/PresentButton.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
+import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
@@ -27,10 +41,17 @@ import {
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
 import {
+  pruneOfflineCopy,
+  refreshOfflineStatus,
+  warmOfflineCopyAssets,
+} from '@/apps/slides/stores/offlineCopy'
+import {
+  contextFor,
   initPresentationDoc,
   inReadonlyMode,
   loadTemplates,
   presentationDoc,
+  presentationId,
   resetEditorState,
   setDocumentContext,
   slidesLength,
@@ -47,13 +68,17 @@ import {
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
-  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
   slides,
 } from '@/apps/slides/stores/slide'
-import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
+import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
+import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
+import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { useHideRail } from '@/platform/rail'
+import { useSession } from '@/platform/session'
+import { openAreaShortcuts } from '@/platform/shortcuts'
 
 import { createSlidesAccess } from './access'
 import {
@@ -65,11 +90,14 @@ import {
   type MergedCompositeSlide,
 } from './compositeGroups'
 import ExportView from './ExportView.vue'
-import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
+import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
+import { useNewPresentationTheme } from './newPresentation'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
 type Panel = DocumentPanel
+
+const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
 
 /** `GET nodes/<id>/threads` */
 interface CommentThread {
@@ -87,7 +115,16 @@ const props = defineProps<{
   session: DocumentSession
 }>()
 const loading = ref(true)
+// a reload mid-show keeps the show up
+const loaded = ref(false)
 const loadError = ref('')
+const route = useRoute()
+const router = useRouter()
+const userSession = useSession()
+const presenting = computed(
+  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
+)
+const presentedSlide = computed(() => Number(route.query.slide) || 1)
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
@@ -142,6 +179,11 @@ const editable = computed(() => access.writable.value && !composite.value && !re
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
 const editing = computed(() => editable.value && !phone.value)
+const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
+  props.session.contentDocname,
+  editable,
+)
+useHideRail()
 
 // Body requests go through the session, with this document's link credentials.
 // A refused write is a verdict: access narrows until the presentation opens again.
@@ -176,6 +218,51 @@ function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
 }
 
+/** A theme write rewrites the deck on the server, so it pauses editing like a restore. */
+async function writeTheme(
+  endpoint: typeof api.slides.documents.applyTheme | typeof api.slides.documents.updateTheme,
+  theme: string,
+) {
+  showThemeDialog.value = false
+  showThemeChange.value = false
+  try {
+    await flushEdits()
+    restoring.value = true
+    await client.mutation(
+      endpoint,
+      { name: props.session.contentDocname, theme },
+      { context: contextFor(props.session.contentDocname) },
+    )
+    await load()
+  } catch (error) {
+    const message = error instanceof Error && error.message
+    toast.error(message || 'Could not change the theme.')
+  } finally {
+    restoring.value = false
+  }
+}
+
+const showThemeChange = ref(false)
+const driveActions = useDriveDocumentActions(props.session)
+const presentationMenu = computed(() => [
+  { group: '', options: driveActions.value.back },
+  {
+    group: '',
+    options: [
+      {
+        label: 'Change theme',
+        icon: 'lucide-swatch-book',
+        condition: () => editable.value,
+        onClick: () => {
+          showThemeChange.value = true
+        },
+      },
+      { label: 'Shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+    ],
+  },
+  { group: '', options: driveActions.value.node },
+])
+
 // The header renames through the session; the deck keeps its own copy of the title.
 watch(
   () => props.session.title.value,
@@ -183,6 +270,12 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
+// an empty presentation has no show, so its /present opens the editor
+watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
+  if (name === 'slides-slideshow' && done && !count) {
+    void router.replace({ name: 'document-host', params: route.params, query: route.query })
+  }
+})
 watch(
   editable,
   (canEdit) => {
@@ -337,15 +430,26 @@ async function load() {
     )
     if (run !== latestLoad) return
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
-    setSlideIndex(1)
+
+    const shown = presentedSlide.value
+    setSlideIndex(presenting.value ? shown : 1)
     loadTemplates()
     composite.value = !!doc?.is_composite
-    if (composite.value) await loadComposite()
+    if (composite.value) {
+      await loadComposite()
+    } else {
+      void offerTheme()
+    }
+
+    pruneOfflineCopy(presentationId.value).catch(() => {})
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
   } finally {
-    if (run === latestLoad) loading.value = false
+    if (run === latestLoad) {
+      loading.value = false
+      loaded.value = true
+    }
   }
 }
 function normalizeCompositeSlide(value: unknown) {
@@ -403,24 +507,58 @@ useDocumentLeaveGuard({
   flush,
   retainRecovery,
 })
+function warnBeforeUnload(event: Event) {
+  resolveDocumentUnload({ state: () => saveState.value, retainRecovery }, event)
+}
 function setOnline() {
   online.value = true
 }
 function setOffline() {
   online.value = false
 }
+
+const deckUnavailable = computed(
+  () => loading.value || !access.readable.value || !slides.value.length,
+)
+const canPin = computed(
+  () =>
+    'serviceWorker' in navigator &&
+    'caches' in window &&
+    !window.disable_slides_service_worker &&
+    isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
+)
+watch([slides, () => presentationDoc.value?.modified], () => {
+  if (!slides.value.length) {
+    refreshOfflineStatus(null)
+    return
+  }
+
+  refreshOfflineStatus(presentationId.value)
+  if (canPin.value) {
+    warmOfflineCopyAssets(presentationId.value).catch((err) =>
+      console.warn('Slides offline copy refresh failed:', err),
+    )
+  }
+})
 onMounted(() => {
   void load()
+  void registerSlidesWorker()
+  void postToServiceWorker('slides-entered')
   autosaveTimer = window.setInterval(() => {
-    if (editable.value && !isSlideInteractionActive.value && !focusedSlide.value) void saveChanges()
+    if (editable.value && !isSlideInteractionActive.value) {
+      void saveChanges()
+    }
   }, 1_000)
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
+  window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
+  void postToServiceWorker('slides-left')
   if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveCurrentState().finally(() => {
@@ -441,20 +579,36 @@ onBeforeUnmount(() => {
       :view-only="!editable"
       :recoverable="hasRecovery"
       :panels="['comments', 'versions']"
+      center-title
       :panel="panel"
       @update:panel="showPanel"
       @download-changes="downloadChanges"
     >
+      <template #icon="{ icon }">
+        <Dropdown :options="presentationMenu">
+          <Button
+            variant="ghost"
+            icon-right="lucide-chevron-down"
+            :aria-label="__('Presentation menu')"
+          >
+            <span class="block size-4.5" :class="icon" aria-hidden="true" />
+          </Button>
+        </Dropdown>
+      </template>
       <template #actions>
+        <OfflineCopyButton v-if="canPin" />
         <Button
           icon="lucide-file-down"
           tooltip="Export"
           aria-label="Export"
           variant="ghost"
           class="max-md:hidden"
-          :disabled="loading || !access.readable.value || !slides.length"
+          :disabled="deckUnavailable"
           @click="exportPdf"
         />
+      </template>
+      <template #primary>
+        <PresentButton :is-disabled="deckUnavailable" @start="startSlideShow" />
       </template>
     </DriveDocumentHeader>
 
@@ -625,9 +779,19 @@ onBeforeUnmount(() => {
     />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
+    <ThemeDialog
+      v-model:open="showThemeDialog"
+      @create="writeTheme(api.slides.documents.applyTheme, $event)"
+    />
+    <ThemeDialog
+      v-model:open="showThemeChange"
+      update
+      @update="writeTheme(api.slides.documents.updateTheme, $event)"
+    />
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
+      <Slideshow v-if="presenting" :active-slide-id="presentedSlide" />
     </teleport>
   </div>
 </template>

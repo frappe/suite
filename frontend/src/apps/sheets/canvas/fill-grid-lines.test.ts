@@ -12,14 +12,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { cellId } from '../utils/cells.js'
+import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createRenderer } from './renderer.js'
 
 const GRID_LINE = '#E2E2E2' // COLORS.gridLine's fallback, with no theme set
 const FILL = '#92b9c6'
 const OTHER_FILL = '#f6c343'
 
-const ROW_HEADER_W = 50
-const COL_HEADER_H = 24
 const COL_W = 100
 const ROW_H = 24
 const CANVAS_W = 400

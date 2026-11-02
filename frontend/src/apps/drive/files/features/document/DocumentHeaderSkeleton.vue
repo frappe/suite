@@ -3,7 +3,7 @@
        Plain elements, not frappe-ui's Skeleton: this ships with the Drive package root,
        which stays out of frappe-ui's chunk. -->
   <header
-    class="flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5"
+    class="flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-4"
     role="status"
     :aria-label="title ? `Opening ${title}` : 'Opening document'"
   >

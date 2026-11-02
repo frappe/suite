@@ -10,6 +10,7 @@ from frappe.tests import IntegrationTestCase
 
 from suite.slides.doctype.presentation.presentation import get_templates
 from suite.slides.install import seed_system_templates
+from suite.slides.tests.utils import make_presentation
 from suite.tests.utils import ensure_user
 
 READER = "slides-template-reader@example.com"
@@ -60,3 +61,21 @@ class TestSystemTemplates(IntegrationTestCase):
         titles = {template["title"] for template in get_templates()}
 
         self.assertFalse(titles & set(EXPECTED))
+
+    def test_a_deck_made_in_drive_starts_on_the_light_template(self):
+        seed_system_templates()
+        deck = make_presentation("Deck made in Drive")
+
+        frappe.set_user(READER)
+        templates = {template["name"]: template for template in get_templates()}
+        theme = templates.get(deck.theme, {})
+
+        self.assertEqual(theme.get("title"), "Light")
+        self.assertEqual(len(theme.get("layouts", [])), 7)
+
+    def test_a_template_made_in_drive_names_no_theme(self):
+        seed_system_templates()
+
+        template = make_presentation("Template made in Drive", is_template=True)
+
+        self.assertFalse(template.theme)

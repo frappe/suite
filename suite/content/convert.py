@@ -34,8 +34,11 @@ from typing import TypeGuard
 
 import frappe
 from frappe.desk.doctype.notification_log.notification_log import make_notification_logs
+from frappe.query_builder import Order, Table
 from frappe.utils.scheduler import is_scheduler_disabled
 from frappe.utils.user import get_system_managers
+from pypika.queries import QueryBuilder
+from pypika.terms import Criterion, ExistsCriterion
 
 from suite import drive
 from suite.content import capacity, checker, log
@@ -124,30 +127,46 @@ def pending_page(app: str, version: str, after: frappe._dict | None) -> list[fra
     """Load the next page of the app's untrashed documents with no live log or refusal, newest first, after `after`."""
     doctype = spec_of(app).doctype
     node_field = drive.node_field(doctype)
-    doc_table = table(app, "doc")
-    conversion_table = table(app, "conversion")
-    since = ""
-    values: tuple = (version,)
-    if after is not None:
-        since = "AND (`row`.`modified` < %s OR (`row`.`modified` = %s AND `row`.`name` < %s))"
-        values = (version, after.modified, after.modified, after.name)
-
-    return frappe.db.sql(
-        f"""SELECT `row`.`name`, `row`.`modified`, `row`.`{node_field}` AS `node`
-        FROM `tab{doctype}` `row`
-        JOIN `tabDrive Node` `node` ON `node`.`name` = `row`.`{node_field}` AND `node`.`state` = 'Active'
-        LEFT JOIN `{doc_table}` `doc` ON `doc`.`node` = `row`.`{node_field}` AND `doc`.`mode` != 'purged'
-        WHERE `row`.`{node_field}` IS NOT NULL AND `doc`.`id` IS NULL
-        AND NOT EXISTS (
-            SELECT 1 FROM `{conversion_table}` `record` WHERE `record`.`node` = `row`.`{node_field}`
-            AND `record`.`converter_version` = %s AND `record`.`outcome` IS NOT NULL
-            AND (`record`.`checked` >= `row`.`modified` OR `record`.`started` > `row`.`modified`)
-        ) {since}
-        ORDER BY `row`.`modified` DESC, `row`.`name` DESC
-        LIMIT {PAGE}""",
-        values,
-        as_dict=True,
+    row = frappe.qb.DocType(doctype)
+    node = frappe.qb.DocType("Drive Node")
+    doc = Table(table(app, "doc"))
+    refused = refusal_of(app, row, node_field, version)
+    query = (
+        frappe.qb.from_(row)
+        .join(node)
+        .on((node.name == row[node_field]) & (node.state == "Active"))
+        .left_join(doc)
+        .on((doc.node == row[node_field]) & (doc.mode != "purged"))
+        .select(row.name, row.modified, row[node_field].as_("node"))
+        .where(row[node_field].isnotnull())
+        .where(doc.id.isnull())
+        .where(ExistsCriterion(refused).negate())
+        .orderby(row.modified, order=Order.desc)
+        .orderby(row.name, order=Order.desc)
+        .limit(PAGE)
     )
+    if after is not None:
+        query = query.where(sorts_after(row, after))
+
+    return query.run(as_dict=True)
+
+
+def refusal_of(app: str, row: Table, node_field: str, version: str) -> QueryBuilder:
+    """Select the record of `version` refusing `row`'s body since its last change."""
+    record = Table(table(app, "conversion"))
+    return (
+        frappe.qb.from_(record)
+        .select(1)
+        .where(record.node == row[node_field])
+        .where(record.converter_version == version)
+        .where(record.outcome.isnotnull())
+        .where((record.checked >= row.modified) | (record.started > row.modified))
+    )
+
+
+def sorts_after(row: Table, after: frappe._dict) -> Criterion:
+    """Match the rows that come after `after` in newest-first order."""
+    return (row.modified < after.modified) | ((row.modified == after.modified) & (row.name < after.name))
 
 
 def log_reason(app: str, reason: str) -> None:

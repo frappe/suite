@@ -66,3 +66,135 @@ describe('ConsumerManager', () => {
 		expect(consumer.close).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('motion-preserving layer preferences', () => {
+	it('does not retain a previous low temporal layer when selecting a smaller spatial layer', async () => {
+		const manager = new ConsumerManager();
+		const consumer = Object.assign(new EventEmitter(), {
+			id: 'moving-video',
+			kind: 'video',
+			paused: false,
+			producerId: 'p',
+			preferredLayers: { spatialLayer: 2, temporalLayer: 0 },
+			rtpParameters: { encodings: [{ scalabilityMode: 'L3T3' }] },
+			requestKeyFrame: vi.fn().mockResolvedValue(undefined),
+			setPreferredLayers: vi.fn().mockResolvedValue(undefined),
+			resume: vi.fn(),
+			close: vi.fn(),
+		});
+		await manager.createConsumer(
+			{
+				id: 't',
+				closed: false,
+				dtlsState: 'connected',
+				consume: vi.fn().mockResolvedValue(consumer),
+			} as never,
+			{ closed: false } as never,
+			'p',
+			'r',
+			'receiver',
+			{} as never,
+		);
+		await manager.setConsumerPreferredLayers('moving-video', 0);
+		expect(consumer.setPreferredLayers).toHaveBeenCalledWith({
+			spatialLayer: 0,
+		});
+		await manager.setConsumerPreferredLayers('moving-video', 0, 0);
+		expect(consumer.setPreferredLayers).toHaveBeenLastCalledWith({
+			spatialLayer: 0,
+			temporalLayer: 0,
+		});
+	});
+});
+
+describe('receiver-ready startup', () => {
+	it.each([
+		['video', true, false],
+		['audio', true, true],
+		['video', false, true],
+		['video', undefined, true],
+	] as const)('starts %s with readiness requested=%s (running=%s)', async (kind, startPaused, running) => {
+		const manager = new ConsumerManager();
+		const consumer = Object.assign(new EventEmitter(), {
+			id: 'fresh', kind, paused: true, rtpParameters: {}, close: vi.fn(),
+			resume: vi.fn(async () => { consumer.paused = false; }),
+			requestKeyFrame: vi.fn().mockResolvedValue(undefined),
+		});
+		const response = await manager.createConsumer({ id: 'recv', closed: false, dtlsState: 'connected', consume: vi.fn().mockResolvedValue(consumer) } as never,
+			{ closed: false } as never, 'producer', 'room', 'peer', {}, startPaused);
+		expect(response.paused).toBe(!running);
+		expect(consumer.paused).toBe(!running);
+		expect(consumer.resume).toHaveBeenCalledTimes(running ? 1 : 0);
+		expect(consumer.requestKeyFrame).toHaveBeenCalledTimes(running && kind === 'video' ? 1 : 0);
+		if (!running) {
+			expect(await manager.resumeConsumer('fresh')).toBe(true);
+			expect(consumer.paused).toBe(false);
+		}
+		manager.closeConsumer('fresh');
+		expect(await manager.resumeConsumer('fresh')).toBe(false);
+		expect(consumer.resume).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('idempotent resume', () => {
+	async function setup() {
+		const manager = new ConsumerManager();
+		const consumer = Object.assign(new EventEmitter(), {
+			id: 'retry', kind: 'video', paused: true, closed: false, rtpParameters: {},
+			close: vi.fn(), requestKeyFrame: vi.fn(),
+			resume: vi.fn(async () => { consumer.paused = false; }),
+		});
+		await manager.createConsumer({ id: 'recv', closed: false, dtlsState: 'connected', consume: vi.fn().mockResolvedValue(consumer) } as never,
+			{ closed: false } as never, 'producer', 'room', 'peer', {}, true);
+		return { manager, consumer };
+	}
+
+	it('accepts sequential readiness retries for a live running consumer', async () => {
+		const { manager, consumer } = await setup();
+		expect(await manager.resumeConsumer('retry')).toBe(true);
+		expect(await manager.resumeConsumer('retry')).toBe(true);
+		expect(consumer.resume).toHaveBeenCalledTimes(1);
+		expect(consumer.requestKeyFrame).not.toHaveBeenCalled();
+	});
+
+	it('accepts concurrent readiness retries', async () => {
+		const { manager, consumer } = await setup();
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => { finish = resolve; });
+		consumer.resume.mockImplementation(async () => { await pending; consumer.paused = false; });
+		const first = manager.resumeConsumer('retry');
+		const second = manager.resumeConsumer('retry');
+		finish();
+		expect(await Promise.all([first, second])).toEqual([true, true]);
+		expect(consumer.requestKeyFrame).not.toHaveBeenCalled();
+	});
+
+	it('rejects missing, closed, and removed-during-resume consumers', async () => {
+		const { manager, consumer } = await setup();
+		expect(await manager.resumeConsumer('missing')).toBe(false);
+		consumer.closed = true;
+		expect(await manager.resumeConsumer('retry')).toBe(false);
+		consumer.closed = false;
+		consumer.resume.mockImplementation(async () => { manager.closeConsumer('retry'); consumer.paused = false; });
+		expect(await manager.resumeConsumer('retry')).toBe(false);
+	});
+
+	it('rejects a consumer closed while resume is pending', async () => {
+		const { manager, consumer } = await setup();
+		let finish!: () => void;
+		consumer.resume.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+		const result = manager.resumeConsumer('retry');
+		consumer.closed = true;
+		consumer.paused = false;
+		finish();
+		expect(await result).toBe(false);
+	});
+
+	it('does not acknowledge a failed resume', async () => {
+		const { manager, consumer } = await setup();
+		consumer.resume.mockRejectedValue(new Error('worker unavailable'));
+		expect(await manager.resumeConsumer('retry')).toBe(false);
+		expect(consumer.paused).toBe(true);
+	});
+
+});

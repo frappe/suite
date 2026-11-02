@@ -14,6 +14,7 @@ export interface Participant {
   is_guest?: boolean
   isHost?: boolean
   networkQuality?: string
+  networkQualityUpdatedAt?: number
   userData?: ParticipantUserData
   isLocalScreenShare?: boolean
 }
@@ -38,6 +39,7 @@ export interface ParticipantData {
   is_guest?: boolean
   isHost?: boolean
   networkQuality?: string
+  networkQualityUpdatedAt?: number
   senderId?: number
   sender_id?: number
   is_host?: boolean

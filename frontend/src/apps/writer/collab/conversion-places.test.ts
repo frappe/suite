@@ -34,7 +34,7 @@ import { placeThread } from '@/apps/writer/collab/places'
 const REFUSED = { kind: 'failed', reason: 'check' }
 const MENTION = '<span class="mention" data-type="mention" data-id="x" data-label="Ann">@Ann</span>'
 
-const forced = vi.hoisted(() => ({ isUnitLost: false, isPlaceShifted: false, calls: 0, key: '' }))
+const forced = vi.hoisted(() => ({ isUnitLost: false, isPlaceShifted: false, calls: 0 }))
 
 vi.mock('@/apps/writer/collab/old-comments', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/apps/writer/collab/old-comments')>()
@@ -66,17 +66,9 @@ vi.mock('@tiptap/y-tiptap', async (importOriginal) => {
   return { ...real, absolutePositionToRelativePosition }
 })
 
-vi.mock('uuid', async (importOriginal) => {
-  const real = await importOriginal<typeof import('uuid')>()
-  function v4() {
-    return forced.key || real.v4()
-  }
-
-  return { ...real, v4 }
-})
-
 afterEach(() => {
-  Object.assign(forced, { isUnitLost: false, isPlaceShifted: false, calls: 0, key: '' })
+  vi.restoreAllMocks()
+  Object.assign(forced, { isUnitLost: false, isPlaceShifted: false, calls: 0 })
 })
 
 function withComments(doc: Doc, ...entries: { id: string; [key: string]: unknown }[]) {
@@ -311,13 +303,14 @@ describe('convertLegacy, a Yjs document with comments kept beside the body', () 
   })
 
   it("refuses a comment kept under a 2023 thread's key", () => {
-    forced.key = 'k1'
+    const key = '00000000-0000-4000-8000-000000000001'
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(key)
     const doc = legacyDoc(
       yMarked('see', { comment: { comment: DRIVE_THREAD } }),
       yParagraph('one two'),
     )
 
-    expect(convertLegacy(withComments(doc, oldComment(doc, 'k1', 10, 13)), MAX_STATE)).toEqual(
+    expect(convertLegacy(withComments(doc, oldComment(doc, key, 10, 13)), MAX_STATE)).toEqual(
       REFUSED,
     )
   })

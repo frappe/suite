@@ -104,15 +104,20 @@ export const canonicalRoutes: RouteRecordRaw[] = [
   ),
   // The tab says "Opening…" until the document host names it after the node,
   // unless the opener named the node in the history entry (`openingTitleState`).
-  placeholder(
-    '/d/:node/:slug?',
-    'document-host',
-    areaMeta('files', 'Opening…', {
+  // The host stays mounted from the document to its slideshow, so the open
+  // session and its loaded slides carry over. Neither child renders anything
+  {
+    path: '/d/:node',
+    component: defineAsyncRoute(() => import('@/composition/DocumentHost.vue')),
+    meta: areaMeta('files', 'Opening…', {
       scroll: 'content',
       allowGuest: true,
     }),
-    defineAsyncRoute(() => import('@/composition/DocumentHost.vue')),
-  ),
+    children: [
+      { path: 'present', name: 'slides-slideshow', component: RouteLoading },
+      { path: ':slug?', name: 'document-host', component: RouteLoading },
+    ],
+  },
 ]
 
 export const routes: RouteRecordRaw[] = [

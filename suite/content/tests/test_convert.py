@@ -10,6 +10,7 @@ from unittest.mock import patch
 import frappe
 from filelock import FileLock
 from frappe.tests import UnitTestCase
+from frappe.utils import CallbackManager
 
 from suite.content import capacity, checker, convert
 
@@ -43,7 +44,12 @@ class TestConvert(UnitTestCase):
 
             self.skipTest(reason)
 
-        job_patch = patch.object(frappe.local, "job", frappe._dict(job_name="test_convert"), create=True)
+        job_patch = patch.object(
+            frappe.local,
+            "job",
+            frappe._dict(job_name="test_convert", after_job=CallbackManager()),
+            create=True,
+        )
         job_patch.start()
         self.addCleanup(job_patch.stop)
         self.folder = Path(self.enterContext(tempfile.TemporaryDirectory()))

@@ -5,10 +5,18 @@ saves go through `WriterDocument.validate`, which refuses them. The scan lists e
 function that writes the row directly; a new one fails until it is listed here with why it
 can't write over a logged document.
 
-The scan reads one file at a time, so it misses a doctype passed in a variable (Build's
-`write_writer_template`, through `_bulk`), and a qb table held in anything but a plain name
-assigned in the same file (annotated, tuple or attribute assigns), or built off a receiver
-not named qb.
+The scan reads one file at a time. It counts a doctype held in a variable in three places only:
+raw SQL's `{spec.doctype}` or `{doctype}`, a qb `DocType(spec.doctype)`, and a qb
+`DocType(doctype)` whose `doctype` is a parameter of the function holding the write. So it misses:
+
+- Build's `write_writer_template`, through `_bulk`
+- a loop over a list that names Writer Document
+- a closure that writes through its outer function's `doctype`
+- a lambda or an async def that takes `doctype`
+- a parameter named anything but `doctype`, such as `dt`
+- a qb table held in anything but a plain name assigned in the same file (annotated, tuple or
+  attribute assigns)
+- a qb table built off a receiver not named qb
 """
 
 import ast
@@ -74,7 +82,7 @@ def names_row(call: ast.Call, path: str) -> bool:
     return bool(call.args) and is_row(call.args[0], path)
 
 
-def is_row_table(node: ast.expr | None, path: str, tables: set[str]) -> bool:
+def is_row_table(node: ast.expr | None, path: str, tables: set[str], doctype_names: set[str]) -> bool:
     if isinstance(node, ast.Name) and node.id in tables:
         return True
 
@@ -85,7 +93,8 @@ def is_row_table(node: ast.expr | None, path: str, tables: set[str]) -> bool:
         first = node.args[0]
         return isinstance(first, ast.Constant) and first.value == "tabWriter Document"
 
-    return call_name(node) == "DocType" and is_row(node.args[0], path)
+    first = node.args[0]
+    return call_name(node) == "DocType" and (is_row(first, path) or ast.unparse(first) in doctype_names)
 
 
 def on_qb(call: ast.Call) -> bool:
@@ -100,18 +109,22 @@ def qb_table(node: ast.AST, method: str) -> ast.expr | None:
     return None
 
 
-def qb_writes_row(call: ast.Call, path: str, tables: set[str]) -> bool:
+def qb_writes_row(call: ast.Call, path: str, tables: set[str], doctype_names: set[str]) -> bool:
     name = call_name(call)
     if name in {"update", "into"}:
-        return is_row_table(qb_table(call, name), path, tables)
+        return is_row_table(qb_table(call, name), path, tables, doctype_names)
 
     if name != "delete" or not isinstance(call.func, ast.Attribute):
         return False
 
-    return any(is_row_table(qb_table(node, "from_"), path, tables) for node in ast.walk(call.func.value))
+    for node in ast.walk(call.func.value):
+        if is_row_table(qb_table(node, "from_"), path, tables, doctype_names):
+            return True
+
+    return False
 
 
-def writes_row(call: ast.Call, path: str, tables: set[str]) -> bool:
+def writes_row(call: ast.Call, path: str, tables: set[str], doctype_names: set[str]) -> bool:
     name = call_name(call)
     if name == "db_set":
         return path.startswith(WRITER_DOCUMENT)
@@ -122,7 +135,7 @@ def writes_row(call: ast.Call, path: str, tables: set[str]) -> bool:
     if name == "sql" and call.args:
         return bool(ROW_SQL.search(sql_text(call.args[0])))
 
-    return qb_writes_row(call, path, tables)
+    return qb_writes_row(call, path, tables, doctype_names)
 
 
 class RowWriters(ast.NodeVisitor):
@@ -133,6 +146,7 @@ class RowWriters(ast.NodeVisitor):
         self.scope: list[str] = []
         self.found: set[str] = set()
         self.tables: set[str] = set()
+        self.params: list[set[str]] = []
 
     def visit_scope(self, node):
         self.scope.append(node.name)
@@ -140,16 +154,27 @@ class RowWriters(ast.NodeVisitor):
         self.scope.pop()
 
     visit_ClassDef = visit_scope
-    visit_FunctionDef = visit_scope
+
+    def visit_FunctionDef(self, node: ast.FunctionDef):
+        args = node.args
+        self.params.append({arg.arg for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs)})
+        self.visit_scope(node)
+        self.params.pop()
+
+    def doctype_names(self) -> set[str]:
+        if self.params and "doctype" in self.params[-1]:
+            return {"spec.doctype", "doctype"}
+
+        return {"spec.doctype"}
 
     def visit_Assign(self, node: ast.Assign):
-        if is_row_table(node.value, self.path, self.tables):
+        if is_row_table(node.value, self.path, self.tables, self.doctype_names()):
             self.tables |= {target.id for target in node.targets if isinstance(target, ast.Name)}
 
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call):
-        if writes_row(node, self.path, self.tables):
+        if writes_row(node, self.path, self.tables, self.doctype_names()):
             where = ".".join(self.scope)
             self.found.add(f"{self.path}:{where}")
 
@@ -205,6 +230,29 @@ def by_qb_update(name):
 def by_qb_delete(name):
     frappe.qb.from_(Table("tabWriter Document")).delete().run()
 
+def by_qb_spec_doctype(spec, name):
+    app_table = frappe.qb.DocType(spec.doctype)
+    frappe.qb.update(app_table).set(app_table.html, "").where(app_table.name == name).run()
+
+def by_qb_insert_doctype(doctype, name):
+    frappe.qb.into(frappe.qb.DocType(doctype)).insert(name).run()
+
+def by_qb_delete_doctype(doctype, name):
+    frappe.qb.from_(frappe.qb.DocType(doctype)).delete().run()
+
+def loops_over_other_doctypes(name):
+    for doctype in ("Mail Queue", "User Settings"):
+        frappe.qb.update(frappe.qb.DocType(doctype)).set("owner", "").run()
+
+def outer_takes_doctype(doctype, name):
+    def nested(name):
+        frappe.qb.update(frappe.qb.DocType(doctype)).set("html", "").run()
+
+    nested(name)
+
+def reads_by_qb_doctype(doctype, name):
+    frappe.qb.from_(frappe.qb.DocType(doctype)).select("*").run()
+
 def by_qb_insert(name):
     frappe.qb.into(frappe.qb.DocType(DOCTYPE)).insert(name).run()
 
@@ -219,7 +267,8 @@ def elsewhere(name):
     frappe.qb.update(frappe.qb.DocType("Writer Settings")).set("theme", "").run()
 """
 
-# The SYNTHETIC writers that name the row outright, so they count in any app's file
+# The SYNTHETIC writers that name the row outright, or build a qb table from `spec.doctype` or a
+# `doctype` parameter, so they count in any app's file
 NAMED_ROW_WRITERS = (
     "Shadow.by_value",
     "by_sql",
@@ -230,6 +279,9 @@ NAMED_ROW_WRITERS = (
     "by_bulk_insert",
     "by_qb_update",
     "by_qb_delete",
+    "by_qb_spec_doctype",
+    "by_qb_insert_doctype",
+    "by_qb_delete_doctype",
 )
 
 

@@ -3,6 +3,8 @@ import type { Validators } from '@/platform/transport'
 import { assertSchema } from '@/platform/transport/schema'
 
 import type {
+  ApplyThemeInput,
+  ApplyThemeOutput,
   CompositeGroupInput,
   CompositeGroupOutput,
   CompositeManifestInput,
@@ -23,6 +25,8 @@ import type {
   SaveSlidesOutput,
   UpdateSlideAttachmentsInput,
   UpdateSlideAttachmentsOutput,
+  UpdateThemeInput,
+  UpdateThemeOutput,
 } from './generated'
 
 export const operationGetPublicPresentation: Validators<
@@ -325,6 +329,71 @@ export const operationSaveSlides: Validators<SaveSlidesInput, SaveSlidesOutput> 
         type: 'object',
       },
       'save_slides output',
+    )
+  },
+}
+
+export const operationApplyTheme: Validators<ApplyThemeInput, ApplyThemeOutput> = {
+  validateInput(value: unknown): asserts value is ApplyThemeInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          theme: { title: 'Theme', type: 'string' },
+        },
+        required: ['name', 'theme'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'apply_theme input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ApplyThemeOutput {
+    assertSchema(
+      value,
+      {
+        properties: { modified: { title: 'Modified', type: 'string' } },
+        required: ['modified'],
+        title: 'SavedDeck',
+        type: 'object',
+      },
+      'apply_theme output',
+    )
+  },
+}
+
+export const operationUpdateTheme: Validators<UpdateThemeInput, UpdateThemeOutput> = {
+  validateInput(value: unknown): asserts value is UpdateThemeInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          theme: { title: 'Theme', type: 'string' },
+        },
+        required: ['name', 'theme'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'update_theme input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UpdateThemeOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          modified: { title: 'Modified', type: 'string' },
+          base_modified: { title: 'Base Modified', type: 'string' },
+        },
+        required: ['modified', 'base_modified'],
+        title: 'ThemedDeck',
+        type: 'object',
+      },
+      'update_theme output',
     )
   },
 }

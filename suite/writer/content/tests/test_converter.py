@@ -11,6 +11,7 @@ from unittest.mock import patch
 import frappe
 import pycrdt
 from frappe.tests import UnitTestCase
+from frappe.utils import CallbackManager
 
 from suite.content import checker, convert
 from suite.writer import content as writer_content
@@ -58,7 +59,12 @@ class TestConverter(UnitTestCase):
 
             self.skipTest(reason)
 
-        job_patch = patch.object(frappe.local, "job", frappe._dict(job_name="test_converter"), create=True)
+        job_patch = patch.object(
+            frappe.local,
+            "job",
+            frappe._dict(job_name="test_converter", after_job=CallbackManager()),
+            create=True,
+        )
         job_patch.start()
         self.addCleanup(job_patch.stop)
 

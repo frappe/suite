@@ -1579,6 +1579,58 @@
       "bytes": false
     },
     {
+      "id": "errors_post",
+      "kind": "mutation",
+      "publicName": "errors.report",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "errors",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "source": {
+            "enum": [
+              "component",
+              "script",
+              "promise"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "stack": {
+            "title": "Stack",
+            "type": "string"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "title",
+          "stack",
+          "route"
+        ],
+        "title": "BrowserError",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "get_preferences",
       "kind": "query",
       "publicName": "preferences.get",

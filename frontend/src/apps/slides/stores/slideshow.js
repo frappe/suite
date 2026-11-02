@@ -67,11 +67,12 @@ const releaseWakeLock = () => {
 const startSlideShow = ({ loop = false, fromStart = false } = {}) => {
   onLoop.value = loop
   requestFullscreen()
+  const current = slideIndex.value + 1
   router.replace({
     name: 'slides-slideshow',
-    params: router.currentRoute.value.params,
+    params: { node: router.currentRoute.value.params.node },
     // a loop plays the whole presentation every time round
-    query: { slide: fromStart || loop ? 1 : slideIndex.value + 1 },
+    query: { ...router.currentRoute.value.query, slide: fromStart || loop ? 1 : current },
   })
 }
 
@@ -89,9 +90,9 @@ const endSlideShow = () => {
   const slide = slideIndex.value == slides.value.length ? slides.value.length : slideIndex.value + 1
   setSlideIndex(slide)
   router.replace({
-    name: 'slides-editor',
-    params: router.currentRoute.value.params,
-    query: { slide: slide },
+    name: 'document-host',
+    params: { node: router.currentRoute.value.params.node },
+    query: { ...router.currentRoute.value.query, slide },
   })
 }
 
@@ -304,8 +305,8 @@ const changeSlideInSlideshow = (index) => {
   nextTick(() => {
     router.replace({
       name: 'slides-slideshow',
-      params: router.currentRoute.value.params,
-      query: { slide: index + 1 },
+      params: { node: router.currentRoute.value.params.node },
+      query: { ...router.currentRoute.value.query, slide: index + 1 },
     })
 
     // Prefetch next slide assets after navigation

@@ -77,6 +77,7 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 					version: 1,
 					participantIds: ['p1'],
 					activeSpeakerIds: [],
+					presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['p1']])),
 				},
 				participants: [
 					{

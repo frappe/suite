@@ -12,6 +12,17 @@ import { ensureParticipantOwner, getPeerId } from './utils';
 
 export function registerProducerHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
+		socket.on('producer:get_camera_layers', (data, callback) => {
+			try {
+				deps.authManager.ensureFullAccess(socket);
+				const { roomId } = ensureParticipantOwner(socket, deps.registry);
+				deps.mediasoup.assertProducerAccess(data?.producerId, roomId, getPeerId(socket));
+				callback({ success: true, demand: deps.mediasoup.getCameraLayerDemand(data.producerId) });
+			} catch (error) {
+				callback({ success: false, error: (error as Error).message });
+			}
+		});
+
 		socket.on('create_producer', async (data, callback) => {
 			const startedAt = performance.now();
 			const media =
@@ -204,6 +215,7 @@ function enforceE2EEMediaPolicy(socket: Socket): void {
 function sanitizeProducerAppData(value: AppData | undefined): ProducerAppData {
 	const appData: ProducerAppData = {};
 	if (value?.type === 'screen') appData.type = 'screen';
+	if (value?.cameraLayerDemand === true) appData.cameraLayerDemand = true;
 	if (typeof value?.e2eeStartPaused === 'boolean') {
 		appData.e2eeStartPaused = value.e2eeStartPaused;
 	}

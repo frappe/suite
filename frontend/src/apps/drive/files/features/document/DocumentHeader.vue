@@ -1,27 +1,34 @@
 <template>
   <header
     ref="headerElement"
-    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-5"
+    class="relative flex shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base"
+    :class="compact ? 'h-10 px-3' : 'h-12 px-3 sm:px-4'"
   >
-    <div class="flex min-w-0 flex-1 items-center gap-1">
-      <template v-if="location">
-        <Button
-          class="md:hidden"
-          variant="ghost"
-          icon="lucide-chevron-left"
-          :route="location.to"
-          :aria-label="`Back to ${location.label}`"
-        />
-        <RouterLink
-          :to="location.to"
-          class="max-w-48 truncate rounded-4 px-1 text-base text-ink-gray-5 hover:text-ink-gray-8 max-md:hidden"
-          :title="location.label"
-        >
-          {{ location.label }}
-        </RouterLink>
-        <span class="text-base text-ink-gray-4 max-md:hidden" aria-hidden="true">/</span>
-      </template>
-      <span class="size-4.5 shrink-0" :class="typeIcon" aria-hidden="true" />
+    <!-- A centered title lifts the title group into the header, between two
+      sides that grow alike; the icon and the way back stay at the start. -->
+    <div class="flex min-w-0 flex-1 items-center gap-1" :class="centering.title">
+      <div class="contents" :class="centering.start">
+        <template v-if="location">
+          <Button
+            class="md:hidden"
+            variant="ghost"
+            icon="lucide-chevron-left"
+            :route="location.to"
+            :aria-label="`Back to ${location.label}`"
+          />
+          <RouterLink
+            :to="location.to"
+            class="max-w-48 truncate rounded-4 px-1 text-base text-ink-gray-5 hover:text-ink-gray-8 max-md:hidden"
+            :title="location.label"
+          >
+            {{ location.label }}
+          </RouterLink>
+          <span class="text-base text-ink-gray-4 max-md:hidden" aria-hidden="true">/</span>
+        </template>
+        <slot name="icon" :icon="typeIcon">
+          <span class="size-4.5 shrink-0" :class="typeIcon" aria-hidden="true" />
+        </slot>
+      </div>
       <!-- The hidden copy of the title gives the field its width, so the field
         fits its text and a refusal sits right after it. -->
       <div class="document-title relative min-w-0 max-w-md">
@@ -83,18 +90,25 @@
           @click="emit('downloadChanges')"
         />
       </template>
+      <!-- A compact header says it beside the title, before its menus. -->
+      <span
+        v-if="compact && saveState"
+        class="ms-1 me-2 whitespace-nowrap text-sm"
+        :class="saveClass"
+        aria-live="polite"
+      >
+        {{ SAVE_LABELS[saveState] }}
+      </span>
       <slot name="status" />
+      <slot name="menus" />
     </div>
 
-    <div class="flex shrink-0 items-center gap-1">
+    <div class="flex shrink-0 items-center gap-1" :class="centering.end">
       <!-- A clean or saving document says so on wide screens only; a failed save always shows. -->
       <span
-        v-if="saveState"
+        v-if="!compact && saveState"
         class="mr-1 whitespace-nowrap text-sm"
-        :class="[
-          saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
-          saveState !== 'failed' && 'max-md:hidden',
-        ]"
+        :class="saveClass"
         aria-live="polite"
       >
         {{ SAVE_LABELS[saveState] }}
@@ -111,8 +125,10 @@
         :data-panel="name"
         @click="panel = panel === name ? null : name"
       />
+      <!-- A surface's own primary action takes the solid button's place. -->
       <template v-if="session.canShare.value">
         <Button
+          v-if="showsSolidShare()"
           class="ml-1 max-md:hidden"
           variant="solid"
           icon-left="lucide-share-2"
@@ -120,7 +136,7 @@
           @click="session.share()"
         />
         <Button
-          class="md:hidden"
+          :class="shareIconClass()"
           variant="ghost"
           icon="lucide-share-2"
           tooltip="Share"
@@ -128,6 +144,7 @@
           @click="session.share()"
         />
       </template>
+      <slot name="primary" />
     </div>
   </header>
 </template>
@@ -135,7 +152,7 @@
 <script setup lang="ts">
 import { useOnline } from '@vueuse/core'
 import { Badge, Button, TextInput } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useSlots, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
@@ -155,7 +172,7 @@ import {
 /**
  * The one header every document surface shows: the Drive type icon, the title
  * (renamed in place), state badges, the recovery download, the save status, the surface's own actions,
- * the side-panel toggles and Share, always in that order.
+ * the side-panel toggles, Share, then the surface's primary action, always in that order.
  */
 const props = withDefaults(
   defineProps<{
@@ -174,6 +191,13 @@ const props = withDefaults(
     location?: { label: string; to: RouteLocationRaw } | null
     /** A file's MIME type picks its icon. Documents have none. */
     mime?: string | null
+    /** Centers the title across the header on wide screens. */
+    centerTitle?: boolean
+    /**
+     * A 40-px header for a surface that adds its own menu bar (the `menus`
+     * slot): the save state moves beside the title, ahead of the menus.
+     */
+    compact?: boolean
   }>(),
   {
     saveState: null,
@@ -182,16 +206,27 @@ const props = withDefaults(
     panels: () => [],
     location: null,
     mime: null,
+    centerTitle: false,
+    compact: false,
   },
 )
 
 const emit = defineEmits<{ downloadChanges: [] }>()
 const panel = defineModel<DocumentPanel | null>('panel', { default: null })
 
+const slots = useSlots()
 const online = useOnline()
 const headerElement = ref<HTMLElement | null>(null)
 const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
 const titleDraft = ref(props.session.title.value)
+/** A centered title sits between two sides that grow alike. */
+const CENTERED = {
+  title: 'md:contents',
+  start: 'md:flex md:flex-1 md:items-center md:gap-1',
+  end: 'md:flex-1 md:justify-end',
+}
+const UNCENTERED = { title: '', start: '', end: '' }
+const centering = computed(() => (props.centerTitle ? CENTERED : UNCENTERED))
 const trashed = computed(() => props.session.state.value === 'Trashed')
 const renamable = computed(() =>
   canRename({ state: props.session.state.value, access: props.session.access.value }),
@@ -199,6 +234,20 @@ const renamable = computed(() =>
 const typeIcon = computed(() =>
   documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
 )
+/** A clean or saving document says so on wide screens only; a failed save always shows. */
+const saveClass = computed(() => [
+  props.saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
+  props.saveState !== 'failed' && 'max-md:hidden',
+])
+
+// read on every render: slots are not reactive
+function showsSolidShare() {
+  return !slots.primary
+}
+
+function shareIconClass() {
+  return slots.primary ? '' : 'md:hidden'
+}
 
 /** A refused rename, shown beside the title until the title changes. */
 const titleError = ref<string>()

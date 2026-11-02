@@ -140,6 +140,8 @@ vi.mock('@/platform/session', async (importOriginal) => {
   }
 })
 
+// the slides package root installs a guard on the app router at import (boundary debt)
+vi.mock('@/apps/slides/router', () => ({ router: { beforeEach: () => {} } }))
 vi.mock('@/apps/drive', async (importOriginal) => ({
   // Drive's own listing date, so the Recent meta is checked against Drive's format.
   formatDriveListingDate: (await importOriginal<typeof import('@/apps/drive')>())
@@ -169,8 +171,11 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
     isPending: false,
     run: state.createDocument,
   }),
-  driveNodeRoute: (node: { name: string }) => `/d/${node.name}/document`,
-  newDocumentRoute: (node: { name: string }) => `/d/${node.name}/document?new`,
+  driveNodeRoute: (node: { name: string }) => ({ path: `/d/${node.name}/document` }),
+  newDocumentRoute: (node: { name: string }) => ({
+    path: `/d/${node.name}/document`,
+    query: { new: '1' },
+  }),
 }))
 vi.mock('@/apps/calendar', async (importOriginal) => ({
   upcomingEventWindow: (await importOriginal<typeof import('@/apps/calendar')>())
@@ -428,7 +433,10 @@ describe('Home page', () => {
       expect(state.createDocument).toHaveBeenCalledWith({
         content_doctype: contentDoctype,
       })
-      expect(state.push).toHaveBeenCalledWith('/d/new-node/document?new')
+      expect(state.push).toHaveBeenCalledWith({
+        path: '/d/new-node/document',
+        query: { new: '1' },
+      })
     },
   )
 })

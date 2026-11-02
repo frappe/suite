@@ -91,9 +91,10 @@ describe('charts through .xlsx', () => {
     const at = { x: 230, y: 70, width: 300, height: 200 }
     await writeCharts(zip, [{ name: 'Sales', charts: [{ spec: SPEC, ...at }], layout }], (s) => s)
     const drawing = await zip.file('xl/drawings/drawing1.xml')!.async('string')
-    // 230 px: past A (200) and the hidden B, 30 px into C; 70 px: 6 into row 3.
+    // 230 px: past A (200) and the hidden B, 30 px into C; 70 px: 2 into row 3
+    // (row 1 is 28, row 2 is 40).
     expect(drawing).toContain(
-      '<xdr:from><xdr:col>2</xdr:col><xdr:colOff>285750</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>57150</xdr:rowOff></xdr:from>',
+      '<xdr:from><xdr:col>2</xdr:col><xdr:colOff>285750</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>19050</xdr:rowOff></xdr:from>',
     )
     const back = await readCharts(zip, () => layout)
     expect(back.charts[0]).toMatchObject(at)
@@ -193,8 +194,8 @@ describe('charts from other apps', () => {
     const back = await readCharts(zip, () => undefined)
     expect(back.charts[0]).toMatchObject({
       sheet: 'Sales',
-      x: 259,
-      y: 180,
+      x: 299, // 2 columns of 120 + 59 px
+      y: 208, // 7 rows of 28 + 12 px
       width: 600,
       height: 371,
     })

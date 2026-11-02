@@ -3,6 +3,7 @@
 import json
 
 import frappe
+from frappe.query_builder import Table
 
 from suite import drive
 from suite.content import ingest, quarantine
@@ -34,29 +35,29 @@ def readable_clocks(app: str, doc_id: str) -> dict[int, int] | None:
 
 def store_clocks(app: str, doc_id: str, clocks: dict[int, int]) -> None:
     """Fill the sessions' missing next clocks, and the log's start clocks for writers without a session."""
-    session_table = table(app, "session")
-    doc_table = table(app, "doc")
-    session_rows = frappe.db.sql(f"SELECT `client_id` FROM `{session_table}` WHERE `doc_id` = %s", doc_id)
+    session = Table(table(app, "session"))
+    doc = Table(table(app, "doc"))
+    session_rows = frappe.qb.from_(session).select(session.client_id).where(session.doc_id == doc_id).run()
     session_client_ids = {int(client) for (client,) in session_rows}
     for client in session_client_ids:
-        frappe.db.sql(
-            f"""UPDATE `{session_table}` SET `next_clock` = %s
-            WHERE `doc_id` = %s AND `client_id` = %s AND `next_clock` IS NULL""",
-            (clocks.get(client, 0), doc_id, client),
+        (
+            frappe.qb.update(session)
+            .set(session.next_clock, clocks.get(client, 0))
+            .where(session.doc_id == doc_id)
+            .where(session.client_id == client)
+            .where(session.next_clock.isnull())
+            .run()
         )
 
     start_clocks = {client: clock for client, clock in clocks.items() if client not in session_client_ids}
-    frappe.db.sql(
-        f"UPDATE `{doc_table}` SET `start_clocks` = %s WHERE `id` = %s",
-        (json.dumps(start_clocks), doc_id),
-    )
+    frappe.qb.update(doc).set(doc.start_clocks, json.dumps(start_clocks)).where(doc.id == doc_id).run()
 
 
 def backfill_clocks(app: str) -> None:
     """Read each writer's next clock for logs made before clocks were kept; safe to run again."""
-    doc_table = table(app, "doc")
-    for (doc_id,) in frappe.db.sql(
-        f"SELECT `id` FROM `{doc_table}` WHERE `start_clocks` IS NULL AND `mode` != 'purged'"
+    doc = Table(table(app, "doc"))
+    for (doc_id,) in (
+        frappe.qb.from_(doc).select(doc.id).where(doc.start_clocks.isnull()).where(doc.mode != "purged").run()
     ):
         try:
             clocks = readable_clocks(app, doc_id)

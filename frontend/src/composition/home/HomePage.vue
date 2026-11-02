@@ -337,7 +337,9 @@ async function createDocument(contentDoctype: string) {
   const node = await createDocumentMutation.run({
     content_doctype: contentDoctype,
   })
-  if (node) await router.push(newDocumentRoute(node))
+  if (node) {
+    await router.push(newDocumentRoute(node))
+  }
 }
 async function startMeeting(type: 'open' | 'restricted') {
   const room = await createRoomMutation.run({

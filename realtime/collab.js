@@ -227,13 +227,17 @@ function flush_presence() {
 	flushTimer = null;
 	try {
 		flush_sites();
-	} catch {}
+	} catch (error) {
+		console.error("[suite realtime] presence flush failed", error);
+	}
 
 	try {
 		if ([...sites.values()].some((site) => site.dirty.size)) {
 			schedule_flush();
 		}
-	} catch {}
+	} catch (error) {
+		console.error("[suite realtime] presence reschedule failed", error);
+	}
 }
 
 function schedule_flush() {
@@ -389,7 +393,8 @@ async function handle_rooms_request(connection, payload, acknowledge) {
 
 		set_rooms(connection, rooms);
 		send_reply(acknowledge, join_reply(connection, rooms));
-	} catch {
+	} catch (error) {
+		console.error("[suite realtime] room change failed", error);
 		try {
 			set_rooms(connection, []);
 		} catch {
@@ -455,14 +460,18 @@ function handle_presence(connection, payload) {
 		connection.clock++;
 		record_presence(connection, rooms, state);
 		schedule_flush();
-	} catch {}
+	} catch (error) {
+		console.error("[suite realtime] presence update failed", error);
+	}
 }
 
 function handle_disconnect(connection) {
 	try {
 		connection.roomRequests++;
 		set_rooms(connection, []);
-	} catch {}
+	} catch (error) {
+		console.error("[suite realtime] disconnect cleanup failed", error);
+	}
 }
 
 function collab_handlers(socket) {

@@ -61,10 +61,12 @@ class Struct:
     parent: tuple[int, int] | None = None
     # Clocks that fall between the two halves of a surrogate pair in a string item's text
     pairs: list[int] = field(default_factory=list)
-    # Root, node, mark, attribute and map key names, which the editor's schema must declare
+    # Root, node, mark, attribute and nested map key names, which the editor's schema must declare
     names: list[str] = field(default_factory=list)
     # The root type's name, for a struct whose parent is a root
     root: str | None = None
+    # The map key of a struct whose parent is a root
+    key: str | None = None
     # For a type item, the shared type it holds: 0 Array, 1 Map, 2 Text, 3 XmlElement, 4 XmlFragment,
     # 5 XmlHook, 6 XmlText
     type: int | None = None
@@ -81,15 +83,6 @@ class Struct:
 class Update:
     structs: list[Struct] = field(default_factory=list)
     deletes: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
-
-    @property
-    def names(self) -> set[str]:
-        """Answer every name the structs carry."""
-        names: set[str] = set()
-        for struct in self.structs:
-            names.update(struct.names)
-
-        return names
 
     def split_points(self) -> set[tuple[int, int]]:
         """Answer where this update can split a struct: after origins, at right origins, at delete ends."""
@@ -304,8 +297,10 @@ def read_header(reader: Reader, info: int, struct: Struct) -> None:
         else:
             struct.parent = reader.id()
 
-        if info & 0x20:
+        if info & 0x20 and struct.root is None:
             struct.names.append(reader.string())
+        elif info & 0x20:
+            struct.key = reader.string()
 
 
 def read_struct(reader: Reader, client: int, clock: int) -> Struct:

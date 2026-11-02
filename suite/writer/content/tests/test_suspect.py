@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
-from frappe.utils import now_datetime
+from frappe.utils import CallbackManager, now_datetime
 from frappe.utils.background_jobs import get_redis_conn
 from frappe.utils.logging import connection_for
 
@@ -77,7 +77,12 @@ class TestSuspect(compaction_case.CompactionCase):
         if not checker.usable_node() or not BUNDLE.is_file():
             self.skipTest(f"needs Node {checker.NODE_MAJOR}+ and the built bundle at {BUNDLE}")
 
-        patcher = patch.object(frappe.local, "job", frappe._dict(job_name="test_suspect"), create=True)
+        patcher = patch.object(
+            frappe.local,
+            "job",
+            frappe._dict(job_name="test_suspect", after_job=CallbackManager()),
+            create=True,
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
 

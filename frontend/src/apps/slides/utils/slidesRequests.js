@@ -1,7 +1,6 @@
 // the url contract between the page and the worker: which requests are slides'
 // and what the worker may store for them. shared by the service worker, so
 // nothing here may import app modules
-import { PIN_HEADER } from './slidesCaches'
 
 // marks an owner's /private/files/ request as slides media
 export const SLIDES_MEDIA_PARAM = 'slides_media'
@@ -38,10 +37,15 @@ const isSlidesClient = (request, clientState) => {
   return isFromSlidesPage(request) && clientState !== 'left'
 }
 
-// the pin action stores the shell through the same route
-const isShell = (request, url) =>
-  isSlidesPath(url.pathname) &&
-  (request.mode === 'navigate' || request.headers.get(PIN_HEADER) === 'shell')
+function isShell(request, url) {
+  return isSlidesPath(url.pathname) && request.mode === 'navigate'
+}
+
+// every view of a node opens the same shell, so one pin serves them all
+export function shellKey(pathname) {
+  const [key = null] = pathname.match(/^\/d\/[^/]+/) ?? []
+  return key
+}
 
 export const getRequestType = (request, clientState) => {
   const url = new URL(request.url)

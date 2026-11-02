@@ -352,7 +352,7 @@ describe('xlsx round trip of styling, sizes, freeze, merges and conditional form
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buf as ArrayBuffer)
     const ws = wb.getWorksheet('Sales')!
-    expect(ws.properties.defaultColWidth).toBe(13.57)
+    expect(ws.properties.defaultColWidth).toBe(16.43)
     expect(ws.getColumn(1).width).toBe(27.86)
   })
 
@@ -438,7 +438,8 @@ describe('xlsx round trip of styling, sizes, freeze, merges and conditional form
     await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
     expect(back.state.views.Sales).toMatchObject({
       colW: { 1: 30 },
-      rowH: { 0: 40, 1: 28 },
+      // Row 2's fit (21 pt = 28 px) is the default height, so nothing is stored.
+      rowH: { 0: 40 },
       manualRows: [0],
       hiddenRows: [3],
       hiddenCols: [3],

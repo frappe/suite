@@ -47,7 +47,7 @@ def gate_reading(update: updates.Update) -> dict:
             [
                 *(struct.client, struct.clock, struct.length, struct.kind),
                 *(id_list(struct.origin), id_list(struct.right_origin), id_list(struct.parent)),
-                *(struct.type, struct.node, struct.format_key, struct.names),
+                *(struct.type, struct.node, struct.format_key, struct.names, struct.key),
             ]
         )
 

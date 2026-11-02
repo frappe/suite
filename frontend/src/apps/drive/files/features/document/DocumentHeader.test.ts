@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, ref } from 'vue'
+import { createApp, h, nextTick, ref, type VNode } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { TransportError } from '@/platform/transport'
@@ -66,7 +66,8 @@ function session(role: number, canShare = true) {
 
 function mount(
   doc: ReturnType<typeof session>,
-  props: { saveState?: DocumentSaveState; viewOnly?: boolean } = {},
+  props: { saveState?: DocumentSaveState; viewOnly?: boolean; centerTitle?: boolean } = {},
+  slots: Record<string, () => VNode> = {},
 ) {
   const panel = ref<DocumentPanel | null>(null)
   const header = ref<{ focusPanelToggle(name: DocumentPanel): void } | null>(null)
@@ -74,17 +75,21 @@ function mount(
   document.body.append(root)
   const app = createApp({
     setup: () => () =>
-      h(DocumentHeader, {
-        ref: header,
-        session: doc as unknown as DocumentSession,
-        titleLabel: 'Spreadsheet title',
-        panels: ['comments', 'versions'],
-        panel: panel.value,
-        'onUpdate:panel': (next: DocumentPanel | null) => {
-          panel.value = next
+      h(
+        DocumentHeader,
+        {
+          ref: header,
+          session: doc as unknown as DocumentSession,
+          titleLabel: 'Spreadsheet title',
+          panels: ['comments', 'versions'],
+          panel: panel.value,
+          'onUpdate:panel': (next: DocumentPanel | null) => {
+            panel.value = next
+          },
+          ...props,
         },
-        ...props,
-      }),
+        slots,
+      ),
   })
   app.mount(root)
   cleanup = () => {
@@ -95,6 +100,11 @@ function mount(
   const button = (name: string) =>
     root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)
   return { root, title, button, panel, header }
+}
+
+/** The group that holds the title field. */
+function titleGroup(root: HTMLElement) {
+  return root.querySelector('header > div:has(input[aria-label="Spreadsheet title"])')!
 }
 
 describe('DocumentHeader', () => {
@@ -198,6 +208,18 @@ describe('DocumentHeader', () => {
     expect(document.activeElement).toBe(button('Versions'))
   })
 
+  it('keeps the title beside the icon unless asked to center it', () => {
+    const { root } = mount(session(40))
+    expect(titleGroup(root).className).toBe('flex min-w-0 flex-1 items-center gap-1')
+    expect(root.querySelector('[class*="md:"][class*="flex-1"]')).toBeNull()
+    cleanup?.()
+
+    const centered = mount(session(40), { centerTitle: true }).root
+    expect(titleGroup(centered).classList).toContain('md:contents')
+    expect(titleGroup(centered).firstElementChild!.classList).toContain('md:flex-1')
+    expect(centered.querySelector('header > div:last-child')!.classList).toContain('md:flex-1')
+  })
+
   it('offers Share only to people who can share', () => {
     const sharer = session(40)
     const { root } = mount(sharer)
@@ -210,5 +232,78 @@ describe('DocumentHeader', () => {
 
     const { button } = mount(session(40, false))
     expect(button('Share')).toBeNull()
+  })
+
+  it.each([
+    ['solid, with its label', {}, true],
+    [
+      'an icon on every width, after a primary action',
+      { primary: () => h('button', 'Present') },
+      false,
+    ],
+  ])('shows Share %s', (_label, slots, isSolid) => {
+    const sharer = session(40)
+    const { root, button } = mount(sharer, {}, slots)
+    const solid = [...root.querySelectorAll('button')].find(
+      (el) => el.textContent === 'Share' && el.getAttribute('variant') === 'solid',
+    )
+
+    expect(!!solid).toBe(isSolid)
+    expect(button('Share')!.classList.contains('md:hidden')).toBe(isSolid)
+    solid?.click()
+    button('Share')!.click()
+    expect(sharer.share).toHaveBeenCalledTimes(isSolid ? 2 : 1)
+  })
+
+  it('puts the primary action last', () => {
+    const { root } = mount(session(40), {}, { primary: () => h('button', 'Present') })
+
+    expect(root.querySelector('header > div:last-child > :last-child')!.textContent).toBe('Present')
+  })
+})
+
+describe('DocumentHeader, compact (Sheets)', () => {
+  function mountWithMenus(compact: boolean) {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({
+      setup: () => () =>
+        h(
+          DocumentHeader,
+          {
+            session: session(40) as unknown as DocumentSession,
+            titleLabel: 'Spreadsheet title',
+            saveState: 'clean',
+            panels: ['comments', 'versions'],
+            compact,
+          },
+          { menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit') },
+        ),
+    })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+    const header = root.querySelector('header')!
+    const saved = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'Saved',
+    )!
+    return { header, saved, menus: header.querySelector('nav')! }
+  }
+
+  it('puts Saved beside the title, then the menus', () => {
+    const { header, saved, menus } = mountWithMenus(true)
+    const left = header.firstElementChild!
+    expect(left.contains(saved)).toBe(true)
+    expect(saved.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(left.contains(menus)).toBe(true)
+  })
+
+  it('stays as it was for every other app', () => {
+    const { header, saved } = mountWithMenus(false)
+    // The save status sits on the right, before the panel toggles.
+    expect(header.firstElementChild!.contains(saved)).toBe(false)
+    expect(header.lastElementChild!.contains(saved)).toBe(true)
   })
 })

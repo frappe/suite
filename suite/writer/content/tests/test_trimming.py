@@ -5,6 +5,7 @@ import json
 from unittest.mock import patch
 
 import frappe
+from frappe.utils import CallbackManager
 from frappe.utils.logging import connection_for
 
 from suite import drive
@@ -20,7 +21,12 @@ from suite.writer.content.tests.support import WRITER, CheckpointCase, call_rout
 class TestWriterTrimming(CheckpointCase):
     def setUp(self):
         super().setUp()
-        in_a_job = patch.object(frappe.local, "job", frappe._dict(job_name="test_trimming"), create=True)
+        in_a_job = patch.object(
+            frappe.local,
+            "job",
+            frappe._dict(job_name="test_trimming", after_job=CallbackManager()),
+            create=True,
+        )
         in_a_job.start()
         self.addCleanup(in_a_job.stop)
 

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
-import { v4 } from 'uuid'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import {
@@ -13,6 +12,7 @@ import { DOCUMENT_ANCHOR } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 import { fullName } from '@/apps/writer/composables/useUsers'
 import { confirm, toast } from '@/platform/feedback'
+import { randomId } from '@/platform/random-id'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -331,7 +331,7 @@ function mayMention(text: string, mentionedBefore?: string[]) {
 // Sending the same words again reuses their client id, so Drive posts them once
 function replyClientId(thread: string, text: string) {
   const unsent = unsentReplies.get(thread) ?? new Map<string, string>()
-  const clientId = unsent.get(text) ?? v4()
+  const clientId = unsent.get(text) ?? randomId()
   unsent.set(text, clientId)
   unsentReplies.set(thread, unsent)
   return clientId

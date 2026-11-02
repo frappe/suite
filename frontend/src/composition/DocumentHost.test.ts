@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { installPageMeta, openingTitleState } from '@/platform/page-meta'
@@ -13,13 +13,14 @@ const testState = vi.hoisted(() => ({
   open: vi.fn(),
   dispose: vi.fn(),
   nodeLocked: vi.fn(),
+  forget: vi.fn(),
   surface: { name: 'WriterTestSurface', render: (): unknown => null },
   preview: { name: 'FileTestSurface', props: ['session'], render: (): unknown => null },
 }))
 
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const { openingTitleState } = await import('@/platform/page-meta')
+  const { driveNodeRoute } = await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
   return {
     // Stands in for the password form: a click is a right password.
     DriveUnlockScreen: define({
@@ -37,10 +38,7 @@ vi.mock('@/apps/drive', async () => {
     isDriveNodeLocked: testState.nodeLocked,
     filePreviewSurface: testState.preview,
     openDocumentSession: testState.open,
-    driveNodeRoute: (node: string, title: string) => ({
-      path: `/d/${node}/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-      state: openingTitleState(title),
-    }),
+    driveNodeRoute,
     DriveDocumentHeaderSkeleton: define({
       props: { title: String },
       setup: (props) => () => render('header', { 'data-skeleton': '' }, props.title),
@@ -56,6 +54,13 @@ vi.mock('@/composition/documentRegistry', () => ({
       icon: {},
       loadSurface: async () => testState.surface,
     },
+    {
+      contentDoctype: 'Presentation',
+      newLabel: () => 'New presentation',
+      icon: {},
+      loadSurface: async () => testState.surface,
+      forgetNode: testState.forget,
+    },
   ],
 }))
 
@@ -68,7 +73,7 @@ testState.preview.render = function (this: { session: { title: { value: string }
 async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+    routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
   })
   await router.push('/d/node-1/quarterly-plan')
   await router.isReady()
@@ -100,6 +105,8 @@ afterEach(() => {
   testState.open.mockReset()
   testState.dispose.mockReset()
   testState.nodeLocked.mockReset()
+  testState.forget.mockReset()
+  document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   document.body.innerHTML = ''
 })
 
@@ -122,7 +129,7 @@ describe('DocumentHost', () => {
     testState.open.mockResolvedValue(session())
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
     await router.push('/d/node-1/stale')
     await router.isReady()
@@ -137,6 +144,73 @@ describe('DocumentHost', () => {
     expect(testState.dispose).toHaveBeenCalledOnce()
   })
 
+  it('keeps the document open through its slideshow, and its slug once back', async () => {
+    testState.open.mockResolvedValue(session())
+    const view = { render: (): unknown => null }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/d/:node',
+          component: DocumentHost,
+          children: [
+            { path: 'present', name: 'slides-slideshow', component: view },
+            { path: ':slug?', name: 'document-host', component: view },
+          ],
+        },
+      ],
+    })
+    await router.push('/d/node-1/present?slide=2')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+    expect(router.currentRoute.value.fullPath).toBe('/d/node-1/present?slide=2')
+
+    await router.replace({ name: 'document-host', params: { node: 'node-1' }, query: { slide: 2 } })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe('/d/node-1/quarterly-plan?slide=2'),
+    )
+    expect(testState.open).toHaveBeenCalledOnce()
+    expect(testState.dispose).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('drops the slug when a rename would turn it into a view', async () => {
+    const opened = session()
+    testState.open.mockResolvedValue(opened)
+    const view = { render: (): unknown => null }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/d/:node',
+          component: DocumentHost,
+          children: [
+            { path: 'present', name: 'slides-slideshow', component: view },
+            { path: ':slug?', name: 'document-host', component: view },
+          ],
+        },
+      ],
+    })
+    await router.push('/d/node-1/quarterly-plan')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+
+    opened.title.value = 'Present'
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/d/node-1'))
+    expect(router.currentRoute.value.name).toBe('document-host')
+    app.unmount()
+  })
+
   it("names the tab from the first frame: the opener's title, else Opening…, then the document's", async () => {
     let answer!: (value: unknown) => void
     testState.open.mockReturnValue(
@@ -146,7 +220,14 @@ describe('DocumentHost', () => {
     )
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost, meta: { title: 'Opening…' } }],
+      routes: [
+        {
+          path: '/d/:node/:slug?',
+          name: 'document-host',
+          component: DocumentHost,
+          meta: { title: 'Opening…' },
+        },
+      ],
     })
     const uninstall = installPageMeta(router)
     await router.push({ path: '/d/node-1/q3', state: openingTitleState('Q3 plan') })
@@ -185,7 +266,7 @@ describe('DocumentHost', () => {
     )
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
     await router.push('/d/node-1/quarterly-plan')
     await router.isReady()
@@ -298,7 +379,7 @@ describe('DocumentHost', () => {
     testState.open.mockRejectedValueOnce(serverError).mockResolvedValueOnce(session())
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/d/:node/:slug?', component: DocumentHost }],
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
     await router.push('/d/node-1/quarterly-plan')
     await router.isReady()
@@ -316,6 +397,84 @@ describe('DocumentHost', () => {
     await vi.waitFor(() => expect(root.textContent).not.toContain('Could not open this document'))
     expect(testState.open).toHaveBeenCalledTimes(2)
     expect(root.querySelector("[aria-label='Opening document']")).toBeNull()
+    app.unmount()
+  })
+
+  // a device copy of a document the user lost access to goes (DESIGN-slides-offline §6)
+  it.each([403, 404, 410])(
+    'forgets the node on every type that keeps copies when the open is a %i',
+    async (status) => {
+      document.cookie = 'user_id=owner@example.com'
+      testState.open.mockRejectedValue(refusal(status, 'Refused'))
+      const { root, app } = await mountHost()
+
+      await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+      expect(testState.forget).toHaveBeenCalledExactlyOnceWith('node-1')
+      app.unmount()
+    },
+  )
+
+  it('keeps the node when a signed-out open is refused', async () => {
+    testState.open.mockRejectedValue(refusal(403, 'Refused'))
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    expect(testState.forget).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('forgets the node when an open document is refused', async () => {
+    const open = session()
+    testState.open.mockResolvedValue(open)
+    testState.nodeLocked.mockResolvedValue(false)
+    const { root, app } = await mountHost()
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+    expect(testState.forget).not.toHaveBeenCalled()
+
+    open.state.value = 'Refused'
+
+    await vi.waitFor(() => expect(testState.forget).toHaveBeenCalledExactlyOnceWith('node-1'))
+    app.unmount()
+  })
+
+  it.each([
+    [
+      'an offline open',
+      new TransportError({ type: 'NetworkError', message: 'offline', status: 0 }),
+    ],
+    ['a server error', new TransportError({ type: 'ServerError', message: 'boom', status: 500 })],
+  ])('keeps the node after %s', async (_label, reason) => {
+    document.cookie = 'user_id=owner@example.com'
+    testState.open.mockRejectedValue(reason)
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    expect(testState.forget).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('keeps both nodes when moving from one document to the next', async () => {
+    testState.open
+      .mockResolvedValueOnce(session())
+      .mockResolvedValueOnce({ ...session(), nodeId: 'node-2', title: ref('Budget') })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
+    })
+    await router.push('/d/node-1/quarterly-plan')
+    await router.isReady()
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(DocumentHost)
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+
+    await router.push('/d/node-2/budget')
+    await vi.waitFor(() => expect(testState.open).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
+
+    expect(testState.forget).not.toHaveBeenCalled()
     app.unmount()
   })
 })

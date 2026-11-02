@@ -801,6 +801,7 @@ import {
 } from '@/apps/mail/utils/threadFolding'
 import { mailRow } from '@/apps/mail/utils/threadRows'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
+import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 
 const {
   mailbox,
@@ -1008,6 +1009,12 @@ const goToMailbox = () =>
 // thread isn't in that list (e.g. a search result, or one on another page), fall back to fetching it
 // directly via `get_thread`.
 const thread = ref<Mail[]>([])
+// Use the same messages as the heading: a directly opened thread may never occur in the list.
+usePageTitle(() =>
+  threadID && thread.value.length
+    ? appDocumentTitle(thread.value[0].subject || __('[No subject]'), 'Mail')
+    : '',
+)
 const threadFallback = useQuery(api.mail.threads.get, () =>
   !messages?.length && threadID
     ? {

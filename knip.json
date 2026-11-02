@@ -18,6 +18,8 @@
         "recorder/frappeUi.ts",
         "src/apps/mail/sw.ts",
         "src/apps/writer/collab/checker-entry.ts",
+        "src/apps/sheets/collab/checker-entry.ts",
+        "src/apps/sheets/collab/converter-entry.ts",
         "src/apps/sheets/engine/difftest/compare-engines.js",
         "src/apps/sheets/engine/difftest/run.js",
         "scripts/generate-pwa-assets.mjs"
@@ -34,6 +36,10 @@
         "meet/captions/global-setup.ts",
         "meet/load/client.ts",
         "meet/load/*.test.mjs",
+        "meet/network/run.mjs",
+        "meet/network/*.test.mjs",
+        "meet/network/compare.mjs",
+        "meet/network/frappeUi.ts",
         "unified-frontend/global-setup.ts"
       ],
       "project": [
@@ -42,6 +48,7 @@
         "meet/**/*.{ts,mjs}",
         "unified-frontend/**/*.ts"
       ],
+      "ignoreDependencies": ["unplugin-icons", "unplugin-vue-components"],
       "playwright": {
         "config": [
           "{drive-backed-apps,meet}/playwright.config.ts",

@@ -1316,9 +1316,7 @@ function trashPath(row: Pick<DriveNode, 'root'>): RouteLocationRaw {
   return trashLocation(row, discovered.data)
 }
 function nodePath(row: Pick<DriveNode, 'name' | 'title' | 'kind'>) {
-  const slug = slugify(row.title)
-  const base = row.kind === 'folder' ? '/drive/f' : '/d'
-  return `${base}/${encodeURIComponent(row.name)}${slug ? `/${slug}` : ''}`
+  return driveNodeRoute(row).path
 }
 function pickUpload(source: 'files' | 'folder') {
   const target = newUploadTarget.value
@@ -1460,6 +1458,7 @@ function create(kind: CreateRequest['kind'], contentDoctype?: string) {
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {
+    // the document's surface may ask what a new one should start as
     await router.push(newDocumentRoute(created))
     return
   }
