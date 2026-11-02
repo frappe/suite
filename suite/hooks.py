@@ -123,9 +123,6 @@ website_redirects = [
     },
 ]
 
-# Framework File permission logic is fully replaced by Drive's
-ignore_file_permissions = True
-
 # ============================================================================
 # Drive content types (§10.3)
 # ============================================================================
