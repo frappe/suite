@@ -106,6 +106,11 @@
         />
       </div>
     </div>
+    <MoveAccessDialog
+      v-model:open="reviewingAccess"
+      :change="accessChange"
+      @confirm="confirmMove"
+    />
   </Dialog>
 </template>
 
@@ -115,7 +120,6 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import { api, client, useInfiniteQuery, useQuery } from '@/api'
 import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
-import { confirm } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
@@ -124,11 +128,13 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
-  moveAccessMessage,
+  moveAccessChange,
   startingFolder,
+  type MoveAccessChange,
   type PickedItem,
   type PickerMode,
 } from './folderPicker'
+import MoveAccessDialog from './MoveAccessDialog.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -275,15 +281,23 @@ function focusList() {
 }
 /** The move preview is loading, before the confirmation or the move. */
 const checking = ref(false)
+const accessChange = ref<MoveAccessChange | null>(null)
+const reviewingAccess = ref(false)
+let confirmMove = () => {}
 async function choose() {
   if (!current.value || target.value.status !== 'allowed' || props.busy || checking.value) return
   const folder = current.value.node
   const title = crumbs.value.at(-1)?.label ?? current.value.title
-  if (props.mode === 'move' && !(await confirmAccessChange(folder))) return
-  emit('choose', folder, title)
+  accessChange.value = props.mode === 'move' ? await previewAccessChange(folder) : null
+  if (!accessChange.value) {
+    emit('choose', folder, title)
+    return
+  }
+  confirmMove = () => emit('choose', folder, title)
+  reviewingAccess.value = true
 }
 /** A move that gives someone access, or lowers the mover's own role, asks first (unified frontend §5.7). */
-async function confirmAccessChange(folder: string): Promise<boolean> {
+async function previewAccessChange(folder: string): Promise<MoveAccessChange | null> {
   checking.value = true
   try {
     const previews = await Promise.all(
@@ -291,13 +305,7 @@ async function confirmAccessChange(folder: string): Promise<boolean> {
         client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
       ),
     )
-    const message = moveAccessMessage(previews)
-    if (!message) return true
-    return await confirm({
-      title: __('Change who has access?'),
-      message,
-      confirmLabel: __('Move'),
-    })
+    return moveAccessChange(previews)
   } finally {
     checking.value = false
   }

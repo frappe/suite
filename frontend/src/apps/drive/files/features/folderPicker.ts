@@ -78,35 +78,43 @@ export function destination(
   return { status: 'allowed' }
 }
 
-/** The most access changes the move confirmation lists before it counts the rest. */
-const LISTED_GAINS = 5
+/** Someone a move gives more access, as the move confirmation lists them. */
+export interface MoveAccessGain {
+  principal: string
+  label: string
+  role: number
+  person?: NodeMovePreviewOutput['gains'][number]['person']
+}
 
-/**
- * What the move confirmation says, from each item's move preview: who gets
- * access, and the mover's own role when it drops (unified frontend §5.7).
- * `null` when the move widens nothing, so it goes ahead without asking.
- */
-export function moveAccessMessage(previews: readonly NodeMovePreviewOutput[]): string | null {
-  const gains = new Map<string, { who: string; role: number }>()
-  for (const gain of previews.flatMap((preview) => preview.gains)) {
-    const known = gains.get(gain.principal)
-    const who = gain.person?.full_name ?? gainLabel(gain.principal)
-    if (!known || gain.role > known.role) gains.set(gain.principal, { who, role: gain.role })
+/** What a move changes, for the move confirmation (unified frontend §5.7). */
+export interface MoveAccessChange {
+  /** Strongest access first, each principal once, with the most it gains across the items. */
+  gains: MoveAccessGain[]
+  /** The mover's lowest role after the move, when it drops. `0` is no access. */
+  ownRoleAfter: number | null
+}
+
+/** From each item's move preview. `null` when the move goes ahead without asking. */
+export function moveAccessChange(
+  previews: readonly NodeMovePreviewOutput[],
+): MoveAccessChange | null {
+  const gains = new Map<string, MoveAccessGain>()
+  for (const { principal, role, person } of previews.flatMap((preview) => preview.gains)) {
+    const known = gains.get(principal)
+    if (known && known.role >= role) continue
+    gains.set(principal, {
+      principal,
+      role,
+      person,
+      label: person?.full_name ?? gainLabel(principal),
+    })
   }
-  const lines = [...gains.values()]
-    .slice(0, LISTED_GAINS)
-    .map(({ who, role }) => __('{0} will get {1} access.', [who, __(roleLabel(role))]))
-  if (gains.size > LISTED_GAINS) lines.push(__('And {0} more.', [gains.size - LISTED_GAINS]))
   const dropped = previews.filter((preview) => preview.role_after < preview.role_now)
-  if (dropped.length) {
-    const lowest = Math.min(...dropped.map((preview) => preview.role_after))
-    lines.push(
-      lowest > 0
-        ? __("You'll have {0} access.", [__(roleLabel(lowest))])
-        : __("You'll no longer have access."),
-    )
-  }
-  return lines.length ? lines.join(' ') : null
+  const ownRoleAfter = dropped.length
+    ? Math.min(...dropped.map((preview) => preview.role_after))
+    : null
+  if (!gains.size && ownRoleAfter === null) return null
+  return { gains: [...gains.values()].sort((a, b) => b.role - a.role), ownRoleAfter }
 }
 
 function gainLabel(principal: string): string {

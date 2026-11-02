@@ -7,16 +7,14 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
-  moveAccessMessage,
+  moveAccessChange,
   type PickedItem,
   type PickerMode,
 } from './folderPicker'
 import FolderPicker from './FolderPicker.vue'
 
-const feedback = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }))
-vi.mock('@/platform/feedback', () => feedback)
-
 vi.mock('frappe-ui', async () => ({
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/Avatar')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Dialog')),
@@ -237,7 +235,6 @@ describe('Moving into a folder that widens access', () => {
   let cleanup: (() => void) | undefined
   afterEach(() => {
     cleanup?.()
-    feedback.confirm.mockReset()
   })
 
   function moveInto(onChoose: (node: string) => void) {
@@ -273,29 +270,46 @@ describe('Moving into a folder that widens access', () => {
     button.click()
   }
 
-  it('asks first, naming who gets access, and does not move when the user cancels', async () => {
-    feedback.confirm.mockResolvedValue(false)
+  function pressInConfirmation(label: string) {
+    const button = [...confirmation().querySelectorAll('button')].find(
+      (candidate) => candidate.textContent?.trim() === label,
+    )
+    if (!button) throw new Error(`${label} is not in the confirmation`)
+    button.click()
+  }
+
+  function confirmation() {
+    const found = [...document.querySelectorAll('[role="dialog"]')].find((dialog) =>
+      dialog.textContent?.includes('More people will get access'),
+    )
+    if (!found) throw new Error('The confirmation is not open')
+    return found
+  }
+
+  it('lists who gets access and does not move when the user cancels', async () => {
     const chosen = vi.fn()
     moveInto(chosen)
     await pressMoveHere('Archive')
 
-    await vi.waitFor(() => expect(feedback.confirm).toHaveBeenCalledOnce())
-    expect(feedback.confirm).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: 'Change who has access?',
-        message: 'People in Design will get Manage access.',
-      }),
-    )
+    const row = await vi.waitFor(() => {
+      const found = confirmation().querySelector('li')
+      if (!found) throw new Error('Nobody is listed')
+      return found
+    })
+    expect(row.textContent).toContain('People in Design')
+    expect(row.textContent).toContain('Manage')
+    pressInConfirmation('Cancel')
     await Promise.resolve()
     expect(chosen).not.toHaveBeenCalled()
   })
 
   it('moves once the user confirms', async () => {
-    feedback.confirm.mockResolvedValue(true)
     const chosen = vi.fn()
     moveInto(chosen)
     await pressMoveHere('Archive')
 
+    await vi.waitFor(() => confirmation())
+    pressInConfirmation('Move')
     await vi.waitFor(() => expect(chosen).toHaveBeenCalledWith('archive', 'Archive'))
   })
 
@@ -305,36 +319,42 @@ describe('Moving into a folder that widens access', () => {
     await pressMoveHere('Projects')
 
     await vi.waitFor(() => expect(chosen).toHaveBeenCalledWith('projects', 'Projects'))
-    expect(feedback.confirm).not.toHaveBeenCalled()
+    expect(document.body.textContent).not.toContain('More people will get access')
   })
 })
 
-describe('move access message', () => {
+describe('move access change', () => {
   const person = { id: 'theo@example.com', full_name: 'Theo Park', user_image: null }
 
-  it('names each principal once, with the most it gains across the items', () => {
+  it('lists each principal once with the most it gains, strongest first, and never shows a link token', () => {
+    const change = moveAccessChange([
+      { gains: [{ principal: '$LINK', role: 10 }], role_now: 50, role_after: 50 },
+      {
+        gains: [
+          { principal: person.id, role: 20, person },
+          { principal: '$LINK', role: 40 },
+        ],
+        role_now: 50,
+        role_after: 50,
+      },
+    ])
+    expect(change?.gains.map(({ label, role }) => [label, role])).toEqual([
+      ['Anyone with a share link', 40],
+      ['Theo Park', 20],
+    ])
+    expect(change?.ownRoleAfter).toBeNull()
+  })
+
+  it("reports the mover's lowest role when it drops, even when nobody gains", () => {
     expect(
-      moveAccessMessage([
-        { gains: [{ principal: '$LINK', role: 10 }], role_now: 50, role_after: 50 },
-        {
-          gains: [
-            { principal: '$LINK', role: 40 },
-            { principal: person.id, role: 20, person },
-          ],
-          role_now: 50,
-          role_after: 50,
-        },
+      moveAccessChange([
+        { gains: [], role_now: 50, role_after: 40 },
+        { gains: [], role_now: 50, role_after: 20 },
       ]),
-    ).toBe('Anyone with a share link will get Edit access. Theo Park will get Comment access.')
+    ).toEqual({ gains: [], ownRoleAfter: 20 })
   })
 
-  it("says when the mover's own role drops, even when nobody gains", () => {
-    expect(moveAccessMessage([{ gains: [], role_now: 50, role_after: 40 }])).toBe(
-      "You'll have Edit access.",
-    )
-  })
-
-  it("says nothing when the move changes nobody's access", () => {
-    expect(moveAccessMessage([{ gains: [], role_now: 40, role_after: 40 }])).toBeNull()
+  it("is null when the move changes nobody's access", () => {
+    expect(moveAccessChange([{ gains: [], role_now: 40, role_after: 40 }])).toBeNull()
   })
 })
