@@ -79,6 +79,13 @@ vi.mock('@/apps/drive', () => ({
   }),
   loadDriveNodeSummary: state.loadNode,
 }))
+vi.mock('@/platform/session', async (actual) => {
+  const session = await actual<typeof import('@/platform/session')>()
+  return {
+    ...session,
+    useSession: () => ({ ...session.useSession(), user: { value: { id: 'maya@northwind.test' } } }),
+  }
+})
 vi.mock('@/api', async () => ({
   api: (await import('@/composition/api')).api,
   useQuery: () => ({
@@ -89,7 +96,7 @@ vi.mock('@/api', async () => ({
     error: null,
   }),
   useInfiniteQuery: () => ({
-    rows: [shareNotification(), mentionNotification()],
+    rows: [shareNotification(), mentionNotification(), commentNotification()],
     status: 'success',
     error: null,
     hasNext: false,
@@ -118,6 +125,8 @@ describe('Notifications bell', () => {
     )
     expect(rows[1]?.textContent).toContain('Theo Williams mentioned you in "Q4 Roadmap"')
     expect(rows[1]?.textContent).toContain('Can you check the numbers, @Maya Chen?')
+    expect(rows[2]?.textContent).toContain('Theo Williams commented on "Launch plan"')
+    expect(rows[2]?.textContent).toContain('The dates moved, @Theo Williams')
     for (const row of rows) {
       expect(row.textContent).not.toMatch(/share_add|share add|theo@northwind\.test/)
     }
@@ -209,6 +218,16 @@ function mentionNotification() {
     comment: 'comment-1',
     resolved: false,
     excerpt: 'Can you check the numbers, @Maya Chen?',
+    mentions: ['maya@northwind.test'],
+  })
+}
+function commentNotification() {
+  return notification('notice-3', 'comment', 'Launch plan', {
+    thread: 'thread-2',
+    comment: 'comment-2',
+    resolved: false,
+    excerpt: 'The dates moved, @Theo Williams',
+    mentions: ['theo@northwind.test'],
   })
 }
 function notification(

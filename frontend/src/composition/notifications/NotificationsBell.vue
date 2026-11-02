@@ -71,7 +71,7 @@
               class="line-clamp-2 block break-words"
               :class="notification.read ? 'text-base' : 'text-base-semibold'"
             >
-              {{ notificationSentence(notification) }}
+              {{ notificationSentence(notification, session.user.value?.id) }}
             </span>
             <span
               v-if="notificationExcerpt(notification)"
@@ -109,6 +109,7 @@ import {
   notificationSentence,
   notificationTime,
 } from '@/composition/notifications/notificationPresentation'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 const router = useRouter()
@@ -117,6 +118,7 @@ const count = useQuery(api.drive.notifications.unreadCount, {})
 const feed = useInfiniteQuery(api.drive.notifications.list, () =>
   open.value ? { limit: 60 } : false,
 )
+const session = useSession()
 const markRead = useMutation(api.drive.notifications.markRead)
 const markAll = useMutation(api.drive.notifications.markAllRead)
 const unread = computed(() => count.data?.unread ?? 0)

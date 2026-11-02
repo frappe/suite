@@ -727,6 +727,17 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(len(detail["excerpt"]), comments.EXCERPT_LENGTH)
         self.assertTrue(detail["excerpt"].endswith("…"))
 
+    def test_each_comment_tells_its_recipient_whom_it_mentions_and_quotes_it(self):
+        grant(self.document.name, MENTIONED, READ, self.admin)
+        thread = create_thread(self.commenter, self.document.name, "anchor", "First words")
+        words = f"Look @[{MENTIONED}]"
+        reply(self.commenter, thread, words)
+        mentioned = Principals(MENTIONED, (MENTIONED,), ())
+
+        detail = activity.notifications(mentioned)["rows"][0].activity.detail
+
+        self.assertEqual((detail["mentions"], detail["excerpt"]), ([MENTIONED], comments.excerpt(words)))
+
     def test_a_notification_quotes_the_comment_as_it_is_now(self):
         grant(self.document.name, MENTIONED, READ, self.admin)  # A notification needs Read to be listed
         thread = create_thread(self.commenter, self.document.name, "anchor", f"First @[{MENTIONED}]").name

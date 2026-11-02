@@ -157,6 +157,7 @@ def insert_reply(
             "comment": comment,
             "resolved": bool(thread_row.resolved),
             "excerpt": excerpt(text),
+            "mentions": mentions,
         },
         via_link=via_link,
     )
@@ -467,6 +468,7 @@ def write_comment_edit(
             "comment": comment_row.name,
             "resolved": bool(thread.resolved),
             "excerpt": excerpt(text),
+            "mentions": mentions,
         },
         via_link=via_link,
     )
