@@ -98,23 +98,23 @@ REVIEW = [
 def spreadsheet(parent: str, imports: str, title: str, rows: Rows, kind: str) -> str:
     """Import a styled XLSX and retain the original as an ordinary uploaded file."""
     workbook = Workbook()
-    sheet = workbook.active
+    sheet = workbook.worksheets[0]
     sheet.title = "Sheet1"
     for row in rows:
         sheet.append(row)
     sheet.merge_cells("A1:E1")
     sheet.freeze_panes = "B3"
     sheet.auto_filter.ref = f"A2:E{len(rows)}"
-    for row in sheet:
-        for cell in row:
-            if cell.row <= 2:
+    for row_number, cells in enumerate(sheet, 1):
+        for column, cell in enumerate(cells, 1):
+            if row_number <= 2:
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill("solid", fgColor="234D47")
-            elif cell.column > 1 and (isinstance(cell.value, int | float) or cell.data_type == "f"):
+            elif column > 1 and (isinstance(cell.value, int | float) or cell.data_type == "f"):
                 cell.number_format = '"$"#,##0.00'
-                if kind == "pipeline" and cell.column == 4:
+                if kind == "pipeline" and column == 4:
                     cell.number_format = "0%"
-                if kind == "hiring" and cell.column == 5:
+                if kind == "hiring" and column == 5:
                     cell.number_format = "0.0"
     for column in range(1, 6):
         sheet.column_dimensions[get_column_letter(column)].width = 30 if column == 1 else 24
