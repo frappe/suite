@@ -15,6 +15,7 @@
 
 import { toast } from 'frappe-ui'
 import { computed, shallowRef } from 'vue'
+import * as Y from 'yjs'
 
 import { type CollabSession, type LostAccess, type RoomStatus } from '@/platform/collab'
 import { GUEST_USER } from '@/platform/collab/colours'
@@ -268,6 +269,12 @@ export function useCollabRoom({
     return restoreVersion(s.room, seq, bytes)
   }
 
+  /** The room's doc as one update, to compare a version with; null outside a room. */
+  function docState(): Uint8Array | null {
+    const s = sheet.value
+    return s ? Y.encodeStateAsUpdate(s.doc) : null
+  }
+
   /** Every action so far committed and sent (or kept on the device). */
   async function flush() {
     const s = sheet.value
@@ -323,6 +330,7 @@ export function useCollabRoom({
     shareSelection,
     followSelection,
     restore,
+    docState,
     flush,
     loseAccess,
     regainAccess,
