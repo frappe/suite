@@ -2975,6 +2975,8 @@ async function _openCollab() {
   _setRoute((cmd) => collab.dispatch(cmd))
   if (props.title != null) currentTitle.value = props.title
   _afterWorkbookLoaded()
+  // Pivot output is not in the doc: each tab writes it on open (Q8).
+  void _recomputeAllPivots()
   return true
 }
 
