@@ -232,6 +232,118 @@ describe('saveCurrentState', () => {
     expect(saveFailed.value).toBe(false)
   })
 
+  describe('a draft write on a full disk', () => {
+    const put = IDBObjectStore.prototype.put
+    let deleted: string[]
+    let pushes: number
+
+    function quotaError() {
+      return new DOMException('full', 'QuotaExceededError')
+    }
+
+    // what a failed commit does: the request succeeded, and only the abort event fires
+    function abortAfterPut(store: IDBObjectStore, request: IDBRequest, error: DOMException | null) {
+      request.addEventListener('success', () => {
+        Object.defineProperty(store.transaction, 'error', { get: () => error, set() {} })
+        store.transaction.abort()
+      })
+    }
+
+    function failFirstWrites(count: number, error: DOMException | null) {
+      let failures = 0
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        record: unknown,
+        key?: IDBValidKey,
+      ) {
+        const request = put.call(this, record, key)
+        if (failures++ < count) {
+          abortAfterPut(this, request, error)
+        }
+
+        return request
+      })
+    }
+
+    beforeEach(() => {
+      deleted = []
+      pushes = 0
+      vi.stubGlobal('caches', {
+        delete: async (name: string) => {
+          deleted.push(name)
+          return true
+        },
+      })
+      serverSave = async () => {
+        pushes++
+        return 'M2'
+      }
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    })
+
+    it('still pushes when the commit aborts with no error event', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, null)
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(pushes).toBe(1))
+      await saving
+    })
+
+    it('clears the visited copies and lands the draft on the retry', async () => {
+      failFirstWrites(1, quotaError())
+      let draftAtPush: { content: { background: string }[] } | null = null
+      serverSave = async () => {
+        draftAtPush = await getPresentationFromLocalDB('p1')
+        return 'M2'
+      }
+
+      slides.value[0].background = '#123456ff'
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(draftAtPush?.content[0].background).toBe('#123456ff'))
+      expect(deleted).toEqual(['slides-visited'])
+      await saving
+    })
+
+    it('retries once, then pushes without the draft', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      let writesAtPush = 0
+      serverSave = async () => {
+        writesAtPush = vi.mocked(IDBObjectStore.prototype.put).mock.calls.length
+        pushes++
+        return 'M2'
+      }
+
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(pushes).toBe(1))
+      expect(writesAtPush).toBe(2)
+      expect(new Set(deleted)).toEqual(new Set(['slides-visited']))
+      await saving
+    })
+
+    it('leaves the visited copies alone on any other failure', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, new DOMException('broken', 'UnknownError'))
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(pushes).toBe(1))
+      await saving
+      expect(deleted).toEqual([])
+    })
+  })
+
   it('keeps writing the draft while a push is stuck', async () => {
     markDirty()
 

@@ -10,6 +10,7 @@ import {
 import { slides } from '@/apps/slides/stores/slide'
 import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
+import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import { draftsDbName } from '@/apps/slides/utils/slidesCaches'
 import { getSessionUser } from '@/boot/session'
 
@@ -63,6 +64,10 @@ const savePresentationToLocalDB = async (data, allowed = () => true) => {
     tx.onerror = () => {
       reject(tx.error)
     }
+
+    tx.onabort = () => {
+      reject(tx.error)
+    }
   })
 }
 
@@ -91,10 +96,22 @@ const writeDraft = (record, epoch) => {
     persistRequested = true
     navigator.storage?.persist?.().catch(() => {})
   }
-  return savePresentationToLocalDB(record, () => mayWrite(record.id, epoch)).then(
-    (wrote) => wrote,
-    () => false,
-  )
+
+  function write() {
+    return savePresentationToLocalDB(record, () => mayWrite(record.id, epoch))
+  }
+
+  return write()
+    .catch(async (err) => {
+      if (err?.name !== 'QuotaExceededError') {
+        throw err
+      }
+
+      // a draft comes before any visited copy
+      await clearVisitedCopies().catch(() => {})
+      return write()
+    })
+    .catch(() => false)
 }
 
 const getPresentationFromLocalDB = async (id) => {
