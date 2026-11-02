@@ -4754,9 +4754,13 @@ convert, with its id and reason, plus every file whose bytes were missing
 `roots_skipped`, `unmigrated_reachable`). While any is present Build raises
 after writing the file, so the migrate stops with the converted rows
 committed and the operator either fixes the rows and migrates again or sets
-site config `drive_build_accept_skips` to accept the loss. Removed rows,
-broken chains, missing bytes and dropped grants and shares are reported but
-do not refuse.
+site config `drive_build_accept_skips` to accept the loss. Cleanup reads the
+same key: its reachable-node check (§14.10) prints the rows and lets them
+through, and its first step deletes their `File` rows with the rest of
+Drive's legacy rows. After the migrate, the backup named in
+`drive_cleanup_backup` is the only copy of them. Removed rows, broken
+chains, missing bytes and dropped grants and shares are reported but do not
+refuse.
 
 **Restored database.** The record lives in `private/`, not the database. A
 database restored without its `private/` directory would meet a record that
@@ -4789,7 +4793,8 @@ hold:
    `<backup>` is free text naming the backup (a path, an S3 URL, an id). The
    value is written into Cleanup's state record.
 2. Every reachable Drive `File` row has a node, checked live against the
-   site, not against Build's state.
+   site, not against Build's state. With `drive_build_accept_skips` set,
+   the rows without a node are printed and do not refuse (§14.9).
 3. `frappe.storage.gc.blob_reference_columns()` exists and names all four of
    Drive's blob columns, so deleting File rows does not orphan every blob
    under the framework GC [003].

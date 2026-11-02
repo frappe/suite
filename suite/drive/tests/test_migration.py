@@ -36,7 +36,9 @@ from suite.drive._core import content
 from suite.drive._core.roles import EDIT, READ
 from suite.drive.framework import principals_for
 from suite.drive.patches import build, cleanup
+from suite.drive.patches.build.environment import ACCEPT_SKIPS_CONFIG_KEY
 from suite.drive.patches.build.ports import SiteContentSource
+from suite.drive.patches.build.skips import SKIPPED_FILENAME
 from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.environment import BACKUP_CONFIG_KEY
 from suite.drive.patches.cleanup.state import CleanupState
@@ -71,7 +73,9 @@ class TestBuildThenCleanup(IntegrationTestCase):
         super().setUpClass()
         cls.prefix = "mig" + frappe.generate_hash(length=6)
         cls.schema = legacy_schema.install()
-        cls.previous_conf = {key: frappe.conf.get(key) for key in ("storage_v2", BACKUP_CONFIG_KEY)}
+        cls.previous_conf = {
+            key: frappe.conf.get(key) for key in ("storage_v2", BACKUP_CONFIG_KEY, ACCEPT_SKIPS_CONFIG_KEY)
+        }
         cls.files_written = []
         try:
             cls.remove_seeded_drive()
@@ -81,8 +85,13 @@ class TestBuildThenCleanup(IntegrationTestCase):
             for path in (build.BuildState.for_site().path, CleanupState.for_site().path):
                 path.unlink(missing_ok=True)
             frappe.conf["storage_v2"] = 1
+            # The seed holds one row Build refuses (`cls.stray`); the operator
+            # accepts it, and Cleanup must honour the same decision (§14.9).
+            frappe.conf[ACCEPT_SKIPS_CONFIG_KEY] = 1
             reset_file_controller()
             build.execute()
+            skipped = build.BuildState.for_site().path.parent / SKIPPED_FILENAME
+            cls.skipped = json.loads(skipped.read_text(encoding="utf-8"))
             # Cleanup drops the legacy tables, so Build's indexes are read now.
             # A resumed Build indexes again, and must find its first index.
             SiteContentSource().index_document_reads()
@@ -186,6 +195,7 @@ class TestBuildThenCleanup(IntegrationTestCase):
         cls.deck_file = cls.prefix + "deckf"
         cls.picture = cls.prefix + "pict"
         cls.old_team = cls.prefix + "team"
+        cls.stray = cls.prefix + "stry"
 
         cls.file_row("Drive", folder=None, is_folder=1, file_name="Drive")
         cls.file_row("Users", folder=None, is_folder=1, file_name="Users")
@@ -198,6 +208,9 @@ class TestBuildThenCleanup(IntegrationTestCase):
         cls.file_row(
             cls.file, folder=cls.folder, file_name="report.txt", owner=cls.owner, **cls.local_bytes(cls.bytes)
         )
+        # A row filed under a file, not a folder. Drive Node cannot hold
+        # that shape, so Build skips it and refuses unless it is accepted.
+        cls.file_row(cls.stray, folder=cls.file, file_name="stray.txt", owner=cls.owner)
         cls.file_row(
             cls.trashed,
             folder=cls.folder,
@@ -518,6 +531,12 @@ class TestBuildThenCleanup(IntegrationTestCase):
         ):
             with self.subTest(file=name):
                 self.assertIsNone(frappe.db.exists("File", name))
+
+    def test_an_accepted_skip_is_listed_by_build_and_removed_by_cleanup(self):
+        self.assertTrue(self.skipped["accepted"])
+        self.assertEqual({row["file"] for row in self.skipped["skipped_rows"]}, {self.stray})
+        self.assertIsNone(frappe.db.exists("Drive Node", self.stray))
+        self.assertIsNone(frappe.db.exists("File", self.stray))
 
     def test_cleanup_finished_every_phase_with_the_backup_on_record(self):
         state = CleanupState.for_site()

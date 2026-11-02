@@ -409,6 +409,14 @@ If Build refuses because of reachable skips, it writes
 other failure, save the traceback and `private/drive-build-state.json`,
 find the cause, and start again from step 6 after a fix.
 
+In production only, Faris can accept the skips with
+`bench --site <site> set-config drive_build_accept_skips 1` and migrate
+again. Accepting means that the listed rows leave Drive: Build gives them no
+node, and Cleanup reads the same key, lets the same rows through its
+reachable-node check, and deletes their `File` rows. After the migrate, the
+backup named in `drive_cleanup_backup` is the only copy of these rows. Keep
+`drive-build-skipped.json` with the migration evidence.
+
 **Pass:** the runner exits 0 with no changed patch files.
 
 **Record:**

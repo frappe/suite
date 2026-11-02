@@ -371,6 +371,7 @@ def cleanup_environment(
     disk_settings: FakeDiskSettingsSnapshot | None = None,
     transaction: FakeTransaction | None = None,
     backup: str | None = None,
+    accept_skips: bool = False,
 ) -> CleanupEnvironment:
     """A `CleanupEnvironment` wired to fakes, with its state file in `tmp_path`."""
     table = files if files is not None else FakeFileTable()
@@ -395,6 +396,7 @@ def cleanup_environment(
         transaction=transaction if transaction is not None else FakeTransaction(),
         state=CleanupState(Path(tmp_path) / "drive-cleanup-state.json"),
         backup=backup,
+        accept_skips=accept_skips,
     )
 
 

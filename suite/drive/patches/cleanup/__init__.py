@@ -14,7 +14,9 @@ each checked once per call:
   record is quarantined and refused, never treated as a fresh site.
 - `gate.check_gate_reachable_nodes` — every reachable Drive `File` has a
   `Drive Node`, recomputed live against the current site, never against
-  Build's own persisted state.
+  Build's own persisted state. Site config `drive_build_accept_skips`, the
+  key that let Build finish over such rows, lets Cleanup through too, and
+  phase 1 deletes those rows.
 - `gate.check_gate_gc_discovery` — `frappe.storage.gc.blob_reference_columns()`
   is callable and names all four of Drive's blob columns (§3.17).
 
