@@ -159,6 +159,44 @@ describe('range outline', () => {
     expect(outlines).toBe(2)
   })
 
+  // Whole rows, columns and the whole sheet are outlined too, around the
+  // full-width / full-height range the tint covers.
+  function lineOutlines(selMode: 'row' | 'col' | 'all', selEnd: Cell) {
+    const { ctx, strokes } = recordingCtx()
+    createRenderer(ctx as never, createMockGeo() as never).render({
+      cssW: 600,
+      cssH: 300,
+      getValue: () => '',
+      cells: {},
+      sel: B2,
+      selEnd,
+      selMode,
+      editing: false,
+      freeze: { rows: 0, cols: 0 },
+      getDiffFor: null,
+      marchAnts: null,
+      marchPhase: 0,
+      pickerRect: null,
+      colDrag: null,
+      zoom: 1,
+    })
+    return strokes.filter((s) => s.lineWidth === 1).map((s) => s.rect)
+  }
+
+  it('outlines a whole-row selection across every column', () => {
+    // Rows 2–3, columns A … Z (26 × 100px from x 50): x 50 … 2650.
+    expect(lineOutlines('row', { r: 2, c: 1 })).toEqual([[50.5, 48.5, 2600, 48]])
+  })
+
+  it('outlines a single selected column down every row', () => {
+    // Column B, rows 1 … 1000 (24px from y 24).
+    expect(lineOutlines('col', B2)).toEqual([[150.5, 24.5, 100, 24000]])
+  })
+
+  it('outlines a whole-sheet selection', () => {
+    expect(lineOutlines('all', B2)).toEqual([[50.5, 24.5, 2600, 24000]])
+  })
+
   it('centres the handle on the 1px outline when the active cell is elsewhere', () => {
     // The outline's corner pixel is (350, 120), centre (350.5, 120.5): a 7px
     // square on whole pixels, x 347 … 354.

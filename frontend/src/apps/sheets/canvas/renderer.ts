@@ -192,9 +192,11 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
         cells.getMergeInfo?.(id),
       )
-    // Cell mode only, like the active frame drawn over it later.
-    if (!editing && fillRange === range)
-      selPainter.drawRangeOutline(range, sel, (id) => cells.getMergeInfo?.(id))
+    // Outlined like it is tinted; in cell mode the active frame goes over it later.
+    if (!editing)
+      selPainter.drawRangeOutline(fillRange, fillRange === range ? sel : null, (id) =>
+        cells.getMergeInfo?.(id),
+      )
     if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
     if (pickerRect) selPainter.drawPickerBorder(pickerRect)
     ctx.restore()
