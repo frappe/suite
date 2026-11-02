@@ -4,6 +4,7 @@ import { initSync, Model } from '@ironcalc/wasm'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CommandTypes } from './commands.js'
+import { MAX_ROWS } from './limits.js'
 import { createWorkbook, WorkbookError } from './workbook.js'
 
 // Node has no fetch-based wasm loading for the web-target package; feed the
@@ -654,6 +655,31 @@ describe('workbook — the cell scans stop at the last used row', () => {
     setInput(wb, 'Sheet1', 1, 5, '5000')
     expect(used(wb).at(-1)).toBe(5000)
     expect(wb.findInputs('Sheet1', '4999', 10)).toEqual([{ row: 4999, col: 3, input: '4999' }])
+  })
+
+  // The status bar's sum over a whole column (ISSUES #89).
+  it('the range stats of a whole column', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 3; r++) setInput(wb, 'Sheet1', r, 1, String(r))
+    const stats = () => wb.rangeStats('Sheet1', 1, 1, MAX_ROWS, 1)
+    expect(rowReads(() => expect(stats()).toEqual({ count: 3, numCount: 3, sum: 6 }))).toBe(3)
+  })
+
+  // C1 spills 1 … 5000; the range starts below C1, inside the spill.
+  it('the range stats of a spill whose formula is above the range', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 5, '5000')
+    setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(E1)')
+    const stats = () => wb.rangeStats('Sheet1', 4000, 3, MAX_ROWS, 3)
+    // 4000 + 4001 + … + 5000: 1001 numbers averaging 4500.
+    const sum = 1001 * 4500
+    expect(rowReads(() => expect(stats()).toEqual({ count: 1001, numCount: 1001, sum }))).toBe(5000)
+  })
+
+  it('the range stats of a few rows read only those rows', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 50; r++) setInput(wb, 'Sheet1', r, 1, '1')
+    expect(rowReads(() => expect(wb.rangeStats('Sheet1', 40, 1, 42, 1).sum).toBe(3))).toBe(3)
   })
 })
 

@@ -608,29 +608,45 @@ export function createWorkbook({
         })
         return out
       }),
-    // The status bar's Count / Sum / Avg. Same row scan as findInputs, so a
-    // whole-column selection costs the used rows, not a million reads.
+    // The status bar's Count / Sum / Avg. A range reaching below the last
+    // input row (a whole column) goes through scanCells, so it costs the used
+    // rows, not a million reads (ISSUES #89); scanCells starts at row 1 to
+    // follow the spills that reach into the range. Any other range reads just
+    // its own rows, so a few cells far down stay cheap.
     rangeStats: (sheet, r1, c1, r2, c2) =>
       read(() => {
         const idx = sheetIndex(sheet)
         const stats: RangeStats = { count: 0, numCount: 0, sum: 0 }
-        for (let row = Math.max(1, r1); row <= Math.min(r2, MAX_ROWS); row++) {
+        const add = (row: number, col: number) => {
+          stats.count++
+          if (model.getCellType(idx, row, col) !== NUMBER_CELL) return
+          const shown = model.getFormattedCellValue(idx, row, col)
+          // A date counts but isn't added up: its shown 2026-01-15 read as
+          // the number 2026 (ISSUES #67). Only text that looks like a date
+          // pays for the style read.
+          const dateLike = /\d[-/]\d|[A-Za-z]{3}/.test(shown)
+          if (dateLike && isDateFormat(model.getCellStyle(idx, row, col).style.num_fmt)) return
+          const n = numberFromShown(shown)
+          if (Number.isFinite(n)) {
+            stats.numCount++
+            stats.sum += n
+          }
+        }
+        const top = Math.max(1, r1),
+          bottom = Math.min(r2, MAX_ROWS)
+        if (bottom > inputRows()) {
+          scanCells(idx, (row, col) => {
+            if (row > bottom) return true
+            if (row >= top && col >= c1 && col <= c2) add(row, col)
+            return false
+          })
+          return stats
+        }
+        for (let row = top; row <= bottom; row++) {
           for (const col of model.getColumnsWithData(idx, row)) {
             // A styled but empty cell is listed too.
             if (col < c1 || col > c2 || model.getCellContent(idx, row, col) === '') continue
-            stats.count++
-            if (model.getCellType(idx, row, col) !== NUMBER_CELL) continue
-            const shown = model.getFormattedCellValue(idx, row, col)
-            // A date counts but isn't added up: its shown 2026-01-15 read
-            // as the number 2026 (ISSUES #67). Only text that looks like a
-            // date pays for the style read.
-            const dateLike = /\d[-/]\d|[A-Za-z]{3}/.test(shown)
-            if (dateLike && isDateFormat(model.getCellStyle(idx, row, col).style.num_fmt)) continue
-            const n = numberFromShown(shown)
-            if (Number.isFinite(n)) {
-              stats.numCount++
-              stats.sum += n
-            }
+            add(row, col)
           }
         }
         return stats
