@@ -5,6 +5,7 @@ from frappe import _
 from frappe.core.doctype.user.user import _get_user_for_update_password
 from frappe.core.doctype.user.user import update_password as update_frappe_password
 from frappe.model.document import Document
+from frappe.utils.data import sha256_hash
 
 from suite.mail.directory import delete_account as delete_mail_account
 from suite.mail.directory import set_account_enabled
@@ -67,14 +68,21 @@ def _update_password(
             old_password=old_password,
         )
 
-    result = _get_user_for_update_password(key, old_password)
-    user = result.get("user")
+    # Frappe consumes the reset key when it resolves the user, so read it here without consuming it.
+    user = (
+        frappe.db.get_value("User", {"reset_password_key": sha256_hash(key)}) if key else frappe.session.user
+    )
     if user:
         from frappe.utils.password import check_password
 
         from suite.suite_core.account_state import read
 
         if read(user).get("must_change_password"):
+            # This path sets the password itself, so it verifies and consumes the key or old password.
+            result = _get_user_for_update_password(key, old_password)
+            if result.get("message"):
+                frappe.local.response.http_status_code = 410
+                return result.message
             try:
                 unchanged = check_password(user, new_password) == user
             except frappe.AuthenticationError:
@@ -105,6 +113,10 @@ def _update_password(
     result = update_frappe_password(
         new_password=new_password, logout_all_sessions=logout_all_sessions, key=key, old_password=old_password
     )
+
+    # Frappe refuses an expired or used key with a message instead of raising.
+    if frappe.local.response.get("http_status_code") == 410:
+        return result
 
     if user and is_jmap_configured(user):
         from suite.mail.account_lifecycle import complete_password_change
