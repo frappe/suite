@@ -729,7 +729,7 @@ class TestCommentWorkflows(IntegrationTestCase):
 
     def test_each_comment_tells_its_recipient_whom_it_mentions_and_quotes_it(self):
         grant(self.document.name, MENTIONED, READ, self.admin)
-        thread = create_thread(self.commenter, self.document.name, "anchor", "First words")
+        thread = create_thread(self.commenter, self.document.name, "anchor", "First words").name
         words = f"Look @[{MENTIONED}]"
         reply(self.commenter, thread, words)
         mentioned = Principals(MENTIONED, (MENTIONED,), ())

@@ -212,18 +212,22 @@ class TestWriterTouches(DriveCallbackCase):
         self.assertEqual(self.automatic_version_actors(node), [WRITER, OUTSIDER])
 
     def test_an_automatic_version_with_no_known_author_credits_the_owner_not_the_sweep(self):
+        ensure_user(OUTSIDER)
         node = self.new_document()
+        share_as_writer(node, OUTSIDER, drive.EDIT)
+        frappe.db.commit()
         start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        frappe.set_user(OUTSIDER)
+        # The first push takes its own version, so the second is the one the sweep follows
         with self.frozen_clock(start):
-            self.type_into(node, ["one"])
+            self.type_into(node, ["one", " two"])
         frappe.db.sql(f"DELETE FROM `{table('writer', 'session')}` WHERE doc_id = %s", self.doc_row(node).id)
-        frappe.db.set_value("Drive Node", node, "owner", OUTSIDER, update_modified=False)
 
         frappe.set_user("Administrator")
         with self.frozen_clock(start + timedelta(minutes=10)), patch.object(scheduling, "enqueue"):
             jobs.sweep()
 
-        self.assertEqual(self.automatic_version_actors(node), [OUTSIDER])
+        self.assertEqual(self.automatic_version_actors(node), [OUTSIDER, WRITER])
 
     def test_a_document_nobody_edits_gets_no_automatic_version(self):
         node = self.new_document()

@@ -13,9 +13,9 @@ from frappe.utils import get_system_timezone, now_datetime
 
 from suite import drive
 from suite.content.http import routes
-from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
+from suite.writer.content.tests.drive_callback_case import share_as_writer
 from suite.writer.content.tests.support import (
     WRITER,
     CheckpointCase,
@@ -215,8 +215,7 @@ class TestRestoreFence(CheckpointCase):
         )
 
     def test_who_restored_what_reaches_a_pull_and_never_the_room_or_a_public_reader(self):
-        owner = Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
-        grant(self.node, "$PUBLIC", drive.READ, owner)
+        share_as_writer(self.node, "$PUBLIC", drive.READ)
         frappe.db.commit()
         seq = drive.take_version(self.node, kind="named", label="Draft for review")
         taken = frappe.db.get_value("Drive Node Version", {"node": self.node, "seq": seq}, "creation")
