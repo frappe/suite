@@ -369,10 +369,10 @@ const saveCurrentState = async () => {
     // only mark clean once the server actually has the changes,
     // and only if no edit arrived while this save was in flight
     if (!(await syncSnapshotToServer(snapshot, idAtSnapshot, generationAtSnapshot, epoch))) return
-    clearSaveFailure()
-
-    // dirty belongs to another presentation now, so it isn't ours to clear
+    // dirty and the failure belong to another presentation now, so they aren't ours to clear
     if (presentationId.value !== idAtSnapshot) return
+
+    clearSaveFailure()
     if (generationFor(idAtSnapshot) === generationAtSnapshot) markClean()
   } catch (err) {
     // the writes stopped mid-push: nothing of this save may land, the failure included

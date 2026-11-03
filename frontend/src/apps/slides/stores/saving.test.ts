@@ -44,6 +44,7 @@ const {
   dirty,
   saveFailed,
   clearSaveFailure,
+  saveRefused,
   getPresentationFromLocalDB,
   stopWrites,
   resumeWrites,
@@ -332,6 +333,51 @@ describe('saveCurrentState', () => {
 
       await vi.waitFor(() => expect(pushes).toBe(1))
       await saving
+    })
+
+    it('leaves the next presentation refused when a delayed push lands', async () => {
+      let freeSpace!: () => void
+
+      const clearing = new Promise<void>((resolve) => {
+        freeSpace = resolve
+      })
+      vi.stubGlobal('caches', {
+        delete: async (name: string) => {
+          deleted.push(name)
+          await clearing
+          return true
+        },
+      })
+      failFirstWrites(1, new DOMException('full', 'QuotaExceededError'))
+      markDirty()
+
+      const leaving = saveCurrentState()
+      await vi.waitFor(() => expect(deleted.length).toBeGreaterThan(0))
+
+      slides.value = [{ clientId: 'c2', background: '#00ff00ff', elements: [] }]
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      markDirty()
+      serverSave = async () => {
+        throw conflict()
+      }
+
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await saveCurrentState()
+      expect(saveRefused.value).toBe(true)
+
+      const pushed: string[] = []
+      serverSave = async (id) => {
+        pushed.push(id)
+        return 'M2'
+      }
+
+      freeSpace()
+      await leaving
+
+      expect(pushed).toEqual(['p1'])
+      expect(saveRefused.value).toBe(true)
+      expect(saveFailed.value).toBe(true)
     })
 
     it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
