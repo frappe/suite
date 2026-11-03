@@ -271,12 +271,14 @@ export async function openedSurface({
   slides = served.slides,
   firstLoad,
   media = (() => undefined) as unknown as DocumentSession['media'],
+  composite,
 }: {
   path?: string
   role?: number
   slides?: unknown[]
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
+  composite?: Record<string, unknown[] | Error>
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -308,13 +310,60 @@ export async function openedSurface({
       return answer([])
     }
 
+    if (composite && url.includes('composite_manifest')) {
+      const references = Object.keys(composite).map((reference, index) => ({
+        reference,
+        index: index + 1,
+        presentation: reference,
+        node: null,
+      }))
+
+      return answer({
+        presentation: docname,
+        node: 'node-1',
+        modified: 'M1',
+        group_limit: 1,
+        reference_count: references.length,
+        references,
+      })
+    }
+
+    if (composite && url.includes('composite_group')) {
+      const [reference] = JSON.parse(String(init?.body)).references
+      const group = composite[reference]
+      if (group instanceof Error) {
+        throw group
+      }
+
+      return answer({
+        presentation: docname,
+        node: 'node-1',
+        references: [
+          {
+            reference,
+            index: 1,
+            presentation: reference,
+            readable: true,
+            node: null,
+            composite: false,
+            slides: group,
+          },
+        ],
+      })
+    }
+
     const held = loads.shift()
     const heldAnswer = held && (await held)
     if (heldAnswer) {
       return heldAnswer
     }
 
-    return answer({ ...structuredClone(served), slides, name: docname })
+    return answer({
+      ...structuredClone(served),
+      slides,
+      name: docname,
+      is_composite: composite ? 1 : 0,
+    })
   })
   const access = ref({ role })
   const opened = session(docname, access, media)
@@ -339,7 +388,7 @@ export async function openedSurface({
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
-  if (!firstLoad) {
+  if (!firstLoad && !composite) {
     await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
   }
 

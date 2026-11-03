@@ -455,7 +455,10 @@ async function load() {
       void offerTheme()
     }
 
-    pruneOfflineCopy(presentationId.value).catch(() => {})
+    // a group that didn't load names none of its pictures, so their bytes would pass for orphans
+    if (!composite.value || compositeItems.value.every((item) => item.status === 'ready')) {
+      pruneOfflineCopy(presentationId.value).catch(() => {})
+    }
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'

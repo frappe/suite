@@ -393,6 +393,54 @@ describe('Slides offline copy', () => {
     expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toEqual([pinnedPicture])
   })
 
+  describe('a saved composite copy opens', () => {
+    const pinnedPicture = '/private/files/b.png'
+    const groupSlides = [{ name: 'a1', idx: 1, parent: 'a', background: '#ffffffff', elements: [] }]
+
+    function pinnedThenOpened(composite: Record<string, unknown[] | Error>) {
+      const deleted: string[] = []
+      vi.stubGlobal('caches', {
+        open: async () => ({
+          keys: async () => [],
+          delete: async (key: string) => {
+            deleted.push(key)
+            return true
+          },
+        }),
+        match: async () => undefined,
+        delete: async () => true,
+      })
+      const next = fakeServer.opens + 1
+      const record = `${RECORD_PREFIX}p${next}`
+      localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
+
+      return { deleted, record, opening: openedSurface({ composite }) }
+    }
+
+    it('keeps the pictures of a group a dropped connection left out', async () => {
+      const { deleted, record, opening } = pinnedThenOpened({
+        a: groupSlides,
+        b: new TypeError('Failed to fetch'),
+      })
+
+      mounted = await opening
+      const root = mounted.root
+      await vi.waitFor(() => expect(root.textContent).toContain('2 · failed'), { timeout: 5000 })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(deleted).toEqual([])
+      expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toEqual([pinnedPicture])
+    })
+
+    it('clears a picture no group shows once every group has loaded', async () => {
+      const { deleted, opening } = pinnedThenOpened({ a: groupSlides, b: groupSlides })
+
+      mounted = await opening
+
+      await vi.waitFor(() => expect(deleted).toEqual([pinnedPicture]))
+    })
+  })
+
   it('takes a refused picture as missing from the copy only while offline', async () => {
     function goes(state: 'online' | 'offline') {
       Object.defineProperty(navigator, 'onLine', {
