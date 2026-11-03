@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import { createSortFilter } from '../../engine/sortFilter'
 import type { Rect } from '../../engine/types'
@@ -91,5 +91,42 @@ describe('sorting from a menu', () => {
     })
 
     expect(cells).toMatchObject({ C5: 'Food', C6: 'Item', C7: 'Rent', C8: 'Total' })
+  })
+})
+
+// The active filter is outlined on the canvas, under the selection (#106).
+describe('the filter outline', () => {
+  it('hands the active filter range to the grid, and null once it is removed', async () => {
+    const sortFilter = createSortFilter({
+      read: async () => ({ inputs: [], displays: [] }),
+      write: () => {},
+    } as never)
+    const renderVersion = ref(0)
+    const setFilterRange = vi.fn()
+    useSortFilter({
+      sortFilter,
+      currentSheet: ref('Sheet1'),
+      activeCell: ref('A1'),
+      renderVersion,
+      gridWrapRef: ref(null),
+      getGrid: () => ({ setFilterRange }),
+      readRect: async () => ({ inputs: [], displays: [] }),
+      rectBlocked: () => false,
+      pushEditOp: vi.fn(),
+      sheetExtent: async () => ({ maxRow: 0, maxCol: 0 }),
+      sortDialog: () => ({ open: vi.fn() }),
+    } as never)
+    expect(setFilterRange).toHaveBeenLastCalledWith(null)
+
+    const range = { r0: 4, c0: 2, r1: 7, c1: 3 }
+    sortFilter.setRange(range, 'Sheet1')
+    renderVersion.value++
+    await nextTick()
+    expect(setFilterRange).toHaveBeenLastCalledWith(range)
+
+    sortFilter.clearRange('Sheet1')
+    renderVersion.value++
+    await nextTick()
+    expect(setFilterRange).toHaveBeenLastCalledWith(null)
   })
 })
