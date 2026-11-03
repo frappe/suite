@@ -90,14 +90,24 @@ def convert_soon(app: str, node: str) -> None:
     if spec_of(app).conversion is None or not convert.may_convert(app):
         return
 
-    scheduling.enqueue(
-        jobs.CONVERT_ONE,
-        f"suite-convert-{app}-{node}",
-        timeout=convert.TIMEOUT,
-        app=app,
-        node=node,
-        enqueue_after_commit=True,
-    )
+    # The collab queue, with the other jobs that run a Node child: not the scheduled run's long queue, where
+    # it could wait minutes behind that run. Only a hint: the scheduled run converts it anyway, so a queue
+    # that refuses it never fails the import
+    try:
+        scheduling.enqueue(
+            jobs.CONVERT_ONE,
+            f"suite-convert-{app}-{node}",
+            timeout=convert.TIMEOUT,
+            app=app,
+            node=node,
+            enqueue_after_commit=True,
+        )
+    except Exception:
+        frappe.log_error(
+            title="Collab conversion: import request failed",
+            message=f"{app} document {node}\n{frappe.get_traceback()}",
+            reference_doctype="Suite Collab Settings",
+        )
 
 
 def copy(app: str, source_node: str, node: str) -> None:

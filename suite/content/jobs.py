@@ -79,7 +79,10 @@ def convert_pending(app: str) -> None:
 
 
 def convert_one(app: str, node: str) -> None:
-    """Convert one document now, as its queued job: an import, which opens read-only until it is converted."""
+    """Convert one imported document, as the job its import queues."""
+    # As the scheduled run: the importer may hold no Edit on the new node (an upload through a share link),
+    # and the conversion takes a version of it
+    frappe.set_user("Administrator")
     conversion = spec_of(app).conversion
     if conversion is not None and convert.may_convert(app):
         conversions.run_one(app, conversion, node)

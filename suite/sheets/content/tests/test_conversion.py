@@ -261,12 +261,15 @@ class TestConvertDocument(IntegrationTestCase):
 
         self.assertEqual(conversion.read_old(node).docname, lowest)
 
-    def imported(self, title: str, raw: bytes) -> tuple[str, list[dict]]:
-        """Import `raw` as "Open as spreadsheet" does; the node, and the conversions the import queued."""
+    def imported(self, title: str, raw: bytes, refused: bool = False) -> tuple[str, list[dict]]:
+        """Import `raw` as "Open as spreadsheet" does; the node, and the conversions the import queued.
+
+        `refused` makes the queue raise, as a full queue or a Redis outage does."""
         root = drive.ensure_personal_root(OWNER)
         parent = frappe.db.get_value("Drive Root", root, "node")
         source = drive.store_file(parent, title, io.BytesIO(raw))
-        with patch.object(scheduling, "enqueue") as enqueue:
+        refusal = frappe.QueueOverloaded if refused else None
+        with patch.object(scheduling, "enqueue", side_effect=refusal) as enqueue:
             node = drive.import_document(
                 parent, f"Imported {uuid.uuid4().hex[:8]}", content_doctype="Sheet", from_node=source
             )
@@ -316,3 +319,21 @@ class TestConvertDocument(IntegrationTestCase):
         assert snapshot is not None
         [cells] = cells_of(snapshot[1]).values()
         self.assertEqual(cells, {"A1": "Name", "B1": "Amount", "A2": "Rent", "B2": "1200"})
+
+    def test_the_job_converts_an_import_its_importer_cannot_edit(self):
+        # A worker runs a job as the user who queued it: one who uploaded through a share link has no Edit
+        node, queued = self.imported("book.xlsx", xlsx_bytes())
+        stranger = "sheets-collab-stranger@example.com"
+        ensure_user(stranger)
+        frappe.set_user(stranger)
+
+        self.run_queued(queued)
+
+        self.assertIsNotNone(log.find(sheets_content.APP, node))
+        self.assertEqual(self.records(node), (("converted", None),))
+
+    def test_an_import_survives_a_queue_that_refuses_its_conversion(self):
+        node, _queued = self.imported("list.csv", b"Name,Amount\nRent,1200\n", refused=True)
+
+        self.assertEqual(frappe.db.get_value("Drive Node", node, "content_doctype"), "Sheet")
+        self.assertIsNone(log.find(sheets_content.APP, node))
