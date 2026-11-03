@@ -468,7 +468,9 @@ def notifications(
     """Page the caller's notification pointers with authorized activity data.
 
     A pointer whose activity is gone, or whose node the caller can no longer
-    read, is dropped after the SQL window, so a full page can answer short.
+    read, is dropped after the SQL window, so a full page can answer short. A
+    mention stays without Read, stripped to who and where, unless a deny blocks
+    the person.
     `next_cursor` still advances by the window (§11.4).
 
     Each row carries its node's current `node_title` and `node_kind`, read for
@@ -522,13 +524,29 @@ def _visible_notifications(
             ["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
             as_dict=True,
         )
-        if not activity or not _can_read(principals, activity.node):
+        if not activity:
             continue
         activity.detail = _json_value(activity.detail, {})
+        if not _can_read(principals, activity.node):
+            if not _is_mentioned_without_access(principals, activity):
+                continue
+            # They may hear who mentioned them and where, not what was said
+            activity.update(detail={"mentions": [principals.user]}, client=None, via_link=None)
         row.activity = activity
         visible.append(row)
     _quote_comments_as_they_are([row.activity for row in visible])
     return visible, len(rows)
+
+
+def _is_mentioned_without_access(principals: Principals, activity: frappe._dict) -> bool:
+    """A comment still tells the person it mentions who can't read its node, unless a deny blocks them."""
+    from suite.drive._core.access import is_blocked
+    from suite.drive._core.nodes import NODE_FIELD_NAMES
+
+    if activity.action != "comment" or principals.user not in activity.detail.get("mentions", []):
+        return False
+    node = frappe.db.get_value("Drive Node", activity.node, NODE_FIELD_NAMES, as_dict=True)
+    return bool(node) and node.state == "Active" and not is_blocked(node, principals)
 
 
 def _quote_comments_as_they_are(activities: Sequence[frappe._dict]) -> None:

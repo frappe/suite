@@ -173,6 +173,20 @@ describe('Notifications bell', () => {
       state.push.mock.invocationCallOrder[0]!,
     )
   })
+  it('still opens a mention of a document the reader has no access to', async () => {
+    state.loadNode.mockRejectedValue(new Error('Not found'))
+    mount()
+    await nextTick()
+    const row = [...document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('mentioned you in'),
+    )
+
+    row?.click()
+    await vi.waitFor(() => expect(state.push).toHaveBeenCalled())
+
+    expect(state.push).toHaveBeenCalledWith(`/d/${mentionNotification().activity.node}/item`)
+  })
+
   it('marks every remaining row only through the explicit action', async () => {
     state.markRead.mockResolvedValue({
       read: 1,

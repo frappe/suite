@@ -14,7 +14,15 @@ from frappe.model.document import Document
 from frappe.utils import get_system_timezone, now_datetime, strip_html_tags
 
 from suite.drive._core import content
-from suite.drive._core.access import effective_role, require
+from suite.drive._core.access import (
+    _principal_kind,
+    _tree,
+    check,
+    effective_role,
+    grant,
+    is_blocked,
+    require,
+)
 from suite.drive._core.activity import notify_users, record
 from suite.drive._core.errors import (
     DriveConflict,
@@ -25,7 +33,8 @@ from suite.drive._core.errors import (
 from suite.drive._core.nodes import MAX_PAGE_SIZE, node_owner
 from suite.drive._core.people import people
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import COMMENT, EDIT, READ
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ
+from suite.drive._core.roots import lock_trees
 
 _BRACKET_MENTION = re.compile(r"@\[([^\]\r\n]{1,140})\]")
 _EMAIL_MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
@@ -65,7 +74,7 @@ def insert_thread(
         }
     ).insert(ignore_permissions=True)
     comment, mentions = _insert_comment(
-        principals, thread.name, node_row.name, text, author_name=author_name, client_id=None
+        principals, thread.name, node_row, text, author_name=author_name, client_id=None
     )
     activity = record(
         principals,
@@ -110,6 +119,7 @@ def create_thread(
     savepoint = f"drive_comment_thread_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        lock_tree_to_share(principals, node, text)
         node_row = _comment_node(node, for_update=True)
         via_link = require(node_row, COMMENT, principals)
         _require_document(node_row)
@@ -143,7 +153,7 @@ def insert_reply(
     comment, mentions = _insert_comment(
         principals,
         thread_row.name,
-        node.name,
+        node,
         text,
         author_name=author_name,
         client_id=client_id,
@@ -179,6 +189,7 @@ def reply(
     savepoint = f"drive_comment_reply_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        lock_tree_to_share(principals, _thread(thread).node, text)
         thread_row, node = _locked_thread(thread)
         via_link = require(node, COMMENT, principals)
         _require_document(node)
@@ -452,7 +463,10 @@ def write_comment_edit(
     via_link: str | None,
 ) -> None:
     """Rewrite a comment's text and record it, telling only the people it newly mentions."""
-    mentions = _mentions(text)
+    before = _json_value(comment_row.mentions, [])
+    named = _mentions(text)
+    added = reach_mentioned(principals, node, [user for user in named if user not in before])
+    mentions = [user for user in named if user in before or user in added]
     frappe.db.set_value(
         "Drive Comment",
         comment_row.name,
@@ -472,7 +486,7 @@ def write_comment_edit(
         },
         via_link=via_link,
     )
-    notify_users(activity, set(mentions) - set(_json_value(comment_row.mentions, [])))
+    notify_users(activity, added)
 
 
 def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dict:
@@ -481,6 +495,7 @@ def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dic
     savepoint = f"drive_comment_edit_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        lock_tree_to_share(principals, _comment(comment).node, text)
         comment_row, node = _locked_comment(comment)
         via_link = require(node, READ, principals)
         _require_document(node)
@@ -701,23 +716,52 @@ def _locked_comment(comment: str) -> tuple[frappe._dict, frappe._dict]:
     return locked, node
 
 
+def lock_tree_to_share(principals: Principals, node: str, text: str) -> None:
+    """A manager's mention may grant, and a grant takes the tree lock before any row of the tree."""
+    row = _comment_node(node)
+    if _mentions(text) and check(row, MANAGE, principals):
+        lock_trees(_tree(row))
+
+
+def reach_mentioned(principals: Principals, node: frappe._dict, users: list[str]) -> list[str]:
+    """The people among `users` a comment reaches, shared with at Comment if the author manages the node.
+
+    A blocked person is left out: no grant, no notification. Anyone else without
+    access stays mentioned, so the bell tells them. Only MANAGE hands out access,
+    so a commenter or a share link never does, and nobody's role is lowered.
+    """
+    from suite.drive.framework import principals_for
+
+    manages = check(node, MANAGE, principals)
+    reached = []
+    for user in users:
+        person = principals_for(user)
+        if not check(node, READ, person):
+            if is_blocked(node, person):
+                continue
+            if manages and _principal_kind(user) == "user":
+                grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
+        reached.append(user)
+    return reached
+
+
 def _insert_comment(
     principals: Principals,
     thread: str,
-    node: str,
+    node: frappe._dict,
     text: str,
     *,
     author_name: str | None,
     client_id: str | None,
 ) -> tuple[str, list[str]]:
     guest_name = _guest_name(principals, author_name)
-    mentions = _mentions(text)
+    mentions = reach_mentioned(principals, node, _mentions(text))
     # Frappe counts words made only of tags as missing; _validate_text already refuses blank words
     row = frappe.get_doc(
         {
             "doctype": "Drive Comment",
             "thread": thread,
-            "node": node,
+            "node": node.name,
             "content": text,
             "author": principals.user,
             "author_name": guest_name,

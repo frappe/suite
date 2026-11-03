@@ -507,6 +507,13 @@ def people_on(node: str, users: Iterable[str] = ()) -> dict[str, bool]:
     return _people_on(node, _principals(), users)
 
 
+def blocked_on(node: str, users: Iterable[str]) -> list[str]:
+    """Answer which of `users` are blocked from `node`; a mention reaches none of them. Needs COMMENT."""
+    from suite.drive._core.access import blocked_on as _blocked_on
+
+    return _blocked_on(node, _principals(), users)
+
+
 def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
     """Store a node's current bytes as an immutable version and return its seq.
 
@@ -609,6 +616,7 @@ __all__ = (
     "administration_usage",
     "adopt_media",
     "bind_legacy_storage_reservation",
+    "blocked_on",
     "check",
     "comment_threads",
     "copy",

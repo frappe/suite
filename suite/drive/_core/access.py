@@ -623,7 +623,7 @@ def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dic
     out. A mention picker ranks people by this, so it needs COMMENT, the
     right to mention anyone here. It answers who can read the node, never
     their role or where it comes from: that stays with MANAGE and the share
-    dialog (§7.2).
+    dialog (§7.2). `blocked_on` adds only whether a deny decides it.
     """
     from suite.drive.framework import principals_for
 
@@ -633,6 +633,24 @@ def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dic
     named = [row.principal for row in rows if row.role >= READ and not row.principal.startswith("$")]
     wanted = dict.fromkeys([node.owner, *named, *users])
     return {user: check(node, READ, principals_for(user)) for user in wanted}
+
+
+def is_blocked(node: Mapping, principals: Principals) -> bool:
+    """Whether the grant deciding this person's access is a deny, on the node or inherited."""
+    _role, rows, depth, _tickets = _point_state(node, principals)
+    acc = Acc()
+    for row in rows:
+        acc.offer(row.principal, row.role, depth[row.node], principals)
+    return acc.own == NONE
+
+
+def blocked_on(node_id: str, principals: Principals, users: Iterable[str]) -> list[str]:
+    """Answer which of `users` are blocked from a node, so a comment can say so before it posts."""
+    from suite.drive.framework import principals_for
+
+    node = _node_or_not_found(node_id)
+    require(node, COMMENT, principals)
+    return [user for user in users if is_blocked(node, principals_for(user))]
 
 
 def grants_for(
@@ -802,6 +820,7 @@ def grant(
     password: str | None | Keep = KEEP,
     send_to: str | None = None,
     notify: bool = False,
+    tell_target: bool = True,
 ) -> dict:
     """Create or update one local grant after the ordered refusal checks.
 
@@ -811,7 +830,8 @@ def grant(
 
     `send_to` mails a new link to one address and stores the address on the
     row. `notify` mails a user principal. Both mails are queued after commit
-    and never fail the grant (§9.5).
+    and never fail the grant (§9.5). `tell_target=False` leaves the person's
+    bell to whatever else tells them, as the comment that mentions them does.
     """
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
@@ -902,6 +922,7 @@ def grant(
                 "expires_on": _json_datetime(normalized_expiry),
                 "has_password": bool(password_hash),
             },
+            tell_target=tell_target,
         )
     except Exception as exc:
         rollback_savepoint(savepoint, exc)
@@ -1414,6 +1435,8 @@ def _write_activity(
     action: str,
     principals: Principals,
     detail: dict,
+    *,
+    tell_target: bool = True,
 ) -> None:
     from suite.drive._core.activity import notify_users, record
 
@@ -1427,7 +1450,7 @@ def _write_activity(
 
     emit_for_principals(targets)
     target = detail.get("principal")
-    if isinstance(target, str) and target and not target.startswith("$"):
+    if tell_target and isinstance(target, str) and target and not target.startswith("$"):
         notify_users(activity, (target,))
 
 

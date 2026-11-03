@@ -294,7 +294,8 @@ function fitsInComment(text: string) {
 // Sending again is a retry: the same words under the same client id
 async function postDraft(draft: ShownDraft) {
   const text = draft.text.trim()
-  if (!fitsInComment(text) || !(await mayMention(text))) {
+  const announce = fitsInComment(text) ? await mayMention(text) : null
+  if (!announce) {
     return
   }
 
@@ -302,6 +303,7 @@ async function postDraft(draft: ShownDraft) {
   if (thread) {
     openThread.value = thread
     emit('sent')
+    announce()
   }
 }
 
@@ -323,7 +325,7 @@ async function discardSentDraft(draft: ShownDraft) {
   }
 }
 
-// False when the writer stops to reconsider people the comment names who can't open the document
+// Null when the writer stops to reconsider; otherwise says, once posted, what the post did for them
 function mayMention(text: string, mentionedBefore?: string[]) {
   return confirmMentionAccess(props.node, text, { canShare: props.canShare, mentionedBefore })
 }
@@ -355,7 +357,8 @@ async function submitReply(thread: DocumentThread) {
 
   isSendingReply = true
   try {
-    if (!(await mayMention(text))) {
+    const announce = await mayMention(text)
+    if (!announce) {
       return
     }
 
@@ -363,6 +366,7 @@ async function submitReply(thread: DocumentThread) {
     if (await props.actions.reply(thread.name, text, takeGuestName(), clientId)) {
       replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
       unsentReplies.delete(thread.name)
+      announce()
     }
   } finally {
     isSendingReply = false
@@ -543,12 +547,14 @@ async function saveEdit(comment: ThreadComment) {
     return
   }
 
-  if (!fitsInComment(text) || !(await mayMention(text, comment.mentions))) {
+  const announce = fitsInComment(text) ? await mayMention(text, comment.mentions) : null
+  if (!announce) {
     return
   }
 
   if (await props.actions.editComment(comment.name, text)) {
     stopEdit()
+    announce()
   }
 }
 

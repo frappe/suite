@@ -3,7 +3,7 @@ import { nextTick } from 'vue'
 
 import type { DocumentThread } from '@/apps/drive'
 
-import { access } from './comment-list-fakes'
+import { access, confirmed, toasts, warnings } from './comment-list-fakes'
 import {
   buttonNamed,
   click,
@@ -61,70 +61,82 @@ describe('naming someone who can’t open the document', () => {
     await settled()
   }
 
-  // Answers the dialog the list is showing, and says what it offered
-  async function answer(label: string) {
-    const [dialog] = access.dialogs.splice(0)
-    const offered = dialog!.actions.map((action) => action.label)
-    await dialog!.actions.find((action) => action.label === label)!.onClick?.()
-    await settled()
-    return [dialog!.title, offered]
-  }
-
-  it('asks before posting, and Share and post shares at View before it posts', async () => {
+  it('posts a manager’s mention at once and says who can now comment', async () => {
     access.locked = ['arjun@x.com']
-    const { list, posted } = fakeDrafts()
+    const { list, posted } = fakeDrafts([], ['thread-1'])
     const { host } = showList({ drafts: list })
     await click(buttonNamed(host, 'Add a comment'))
     await write('Add a comment', 'Check this @[arjun@x.com] and @[ben@x.com]')
 
     await send('Add a comment')
-    const postedWhileAsked = [...posted]
-    const asked = await answer('Share and post')
 
-    expect([postedWhileAsked, asked, access.shared, posted]).toEqual([
+    expect([confirmed.asked, posted, toasts.map((toast) => toast.message)]).toEqual([
       [],
-      ['arjun can’t open this document', ['Cancel', 'Post without sharing', 'Share and post']],
-      [['arjun@x.com']],
       ['draft-0'],
+      ['arjun can now comment'],
     ])
   })
 
-  it('keeps a reply on Cancel, and posts it unshared on Post without sharing', async () => {
+  it('tells a writer without Manage that the person still can’t open it', async () => {
     access.locked = ['arjun@x.com']
+    const { host, asked } = showList({ canShare: false })
+    await click(rowButton(host, 'Is this right?'))
+    await write('Reply', 'Over to @[arjun@x.com]')
+
+    await send('Reply')
+
+    expect([confirmed.asked, asked, toasts, warnings]).toEqual([
+      [],
+      ['reply on-text "Over to @[arjun@x.com]"'],
+      [],
+      ['arjun can’t open this document until someone who manages it shares it'],
+    ])
+  })
+
+  it('asks about a blocked person, keeps the reply on Cancel, and posts on Post anyway', async () => {
+    access.locked = ['arjun@x.com']
+    access.blocked = ['arjun@x.com']
+    confirmed.answer = false
     const { host, asked } = showList()
     await click(rowButton(host, 'Is this right?'))
     await write('Reply', 'Over to @[arjun@x.com]')
 
     await send('Reply')
-    await answer('Cancel')
     const afterCancel = [[...asked], box('Reply')?.value]
+    confirmed.answer = true
     await send('Reply')
-    await answer('Post without sharing')
 
-    expect([afterCancel, asked, access.shared]).toEqual([
+    expect([confirmed.asked[0], afterCancel, asked, toasts, warnings]).toEqual([
+      'arjun has been blocked from this document',
       [[], 'Over to @[arjun@x.com]'],
       ['reply on-text "Over to @[arjun@x.com]"'],
+      [],
       [],
     ])
   })
 
-  it('posts without asking when everyone named can open the document', async () => {
+  it('says nothing when everyone named can open the document', async () => {
     const { host, asked } = showList()
     await click(rowButton(host, 'Is this right?'))
     await write('Reply', 'Over to @[ben@x.com]')
 
     await send('Reply')
 
-    expect([access.dialogs, asked]).toEqual([[], ['reply on-text "Over to @[ben@x.com]"']])
+    expect([confirmed.asked, asked, toasts, warnings]).toEqual([
+      [],
+      ['reply on-text "Over to @[ben@x.com]"'],
+      [],
+      [],
+    ])
   })
 
-  it('asks about an edit only for the people it adds, offering only Post anyway without Manage', async () => {
+  it('looks only at the people an edit adds', async () => {
     access.locked = ['ben@x.com', 'arjun@x.com']
     const asking = {
       ...WHOLE,
       comments: [{ ...comment('c8', 'Asha Rao', 'Ask @[ben@x.com]'), mentions: ['ben@x.com'] }],
     } as unknown as DocumentThread
-    const { host, asked } = showList({ threads: [asking], canShare: false })
+    const { host, asked } = showList({ threads: [asking] })
     await click(rowButton(host, 'Ask'))
     const menu = host.querySelector<HTMLElement>('li button[aria-label="More comment actions"]')
     await click(menu!)
@@ -137,12 +149,10 @@ describe('naming someone who can’t open the document', () => {
 
     await write('Edit comment', 'Ask @[ben@x.com] and @[arjun@x.com]')
     await send('Edit comment')
-    const offered = await answer('Post anyway')
 
-    expect([offered, asked, access.shared]).toEqual([
-      ['arjun can’t open this document', ['Cancel', 'Post anyway']],
+    expect([asked, toasts.map((toast) => toast.message)]).toEqual([
       ['edit c8 "Ask @[ben@x.com] and @[arjun@x.com]"'],
-      [],
+      ['arjun can now comment'],
     ])
   })
 })

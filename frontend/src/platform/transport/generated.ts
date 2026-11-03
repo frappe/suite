@@ -835,6 +835,7 @@ export type PeopleGetOutputPersonUser = {
   full_name: string | null
   user_image: string | null
   has_access?: boolean
+  is_blocked?: boolean
 }
 
 export type PeopleGetInput = { q?: string; cursor?: string; node?: string }

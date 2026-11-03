@@ -7,6 +7,9 @@ from frappe.utils import get_test_client
 
 from suite import drive
 from suite.api.test_people import make_user, token_for
+from suite.drive._core.access import grant, revoke
+from suite.drive._core.roles import NONE
+from suite.drive.framework import principals_for
 from suite.drive.tests.fixtures import drop_personal_root
 
 NODE_MARK = "Qznode"
@@ -86,6 +89,21 @@ class TestPeopleOnANode(IntegrationTestCase):
         frappe.db.commit()
         self.addCleanup(self.restore_owner)
         self.assertEqual(self.found({"q": "Administrator"}), [("Administrator", True)])
+
+    def test_a_person_blocked_from_the_node_is_marked_and_others_are_not(self):
+        owner = principals_for(OWNER)
+        grant(self.node, STRANGER, NONE, owner)
+        self.addCleanup(self.lift_block, owner)
+        frappe.db.commit()
+
+        response = self.get({"node": self.node, "q": NODE_MARK}, self.commenter)
+
+        marks = {row["name"]: row["is_blocked"] for row in response.json["data"]["rows"]}
+        self.assertEqual(marks, {OWNER: False, READER: False, STRANGER: True})
+
+    def lift_block(self, owner):
+        revoke(self.node, STRANGER, owner)
+        frappe.db.commit()
 
     def test_a_node_the_caller_cannot_comment_on_is_refused(self):
         for auth, status in ((self.stranger, 404), (self.reader, 403)):

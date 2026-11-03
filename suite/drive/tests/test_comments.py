@@ -12,7 +12,7 @@ from frappe.utils import get_datetime, get_system_timezone
 
 from suite import drive
 from suite.drive._core import activity, comments
-from suite.drive._core.access import grant
+from suite.drive._core.access import grant, revoke
 from suite.drive._core.comments import (
     _locked_comment,
     _locked_thread,
@@ -30,7 +30,7 @@ from suite.drive._core.comments import (
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import COMMENT, READ
+from suite.drive._core.roles import COMMENT, EDIT, NONE, READ
 from suite.drive._core.roots import create_root
 from suite.drive._core.versions import list_versions
 from suite.drive.http import routes
@@ -738,8 +738,121 @@ class TestCommentWorkflows(IntegrationTestCase):
 
         self.assertEqual((detail["mentions"], detail["excerpt"]), ([MENTIONED], comments.excerpt(words)))
 
+    def bell(self, user: str = MENTIONED) -> list:
+        return activity.notifications(Principals(user, (user,), ()))["rows"]
+
+    def role_of(self, user: str = MENTIONED):
+        return frappe.db.get_value("Drive Grant", {"node": self.document.name, "principal": user}, "role")
+
+    def test_a_managers_mention_shares_at_comment_and_notifies_once(self):
+        thread = create_thread(self.owner, self.document.name, "anchor", f"Look @[{MENTIONED}]").name
+
+        rows = self.bell()
+        stored = frappe.db.get_value("Drive Comment", {"thread": thread}, "mentions")
+        self.assertEqual(self.role_of(), COMMENT)
+        self.assertEqual([row.activity.action for row in rows], ["comment"])
+        self.assertEqual(frappe.parse_json(stored), [MENTIONED])
+        self.assertEqual(rows[0].activity.detail["excerpt"], comments.excerpt(f"Look @[{MENTIONED}]"))
+
+    def test_a_managers_reply_and_edit_that_add_a_mention_share_the_same_way(self):
+        thread = create_thread(self.owner, self.document.name, "anchor", "First words").name
+        reply(self.owner, thread, f"Look @[{MENTIONED}]")
+        first = self.role_of()
+        written = create_thread(self.owner, self.document.name, "other", "Second words").name
+        comment = frappe.db.get_value("Drive Comment", {"thread": written}, "name")
+        edit_comment(self.owner, comment, f"Second words @[{OUTSIDER}]")
+
+        self.assertEqual((first, self.role_of(OUTSIDER)), (COMMENT, COMMENT))
+        self.assertEqual(len(self.bell(OUTSIDER)), 1)
+
+    def test_a_managers_mention_never_lowers_a_higher_role(self):
+        grant(self.document.name, MENTIONED, EDIT, self.admin)
+        before = len(self.bell())
+
+        create_thread(self.owner, self.document.name, "anchor", f"Look @[{MENTIONED}]")
+
+        self.assertEqual(self.role_of(), EDIT)
+        self.assertEqual(len(self.bell()), before + 1)
+
+    def test_a_blocked_person_is_neither_shared_with_nor_told(self):
+        for block_on in (self.document.name, self.root.name):
+            with self.subTest(block_on=block_on):
+                grant(block_on, MENTIONED, NONE, self.admin)
+                thread = create_thread(self.owner, self.document.name, "anchor", f"Hi @[{MENTIONED}]").name
+                reply(self.commenter, thread, f"Again @[{MENTIONED}]")
+
+                stored = frappe.get_all("Drive Comment", filters={"thread": thread}, pluck="mentions")
+                self.assertEqual([frappe.parse_json(row) for row in stored], [[], []])
+                self.assertEqual(self.role_of(), NONE if block_on == self.document.name else None)
+                self.assertEqual(self.bell(), [])
+                revoke(block_on, MENTIONED, self.admin)
+            frappe.db.delete("Drive Notification", {"to_user": MENTIONED})
+
+    def test_a_mention_made_before_a_block_goes_quiet_once_blocked(self):
+        create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
+        mentioned = Principals(MENTIONED, (MENTIONED,), ())
+        self.assertEqual(activity.unread_count(mentioned), 1)
+
+        grant(self.document.name, MENTIONED, NONE, self.admin)
+
+        self.assertEqual(
+            (activity.unread_count(mentioned), self.bell(), activity.mark_read(mentioned)), (0, [], 0)
+        )
+
+    def test_a_commenters_mention_tells_without_sharing_or_quoting(self):
+        words = f"Secret plan @[{MENTIONED}]"
+        create_thread(self.commenter, self.document.name, "anchor", words)
+        mentioned = Principals(MENTIONED, (MENTIONED,), ())
+
+        row = self.bell()[0]
+
+        self.assertIsNone(self.role_of())
+        self.assertEqual(row.node_title, "Document")
+        self.assertEqual(row.activity.actor, COMMENTER)
+        self.assertEqual(row.activity.detail, {"mentions": [MENTIONED]})
+        self.assertNotIn("Secret plan", frappe.as_json(row))
+        self.assertEqual(activity.unread_count(mentioned), 1)
+        self.assertEqual(activity.mark_read(mentioned), 1)
+        self.assertEqual(activity.unread_count(mentioned), 0)
+        with self.assertRaises(DriveNotFound):
+            threads(mentioned, self.document.name)
+
+    def test_a_comment_without_a_mention_tells_no_one_who_lacks_read(self):
+        recorded = activity.record(
+            self.owner, self.document.name, "comment", detail={"excerpt": "Secret", "mentions": []}
+        )
+        activity.notify_users(recorded, [MENTIONED])
+
+        self.assertEqual(self.bell(), [])
+
+    def test_a_trashed_document_tells_no_one_who_lacks_read(self):
+        create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
+        frappe.db.set_value("Drive Node", self.document.name, "state", "Trashed")
+
+        self.assertEqual(self.bell(), [])
+
+    def test_a_link_commenter_or_guest_never_shares(self):
+        link = grant(self.document.name, "$LINK", COMMENT, self.admin)["principal"]
+        guest = Principals("Guest", ("Guest",), (link,))
+
+        create_thread(guest, self.document.name, "anchor", f"Hi @[{MENTIONED}]", author_name="Sam")
+
+        self.assertIsNone(self.role_of())
+        self.assertEqual(len(self.bell()), 1)
+
+    def test_a_mention_of_someone_with_access_is_unchanged(self):
+        grant(self.document.name, MENTIONED, READ, self.admin)
+        before = len(self.bell())
+
+        create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
+
+        rows = self.bell()
+        self.assertEqual(self.role_of(), READ)
+        self.assertEqual(len(rows), before + 1)
+        self.assertEqual(rows[0].activity.detail["excerpt"], comments.excerpt(f"Hi @[{MENTIONED}]"))
+
     def test_a_notification_quotes_the_comment_as_it_is_now(self):
-        grant(self.document.name, MENTIONED, READ, self.admin)  # A notification needs Read to be listed
+        grant(self.document.name, MENTIONED, READ, self.admin)  # Without Read a notification quotes nothing
         thread = create_thread(self.commenter, self.document.name, "anchor", f"First @[{MENTIONED}]").name
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
         mentioned = Principals(MENTIONED, (MENTIONED,), ())

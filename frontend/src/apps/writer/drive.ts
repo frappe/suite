@@ -13,9 +13,6 @@ import { watch } from 'vue'
 import { api, client, useUpload } from '@/api'
 import { randomId } from '@/platform/random-id'
 
-// Drive's View role, as `DRIVE_ROLES.read`; importing Drive's root here would load all of Drive
-const READ = 10
-
 /** A person on this site, in the shape the mention menu reads. */
 export interface WriterUser extends MentionSuggestionItem {
   name: string
@@ -26,6 +23,7 @@ export interface WriterUser extends MentionSuggestionItem {
   label: string
   /** Asked about a document: whether they can open it. */
   has_access?: boolean
+  is_blocked?: boolean
 }
 
 /** The URL a Writer body stores for a media node. `suite/writer/drive.py` reads it back. */
@@ -109,6 +107,7 @@ export async function searchUsers(query: string, node?: string | null): Promise<
             value: row.email,
             label: (row.full_name || row.email).trimEnd(),
             ...(row.has_access !== undefined && { has_access: row.has_access }),
+            ...(row.is_blocked && { is_blocked: true }),
           },
         ]
       : [],
@@ -127,19 +126,4 @@ export async function peopleWithoutAccess(
   return found.flatMap((rows, index) =>
     rows.filter((row) => row.name === users[index] && row.has_access === false),
   )
-}
-
-/**
- * Share `node` with each of `users` at View, without the share email: the
- * comment that names them notifies them. Needs Manage on the node.
- */
-export async function shareToView(node: string, users: readonly string[]): Promise<void> {
-  for (const principal of users) {
-    await client.mutation(api.drive.grants.put, {
-      node,
-      principal,
-      role: READ,
-      notify: false,
-    })
-  }
 }

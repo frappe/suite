@@ -127,7 +127,12 @@ async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
   }
-  const node = await loadDriveNodeSummary(notification.activity.node)
+  // Someone mentioned without access can't load the node, and lands on the page that says so
+  const node = await loadDriveNodeSummary(notification.activity.node).catch(() => ({
+    name: notification.activity.node,
+    title: notification.node_title,
+    kind: notification.node_kind,
+  }))
   open.value = false
   await router.push(driveNodeRoute(node))
 }

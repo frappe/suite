@@ -70,6 +70,8 @@ class PersonUser(TypedDict):
     user_image: str | None
     # Only with `node`: whether they can open it.
     has_access: NotRequired[bool]
+    # Only with `node`: whether a deny keeps them out, so no mention reaches them.
+    is_blocked: NotRequired[bool]
 
 
 class PersonGroup(TypedDict):
@@ -94,7 +96,7 @@ def search(query: str | None = None, cursor: str | None = None, node: str | None
 
     With `node`, the page is for naming someone on that node, as a mention
     does: users only, not the caller, the ones who can open the node first,
-    each marked with `has_access`. It adds the people the node names, such as
+    each marked with `has_access` and `is_blocked`. It adds the people the node names, such as
     its creator, and is one page with no cursor.
     """
     frappe.only_for("Suite User")
@@ -135,7 +137,12 @@ def _search_on(node: str, query: str) -> PeoplePage:
     labels.pop(frappe.session.user, None)
     ranked = sorted(labels, key=lambda user: (not access[user], labels[user].casefold(), user))[:PAGE_SIZE]
     users = _users(ranked)
-    rows_out: list[Person] = [{**users[user], "has_access": access[user]} for user in ranked if user in users]
+    blocked = set(drive.blocked_on(node, [user for user in ranked if not access[user]]))
+    rows_out: list[Person] = [
+        {**users[user], "has_access": access[user], "is_blocked": user in blocked}
+        for user in ranked
+        if user in users
+    ]
     return {"rows": rows_out, "next_cursor": None}
 
 

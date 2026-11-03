@@ -72,8 +72,7 @@ afterEach(() => {
   errors.length = 0
   me.id = 'Asha Rao'
   access.locked = []
-  access.dialogs = []
-  access.shared = []
+  access.blocked = []
 })
 
 // Drafts as useCommentDrafts shows them, each post answered in turn by the thread Drive made or null

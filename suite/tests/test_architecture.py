@@ -694,6 +694,7 @@ class TestArchitecture(unittest.TestCase):
                 "administration_usage",
                 "adopt_media",
                 "bind_legacy_storage_reservation",
+                "blocked_on",
                 "check",
                 "comment_threads",
                 "copy",

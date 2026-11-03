@@ -1328,6 +1328,7 @@ export const operationPeopleGet: Validators<PeopleGetInput, PeopleGetOutput> = {
               full_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Full Name' },
               user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
               has_access: { title: 'Has Access', type: 'boolean' },
+              is_blocked: { title: 'Is Blocked', type: 'boolean' },
             },
             required: ['kind', 'name', 'email', 'full_name', 'user_image'],
             title: 'PersonUser',

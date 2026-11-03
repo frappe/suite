@@ -13,16 +13,10 @@ export const warnings: string[] = []
 export const errors: string[] = []
 export const me = { id: 'Asha Rao' }
 
-export interface AskedDialog {
-  title: string
-  actions: { label: string; onClick?: () => unknown }[]
-}
-
-// Who can't open the document, and what the list asked and shared about them
+// Who can't open the document, and who of them are blocked from it
 export const access = {
   locked: [] as string[],
-  dialogs: [] as AskedDialog[],
-  shared: [] as string[][],
+  blocked: [] as string[],
 }
 
 export function fakeWriterDrive() {
@@ -30,10 +24,11 @@ export function fakeWriterDrive() {
     peopleWithoutAccess: async (_node: string, users: string[]) =>
       users
         .filter((user) => access.locked.includes(user))
-        .map((user) => ({ name: user, label: user.split('@')[0] })),
-    shareToView: async (_node: string, users: string[]) => {
-      access.shared.push([...users])
-    },
+        .map((user) => ({
+          name: user,
+          label: user.split('@')[0],
+          is_blocked: access.blocked.includes(user),
+        })),
   }
 }
 
@@ -95,7 +90,6 @@ export async function fakeFrappeUi() {
   }
 
   return {
-    dialog: { confirm: (args: AskedDialog) => access.dialogs.push(args) },
     Avatar: define({
       props: { image: String, label: String },
       setup: (props) => () =>

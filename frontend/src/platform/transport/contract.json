@@ -2662,6 +2662,10 @@
               "has_access": {
                 "title": "Has Access",
                 "type": "boolean"
+              },
+              "is_blocked": {
+                "title": "Is Blocked",
+                "type": "boolean"
               }
             },
             "required": [
