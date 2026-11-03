@@ -571,6 +571,24 @@ describe('pruneOfflineCopy', () => {
       expect(cache.has('/private/files/a.png')).toBe(true)
     })
 
+    it('keeps its bytes on open when an expired session has it refused', async () => {
+      driveAnswers(null, 'refused')
+
+      await pruneOfflineCopy('p1')
+
+      expect(cache.has(picture)).toBe(true)
+      expect(recordedKeys('p1')).toContain(picture)
+    })
+
+    it('keeps its bytes on save when an expired session has it refused', async () => {
+      driveAnswers(null, 'refused')
+
+      await saveOfflineCopy('p1')
+
+      expect(cache.has(picture)).toBe(true)
+      expect(recordedKeys('p1')).toContain(picture)
+    })
+
     it('keeps its bytes and its place in the record when a save outwaits the read', async () => {
       vi.useFakeTimers()
       driveAnswers(null, 'unanswered')

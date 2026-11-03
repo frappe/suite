@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 
 import {
-  isMediaAnswered,
   isMediaNodeId,
+  isMediaReady,
   isMediaRefused,
   isMediaUnanswered,
   mediaSettled,
@@ -280,9 +280,9 @@ async function pruneOfflineCopy(id) {
 
   await mediaSettled(mediaNodeIds())
 
-  // a picture no read has answered for has no key, so its bytes would pass for orphans;
-  // the next open tries again
-  if (id === presentationId.value && mediaNodeIds().every(isMediaAnswered)) {
+  // a picture with no signed url has no key, so its bytes would pass for orphans, and
+  // refused may only mean an expired session; the next open tries again
+  if (id === presentationId.value && mediaNodeIds().every(isMediaReady)) {
     await dropOrphans(id, getMediaTargets())
   }
 }
@@ -342,6 +342,7 @@ const saveOfflineCopy = async (id) => {
     await warmAssets()
     // a node-id picture has no url until Drive signs it
     const unsigned = unsignedSources(await mediaSettled(mediaNodeIds(), signal))
+    const everyReady = mediaNodeIds().every(isMediaReady)
     if (signal.aborted) {
       return null
     }
@@ -356,15 +357,15 @@ const saveOfflineCopy = async (id) => {
     const pinned = await pinnedPaths(cache)
     const startup = await fetchStartup(node, id, pinned, signal)
 
-    if (!unsigned.length) {
+    if (everyReady) {
       await dropOrphans(id, targets)
     }
 
     const previous = startupKeys(readRecord(id))
     const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
     const listed = [...startup.keys, ...media]
-    // a picture still unsigned may be any of the keys held, so all of them stay listed
-    if (unsigned.length) {
+    // a picture with no signed url may be any of the keys held, so all of them stay listed
+    if (!everyReady) {
       const held = readRecord(id)?.keys.filter(isMediaKey) ?? []
       listed.push(...held)
     }
