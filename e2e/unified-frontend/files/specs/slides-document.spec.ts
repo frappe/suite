@@ -123,8 +123,14 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	await page.waitForTimeout(3_000);
 	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
 
+	// The copy is kept per person, under a key that ends in the node.
 	const recovery = () =>
-		page.evaluate((node) => localStorage.getItem(`suite:slides-recovery:${node}`), deck.name);
+		page.evaluate((node) => {
+			const key = Object.keys(localStorage).find(
+				(name) => name.startsWith("suite:slides-recovery:") && name.endsWith(`:${node}`),
+			);
+			return key ? localStorage.getItem(key) : null;
+		}, deck.name);
 	expect(await recovery()).toContain("rectangle");
 
 	const download = page.waitForEvent("download");
@@ -134,7 +140,11 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	expect(await recovery()).toBeNull();
+	// A browser save can't be confirmed, so the download marks the copy and keeps it.
+	expect(JSON.parse((await recovery())!)).toEqual(
+		expect.arrayContaining([expect.objectContaining({ downloaded: true })]),
+	);
+	expect(await recovery()).toContain("rectangle");
 
 	// A trashed deck takes no new comments.
 	await page.getByRole("button", { name: "Comments" }).click();
