@@ -19,6 +19,8 @@ NEW_PASSWORD = "Another-strong-pw-9"
 
 class TestResetPassword(SuiteCloudTestCase):
     def setUp(self) -> None:
+        # Logging in commits, which would keep the Suite Cloud settings past the test's rollback.
+        self.enterContext(patch.object(frappe.db, "commit"))
         super().setUp()
         throttle = patch("frappe.core.doctype.user.user.throttle_user_creation")
         throttle.start()
