@@ -39,6 +39,11 @@ export function isMediaRefused(id: string) {
   return documentMedia?.(id).status.value === 'refused'
 }
 
+export function isMediaAnswered(id: string) {
+  const status = documentMedia?.(id).status.value
+  return status === 'ready' || status === 'refused'
+}
+
 export function isMediaUnanswered(id: string) {
   return documentMedia?.(id).status.value === 'unanswered'
 }

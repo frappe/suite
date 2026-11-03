@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 
 import {
+  isMediaAnswered,
   isMediaNodeId,
   isMediaRefused,
   isMediaUnanswered,
@@ -272,11 +273,25 @@ async function pinnedPaths(cache) {
 }
 
 // bytes the presentation no longer shows go, and its ledger stops listing them
-const pruneOfflineCopy = async (id, targets = null) => {
+async function pruneOfflineCopy(id) {
+  if (!readRecord(id)) {
+    return
+  }
+
+  await mediaSettled(mediaNodeIds())
+
+  // a picture no read has answered for has no key, so its bytes would pass for orphans;
+  // the next open tries again
+  if (id === presentationId.value && mediaNodeIds().every(isMediaAnswered)) {
+    await dropOrphans(id, getMediaTargets())
+  }
+}
+
+async function dropOrphans(id, targets) {
   const record = readRecord(id)
   if (!record) return
 
-  const needed = new Set((targets ?? getMediaTargets()).map((target) => target.key))
+  const needed = new Set(targets.map((target) => target.key))
   const orphans = new Set(
     unsharedKeys(
       id,
@@ -341,11 +356,20 @@ const saveOfflineCopy = async (id) => {
     const pinned = await pinnedPaths(cache)
     const startup = await fetchStartup(node, id, pinned, signal)
 
-    await pruneOfflineCopy(id, targets)
+    if (!unsigned.length) {
+      await dropOrphans(id, targets)
+    }
 
     const previous = startupKeys(readRecord(id))
     const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
-    const record = { node, keys: [...startup.keys, ...media] }
+    const listed = [...startup.keys, ...media]
+    // a picture still unsigned may be any of the keys held, so all of them stay listed
+    if (unsigned.length) {
+      const held = readRecord(id)?.keys.filter(isMediaKey) ?? []
+      listed.push(...held)
+    }
+
+    const record = { node, keys: [...new Set(listed)] }
     await putStartup(cache, id, record, startup, previous, signal)
     navigator.storage?.persist?.().catch(() => {})
 

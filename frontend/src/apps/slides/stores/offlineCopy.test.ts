@@ -487,6 +487,103 @@ describe('pruneOfflineCopy', () => {
     await expect(pruneOfflineCopy('p1')).resolves.toBeUndefined()
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
   })
+
+  describe('a picture named by its Drive node', () => {
+    const picture = '/private/files/m1.png'
+    const signed = `${picture}?signature=s1`
+    const src = ref<string | null>(null)
+    const status = ref<'loading' | 'unanswered' | 'ready' | 'refused'>('ready')
+    let release: () => void
+
+    function driveAnswers(url: string | null, answer: typeof status.value) {
+      src.value = url
+      status.value = answer
+    }
+
+    beforeEach(async () => {
+      release = setDocumentMedia((id) => ({
+        id,
+        src,
+        status,
+        cacheKey: ref(id),
+        refresh: async () => {},
+      }))
+      responses[signed] = () => image(30)
+      driveAnswers(signed, 'ready')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      await saveOfflineCopy('p1')
+    })
+
+    afterEach(() => {
+      release()
+      vi.useRealTimers()
+    })
+
+    it.each(['loading', 'unanswered'] as const)(
+      'keeps its bytes when the read is still %s after the wait',
+      async (waiting) => {
+        vi.useFakeTimers()
+        driveAnswers(null, waiting)
+
+        const pruning = pruneOfflineCopy('p1')
+        await vi.advanceTimersByTimeAsync(30_000)
+        await pruning
+
+        expect(cache.has(picture)).toBe(true)
+        expect(recordedKeys('p1')).toContain(picture)
+      },
+    )
+
+    it('keeps everything while any picture waits, not only the waiting one', async () => {
+      vi.useFakeTimers()
+      driveAnswers(null, 'unanswered')
+      slides.value = slidesWith(['media-node-1'])
+
+      const pruning = pruneOfflineCopy('p1')
+      await vi.advanceTimersByTimeAsync(30_000)
+      await pruning
+
+      expect(cache.has('/private/files/a.png')).toBe(true)
+    })
+
+    it('prunes what the presentation no longer shows once the read answers', async () => {
+      driveAnswers(null, 'loading')
+      slides.value = slidesWith(['media-node-1'])
+
+      const pruning = pruneOfflineCopy('p1')
+      driveAnswers(signed, 'ready')
+      await pruning
+
+      expect(cache.has(picture)).toBe(true)
+      expect(cache.has('/private/files/a.png')).toBe(false)
+    })
+
+    it('leaves the copy alone when another presentation opens during the wait', async () => {
+      driveAnswers(null, 'loading')
+
+      const pruning = pruneOfflineCopy('p1')
+      presentationId.value = 'p2'
+      slides.value = slidesWith(['/files/b.png'])
+      driveAnswers(signed, 'ready')
+      await pruning
+
+      expect(cache.has(picture)).toBe(true)
+      expect(cache.has('/private/files/a.png')).toBe(true)
+    })
+
+    it('keeps its bytes and its place in the record when a save outwaits the read', async () => {
+      vi.useFakeTimers()
+      driveAnswers(null, 'unanswered')
+
+      const saving = saveOfflineCopy('p1')
+      await vi.advanceTimersByTimeAsync(30_000)
+      const result = await saving
+
+      expect(result?.failed).toEqual([{ slideIndex: 0, src: 'media-node-1', status: 'timeout' }])
+      expect(cache.has(picture)).toBe(true)
+      expect(recordedKeys('p1')).toContain(picture)
+    })
+  })
 })
 
 describe('a pin and the visited copies', () => {

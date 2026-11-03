@@ -352,6 +352,47 @@ describe('Slides offline copy', () => {
     })
   })
 
+  it('keeps the bytes of a picture whose read has not answered when a saved copy opens', async () => {
+    const pinnedPicture = '/private/files/m1.png'
+    const deleted: string[] = []
+    vi.stubGlobal('caches', {
+      open: async () => ({
+        keys: async () => [],
+        delete: async (key: string) => {
+          deleted.push(key)
+          return true
+        },
+      }),
+      match: async () => undefined,
+      delete: async () => true,
+    })
+    const next = fakeServer.opens + 1
+    const record = `${RECORD_PREFIX}p${next}`
+    localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
+    const waiting = {
+      id: 'media-node-1',
+      src: ref(null),
+      cacheKey: ref('media-node-1'),
+      status: ref('loading'),
+      refresh: async () => {},
+    }
+
+    mounted = await openedSurface({
+      slides: [
+        {
+          clientId: 'c1',
+          background: '#ffffffff',
+          elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
+        },
+      ],
+      media: () => waiting as never,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(deleted).toEqual([])
+    expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toEqual([pinnedPicture])
+  })
+
   it('takes a refused picture as missing from the copy only while offline', async () => {
     function goes(state: 'online' | 'offline') {
       Object.defineProperty(navigator, 'onLine', {
