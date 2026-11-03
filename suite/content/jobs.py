@@ -22,6 +22,7 @@ DELETE_PURGED = "suite.content.jobs.delete_purged"
 TRIM = "suite.content.jobs.trim"
 CHECK_RENDER = "suite.content.jobs.check_render"
 CONVERT = "suite.content.jobs.convert_pending"
+CONVERT_ONE = "suite.content.jobs.convert_one"
 
 
 def delete_purged(app: str, doc_id: str) -> None:
@@ -75,6 +76,13 @@ def convert_pending(app: str) -> None:
     conversion = spec_of(app).conversion
     if conversion is not None and convert.may_convert(app):
         conversions.run_pending(app, conversion)
+
+
+def convert_one(app: str, node: str) -> None:
+    """Convert one document now, as its queued job: an import, which opens read-only until it is converted."""
+    conversion = spec_of(app).conversion
+    if conversion is not None and convert.may_convert(app):
+        conversions.run_one(app, conversion, node)
 
 
 def judge(app: str, doc_id: str) -> None:

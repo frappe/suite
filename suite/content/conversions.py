@@ -2,7 +2,8 @@
 
 `run_pending` is the scheduled job's loop: it pages through the app's documents that have no log, newest
 first, and hands each to `convert_document`, which converts one document. It passes over a document this
-converter refused unless the row changed after the refused attempt began.
+converter refused unless the row changed after the refused attempt began. `run_one` takes one document the
+same way, for the job an import queues.
 
 `convert_document` runs the app's converter on the old body the app's `read_old` answers, and installs
 the answer in one transaction under the row's lock: the app's `check` refuses before the first write,
@@ -100,6 +101,22 @@ def run_pending(app: str, conversion: Conversion) -> None:
 
     while page and convert_page(app, page, deadline):
         page = convert.pending_page(app, conversion.version, page[-1])
+
+
+def run_one(app: str, conversion: Conversion, node: str) -> None:
+    """Convert `node` now, behind the checks `run_pending` makes; a document this can't convert waits for that run."""
+    missing = convert.missing_prerequisite(app)
+    if missing:
+        convert.log_reason(app, missing)
+        return
+
+    fault = selftest.self_test_fault()
+    if fault:
+        convert.log_reason(app, f"the collaboration self-test fails: {fault}")
+        return
+
+    if convert.converter_ready(app, conversion):
+        convert_page(app, [frappe._dict(node=node)], time.monotonic() + convert.RUN_FOR)
 
 
 def convert_page(app: str, page: list[frappe._dict], deadline: float) -> bool:
