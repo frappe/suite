@@ -28,7 +28,7 @@ const CSRF_HEADER = 'x-visited-csrf'
 const NODE_HEADER = 'x-visited-node'
 const TIME_HEADER = 'x-visited-time'
 
-// nodes this page has captured or is capturing
+// nodes captured or being captured in this open
 const remembered = new Set()
 
 // the capture in flight: { id, node, controller }
@@ -220,16 +220,17 @@ async function fetchCopy(cache, id, node, signal) {
   return { shell, html, files, dataUrls, ...fetched }
 }
 
+// a body a put has started on is locked, and that put finishes it
 async function dropCopy({ shell, responses }) {
   const bodies = [...responses.values()]
   if (shell) {
     bodies.push(shell)
   }
 
-  await cancelBodies(bodies)
+  await cancelBodies(bodies.filter((response) => !response.body?.locked))
 }
 
-// files, then the shell, then the data, so whatever stops this leaves the old copy whole
+// a stop before the data keeps the old copy, a failed data put removes it, a closed tab mixes them
 async function storeCopy(cache, node, copy, isWanted) {
   const { shell, html, files, dataUrls, responses } = copy
   const put = putterFor(cache, node)
@@ -249,9 +250,15 @@ async function storeCopy(cache, node, copy, isWanted) {
     return
   }
 
-  await runPool(dataUrls, (url) =>
-    put(url, withHeaders(responses.get(url), { [NODE_HEADER]: node })),
-  )
+  try {
+    await runPool(dataUrls, (url) =>
+      put(url, withHeaders(responses.get(url), { [NODE_HEADER]: node })),
+    )
+  } catch (err) {
+    await removeNode(cache, node)
+    throw err
+  }
+
   if (isWanted()) {
     const headers = { [NODE_HEADER]: node, [TIME_HEADER]: String(Date.now()) }
     await put(`/d/${node}`, new Response(null, { headers }))
@@ -281,7 +288,12 @@ async function capture(id, node, signal) {
     return
   }
 
-  await storeCopy(cache, node, copy, isWanted)
+  try {
+    await storeCopy(cache, node, copy, isWanted)
+  } finally {
+    await dropCopy(copy)
+  }
+
   if (signal.aborted) {
     await removeNode(cache, node)
     return
@@ -292,6 +304,7 @@ async function capture(id, node, signal) {
 
 function cancelVisit() {
   visit?.controller.abort()
+  remembered.clear()
 }
 
 // nothing awaits this and nothing reads it; a failure only means no copy this time
@@ -309,10 +322,6 @@ async function runVisit(current) {
       console.warn('Slides visited copy failed:', err)
     }
   } finally {
-    if (signal.aborted) {
-      remembered.delete(node)
-    }
-
     if (visit === current) {
       visit = null
     }

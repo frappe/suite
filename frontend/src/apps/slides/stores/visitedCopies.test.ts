@@ -329,8 +329,8 @@ describe('a later visit', () => {
     expect(keys().sort()).toEqual([SHELL_KEY, ...FILES, ...dataUrls('n1', 'p1'), '/d/n1'].sort())
   })
 
-  it('runs once per presentation per page', async () => {
-    const { rememberVisit } = await loadStore()
+  it('runs once per open', async () => {
+    const { cancelVisit, rememberVisit } = await loadStore()
     showPresentation()
 
     await rememberVisit('p1')
@@ -338,6 +338,40 @@ describe('a later visit', () => {
     await rememberVisit('p1')
 
     expect(requests).toEqual([])
+
+    cancelVisit()
+    clock = 5000
+    await rememberVisit('p1')
+
+    expect(fetchedUrls().sort()).toEqual(dataUrls('n1', 'p1').sort())
+    expect(header('/d/n1', 'x-visited-time')).toBe('5000')
+  })
+
+  it('captures once when the person leaves and returns inside the wait', async () => {
+    const { cancelVisit, rememberVisit } = await loadStore()
+    showPresentation()
+    const timers: (() => void)[] = []
+    vi.stubGlobal('setTimeout', (run: () => void) => {
+      if (timers.length) {
+        queueMicrotask(run)
+      } else {
+        timers.push(run)
+      }
+
+      return 0
+    })
+
+    const left = rememberVisit('p1')
+    cancelVisit()
+    await rememberVisit('p1')
+
+    expect(keys()).toContain('/d/n1')
+
+    timers[0]()
+    await left
+    await rememberVisit('p1')
+
+    expect(fetchedUrls().filter((url) => url === dataUrl('n1', 'p1'))).toHaveLength(1)
   })
 })
 
@@ -381,6 +415,13 @@ describe('who gets no copy', () => {
   it('a composite presentation', async () => {
     const { rememberVisit } = await loadStore()
     showPresentation('n1', 'p1', { is_composite: 1 })
+    await rememberVisit('p1')
+    await expectNothing()
+  })
+
+  it('a presentation with no node yet', async () => {
+    const { rememberVisit } = await loadStore()
+    showPresentation('', 'p1')
     await rememberVisit('p1')
     await expectNothing()
   })
@@ -505,6 +546,29 @@ describe('a build swap', () => {
     expect(keys()).toContain('/assets/suite/frontend/assets/old-z9.js')
     expect(keys()).not.toContain('/d/n1')
     expect(keys()).not.toContain(dataUrl('n1', 'p1'))
+  })
+})
+
+describe('a failed data put', () => {
+  it('removes the node and leaves the others', async () => {
+    seedNode('n1', 500)
+    seedNode('other', 600)
+    const [, , media] = dataUrls('n1', 'id-n1')
+    visited().putHook = (key) => {
+      if (key === media) {
+        throw new TypeError('network')
+      }
+    }
+
+    await visit('n1', 'id-n1')
+
+    expect(keys()).not.toContain('/d/n1')
+    for (const url of dataUrls('n1', 'id-n1')) {
+      expect(keys()).not.toContain(url)
+    }
+
+    expect(keys()).toContain('/d/other')
+    expect(keys()).toContain(dataUrl('other', 'id-other'))
   })
 })
 
@@ -721,6 +785,108 @@ describe('a change during the capture', () => {
     await capture
 
     expect(keys()).toEqual([])
+  })
+})
+
+describe('a change during the puts', () => {
+  type Store = Awaited<ReturnType<typeof loadStore>>
+
+  const changes: [string, (store: Store) => void][] = [
+    ['an abort', ({ cancelVisit }) => cancelVisit()],
+    [
+      'a user change',
+      () => {
+        state.user = 'b@example.com'
+      },
+    ],
+    [
+      'a new pin',
+      () =>
+        localStorage.setItem(
+          `slides-offline-copy:${presentationId.value}`,
+          JSON.stringify({ node: 'n1', keys: [] }),
+        ),
+    ],
+  ]
+
+  async function changeAtPut(put: string, change: (store: Store) => void, id = 'p1') {
+    const store = await loadStore()
+    showPresentation('n1', id)
+    let isDone = false
+    visited().putHook = (key) => {
+      if (key === put && !isDone) {
+        isDone = true
+        change(store)
+      }
+    }
+
+    await store.rememberVisit(id)
+  }
+
+  function expectNoData() {
+    expect(keys()).not.toContain('/d/n1')
+    for (const url of dataUrls('n1', 'p1')) {
+      expect(keys()).not.toContain(url)
+    }
+  }
+
+  it.each(changes)('stores no shell or data after %s during a file', async (_label, change) => {
+    await changeAtPut(CHUNK, change)
+
+    expect(keys()).not.toContain(SHELL_KEY)
+    expectNoData()
+  })
+
+  it.each(changes.slice(1))('keeps the old copy after %s during the shell', async (_, change) => {
+    seedNode('n1', 500)
+
+    await changeAtPut(SHELL_KEY, change, 'id-n1')
+
+    expect(keys()).toContain('/d/n1')
+    for (const url of dataUrls('n1', 'id-n1')) {
+      expect(await visited().store.get(url)!.clone().text()).toBe('old')
+    }
+  })
+
+  it.each(changes)('stores no marker after %s during the data', async (_label, change) => {
+    await changeAtPut(dataUrl('n1', 'p1'), change)
+
+    expect(keys()).not.toContain('/d/n1')
+  })
+
+  it('removes the old copy on an abort during the data', async () => {
+    seedNode('n1', 500)
+
+    await changeAtPut(dataUrl('n1', 'id-n1'), ({ cancelVisit }) => cancelVisit(), 'id-n1')
+
+    expect(keys()).not.toContain('/d/n1')
+    for (const url of dataUrls('n1', 'id-n1')) {
+      expect(keys()).not.toContain(url)
+    }
+  })
+
+  it('cancels the data bodies a stopped store never read', async () => {
+    const cancelled: string[] = []
+    const serve = fetch
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const response = await serve(url, init)
+      if (!dataUrls('n1', 'p1').includes(url)) {
+        return response
+      }
+
+      const body = new ReadableStream({
+        cancel() {
+          cancelled.push(url)
+        },
+      })
+      return new Response(body, { status: response.status, headers: response.headers })
+    })
+
+    await changeAtPut(CHUNK, () => {
+      state.user = 'b@example.com'
+    })
+
+    expect(cancelled.sort()).toEqual(dataUrls('n1', 'p1').sort())
   })
 })
 
