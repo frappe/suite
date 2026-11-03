@@ -1,4 +1,4 @@
-import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model'
+import { type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model'
 import { TableMap } from '@tiptap/pm/tables'
 
 export type Axis = 'row' | 'column'
@@ -75,65 +75,4 @@ export class TableShape {
     }
     return rows
   }
-
-  /** A row moves whole, so only cells spanning rows block it; a column is cut from every row */
-  canMove(axis: Axis) {
-    if (this.count(axis) < 2) return false
-    let isBlocked = false
-    this.node.descendants((node) => {
-      if (isBlocked || !node.type.spec.tableRole?.endsWith('cell')) return !isBlocked
-      isBlocked = node.attrs.rowspan > 1 || (axis === 'column' && node.attrs.colspan > 1)
-      return false
-    })
-    return !isBlocked
-  }
-
-  /**
-   * The table with line `from` moved to index `to`, counted after its removal. The header rows
-   * stay the leading rows: cells landing there become header cells, cells leaving them plain ones.
-   */
-  moved(axis: Axis, from: number, to: number): PMNode {
-    const rows = [...this.node.children]
-    if (axis === 'column') {
-      return this.node.copy(
-        Fragment.from(rows.map((row) => row.copy(Fragment.from(reorder(row.children, from, to))))),
-      )
-    }
-    const { tableCell, tableHeader } = this.node.type.schema.nodes
-    const headerRows = this.headerRows
-    const reordered = reorder(rows, from, to).map((row, index) => {
-      const type = index < headerRows ? tableHeader : tableCell
-      const cells = row.children.map((cell) =>
-        cell.type === type ? cell : type.create(cell.attrs, cell.content, cell.marks),
-      )
-      return row.copy(Fragment.from(cells))
-    })
-    return this.node.copy(Fragment.from(reordered))
-  }
-}
-
-/**
- * Where a dragged line lands: the edge nearest `at`, as an index after the line's removal, or
- * null when that edge is one of the line's own (no move). `edges` are the lines' leading edges
- * followed by the last line's trailing edge.
- */
-export function landingIndex(edges: readonly number[], at: number, from: number): number | null {
-  let nearest = 0
-  edges.forEach((edge, index) => {
-    if (Math.abs(edge - at) < Math.abs(edges[nearest] - at)) nearest = index
-  })
-  if (nearest === from || nearest === from + 1) return null
-  return nearest > from ? nearest - 1 : nearest
-}
-
-/** The index of the edge a landing index draws its line on */
-export function landingEdge(from: number, to: number) {
-  return to > from ? to + 1 : to
-}
-
-function reorder<T>(items: readonly T[], from: number, to: number): T[] {
-  const result = [...items]
-  const [item] = result.splice(from, 1)
-  result.splice(to, 0, item)
-  return result
 }

@@ -1,5 +1,4 @@
 import { Editor } from '@tiptap/core'
-import { CellSelection } from '@tiptap/pm/tables'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
@@ -7,7 +6,6 @@ import { writerSchema } from '@/apps/writer/schema'
 import { INSERTS } from '../inserts'
 import { TableEditing } from './tableEditing'
 import { tableMenu } from './tableMenus'
-import { landingIndex, TableShape } from './tableShape'
 import { selectionTarget } from './useTableTarget'
 
 let editor: Editor | null = null
@@ -133,25 +131,6 @@ describe('table editing', () => {
     expect(grid(editor).map((r) => r[0])).toEqual(['NAME', 'Al', 'Ann', 'Bo', 'Cy'])
   })
 
-  it('moves a row below the header and keeps the header row first', () => {
-    const { editor, table } = open()
-    table.moveLine('row', 0, 2)
-    expect(grid(editor)).toEqual([
-      ['ANN', 'DEV', 'CORE'],
-      ['Bo', 'Ops', 'Infra'],
-      ['Name', 'Role', 'Team'],
-    ])
-    const { selection } = editor.state
-    expect(selection instanceof CellSelection && selection.isRowSelection()).toBe(true)
-  })
-
-  it('moves a column with its cells', () => {
-    const { editor, table } = open()
-    table.moveLine('column', 2, 0)
-    expect(grid(editor)[0]).toEqual(['TEAM', 'NAME', 'ROLE'])
-    expect(grid(editor)[2]).toEqual(['Infra', 'Bo', 'Ops'])
-  })
-
   it('clears a column, colours a row and toggles the header row', () => {
     const { editor, table } = open()
     table.clearLine('column', 1)
@@ -213,36 +192,10 @@ describe('inside a table', () => {
   })
 })
 
-describe('landing a dragged line', () => {
-  const edges = [0, 40, 80, 120, 160]
-
-  it('lands on the nearest edge, counted after the line leaves', () => {
-    expect(landingIndex(edges, 150, 0)).toBe(3)
-    expect(landingIndex(edges, 5, 3)).toBe(0)
-    expect(landingIndex(edges, 85, 0)).toBe(1)
-  })
-
-  it('does not move when the nearest edge is the line’s own', () => {
-    expect(landingIndex(edges, 45, 1)).toBeNull()
-    expect(landingIndex(edges, 78, 1)).toBeNull()
-  })
-})
-
 describe('table shape', () => {
-  it('reports header rows and refuses to move a column past merged cells', () => {
+  it('reports header rows', () => {
     const { editor } = open()
-    const shape = editing(editor).shape
-    expect(shape?.headerRows).toBe(1)
-    expect(shape?.canMove('column')).toBe(true)
-
-    editor.commands.setCellSelection({
-      anchorCell: shape?.cellPos(1, 0) ?? 0,
-      headCell: shape?.cellPos(1, 1) ?? 0,
-    })
-    editor.commands.mergeCells()
-    const merged = TableShape.at(editor.state.doc, shape?.cellPos(0, 0) ?? 0)
-    expect(merged?.canMove('column')).toBe(false)
-    expect(merged?.canMove('row')).toBe(true)
+    expect(editing(editor).shape?.headerRows).toBe(1)
   })
 })
 

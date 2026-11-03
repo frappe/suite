@@ -116,18 +116,6 @@ export class TableEditing {
     this.run((chain) => this.caretIn(chain, 'row', 0).toggleHeaderRow())
   }
 
-  /** Moves line `from` to index `to`, counted after its removal, and selects it there */
-  moveLine(axis: Axis, from: number, to: number) {
-    this.run((chain) =>
-      chain.command(({ tr }) => {
-        const shape = TableShape.at(tr.doc, this.cell)
-        if (!shape || from === to || !shape.canMove(axis)) return false
-        tr.replaceWith(shape.pos, shape.pos + shape.node.nodeSize, shape.moved(axis, from, to))
-        return selectLine(tr, shape.start, axis, to)
-      }),
-    )
-  }
-
   /** Focuses the editor with the caret at the end of the cell */
   focusCell() {
     this.run((chain) =>

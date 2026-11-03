@@ -1,5 +1,5 @@
 <template>
-  <!-- Emptied, not disabled, while open: a disabled Tooltip remounts the button and drops the drag -->
+  <!-- Emptied, not disabled, while open: a disabled Tooltip remounts the button and drops the press -->
   <Tooltip :text="open ? '' : label" :side="axis === 'column' ? 'top' : 'left'">
     <button
       type="button"
@@ -21,7 +21,7 @@ import { Tooltip } from 'frappe-ui'
 /** A row or column handle, a small pill with dots on the table's rule, or the cell menu's button */
 defineProps<{ axis: 'row' | 'column' | 'cell'; open: boolean; label: string }>()
 
-// Tooltip drops attributes, so the placement and the press and drag listeners go to the button
+// Tooltip drops attributes, so the placement and the listeners go to the button
 defineOptions({ inheritAttrs: false })
 
 const ICONS = {

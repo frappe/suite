@@ -129,7 +129,7 @@
   border-radius: 4px;
   box-shadow: 0 0 0 2px var(--surface-base);
   color: var(--ink-gray-6);
-  cursor: grab;
+  cursor: pointer;
   display: flex;
   justify-content: center;
   pointer-events: auto;
@@ -168,19 +168,6 @@
 }
 
 /* The edge a dragged row or column lands on */
-.writer-table-drop {
-  background-color: var(--ink-gray-7);
-  border-radius: 9999px;
-  pointer-events: none;
-  position: absolute;
-}
-
-body.writer-table-dragging,
-body.writer-table-dragging .writer-table-grip {
-  cursor: grabbing;
-  user-select: none;
-}
-
 /* No fill: a slash, so it does not read as gray */
 .writer-swatch.is-none {
   background-image: linear-gradient(

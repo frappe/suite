@@ -13,10 +13,11 @@
         </Dropdown>
         <TableGrip
           axis="row"
-          :open="open.row || drag.dragging.value === 'row'"
+          :open="open.row"
           :label="__('Row options')"
           :style="place(rowGrip)"
-          v-on="drag.handlers('row')"
+          @pointerdown="selectLine('row', $event)"
+          @click="open.row = true"
           @keydown.enter.prevent="open.row = true"
         />
       </template>
@@ -29,10 +30,11 @@
         </Dropdown>
         <TableGrip
           axis="column"
-          :open="open.column || drag.dragging.value === 'column'"
+          :open="open.column"
           :label="__('Column options')"
           :style="place(columnGrip)"
-          v-on="drag.handlers('column')"
+          @pointerdown="selectLine('column', $event)"
+          @click="open.column = true"
           @keydown.enter.prevent="open.column = true"
         />
       </template>
@@ -52,14 +54,7 @@
         />
       </template>
 
-      <div
-        v-if="drag.dropLine.value"
-        class="writer-table-drop"
-        :style="place(drag.dropLine.value)"
-        aria-hidden="true"
-      />
-
-      <template v-if="!drag.dragging.value && !isMenuOpen()">
+      <template v-if="!isMenuOpen()">
         <Tooltip :text="__('Add column')" side="right">
           <button
             type="button"
@@ -103,7 +98,6 @@ import { TableEditing } from './tableEditing'
 import TableGrip from './TableGrip.vue'
 import { cellMenu, columnMenu, rowMenu } from './tableMenus'
 import type { Axis } from './tableShape'
-import { useLineDrag } from './useLineDrag'
 import { useTableTarget } from './useTableTarget'
 
 const props = defineProps<{ editor: Editor }>()
@@ -113,18 +107,7 @@ const layer = useTemplateRef<HTMLElement>('layer')
 const open = reactive({ row: false, column: false, cell: false })
 const isMenuOpen = () => open.row || open.column || open.cell
 
-const { target, boxes, wrapper, refresh } = useTableTarget(
-  editor,
-  layer,
-  () => isMenuOpen() || drag.isPressed(),
-)
-const drag = useLineDrag({
-  editor,
-  target,
-  wrapper,
-  layer,
-  onClick: (axis) => (open[axis] = true),
-})
+const { target, boxes, refresh } = useTableTarget(editor, layer, isMenuOpen)
 
 // A closed menu hands the controls back to the pointer
 watch(isMenuOpen, (isOpen) => {
@@ -219,6 +202,15 @@ const cellOptions = computed(() => {
   const context = menuContext()
   return context ? cellMenu(context) : []
 })
+
+// The press neither focuses the grip nor starts a text selection; the click opens the menu
+function selectLine(axis: Axis, event: PointerEvent) {
+  const current = target.value
+  if (event.button !== 0 || !current) return
+  const index = axis === 'row' ? current.row : current.column
+  new TableEditing(props.editor, current.cell).selectLine(axis, index)
+  event.preventDefault()
+}
 
 function addLine(axis: Axis) {
   const current = target.value
