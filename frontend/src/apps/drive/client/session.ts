@@ -220,6 +220,10 @@ export async function openDriveDocumentSession(
   const refreshMedia = async () => {
     if (disposed) return
     if (mediaPromise) return mediaPromise
+
+    // a handle made after the read began may name a picture newer than its answer
+    const asked = new Set(handles.keys())
+
     mediaPromise = requester
       .query(
         api.drive.nodes.media,
@@ -240,7 +244,9 @@ export async function openDriveDocumentSession(
           handle.status.value = 'ready'
         }
         for (const [id, handle] of handles) {
-          if (!seen.has(id)) handle.status.value = 'refused'
+          if (!seen.has(id) && asked.has(id)) {
+            handle.status.value = 'refused'
+          }
         }
       })
       .catch(() => {
@@ -248,8 +254,16 @@ export async function openDriveDocumentSession(
       })
       .finally(() => {
         mediaPromise = null
+
+        if (hasLoadingBeyond(asked)) {
+          void refreshMedia()
+        }
       })
     return mediaPromise
+  }
+
+  function hasLoadingBeyond(asked: Set<string>) {
+    return [...handles].some(([id, handle]) => !asked.has(id) && handle.status.value === 'loading')
   }
   function getHandle(id: string): InternalMediaHandle {
     let handle = handles.get(id)

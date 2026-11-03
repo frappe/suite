@@ -219,6 +219,78 @@ describe('document session media', () => {
     expect(handle.cacheKey.value).not.toContain('?')
     session.dispose()
   })
+
+  describe('a picture added while a read is in flight', () => {
+    function row(node: string) {
+      return { node, url: `/private/files/b7x2k9q4mz/${node}.png`, expires: 1 }
+    }
+
+    async function openedWithHeldRead() {
+      const answers: Array<(media: unknown[]) => void> = []
+      const requester: Transport = {
+        request: (operation) => {
+          if (operation.id === 'node_get') {
+            return Promise.resolve(documentNode('root')) as never
+          }
+
+          if (operation.id !== 'node_media') {
+            return Promise.resolve({}) as never
+          }
+
+          return new Promise((resolve) => {
+            answers.push((media) => resolve({ media }))
+          }) as never
+        },
+      }
+      const session = await openDriveDocumentSession('root', { client: testClient(requester) })
+      return { session, answers }
+    }
+
+    it('reads again for it, as the answer in flight may be older than the picture', async () => {
+      const { session, answers } = await openedWithHeldRead()
+      const shown = session.media('shown')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+      const added = session.media('added')
+
+      answers[0]([row('shown')])
+      await vi.waitFor(() => expect(shown.status.value).toBe('ready'))
+      expect(added.status.value).toBe('loading')
+      await vi.waitFor(() => expect(answers).toHaveLength(2))
+
+      answers[1]([row('shown'), row('added')])
+      await vi.waitFor(() => expect(added.status.value).toBe('ready'))
+      expect(added.src.value).toContain('added.png')
+      session.dispose()
+    })
+
+    it('refuses it once a read begun after it still lacks it', async () => {
+      const { session, answers } = await openedWithHeldRead()
+      session.media('shown')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+      const added = session.media('added')
+
+      answers[0]([row('shown')])
+      await vi.waitFor(() => expect(answers).toHaveLength(2))
+      answers[1]([row('shown')])
+
+      await vi.waitFor(() => expect(added.status.value).toBe('refused'))
+      expect(answers).toHaveLength(2)
+      session.dispose()
+    })
+
+    it('still refuses at once a picture the answered read was asked about', async () => {
+      const { session, answers } = await openedWithHeldRead()
+      const gone = session.media('gone')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+
+      answers[0]([])
+
+      await vi.waitFor(() => expect(gone.status.value).toBe('refused'))
+      await new Promise((resolve) => setTimeout(resolve))
+      expect(answers).toHaveLength(1)
+      session.dispose()
+    })
+  })
 })
 
 describe('document session access refresh', () => {
