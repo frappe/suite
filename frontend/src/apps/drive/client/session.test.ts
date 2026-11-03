@@ -298,7 +298,7 @@ describe('document session media', () => {
         session.dispose()
       })
 
-      it('waits longer after each read that fails, up to a minute', async () => {
+      it('waits longer after each read that fails, capped at 30 seconds', async () => {
         const { session, answers, failures } = await openedWithHeldRead()
         session.media('waiting')
         await vi.advanceTimersByTimeAsync(0)
@@ -318,7 +318,7 @@ describe('document session media', () => {
         expect(gaps[0]).toBeLessThanOrEqual(5_000)
         expect(gaps[3]).toBeGreaterThan(gaps[0])
         expect(gaps).toEqual([...gaps].sort((one, other) => one - other))
-        expect(gaps[5]).toBeLessThanOrEqual(60_000)
+        expect(Math.max(...gaps)).toBe(30_000)
         session.dispose()
       })
 
