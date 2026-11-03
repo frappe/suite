@@ -77,16 +77,27 @@
         <ToolbarButton
           icon="lucide-minus"
           :label="__('Smaller text')"
-          :disabled="fontSize <= FONT_SIZE_MIN"
+          :disabled="!hasMixedSizes && fontSize <= FONT_SIZE_MIN"
           @click="stepFontSize(editor, -1)"
         />
-        <span class="w-6 text-center text-base leading-4 tabular-nums text-ink-gray-7">
-          {{ fontSize }}
-        </span>
+        <TextInput
+          class="w-9"
+          variant="ghost"
+          size="sm"
+          inputmode="numeric"
+          :aria-label="__('Font size')"
+          :placeholder="hasMixedSizes ? '–' : undefined"
+          :model-value="typedSize ?? (hasMixedSizes ? '' : fontSize)"
+          @update:model-value="typedSize = String($event)"
+          @focus="($event.target as HTMLInputElement).select()"
+          @blur="applyTypedSize"
+          @keydown.enter.prevent="finishTypingSize(applyTypedSize)"
+          @keydown.esc.prevent="finishTypingSize(() => (typedSize = null))"
+        />
         <ToolbarButton
           icon="lucide-plus"
           :label="__('Larger text')"
-          :disabled="fontSize >= FONT_SIZE_MAX"
+          :disabled="!hasMixedSizes && fontSize >= FONT_SIZE_MAX"
           @click="stepFontSize(editor, 1)"
         />
       </div>
@@ -219,7 +230,7 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { useResizeObserver } from '@vueuse/core'
-import { Dropdown, Popover, type DropdownOptions } from 'frappe-ui'
+import { Dropdown, Popover, TextInput, type DropdownOptions } from 'frappe-ui'
 import { computed, defineAsyncComponent, h, ref, toRef, useTemplateRef, watch } from 'vue'
 
 import { FONT_FAMILIES } from '@/apps/writer/utils'
@@ -228,7 +239,13 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/apps/writer/utils/typography'
 import { translate as __ } from '@/platform/translation'
 
 import ColorPanel from './ColorPanel.vue'
-import { selectionFontSize, stepFontSize } from './fontSize'
+import {
+  hasMixedFontSizes,
+  selectionFontSize,
+  setFontSize,
+  stepFontSize,
+  typedFontSize,
+} from './fontSize'
 import {
   activeBlockStyle,
   BLOCK_STYLES,
@@ -296,6 +313,21 @@ const activeFont = live(
 )
 
 const fontSize = live(() => selectionFontSize(props.editor))
+const hasMixedSizes = live(() => hasMixedFontSizes(props.editor))
+// What's being typed in the font size box, until Enter or leaving the box applies it
+const typedSize = ref<string | null>(null)
+
+// A size outside the range is refused, and the box shows the real size again
+function applyTypedSize() {
+  const size = typedFontSize(typedSize.value ?? '')
+  typedSize.value = null
+  if (size !== null) setFontSize(props.editor, size)
+}
+
+function finishTypingSize(finish: () => void) {
+  finish()
+  props.editor.commands.focus()
+}
 const canUndo = live(() => props.editor.can().undo())
 const canRedo = live(() => props.editor.can().redo())
 

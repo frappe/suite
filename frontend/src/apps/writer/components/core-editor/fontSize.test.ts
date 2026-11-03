@@ -3,7 +3,13 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
 
-import { selectionFontSize, stepFontSize } from './fontSize'
+import {
+  hasMixedFontSizes,
+  selectionFontSize,
+  setFontSize,
+  stepFontSize,
+  typedFontSize,
+} from './fontSize'
 
 let editor: Editor | null = null
 
@@ -43,5 +49,32 @@ describe('font size', () => {
     const html = target.getHTML()
     expect(html).toContain('<span style="font-size: 23px;">Goals</span>')
     expect(html).toContain('<p>Body</p>')
+  })
+
+  it('sets every selected run to a typed size and keeps the selection', () => {
+    const target = open('<h2>Goals</h2><p><span style="font-size: 18px">Body</span></p>')
+    target.commands.selectAll()
+    const { from, to } = target.state.selection
+    expect(hasMixedFontSizes(target)).toBe(true)
+
+    setFontSize(target, 20)
+
+    const html = target.getHTML()
+    expect(html).toContain('<span style="font-size: 20px;">Goals</span>')
+    expect(html).toContain('<span style="font-size: 20px;">Body</span>')
+    expect([target.state.selection.from, target.state.selection.to]).toEqual([from, to])
+    expect(hasMixedFontSizes(target)).toBe(false)
+  })
+
+  it('gives the text the caret types the typed size', () => {
+    const target = open('<p>Body</p>')
+    target.commands.setTextSelection(3)
+    setFontSize(target, 30)
+    expect(selectionFontSize(target)).toBe(30)
+  })
+
+  it('takes a typed size only inside the range, as the old font control did', () => {
+    expect(['18', ' 6 ', '96', '12.4'].map(typedFontSize)).toEqual([18, 6, 96, 12])
+    expect(['5', '97', '', 'big', '1e3'].map(typedFontSize)).toEqual([null, null, null, null, null])
   })
 })

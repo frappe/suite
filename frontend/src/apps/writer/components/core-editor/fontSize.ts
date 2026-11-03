@@ -1,4 +1,4 @@
-import type { Editor } from '@tiptap/core'
+import type { ChainedCommands, Editor } from '@tiptap/core'
 import type { EditorView } from '@tiptap/pm/view'
 
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/apps/writer/utils/typography'
@@ -19,30 +19,57 @@ export function selectionFontSize(editor: Editor): number {
  * text under it keep their difference. A run that lands on its block's own size loses its size.
  */
 export function stepFontSize(editor: Editor, step: 1 | -1): boolean {
+  return resize(editor.chain().focus(), editor, (size) => size + step)
+}
+
+/** Sets all selected text to `size`, or the text the caret types with, without moving the selection. */
+export function setFontSize(editor: Editor, size: number): boolean {
+  return resize(editor.chain(), editor, () => size)
+}
+
+/** The size in what someone typed, rounded; null when it isn't a number the editor accepts. */
+export function typedFontSize(typed: string): number | null {
+  const size = Math.round(Number(typed))
+  return typed.trim() && size >= FONT_SIZE_MIN && size <= FONT_SIZE_MAX ? size : null
+}
+
+/** Whether the selected text holds more than one size, so no single number describes it. */
+export function hasMixedFontSizes(editor: Editor): boolean {
+  const { doc, selection, schema } = editor.state
+  const sizes = new Set<string>()
+  doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+    if (sizes.size > 1) return false
+    if (!node.isText) return true
+    const stored = schema.marks.textStyle.isInSet(node.marks)?.attrs.fontSize
+    const $pos = doc.resolve(pos)
+    sizes.add(stored ?? `${$pos.parent.type.name}${$pos.parent.attrs.level ?? ''}`)
+    return false
+  })
+  return sizes.size > 1
+}
+
+function resize(chain: ChainedCommands, editor: Editor, next: (size: number) => number) {
   const { view, state } = editor
   const { from, to, empty, $from } = state.selection
   if (empty) {
-    const next = clampSize(selectionFontSize(editor) + step)
-    const chain = editor.chain().focus()
-    if (next === blockSize(view, $from.before())) return chain.unsetFontSize().run()
-    return chain.setFontSize(`${next}px`).run()
+    const size = clampSize(next(selectionFontSize(editor)))
+    if (size === blockSize(view, $from.before())) return chain.unsetFontSize().run()
+    return chain.setFontSize(`${size}px`).run()
   }
   const textStyle = state.schema.marks.textStyle
-  return editor
-    .chain()
-    .focus()
+  return chain
     .command(({ tr }) => {
       state.doc.nodesBetween(from, to, (node, pos) => {
         if (!node.isText) return
         const start = Math.max(from, pos)
         const end = Math.min(to, pos + node.nodeSize)
-        const next = clampSize(renderedSize(view, start, 1) + step)
+        const size = clampSize(next(renderedSize(view, start, 1)))
         const base = blockSize(view, state.doc.resolve(pos).before())
         const attrs = textStyle.isInSet(node.marks)?.attrs
         tr.addMark(
           start,
           end,
-          textStyle.create({ ...attrs, fontSize: next === base ? null : `${next}px` }),
+          textStyle.create({ ...attrs, fontSize: size === base ? null : `${size}px` }),
         )
       })
       return true
