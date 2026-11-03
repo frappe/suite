@@ -20,6 +20,9 @@ const protocols = new Set([
   'apps/slides/service-worker.js',
   'apps/slides/stores/offlineCopy.js',
   'apps/slides/stores/element.js',
+  'apps/slides/stores/presentation.js',
+  'apps/slides/stores/visitedMedia.js',
+  'apps/slides/utils/startupRequests.js',
 ])
 const resources = new Set([
   'createResource',

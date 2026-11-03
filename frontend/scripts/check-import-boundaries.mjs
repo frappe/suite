@@ -242,10 +242,12 @@ const moduleGraphDebtGroups = [
     entries: [
       'slides/router.ts|@/router',
       'slides/stores/presentation.js|@/boot/session',
+      'slides/stores/presentationOfflineDraft.test.ts|@/boot/session',
       'slides/stores/presentationRestore.test.ts|@/boot/session',
       'slides/stores/saveTimeout.test.ts|@/boot/session',
       'slides/stores/saving.js|@/boot/session',
       'slides/stores/saving.test.ts|@/boot/session',
+      'slides/stores/visitedMedia.test.ts|@/boot/session',
       'slides/utils/mediaUploads.js|@/boot/session',
       'slides/utils/uploadTargetSlide.test.ts|@/boot/session',
     ],
