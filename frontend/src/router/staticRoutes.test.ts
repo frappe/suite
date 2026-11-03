@@ -8,6 +8,8 @@ const state = vi.hoisted(() => {
   window.suite_can_onboard = false
   return {
     status: 'authenticated' as 'guest' | 'authenticated',
+    user: null as { setup_required: boolean } | null,
+    jmap: true,
     remembered: [] as [token: string, node: string][],
   }
 })
@@ -20,8 +22,16 @@ vi.mock('@/platform/session', async (importOriginal) => {
         return state.status
       },
     },
-    user: { value: null },
-    capabilities: { value: { jmap: true, systemManager: true } },
+    user: {
+      get value() {
+        return state.user
+      },
+    },
+    capabilities: {
+      get value() {
+        return { jmap: state.jmap, systemManager: true }
+      },
+    },
     login: async () => {},
     logout: async () => {},
     refresh: async () => {},
@@ -59,6 +69,8 @@ async function settle(path: string): Promise<RouteLocationNormalized | undefined
 describe('suite route table', () => {
   afterEach(() => {
     state.status = 'authenticated'
+    state.user = null
+    state.jmap = true
   })
 
   // Each area's routes load on its first visit. Before that, a placeholder
@@ -99,6 +111,17 @@ describe('suite route table', () => {
 
   it.each(['suite-start', 'suite-root', 'suite-launcher'])('sends %s to Home', (name) => {
     expect(redirectOf(router, name)).toBe('/home')
+  })
+
+  // Mail-backed areas open too; the shell says on the page what they need.
+  it('lets a user without a Mail account into every area', async () => {
+    state.user = { setup_required: true }
+    state.jmap = false
+
+    expect((await settle('/drive'))?.meta.area).toBe('files')
+    expect((await settle('/d/doc-1'))?.path).toBe('/d/doc-1')
+    expect((await settle('/home'))?.path).toBe('/home')
+    expect((await settle('/calendar'))?.meta.area).toBe('calendar')
   })
 
   it('lets a guest open a shared folder, and nothing else in the Drive area', async () => {

@@ -1,5 +1,10 @@
 export const COL_HEADER_H = 28
 export const ROW_HEADER_W = 50
+// Gridlines are 1px lines on the pixel after the integer cell edge, so their
+// centre is the edge + 0.5. The selection frame is centred there.
+export const GRID_LINE = 0.5
+// The active cell's frame width; the in-cell editor's border matches it.
+export const FRAME_W = 1.5
 // Thickness of the overlay scrollbars (scrollbars.ts). Shared so DOM overlays
 // (filter/pivot outlines) can keep clear of the scrollbar gutter.
 export const SCROLLBAR_THICK = 12
@@ -75,6 +80,15 @@ export const COLORS = {
   },
   get activeHeader() {
     return _token('--surface-gray-4', '#E2E2E2')
+  },
+  // An active filter's range outline (Google-Sheets-style green).
+  get filterOutline() {
+    return _token('--ink-green-3', '#15803D')
+  },
+  // Separators between selected headers: gridLine is the tint's own grey, so
+  // it would vanish on it.
+  get activeHeaderLine() {
+    return _token('--outline-gray-3', '#C7C7C7')
   },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')

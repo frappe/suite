@@ -1,5 +1,6 @@
 """Move a disabled user's retained tree without restoring trash or changing node identities."""
 
+import dataclasses
 import hashlib
 import json
 
@@ -12,7 +13,7 @@ from suite.drive._core.nodes import _move, _node, _subtree_charge
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import _check_combined, administration_usage, preflight, root_for_node
 from suite.drive._core.roots import validate_root_pair
-from suite.suite_core.storage import effective_limit, state
+from suite.suite_core.storage import effective_limit, personal_mail_usage, state
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
@@ -54,7 +55,7 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
     ]
     reserved_bytes = sum(row["reserved_bytes"] for row in rows)
     stored_bytes = sum(row["stored_bytes"] for row in rows)
-    mail_bytes = 0
+    mail_bytes: int | None = 0
     cap = next(row["effective_quota_bytes"] for row in rows if row["name"] == target_root.name) or None
     buffer_bytes = 0
     configured = is_suite_cloud_configured()
@@ -63,7 +64,7 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
         limit = policy.get("users", {}).get(target_root.user, {}) if personal else {}
         cap = limit.get("cap")
         buffer_bytes = cap // 10 if cap is not None else 0
-        mail_bytes = measurements.get("personal", {}).get(target_root.user) if personal else 0
+        mail_bytes = personal_mail_usage(measurements, target_root.user) if personal else 0
     threshold = effective_limit(cap) if configured else cap
     current_bytes = stored_bytes + reserved_bytes + mail_bytes if mail_bytes is not None else None
     projected_bytes = current_bytes + charge if current_bytes is not None else None
@@ -132,6 +133,9 @@ def transfer(
         _check_combined(target_root.name, current["bytes"], lock=True, source_root=current["source_root"])
     else:
         preflight(target_root, current["bytes"])
+    # The admin holds no grant on what they move, so the move runs with Drive's
+    # own authority and records the admin as its actor (ADR 0001).
+    acting = dataclasses.replace(principals, is_system=True)
     results = []
     # Bounded requests provide observable progress; each item uses Drive's own
     # savepoint. A retry only lists what remains in the source, never copies an
@@ -139,7 +143,7 @@ def transfer(
     for item in current["items"][:50]:
         try:
             _move(
-                principals,
+                acting,
                 item.name,
                 destination,
                 expect_parent_node=current["source_root"],

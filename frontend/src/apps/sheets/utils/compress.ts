@@ -1,30 +1,17 @@
-// Gzip + base64 envelope for uploading large sheets_data payloads.
+// The gzip + base64 envelope `sheets_data` may be stored in, read on download.
 //
-// Mirrors the server-side wire format in
-// sheets/sheets/doctype/sheet/storage.py:
+// Mirrors the server-side wire format in suite/sheets/doctype/sheet/storage.py:
 //
 //   {"_z": "gzip", "data": "<base64-encoded gzip bytes>"}
-//
-// The server's `_validate_payload` and `save_sheet` accept either the envelope
-// or plain JSON, so this is purely an optimisation — if `CompressionStream`
-// isn't available (older Safari) or the payload is tiny, we fall back to
-// sending the raw string.
 
 const MARKER = '_z'
 const KIND = 'gzip'
-// Only compress payloads larger than this — below it the round-trip overhead
-// outweighs the wire-size saving.
-const MIN_BYTES = 64 * 1024
-
-function isCompressionSupported(): boolean {
-  return typeof CompressionStream !== 'undefined'
-}
 
 export function isDecompressionSupported(): boolean {
   return typeof DecompressionStream !== 'undefined'
 }
 
-// Inverse of encodeForUpload, for the download path: unwrap a stored envelope
+// The download path: unwrap a stored envelope
 // ({"_z":"gzip","data":"<base64>"}) back into the plain JSON string. Legacy
 // values (plain JSON, or a server that already decoded) pass through untouched.
 // Lets get_sheet ship the ~1.5MB compressed payload instead of the ~20MB
@@ -59,28 +46,4 @@ function _base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
   return out
-}
-
-export async function encodeForUpload(jsonString: string): Promise<string> {
-  if (!jsonString || jsonString.length < MIN_BYTES) return jsonString
-  if (!isCompressionSupported()) return jsonString
-  const gz = await _gzip(jsonString)
-  const data = _bytesToBase64(gz)
-  return JSON.stringify({ [MARKER]: KIND, data })
-}
-
-async function _gzip(text: string): Promise<Uint8Array> {
-  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
-  const buf = await new Response(stream).arrayBuffer()
-  return new Uint8Array(buf)
-}
-
-// Chunked to avoid "Maximum call stack size exceeded" on multi-MB inputs.
-function _bytesToBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000
-  let binary = ''
-  // `apply` accepts any array-like at runtime; its typing only allows arrays.
-  for (let i = 0; i < bytes.length; i += CHUNK)
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[])
-  return btoa(binary)
 }

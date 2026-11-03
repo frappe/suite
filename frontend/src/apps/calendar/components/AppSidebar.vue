@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useNow, useStorage } from '@vueuse/core'
 import { Button, SidebarItem, SidebarSection, Tooltip } from 'frappe-ui'
-import { Ellipsis, Plus } from 'lucide-vue-next'
+import { Ellipsis } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -14,7 +14,6 @@ import { userStore } from '@/apps/calendar/stores/user'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { toTitleCase } from '@/apps/calendar/utils/format'
 import {
   MOBILE_VIEWS,
   routeDate,
@@ -57,8 +56,8 @@ const calendarGroups = computed(() => {
   const mine = calendars.filter((calendar) => calendar.account === store.accountId)
   const shared = calendars.filter((calendar) => calendar.account !== store.accountId)
   return [
-    { key: 'mine', label: __('My Calendars'), calendars: mine },
-    ...(shared.length ? [{ key: 'shared', label: __('Shared Calendars'), calendars: shared }] : []),
+    { key: 'mine', label: __('My calendars'), calendars: mine },
+    ...(shared.length ? [{ key: 'shared', label: __('Shared calendars'), calendars: shared }] : []),
   ]
 })
 
@@ -124,7 +123,7 @@ const subtitle = computed(() => {
   // A user with no personal account and no stored id leaves `accountId` empty,
   // and the find unmatched — as mail's sidebar already allows for.
   const currentAccount = user.data.accounts.find((a) => a.id === store.accountId)
-  if (!currentAccount || currentAccount.is_personal) return toTitleCase(user.data.full_name)
+  if (!currentAccount || currentAccount.is_personal) return user.data.full_name
   return currentAccount._name
 })
 
@@ -230,7 +229,19 @@ const selectView = (view: MobileView) => {
       </div>
       <div class="-mx-3 mt-3 border-t" />
       <template v-for="group in calendarGroups" :key="group.key">
-        <div class="text-ink-gray-5 px-3 pb-1 pt-3 text-sm">{{ group.label }}</div>
+        <div class="text-ink-gray-5 relative px-3 pb-1 pt-3 text-sm">
+          {{ group.label }}
+          <!-- Mail's folders' "+" at its size, with a thumb's reach around it. -->
+          <button
+            v-if="group.key === 'mine'"
+            type="button"
+            class="text-ink-gray-5 absolute right-2 top-3 flex size-4 items-center justify-center after:absolute after:-inset-3"
+            :aria-label="__('New Calendar')"
+            @click="calendarActions.create"
+          >
+            <span class="lucide-plus size-3.5" aria-hidden="true" />
+          </button>
+        </div>
         <!-- Rows as Mail's folder sheet spaces them, 2px apart. -->
         <div class="flex flex-col gap-0.5">
           <button
@@ -268,65 +279,71 @@ const selectView = (view: MobileView) => {
       />
     </div>
     <template v-if="!isMobile">
-      <SidebarSection
-        v-for="group in calendarGroups"
-        :key="group.key"
-        :label="group.label"
-        :collapsible="calendarGroups.length > 1"
-        :collapsed="collapsedSections.includes(group.key)"
-        class="!mt-4"
-        @update:collapsed="(collapsed) => setSectionCollapsed(group.key, collapsed)"
-      >
-        <!-- A calendar that is switched off keeps its place but loses its colour. -->
-        <SidebarItem
-          v-for="calendar in group.calendars"
-          :key="calendar.name"
-          :label="calendar._name"
-          :on-click="() => calendarActions.toggleVisible(calendar)"
+      <!-- A section's own action sits over the right end of its heading, as Mail's folders' does:
+           SidebarSection draws the heading itself and leaves no place in it for one. -->
+      <div v-for="group in calendarGroups" :key="group.key" class="relative mt-4">
+        <Tooltip v-if="group.key === 'mine'" :text="__('New Calendar')">
+          <button
+            type="button"
+            class="text-ink-gray-5 hover:text-ink-gray-8 absolute right-2 top-1.5 z-10 flex size-4 items-center justify-center"
+            :aria-label="__('New Calendar')"
+            @click="calendarActions.create"
+          >
+            <span class="lucide-plus size-3.5" aria-hidden="true" />
+          </button>
+        </Tooltip>
+        <SidebarSection
+          :label="group.label"
+          :collapsible="calendarGroups.length > 1"
+          :collapsed="collapsedSections.includes(group.key)"
+          class="!mt-0"
+          @update:collapsed="(collapsed) => setSectionCollapsed(group.key, collapsed)"
         >
-          <template #prefix>
-            <!-- One size collapsed and expanded, centred in the 16px icon box. 10px, about
-  					     cap height: at 12 a filled dot outweighed the label and the outline + below. -->
-            <span class="grid size-4 place-items-center">
-              <span
-                class="size-2.5 rounded-full transition-opacity"
-                :class="!calendar.visible && 'opacity-30'"
-                :style="dotStyle(calendarColor(calendar.name))"
-              />
-            </span>
-          </template>
-          <Tooltip :text="calendarLabel(calendar).email || ownerName(calendar)" side="right">
-            <span class="truncate text-sm" :class="!calendar.visible && 'text-ink-gray-4'">
-              {{ calendarLabel(calendar).label }}
-            </span>
-          </Tooltip>
-          <template #suffix>
-            <Dropdown
-              v-if="calendarActions.hasMenuOptions(calendar)"
-              :options="calendarActions.menuOptions(calendar)"
-            >
-              <Button
-                variant="ghost"
-                class="!bg-transparent"
-                :aria-label="__('Calendar options')"
-                @click.stop
+          <!-- A calendar that is switched off keeps its place but loses its colour. -->
+          <SidebarItem
+            v-for="calendar in group.calendars"
+            :key="calendar.name"
+            :label="calendar._name"
+            :on-click="() => calendarActions.toggleVisible(calendar)"
+          >
+            <template #prefix>
+              <!-- One size collapsed and expanded, centred in the 16px icon box. 10px, about
+    					     cap height: at 12 a filled dot outweighed the label and the outline + below. -->
+              <span class="grid size-4 place-items-center">
+                <span
+                  class="size-2.5 rounded-full transition-opacity"
+                  :class="!calendar.visible && 'opacity-30'"
+                  :style="dotStyle(calendarColor(calendar.name))"
+                />
+              </span>
+            </template>
+            <Tooltip :text="calendarLabel(calendar).email || ownerName(calendar)" side="right">
+              <span class="truncate text-sm" :class="!calendar.visible && 'text-ink-gray-4'">
+                {{ calendarLabel(calendar).label }}
+              </span>
+            </Tooltip>
+            <template #suffix>
+              <Dropdown
+                v-if="calendarActions.hasMenuOptions(calendar)"
+                :options="calendarActions.menuOptions(calendar)"
               >
-                <template #icon>
-                  <Ellipsis
-                    class="size-4 text-ink-gray-6 opacity-0 group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:opacity-100 [@media(hover:none)]:opacity-100"
-                  />
-                </template>
-              </Button>
-            </Dropdown>
-          </template>
-        </SidebarItem>
-        <SidebarItem
-          v-if="group.key === 'mine'"
-          :label="__('New Calendar')"
-          :icon="Plus"
-          :on-click="calendarActions.create"
-        />
-      </SidebarSection>
+                <Button
+                  variant="ghost"
+                  class="!bg-transparent"
+                  :aria-label="__('Calendar options')"
+                  @click.stop
+                >
+                  <template #icon>
+                    <Ellipsis
+                      class="size-4 text-ink-gray-6 opacity-0 group-hover/sidebar-item:opacity-100 group-focus-within/sidebar-item:opacity-100 [@media(hover:none)]:opacity-100"
+                    />
+                  </template>
+                </Button>
+              </Dropdown>
+            </template>
+          </SidebarItem>
+        </SidebarSection>
+      </div>
     </template>
 
     <!-- Pinned under the scrolling body, as mail's sidebar keeps it. -->

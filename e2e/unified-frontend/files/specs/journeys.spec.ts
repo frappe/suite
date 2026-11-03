@@ -132,6 +132,11 @@ test("a file moves from My files to Organization files and back through the pick
 		await dialog.getByRole("radio", { name: "Organization files" }).click();
 		await dialog.getByRole("button", { name: shared.title, exact: true }).click();
 		await dialog.getByRole("button", { name: "Move here", exact: true }).click();
+		const widening = page.getByRole("dialog", {
+			name: "More people will get access",
+			exact: true,
+		});
+		await widening.getByRole("button", { name: "Move", exact: true }).click();
 		await expect(dialog).toBeHidden();
 		await expect(page.locator(`[data-node='${file.name}']`)).toHaveCount(0);
 		expect((await getNode(api, file.name)).parent_node).toBe(shared.name);

@@ -35,7 +35,7 @@ import { createRenderer } from './renderer.js'
 import { planRowRefit } from './row-refit.js'
 import { createScrollbars } from './scrollbars.js'
 import { createSelection } from './selection.js'
-import type { CellValue, Grid, GridOptions, RowHeightChange } from './types.js'
+import type { CellBlock, CellValue, Grid, GridOptions, RowHeightChange } from './types.js'
 import { createViewport, watchPixelRatio } from './viewport.js'
 
 export type * from './types.js'
@@ -210,6 +210,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
   })
 
   // ── Paint ────────────────────────────────────────────────────────────────
+  let filterRect: CellBlock | null = null
   let diffCells: { [sheet: string]: { [id: string]: boolean } } | null = null
   let diffSheet: string | null = null
   const diffFor = (id: string): boolean => !!(diffCells && diffSheet && diffCells[diffSheet]?.[id])
@@ -230,6 +231,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
       marchAnts: ants.rect,
       marchPhase: ants.phase,
       pickerRect: pick.rect,
+      filterRect,
       colDrag: drag && drag.moved ? drag : null,
       zoom: vm.zoom,
     })
@@ -512,6 +514,14 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     onRender: loop.onRender,
 
     setMarchingAnts: (rect) => ants.set(rect),
+    setFilterRange(rect) {
+      // The editor sets it after every paint; only a change needs another one.
+      const same = (a: CellBlock | null, b: CellBlock | null) =>
+        a === b || (!!a && !!b && a.r0 === b.r0 && a.c0 === b.c0 && a.r1 === b.r1 && a.c1 === b.c1)
+      if (same(filterRect, rect)) return
+      filterRect = rect
+      scheduleRender()
+    },
     setDiffOverlay(bySheet) {
       diffCells = bySheet || null
       scheduleRender()

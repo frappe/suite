@@ -5,8 +5,7 @@
 // component.
 //
 // Usage:
-//   const { pushEditOp } = useEditOps({ currentSheet, history, queueOp,
-//                                       broadcastBatchChange,
+//   const { pushEditOp } = useEditOps({ currentSheet, history,
 //                                       syncFlags, isDirty, refitRowsFor })
 //
 // Caller pattern (per edit path — fill, dropdown pick, checkbox):
@@ -16,20 +15,11 @@
 //
 // pushEditOp keeps only the cells whose input changed, refits the rows
 // they wrap in (heights ride the op as beforeRowH / afterRowH, so undo
-// restores them; same as paste and fill), fires the op through
-// history.pushOp + queueOp + broadcastBatchChange, and flips the dirty /
-// saved flags. Returns the op (or null when no cells
+// restores them; same as paste and fill), ends the action with
+// history.pushOp, and flips the dirty flag. Returns the op (or null when no cells
 // actually changed) so callers can chain logic off the diff.
 
-export function useEditOps({
-  currentSheet,
-  history,
-  queueOp,
-  broadcastBatchChange,
-  syncFlags,
-  isDirty,
-  refitRowsFor,
-}) {
+export function useEditOps({ currentSheet, history, syncFlags, isDirty, refitRowsFor }) {
   // `extra` adds fields to the op (sort adds beforeFormats / afterFormats).
   function pushEditOp(sheetName, beforeMap, afterMap, summary = '', extra = {}) {
     if (!beforeMap || !afterMap) return null
@@ -52,12 +42,7 @@ export function useEditOps({
       op.beforeRowH = rowH.before
       op.afterRowH = rowH.after
     }
-    queueOp?.(op)
     history?.pushOp?.(op)
-    broadcastBatchChange?.(
-      sn,
-      refs.map((id) => ({ id, value: after[id] })),
-    )
     syncFlags?.()
     if (isDirty) isDirty.value = true
     return op

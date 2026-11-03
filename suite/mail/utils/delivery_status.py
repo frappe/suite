@@ -2,6 +2,12 @@
 # For license information, please see license.txt
 """Parsing of `message/delivery-status` parts (RFC 3464) carried by bounce (DSN) messages."""
 
+import re
+
+# A recipient line of a report's human-readable part: the address in angle brackets, then what
+# became of it — Stalwart's "<a@b> (no MX record found)", Postfix's "<a@b>: host ... said: 550 ...".
+_RECIPIENT_LINE = re.compile(r"^<([^<>\s]+@[^<>\s]+)>:?\s*(.*)$")
+
 
 def parse_delivery_status(content: bytes | str) -> dict:
     """Parses a `message/delivery-status` part into per-message and per-recipient fields.
@@ -38,8 +44,33 @@ def parse_delivery_status(content: bytes | str) -> dict:
     return {
         "reporting_mta": _strip_address_type(report_fields.get("reporting-mta") or ""),
         "arrival_date": report_fields.get("arrival-date") or "",
+        # The ENVID of the envelope the report is about (RFC 3461 §4.4).
+        "original_envelope_id": report_fields.get("original-envelope-id") or "",
         "recipients": recipients,
     }
+
+
+def parse_bounce_reasons(text: str) -> dict[str, str]:
+    """The reason a bounce's human-readable part gives for each recipient, by lower-cased address.
+
+    A report's Diagnostic-Code is optional: Stalwart leaves it out when the delivery failed before
+    any server answered (no MX record, say), and says why only in the text. Lines indented under a
+    recipient line continue its reason; one wrapped in parentheses is unwrapped.
+    """
+
+    reasons: dict[str, list[str]] = {}
+    current = None
+    for line in text.splitlines():
+        if match := _RECIPIENT_LINE.match(line):
+            current = match.group(1).lower()
+            reasons[current] = [match.group(2).strip()]
+        elif current and line[:1] in (" ", "\t") and line.strip():
+            reasons[current].append(line.strip())
+        else:
+            current = None
+
+    joined = {email: " ".join(part for part in parts if part) for email, parts in reasons.items()}
+    return {email: _unwrap(reason) for email, reason in joined.items() if reason}
 
 
 def _parse_field_groups(content: str) -> list[dict[str, str]]:
@@ -72,3 +103,9 @@ def _strip_address_type(value: str) -> str:
     if sep and " " not in type_token.strip():
         return rest.strip()
     return value.strip()
+
+
+def _unwrap(reason: str) -> str:
+    if reason.startswith("(") and reason.endswith(")"):
+        return reason[1:-1].strip()
+    return reason

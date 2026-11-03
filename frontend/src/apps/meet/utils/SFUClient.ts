@@ -1225,7 +1225,8 @@ export class SFUClient {
                 response.code,
                 response.details,
               )
-              console.error(`SFU request failed (${event}):`, response.error)
+              const log = event === 'create_consumer' ? console.debug : console.error
+              log(`SFU request failed (${event}):`, response.error)
               reject(error)
             }
           })

@@ -26,7 +26,6 @@ export function useFill({
   captureFormatsRange: _captureFormatsRange,
   captureValidationRange: _captureValidationRange,
   diffRefs: _diffRefs,
-  queueOp: _queueOp,
   rectBlocked: _rectBlocked,
   refitRowsFor,
   readEngineFormats,
@@ -49,9 +48,8 @@ export function useFill({
 
   // _runFill modes: 'auto' | 'series' | 'copy' (see planFill). Every mode
   // carries the source's formats, validation, conditional-format rules and
-  // merges along with the values, as Excel and Google Sheets do. `summary`
-  // names the op in the version log (default: "Filled N cells").
-  async function _runFill(src, total, mode, summary = '') {
+  // merges along with the values, as Excel and Google Sheets do.
+  async function _runFill(src, total, mode) {
     const sheetName = currentSheet.value
     // `total` includes `src`, so this one read is also the fill's source.
     const fillBefore = await _readInputs(total, sheetName)
@@ -79,17 +77,6 @@ export function useFill({
     const afterMergeSnap = merge.snapshot?.()
     const cfAfter = condFormat?.getRules?.(sheetName)?.length ?? 0
     const refs = _diffRefs(fillBefore, fillAfter)
-    // Server sync — queue the value diff regardless of how history records it.
-    if (refs.length) {
-      _queueOp({
-        opType: 'fill',
-        subSheet: sheetName,
-        cellRefs: refs,
-        before: fillBefore,
-        after: fillAfter,
-        summary: summary || _fillSummary(mode, refs.length),
-      })
-    }
     // History — the previous markEdited() path pushed a full snapshot, but
     // history.undo() can't roll a snapshot back when its preceding entry is
     // an op (no earlier snapshot to restore from), so undoing a fill that
@@ -129,11 +116,6 @@ export function useFill({
       markEdited()
     }
   }
-  function _fillSummary(mode, n) {
-    if (mode === 'copy') return `Copied into ${n} cell${n === 1 ? '' : 's'}`
-    return `Filled ${n} cell${n === 1 ? '' : 's'}`
-  }
-
   // Replicate every merge whose master AND span lie entirely inside `src` into
   // each tile of the destination range. Without this, dragging the fill handle
   // from a merged source produced unmerged target cells — values copied but
@@ -272,7 +254,7 @@ export function useFill({
     const dest = down ? { r0: r0 + 1, c0, r1, c1 } : { r0, c0: c0 + 1, r1, c1 }
     if (_rectBlocked(dest, currentSheet.value)) return
     const src = down ? { r0, c0, r1: r0, c1 } : { r0, c0, r1, c1: c0 }
-    await _runFill(src, sel, 'copy', down ? 'Fill down' : 'Fill right')
+    await _runFill(src, sel, 'copy')
   }
   function fillDown() {
     _fillFromEdge(true).catch((e) => console.error('[sheets] fill down failed', e))

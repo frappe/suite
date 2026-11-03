@@ -2,26 +2,31 @@ import { describe, expect, it, vi } from 'vitest'
 
 import dayjs from '@/apps/calendar/utils/dayjs'
 
-vi.mock('@/apps/calendar/stores/user', () => ({
-  userStore: () => ({ userResource: { data: { time_zone: 'Asia/Karachi' } } }),
+// The tests below assert against the Settings zone.
+vi.mock('@/platform/session', () => ({
+  useSession: () => ({ user: { value: { timeZone: 'Asia/Kolkata' } } }),
 }))
-
-// The browser zone wins over the User doc's zone; the tests below assert against it.
-vi.spyOn(dayjs.tz, 'guess').mockReturnValue('Asia/Kolkata')
 
 const load = async () => await import('@/apps/calendar/utils/datetime')
 
 describe('calendar datetime helpers', () => {
-  it('prefers the browser zone, falling back to the user zone', async () => {
+  it('reads the zone from Settings', async () => {
     const { userTimeZone } = await load()
     expect(userTimeZone()).toBe('Asia/Kolkata')
-    vi.mocked(dayjs.tz.guess).mockReturnValueOnce(undefined as unknown as string)
-    expect(userTimeZone()).toBe('Asia/Karachi')
   })
 
   it('renders a UTC timestamp in the user zone', async () => {
     const { formatDateTime } = await load()
     expect(formatDateTime('2026-07-28T09:02:30Z')).toBe('Jul 28 2026, 2:32 PM')
+  })
+
+  it('measures a dragged event in the Settings zone, across a clock change', async () => {
+    const { draggedDuration } = await load()
+    expect(draggedDuration('2026-07-28T10:00:00', '2026-07-28T11:30:00')).toBe('PT1H30M')
+    // New York's clocks jump from 02:00 to 03:00 on this date, so this is one hour.
+    expect(draggedDuration('2026-03-08T01:30:00', '2026-03-08T03:30:00', 'America/New_York')).toBe(
+      'PT1H',
+    )
   })
 
   it('reads an alert wall clock back as UTC', async () => {

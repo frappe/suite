@@ -1,6 +1,5 @@
 import { useEventListener } from '@vueuse/core'
 import { toast } from 'frappe-ui'
-import { v4 } from 'uuid'
 import { ref, type Ref } from 'vue'
 import { getState, type Doc, type ID } from 'yjs'
 
@@ -15,6 +14,7 @@ import {
   type CommentDraft,
 } from '@/apps/writer/recovery/commentDrafts'
 import type { CollabRoom } from '@/platform/collab'
+import { randomId } from '@/platform/random-id'
 
 import { showError } from './useDocumentPanel'
 
@@ -32,7 +32,7 @@ interface DraftOptions {
 
 function newDraft(anchor: string): ShownDraft {
   return {
-    clientId: v4(),
+    clientId: randomId(),
     anchor,
     text: '',
     isSent: false,

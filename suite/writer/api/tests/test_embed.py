@@ -36,7 +36,7 @@ PNG = (
 
 
 def _admin() -> Principals:
-    return Principals("Administrator", ("Administrator",), (), is_admin=True)
+    return Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
 
 @contextmanager

@@ -1,7 +1,7 @@
-// The selection frame sits on the gridlines and the fill handle sits on the
-// frame's corner. Cell edges are integers, so a 2px stroke there covers the
-// 1px gridline plus one pixel beside it: crisp, with no grey line left next
-// to the black one.
+// The selection frame, the range outline and the fill handle are all centred
+// on the gridline, which is drawn on the pixel after the integer cell edge
+// (edge + 0.5). The frame is 1.5px, so it reaches past the gridline by the
+// same amount on both sides.
 import { describe, expect, it, vi } from 'vitest'
 
 import { COL_HEADER_H, COLORS, ROW_HEADER_W, SEL_ALPHA } from './constants.js'
@@ -34,17 +34,17 @@ function frame(range: CellBlock = ONE, merge: MergeInfo | null = null) {
 }
 
 describe('selection frame', () => {
-  it('strokes 2px on the cell’s gridlines', () => {
-    expect(frame().strokes).toEqual([{ rect: [150, 48, 100, 24], lineWidth: 2 }])
+  it('strokes 1.5px centred on the cell’s gridlines', () => {
+    expect(frame().strokes).toEqual([{ rect: [150.5, 48.5, 100, 24], lineWidth: 1.5 }])
   })
 
   it('frames a merged active cell on its outer gridlines', () => {
-    expect(frame(ONE, { colSpan: 2, rowSpan: 3 }).strokes[0].rect).toEqual([150, 48, 200, 72])
+    expect(frame(ONE, { colSpan: 2, rowSpan: 3 }).strokes[0].rect).toEqual([150.5, 48.5, 200, 72])
   })
 
-  it('keeps the full 2px on the side that meets a header', () => {
-    // A1's frame is centred on the header edges; its outer pixel lies on the
-    // header side, so the clip must reach 1px past them.
+  it('keeps the whole frame on the side that meets a header', () => {
+    // A1's frame is centred on the gridline after the header edge and reaches
+    // 0.25px onto the header side, so the clip must reach past the edge.
     const { ctx } = recordingCtx()
     const clips: Rect[] = []
     ctx.rect = (...r: Rect) => void clips.push(r)
@@ -64,7 +64,7 @@ describe('selection frame', () => {
       1000,
       () => null,
     )
-    expect(clips[0].slice(0, 2)).toEqual([ROW_HEADER_W - 1, COL_HEADER_H - 1])
+    expect(clips[0].slice(0, 2)).toEqual([ROW_HEADER_W - 0.25, COL_HEADER_H - 0.25])
   })
 
   it('keeps the plain clip for a cell starting on the freeze line', () => {
@@ -87,12 +87,13 @@ describe('selection frame', () => {
     expect(clips[0][0]).toBe(200)
   })
 
-  it('centres a square fill handle on the frame’s corner', () => {
+  it('centres a square fill handle on the gridlines’ crossing', () => {
     const { fills } = frame()
-    // White ring (8px) then the 6px handle, both centred on (250, 72).
+    // White ring (9px) then the 7px handle, both centred on (250.5, 72.5),
+    // so both sit on whole pixels.
     expect(fills).toEqual([
-      { rect: [246, 68, 8, 8], colour: COLORS.white },
-      { rect: [247, 69, 6, 6], colour: COLORS.selHandle },
+      { rect: [246, 68, 9, 9], colour: COLORS.white },
+      { rect: [247, 69, 7, 7], colour: COLORS.selHandle },
     ])
   })
 
@@ -118,7 +119,7 @@ describe('range outline', () => {
     // each pixel's middle.
     expect(paint(B2, RANGE).strokes).toEqual([
       { rect: [150.5, 48.5, 200, 72], lineWidth: 1 },
-      { rect: [150, 48, 100, 24], lineWidth: 2 },
+      { rect: [150.5, 48.5, 100, 24], lineWidth: 1.5 },
     ])
   })
 
@@ -134,8 +135,11 @@ describe('range outline', () => {
     // in both panes, each clipped to its own pane.
     const ctx = createMockCtx()
     let outlines = 0
+    // Leave out the repaint on the header edges' 1px strips (filter-outline.test.ts).
+    let strip = false
+    ctx.rect = (_x: number, _y: number, w: number, h: number) => void (strip = w === 1 || h === 1)
     ctx.strokeRect = () => {
-      if (ctx.lineWidth === 1) outlines++
+      if (ctx.lineWidth === 1 && !strip) outlines++
     }
     const geo = createMockGeo()
     geo.frozenH = vi.fn(() => 24)
@@ -159,34 +163,81 @@ describe('range outline', () => {
     expect(outlines).toBe(2)
   })
 
-  it('centres the handle on the 1px outline when the active cell is elsewhere', () => {
-    // The outline's corner pixel is (350, 120), centre (350.5, 120.5): a 7px
-    // square on whole pixels, x 347 … 354.
+  // Whole rows, columns and the whole sheet are outlined too, around the
+  // full-width / full-height range the tint covers.
+  function lineOutlines(selMode: 'row' | 'col' | 'all', selEnd: Cell, frozenCols = 0) {
+    const { ctx } = recordingCtx()
+    // Leave out the repaint on the header edges' 1px strips (filter-outline.test.ts).
+    const strokes: { rect: Rect; lineWidth: number }[] = []
+    let strip = false
+    ctx.rect = (_x: number, _y: number, w: number, h: number) => void (strip = w === 1 || h === 1)
+    ctx.strokeRect = (...rect: Rect) => {
+      if (!strip) strokes.push({ rect, lineWidth: ctx.lineWidth })
+    }
+    const geo = createMockGeo()
+    geo.frozenW = vi.fn(() => frozenCols * 100)
+    createRenderer(ctx as never, geo as never).render({
+      cssW: 600,
+      cssH: 300,
+      getValue: () => '',
+      cells: {},
+      sel: B2,
+      selEnd,
+      selMode,
+      editing: false,
+      freeze: { rows: 0, cols: frozenCols },
+      getDiffFor: null,
+      marchAnts: null,
+      marchPhase: 0,
+      pickerRect: null,
+      colDrag: null,
+      zoom: 1,
+    })
+    return strokes.filter((s) => s.lineWidth === 1).map((s) => s.rect)
+  }
+
+  it('outlines a whole-row selection across every column', () => {
+    // Rows 2–3, columns A … Z (26 × 100px from x 50): x 50 … 2650.
+    expect(lineOutlines('row', { r: 2, c: 1 })).toEqual([[50.5, 48.5, 2600, 48]])
+  })
+
+  it('outlines a whole row in each pane when columns are frozen', () => {
+    // Column A frozen: the frozen and the scrolling pane each stroke the
+    // row's outline inside their own clip, so it reads as one line.
+    expect(lineOutlines('row', { r: 2, c: 1 }, 1)).toEqual([
+      [50.5, 48.5, 2600, 48],
+      [50.5, 48.5, 2600, 48],
+    ])
+  })
+
+  it('outlines a single selected column down every row', () => {
+    // Column B, rows 1 … 1000 (24px from y 24).
+    expect(lineOutlines('col', B2)).toEqual([[150.5, 24.5, 100, 24000]])
+  })
+
+  it('outlines a whole-sheet selection', () => {
+    expect(lineOutlines('all', B2)).toEqual([[50.5, 24.5, 2600, 24000]])
+  })
+
+  it('puts the handle on the range’s far corner, wherever the active cell is', () => {
+    // The corner's gridlines cross at (350.5, 120.5): a 7px square on whole
+    // pixels, x 347 … 354, the same with the active cell in that corner.
     expect(paint(B2, RANGE).fills.at(-1)!.rect).toEqual([347, 117, 7, 7])
-  })
-
-  it('centres the handle on the 2px frame when the active cell is in that corner', () => {
-    expect(paint({ r: 3, c: 2 }, RANGE).fills.at(-1)!.rect).toEqual([347, 117, 6, 6])
-  })
-
-  it('picks the line per axis', () => {
-    // B2:C2 with B2 active: the frame reaches the bottom edge, not the right.
-    const row: CellBlock = { r0: 1, c0: 1, r1: 1, c1: 2 }
-    expect(paint(B2, row).fills.at(-1)!.rect).toEqual([347, 69, 7, 6])
+    expect(paint({ r: 3, c: 2 }, RANGE).fills.at(-1)!.rect).toEqual([347, 117, 7, 7])
   })
 })
 
 describe('copy outline and formula range border', () => {
-  it('draws the marching ants on the gridlines, 2px', () => {
+  it('draws the marching ants centred on the gridlines, like the frame', () => {
     const { ctx, strokes } = recordingCtx()
     createSelectionPainter(ctx, createMockGeo()).drawMarchingAnts(ONE, 0)
-    expect(strokes).toEqual([{ rect: [150, 48, 100, 24], lineWidth: 2 }])
+    expect(strokes).toEqual([{ rect: [150.5, 48.5, 100, 24], lineWidth: 1.5 }])
   })
 
-  it('draws the picker border on the gridlines, 2px', () => {
+  it('draws the picker border centred on the gridlines, like the frame', () => {
     const { ctx, strokes } = recordingCtx()
     createSelectionPainter(ctx, createMockGeo()).drawPickerBorder(ONE)
-    expect(strokes).toEqual([{ rect: [150, 48, 100, 24], lineWidth: 2 }])
+    expect(strokes).toEqual([{ rect: [150.5, 48.5, 100, 24], lineWidth: 1.5 }])
   })
 })
 

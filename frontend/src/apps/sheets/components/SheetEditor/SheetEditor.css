@@ -84,8 +84,9 @@
 }
 
 /* ── Bar 1 · Identity / topbar ───────────────────────────────────────────── */
-/* The bar itself is SheetTopbar.vue and its actions SheetTopbarActions.vue;
-   the status chips stay here because the editor renders them. */
+/* The bar itself is the Drive header (SheetsSurface.vue) and its actions
+   SheetTopbarActions.vue; the status chips stay here because the editor
+   renders them. */
 .sn-save-error {
   display: inline-flex;
   min-width: 0;
@@ -140,26 +141,15 @@
   border-radius: 2px;
 }
 
-/* Filter range outline — same neutral chrome as the pivot highlight, drawn
-   around the active filter's rectangle so its extent is visible. pointer-events
-   stays off so the chevron buttons and canvas underneath keep receiving clicks. */
-.sn-filter-range {
-  position: absolute;
-  z-index: 14;
-  pointer-events: none;
-  /* Thin green outline, Google-Sheets-style — a 1.5px near-black frame read
-     as far too heavy against the gridlines. */
-  border: 1px solid var(--ink-green-3, #15803d);
-  border-radius: 2px;
-}
-
 /* ── Formula bar (inside row 2, SheetToolbar's `formula` slot) ───────────── */
 
 /* Name box and value field: white, bordered fields on the bar, so they
    read as places to type. */
 .sn-cell-ref {
   box-sizing: border-box;
-  width: 72px;
+  /* As wide as its reference (--sn-name-ch: its length + 1, set in index.vue;
+     a ch is a digit, letters run a little wider), 72px to 220px. ISSUES #105 */
+  width: min(220px, max(72px, calc(var(--sn-name-ch, 3) * 1ch + 18px)));
   height: 32px;
   padding: 0 8px;
   flex-shrink: 0;

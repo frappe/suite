@@ -1,18 +1,17 @@
 """Sheets' editor: what the content layer needs to know about a sheet's collab doc.
 
 The doc's layout is frontend/src/apps/sheets/collab/schema.ts; PART_MAP and schema.json name its roots
-and must change with it. Collaboration stays off until a site turns it on (`always_on` False), so a
-sheet keeps its old save path (`sheets_data`) until then.
+and must change with it. Collaboration is always on: the editor reads and writes only the room, and a
+sheet still holding its old body (`sheets_data`) is converted when it is opened.
 """
 
 import json
 from pathlib import Path
 
-import frappe
 import pycrdt
-from frappe import _
 
 from suite import content
+from suite.content.log import set_mode
 from suite.sheets.content.conversion import (
     CheckedSheet,
     OldSheet,
@@ -24,10 +23,6 @@ from suite.sheets.content.conversion import (
 from suite.sheets.content.readable_copy import is_html_complete
 
 APP = "sheets"
-# Whether the editor reads and writes the room. Until it does, a sheet turned collaborative would keep
-# saving to `sheets_data` while its log and versions held an empty doc, and the switch can't go back
-# off once logs exist, so `refuse_turning_on` keeps Sheets off. The editor's wiring sets it True
-EDITOR_READY = True
 # Every root schema.ts `ROOT` names: `sheets` is the tab order, every other root a map
 PART_MAP = {
     "meta": pycrdt.Map,
@@ -111,17 +106,11 @@ EDITOR = content.EditorSpec(
     checker_build=CHECKER_BUILD,
     readable_copy=content.HtmlCopy(field="html", is_html_complete=is_html_complete),
     media=None,
-    always_on=False,
+    always_on=True,
     conversion=CONVERSION,
 )
 
 
-def refuse_turning_on(settings, method=None) -> None:
-    """Refuse Suite Collab Settings that switch Sheets on before its editor uses the room."""
-    if EDITOR_READY:
-        return
-
-    before = settings.get_doc_before_save()
-    was_on = before is not None and any(row.app == APP and row.mode == "on" for row in before.apps)
-    if not was_on and any(row.app == APP and row.mode == "on" for row in settings.apps):
-        frappe.throw(_("Sheets collaboration can be turned on once the Sheets editor uses it"))
+def turn_on() -> None:
+    """Turn Sheets' collaboration on, which it then stays."""
+    set_mode(APP, "on")

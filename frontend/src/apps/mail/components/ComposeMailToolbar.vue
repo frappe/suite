@@ -61,10 +61,20 @@
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
       </div>
 
+      <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
+      <Button
+        v-if="saveFailed"
+        variant="ghost"
+        theme="red"
+        class="ml-auto shrink-0"
+        :label="__('Not saved · Retry')"
+        @click="emit('retrySave')"
+      />
       <Button
         v-if="!isMobile"
         variant="ghost"
-        class="ml-auto shrink-0"
+        class="shrink-0"
+        :class="{ 'ml-auto': !saveFailed }"
         :aria-label="__('Discard')"
         :tooltip="__('Discard ({0}+D)', [modifier])"
         @click="emit('discardMail')"
@@ -84,12 +94,20 @@ import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 
-const { isRecipientsEmpty, isUploading } = defineProps<{
+const { isRecipientsEmpty, isUploading, saveFailed } = defineProps<{
   isRecipientsEmpty: boolean
   isUploading?: boolean
+  saveFailed?: boolean
 }>()
 
-const emit = defineEmits(['appendEmoji', 'selectFiles', 'discardMail', 'sendMail', 'scheduleSend'])
+const emit = defineEmits([
+  'appendEmoji',
+  'selectFiles',
+  'discardMail',
+  'sendMail',
+  'scheduleSend',
+  'retrySave',
+])
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 

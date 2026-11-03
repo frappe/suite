@@ -1068,7 +1068,7 @@ class TestConversion(DriveCallbackCase):
     def test_converts_an_old_version_for_an_editor_who_holds_only_an_edit_link(self):
         node = self.old_document("<p>Hello world</p>")
         seq = drive.take_version(node)
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         code = grant(node, "$LINK", drive.EDIT, admin)["principal"].removeprefix("$LINK:")
         frappe.db.commit()
         environ = EnvironBuilder(path="/api/v2/method/suite.writer.api.docs.convert_version")
@@ -2150,7 +2150,10 @@ class TestConversion(DriveCallbackCase):
         )
         self.addCleanup(frappe.db.set_value, "Suite Collab App", row, "mode", "on")
         frappe.db.set_value("Suite Collab App", row, "mode", "off")
+        # Only Writer: Sheets is always on and queues its own job
+        writer_only = {writer_content.APP: spec_of(writer_content.APP)}
         with (
+            patch.object(jobs, "editors", return_value=writer_only),
             patch.object(frappe, "enqueue") as enqueue,
             patch.object(conversions, "run_pending") as running,
         ):

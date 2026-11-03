@@ -9,8 +9,17 @@ import type * as Y from 'yjs'
 
 import type { WorkbookClient } from '../core/client'
 import type { BatchCommand, NonBatchCommand } from '../core/commands'
+import { computePivot, parseRangeRect, pivotExtent, rangeReader } from '../engine/pivot'
+import { cellId } from '../utils/cells'
 import { addSheet, axis, cellKey, initDoc, parseCellKey, roots } from './schema'
-import { docSheets, readEntries, restoreStores, writeStores, type GlueStores } from './stores'
+import {
+  docSheets,
+  pivotOutput,
+  readEntries,
+  restoreStores,
+  writeStores,
+  type GlueStores,
+} from './stores'
 
 /** One cell as IronCalc holds it: 1-based position and typed input. */
 export interface CellInput {
@@ -79,26 +88,75 @@ export function putInput(doc: Y.Doc, sheetId: string, cell: CellInput): void {
 export interface WriteOptions {
   /** The transaction origin (the glue's local origin, so the writes go out). */
   origin?: unknown
-  /** Cells to leave out: pivot output, which every tab rebuilds itself (Q8). Positions 1-based. */
-  skip?: (sheet: string, row: number, col: number) => boolean
 }
 
-/** Fill an empty doc from a running workbook and its side stores, in one transaction. */
+/**
+ * Sets the output extent of each pivot that has not written its output this
+ * session (an old sheet's, which saved it as cells): the table the pivot
+ * computes from its source now, at its anchor, as the editor's rebuild writes
+ * it. Cells beside the table are the person's and stay theirs.
+ */
+async function setPivotExtents(
+  client: WorkbookClient,
+  stores: GlueStores,
+  cells: Map<string, CellInput[]>,
+): Promise<void> {
+  const pivot = stores.pivot
+  for (const p of pivot?.list() ?? []) {
+    const rect = parseRangeRect(p.sourceRange)
+    const source = p.sourceSheet
+    if (p._extent || !p.outputSheet || !source || !rect) continue
+    // A range like A1:Z1048576 reads only as far as the sheet holds data.
+    let lastRow = -1
+    let lastCol = -1
+    for (const c of cells.get(source) ?? []) {
+      lastRow = Math.max(lastRow, c.row - 1)
+      lastCol = Math.max(lastCol, c.col - 1)
+    }
+    const read = { ...rect, r1: Math.min(rect.r1, lastRow), c1: Math.min(rect.c1, lastCol) }
+    if (read.r1 < read.r0 || read.c1 < read.c0) continue
+    const values: string[][] = []
+    const step = Math.max(1, Math.floor(READ_CHUNK / (read.c1 - read.c0 + 1)))
+    for (let r = read.r0; r <= read.r1; r += step) {
+      const part = await client.readViewport({
+        sheet: source,
+        r1: r + 1,
+        c1: read.c0 + 1,
+        r2: Math.min(r + step - 1, read.r1) + 1,
+        c2: read.c1 + 1,
+      })
+      values.push(...part.values)
+    }
+    // Over the rows read only: past the data every row is empty, and the
+    // pivot leaves empty rows out.
+    const sourceRange = `${cellId(read.r0, read.c0)}:${cellId(read.r1, read.c1)}`
+    const table = computePivot({ ...p, sourceRange }, rangeReader(read, values))
+    const extent = pivotExtent(table, p.anchorRow ?? 0, p.anchorCol ?? 0)
+    if (extent) pivot?.setExtent(p.id, extent)
+  }
+}
+
+/**
+ * Fill an empty doc from a running workbook and its side stores, in one
+ * transaction. Pivot output stays out: every tab rebuilds it itself (Q8).
+ */
 export async function writeWorkbookToDoc(
   doc: Y.Doc,
   client: WorkbookClient,
   stores: GlueStores,
-  { origin, skip }: WriteOptions = {},
+  { origin }: WriteOptions = {},
 ): Promise<void> {
   if (docSheets(doc).length) throw new Error('writeWorkbookToDoc needs an empty doc')
   const names = [...client.sheets]
   const cells = await Promise.all(names.map((sheet) => readSheetInputs(client, sheet)))
+  await setPivotExtents(client, stores, new Map(names.map((name, i) => [name, cells[i]!])))
+  const derived = pivotOutput(stores)
   doc.transact(() => {
     initDoc(doc)
     names.forEach((name, i) => {
       const sheetId = addSheet(doc, name)
       for (const cell of cells[i]!)
-        if (!skip?.(name, cell.row, cell.col)) putInput(doc, sheetId, cell)
+        if (!derived?.(name, cell.row - 1, cell.col - 1)) putInput(doc, sheetId, cell)
     })
     writeStores(doc, stores, docSheets(doc))
   }, origin)

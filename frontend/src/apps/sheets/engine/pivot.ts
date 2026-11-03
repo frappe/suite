@@ -442,6 +442,17 @@ export function pivotDrillDown(model: PivotModel | null | undefined, r: number, 
 
 // ── Write pivot output to sheet ──────────────────────────────────────────────
 
+/** The rectangle a computed table fills at its anchor; null for an empty table. */
+export function pivotExtent(table: unknown[][], anchorRow = 0, anchorCol = 0): Rect | null {
+  if (!table.length) return null
+  return {
+    r0: anchorRow,
+    c0: anchorCol,
+    r1: anchorRow + table.length - 1,
+    c1: anchorCol + (table[0]?.length || 1) - 1,
+  }
+}
+
 // Write a computed pivot table into the sheet, offset by `anchor` (so several
 // pivots can coexist on one sheet at different origins). `clearRect` wipes only
 // the pivot's *previous* output rectangle (`prevExtent`, or nothing on the

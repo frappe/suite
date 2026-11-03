@@ -1167,7 +1167,7 @@ def _sweep_document(spec: ContentTypeSpec, row: frappe._dict) -> int:
     answer = call_app(spec.used_nodes, row.content_docname)
     used = _validated_used_nodes(answer)
     cutoff = now_datetime() - timedelta(days=UNUSED_MEDIA_GRACE_DAYS)
-    system = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    system = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     trashed = 0
     for media in media_rows(row.name):
         if media.name in used or media.creation >= cutoff:

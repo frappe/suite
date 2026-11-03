@@ -429,7 +429,7 @@ const currencyIcon = computed(
     min-width: 96px;
   }
   .sn-toolbar :deep(.sn-cell-ref) {
-    width: 60px;
+    width: min(120px, max(60px, calc(var(--sn-name-ch, 3) * 1ch + 14px)));
     padding: 0 6px;
   }
   /* Format keeps its icon; the room goes to the tools, which scroll. */

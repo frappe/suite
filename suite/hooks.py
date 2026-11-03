@@ -66,6 +66,10 @@ website_route_rules = [
     {"from_route": "/meet/<path:app_path>", "to_route": "suite"},
     {"from_route": "/calendar", "to_route": "suite"},
     {"from_route": "/calendar/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/people", "to_route": "suite"},
+    {"from_route": "/people/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/admin", "to_route": "suite"},
+    {"from_route": "/admin/<path:app_path>", "to_route": "suite"},
 ]
 
 home_page = "suite"
@@ -255,10 +259,6 @@ doc_events = {
     "DocShare": {
         "validate": ["suite.drive.framework.refuse_governed_share"],
     },
-    # sheets — collaboration stays off until the editor uses the room
-    "Suite Collab Settings": {
-        "validate": ["suite.sheets.content.refuse_turning_on"],
-    },
     "User": {
         "before_save": ["suite.composition.users.before_save"],
         # Roles are assigned before insert so they are present when Frappe's
@@ -280,6 +280,7 @@ doc_events = {
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
             "suite.mail.email_suggestions.clear_directory_addresses",
+            "suite.mail.events.sync_identity_names",
         ],
         "on_trash": [
             "suite.composition.users.on_trash",
@@ -329,8 +330,6 @@ scheduler_events = {
         "suite.drive.jobs.thin_versions",
         "suite.drive.jobs.sweep_missing_previews",
         "suite.drive.jobs.sweep_unused_document_media",
-        # sheets
-        "suite.sheets.versioning.tasks.truncate_op_log",
         # mail
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",

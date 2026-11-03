@@ -1579,6 +1579,58 @@
       "bytes": false
     },
     {
+      "id": "errors_post",
+      "kind": "mutation",
+      "publicName": "errors.report",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "errors",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "source": {
+            "enum": [
+              "component",
+              "script",
+              "promise"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "stack": {
+            "title": "Stack",
+            "type": "string"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "title",
+          "stack",
+          "route"
+        ],
+        "title": "BrowserError",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "get_preferences",
       "kind": "query",
       "publicName": "preferences.get",
@@ -1905,11 +1957,26 @@
                 ],
                 "title": "Avatar"
               },
+              "time_zone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Time Zone"
+              },
               "roles": {
                 "$ref": "#/$defs/AccountRoles"
               },
               "is_jmap_configured": {
                 "title": "Is Jmap Configured",
+                "type": "boolean"
+              },
+              "is_mail_server_configured": {
+                "title": "Is Mail Server Configured",
                 "type": "boolean"
               },
               "must_change_password": {
@@ -1926,8 +1993,10 @@
               "email",
               "full_name",
               "avatar",
+              "time_zone",
               "roles",
               "is_jmap_configured",
+              "is_mail_server_configured",
               "must_change_password",
               "setup_required"
             ],

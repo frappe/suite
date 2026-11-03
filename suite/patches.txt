@@ -33,6 +33,10 @@ suite.slides.doctype.presentation.patches.move_attachments_to_private_folder
 suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation
 suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files
 suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails
+suite.slides.doctype.presentation.patches.set_default_theme
+# T3-21: media uploaded as Files after Build. It only reads decks already linked to nodes;
+# on a site Build has not reached, none are, and Build converts their media itself.
+suite.slides.patches.move_file_media_to_drive
 # --- sheets ---
 suite.sheets.patches.v0_1.migrate_blob_to_cells
 # --- drive (legacy tree, before Build) ---
@@ -52,6 +56,9 @@ suite.meet.patches.migrate_document_method_rate_limits
 # --- writer ---
 # After model sync, which makes the Suite Collab Settings tables on an old site
 suite.writer.patches.turn_collaboration_on
+# --- sheets ---
+# After Writer's, for the same reason
+suite.sheets.patches.turn_collaboration_on
 # --- mail ---
 suite.mail.patches.create_push_subscriptions
 suite.mail.patches.rename_user_settings
@@ -86,6 +93,8 @@ suite.mail.patches.move_screener_to_unscreened_keyword
 suite.mail.patches.turn_reject_rules_into_spam
 execute:frappe.db.set_single_value("Mail Settings", "enable_email_classification", 1)
 suite.mail.patches.group_by_date
+# T3-27: the Screening gate keeps delivery reports unmarked.
+suite.mail.patches.rebuild_screening_gates #delivery-reports
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
@@ -119,3 +128,5 @@ suite.drive.patches.migrate_preview_size_unit #2026-10-06
 suite.drive.patches.build
 suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup
+# ADR 0001: a Suite Admin edits only with a grant; gives them the creator grants the override skipped.
+suite.drive.patches.grant_admin_creators_edit

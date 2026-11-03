@@ -1,65 +1,50 @@
 <template>
-  <div class="pfp-wrap">
-    <div ref="triggerRef" @click="toggle">
-      <!-- Slot prop is `isOpen` (not `open`) to avoid colliding with the global
-           `window.open` function name in some Vue template-compiler edge cases.
-           Pass the unwrapped boolean explicitly. -->
-      <slot :is-open="open" />
+  <!-- frappe-ui Popover nests its layer inside the host Dialog's, so focus,
+       clicks and Escape stay with the picker while it is open. -->
+  <Popover v-model:open="open" bare>
+    <template #trigger>
+      <div class="pfp-wrap">
+        <!-- Slot prop is `isOpen` (not `open`) to avoid colliding with the global
+             `window.open` function name in some Vue template-compiler edge cases. -->
+        <slot :is-open="open" />
+      </div>
+    </template>
+    <div class="pfp-pop">
+      <div class="pfp-search-row">
+        <FeatherIcon name="search" class="pfp-search-icon" />
+        <input
+          ref="searchRef"
+          name="pivot-field-search"
+          v-model="query"
+          class="pfp-search"
+          placeholder="Search fields…"
+          spellcheck="false"
+          autocomplete="off"
+          @keydown.enter.prevent="selectFirst"
+          @keydown.down.prevent="moveHighlight(1)"
+          @keydown.up.prevent="moveHighlight(-1)"
+        />
+      </div>
+      <div class="pfp-list" ref="listRef">
+        <button
+          v-for="(f, i) in filtered"
+          :key="f"
+          class="pfp-item"
+          :class="{ 'pfp-item--active': i === highlight }"
+          @click="onSelect(f)"
+          @mouseenter="highlight = i"
+        >
+          {{ f }}
+        </button>
+        <div v-if="!filtered.length" class="pfp-empty">No matching fields</div>
+      </div>
     </div>
-    <!-- Teleport into Frappe UI Dialog's `.dialog-overlay` (its `fixed inset-0`
-         outer wrapper, *not* the `DialogContent` panel which has both
-         `transform` and `overflow-hidden`). This puts the popover INSIDE the
-         dialog's interactive boundary (focus trap, click semantics, inert
-         siblings all work) while escaping the panel's clip box, so the
-         popover can extend past the dialog edge without being cut off. -->
-    <Teleport :to="teleportTarget" :disabled="!open">
-      <!-- Wrap in Reka UI's FocusScope so its global stack auto-pauses the
-           host Dialog's focus trap while the popover is open. Without this,
-           the Dialog's FocusScope (listening on document.focusin/out) steals
-           focus from the teleported search input on every keystroke and
-           typing does nothing. `as-child` reuses our div as the scope
-           container; `trapped=false` is fine — we only want the *pause*
-           side-effect, not our own trap. -->
-      <FocusScope v-if="open" as-child :trapped="false">
-        <div ref="popRef" class="pfp-pop" :class="{ 'pfp-pop--up': openUpward }" :style="popStyle">
-          <div class="pfp-search-row">
-            <FeatherIcon name="search" class="pfp-search-icon" />
-            <input
-              ref="searchRef"
-              name="pivot-field-search"
-              v-model="query"
-              class="pfp-search"
-              placeholder="Search fields…"
-              spellcheck="false"
-              autocomplete="off"
-              @keydown.escape.stop="close"
-              @keydown.enter.prevent="selectFirst"
-              @keydown.down.prevent="moveHighlight(1)"
-              @keydown.up.prevent="moveHighlight(-1)"
-            />
-          </div>
-          <div class="pfp-list" ref="listRef">
-            <button
-              v-for="(f, i) in filtered"
-              :key="f"
-              class="pfp-item"
-              :class="{ 'pfp-item--active': i === highlight }"
-              @click="onSelect(f)"
-              @mouseenter="highlight = i"
-            >
-              {{ f }}
-            </button>
-            <div v-if="!filtered.length" class="pfp-empty">No matching fields</div>
-          </div>
-        </div>
-      </FocusScope>
-    </Teleport>
-  </div>
+  </Popover>
 </template>
 
 <script setup>
+import { Popover } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import { FocusScope } from 'reka-ui'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps({
@@ -70,20 +55,8 @@ const emit = defineEmits(['select', 'opened', 'closed'])
 const open = ref(false)
 const query = ref('')
 const highlight = ref(0)
-const openUpward = ref(false)
-const triggerRef = ref(null)
-const popRef = ref(null)
 const searchRef = ref(null)
 const listRef = ref(null)
-const popStyle = ref({})
-// Resolved at open time so the popover lands inside the host dialog's
-// outer overlay (HeadlessUI interactive zone) rather than naked <body>.
-const teleportTarget = ref('body')
-
-// Approximate popover height — 1 search row (~36px) + 1px border + list cap
-// (148px) + popover padding. Used for both the open-up/down decision and the
-// initial space-fits check before measurement.
-const POP_H = 195
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -95,55 +68,20 @@ watch(filtered, () => {
   highlight.value = 0
 })
 
-function toggle() {
-  open.value ? close() : openPopover()
-}
-
-async function openPopover() {
+watch(open, (isOpen) => {
+  if (!isOpen) {
+    emit('closed')
+    return
+  }
   query.value = ''
   highlight.value = 0
-  // Resolve the teleport target before opening — walk up from the trigger to
-  // find any host that's a Frappe UI Dialog overlay (no transform, no clip
-  // box). Fall back to <body> for non-dialog contexts so the component
-  // remains usable outside dialogs.
-  teleportTarget.value = _findOverlayHost() || 'body'
-  open.value = true
   emit('opened')
-  await nextTick()
-  _position()
-  // preventScroll: true keeps the dialog from autoscrolling and shifting
-  // the trigger's viewport coordinates under us.
-  requestAnimationFrame(() => {
-    searchRef.value?.focus({ preventScroll: true })
-  })
-  document.addEventListener('mousedown', _onOutsideClick, true)
-  document.addEventListener('keydown', _onGlobalKey, true)
-  window.addEventListener('resize', _position)
-  window.addEventListener('scroll', _onScroll, true)
-}
-
-function close() {
-  if (!open.value) return
-  open.value = false
-  emit('closed')
-  document.removeEventListener('mousedown', _onOutsideClick, true)
-  document.removeEventListener('keydown', _onGlobalKey, true)
-  window.removeEventListener('resize', _position)
-  window.removeEventListener('scroll', _onScroll, true)
-}
-
-let _scrollRafId = 0
-function _onScroll() {
-  if (_scrollRafId) return
-  _scrollRafId = requestAnimationFrame(() => {
-    _scrollRafId = 0
-    _position()
-  })
-}
+  nextTick(() => searchRef.value?.focus({ preventScroll: true }))
+})
 
 function onSelect(f) {
   emit('select', f)
-  close()
+  open.value = false
 }
 
 function selectFirst() {
@@ -161,76 +99,20 @@ function moveHighlight(delta) {
   })
 }
 
-// Compute popover position in viewport coordinates. Since the popover is
-// teleported into `.dialog-overlay` (a `fixed inset-0` element with no
-// transform), `position: fixed` here behaves normally — coordinates are
-// relative to the viewport.
-function _position() {
-  const t = triggerRef.value?.getBoundingClientRect()
-  if (!t) return
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const pad = 8
-  const width = Math.max(180, Math.min(280, t.width))
-  const spaceBelow = vh - t.bottom
-  const spaceAbove = t.top
-  const up = spaceBelow < POP_H && spaceAbove > spaceBelow
-  openUpward.value = up
-  const maxH = Math.max(140, Math.min(POP_H, (up ? spaceAbove : spaceBelow) - pad))
-  const left = Math.min(Math.max(pad, t.left), vw - width - pad)
-  popStyle.value = up
-    ? {
-        left: `${left}px`,
-        bottom: `${vh - t.top + 6}px`,
-        width: `${width}px`,
-        maxHeight: `${maxH}px`,
-      }
-    : { left: `${left}px`, top: `${t.bottom + 6}px`, width: `${width}px`, maxHeight: `${maxH}px` }
-}
-
-// Walk up from the trigger to find a Frappe UI Dialog overlay container.
-// `.dialog-overlay` is the `fixed inset-0` element that wraps the panel —
-// no transform, no overflow:hidden — so teleporting there lets the popover
-// escape the inner panel's clip box without leaving HeadlessUI's interactive
-// zone (which is what kills clicks/focus when we teleport to bare <body>).
-function _findOverlayHost() {
-  let node = triggerRef.value?.parentElement
-  while (node && node !== document.body) {
-    if (node.classList?.contains('dialog-overlay')) return node
-    node = node.parentElement
-  }
-  // Not inside a dialog — fall through to <body> at the caller.
-  return null
-}
-
-function _onOutsideClick(e) {
-  if (popRef.value?.contains(e.target)) return
-  if (triggerRef.value?.contains(e.target)) return
-  close()
-}
-
-function _onGlobalKey(e) {
-  if (e.key === 'Escape') {
-    e.stopPropagation()
-    close()
-  }
-}
-
-onBeforeUnmount(close)
+// The dialog counts open pickers; a picker removed while open still closes.
+onBeforeUnmount(() => {
+  if (open.value) emit('closed')
+})
 </script>
 
 <style scoped>
 .pfp-wrap {
-  position: relative;
   display: block;
 }
 
 .pfp-pop {
-  /* Teleported to <body>, so positioned via inline `left/top/bottom/width`
-     from _position(). z-index sits above Frappe UI Dialog (~50-100) but
-     below modal-blocking layers like global toasts. */
-  position: fixed;
-  z-index: 9500;
+  width: 240px;
+  max-height: 195px;
   background: var(--surface-base, #ffffff);
   border: 1px solid var(--outline-gray-2, #e5e5e5);
   border-radius: 8px;
@@ -241,21 +123,6 @@ onBeforeUnmount(close)
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: pfp-rise 140ms cubic-bezier(0.2, 0.8, 0.25, 1);
-  transform-origin: top left;
-}
-.pfp-pop--up {
-  transform-origin: bottom left;
-}
-@keyframes pfp-rise {
-  from {
-    transform: translateY(-4px) scale(0.98);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
 }
 
 .pfp-search-row {

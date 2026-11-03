@@ -7,6 +7,8 @@ import type {
   AccountGetOutput,
   AdminHealthGetInput,
   AdminHealthGetOutput,
+  ErrorsPostInput,
+  ErrorsPostOutput,
   FrappeLoginInput,
   FrappeLoginOutput,
   FrappeLogoutInput,
@@ -778,6 +780,30 @@ export const operationStorageDefault: Validators<StorageDefaultInput, StorageDef
   },
 }
 
+export const operationErrorsPost: Validators<ErrorsPostInput, ErrorsPostOutput> = {
+  validateInput(value: unknown): asserts value is ErrorsPostInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          source: { enum: ['component', 'script', 'promise'], title: 'Source', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          stack: { title: 'Stack', type: 'string' },
+          route: { title: 'Route', type: 'string' },
+        },
+        required: ['source', 'title', 'stack', 'route'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'errors_post input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ErrorsPostOutput {
+    assertSchema(value, { type: 'null' }, 'errors_post output')
+  },
+}
+
 export const operationGetPreferences: Validators<GetPreferencesInput, GetPreferencesOutput> = {
   validateInput(value: unknown): asserts value is GetPreferencesInput {
     assertSchema(
@@ -923,8 +949,10 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               email: { title: 'Email', type: 'string' },
               full_name: { title: 'Full Name', type: 'string' },
               avatar: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Avatar' },
+              time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
               roles: { $ref: '#/$defs/AccountRoles' },
               is_jmap_configured: { title: 'Is Jmap Configured', type: 'boolean' },
+              is_mail_server_configured: { title: 'Is Mail Server Configured', type: 'boolean' },
               must_change_password: { title: 'Must Change Password', type: 'boolean' },
               setup_required: { title: 'Setup Required', type: 'boolean' },
             },
@@ -933,8 +961,10 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               'email',
               'full_name',
               'avatar',
+              'time_zone',
               'roles',
               'is_jmap_configured',
+              'is_mail_server_configured',
               'must_change_password',
               'setup_required',
             ],

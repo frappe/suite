@@ -139,7 +139,8 @@ def invalidate_measurements(user: str, address: str) -> None:
 
     doc, _policy, measurements = state(lock=True)
     measurements.get("entries", {}).pop(address, None)
-    measurements.get("personal", {}).pop(user, None)
+    # None, not removed: a user the refresh doesn't list has no mailbox (`personal_mail_usage`).
+    measurements.get("personal", {})[user] = None
     measurements.update(site_mail=None, stale=True)
     doc.measurements = json.dumps(measurements)
     doc.save(ignore_permissions=True)

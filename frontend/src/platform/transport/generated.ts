@@ -446,6 +446,33 @@ const operationStorageDefault: MutationRef<
   loadValidators: async () => (await import('./validators')).operationStorageDefault,
 }
 
+export type ErrorsPostInput = {
+  source: 'component' | 'script' | 'promise'
+  title: string
+  stack: string
+  route: string
+}
+
+export type ErrorsPostOutput = null
+
+export type ErrorsPostError = never
+
+const operationErrorsPost: MutationRef<ErrorsPostInput, ErrorsPostOutput, ErrorsPostError> = {
+  id: 'errors_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'errors.report',
+  empty: true,
+  method: 'POST',
+  path: 'errors',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationErrorsPost,
+}
+
 export type GetPreferencesInput = Record<string, never>
 
 export type GetPreferencesOutput = {
@@ -548,8 +575,10 @@ export type AccountGetOutputAccount = {
   email: string
   full_name: string
   avatar: string | null
+  time_zone: string | null
   roles: AccountGetOutputAccountRoles
   is_jmap_configured: boolean
+  is_mail_server_configured: boolean
   must_change_password: boolean
   setup_required: boolean
 }
@@ -1109,6 +1138,9 @@ export const api = {
     get: operationStorageGet,
     setLimits: operationStorageLimits,
     setDefault: operationStorageDefault,
+  },
+  errors: {
+    report: operationErrorsPost,
   },
   preferences: {
     get: operationGetPreferences,

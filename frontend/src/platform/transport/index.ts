@@ -232,8 +232,17 @@ async function sendRequest<Input, Output, ErrorType extends string>(
   validateOperation(operation)
   const validators: Validators<typeof input, unknown> | undefined =
     await operation.loadValidators?.()
-  validators?.validateInput(input)
-  operation.validateInput?.(input)
+  try {
+    validators?.validateInput(input)
+    operation.validateInput?.(input)
+  } catch (error) {
+    // A caller bug, never a refusal: logged even when the caller shows its own message.
+    console.error(
+      `${operation.owner}.${operation.publicName ?? operation.id} was not sent: its input does not match the contract.`,
+      error,
+    )
+    throw error
+  }
   signal?.throwIfAborted()
 
   const pathInput = asRecord(input)
@@ -377,7 +386,7 @@ function decodeOutput(operation: Operation, body: unknown): unknown {
   const isEmpty =
     operation.empty &&
     isRecord(body) &&
-    Object.keys(body).every((key) => key === 'docs' || key === '_server_messages')
+    Object.keys(body).every((key) => ['docs', '_server_messages', 'messages'].includes(key))
   if (isEmpty) {
     return null
   }

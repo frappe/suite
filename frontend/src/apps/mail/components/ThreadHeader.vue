@@ -2,7 +2,7 @@
   <!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
 	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
   <div
-    class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0"
+    class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b"
   >
     <Button
       variant="ghost"

@@ -1,10 +1,11 @@
 """Sheets' one declaration to Drive (§10.7).
 
 Drive owns a sheet's title, place, grants, lifecycle, versions, comments, and
-byte charge. Sheets owns the body: the workbook in `sheets_data`, the append-only
-`Sheet Op Log`, the allocator in `Sheet Seq`, and the collaborative Y.Doc in
-`Sheet Collab State`. Everything Drive needs is the `SPEC` below, registered
-through the `drive_content_types` hook.
+byte charge. Sheets owns the body. A sheet's live body is its collaborative
+document on the content layer (`suite.sheets.content`, wrapped round `SPEC` by
+`with_content`); `sheets_data` is the old body, which the content layer converts
+and these callbacks still write for a sheet it hasn't converted. Everything Drive
+needs is the `SPEC` below, registered through the `drive_content_types` hook.
 
 Every callable here takes and returns names, never documents, and reaches Drive
 only through `from suite import drive` (ARCHITECTURE.md, rule 2.2).
@@ -23,18 +24,12 @@ Read to see, Edit to change. A sheet's versions are not a satellite: they are
 `Drive Node Version` rows, written through `version_bytes` and put back through
 `restore_version`.
 
-## The op log across a Drive lifecycle
+## The old tables
 
-Every Drive workflow that changes a body writes one op, so the history panel
-tells the whole story rather than skipping the operations Drive performs.
-`create_empty` writes `create`, `duplicate` writes `create`, `import_from_file`
-writes `import`, and `restore_version` writes `restore`. The seq allocator is
-`Sheet Seq`, taken with `SELECT ... FOR UPDATE`, so an op written here is
-ordered against a concurrent save exactly like every other op.
-
-None of these calls `versioning.save`: that module asks `require_sheet` first,
-and by the time Drive reaches a callback the point check has already run
-against `Drive Grant`. Asking the same question twice would only cost a query.
+`Sheet Op Log`, `Sheet Seq`, `Sheet Collab State` and `Sheet Cell` are no longer
+written: the content layer keeps a sheet's history now. Their rows stay, since
+Drive's develop migration (`suite.drive.patches.build`) still reads them, and a
+purge still deletes a sheet's rows from all four.
 
 ## Media
 
@@ -54,15 +49,17 @@ that ticket declares `remap_media` and narrows `used_nodes` with it.
 ## Transactions
 
 Drive runs every callback inside the savepoint of the workflow that calls it, so
-any refusal rolls the node, the sheet, its ops, and its seq row back together. A
+any refusal rolls the node and the sheet back together. A
 callback that cannot honour its contract raises rather than half-writing, and
 none of them commits. `content.call_app` and `content.call_app_stream` enforce
 that last part.
 """
 
+import csv
 import dataclasses
 import datetime
 import io
+import itertools
 import json
 import re
 import zipfile
@@ -77,7 +74,6 @@ from suite.sheets.doctype.sheet.storage import (
     decode_sheets_data,
     encode_sheets_data,
 )
-from suite.sheets.versioning import seq as seq_mod
 
 DOCTYPE = "Sheet"
 MIME = "frappe/sheet"
@@ -112,6 +108,8 @@ MEDIA_ID = re.compile(r"[A-Za-z0-9_-]{1,140}")
 # counts bound the parse itself.
 MAX_IMPORT_BYTES = 40 * 1024 * 1024
 MAX_IMPORT_CELLS = 2_000_000
+CSV_SAMPLE_ROWS = 20
+CSV_SEPARATORS = (";", "\t", "|", ",")
 MAX_IMPORT_SHEETS = 200
 
 # The xlsx package is a zip of XML, and every one of those three layers expands.
@@ -162,25 +160,24 @@ def _read_bounded(stream, limit: int, what: str) -> bytes:
 
 def create_empty(node: str) -> str:
     """Insert one empty sheet bound to `node`."""
-    return _insert_sheet(node, EMPTY_WORKBOOK, op_type="create", summary="Created")
+    return _insert_sheet(node, EMPTY_WORKBOOK)
 
 
 def duplicate(source_docname: str, node: str) -> str:
     """Copy one workbook under a new node, for copy and new-from-template.
 
-    The body is carried. The op log, the snapshots, the seq allocator, and the
-    collaborative Y.Doc are not: §8.9 gives a copy no history, and a copy that
-    inherited the source's Y.Doc would rebase every editor of the source onto
-    the copy.
+    The old body is carried and none of its old tables' rows: §8.9 gives a copy
+    no history. A converted sheet's collaborative document is copied by the
+    content layer (`with_content`), not here.
     """
     stored = frappe.db.get_value(DOCTYPE, source_docname, "sheets_data")
     if stored is None and not frappe.db.exists(DOCTYPE, source_docname):
         frappe.throw(_("The sheet to copy was not found"), frappe.DoesNotExistError)
-    return _insert_sheet(node, decode_sheets_data(stored), op_type="create", summary="Copied")
+    return _insert_sheet(node, decode_sheets_data(stored))
 
 
 def import_from_file(file_node: str, node: str) -> str:
-    """Turn one xlsx file node into a sheet bound to `node` (§10.1).
+    """Turn one xlsx or CSV file node into a sheet bound to `node` (§10.1).
 
     Drive has already checked READ on the file and UPLOAD on the destination.
     The bytes come back through `drive.read_file`, because only Sheets can parse
@@ -192,15 +189,21 @@ def import_from_file(file_node: str, node: str) -> str:
     number format, and the worksheet's merges come across. What the browser gets
     from SheetJS and this does not is a workbook-level style sheet, so borders,
     fills, and fonts are dropped. Losing decoration is recoverable; losing a
-    formula or a merge is not, and neither is dropped here.
+    formula or a merge is not, and neither is dropped here. A CSV becomes one
+    sub-sheet of its values, as the browser's CSV import types them in. The body
+    names the file it came from, for the editor's notice after the first open.
     """
     stream, _mime = drive.read_file(file_node)
     try:
         raw = _read_bounded(stream, MAX_IMPORT_BYTES, _("spreadsheet"))
     finally:
         stream.close()
-    workbook = _workbook_from_xlsx(raw)
-    return _insert_sheet(node, workbook, op_type="import", summary="Imported from a spreadsheet file")
+    # An xlsx is a zip. The stored mime cannot tell a CSV apart: the upload
+    # sniffs the bytes, and a CSV has no signature to sniff.
+    is_xlsx = zipfile.is_zipfile(io.BytesIO(raw))
+    source_title = drive.node_title(file_node)
+    workbook = _workbook_from_xlsx(raw, source_title) if is_xlsx else _workbook_from_csv(raw, source_title)
+    return _insert_sheet(node, workbook)
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
@@ -225,29 +228,14 @@ def restore_version(docname: str, stream) -> None:
 
     Drive has already taken a version of the current state, so this is not
     destructive. A payload that is not a `sheet/1` envelope is refused rather
-    than half-applied: a truncated workbook would read as an empty one.
-
-    The restore is one op of its own, at a fresh seq, so the timeline records it
-    and `head_seq` never regresses.
-
-    The collaborative Y.Doc goes with it. Once a sheet has been opened, that
-    doc is what the editor loads and what the next save writes back, so a
-    restore that only moved `sheets_data` would be overwritten by the first
-    editor to connect, silently and with no error. Dropping the
-    `Sheet Collab State` row is what makes the next opener re-hydrate from the
-    body this just wrote — the same reason `on_purge` drops it and `duplicate`
-    never copies it.
+    than half-applied: a truncated workbook would read as an empty one. The
+    content layer refuses a restore into a converted sheet, so this only ever
+    writes the old body of one it hasn't converted.
     """
     payload = _version_payload(_read_bounded(stream, MAX_VERSION_BYTES, _("sheet version")))
     if not frappe.db.exists(DOCTYPE, docname):
         frappe.throw(_("That sheet was not found"), frappe.DoesNotExistError)
-    restored_seq = _append_op(docname, "restore", f"Restored from seq {payload['head_seq']}")
-    frappe.db.set_value(
-        DOCTYPE,
-        docname,
-        {"sheets_data": encode_sheets_data(payload["sheets_data"]), "head_seq": restored_seq},
-    )
-    frappe.db.delete(COLLAB_STATE_DOCTYPE, {"sheet": docname})
+    frappe.db.set_value(DOCTYPE, docname, "sheets_data", encode_sheets_data(payload["sheets_data"]))
 
 
 def on_purge(docname: str) -> None:
@@ -385,37 +373,14 @@ def docname_for_node(node: str) -> str | None:
 # ── Sheet rows ───────────────────────────────────────────────────────────────
 
 
-def _insert_sheet(node: str, plain: str, *, op_type: str, summary: str) -> str:
-    """Insert one sheet bound to `node`, with its first op."""
+def _insert_sheet(node: str, plain: str) -> str:
+    """Insert one sheet bound to `node`."""
     document = frappe.new_doc(DOCTYPE)
     document.set(NODE_FIELD, node)
     document.sheets_data = encode_sheets_data(plain)
     document.head_seq = 0
     document.insert(ignore_permissions=True)
-    head_seq = _append_op(document.name, op_type, summary)
-    frappe.db.set_value(DOCTYPE, document.name, "head_seq", head_seq, update_modified=False)
     return document.name
-
-
-def _append_op(sheet: str, op_type: str, summary: str) -> int:
-    """Append one op at a freshly allocated seq and return that seq.
-
-    `versioning.save.append_op` is not used: it gates on
-    `frappe.has_permission("Sheet", ...)`, and Drive has already answered the
-    access question against `Drive Grant`.
-    """
-    new_seq = seq_mod.allocate(sheet)
-    frappe.get_doc(
-        {
-            "doctype": OP_LOG_DOCTYPE,
-            "sheet": sheet,
-            "seq": new_seq,
-            "op_type": op_type,
-            "summary": summary,
-            "actor": frappe.session.user,
-        }
-    ).insert(ignore_permissions=True)
-    return new_seq
 
 
 def _version_payload(raw: bytes) -> dict:
@@ -516,7 +481,7 @@ def _validate_package(raw: bytes) -> None:
 _DTD_PROBE_BYTES = 8192
 
 
-def _workbook_from_xlsx(raw: bytes) -> str:
+def _workbook_from_xlsx(raw: bytes, source_title: str = "") -> str:
     """Parse one xlsx into the workbook JSON the client reads.
 
     openpyxl is loaded read-only, so the whole workbook is never materialised in
@@ -552,14 +517,82 @@ def _workbook_from_xlsx(raw: bytes) -> str:
     finally:
         book.close()
 
+    return _workbook_json(packed, formats, merged, source_title)
+
+
+def _workbook_from_csv(raw: bytes, source_title: str = "") -> str:
+    """Parse one CSV into the workbook JSON the client reads: one sub-sheet, every value as typed.
+
+    Text with no row of two or more values is not a table, and binary is not
+    text: both are refused.
+    """
+    unreadable = UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read"))
+    if b"\0" in raw:
+        raise unreadable
+    try:
+        text = _decode_csv(raw)
+        records = csv.reader(io.StringIO(text, newline=""), delimiter=_csv_separator(text))
+        rows: dict[str, list] = {}
+        seen = 0
+        is_table = False
+        for index, record in enumerate(records):
+            is_table = is_table or len(record) > 1
+            seen += len(record)
+            if seen > MAX_IMPORT_CELLS:
+                frappe.throw(
+                    _("That spreadsheet has more than {0} cells and cannot be imported").format(
+                        MAX_IMPORT_CELLS
+                    ),
+                    frappe.ValidationError,
+                )
+            if any(record):
+                rows[str(index)] = [value if value != "" else None for value in record]
+    except (UnicodeDecodeError, csv.Error) as error:
+        raise unreadable from error
+    if not is_table:
+        raise unreadable
+    return _workbook_json({DEFAULT_SUB_SHEET: {"rows": rows}}, {}, {}, source_title)
+
+
+def _decode_csv(raw: bytes) -> str:
+    """UTF-8 if it is valid, else Windows-1252, which is what Excel saves. Strict, so binary still fails."""
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252")
+
+
+def _csv_separator(text: str) -> str:
+    """The separator that gives the first rows the most columns in every row; a comma if none splits them all.
+
+    Every row must split, so one column or free text stays with the comma. A
+    semicolon file often has decimal commas, so on a tie the comma comes last.
+    """
+    sample = list(itertools.islice(io.StringIO(text, newline=""), CSV_SAMPLE_ROWS))
+    best, most = ",", 1
+    for separator in CSV_SEPARATORS:
+        rows = [row for row in csv.reader(sample, delimiter=separator) if any(row)]
+        columns = min((len(row) for row in rows), default=0)
+        if columns > most:
+            best, most = separator, columns
+    return best
+
+
+def _workbook_json(
+    packed: dict[str, dict], formats: dict[str, dict], merged: dict[str, dict], source_title: str = ""
+) -> str:
+    """The `sheets_data` JSON for imported sub-sheets, refused over the workbook limit."""
     workbook = {
         "sheet": {
             "v": PACK_VERSION,
-            "current": names[0] if names else DEFAULT_SUB_SHEET,
+            "current": next(iter(packed), DEFAULT_SUB_SHEET),
             "sheets": packed,
         },
         "formats": formats,
         "merge": merged or None,
+        # The file this body was made from. The content layer converts it
+        # like a develop sheet's body.
+        "imported_from": source_title,
     }
     plain = json.dumps(workbook)
     if len(plain.encode("utf-8")) > MAX_SHEETS_DATA_BYTES:

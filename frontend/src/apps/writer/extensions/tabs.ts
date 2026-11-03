@@ -4,10 +4,10 @@ import { EditorState, Plugin, PluginKey, TextSelection, type PluginSpec } from '
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
-import { v4 } from 'uuid'
 import type { Doc } from 'yjs'
 
 import { TabNode } from '@/apps/writer/schema'
+import { randomId } from '@/platform/random-id'
 
 import TabView from './components/TabView.vue'
 
@@ -392,7 +392,7 @@ export const TabsExtension = TabNode.extend({
         (attrs: { id?: string; label?: string; order?: number } = {}) =>
         ({ tr, dispatch, state }) => {
           if (dispatch) {
-            if (!attrs.id) attrs.id = v4()
+            if (!attrs.id) attrs.id = randomId()
             if (!attrs.label) attrs.label = 'Untitled'
             if (attrs.order === undefined) attrs.order = tabsIn(state.doc).length
 

@@ -11,12 +11,8 @@ import type {
   GetLinkPreviewOutput,
   GetSheetInput,
   GetSheetOutput,
-  OpsForCellInput,
-  OpsForCellOutput,
   SaveAiSettingsInput,
   SaveAiSettingsOutput,
-  SaveSheetInput,
-  SaveSheetOutput,
 } from './generated'
 
 export const operationGetSheet: Validators<GetSheetInput, GetSheetOutput> = {
@@ -53,102 +49,6 @@ export const operationGetSheet: Validators<GetSheetInput, GetSheetOutput> = {
         type: 'object',
       },
       'get_sheet output',
-    )
-  },
-}
-
-export const operationSaveSheet: Validators<SaveSheetInput, SaveSheetOutput> = {
-  validateInput(value: unknown): asserts value is SaveSheetInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          name: { title: 'Name', type: 'string' },
-          sheets_data: { title: 'Sheets Data', type: 'string' },
-          title: { title: 'Title', type: 'string' },
-          ops: { title: 'Ops', type: 'string' },
-          request_id: { title: 'Request Id', type: 'string' },
-        },
-        required: ['name', 'sheets_data'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'save_sheet input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is SaveSheetOutput {
-    assertSchema(
-      value,
-      {
-        properties: {
-          name: { title: 'Name', type: 'string' },
-          head_seq: { title: 'Head Seq', type: 'integer' },
-        },
-        required: ['name', 'head_seq'],
-        title: 'SavedSheet',
-        type: 'object',
-      },
-      'save_sheet output',
-    )
-  },
-}
-
-export const operationOpsForCell: Validators<OpsForCellInput, OpsForCellOutput> = {
-  validateInput(value: unknown): asserts value is OpsForCellInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          sheet: { title: 'Sheet', type: 'string' },
-          cell_id: { title: 'Cell Id', type: 'string' },
-          sub_sheet: { title: 'Sub Sheet', type: 'string' },
-          limit: { title: 'Limit', type: 'integer' },
-        },
-        required: ['sheet', 'cell_id'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'ops_for_cell input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is OpsForCellOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          CellOperation: {
-            properties: {
-              id: { title: 'Id', type: 'string' },
-              seq: { title: 'Seq', type: 'integer' },
-              sub_sheet: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sub Sheet' },
-              op_type: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Op Type' },
-              summary: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Summary' },
-              actor: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Actor' },
-              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
-              before: { title: 'Before' },
-              after: { title: 'After' },
-            },
-            required: [
-              'id',
-              'seq',
-              'sub_sheet',
-              'op_type',
-              'summary',
-              'actor',
-              'creation',
-              'before',
-              'after',
-            ],
-            title: 'CellOperation',
-            type: 'object',
-          },
-        },
-        items: { $ref: '#/$defs/CellOperation' },
-        type: 'array',
-      },
-      'ops_for_cell output',
     )
   },
 }
@@ -225,6 +125,7 @@ export const operationAiAssist: Validators<AiAssistInput, AiAssistOutput> = {
           name: { title: 'Name', type: 'string' },
           prompt: { title: 'Prompt', type: 'string' },
           selection: { title: 'Selection', type: 'string' },
+          cells: { title: 'Cells', type: 'string' },
         },
         required: ['name', 'prompt', 'selection'],
         additionalProperties: false,

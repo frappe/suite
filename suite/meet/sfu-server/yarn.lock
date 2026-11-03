@@ -551,14 +551,7 @@
     "@types/node" "*"
     "@types/send" "<1"
 
-"@types/ws@^8.18.1":
-  version "8.18.1"
-  resolved "https://registry.yarnpkg.com/@types/ws/-/ws-8.18.1.tgz#48464e4bf2ddfd17db13d845467f6070ffea4aa9"
-  integrity sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==
-  dependencies:
-    "@types/node" "*"
-
-"@types/ws@^8.5.12":
+"@types/ws@^8.18.1", "@types/ws@^8.5.12":
   version "8.18.1"
   resolved "https://registry.npmjs.org/@types/ws/-/ws-8.18.1.tgz"
   integrity sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==
@@ -1188,10 +1181,10 @@ gopd@^1.0.1, gopd@^1.2.0:
   resolved "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz"
   integrity sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==
 
-h264-profile-level-id@^2.3.2:
-  version "2.3.2"
-  resolved "https://registry.npmjs.org/h264-profile-level-id/-/h264-profile-level-id-2.3.2.tgz"
-  integrity sha512-hnq1UDlw7WGJV6GCr/g7wnkHYUjdAY2bis9rgn2JqSdQS2WfVvnt1ZE9g8nTguracodf5LLKZOwURsDN49YtBQ==
+h264-profile-level-id@^2.3.3:
+  version "2.3.3"
+  resolved "https://registry.yarnpkg.com/h264-profile-level-id/-/h264-profile-level-id-2.3.3.tgz#1206e6c1a536a49e8b14b51ab147255a1e44695c"
+  integrity sha512-rPd5gpyWuIfEbBiHC/f9I4wdeCpAhg0aWdYgjMRdVTqhJT22C6VrWTi4hpAAgJad1Vv8BJDEvrzAQTW7CxzmJw==
   dependencies:
     debug "^4.4.3"
 
@@ -1509,17 +1502,17 @@ media-typer@0.3.0:
   resolved "https://registry.npmjs.org/media-typer/-/media-typer-0.3.0.tgz"
   integrity sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==
 
-mediasoup@^3.19.19:
-  version "3.19.19"
-  resolved "https://registry.npmjs.org/mediasoup/-/mediasoup-3.19.19.tgz"
-  integrity sha512-rhaDxUEy+r54LlNBFNDowiWHNzoRTmFLN4PVWjarTrv7BRKq6qkNAkNadiMneo7vgV7YkRCMzfKy76XURP1fYw==
+mediasoup@^3.32.1:
+  version "3.32.1"
+  resolved "https://registry.yarnpkg.com/mediasoup/-/mediasoup-3.32.1.tgz#caf6100c713b2046f7b232af796db891c6f40949"
+  integrity sha512-rwMHCARcAw1Bdd2Wb0TA0iLhvkqfSlVOuTspwZLQBzDO9Pk0tgoUzirusfVFCE7ra+Y3LPUyUqdygnz6GIu2uA==
   dependencies:
     debug "^4.4.3"
     flatbuffers "^25.9.23"
-    h264-profile-level-id "^2.3.2"
+    h264-profile-level-id "^2.3.3"
     node-fetch "^3.3.2"
-    supports-color "^10.2.2"
-    tar "^7.5.13"
+    supports-color "^11.0.0"
+    tar "^7.5.22"
 
 merge-descriptors@1.0.3:
   version "1.0.3"
@@ -1976,10 +1969,10 @@ std-env@^4.0.0-rc.1:
   resolved "https://registry.yarnpkg.com/std-env/-/std-env-4.1.0.tgz#45899abc590d86d682e87f0acd1033a75084cd3f"
   integrity sha512-Rq7ybcX2RuC55r9oaPVEW7/xu3tj8u4GeBYHBWCychFtzMIr86A7e3PPEBPT37sHStKX3+TiX/Fr/ACmJLVlLQ==
 
-supports-color@^10.2.2:
-  version "10.2.2"
-  resolved "https://registry.npmjs.org/supports-color/-/supports-color-10.2.2.tgz"
-  integrity sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==
+supports-color@^11.0.0:
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/supports-color/-/supports-color-11.0.0.tgz#54f4096e9cac614c6f273dc764e697e3c2c3941d"
+  integrity sha512-/zyImLdxhdygBIaVX0xTlQhKaCDLCrm665aqHk8xqK/Pa6k61fL6gwQGQq1k31yNyz6x55PppQgF2DMyPQa5xw==
 
 supports-color@^5.5.0:
   version "5.5.0"
@@ -1995,10 +1988,10 @@ supports-color@^7.1.0:
   dependencies:
     has-flag "^4.0.0"
 
-tar@^7.5.13:
-  version "7.5.13"
-  resolved "https://registry.npmjs.org/tar/-/tar-7.5.13.tgz"
-  integrity sha512-tOG/7GyXpFevhXVh8jOPJrmtRpOTsYqUIkVdVooZYJS/z8WhfQUX8RJILmeuJNinGAMSu1veBr4asSHFt5/hng==
+tar@^7.5.22:
+  version "7.5.22"
+  resolved "https://registry.yarnpkg.com/tar/-/tar-7.5.22.tgz#a696f998136e71487dc3f869a85bba2c67971ba9"
+  integrity sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA==
   dependencies:
     "@isaacs/fs-minipass" "^4.0.0"
     chownr "^3.0.0"

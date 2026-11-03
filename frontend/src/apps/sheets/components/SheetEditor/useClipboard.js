@@ -26,7 +26,6 @@ export function useClipboard({
   flashProtected: _flashProtected,
   showInput: _showInputInFormulaBar,
   readInputs: _readInputs,
-  queueOp: _queueOp,
   pasteAffectedRects: _pasteAffectedRects,
   cutSourceElsewhere: _cutSourceElsewhere,
   captureFormatsRange: _captureFormatsRange,
@@ -198,15 +197,6 @@ export function useClipboard({
       // vacated rows shrink back); the height change undoes with the paste.
       const rowH = refitRowsFor?.(sn, after)
       if (refs.length || cfBefore !== cfAfter) {
-        _queueOp({
-          opType: 'paste',
-          subSheet: sn,
-          cellRefs: refs,
-          before,
-          after,
-          summary: `Pasted into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
-          ...(source && { source }),
-        })
         _pushPasteHistory({
           opType: 'paste',
           subSheet: sn,
@@ -261,15 +251,6 @@ export function useClipboard({
     const refs = _diffRefs(before, after)
     const rowH = refitRowsFor?.(sn, after) // as in onDocPaste
     if (refs.length || cfBefore !== cfAfter) {
-      _queueOp({
-        opType: 'paste',
-        subSheet: sn,
-        cellRefs: refs,
-        before,
-        after,
-        summary: `Pasted ${kind} into ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
-        ...(source && { source }),
-      })
       _pushPasteHistory({
         opType: 'paste',
         subSheet: sn,

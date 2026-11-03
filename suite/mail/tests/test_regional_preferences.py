@@ -184,6 +184,7 @@ class TestRegionalPreferences(IntegrationTestCase):
         client.call.side_effect = [
             {"description": "Suite setup invite-1", "locale": "fr-FR", "time_zone": "Europe/Paris"},
             None,
+            None,
             {"app_password": "new-secret"},
         ]
         with patch("suite.mail.directory.get_client", return_value=client):
@@ -193,5 +194,10 @@ class TestRegionalPreferences(IntegrationTestCase):
         self.assertEqual((result["locale"], result["time_zone"]), ("fr-FR", "Europe/Paris"))
         self.assertEqual(
             [call.args[0] for call in client.call.call_args_list],
-            ["mail.accounts.get_account", "mail.accounts.set_password", "mail.accounts.rotate_app_password"],
+            [
+                "mail.accounts.get_account",
+                "mail.accounts.set_password",
+                "mail.accounts.set_account_enabled",
+                "mail.accounts.rotate_app_password",
+            ],
         )

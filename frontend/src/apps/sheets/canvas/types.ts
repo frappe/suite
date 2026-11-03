@@ -206,6 +206,8 @@ export interface Grid {
   onRender(cb: () => void): () => void
 
   setMarchingAnts(rect: Partial<CellBlock> | null | undefined): void
+  /** Outline the active filter's range (null: no filter shown). */
+  setFilterRange(rect: CellBlock | null): void
   setDiffOverlay(diffBySheet: { [sheet: string]: { [id: string]: boolean } } | null): void
   setActiveDiffSheet(sheet: string | null): void
 

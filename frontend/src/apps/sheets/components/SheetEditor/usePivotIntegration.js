@@ -6,6 +6,7 @@ import {
   computePivotModelAsync,
   parseRangeRect,
   pivotDrillDown,
+  pivotExtent,
   rangeReader,
   writePivotToSheet,
 } from '../../engine/pivot.js'
@@ -309,10 +310,7 @@ export function usePivotIntegration({
         )
         cells.write(config.outputSheet, out)
       })
-      const newExtent = table.length
-        ? { r0: ar, c0: ac, r1: ar + table.length - 1, c1: ac + (table[0]?.length || 1) - 1 }
-        : null
-      pivot.setExtent(config.id, newExtent)
+      pivot.setExtent(config.id, pivotExtent(table, ar, ac))
       _styleHeaderAndTotal(table, config.outputSheet, ar, ac)
     } finally {
       if (token === _buildToken) pivotBuilding.value = false

@@ -23,6 +23,8 @@ export interface RenderOptions {
   marchAnts: CellBlock | null
   marchPhase: number
   pickerRect: CellBlock | null
+  // The active filter's range, outlined under the selection.
+  filterRect: CellBlock | null
   colDrag: ColDrag | null
   zoom: number
 }
@@ -44,6 +46,7 @@ interface RegionState {
   marchAnts: CellBlock | null
   marchPhase: number
   pickerRect: CellBlock | null
+  filterRect: CellBlock | null
 }
 
 export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry): Renderer {
@@ -68,6 +71,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     marchAnts,
     marchPhase,
     pickerRect,
+    filterRect,
     colDrag,
     zoom,
   }: RenderOptions): void {
@@ -107,6 +111,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       marchAnts,
       marchPhase,
       pickerRect,
+      filterRect,
     }
 
     _renderRegion(r0s, c0s, r1s, c1s, mainX, mainY, cssW - mainX, cssH - mainY, state)
@@ -118,6 +123,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     headerPainter.drawColHeaders(c0s, c1s, fc, mainX, cssW, range)
     headerPainter.drawRowHeaders(r0s, r1s, fr, mainY, cssH, range)
     headerPainter.drawCorner()
+    _repaintHeaderEdges(state)
 
     if (!editing && selMode === 'cell')
       selPainter.drawSelectionBorder(sel, range, fc, fr, mainX, mainY, cssW, cssH, (id) =>
@@ -177,6 +183,7 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
       marchAnts,
       marchPhase,
       pickerRect,
+      filterRect,
     } = state
     ctx.save()
     ctx.beginPath()
@@ -186,18 +193,47 @@ export function createRenderer(ctx: CanvasRenderingContext2D, geometry: Geometry
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
     cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, cells, getDiffFor)
     cellPainter.drawRegionBorders(r0, c0, r1, c1, cells)
+    if (filterRect) selPainter.drawFilterOutline(filterRect)
     // The tint goes over the cells, see-through, so they show under it. Only
     // cell mode frames the active cell, so only there can a lone cell skip it.
-    if (!editing)
-      selPainter.drawSelFill(fillRange || range, fillRange === range ? sel : null, (id) =>
-        cells.getMergeInfo?.(id),
-      )
-    // Cell mode only, like the active frame drawn over it later.
-    if (!editing && fillRange === range)
-      selPainter.drawRangeOutline(range, sel, (id) => cells.getMergeInfo?.(id))
+    // The outline follows the same rule; in cell mode the active frame goes
+    // over it later.
+    if (!editing) {
+      const active = fillRange === range ? sel : null
+      const getMergeInfo = (id: string) => cells.getMergeInfo?.(id)
+      selPainter.drawSelFill(fillRange, active, getMergeInfo)
+      selPainter.drawRangeOutline(fillRange, active, getMergeInfo)
+    }
     if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
     if (pickerRect) selPainter.drawPickerBorder(pickerRect)
     ctx.restore()
+  }
+
+  // The headers' borders are painted after the cells, on column A's left
+  // gridline and row 1's top gridline, so they cover whatever selection or
+  // filter line the region drew on those pixels. Those lines are painted again
+  // on the two 1px strips, in the region's order; the active frame comes after.
+  function _repaintHeaderEdges(state: RegionState): void {
+    const { cssW, cssH, editing, sel, range, fillRange, filterRect, cells } = state
+    const { marchAnts, marchPhase, pickerRect } = state
+    if (!filterRect && editing && !marchAnts && !pickerRect) return
+    const active = fillRange === range ? sel : null
+    const getMergeInfo = (id: string) => cells.getMergeInfo?.(id)
+    const strips: [number, number, number, number][] = [
+      [ROW_HEADER_W, COL_HEADER_H, 1, cssH - COL_HEADER_H],
+      [ROW_HEADER_W, COL_HEADER_H, cssW - ROW_HEADER_W, 1],
+    ]
+    for (const [x, y, w, h] of strips) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(x, y, w, h)
+      ctx.clip()
+      if (filterRect) selPainter.drawFilterOutline(filterRect)
+      if (!editing) selPainter.drawRangeOutline(fillRange, active, getMergeInfo)
+      if (marchAnts) selPainter.drawMarchingAnts(marchAnts, marchPhase)
+      if (pickerRect) selPainter.drawPickerBorder(pickerRect)
+      ctx.restore()
+    }
   }
 
   function _selRange(sel: Cell, selEnd: Cell): CellBlock {

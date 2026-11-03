@@ -876,6 +876,19 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   UPLOAD may be selected [T006].
 - Cross-root moves and copies are allowed. The server stays authoritative
   for cycles, depth, title conflicts, quota and permission changes [T006].
+- A move that gives anyone access, or lowers the mover's own role, is
+  confirmed first. Before it moves, the picker asks
+  `GET /nodes/<id>/move-preview?parent_node=<folder>` for each item. The
+  answer lists the principals that would get a higher role from the
+  destination, and the mover's role now and after the move. The client
+  cannot work this out, because reading the destination's grants needs
+  Manage. The dialog "More people will get access" lists each principal once, with
+  the most it gains, for example "People in Product" and "Manage". The list
+  scrolls when it is long. The dialog adds "You'll have Edit access." when the
+  mover's role drops, and when only that changes its title is "Your access will
+  change". A move that changes no one's access goes ahead without asking. A share link is
+  named only as "Anyone with a share link"; its token is a secret
+  [R2-T1-24].
 
 ### 5.8 Selection and bulk actions
 

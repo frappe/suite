@@ -71,14 +71,14 @@ export function createHeaderPainter(
     const x = colX(c),
       w = cw(c)
     const marked = c >= range.c0 && c <= range.c1
-    if (marked) _markHeader(x, 0, w, COL_HEADER_H)
+    if (marked) _markHeader(x + 1, 0, w - 1, COL_HEADER_H)
     else _plainLabel()
     // No gridline above the column headers: the white area is the full height.
     if (w > 0) ctx.fillText(colLabel(c), x + w / 2, centredBaseline(COL_HEADER_H / 2, capHeight()))
-    _drawColHeaderSeparator(x, w, c)
+    _drawColHeaderSeparator(x, w, c, marked)
   }
 
-  function _drawColHeaderSeparator(x: number, w: number, c: number): void {
+  function _drawColHeaderSeparator(x: number, w: number, c: number, marked: boolean): void {
     const nextHidden = cw(c + 1) === 0 && c + 1 < 9999
     if (w > 0 && nextHidden) {
       ctx.strokeStyle = COLORS.freezeLine
@@ -89,7 +89,7 @@ export function createHeaderPainter(
       ctx.stroke()
       _drawHiddenChevronsV(x + w, COL_HEADER_H / 2)
     } else {
-      ctx.strokeStyle = COLORS.gridLine
+      ctx.strokeStyle = marked ? COLORS.activeHeaderLine : COLORS.gridLine
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(x + w + 0.5, 0)
@@ -98,7 +98,8 @@ export function createHeaderPainter(
     }
   }
 
-  // A header the selection covers: tinted, with a dark semibold label.
+  // A header the selection covers: tinted, with a dark semibold label. The
+  // tint starts one pixel in: that pixel is the previous header's separator.
   function _markHeader(x: number, y: number, w: number, h: number): void {
     ctx.fillStyle = COLORS.activeHeader
     ctx.fillRect(x, y, w, h)
@@ -149,13 +150,13 @@ export function createHeaderPainter(
       h = rh(r)
     if (h === 0) return
     const marked = r >= range.r0 && r <= range.r1
-    if (marked) _markHeader(0, y, ROW_HEADER_W, h)
+    if (marked) _markHeader(0, y + 1, ROW_HEADER_W, h - 1)
     else _plainLabel()
     ctx.fillText(String(r + 1), ROW_HEADER_W / 2, centredBaseline(cellMidY(y, h), capHeight()))
-    _drawRowHeaderSeparator(y, h, r)
+    _drawRowHeaderSeparator(y, h, r, marked)
   }
 
-  function _drawRowHeaderSeparator(y: number, h: number, r: number): void {
+  function _drawRowHeaderSeparator(y: number, h: number, r: number, marked: boolean): void {
     const nextHidden = rh(r + 1) === 0 && r + 1 < 9999
     if (nextHidden) {
       ctx.strokeStyle = COLORS.freezeLine
@@ -166,7 +167,7 @@ export function createHeaderPainter(
       ctx.stroke()
       _drawHiddenChevronsH(ROW_HEADER_W / 2, y + h)
     } else {
-      ctx.strokeStyle = COLORS.gridLine
+      ctx.strokeStyle = marked ? COLORS.activeHeaderLine : COLORS.gridLine
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(0, y + h + 0.5)

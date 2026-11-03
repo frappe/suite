@@ -87,6 +87,7 @@ import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpc
 import type { Attachment } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { userTimeZone } from '@/platform/time-zone'
 
 type InviteDetails = NonNullable<OutputOf<typeof api.calendar.invites.get>>
 const { attachment, account } = defineProps<{
@@ -131,7 +132,6 @@ const invite = computed<InviteDetails | null>(() => {
 
 // JSCalendar start/duration are a wall clock in the event's own zone; render them in the
 // reader's, mirroring the calendar app (see @/apps/calendar/utils/datetime).
-const localZone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 const isAllDay = computed(() => !!invite.value?.event && isAllDayEvent(invite.value.event))
 const start = computed(() => {
   const event = invite.value?.event
@@ -140,7 +140,7 @@ const start = computed(() => {
   // clock — moving its midnight into the reader's zone would slide it a day either way.
   if (isAllDay.value) return dayjs(event.start)
   if (!event.time_zone) return dayjs(event.start)
-  return dayjs.tz(event.start, event.time_zone).tz(localZone())
+  return dayjs.tz(event.start, event.time_zone).tz(userTimeZone())
 })
 
 // One chip for a single day, two for a span — the last day coming from the formatter rather than

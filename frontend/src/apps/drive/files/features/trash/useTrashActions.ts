@@ -1,7 +1,7 @@
 import { computed, getCurrentInstance, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
-import { DRIVE_ROLES, hasRole, type DriveBatchResult } from '@/apps/drive/client/types'
+import { canManage, type DriveBatchResult } from '@/apps/drive/client/types'
 import { confirm, toast } from '@/platform/feedback'
 
 import { announceRestore, subject, type ChangedItem } from '../changeToast'
@@ -40,7 +40,7 @@ export function useTrashActions(root: () => string | null) {
       : false
   })
   /** Empty trash deletes other people's items too, so it needs MANAGE on the root. */
-  const canEmptyTrash = computed(() => hasRole(rootDetail.data, DRIVE_ROLES.manage))
+  const canEmptyTrash = computed(() => canManage(rootDetail.data))
   const pending = computed(() => restoring.isPending || purging.isPending || emptying.isPending)
 
   /**

@@ -55,7 +55,7 @@ class DisabledAccount(TypedDict):
 
 
 class RecentAccount(DisabledAccount):
-    user_image: str
+    user_image: str | None
     enabled: bool
     joined_on: str | None
 

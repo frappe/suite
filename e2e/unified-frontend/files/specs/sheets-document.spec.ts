@@ -14,7 +14,6 @@ import {
 	runTag,
 	type DriveNode,
 } from "../../helpers/drive";
-import { xlsxCellText } from "../../helpers/xlsx";
 
 /** Stage 11: the Sheets document on `/d/<id>`, through Drive and Suite routes only. */
 
@@ -35,6 +34,9 @@ test.afterEach(async () => {
 	await purge(api, home.name);
 	await api.dispose();
 });
+
+/** A push of the sheet's edits to its live room (the content layer). */
+const PUSH = /^POST .*\/content\/[^/]+\/updates/;
 
 /** Every request the page sends, and every error it throws. */
 function watchPage(page: Page) {
@@ -80,7 +82,7 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 		{ anchor: "sheets:cell:A1!Sheet1", comments: [{ content: "Check the A1 total" }] },
 	]);
 
-	// An edit still waiting for its autosave goes into the version first.
+	// An edit still waiting to be sent goes into the version first.
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
@@ -93,19 +95,18 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await prompt.getByRole("textbox").fill("Journey version");
 	await prompt.getByRole("button", { name: "Save" }).click();
 	await expect(versions.getByText("Journey version")).toBeVisible();
-	const order = seen.requests.filter((line) => line.includes("save_sheet") || line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST"));
-	expect(order[0]).toContain("save_sheet");
+	const order = seen.requests.filter((line) => PUSH.test(line) || line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST"));
+	expect(order[0]).toMatch(PUSH);
 	expect(order.at(-1)).toContain("/versions");
 
-	// Autosave may already have kept automatic versions; restore adds one more.
-	const automatic = versions.getByRole("listitem").filter({ hasText: "Automatic version" });
-	const automaticBefore = await automatic.count();
+	// The room keeps the state a restore replaces as a version of its own.
+	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring version" });
+	await expect(before).toHaveCount(0);
 	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "Restore" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
-	// Restore keeps the state it replaced as a new automatic version first.
-	await expect(automatic).toHaveCount(automaticBefore + 1);
-	await expect(versions.getByRole("listitem").first()).toContainText("Automatic version");
+	await expect(before).toHaveCount(1);
+	await expect(versions.getByRole("listitem").first()).toContainText("Before restoring version");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).
@@ -115,46 +116,41 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	expect(seen.errors).toEqual([]);
 });
 
-test("losing edit access freezes the sheet, cancels the pending save and offers the changes", async ({ page }) => {
+test("losing edit access freezes the sheet, stops sending its edits and offers them as a download", async ({ page }) => {
 	const seen = watchPage(page);
 	await openSheet(page);
 
+	// Trash the sheet before the edit is sent: this route keeps the room's push
+	// from landing, as Drive's refusal of a trashed node would.
+	await page.route(/\/content\/[^/]+\/updates/, (route) =>
+		route.request().method() === "POST" ? route.abort("failed") : route.continue(),
+	);
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("4242");
 	await page.keyboard.press("Enter");
-	// Text still in the cell editor is part of the recovery copy too.
 	await page.keyboard.type("5150");
-	// The autosave waits two seconds. Trash the sheet before it fires.
 	await patchNode(api, sheet.name, { state: "Trashed" });
-	const trashedAt = seen.requests.length;
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
 	// A trashed document shows Trashed in place of View only; the frozen toolbar shows the lock.
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Bold" })).toBeDisabled();
+	// The room's strip says so, and the edit it could not send is not saved.
+	await expect(page.getByRole("status").filter({ hasText: "You can no longer edit this spreadsheet." })).toBeVisible();
+	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
 	await page.waitForTimeout(3_000);
 
-	const saves = seen.requests.slice(trashedAt).filter((line) => line.includes("suite.sheets.api.save_sheet"));
-	expect(saves).toEqual([]);
-	const recovery = () =>
-		page.evaluate((node) => localStorage.getItem(`suite:sheets-recovery:${node}`), sheet.name);
-	// The committed cell lives in the engine snapshot (binary), the cell editor's
-	// text in the draft. Both must come out in the downloaded file below.
-	expect(await recovery()).toContain("5150");
-
+	// What did not reach the server, the text still in the cell editor too, is
+	// offered as a download. SheetJS writes the .xlsx uncompressed, so the
+	// values read straight from its bytes.
 	const download = page.waitForEvent("download");
 	await page.locator(".sheets-header").getByRole("button", { name: "Download my changes" }).click();
 	const file = await download;
 	expect(file.suggestedFilename()).toBe("Sheets journey (recovered).xlsx");
-	// An .xlsx file is a zip archive.
-	const bytes = readFileSync((await file.path())!);
-	expect(bytes.subarray(0, 2).toString()).toBe("PK");
-	const cells = xlsxCellText(bytes);
-	expect(cells, "the recovered file keeps the committed cell").toMatch(/>4242</);
-	expect(cells, "the recovered file keeps the cell still in the editor").toMatch(/>5150</);
-	await expect(page.locator(".sheets-header").getByRole("button", { name: "Download my changes" })).toHaveCount(0);
-	expect(await recovery()).toBeNull();
+	const saved = readFileSync(await file.path()).toString("latin1");
+	expect(saved).toContain("4242");
+	expect(saved).toContain("5150");
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 });
 
@@ -250,7 +246,7 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	await openSheet(page);
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 
-	const saved = page.waitForResponse((answer) => answer.url().includes("suite.sheets.api.save_sheet"));
+	const saved = page.waitForResponse((answer) => PUSH.test(`${answer.request().method()} ${answer.url()}`));
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("6060");
 	await page.keyboard.press("Enter");

@@ -7,8 +7,7 @@ insert with no node (`content.py:757-770`). The legacy `create_sheet` built a
 bare `Sheet` through `versioning.save`, so every call raised `DriveConflict`.
 
 These are shape tests, not integration tests: `frappe` and `suite.sheets.api.drive`
-are mocked wholesale, the way `test_api_security.py` and `test_list_sheets.py`
-already do for this module, so they pin the adapter's contract — what it calls,
+are mocked wholesale, so they pin the adapter's contract — what it calls,
 in what order, and what it returns — without a site. The Drive-native lifecycle
 itself (`drive.create_document`, `require_node`, the reciprocal link) is
 `suite.sheets.tests.test_drive_adoption`'s `TestSheetsInDrive`.

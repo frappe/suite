@@ -1,11 +1,10 @@
-"""Wire contracts for Sheets bodies, history and editor assistance."""
+"""Wire contracts for Sheets bodies and editor assistance."""
 
 from typing import Literal, NotRequired, TypedDict
 
 from suite.composition.http import Route
-from suite.sheets.api import ai_assist, get_ai_settings, get_sheet, save_ai_settings, save_sheet
+from suite.sheets.api import ai_assist, get_ai_settings, get_sheet, save_ai_settings
 from suite.sheets.link_preview import get_link_preview
-from suite.sheets.versioning.api import ops_for_cell
 
 
 class SheetInput(TypedDict):
@@ -20,38 +19,6 @@ class SheetBody(TypedDict):
     sheets_data: str | None
     owner: str
     node: str
-
-
-class SaveSheet(TypedDict):
-    name: str
-    sheets_data: str
-    title: NotRequired[str]
-    ops: NotRequired[str]
-    request_id: NotRequired[str]
-
-
-class SavedSheet(TypedDict):
-    name: str
-    head_seq: int
-
-
-class CellInput(TypedDict):
-    sheet: str
-    cell_id: str
-    sub_sheet: NotRequired[str]
-    limit: NotRequired[int]
-
-
-class CellOperation(TypedDict):
-    id: str
-    seq: int
-    sub_sheet: str | None
-    op_type: str | None
-    summary: str | None
-    actor: str | None
-    creation: str | None
-    before: object
-    after: object
 
 
 class AISettings(TypedDict):
@@ -70,6 +37,7 @@ class AssistInput(TypedDict):
     name: str
     prompt: str
     selection: str
+    cells: NotRequired[str]
 
 
 class AssistResult(TypedDict):
@@ -102,28 +70,6 @@ CONTRACT_ROUTES = (
         output=SheetBody,
         kind="query",
         public_name="documents.get",
-        allow_guest=True,
-        envelope="message",
-    ),
-    Route(
-        "POST",
-        "/api/method/suite.sheets.api.save_sheet",
-        "save_sheet",
-        body=SaveSheet,
-        output=SavedSheet,
-        kind="mutation",
-        public_name="documents.save",
-        allow_guest=True,
-        envelope="message",
-    ),
-    Route(
-        "GET",
-        "/api/method/suite.sheets.versioning.api.ops_for_cell",
-        "ops_for_cell",
-        query=CellInput,
-        output=list[CellOperation],
-        kind="query",
-        public_name="history.cell",
         allow_guest=True,
         envelope="message",
     ),

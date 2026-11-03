@@ -30,6 +30,11 @@ export function saveStateOf(status: RoomStatus): SaveState {
   return 'clean'
 }
 
+/** This tab holds edits the server has not taken, a push in flight included (other tabs' do not count). */
+export function hasUnsentWork(status: RoomStatus): boolean {
+  return status.unsentCount > 0
+}
+
 /** 'editing', 'paused' for a reason that clears, 'closed' when the person can't edit (any more). */
 export function editingStateOf(status: RoomStatus): 'editing' | 'paused' | 'closed' {
   if (status.blockReason === 'lost_edit' || status.blockReason === 'lost_read') return 'closed'
