@@ -1,8 +1,7 @@
 <template>
   <!-- Who else is here, beside the header's Comments, Versions and Share. The
   editor's other actions (Ask AI, File, Notes, Keyboard shortcuts) are in the
-  menu bar. Rendered in the editor's own top bar or, on /d/, in the Drive
-  document header. -->
+  menu bar. Rendered in the Drive document header on /d/. -->
   <!-- Presence avatars — other users currently in the workbook.
      Outline = their cursor color; tooltip says which sub-sheet
      they're on so cross-sheet collaborators are discoverable. -->

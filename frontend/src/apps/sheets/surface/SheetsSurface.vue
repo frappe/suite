@@ -207,7 +207,6 @@ useDocumentLeaveGuard({
       :id="session.contentDocname"
       :key="bodyRevision"
       ref="editor"
-      embedded
       :writable="editorWritable"
       :title="session.title.value"
       :request-context="session.credentials.context"
