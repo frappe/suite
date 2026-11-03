@@ -435,14 +435,69 @@ describe('saveOfflineCopy', () => {
     setItem.mockRestore()
   })
 
-  it('drops the bytes of images the presentation no longer shows', async () => {
+  it('leaves the images the presentation no longer shows for the next open to clear', async () => {
     await saveOfflineCopy('p1')
     slides.value = slidesWith(['/files/b.png'])
 
     await saveOfflineCopy('p1')
 
+    expect(cache.has('/private/files/a.png')).toBe(true)
+    expect(recordedKeys('p1')).toContain('/private/files/a.png')
+
+    await pruneOfflineCopy('p1')
+
     expect(cache.has('/private/files/a.png')).toBe(false)
     expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+  })
+
+  describe('when the presentation goes away during the wait for a picture', () => {
+    const copied = ['/private/files/a.png', '/private/files/b.png']
+
+    async function savedThenGoesAway(goAway: () => void) {
+      await saveOfflineCopy('p1')
+      const src = ref<string | null>(null)
+      const status = ref<'loading' | 'ready'>('loading')
+      const release = setDocumentMedia((id) => ({
+        id,
+        src,
+        status,
+        cacheKey: ref(id),
+        refresh: async () => {},
+      }))
+      slides.value = slidesWith(['/files/a.png'], ['/files/b.png'], ['media-node-1'])
+
+      const saving = saveOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      goAway()
+      status.value = 'ready'
+      await saving
+      release()
+    }
+
+    it('keeps the copy and its record when another presentation opens', async () => {
+      responses['/private/files/other.png?slides_media=1'] = () => image(40)
+
+      await savedThenGoesAway(() => {
+        presentationDoc.value = { node: 'n2', is_composite: 0, modified: '2026-08-17 10:00:00' }
+        presentationId.value = 'p2'
+        slides.value = slidesWith(['/files/other.png'])
+      })
+
+      expect(copied.every((key) => cache.has(key))).toBe(true)
+      expect(cache.has('/private/files/other.png')).toBe(false)
+      expect(recordedKeys('p1')).toEqual(copied)
+    })
+
+    it('keeps the copy and its record when the editor is left', async () => {
+      await savedThenGoesAway(() => {
+        presentationDoc.value = null
+        presentationId.value = null
+        slides.value = []
+      })
+
+      expect(copied.every((key) => cache.has(key))).toBe(true)
+      expect(recordedKeys('p1')).toEqual(copied)
+    })
   })
 })
 

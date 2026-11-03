@@ -282,16 +282,14 @@ async function pruneOfflineCopy(id) {
 
   // a picture with no signed url has no key, so its bytes would pass for orphans, and
   // refused may only mean an expired session; the next open tries again
-  if (id === presentationId.value && mediaNodeIds().every(isMediaReady)) {
-    await dropOrphans(id, getMediaTargets())
+  if (id !== presentationId.value || !mediaNodeIds().every(isMediaReady)) {
+    return
   }
-}
 
-async function dropOrphans(id, targets) {
   const record = readRecord(id)
   if (!record) return
 
-  const needed = new Set(targets.map((target) => target.key))
+  const needed = new Set(getMediaTargets().map((target) => target.key))
   const orphans = new Set(
     unsharedKeys(
       id,
@@ -342,8 +340,8 @@ const saveOfflineCopy = async (id) => {
     await warmAssets()
     // a node-id picture has no url until Drive signs it
     const unsigned = unsignedSources(await mediaSettled(mediaNodeIds(), signal))
-    const everyReady = mediaNodeIds().every(isMediaReady)
-    if (signal.aborted) {
+    // the slides on screen may now be another presentation's
+    if (signal.aborted || presentationDoc.value?.node !== node) {
       return null
     }
 
@@ -357,20 +355,11 @@ const saveOfflineCopy = async (id) => {
     const pinned = await pinnedPaths(cache)
     const startup = await fetchStartup(node, id, pinned, signal)
 
-    if (everyReady) {
-      await dropOrphans(id, targets)
-    }
-
     const previous = startupKeys(readRecord(id))
     const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
-    const listed = [...startup.keys, ...media]
-    // a picture with no signed url may be any of the keys held, so all of them stay listed
-    if (!everyReady) {
-      const held = readRecord(id)?.keys.filter(isMediaKey) ?? []
-      listed.push(...held)
-    }
-
-    const record = { node, keys: [...new Set(listed)] }
+    // only an open deletes, so what the presentation no longer shows stays listed until then
+    const held = readRecord(id)?.keys.filter(isMediaKey) ?? []
+    const record = { node, keys: [...new Set([...startup.keys, ...media, ...held])] }
     await putStartup(cache, id, record, startup, previous, signal)
     navigator.storage?.persist?.().catch(() => {})
 
