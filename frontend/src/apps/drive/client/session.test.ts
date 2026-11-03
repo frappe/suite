@@ -255,7 +255,7 @@ describe('document session media', () => {
       ['the network', new TypeError('Failed to fetch')],
       ['a server error', new TransportError({ type: 'ServerError', message: 'x', status: 503 })],
       ['a timeout', new TransportError({ type: 'Timeout', message: 'x', status: 408 })],
-    ])('leaves every picture as it was when %s fails it', async (_reason, error) => {
+    ])('leaves a signed picture as it was when %s fails it', async (_reason, error) => {
       const { session, answers, failures } = await openedWithHeldRead()
       const signed = session.media('signed')
       await vi.waitFor(() => expect(answers).toHaveLength(1))
@@ -269,7 +269,7 @@ describe('document session media', () => {
 
       expect(signed.status.value).toBe('ready')
       expect(signed.src.value).toContain('signed.png')
-      expect(waiting.status.value).toBe('loading')
+      expect(waiting.status.value).toBe('unanswered')
       session.dispose()
     })
 

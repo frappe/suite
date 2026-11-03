@@ -666,9 +666,9 @@ describe('offline status', () => {
     const picture = '/private/files/m1.png?signature=s1'
     let release: (() => void) | null = null
     const src = ref<string | null>(null)
-    const status = ref<'loading' | 'ready' | 'refused'>('loading')
+    const status = ref<'loading' | 'unanswered' | 'ready' | 'refused'>('loading')
 
-    function driveAnswers(url: string | null, answer: 'ready' | 'refused') {
+    function driveAnswers(url: string | null, answer: 'unanswered' | 'ready' | 'refused') {
       src.value = url
       status.value = answer
     }
@@ -728,7 +728,7 @@ describe('offline status', () => {
       expect(offlineCopyStatus.value).toBe('available')
     })
 
-    it('keeps its status while a read leaves one waiting', async () => {
+    it('keeps its status while the first read is still out', async () => {
       await saveOfflineCopy('p1')
       slides.value = slidesWith(['/files/a.png', 'media-node-1'])
 
@@ -736,6 +736,43 @@ describe('offline status', () => {
       await settled()
 
       expect(offlineCopyStatus.value).toBe('available')
+    })
+
+    it('does not claim to be available on a picture no read has answered for', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      refreshOfflineStatus('p1')
+
+      driveAnswers(null, 'unanswered')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('outdated')
+    })
+
+    it('is available again once a read answers for a picture the pin holds', async () => {
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      responses[picture] = () => image(30)
+      driveAnswers(picture, 'ready')
+      await saveOfflineCopy('p1')
+      driveAnswers(null, 'unanswered')
+      refreshOfflineStatus('p1')
+
+      driveAnswers(picture, 'ready')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('available')
+    })
+
+    it('waits for a read to answer for a picture before saving without it', async () => {
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      responses[picture] = () => image(30)
+      driveAnswers(null, 'unanswered')
+
+      const saving = saveOfflineCopy('p1')
+      await settled()
+      driveAnswers(picture, 'ready')
+
+      expect(await saving).toEqual({ ok: true, failed: [], count: 2 })
     })
 
     it('follows a later read with no change to the slides', async () => {

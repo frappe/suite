@@ -29,7 +29,8 @@ const MEDIA_RETRY_GROWTH = 2
 const MEDIA_RETRY_MAX_MS = 30_000
 const MIN_CLIENT_ERROR_STATUS = 400
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
-export type MediaStatus = 'loading' | 'ready' | 'refused'
+/** `unanswered`: a read for this picture failed in passing and none has answered for it yet. */
+export type MediaStatus = 'loading' | 'unanswered' | 'ready' | 'refused'
 export interface MediaHandle {
   readonly id: string
   readonly src: Readonly<Ref<string | null>>
@@ -256,6 +257,7 @@ export async function openDriveDocumentSession(
 
         // a passing failure says nothing about a picture, so the next read settles it
         if (!isRefusal(error)) {
+          markUnanswered(asked)
           retryMedia()
           return
         }
@@ -274,6 +276,14 @@ export async function openDriveDocumentSession(
         }
       })
     return mediaPromise
+  }
+
+  function markUnanswered(asked: Set<string>) {
+    for (const [id, handle] of handles) {
+      if (asked.has(id) && handle.status.value === 'loading') {
+        handle.status.value = 'unanswered'
+      }
+    }
   }
 
   function retryMedia() {

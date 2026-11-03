@@ -39,6 +39,10 @@ export function isMediaRefused(id: string) {
   return documentMedia?.(id).status.value === 'refused'
 }
 
+export function isMediaUnanswered(id: string) {
+  return documentMedia?.(id).status.value === 'unanswered'
+}
+
 /** Calls back when Drive's answer for any of these nodes changes; returns the stop. */
 export function onMediaStatusChange(ids: string[], changed: () => void) {
   const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
@@ -47,19 +51,23 @@ export function onMediaStatusChange(ids: string[], changed: () => void) {
 
 const SETTLE_TIMEOUT = 30_000
 
-function loadingIds(handles: MediaHandle[]) {
-  return handles.filter((handle) => handle.status.value === 'loading').map((handle) => handle.id)
+function isWaiting(handle: MediaHandle) {
+  return handle.status.value === 'loading' || handle.status.value === 'unanswered'
 }
 
-/** Resolves with the media nodes still loading once Drive has answered for every one, on abort, or after 30s. */
+function waitingIds(handles: MediaHandle[]) {
+  return handles.filter(isWaiting).map((handle) => handle.id)
+}
+
+/** Resolves with the media nodes still waiting once Drive has answered for every one, on abort, or after 30s. */
 export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise<string[]> {
   const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
   function isSettled() {
-    return handles.every((handle) => handle.status.value !== 'loading')
+    return !handles.some(isWaiting)
   }
 
   if (signal?.aborted || isSettled()) {
-    return loadingIds(handles)
+    return waitingIds(handles)
   }
 
   await new Promise<void>((resolve) => {
@@ -78,8 +86,8 @@ export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise
 
     signal?.addEventListener('abort', finish, { once: true })
     // the session reads its media together, so one handle asks for them all
-    void handles.find((handle) => handle.status.value === 'loading')?.refresh()
+    void handles.find(isWaiting)?.refresh()
   })
 
-  return loadingIds(handles)
+  return waitingIds(handles)
 }

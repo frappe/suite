@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import {
   isMediaNodeId,
   isMediaRefused,
+  isMediaUnanswered,
   mediaSettled,
   onMediaStatusChange,
 } from '@/apps/slides/stores/documentMedia'
@@ -486,6 +487,11 @@ const getOfflineStatus = (id) => {
     return 'outdated'
   }
 
+  // with no key for this picture, nothing shows the copy holds it
+  if (mediaNodeIds().some(isMediaUnanswered)) {
+    return 'outdated'
+  }
+
   const pinned = new Set(record.keys)
   return getMediaTargets().every((target) => pinned.has(target.key)) ? 'available' : 'outdated'
 }
@@ -501,8 +507,7 @@ function refreshOfflineStatus(id) {
     return
   }
 
-  // a picture still loading has no key yet, so the answer above left it out;
-  // a read that fails changes no status, and the next one settles it
+  // a picture still loading has no key yet, so the answer above left it out
   stopFollowingMedia = onMediaStatusChange(mediaNodeIds(), () => {
     if (id === presentationId.value) {
       offlineCopyStatus.value = getOfflineStatus(id)
