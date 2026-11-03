@@ -300,7 +300,12 @@ async function pruneOfflineCopy(id) {
 
   const cache = await openPinnedCache()
   await Promise.all([...orphans].map((key) => cache.delete(key)))
-  writeRecord(id, { ...record, keys: record.keys.filter((key) => !orphans.has(key)) })
+
+  // a save may have pinned more during the deletes
+  const current = readRecord(id)
+  if (current) {
+    writeRecord(id, { ...current, keys: current.keys.filter((key) => !orphans.has(key)) })
+  }
 }
 
 // a save and a visit's refresh share one slot; a later run stops the one before and waits for it

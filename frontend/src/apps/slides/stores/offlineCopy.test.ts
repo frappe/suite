@@ -502,6 +502,24 @@ describe('saveOfflineCopy', () => {
 })
 
 describe('pruneOfflineCopy', () => {
+  it('keeps in the record what a save pins while the bytes are being deleted', async () => {
+    await saveOfflineCopy('p1')
+    slides.value = slidesWith(['/files/b.png'])
+    responses['/private/files/c.png?slides_media=1'] = () => image(30)
+    const deleteKey = cache.delete.bind(cache)
+    vi.spyOn(cache, 'delete').mockImplementationOnce(async (key: string) => {
+      slides.value = slidesWith(['/files/b.png'], ['/files/c.png'])
+      await saveOfflineCopy('p1')
+
+      return deleteKey(key)
+    })
+
+    await pruneOfflineCopy('p1')
+
+    expect(cache.has('/private/files/c.png')).toBe(true)
+    expect(recordedKeys('p1')).toEqual(['/private/files/b.png', '/private/files/c.png'])
+  })
+
   it('drops the bytes of an image the presentation no longer shows', async () => {
     await saveOfflineCopy('p1')
     slides.value = slidesWith(['/files/b.png'])
