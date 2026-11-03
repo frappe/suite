@@ -65,6 +65,7 @@ import {
   saveChanges,
   saveFailed,
   saveRefused,
+  savingFor,
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
@@ -548,8 +549,16 @@ watch(
   },
   { flush: 'post' },
 )
+// closing the tab ends a push of the presentation left behind too
+function unloadState(): DocumentSaveState {
+  if (savingFor.value) {
+    return 'saving'
+  }
+
+  return saveState.value
+}
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: () => saveState.value, retainRecovery: retainOrWarn }, event)
+  resolveDocumentUnload({ state: unloadState, retainRecovery: retainOrWarn }, event)
 }
 function setOnline() {
   online.value = true

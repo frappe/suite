@@ -32,6 +32,7 @@ const {
   saveCurrentState,
   saveFailed,
   saveRefused,
+  savingFor,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
 const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
@@ -808,6 +809,62 @@ describe('Slides push refused by the server', () => {
       }
     }
 
+    describe('with the last presentation still pushing', () => {
+      let land!: () => void
+
+      async function openedDuringItsPush() {
+        mounted = await openedSurface()
+        const answerAtServer = server.fetch.getMockImplementation()
+        const held = new Promise<Response>((resolve) => {
+          land = () => resolve(new Response('{}', { status: 500 }))
+        })
+        server.fetch.mockImplementation((url: string, init?: RequestInit) => {
+          if (url.includes('save_slides')) {
+            return held
+          }
+
+          return answerAtServer?.(url, init)
+        })
+        duplicateSlide()
+        await vi.waitFor(() => expect(isSaving.value).toBe(true), { timeout: 3000 })
+        mounted.app.unmount()
+        mounted.root.remove()
+
+        mounted = await openedSurface()
+      }
+
+      afterEach(async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        land()
+        await vi.waitFor(() => expect(savingFor.value).toBeNull())
+        vi.mocked(console.error).mockRestore()
+      })
+
+      it('takes a clean presentation as having nothing unsaved when access narrows', async () => {
+        await openedDuringItsPush()
+        const copies = readRecovery('node-1').length
+        vi.mocked(toast.warning).mockClear()
+
+        if (mounted) {
+          mounted.access.value = { role: 10 }
+        }
+
+        await nextTick()
+
+        expect(toast.warning).toHaveBeenCalledWith(VIEW_ONLY)
+        expect(readRecovery('node-1')).toHaveLength(copies)
+      })
+
+      it('still asks the browser to confirm closing the tab', async () => {
+        await openedDuringItsPush()
+
+        const unload = new Event('beforeunload', { cancelable: true })
+        window.dispatchEvent(unload)
+
+        expect(unload.defaultPrevented).toBe(true)
+      })
+    })
+
     it('says the copy is kept when it is', async () => {
       await narrowedWithEdits()
 
@@ -1460,7 +1517,7 @@ describe('Slides push refused by the server', () => {
     keepRecovery('node-1', [{ clientId: 'kept-by-this-page' }])
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     failPush()
-    await vi.waitFor(() => expect(isSaving.value).toBe(false))
+    await vi.waitFor(() => expect(savingFor.value).toBeNull())
     await nextTick()
     error.mockRestore()
 

@@ -12,7 +12,7 @@ import {
 } from './SlidesSurface.fakes'
 
 const { duplicateSlide, slides: editorSlides } = await import('@/apps/slides/stores/slide')
-const { isSaving, saveFailed, writeDraft } = await import('@/apps/slides/stores/saving')
+const { isSaving, saveFailed, savingFor, writeDraft } = await import('@/apps/slides/stores/saving')
 const { keepRecovery, readRecovery } = await import('./recovery')
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
@@ -54,7 +54,7 @@ describe('a copy that outlived its page', () => {
     mounted = null
     // the unmount sends what it holds, and that landing must not reach the next open
     await new Promise((resolve) => setTimeout(resolve, 50))
-    await vi.waitFor(() => expect(isSaving.value).toBe(false))
+    await vi.waitFor(() => expect(savingFor.value).toBeNull())
     saves.length = 0
   }
 
@@ -157,9 +157,9 @@ describe('a copy that outlived its page', () => {
       }),
     })
     saveFailed.value = false
-    isSaving.value = true
+    savingFor.value = mounted.docname
     await nextTick()
-    isSaving.value = false
+    savingFor.value = null
     await nextTick()
 
     release()

@@ -6,11 +6,11 @@ import { showsSlides, viewOnly } from '@/apps/slides/stores/presentation'
 import {
   dirty,
   isSaving,
-  lastPushWasFor,
   resumeWrites,
   retireDraft,
   saveFailed,
   saveRefused,
+  savingFor,
   stopWrites,
 } from '@/apps/slides/stores/saving'
 import { slides } from '@/apps/slides/stores/slide'
@@ -87,14 +87,14 @@ export function useUnsavedRecovery(
   let hasSettledCopies = false
 
   // A save that lands with edit access makes the recovery copy stale
-  watch(isSaving, (now, before) => {
-    if (!before || now || saveFailed.value || !isEditable() || !hasRecovery.value) return
+  watch(savingFor, (now, before) => {
+    // a push of the presentation left behind says nothing about this one
+    if (now || before !== session.contentDocname) return
+
+    if (saveFailed.value || !isEditable() || !hasRecovery.value) return
 
     // the last surface's push can land during this one's first load
     if (!hasSettledCopies) return
-
-    // a push of the presentation left behind says nothing about this one
-    if (!lastPushWasFor(session.contentDocname)) return
 
     clearStaleRecovery(session.nodeId)
     syncHasRecovery()

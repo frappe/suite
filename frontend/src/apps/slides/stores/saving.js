@@ -161,13 +161,10 @@ const getPresentationFromLocalDB = async (id) => {
 // explicit dirty flag set by every mutation path
 const dirty = ref(false)
 
-const isSaving = ref(false)
+// whose push is running; there is one at a time, whichever presentation is open
+const savingFor = ref(null)
 
-// whose push `isSaving` last followed, as it is shared across presentations
-let lastPushed = null
-function lastPushWasFor(id) {
-  return lastPushed === id
-}
+const isSaving = computed(() => !!savingFor.value && savingFor.value === presentationId.value)
 
 // edits the gate turned away; a push landing after the editor left carries them out
 const queuedSnapshots = new Map()
@@ -353,7 +350,7 @@ const saveCurrentState = async () => {
 
   ticksAtGate.set(idAtSnapshot, tick)
 
-  if (isSaving.value) {
+  if (savingFor.value) {
     queuedSnapshots.set(idAtSnapshot, snapshot)
     return
   }
@@ -362,8 +359,7 @@ const saveCurrentState = async () => {
   if (snapshot.baseModified === refusedBase.value) return
   if (Date.now() < retryAt) return
 
-  isSaving.value = true
-  lastPushed = idAtSnapshot
+  savingFor.value = idAtSnapshot
 
   try {
     // only mark clean once the server actually has the changes,
@@ -393,7 +389,7 @@ const saveCurrentState = async () => {
       retryAt = Date.now() + retryDelay
     }
   } finally {
-    isSaving.value = false
+    savingFor.value = null
   }
 }
 
@@ -451,7 +447,7 @@ export {
   retireDraft,
   resumeWrites,
   isSaving,
-  lastPushWasFor,
+  savingFor,
   dirty,
   markDirty,
   markClean,
