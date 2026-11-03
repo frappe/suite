@@ -16,6 +16,7 @@ from suite.content.conversions import ConversionRefused
 from suite.drive._core.access import grant
 from suite.drive.framework import principals_for
 from suite.sheets import content as sheets_content
+from suite.sheets.api import get_conversion
 from suite.sheets.content import conversion
 from suite.sheets.content.tests.support import (
     CURRENT_BODY,
@@ -264,6 +265,23 @@ class TestConvertDocument(IntegrationTestCase):
         self.assertIsNone(log.find(sheets_content.APP, node))
         self.assertEqual(self.records(node), (("check", None),))
         self.assertTrue(frappe.db.get_value("Sheet", docname, "sheets_data"))
+
+    def test_a_page_reading_a_sheet_learns_it_waits_was_refused_or_is_converted(self):
+        waiting = self.old_sheet(CURRENT_BODY)
+        refused = self.old_sheet("not json")
+        done = self.old_sheet(CURRENT_BODY)
+        self.assertEqual(conversions.convert_document(sheets_content.APP, refused), "check")
+        self.assertEqual(conversions.convert_document(sheets_content.APP, done), "converted")
+
+        def status(node: str) -> dict:
+            return get_conversion(frappe.db.get_value("Drive Node", node, "content_docname"))
+
+        self.assertEqual(
+            [status(node) for node in (waiting, refused, done)],
+            [{"state": "pending"}, {"state": "refused"}, {"state": "converted"}],
+        )
+        frappe.set_user("Administrator")
+        self.assertEqual(status(refused), {"state": "refused", "reason": "check"})
 
     def test_a_changed_body_fingerprints_again(self):
         node = self.old_sheet(CURRENT_BODY)
