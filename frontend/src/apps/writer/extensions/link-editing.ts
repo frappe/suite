@@ -66,11 +66,15 @@ export function removeLink(editor: Editor): boolean {
     .run()
 }
 
-/** A link the editor accepts: http(s), mail and phone links, and paths in this site. */
+/**
+ * A link the editor accepts: http(s), mail and phone links, and paths in this site. A typed
+ * scheme takes any host, such as `http://intranet`; without one a host needs a dot.
+ */
 export function normalizeHref(value: string): string | null {
   const href = value.trim()
   if (/^[/#]/.test(href)) return href
-  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(href) ? href : `https://${href}`
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(href)
+  const withScheme = hasScheme ? href : `https://${href}`
   let url: URL
   try {
     url = new URL(withScheme)
@@ -79,7 +83,7 @@ export function normalizeHref(value: string): string | null {
   }
   if (['mailto:', 'tel:'].includes(url.protocol)) return withScheme
   if (!['http:', 'https:'].includes(url.protocol)) return null
-  return url.hostname === 'localhost' || url.hostname.includes('.') ? withScheme : null
+  return hasScheme || url.hostname === 'localhost' || url.hostname.includes('.') ? withScheme : null
 }
 
 /**
