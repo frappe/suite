@@ -3,6 +3,7 @@ import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { slidesWorkerEnabled } from '@/apps/slides/utils/serviceWorker'
 import {
+  isQuotaError,
   RECORD_PREFIX,
   VISITED_CACHE_NAME,
   VISITED_SHELL_KEY,
@@ -192,7 +193,7 @@ function putterFor(cache, node) {
     try {
       await cache.put(key, response)
     } catch (err) {
-      if (err?.name !== 'QuotaExceededError') {
+      if (!isQuotaError(err)) {
         throw err
       }
 

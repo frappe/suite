@@ -8,6 +8,10 @@ export const VISITED_CACHE_NAME = 'slides-visited'
 
 export const PIN_HEADER = 'x-slides-pin'
 
+export function isQuotaError(err) {
+  return err?.name === 'QuotaExceededError'
+}
+
 // every visited presentation opens this one shell, see stores/visitedCopies.js
 export const VISITED_SHELL_KEY = '/slides-visited-shell'
 

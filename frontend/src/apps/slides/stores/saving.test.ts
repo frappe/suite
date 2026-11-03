@@ -44,6 +44,7 @@ const {
   getPresentationFromLocalDB,
   stopWrites,
   resumeWrites,
+  writeDraft,
 } = await import('./saving')
 
 function conflict() {
@@ -233,9 +234,19 @@ describe('saveCurrentState', () => {
   })
 
   describe('a draft write on a full disk', () => {
+    type Draft = {
+      dirty: boolean
+      baseModified: string
+      content: Array<{ background: string }>
+    }
+
     const put = IDBObjectStore.prototype.put
     let deleted: string[]
     let pushes: number
+
+    function readDraft(id: string) {
+      return getPresentationFromLocalDB(id) as Promise<Draft>
+    }
 
     function quotaError() {
       return new DOMException('full', 'QuotaExceededError')
@@ -316,8 +327,10 @@ describe('saveCurrentState', () => {
     it('retries once, then pushes without the draft', async () => {
       failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
       let writesAtPush = 0
+      let clearsAtPush: string[] = []
       serverSave = async () => {
         writesAtPush = vi.mocked(IDBObjectStore.prototype.put).mock.calls.length
+        clearsAtPush = [...deleted]
         pushes++
         return 'M2'
       }
@@ -328,8 +341,256 @@ describe('saveCurrentState', () => {
 
       await vi.waitFor(() => expect(pushes).toBe(1))
       expect(writesAtPush).toBe(2)
-      expect(new Set(deleted)).toEqual(new Set(['slides-visited']))
+      expect(clearsAtPush).toEqual(['slides-visited'])
       await saving
+    })
+
+    function holdClear() {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      vi.stubGlobal('caches', {
+        delete: async (name: string) => {
+          deleted.push(name)
+          await held
+          return true
+        },
+      })
+      return release
+    }
+
+    function seedDraft(id: string, background = '#aaaaaaff') {
+      return writeDraft({
+        id,
+        content: [{ clientId: 'c1', background, elements: [] }],
+        dirty: true,
+        updatedAt: 1,
+        baseModified: 'M0',
+      })
+    }
+
+    it('never sends an older tick after a newer one, when the editor moved on', async () => {
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+      const sent: string[] = []
+      let land!: (modified: string) => void
+      serverSave = (_id, content) => {
+        sent.push(content[0].background)
+        if (sent.length > 1) {
+          return Promise.resolve('M3')
+        }
+
+        return new Promise((resolve) => {
+          land = resolve
+        })
+      }
+
+      slides.value[0].background = '#aaaaaaff'
+      markDirty()
+      const older = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+
+      slides.value[0].background = '#bbbbbbff'
+      markDirty()
+      const newer = saveCurrentState()
+      await vi.waitFor(() => expect(sent).toEqual(['#bbbbbbff']))
+
+      slides.value = []
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      releaseClear()
+      await older
+      land('M2')
+      await newer
+
+      expect(sent).toEqual(['#bbbbbbff'])
+      const local = await readDraft('p1')
+      expect(local.content[0].background).toBe('#bbbbbbff')
+      expect(local.baseModified).toBe('M2')
+    })
+
+    it('never sends an older tick on the old base after the newer one landed', async () => {
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+      const sent: string[] = []
+      serverSave = async (_id, content) => {
+        sent.push(content[0].background)
+        return 'M2'
+      }
+
+      slides.value[0].background = '#aaaaaaff'
+      markDirty()
+      const older = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+
+      slides.value[0].background = '#bbbbbbff'
+      markDirty()
+      await saveCurrentState()
+      releaseClear()
+      await older
+
+      expect(sent).toEqual(['#bbbbbbff'])
+      expect(saveFailed.value).toBe(false)
+      const local = await readDraft('p1')
+      expect(local.content[0].background).toBe('#bbbbbbff')
+    })
+
+    it('writes and sends nothing when the writes stop during the clear', async () => {
+      presentationId.value = 'p-stopped-in-clear'
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+
+      markDirty()
+      const saving = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+      await stopWrites('p-stopped-in-clear')
+      releaseClear()
+      await saving
+
+      expect(pushes).toBe(0)
+      expect(await getPresentationFromLocalDB('p-stopped-in-clear')).toBeFalsy()
+    })
+
+    it('still retries the draft when the clear itself fails', async () => {
+      failFirstWrites(1, quotaError())
+      vi.stubGlobal('caches', {
+        delete: async () => {
+          throw new Error('caches gone')
+        },
+      })
+      let draftAtPush!: Draft
+      serverSave = async () => {
+        draftAtPush = await getPresentationFromLocalDB('p1')
+        return 'M2'
+      }
+
+      slides.value[0].background = '#123456ff'
+      markDirty()
+
+      await saveCurrentState()
+
+      expect(draftAtPush.content[0].background).toBe('#123456ff')
+    })
+
+    it('drops the older draft when the clean write after a landed save fails', async () => {
+      presentationId.value = 'p-landed-full'
+      await seedDraft('p-landed-full')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      markDirty()
+
+      await saveCurrentState()
+
+      expect(pushes).toBe(1)
+      expect(await getPresentationFromLocalDB('p-landed-full')).toBeFalsy()
+    })
+
+    it('drops it too when the editor moved on before the save landed', async () => {
+      presentationId.value = 'p-landed-moved'
+      await seedDraft('p-landed-moved')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      serverSave = async () => {
+        slides.value = []
+        presentationId.value = 'p2'
+        presentationDoc.value = { modified: 'M9' }
+        return 'M2'
+      }
+
+      markDirty()
+
+      await saveCurrentState()
+
+      expect(await getPresentationFromLocalDB('p-landed-moved')).toBeFalsy()
+    })
+
+    it('keeps the draft when an edit arrived during the landed save', async () => {
+      presentationId.value = 'p-landed-edited'
+      await seedDraft('p-landed-edited')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      serverSave = async () => {
+        slides.value[0].background = '#00ff00ff'
+        markDirty()
+        return 'M2'
+      }
+
+      markDirty()
+
+      await saveCurrentState()
+
+      const local = await readDraft('p-landed-edited')
+      expect(local.dirty).toBe(true)
+      expect(dirty.value).toBe(true)
+    })
+
+    it('keeps the draft when an edit arrived before the editor moved on', async () => {
+      presentationId.value = 'p-edited-moved'
+      await seedDraft('p-edited-moved')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      serverSave = async () => {
+        markDirty()
+        slides.value = []
+        presentationId.value = 'p2'
+        presentationDoc.value = { modified: 'M9' }
+        return 'M2'
+      }
+
+      markDirty()
+
+      await saveCurrentState()
+
+      const local = await readDraft('p-edited-moved')
+      expect(local.dirty).toBe(true)
+    })
+
+    it('keeps the draft when the writes stop during the clean write', async () => {
+      presentationId.value = 'p-stopped-clean'
+      await seedDraft('p-stopped-clean')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      let releaseClear!: () => void
+      vi.stubGlobal('caches', {
+        delete: (name: string) => {
+          deleted.push(name)
+          if (deleted.length === 1) {
+            return Promise.resolve(true)
+          }
+
+          return new Promise((resolve) => {
+            releaseClear = () => resolve(true)
+          })
+        },
+      })
+      markDirty()
+
+      const saving = saveCurrentState()
+      await vi.waitFor(() => expect(releaseClear).toBeDefined())
+      await stopWrites('p-stopped-clean', () => false)
+      releaseClear()
+      await saving
+      resumeWrites('p-stopped-clean')
+
+      const local = await readDraft('p-stopped-clean')
+      expect(local.dirty).toBe(true)
+    })
+
+    it('leaves no retired draft to replay when access returns on a full store', async () => {
+      await seedDraft('p-retired-full')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+
+      await stopWrites('p-retired-full')
+      resumeWrites('p-retired-full')
+
+      expect(await getPresentationFromLocalDB('p-retired-full')).toBeFalsy()
+    })
+
+    it('leaves the draft when what keeps its content cannot', async () => {
+      await seedDraft('p-unkept-full')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+
+      await stopWrites('p-unkept-full', () => false)
+      resumeWrites('p-unkept-full')
+
+      const local = await readDraft('p-unkept-full')
+      expect(local.dirty).toBe(true)
     })
 
     it('leaves the visited copies alone on any other failure', async () => {
@@ -347,10 +608,10 @@ describe('saveCurrentState', () => {
   it('keeps writing the draft while a push is stuck', async () => {
     markDirty()
 
-    let release: (modified: string) => void = () => {}
+    let release!: (modified: string) => void
     serverSave = () => new Promise((resolve) => (release = resolve))
     const stuck = saveCurrentState()
-    await new Promise((resolve) => setTimeout(resolve))
+    await vi.waitFor(() => expect(release).toBeDefined())
 
     slides.value[0].background = '#00ff00ff'
     markDirty()
@@ -397,10 +658,10 @@ describe('saveCurrentState', () => {
   it('drops a queued edit once the push it waited on fails', async () => {
     markDirty()
 
-    let fail: (err: Error) => void = () => {}
+    let fail!: (err: Error) => void
     serverSave = () => new Promise((_, reject) => (fail = reject))
     const stuck = saveCurrentState()
-    await new Promise((resolve) => setTimeout(resolve))
+    await vi.waitFor(() => expect(fail).toBeDefined())
 
     slides.value[0].background = '#222222ff'
     markDirty()

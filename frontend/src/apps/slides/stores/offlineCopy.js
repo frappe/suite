@@ -9,7 +9,12 @@ import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources, entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
-import { PIN_HEADER, PINNED_CACHE_NAME, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
+import {
+  isQuotaError,
+  PIN_HEADER,
+  PINNED_CACHE_NAME,
+  RECORD_PREFIX,
+} from '@/apps/slides/utils/slidesCaches'
 import { isMediaContentType } from '@/apps/slides/utils/slidesRequests'
 import {
   cancelBodies,
@@ -24,7 +29,6 @@ import {
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
 const TIMEOUT = 'timeout'
-const QUOTA_ERROR = 'QuotaExceededError'
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
@@ -200,7 +204,7 @@ function deleteUnshared(cache, id, keys) {
 
 // a pin comes before any visited copy
 async function clearVisitedOnQuota(err) {
-  if (err?.name !== QUOTA_ERROR) {
+  if (!isQuotaError(err)) {
     throw err
   }
 
@@ -357,7 +361,7 @@ const saveOfflineCopy = async (id) => {
           return
         }
 
-        if (err?.name === QUOTA_ERROR) {
+        if (isQuotaError(err)) {
           // every later put fails the same way
           recordFailure(progress, target, QUOTA)
           controller.abort(QUOTA)

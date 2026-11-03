@@ -238,7 +238,8 @@ const {
   saveRefused,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
-const { inReadonlyMode, startLoad, viewOnly } = await import('@/apps/slides/stores/presentation')
+const { initPresentationDoc, inReadonlyMode, startLoad, viewOnly } =
+  await import('@/apps/slides/stores/presentation')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
@@ -1288,6 +1289,71 @@ describe('Slides push refused by the server', () => {
 
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
       expect(refusalToast(KEPT)).toBeUndefined()
+    })
+
+    function failDraftWrites() {
+      const put = IDBObjectStore.prototype.put
+      return vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        record: unknown,
+        key?: IDBValidKey,
+      ) {
+        const request = put.call(this, record, key)
+        const { transaction } = this
+        request.addEventListener('success', () => {
+          Object.defineProperty(transaction, 'error', {
+            get: () => new DOMException('full', 'QuotaExceededError'),
+            set() {},
+          })
+          transaction.abort()
+        })
+        return request
+      })
+    }
+
+    it('shows the server copy and no false toast after a landed save could not write', async () => {
+      mounted = await openedSurface()
+      await writeDraft({
+        id: mounted.docname,
+        content: [{ clientId: 'older', background: '#00ff00ff', elements: [] }],
+        dirty: true,
+        updatedAt: 1,
+        baseModified: 'M0',
+      })
+      const writes = failDraftWrites()
+
+      duplicateSlide()
+      await saveLands()
+      await vi.waitFor(async () =>
+        expect(await getPresentationFromLocalDB(mounted?.docname as string)).toBeFalsy(),
+      )
+      writes.mockRestore()
+      vi.mocked(toast.warning).mockClear()
+
+      await initPresentationDoc(mounted.docname)
+
+      expect(editorSlides.value).toHaveLength(2)
+      expect(toast.warning).not.toHaveBeenCalled()
+      expect(readRecovery('node-1')).toEqual([])
+    })
+
+    it('takes the copy before the record goes when access narrows on a full store', async () => {
+      await seedDraft()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+      const writes = failDraftWrites()
+
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
+      await vi.waitFor(async () =>
+        expect(await getPresentationFromLocalDB(mounted?.docname as string)).toBeFalsy(),
+      )
+      writes.mockRestore()
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+
+      const [copy] = readRecovery('node-1')
+      expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
     })
 
     it('stays view only when access returns and the store is still full', async () => {
