@@ -73,6 +73,73 @@ describe('buildOption — formatted numbers', () => {
   })
 })
 
+// A scatter point sits at (x, y) from one row. With Y alone on a value X axis,
+// ECharts had no X to read and drew Y against Y (ISSUES #76).
+describe('buildOption — scatter', () => {
+  const scatter = (rows, over = {}) => buildOption(cfg({ chartType: 'scatter', ...over }), rows)
+
+  it('plots each row at (x, y)', () => {
+    const rows = [
+      ['Price', 'Units'],
+      [10, 5],
+      [20, 3],
+      ['$30.00', '1,000'],
+    ]
+    expect(scatter(rows).series[0].data).toEqual([
+      [10, 5],
+      [20, 3],
+      [30, 1000],
+    ])
+  })
+
+  it('plots every Y series against the same X column', () => {
+    const rows = [
+      ['Units', 'Price', 'Cost'],
+      [5, 10, 7],
+      [3, 20, 9],
+    ]
+    const opt = scatter(rows, { encoding: { x: 1, y: [0, 2] } })
+    expect(opt.series.map((s) => s.data)).toEqual([
+      [
+        [10, 5],
+        [20, 3],
+      ],
+      [
+        [10, 7],
+        [20, 9],
+      ],
+    ])
+  })
+
+  it('skips rows whose X or Y is empty or not a number', () => {
+    const rows = [
+      ['Price', 'Units'],
+      [10, 5],
+      ['', 4],
+      [12, ''],
+      ['n/a', 6],
+      [14, 'none'],
+      [null, 2],
+      [16, 8],
+    ]
+    expect(scatter(rows).series[0].data).toEqual([
+      [10, 5],
+      [16, 8],
+    ])
+  })
+
+  it('leaves bar, line and area series as plain Y values', () => {
+    const rows = [
+      ['Month', 'Sales'],
+      ['Jan', 10],
+      ['Feb', ''],
+    ]
+    for (const chartType of ['bar', 'line', 'area']) {
+      expect(buildOption(cfg({ chartType }), rows).series[0].data).toEqual([10, 0])
+    }
+  })
+})
+
 describe('buildOption — rendering', () => {
   // ECharts is imported at the top of the file, while the file loads: a cold
   // import inside the test counted against its 5 s timeout and could run past
