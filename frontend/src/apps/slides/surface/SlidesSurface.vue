@@ -625,7 +625,7 @@ onBeforeUnmount(() => {
       :view-only="!editable"
       :recoverable="canDownloadChanges"
       :panels="['comments', 'versions']"
-      center-title
+      layout="centered"
       :panel="panel"
       @update:panel="showPanel"
       @download-changes="downloadChanges"

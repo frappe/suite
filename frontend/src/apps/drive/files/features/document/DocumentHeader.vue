@@ -2,7 +2,7 @@
   <header
     ref="headerElement"
     class="relative flex shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base"
-    :class="compact ? 'h-10 px-3' : 'h-12 px-3 sm:px-4'"
+    :class="sizeClass"
   >
     <!-- A centered title lifts the title group into the header, between two
       sides that grow alike; the icon and the way back stay at the start. -->
@@ -92,12 +92,12 @@
       </template>
       <!-- A compact header says it beside the title, before its menus. -->
       <span
-        v-if="compact && saveState"
+        v-if="showsSaveBesideTitle"
         class="ms-1 me-2 whitespace-nowrap text-sm"
         :class="saveClass"
         aria-live="polite"
       >
-        {{ SAVE_LABELS[saveState] }}
+        {{ saveLabel }}
       </span>
       <slot name="status" />
       <slot name="menus" />
@@ -106,12 +106,12 @@
     <div class="flex shrink-0 items-center gap-1" :class="centering.end">
       <!-- A clean or saving document says so on wide screens only; a failed save always shows. -->
       <span
-        v-if="!compact && saveState"
+        v-if="showsSaveAtEnd"
         class="mr-1 whitespace-nowrap text-sm"
         :class="saveClass"
         aria-live="polite"
       >
-        {{ SAVE_LABELS[saveState] }}
+        {{ saveLabel }}
       </span>
       <slot name="actions" />
       <Button
@@ -193,13 +193,12 @@ const props = withDefaults(
     location?: { label: string; to: RouteLocationRaw } | null
     /** A file's MIME type picks its icon. Documents have none. */
     mime?: string | null
-    /** Centers the title across the header on wide screens. */
-    centerTitle?: boolean
     /**
-     * A 40-px header for a surface that adds its own menu bar (the `menus`
+     * `centered` centers the title across the header on wide screens. `compact`
+     * is a 40-px header for a surface that adds its own menu bar (the `menus`
      * slot): the save state moves beside the title, ahead of the menus.
      */
-    compact?: boolean
+    layout?: 'default' | 'centered' | 'compact'
   }>(),
   {
     saveState: null,
@@ -208,8 +207,7 @@ const props = withDefaults(
     panels: () => [],
     location: null,
     mime: null,
-    centerTitle: false,
-    compact: false,
+    layout: 'default',
   },
 )
 
@@ -228,7 +226,18 @@ const CENTERED = {
   end: 'md:flex-1 md:justify-end',
 }
 const UNCENTERED = { title: '', start: '', end: '' }
-const centering = computed(() => (props.centerTitle ? CENTERED : UNCENTERED))
+const isCompact = computed(() => props.layout === 'compact')
+const sizeClass = computed(() => (isCompact.value ? 'h-10 px-3' : 'h-12 px-3 sm:px-4'))
+const showsSaveBesideTitle = computed(() => isCompact.value && !!props.saveState)
+const showsSaveAtEnd = computed(() => !isCompact.value && !!props.saveState)
+const saveLabel = computed(() => {
+  if (!props.saveState) {
+    return ''
+  }
+
+  return SAVE_LABELS[props.saveState]
+})
+const centering = computed(() => (props.layout === 'centered' ? CENTERED : UNCENTERED))
 const trashed = computed(() => props.session.state.value === 'Trashed')
 const renamable = computed(() =>
   canRename({ state: props.session.state.value, access: props.session.access.value }),

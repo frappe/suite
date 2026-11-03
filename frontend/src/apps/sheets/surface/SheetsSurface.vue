@@ -226,7 +226,7 @@ useDocumentLeaveGuard({
           :recoverable="hasRecovery"
           :panels="['comments', 'versions']"
           :panel="panel"
-          compact
+          layout="compact"
           @update:panel="showPanel"
           @download-changes="downloadChanges"
         >
