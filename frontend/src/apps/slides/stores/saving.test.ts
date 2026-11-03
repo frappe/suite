@@ -440,7 +440,7 @@ describe('saveCurrentState', () => {
         refuse = reject
       })
     const stuck = saveCurrentState()
-    await new Promise((resolve) => setTimeout(resolve))
+    await vi.waitFor(() => expect(refuse).toBeDefined())
 
     slides.value[0].background = '#222222ff'
     markDirty()

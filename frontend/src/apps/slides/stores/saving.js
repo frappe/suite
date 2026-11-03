@@ -344,19 +344,20 @@ const saveCurrentState = async () => {
   }
 }
 
-async function retireDraft(id) {
+// `keepContent` answers false to leave the draft in place, as the only place its edits live
+async function retireDraft(id, keepContent) {
   const local = await getPresentationFromLocalDB(id).catch(() => null)
-  if (local?.dirty) {
-    await savePresentationToLocalDB({ ...local, dirty: false, updatedAt: Date.now() }).catch(
-      () => {},
-    )
+  if (!local?.dirty || (keepContent && !keepContent(local.content))) {
+    return
   }
+
+  await savePresentationToLocalDB({ ...local, dirty: false, updatedAt: Date.now() }).catch(() => {})
 }
 
 // Edit access is gone. No save starts, the one under way is aborted and lands
 // nothing, and the draft is retired so it never replays: the edits live on only
 // in the explicit recovery copy the surface keeps.
-const stopWrites = async (id) => {
+async function stopWrites(id, keepContent) {
   if (!id) return
   stopped.add(id)
   epochs.set(id, epochFor(id) + 1)
@@ -364,7 +365,7 @@ const stopWrites = async (id) => {
   draftGenerations.delete(id)
   saveAborts.get(id)?.abort()
   saveAborts.delete(id)
-  await retireDraft(id)
+  await retireDraft(id, keepContent)
 }
 
 // Edit access is back. The caller reloads from the server; the old epoch stays

@@ -229,8 +229,16 @@ const {
   slideIndex,
   slides: editorSlides,
 } = await import('@/apps/slides/stores/slide')
-const { dirty, getPresentationFromLocalDB, isSaving, saveRefused, writeDraft } =
-  await import('@/apps/slides/stores/saving')
+const {
+  dirty,
+  getPresentationFromLocalDB,
+  isSaving,
+  saveCurrentState,
+  saveFailed,
+  saveRefused,
+  writeDraft,
+} = await import('@/apps/slides/stores/saving')
+const { inReadonlyMode, startLoad, viewOnly } = await import('@/apps/slides/stores/presentation')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
@@ -257,9 +265,23 @@ function session(docname: string, access: Ref<{ role: number }>): DocumentSessio
 // each test opens its own presentation, so no draft carries over between them
 let opens = 0
 
-async function openedSurface({ path = '', role = 50, slides = served.slides } = {}) {
+async function openedSurface({
+  path = '',
+  role = 50,
+  slides = served.slides,
+  firstLoad,
+}: {
+  path?: string
+  role?: number
+  slides?: unknown[]
+  firstLoad?: Promise<void | Response>
+} = {}) {
   const docname = `p${++opens}`
-  const loads: Array<Promise<void>> = []
+  const loads: Array<Promise<void | Response>> = []
+  if (firstLoad) {
+    loads.push(firstLoad)
+  }
+
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.includes('save_slides')) {
       if (isRefusing) {
@@ -276,8 +298,9 @@ async function openedSurface({ path = '', role = 50, slides = served.slides } = 
     }
 
     const held = loads.shift()
-    if (held) {
-      await held
+    const heldAnswer = held && (await held)
+    if (heldAnswer) {
+      return heldAnswer
     }
 
     return answer({ ...structuredClone(served), slides, name: docname })
@@ -305,7 +328,10 @@ async function openedSurface({ path = '', role = 50, slides = served.slides } = 
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
-  await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
+  if (!firstLoad) {
+    await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
+  }
+
   return { app, root, docname, router, access, loads }
 }
 
@@ -942,8 +968,8 @@ describe('Slides push refused by the server', () => {
   describe('edit access lost with unsaved edits', () => {
     const KEPT = 'Editing access changed. Your unsaved changes are kept on this device.'
     const UNSTORED = 'Editing access changed. Download your changes before you reload.'
-    const BACK_UNSTORED =
-      'You can edit this presentation again. Download your changes before you reload.'
+    const VIEW_ONLY = 'Editing access changed. This presentation is now view only.'
+    const BACK_UNSTORED = 'Editing access is back. Download your changes before you reload.'
 
     async function narrowedWithEdits(afterOpening = () => {}) {
       mounted = await openedSurface()
@@ -1022,6 +1048,7 @@ describe('Slides push refused by the server', () => {
 
       expect(saves).toEqual([])
 
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
       refusalToast(BACK_UNSTORED)?.cancel.onClick()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
       await nextTick()
@@ -1042,7 +1069,7 @@ describe('Slides push refused by the server', () => {
       expect(copy.slides).toHaveLength(3)
     })
 
-    it('asks before leaving when the save landed just as access went', async () => {
+    async function savedJustAsAccessWent() {
       mounted = await openedSurface()
       fillTheStore()
       const put = IDBObjectStore.prototype.put
@@ -1062,6 +1089,10 @@ describe('Slides push refused by the server', () => {
       await vi.waitFor(() => expect(refusalToast(UNSTORED)).toBeDefined(), { timeout: 3000 })
       await vi.waitFor(() => expect(dirty.value || isSaving.value).toBe(false))
       await nextTick()
+    }
+
+    it('asks before leaving when the save landed just as access went', async () => {
+      await savedJustAsAccessWent()
       expect(downloadButton()).not.toBeNull()
 
       const unload = new Event('beforeunload', { cancelable: true })
@@ -1069,14 +1100,15 @@ describe('Slides push refused by the server', () => {
       expect(unload.defaultPrevented).toBe(true)
 
       const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-      await mounted.router.push('/d/node-2')
+      await mounted?.router.push('/d/node-2')
       expect(confirm).toHaveBeenCalled()
-      expect(mounted.router.currentRoute.value.params.node).toBe('node-1')
+      expect(mounted?.router.currentRoute.value.params.node).toBe('node-1')
     })
 
     it('does not let a load already running land over the slides', async () => {
       await narrowedWithEdits(fillTheStore)
       widen()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
       let release!: () => void
       mounted?.loads.push(
         new Promise((resolve) => {
@@ -1103,6 +1135,277 @@ describe('Slides push refused by the server', () => {
       widen()
       refusalToast(BACK_UNSTORED)?.cancel.onClick()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+    })
+
+    async function saveLands() {
+      const landed = saves.length
+      await vi.waitFor(() => expect(saves.length).toBeGreaterThan(landed), { timeout: 3000 })
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+      await nextTick()
+    }
+
+    it('keeps the copy through access returning and the next save', async () => {
+      await narrowedWithEdits()
+      widen()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      duplicateSlide()
+      duplicateSlide()
+      await saveLands()
+
+      expect(readRecovery('node-1').map((copy) => copy.slides.length)).toEqual([3])
+      refusalToast(KEPT)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      expect(await downloadedSlides()).toHaveLength(3)
+    })
+
+    it('keeps the copy taken when access returns with room through the next save', async () => {
+      await narrowedWithEdits(fillTheStore)
+      vi.mocked(Storage.prototype.setItem).mockRestore()
+      widen()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      duplicateSlide()
+      duplicateSlide()
+      await saveLands()
+
+      expect(readRecovery('node-1').map((copy) => copy.slides.length)).toEqual([3])
+    })
+
+    it('keeps the copy from leaving while view only through the next save', async () => {
+      await narrowedWithEdits()
+      localStorage.clear()
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await mounted?.router.push('/d/node-2')
+      widen()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      duplicateSlide()
+      duplicateSlide()
+      await saveLands()
+
+      expect(readRecovery('node-1').map((copy) => copy.slides.length)).toEqual([3])
+    })
+
+    it('lets the next save clear a copy kept by unloading a writable tab', async () => {
+      mounted = await openedSurface()
+      duplicateSlide()
+      window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+      expect(readRecovery('node-1')).toHaveLength(1)
+
+      await saveLands()
+
+      expect(readRecovery('node-1')).toEqual([])
+    })
+
+    function seedDraft() {
+      const nextOpen = opens + 1
+      return writeDraft({
+        id: `p${nextOpen}`,
+        content: [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
+        dirty: true,
+        updatedAt: 1,
+        baseModified: 'M0',
+      })
+    }
+
+    function holdFirstLoad() {
+      let release!: () => void
+      const firstLoad = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      return { firstLoad, release }
+    }
+
+    it('keeps a draft nobody loaded yet when access narrows during the first load', async () => {
+      await seedDraft()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+
+      const [copy] = readRecovery('node-1')
+      expect(copy.sticky).toBe(true)
+      expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
+      expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(false)
+      refusalToast(KEPT)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      expect(await downloadedSlides()).toEqual(copy.slides)
+    })
+
+    it('keeps a draft nobody loaded yet whatever the save flags still say', async () => {
+      await seedDraft()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+      saveFailed.value = true
+
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
+      release()
+      saveFailed.value = false
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+
+      const [copy] = readRecovery('node-1')
+      expect(copy.sticky).toBe(true)
+    })
+
+    it('keeps a draft the load already read when access narrows', async () => {
+      await seedDraft()
+      let answerPing!: () => void
+      const ping = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answerPing = () => resolve(new Response('{"message":"pong"}'))
+          }),
+      )
+      vi.stubGlobal('fetch', ping)
+      mounted = await openedSurface({ firstLoad: Promise.resolve() })
+      await vi.waitFor(() => expect(ping).toHaveBeenCalled())
+
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
+      answerPing()
+      await vi.waitFor(() =>
+        expect(mounted?.root.querySelectorAll('nav button').length).toBeGreaterThan(0),
+      )
+
+      const [copy] = readRecovery('node-1')
+      expect(copy.sticky).toBe(true)
+      expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
+    })
+
+    it('leaves the draft in place when access narrows during the load and no copy fits', async () => {
+      await seedDraft()
+      fillTheStore()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+
+      mounted.access.value = { role: 10 }
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+
+      expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
+      expect(refusalToast(KEPT)).toBeUndefined()
+    })
+
+    it('stays view only when access returns and the store is still full', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      await nextTick()
+
+      expect(inReadonlyMode.value).toBe(true)
+      expect(refusalToast(BACK_UNSTORED)).toBeDefined()
+      expect(toast.info).not.toHaveBeenCalled()
+    })
+
+    it('keeps a copy on Reload when there is room by then, with no question', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      vi.mocked(Storage.prototype.setItem).mockRestore()
+      const confirm = vi.spyOn(window, 'confirm')
+
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      expect(confirm).not.toHaveBeenCalled()
+      const [copy] = readRecovery('node-1')
+      expect(copy.slides).toHaveLength(3)
+      expect(copy.sticky).toBe(true)
+      expect(inReadonlyMode.value).toBe(false)
+    })
+
+    it('asks before Reload replaces the only copy, and stays put on no', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      const shownBefore = vi.mocked(toast.warning).mock.calls.length
+      const reads = server.fetch.mock.calls.length
+
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(confirm).toHaveBeenCalledTimes(1)
+      expect(editorSlides.value).toHaveLength(3)
+      expect(server.fetch.mock.calls.length).toBe(reads)
+      expect(vi.mocked(toast.warning).mock.calls.length).toBe(shownBefore + 1)
+      expect(vi.mocked(toast.warning).mock.lastCall?.[0]).toBe(BACK_UNSTORED)
+    })
+
+    it('shows no load error from a load the only copy cancelled', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let fail!: (answer: Response) => void
+      mounted?.loads.push(
+        new Promise((resolve) => {
+          fail = resolve
+        }),
+      )
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await vi.waitFor(() =>
+        expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
+      )
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+
+      fail(new Response(JSON.stringify({ exception: 'load gone wrong' }), { status: 404 }))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(thumbnails(mounted?.root as Element)).toHaveLength(3)
+    })
+
+    it('holds on to the only copy when a later load takes over', async () => {
+      await narrowedWithEdits(fillTheStore)
+      widen()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let release!: () => void
+      mounted?.loads.push(
+        new Promise((resolve) => {
+          release = resolve
+        }),
+      )
+      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await vi.waitFor(() =>
+        expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
+      )
+
+      startLoad()
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await nextTick()
+
+      expect(editorSlides.value).toHaveLength(3)
+      expect(downloadButton()).not.toBeNull()
+    })
+
+    it('still holds the only copy when access narrows again with the flags clean', async () => {
+      await savedJustAsAccessWent()
+      widen()
+      vi.mocked(toast.warning).mockClear()
+
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+
+      expect(refusalToast(UNSTORED)).toBeDefined()
+      expect(refusalToast(VIEW_ONLY)).toBeUndefined()
+    })
+
+    it('keeps writes stopped after a discard while view only', async () => {
+      await narrowedWithEdits(fillTheStore)
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await nextTick()
+      menuItem('Discard my changes')?.click()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+
+      viewOnly.value = false
+      duplicateSlide()
+      await saveCurrentState()
+
+      expect(saves).toEqual([])
     })
 
     it('a discard loads the server copy and leaves an older copy alone', async () => {

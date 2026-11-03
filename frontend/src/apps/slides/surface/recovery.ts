@@ -2,10 +2,11 @@
  * Slides' local recovery copies: the presentation's slides kept on this device,
  * per person, when unsaved work cannot reach the server. They are never replayed
  * automatically. The person takes one out as a JSON file, which removes nothing
- * since a browser save can't be confirmed, or dismisses it. A copy kept for lost
- * edit access or by the unload guard is also removed once the presentation saves
- * again with edit access, because it is then stale. A sticky copy, kept when the
- * server refused or a draft was discarded, is not.
+ * since a browser save can't be confirmed, or dismisses it. A copy the unload guard
+ * keeps in a writable tab is also removed once the presentation saves again with edit
+ * access: its draft still holds the edits, so it is then stale. A sticky copy, kept
+ * when the server refused, a draft was discarded or writes had stopped, is not: it may
+ * hold edits that are nowhere else.
  */
 import { getCookieSessionUser } from '@/platform/session'
 

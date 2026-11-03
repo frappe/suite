@@ -5,7 +5,7 @@ export type DocumentSaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 interface LeaveGuardOptions {
   state: () => DocumentSaveState
   flush: () => Promise<void>
-  retainRecovery: () => boolean | Promise<boolean>
+  retainRecovery: () => boolean
 }
 
 export async function resolveDocumentLeave(options: LeaveGuardOptions): Promise<boolean> {
@@ -13,7 +13,7 @@ export async function resolveDocumentLeave(options: LeaveGuardOptions): Promise<
   if (options.state() === 'saving') await options.flush()
   if (options.state() === 'clean') return true
 
-  const isKept = await options.retainRecovery()
+  const isKept = options.retainRecovery()
   return window.confirm(
     isKept
       ? 'Your latest changes are kept as a recovery copy. Leave this presentation?'
@@ -29,7 +29,7 @@ export function resolveDocumentUnload(
   if (options.state() === 'clean') return
 
   event.preventDefault()
-  void options.retainRecovery()
+  options.retainRecovery()
 }
 
 export function useDocumentLeaveGuard(options: LeaveGuardOptions): void {

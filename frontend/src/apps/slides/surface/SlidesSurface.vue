@@ -169,9 +169,12 @@ const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
     // also cancels a save under way and retires the draft, so it never replays.
-    const unsaved = dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value
+    // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
+    const unsaved =
+      !!slides.value?.length &&
+      (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
     viewOnly.value = true
-    void stopWrites(props.session.contentDocname)
+    void stopWrites(props.session.contentDocname, unsaved ? undefined : keepUnreadDraft)
     if (!unsaved) {
       toast.warning('Editing access changed. This presentation is now view only.')
       return
@@ -185,20 +188,11 @@ const access = createSlidesAccess(props.session, {
       return
     }
 
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: 'Download my changes',
-        onClick: downloadChanges,
-      },
-    })
+    showKept()
   },
   widened() {
     if (isOnlyCopy.value && !retainRecovery()) {
-      showOnlyCopy(
-        translate('You can edit this presentation again. Download your changes before you reload.'),
-        { label: translate('Reload'), onClick: loadAfterAccessBack },
-      )
+      showAccessBack()
       return
     }
 
@@ -208,7 +202,12 @@ const access = createSlidesAccess(props.session, {
 })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
-const editable = computed(() => access.writable.value && !composite.value && !restoring.value)
+const editable = computed(
+  () => access.writable.value && !composite.value && !restoring.value && !isOnlyCopy.value,
+)
+const canRestoreVersions = computed(
+  () => access.writable.value && !restoring.value && !isOnlyCopy.value,
+)
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
@@ -225,10 +224,7 @@ const releaseContext = setDocumentContext(
   props.session.contentDocname,
   props.session.credentials.context,
   () => access.refuse(),
-  (content: unknown[]) => {
-    keepRecovery(props.session.nodeId, content, { sticky: true })
-    hasRecovery.value = true
-  },
+  keepSticky,
 )
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
@@ -565,12 +561,41 @@ function retainRecovery() {
   }
 
   try {
-    keepRecovery(props.session.nodeId, JSON.parse(JSON.stringify(slides.value)) as unknown[])
+    // with writes stopped no draft holds these slides, so a landed save can't make them stale
+    keepRecovery(props.session.nodeId, JSON.parse(JSON.stringify(slides.value)) as unknown[], {
+      sticky: !access.writable.value || isOnlyCopy.value,
+    })
     hasRecovery.value = true
     return true
   } catch {
     return false
   }
+}
+
+function keepSticky(content: unknown[]) {
+  keepRecovery(props.session.nodeId, content, { sticky: true })
+  hasRecovery.value = true
+}
+
+// a draft from a killed tab that the first load had not reached when access narrowed
+function keepUnreadDraft(content: unknown[]) {
+  try {
+    keepSticky(content)
+    showKept()
+    return true
+  } catch {
+    return false
+  }
+}
+
+function showKept() {
+  toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: 'Download my changes',
+      onClick: downloadChanges,
+    },
+  })
 }
 
 function retainOrWarn() {
@@ -587,6 +612,28 @@ function loadAfterAccessBack() {
   resumeWrites(props.session.contentDocname)
   toast.info('You can edit this presentation again.')
   void load()
+}
+
+function showAccessBack() {
+  showOnlyCopy(translate('Editing access is back. Download your changes before you reload.'), {
+    label: translate('Reload'),
+    onClick: reloadAfterAccessBack,
+  })
+}
+
+function reloadAfterAccessBack() {
+  const isSafe =
+    retainRecovery() ||
+    window.confirm(
+      translate('Your latest changes could not be kept on this device. Reload anyway?'),
+    )
+  if (!isSafe) {
+    // the toast closes on any press, and it is the way back to Reload
+    showAccessBack()
+    return
+  }
+
+  loadAfterAccessBack()
 }
 
 function syncHasRecovery() {
@@ -978,7 +1025,7 @@ onBeforeUnmount(() => {
     <SlidesVersionsPanel
       v-else-if="panel === 'versions'"
       :session="session"
-      :writable="access.writable.value && !restoring"
+      :writable="canRestoreVersions"
       :flush="flushEdits"
       :restore="restoreVersion"
       @close="panel = null"
