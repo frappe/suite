@@ -1,15 +1,38 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
+import { TransportError } from '@/platform/transport'
+
 import ScheduleMeetingDialog from './ScheduleMeetingDialog.vue'
 
 const state = vi.hoisted(() => ({
   run: vi.fn().mockResolvedValue({}),
   loadUser: vi.fn().mockResolvedValue(undefined),
   account: 'personal',
+  admin: false,
+  configured: true,
   error: vi.fn(),
 }))
 
+vi.mock('@/platform/session', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/platform/session')>()
+  return {
+    ...original,
+    useSession: () => ({
+      ...original.useSession(),
+      capabilities: { value: { suiteAdmin: state.admin, jmap: !!state.account } },
+      user: { value: { is_mail_server_configured: state.configured } },
+    }),
+  }
+})
+vi.mock('@/platform/feedback', () => ({
+  toast: {
+    error: state.error,
+    success: vi.fn(),
+    promise: (promise: Promise<unknown>, options: { error: (error: unknown) => string }) =>
+      promise.catch((error) => state.error(options.error(error))),
+  },
+}))
 vi.mock('@/api', async (importOriginal) => ({
   api: (await importOriginal<typeof import('@/api')>()).api,
   useQuery: () => ({ data: { name: 'me@example.com', full_name: 'Me' } }),
@@ -44,6 +67,12 @@ vi.mock('@/apps/calendar', async (importOriginal) => ({
   }),
 }))
 vi.mock('frappe-ui', () => ({
+  Alert: defineComponent({
+    props: ['title', 'theme'],
+    setup(props) {
+      return () => h('div', { role: props.theme === 'red' ? 'alert' : 'status' }, props.title)
+    },
+  }),
   Dialog: defineComponent({
     props: ['open'],
     setup(props, { slots }) {
@@ -70,7 +99,6 @@ vi.mock('frappe-ui', () => ({
       return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
     },
   }),
-  toast: { error: state.error, success: vi.fn(), promise: (promise: Promise<unknown>) => promise },
 }))
 
 let cleanup = () => {}
@@ -78,6 +106,10 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   state.account = 'personal'
+  state.admin = false
+  state.configured = true
+  state.run.mockResolvedValue({})
+  state.loadUser.mockResolvedValue(undefined)
 })
 
 async function mount() {
@@ -138,11 +170,118 @@ describe('Shared meeting scheduler', () => {
     expect(root.querySelector('input')).toBeNull()
   })
 
-  it('does not open without a Calendar account', async () => {
+  it.each([false, true])('offers account recovery appropriate to admin=%s', async (admin) => {
     state.account = ''
+    state.admin = admin
     const { root } = await mount()
     expect(root.querySelector('input')).toBeNull()
-    expect(state.error).toHaveBeenCalledWith('Set up Calendar before scheduling a Meet.')
+    expect(root.textContent).toContain(admin ? 'Open Admin users' : 'Ask your admin to add one')
+    expect(root.textContent?.includes('Open Admin users')).toBe(admin)
     expect(state.run).not.toHaveBeenCalled()
+  })
+
+  it('explains missing provider setup', async () => {
+    state.account = ''
+    state.configured = false
+    const { root } = await mount()
+    expect(root.textContent).toContain('Ask a site administrator to configure mail')
+    expect(state.run).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes denied account access from missing setup', async () => {
+    state.loadUser.mockRejectedValueOnce(
+      new TransportError({
+        type: 'PermissionError',
+        status: 403,
+        message: 'private permission details',
+      }),
+    )
+    const { root } = await mount()
+    expect(root.textContent).toContain('Ask a site administrator to review your access')
+    expect(root.textContent).not.toContain('private')
+    expect(root.textContent).not.toContain('Open Admin users')
+  })
+
+  it('retries account loading without claiming setup is missing', async () => {
+    state.loadUser.mockRejectedValueOnce(new Error('offline'))
+    const { root } = await mount()
+    expect(root.textContent).toContain('Could not load Calendar account. Retry')
+    expect(root.textContent).not.toContain('Ask your admin')
+    root.querySelector<HTMLButtonElement>('button')?.click()
+    await vi.waitFor(() => expect(root.querySelector('input')).not.toBeNull())
+    expect(state.loadUser).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    [
+      new TransportError({
+        type: 'ValidationError',
+        status: 417,
+        message: 'Choose a writable calendar.',
+      }),
+      'Choose a writable calendar.',
+    ],
+    [
+      new TransportError({
+        type: 'PermissionError',
+        status: 403,
+        message: 'You cannot schedule in this calendar.',
+      }),
+      'You cannot schedule in this calendar.',
+    ],
+    [
+      new TransportError({ type: 'NetworkError', status: 0, message: 'private network details' }),
+      'Your details are kept. Please try again.',
+    ],
+    [
+      new TransportError({ type: 'ServerError', status: 500, message: 'private provider token' }),
+      'Your details are kept. Please try again.',
+    ],
+  ])('retains fields after %s and succeeds on retry', async (error, message) => {
+    state.run.mockRejectedValueOnce(error)
+    const { root, scheduled } = await mount()
+    for (const [label, value] of [
+      ['Title', 'Design review'],
+      ['Date', '2026-12-08'],
+      ['Start', '14:00'],
+      ['End', '15:00'],
+    ]) {
+      const input = root.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+      input.value = value!
+      input.dispatchEvent(new Event('input'))
+      await nextTick()
+    }
+    const click = (text: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === text)!
+        .click()
+    click('Invite guest')
+    await nextTick()
+    click('Schedule')
+    await vi.waitFor(() =>
+      expect(root.querySelector('[role="alert"]')?.textContent).toContain(message),
+    )
+    expect(root.textContent).not.toContain('private')
+    expect(scheduled).not.toHaveBeenCalled()
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.value).toBe(
+      'Design review',
+    )
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="Start"]')?.value).toBe('14:00')
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="End"]')?.value).toBe('15:00')
+    expect(root.textContent).toContain('guest@example.com')
+    click('Schedule')
+    await vi.waitFor(() => expect(scheduled).toHaveBeenCalledOnce())
+    expect(state.run).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        title: 'Design review',
+        start: '2026-12-08T14:00:00',
+        duration: 'PT1H',
+        participants: [
+          expect.objectContaining({ email: 'me@example.com' }),
+          { email: 'guest@example.com' },
+        ],
+      }),
+    )
+    expect(root.querySelector('input')).toBeNull()
   })
 })
