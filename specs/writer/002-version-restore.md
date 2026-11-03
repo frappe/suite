@@ -23,7 +23,7 @@ How a version restore behaves when other people have the document open. Findings
 
 ## Who a version names
 
-- An automatic version names the person who made most of the changes it holds, the latest on a tie. It no longer names whoever's save or sweep happened to take it, such as Administrator.
+- An automatic version names the person who made most of the changes it holds, the latest on a tie. When no change names a person, it names the document's owner. It never names whoever's save or sweep happened to take it, such as Administrator.
 - The version kept before a restore names the person who restored.
 - It is called "Before restoring “<name>”" for a named version, and "Before restoring the version from <time>" otherwise, in the restorer's time zone. Repeated restores no longer all read "Before restoring version N".
 

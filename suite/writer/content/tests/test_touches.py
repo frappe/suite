@@ -10,6 +10,7 @@ from frappe.utils import now_datetime
 from suite import drive
 from suite.content import jobs, scheduling, touches
 from suite.content.http import routes
+from suite.content.tables import table
 from suite.drive._core import content as drive_content
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
@@ -209,6 +210,20 @@ class TestWriterTouches(DriveCallbackCase):
             jobs.sweep()
 
         self.assertEqual(self.automatic_version_actors(node), [WRITER, OUTSIDER])
+
+    def test_an_automatic_version_with_no_known_author_credits_the_owner_not_the_sweep(self):
+        node = self.new_document()
+        start = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+        with self.frozen_clock(start):
+            self.type_into(node, ["one"])
+        frappe.db.sql(f"DELETE FROM `{table('writer', 'session')}` WHERE doc_id = %s", self.doc_row(node).id)
+        frappe.db.set_value("Drive Node", node, "owner", OUTSIDER, update_modified=False)
+
+        frappe.set_user("Administrator")
+        with self.frozen_clock(start + timedelta(minutes=10)), patch.object(scheduling, "enqueue"):
+            jobs.sweep()
+
+        self.assertEqual(self.automatic_version_actors(node), [OUTSIDER])
 
     def test_a_document_nobody_edits_gets_no_automatic_version(self):
         node = self.new_document()

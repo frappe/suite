@@ -132,11 +132,11 @@ def claimed(app: str, doc_id: str, follower: Follower) -> Claim | None:
     return Claim(node=node, at=now, rev=claimed_rev, previous_rev=previous_rev)
 
 
-def main_author(app: str, doc_id: str, claim: Claim) -> str | None:
+def main_author(app: str, doc_id: str, claim: Claim) -> str:
     """The person whose tabs sent the most of the rows `claim` follows, the latest on a tie.
 
     A sweep runs as the system user and a push as whoever sent it, so neither is who made the
-    changes. None when no row names a person, as for a copy's start.
+    changes. The document's owner when no row names a person, as for a copy's start.
     """
     authors = frappe.db.sql(
         f"""SELECT `session`.`user` FROM `{table(app, "update")}` AS `row`
@@ -146,7 +146,7 @@ def main_author(app: str, doc_id: str, claim: Claim) -> str | None:
         GROUP BY `session`.`user` ORDER BY COUNT(*) DESC, MAX(`row`.`rev`) DESC LIMIT 1""",
         (doc_id, claim.previous_rev, claim.rev),
     )
-    return authors[0][0] if authors else None
+    return authors[0][0] if authors else frappe.db.get_value("Drive Node", claim.node, "owner")
 
 
 def give_back(app: str, doc_id: str, follower: Follower, claim: Claim) -> None:
