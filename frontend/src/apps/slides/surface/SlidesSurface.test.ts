@@ -1944,6 +1944,43 @@ describe('Slides push refused by the server', () => {
     })
   })
 
+  it('takes a failed push from the last surface as nothing about the one now open', async () => {
+    mounted = await openedSurface()
+    const left = mounted.docname
+    const answerAtServer = server.fetch.getMockImplementation()
+    let failPush!: () => void
+    const held = new Promise<Response>((resolve) => {
+      failPush = () => resolve(new Response('{}', { status: 500 }))
+    })
+    server.fetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('save_slides')) {
+        return held
+      }
+
+      return answerAtServer?.(url, init)
+    })
+    duplicateSlide()
+    await vi.waitFor(() => expect(isSaving.value).toBe(true), { timeout: 3000 })
+    mounted.app.unmount()
+    mounted.root.remove()
+
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    mounted = await openedSurface()
+    keepRecovery('node-1', [{ clientId: 'kept-by-this-page' }])
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    failPush()
+    await vi.waitFor(() => expect(isSaving.value).toBe(false))
+    await nextTick()
+    error.mockRestore()
+
+    expect(saveFailed.value).toBe(false)
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([
+      [{ clientId: 'older' }],
+      [{ clientId: 'kept-by-this-page' }],
+    ])
+    expect(await getPresentationFromLocalDB(left)).toMatchObject({ dirty: true })
+  })
+
   it('leaves a sticky copy after a download outside the hold', async () => {
     keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })

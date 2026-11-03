@@ -62,6 +62,7 @@ import {
 import {
   dirty,
   isSaving,
+  lastPushWasFor,
   resumeWrites,
   retireDraft,
   saveChanges,
@@ -346,6 +347,9 @@ watch(isSaving, (now, before) => {
 
   // the last surface's push can land during this one's first load
   if (!hasSettledCopies) return
+
+  // a push of the presentation left behind says nothing about this one
+  if (!lastPushWasFor(props.session.contentDocname)) return
 
   clearStaleRecovery(props.session.nodeId)
   syncHasRecovery()

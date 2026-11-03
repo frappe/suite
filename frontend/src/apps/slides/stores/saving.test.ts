@@ -885,7 +885,7 @@ describe('saveCurrentState', () => {
     expect(local.content[0].background).toBe('#00ff00ff')
     expect(local.dirty).toBe(true)
     expect(local.baseModified).toBe('M2')
-    expect(saveFailed.value).toBe(true)
+    expect(saveFailed.value).toBe(false)
   })
 
   it('waits longer after each failed push', async () => {
@@ -911,6 +911,55 @@ describe('saveCurrentState', () => {
     vi.advanceTimersByTime(500)
     await saveCurrentState()
     expect(pushes).toBe(3)
+  })
+
+  describe('a push that fails after the editor moved on', () => {
+    async function failedAfterMoving() {
+      markDirty()
+
+      serverSave = async () => {
+        slides.value = []
+        presentationId.value = 'p2'
+        presentationDoc.value = { modified: 'M9' }
+        throw new Error('500')
+      }
+
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await saveCurrentState()
+      error.mockRestore()
+      slides.value = [{ clientId: 'c2', background: '#00ff00ff', elements: [] }]
+    }
+
+    it('does not show as failed on the presentation now open', async () => {
+      await failedAfterMoving()
+
+      expect(saveFailed.value).toBe(false)
+    })
+
+    it('keeps its edits for the next open of its own presentation', async () => {
+      await failedAfterMoving()
+
+      expect(await getPresentationFromLocalDB('p1')).toMatchObject({
+        dirty: true,
+        content: [{ clientId: 'c1' }],
+      })
+    })
+
+    it('does not hold back the first push of the presentation now open', async () => {
+      await failedAfterMoving()
+
+      const pushed: string[] = []
+      serverSave = async (id) => {
+        pushed.push(id)
+        return 'M10'
+      }
+
+      markDirty()
+      await saveCurrentState()
+
+      expect(pushed).toEqual(['p2'])
+    })
   })
 
   it('pushes on request without waiting out the backoff', async () => {

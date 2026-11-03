@@ -160,6 +160,12 @@ const dirty = ref(false)
 
 const isSaving = ref(false)
 
+// whose push `isSaving` last followed, as it is shared across presentations
+let lastPushed = null
+function lastPushWasFor(id) {
+  return lastPushed === id
+}
+
 // edits the gate turned away; a push landing after the editor left carries them out
 const queuedSnapshots = new Map()
 
@@ -354,6 +360,7 @@ const saveCurrentState = async () => {
   if (Date.now() < retryAt) return
 
   isSaving.value = true
+  lastPushed = idAtSnapshot
 
   try {
     // only mark clean once the server actually has the changes,
@@ -371,10 +378,12 @@ const saveCurrentState = async () => {
     queuedSnapshots.delete(idAtSnapshot)
     // keep dirty so autosave retries; log once per outage
     if (!saveFailed.value) console.error('Save failed: ', err)
+
+    // its draft stays dirty for its next open; the failure isn't the open presentation's
+    if (presentationId.value !== idAtSnapshot) return
+
     saveFailed.value = true
     if (err?.type === 'TimestampMismatchError') {
-      if (presentationId.value !== idAtSnapshot) return
-
       await holdRefused(snapshot, epoch)
     } else {
       retryDelay = Math.min(retryDelay * 2 || 500, MAX_RETRY_MS)
@@ -439,6 +448,7 @@ export {
   retireDraft,
   resumeWrites,
   isSaving,
+  lastPushWasFor,
   dirty,
   markDirty,
   markClean,
