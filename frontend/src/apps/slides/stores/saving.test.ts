@@ -234,8 +234,7 @@ describe('saveCurrentState', () => {
   })
 
   describe('a draft write on a full disk', () => {
-    type Draft = {
-      dirty: boolean
+    interface Draft {
       baseModified: string
       content: Array<{ background: string }>
     }
@@ -518,7 +517,7 @@ describe('saveCurrentState', () => {
       await saveCurrentState()
 
       const local = await readDraft('p-landed-edited')
-      expect(local.dirty).toBe(true)
+      expect(local).toMatchObject({ dirty: true })
       expect(dirty.value).toBe(true)
     })
 
@@ -539,7 +538,7 @@ describe('saveCurrentState', () => {
       await saveCurrentState()
 
       const local = await readDraft('p-edited-moved')
-      expect(local.dirty).toBe(true)
+      expect(local).toMatchObject({ dirty: true })
     })
 
     it('keeps the draft when the writes stop during the clean write', async () => {
@@ -569,7 +568,7 @@ describe('saveCurrentState', () => {
       resumeWrites('p-stopped-clean')
 
       const local = await readDraft('p-stopped-clean')
-      expect(local.dirty).toBe(true)
+      expect(local).toMatchObject({ dirty: true })
     })
 
     it('leaves no retired draft to replay when access returns on a full store', async () => {
@@ -590,7 +589,7 @@ describe('saveCurrentState', () => {
       resumeWrites('p-unkept-full')
 
       const local = await readDraft('p-unkept-full')
-      expect(local.dirty).toBe(true)
+      expect(local).toMatchObject({ dirty: true })
     })
 
     it('leaves the visited copies alone on any other failure', async () => {
