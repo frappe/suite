@@ -45,3 +45,66 @@ describe('selection headers', () => {
     }
   })
 })
+
+// Paints rows 1–4 and columns A–D with B2:C3 selected; returns the colour of
+// the separator after each header (the stroke that follows its label).
+function separators() {
+  const ctx = createMockCtx()
+  const rows: Record<string, string> = {}
+  const cols: Record<string, string> = {}
+  let last = ''
+  ctx.fillText = (text: string) => void (last = text)
+  ctx.stroke = () => {
+    if (!last) return
+    if (/^\d+$/.test(last)) rows[last] = String(ctx.strokeStyle)
+    else cols[last] = String(ctx.strokeStyle)
+    last = ''
+  }
+  const hp = createHeaderPainter(ctx, createMockGeo())
+  const range = { r0: 1, c0: 1, r1: 2, c1: 2 }
+  hp.drawRowHeaders(0, 3, 0, COL_HEADER_H, 600, range)
+  hp.drawColHeaders(0, 3, 0, 50, 600, range)
+  return { rows, cols }
+}
+
+describe('separators between selected headers', () => {
+  it('stay visible on the tint', () => {
+    const { rows, cols } = separators()
+    expect(COLORS.activeHeaderLine).not.toBe(COLORS.activeHeader)
+    for (const row of ['2', '3']) expect(rows[row], `row ${row}`).toBe(COLORS.activeHeaderLine)
+    for (const col of ['B', 'C']) expect(cols[col], `col ${col}`).toBe(COLORS.activeHeaderLine)
+  })
+
+  it('stay the plain gridline colour outside the selection', () => {
+    const { rows, cols } = separators()
+    for (const row of ['1', '4']) expect(rows[row], `row ${row}`).toBe(COLORS.gridLine)
+    for (const col of ['A', 'D']) expect(cols[col], `col ${col}`).toBe(COLORS.gridLine)
+  })
+})
+
+// A header's separator is drawn on the first pixel of the next header, so a
+// selected header's tint must start after it or it paints over the line.
+describe('selected header tint', () => {
+  function tints() {
+    const ctx = createMockCtx()
+    const rects: [number, number, number, number][] = []
+    ctx.fillRect = (...r: [number, number, number, number]) => {
+      if (ctx.fillStyle === COLORS.activeHeader) rects.push(r)
+    }
+    const hp = createHeaderPainter(ctx, createMockGeo())
+    const range = { r0: 1, c0: 1, r1: 2, c1: 2 }
+    hp.drawColHeaders(0, 3, 0, 50, 600, range)
+    hp.drawRowHeaders(0, 3, 0, COL_HEADER_H, 600, range)
+    return rects
+  }
+
+  it('leaves the separator on its left edge uncovered', () => {
+    // Columns B and C start at x 150 and 250 (their left separators' pixels);
+    // rows 2 and 3 start at y 48 and 72.
+    const [b, c, row2, row3] = tints()
+    expect([b[0], b[2]]).toEqual([151, 99])
+    expect([c[0], c[2]]).toEqual([251, 99])
+    expect([row2[1], row2[3]]).toEqual([49, 23])
+    expect([row3[1], row3[3]]).toEqual([73, 23])
+  })
+})

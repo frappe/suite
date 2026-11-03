@@ -136,6 +136,7 @@
               name="name-box"
               :aria-label="__('Name box')"
               :value="nameBox"
+              :style="{ '--sn-name-ch': nameBox.length + 1 }"
               spellcheck="false"
               autocomplete="off"
               @focus="$event.target.select()"
@@ -280,15 +281,6 @@
           @edit="editLinkCardCell"
           @unlink="unlinkLinkCardCell"
           @replace="replaceLinkWithTitle"
-        />
-
-        <!-- Outline around the active filter's range so its extent is visible.
-           pointer-events:none keeps clicks reaching the canvas underneath. -->
-        <div
-          v-if="filterHighlightStyle"
-          class="sn-filter-range"
-          :style="filterHighlightStyle"
-          aria-hidden="true"
         />
 
         <!-- Filter chevrons on row 0 (the user's header row of data) -->
@@ -2417,7 +2409,6 @@ const {
   filterConfig,
   visibleFilterCols,
   filterPanelStyle,
-  filterHighlightStyle,
   detectContiguousBlock: _detectContiguousBlock,
   openFilterPanel,
   openQuickFilterForActive,

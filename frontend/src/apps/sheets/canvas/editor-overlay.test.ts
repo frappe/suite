@@ -1,7 +1,7 @@
 // Opening the in-cell editor must not move the text: the <textarea> lays its
 // first line out where the canvas drew it (capitals centred on the cell's
 // white area, 4px in from the left), and its border sits on the selection
-// frame (2px centred on the gridline).
+// frame (1.5px centred on the gridline).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createOverlay } from './overlay.js'
@@ -82,8 +82,9 @@ describe('in-cell editor lines up with the canvas', () => {
 
   it('puts its border on the selection frame', () => {
     const { s } = layout(150, 48, 100, 24)
-    // Frame: 2px centred on the gridlines, i.e. x 149…251, y 47…73.
-    expect([px(s.left), px(s.top), px(s.width), px(s.height)]).toEqual([149, 47, 102, 26])
-    expect(px(s.borderTopWidth)).toBe(2)
+    // Frame: 1.5px centred on the gridlines (x 150.5, y 48.5), i.e.
+    // x 149.75…251.25, y 47.75…73.25.
+    expect([px(s.left), px(s.top), px(s.width), px(s.height)]).toEqual([149.75, 47.75, 101.5, 25.5])
+    expect(px(s.borderTopWidth)).toBe(1.5)
   })
 })

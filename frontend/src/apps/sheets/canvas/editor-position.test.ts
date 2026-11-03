@@ -34,10 +34,10 @@ function mount() {
 }
 
 // The overlay stores its on-screen offset as inline px styles; strip 'px'.
-// Its border sits on the selection frame, one zoomed pixel outside the cell,
-// so add that back to compare with the cell's rect.
-const leftOf = (el, zoom = 1) => parseFloat(el.style.left) + zoom
-const topOf = (el, zoom = 1) => parseFloat(el.style.top) + zoom
+// Its border sits on the selection frame, a quarter of a zoomed pixel outside
+// the cell, so add that back to compare with the cell's rect.
+const leftOf = (el, zoom = 1) => parseFloat(el.style.left) + 0.25 * zoom
+const topOf = (el, zoom = 1) => parseFloat(el.style.top) + 0.25 * zoom
 
 describe('in-cell editor stays pinned to its cell', () => {
   let h
