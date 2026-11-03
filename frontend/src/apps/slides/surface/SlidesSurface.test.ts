@@ -191,6 +191,20 @@ describe('Slides Present button', () => {
 })
 
 // the offline copy (DESIGN-slides-offline §1, §5)
+function answersStartupReads() {
+  vi.stubGlobal('__SUITE_BUILD__', '100')
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (url.startsWith('/d/')) {
+      return new Response('<html></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', 'X-Suite-Build': '100' },
+      })
+    }
+
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+  })
+}
+
 describe('Slides offline copy', () => {
   const posted: string[] = []
   const register = vi.fn(async () => ({}))
@@ -358,6 +372,7 @@ describe('Slides offline copy', () => {
     vi.stubGlobal('caches', {
       open: async () => ({
         keys: async () => [],
+        put: async () => {},
         delete: async (key: string) => {
           deleted.push(key)
           return true
@@ -366,6 +381,7 @@ describe('Slides offline copy', () => {
       match: async () => undefined,
       delete: async () => true,
     })
+    answersStartupReads()
     const next = fakeServer.opens + 1
     const record = `${RECORD_PREFIX}p${next}`
     localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
@@ -390,7 +406,7 @@ describe('Slides offline copy', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(deleted).toEqual([])
-    expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toEqual([pinnedPicture])
+    expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toContain(pinnedPicture)
   })
 
   describe('a saved composite copy opens', () => {
@@ -402,6 +418,7 @@ describe('Slides offline copy', () => {
       vi.stubGlobal('caches', {
         open: async () => ({
           keys: async () => [],
+          put: async () => {},
           delete: async (key: string) => {
             deleted.push(key)
             return true
@@ -410,6 +427,7 @@ describe('Slides offline copy', () => {
         match: async () => undefined,
         delete: async () => true,
       })
+      answersStartupReads()
       const next = fakeServer.opens + 1
       const record = `${RECORD_PREFIX}p${next}`
       localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
@@ -429,7 +447,7 @@ describe('Slides offline copy', () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
 
       expect(deleted).toEqual([])
-      expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toEqual([pinnedPicture])
+      expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toContain(pinnedPicture)
     })
 
     it('clears a picture no group shows once every group has loaded', async () => {

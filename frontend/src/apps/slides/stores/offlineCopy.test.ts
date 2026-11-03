@@ -502,19 +502,145 @@ describe('saveOfflineCopy', () => {
 })
 
 describe('pruneOfflineCopy', () => {
+  describe('while the pinned document may still show the picture', () => {
+    const removed = '/private/files/a.png'
+
+    beforeEach(async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/b.png'])
+    })
+
+    it('stores a fresh document before the bytes go', async () => {
+      const fresh = `${SHELL_HTML}<!-- fresh -->`
+      shell = () => shellResponse({}, 200, fresh)
+      let heldWhenDeleting = ''
+      const deleteKey = cache.delete.bind(cache)
+      vi.spyOn(cache, 'delete').mockImplementation(async (key: string) => {
+        if (key === removed) {
+          heldWhenDeleting = await cache.text('/d/n1')
+        }
+
+        return deleteKey(key)
+      })
+
+      await pruneOfflineCopy('p1')
+
+      expect(heldWhenDeleting).toBe(fresh)
+      expect(cache.has(removed)).toBe(false)
+      expect(recordedKeys('p1')).not.toContain(removed)
+    })
+
+    it('keeps the bytes when a fresh document cannot be fetched', async () => {
+      shell = () => shellResponse({}, 503)
+
+      await pruneOfflineCopy('p1').catch(() => {})
+
+      expect(cache.has(removed)).toBe(true)
+      expect(recordedKeys('p1')).toContain(removed)
+    })
+
+    it('keeps the bytes when a fresh document does not fit', async () => {
+      const fresh = `${SHELL_HTML}<!-- fresh -->`
+      shell = () => shellResponse({}, 200, fresh)
+      vi.spyOn(cache, 'put').mockRejectedValue(new DOMException('full', 'QuotaExceededError'))
+
+      await pruneOfflineCopy('p1').catch(() => {})
+
+      expect(cache.has(removed)).toBe(true)
+      expect(recordedKeys('p1')).toContain(removed)
+    })
+  })
+
+  it('asks the server for nothing when no bytes are due to go', async () => {
+    await saveOfflineCopy('p1')
+    startupFetched.length = 0
+
+    await pruneOfflineCopy('p1')
+
+    expect(startupFetched).toEqual([])
+  })
+
+  describe('alongside a run that started first', () => {
+    const removed = '/private/files/a.png'
+
+    function holdsTheShell() {
+      const { promise: answered, resolve } = Promise.withResolvers<void>()
+      const next = fetch
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+        if (url === '/d/n1') {
+          await answered
+        }
+
+        return next(url, init)
+      })
+
+      return resolve
+    }
+
+    it('does not have its removal undone by a visit', async () => {
+      presentationId.value = 'v1'
+      await saveOfflineCopy('v1')
+      slides.value = slidesWith(['/files/b.png'])
+      const answer = holdsTheShell()
+
+      const visiting = warmOfflineCopyAssets('v1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const pruning = pruneOfflineCopy('v1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      answer()
+      await Promise.all([visiting, pruning])
+
+      expect(cache.has(removed)).toBe(false)
+      expect(recordedKeys('v1')).not.toContain(removed)
+
+      slides.value = slidesWith(['/files/a.png'], ['/files/b.png'])
+      refreshOfflineStatus('v1')
+
+      expect(offlineCopyStatus.value).toBe('outdated')
+    })
+
+    it('does not have its removal undone by a save storing a new picture', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/b.png'], ['/files/c.png'])
+      const { promise: answered, resolve: answer } = Promise.withResolvers<void>()
+      const next = fetch
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+        if (url.includes('c.png')) {
+          await answered
+        }
+
+        return next(url, init)
+      })
+      responses['/private/files/c.png?slides_media=1'] = () => image(30)
+
+      const saving = saveOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const pruning = pruneOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      answer()
+      await Promise.all([saving, pruning])
+
+      expect(cache.has(removed)).toBe(false)
+      expect(recordedKeys('p1')).toEqual(['/private/files/b.png', '/private/files/c.png'])
+    })
+  })
+
   it('keeps in the record what a save pins while the bytes are being deleted', async () => {
     await saveOfflineCopy('p1')
     slides.value = slidesWith(['/files/b.png'])
     responses['/private/files/c.png?slides_media=1'] = () => image(30)
     const deleteKey = cache.delete.bind(cache)
+    let saving: Promise<unknown> | undefined
     vi.spyOn(cache, 'delete').mockImplementationOnce(async (key: string) => {
       slides.value = slidesWith(['/files/b.png'], ['/files/c.png'])
-      await saveOfflineCopy('p1')
+      saving = saveOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       return deleteKey(key)
     })
 
     await pruneOfflineCopy('p1')
+    await saving
 
     expect(cache.has('/private/files/c.png')).toBe(true)
     expect(recordedKeys('p1')).toEqual(['/private/files/b.png', '/private/files/c.png'])

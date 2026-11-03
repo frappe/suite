@@ -272,39 +272,58 @@ async function pinnedPaths(cache) {
   return new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
 }
 
-// bytes the presentation no longer shows go, and its ledger stops listing them
+function orphanKeys(id) {
+  const record = readRecord(id)
+  // a picture with no signed url has no key, so its bytes would pass for orphans, and
+  // refused may only mean an expired session; the next open tries again
+  if (!record || id !== presentationId.value || !mediaNodeIds().every(isMediaReady)) {
+    return []
+  }
+
+  const needed = new Set(getMediaTargets().map((target) => target.key))
+  return unsharedKeys(
+    id,
+    record.keys.filter((key) => isMediaKey(key) && !needed.has(key)),
+  )
+}
+
+// the worker serves the pinned document first, so it must stop naming the bytes before they go;
+// the deletes hold the run slot, so no save or visit writes back a list read before them
 async function pruneOfflineCopy(id) {
   if (!readRecord(id)) {
     return
   }
 
   await mediaSettled(mediaNodeIds())
-
-  // a picture with no signed url has no key, so its bytes would pass for orphans, and
-  // refused may only mean an expired session; the next open tries again
-  if (id !== presentationId.value || !mediaNodeIds().every(isMediaReady)) {
+  if (!orphanKeys(id).length) {
     return
   }
 
+  await run?.done
+  if (run || !orphanKeys(id).length) {
+    return
+  }
+
+  const loadOptions = getLoadOptions()
   const record = readRecord(id)
-  if (!record) return
+  const current = claimRun(id, record.node)
+  const { signal } = current.controller
+  try {
+    await refreshStartup(id, record, loadOptions, signal)
+    if (signal.aborted || forgotten.has(record.node)) {
+      return
+    }
 
-  const needed = new Set(getMediaTargets().map((target) => target.key))
-  const orphans = new Set(
-    unsharedKeys(
-      id,
-      record.keys.filter((key) => isMediaKey(key) && !needed.has(key)),
-    ),
-  )
-  if (!orphans.size) return
+    const orphans = new Set(orphanKeys(id))
+    const cache = await openPinnedCache()
+    await Promise.all([...orphans].map((key) => cache.delete(key)))
 
-  const cache = await openPinnedCache()
-  await Promise.all([...orphans].map((key) => cache.delete(key)))
-
-  // a save may have pinned more during the deletes
-  const current = readRecord(id)
-  if (current) {
-    writeRecord(id, { ...current, keys: current.keys.filter((key) => !orphans.has(key)) })
+    const latest = readRecord(id)
+    if (latest) {
+      writeRecord(id, { ...latest, keys: latest.keys.filter((key) => !orphans.has(key)) })
+    }
+  } finally {
+    releaseRun(current)
   }
 }
 
@@ -469,6 +488,15 @@ function needsRefresh(id) {
   return !known || mediaNodeIds().some((nodeId) => !known.has(nodeId))
 }
 
+async function refreshStartup(id, record, loadOptions, signal) {
+  await warmAssets()
+  const cache = await openPinnedCache()
+  const pinned = await pinnedPaths(cache)
+  const startup = await fetchStartup(record.node, id, pinned, loadOptions, signal)
+  const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
+  await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record), signal)
+}
+
 // an online visit replaces the start-up copy, so after a deploy it holds the new build
 async function warmOfflineCopyAssets(id) {
   const record = readRecord(id)
@@ -481,12 +509,7 @@ async function warmOfflineCopyAssets(id) {
   const current = claimRun(id, record.node)
   const { signal } = current.controller
   try {
-    await warmAssets()
-    const cache = await openPinnedCache()
-    const pinned = await pinnedPaths(cache)
-    const startup = await fetchStartup(record.node, id, pinned, loadOptions, signal)
-    const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
-    await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record), signal)
+    await refreshStartup(id, record, loadOptions, signal)
   } catch (err) {
     if (signal.aborted) {
       return

@@ -151,6 +151,7 @@ vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
 vi.mock('@/apps/drive', () => ({
+  documentSessionUrls: () => [],
   GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
     props: { recoverable: Boolean },
