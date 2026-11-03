@@ -44,18 +44,13 @@ async function openDB() {
 // `allowed` is asked right before the transaction opens: IndexedDB runs
 // read-write transactions on one store in the order they open, so a write that
 // is refused here can never land after one that `stopWrites` made
-const savePresentationToLocalDB = async (data, allowed = () => true) => {
+async function changeDraftStore(change, allowed) {
   const db = await openDB()
   if (!allowed()) return false
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
-    const store = tx.objectStore(STORE)
-
-    const req = store.put(data)
-    req.onerror = () => {
-      reject(req.error)
-    }
+    change(tx.objectStore(STORE))
 
     tx.oncomplete = () => {
       resolve(true)
@@ -71,28 +66,12 @@ const savePresentationToLocalDB = async (data, allowed = () => true) => {
   })
 }
 
-async function deletePresentationFromLocalDB(id, allowed = () => true) {
-  const openedDb = await openDB()
-  if (!allowed()) {
-    return
-  }
+function savePresentationToLocalDB(data, allowed = () => true) {
+  return changeDraftStore((store) => store.put(data), allowed)
+}
 
-  return new Promise((resolve, reject) => {
-    const tx = openedDb.transaction(STORE, 'readwrite')
-    tx.objectStore(STORE).delete(id)
-
-    tx.oncomplete = () => {
-      resolve()
-    }
-
-    tx.onerror = () => {
-      reject(tx.error)
-    }
-
-    tx.onabort = () => {
-      reject(tx.error)
-    }
-  })
+function deletePresentationFromLocalDB(id, allowed = () => true) {
+  return changeDraftStore((store) => store.delete(id), allowed)
 }
 
 let persistRequested = false
@@ -114,7 +93,8 @@ const abortFor = (id) => {
   return saveAborts.get(id).signal
 }
 
-// the newest draft write per presentation; one waiting on the clear gives way to it
+// the newest dirty draft write per presentation; any write waiting on the clear gives
+// way to it. A clean one never makes a dirty one give way, as that may hold newer edits
 const draftWrites = new Map()
 
 // a store that refuses the draft must not stop the push; answers whether it wrote
@@ -124,7 +104,7 @@ const writeDraft = (record, epoch) => {
     navigator.storage?.persist?.().catch(() => {})
   }
 
-  const turn = (draftWrites.get(record.id) ?? 0) + 1
+  const turn = (draftWrites.get(record.id) ?? 0) + (record.dirty ? 1 : 0)
   draftWrites.set(record.id, turn)
 
   function write() {
@@ -203,9 +183,13 @@ const markClean = () => {
   dirty.value = false
 }
 
-// the newest tick per presentation; a snapshot holds every slide, so an older tick
-// still in its draft write has nothing the newer one lacks
+// counts the ticks per presentation
 const latestTicks = new Map()
+
+// the newest tick past its draft write; a snapshot holds every slide, so an older tick
+// has nothing that one lacks. Giving way to any newer tick would stall the push when
+// every draft write outlasts the autosave interval
+const ticksAtGate = new Map()
 
 // the generation each draft holds, so a blocked push does not rewrite it every tick
 const draftGenerations = new Map()
@@ -241,7 +225,7 @@ const saveRefused = computed(
 // the server holds this record, so if it can't be written an older dirty draft must
 // not outlive it; an edit made during the save keeps the draft
 async function writeLanded(record, generation, epoch) {
-  if ((await writeDraft(record, epoch)) || record.dirty) {
+  if (await writeDraft(record, epoch)) {
     return
   }
 
@@ -358,9 +342,11 @@ const saveCurrentState = async () => {
 
   // written before the gate, so the draft follows the edits while a push is stuck
   await writeSnapshot(snapshot, epoch)
-  if (!mayWrite(idAtSnapshot, epoch) || latestTicks.get(idAtSnapshot) !== tick) {
+  if (!mayWrite(idAtSnapshot, epoch) || (ticksAtGate.get(idAtSnapshot) ?? 0) > tick) {
     return
   }
+
+  ticksAtGate.set(idAtSnapshot, tick)
 
   if (isSaving.value) {
     queuedSnapshots.set(idAtSnapshot, snapshot)
@@ -410,7 +396,7 @@ async function retireDraft(id, keepContent) {
     return
   }
 
-  // on a full store the record goes, so it can't replay either way
+  // if that write fails the record goes, so it can't replay either way
   await savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
     .catch(() => deletePresentationFromLocalDB(id))
     .catch(() => {})

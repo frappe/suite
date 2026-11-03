@@ -435,6 +435,77 @@ describe('saveCurrentState', () => {
       expect(local.content[0].background).toBe('#bbbbbbff')
     })
 
+    it('pushes from the first overlapping tick to finish, with every write failing', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      const clears: (() => void)[] = []
+      vi.stubGlobal('caches', {
+        delete: (name: string) => {
+          deleted.push(name)
+          if (clears.length === 2) {
+            return Promise.resolve(true)
+          }
+
+          return new Promise((resolve) => {
+            clears.push(() => resolve(true))
+          })
+        },
+      })
+
+      markDirty()
+      const first = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+      markDirty()
+      const second = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(2))
+
+      clears[0]()
+      await first
+      expect(pushes).toBe(1)
+
+      clears[1]()
+      await second
+    })
+
+    it('lets a newer dirty retry land over the clean write of the push before it', async () => {
+      const sent: string[] = []
+      let land!: (modified: string) => void
+      serverSave = (_id, content) => {
+        sent.push(content[0].background)
+        if (sent.length > 1) {
+          return Promise.reject(conflict())
+        }
+
+        return new Promise((resolve) => {
+          land = resolve
+        })
+      }
+
+      slides.value[0].background = '#aaaaaaff'
+      markDirty()
+      const pushing = saveCurrentState()
+      await vi.waitFor(() => expect(sent).toEqual(['#aaaaaaff']))
+
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+      slides.value[0].background = '#bbbbbbff'
+      markDirty()
+      const retrying = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+
+      slides.value = []
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      land('M2')
+      await pushing
+
+      releaseClear()
+      await retrying
+
+      const local = await readDraft('p1')
+      expect(local).toMatchObject({ dirty: true })
+      expect(local.content[0].background).toBe('#bbbbbbff')
+    })
+
     it('writes and sends nothing when the writes stop during the clear', async () => {
       presentationId.value = 'p-stopped-in-clear'
       failFirstWrites(1, quotaError())

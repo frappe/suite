@@ -197,14 +197,14 @@ async function removeOldest(cache, node) {
 }
 
 // a full disk gives up one presentation per capture, and each put one retry
-function putterFor(cache, node) {
+function putterFor(cache, node, isWanted) {
   let room = null
   return async (key, response) => {
     const retry = response.clone()
     try {
       await cache.put(key, response)
     } catch (err) {
-      if (!isQuotaError(err)) {
+      if (!isQuotaError(err) || !isWanted()) {
         throw err
       }
 
@@ -257,7 +257,7 @@ async function storeData(cache, node, { dataUrls, responses }, put) {
 // a closed tab mixes them
 async function storeCopy(cache, node, copy, isWanted, signal) {
   const { shell, html, files, responses } = copy
-  const put = putterFor(cache, node)
+  const put = putterFor(cache, node, isWanted)
   const fileLabel = { [BUILD_HEADER]: String(__SUITE_BUILD__) }
   await runPool(files, (file) => put(file, withHeaders(responses.get(file), fileLabel)))
   if (!isWanted()) {

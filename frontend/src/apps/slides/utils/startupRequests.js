@@ -10,15 +10,24 @@ export function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// a failure stops the taking, and answers only once the lanes at work have finished
 export async function runPool(items, worker) {
   let next = 0
+  const failures = []
   const lanes = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
-    while (next < items.length) {
+    while (!failures.length && next < items.length) {
       const item = items[next++]
-      await worker(item)
+      try {
+        await worker(item)
+      } catch (err) {
+        failures.push(err)
+      }
     }
   })
   await Promise.all(lanes)
+  if (failures.length) {
+    throw failures[0]
+  }
 }
 
 // an uncontrolled page's fetches bypass the worker

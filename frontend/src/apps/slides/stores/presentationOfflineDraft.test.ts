@@ -59,7 +59,8 @@ vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: {} }))
 vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: unknown) => els }))
 vi.mock('@/boot/session', () => ({ getSessionUser: () => 'me@example.com' }))
 
-const { initPresentationDoc, presentationDoc, presentationId } = await import('./presentation')
+const { initPresentationDoc, presentationDoc, presentationId, setDocumentContext } =
+  await import('./presentation')
 const {
   clearSaveFailure,
   dirty,
@@ -178,5 +179,71 @@ describe('a draft kept against a newer stored document', () => {
     expect(warning).not.toHaveBeenCalled()
     const local = await storedDraft()
     expect(local.dirty).toBe(true)
+  })
+})
+
+describe('a draft retry older than the load', () => {
+  // what a failed commit does: the request succeeded, and only the abort event fires
+  function failNextWrite() {
+    const put = IDBObjectStore.prototype.put
+    return vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementationOnce(function (
+      this: IDBObjectStore,
+      record: unknown,
+      key?: IDBValidKey,
+    ) {
+      const request = put.call(this, record, key)
+      request.addEventListener('success', () => {
+        const error = new DOMException('full', 'QuotaExceededError')
+        Object.defineProperty(this.transaction, 'error', { get: () => error, set() {} })
+        this.transaction.abort()
+      })
+      return request
+    })
+  }
+
+  it('lands over the load write, and the next load restores its edits on the served base', async () => {
+    vi.clearAllMocks()
+    markClean()
+    clearSaveFailure()
+    server.modified = 'M2'
+    presentationId.value = 'p1'
+    setNetwork({ isOnline: true, isReachable: true })
+    const release = setDocumentContext('p1', undefined, undefined, vi.fn())
+    await seedDraft()
+
+    const onServed = '#0000ffff'
+    const write = failNextWrite()
+    let endClear!: (done: boolean) => void
+    let isClearing = false
+    vi.stubGlobal('caches', {
+      delete: () => {
+        isClearing = true
+        return new Promise((resolve) => {
+          endClear = resolve
+        })
+      },
+    })
+    const retry = writeDraft({
+      id: 'p1',
+      content: [{ clientId: 'mine', background: onServed, elements: [] }],
+      dirty: true,
+      updatedAt: Date.now(),
+      baseModified: 'M2',
+    })
+    await vi.waitFor(() => expect(isClearing).toBe(true))
+
+    await reopen()
+    expect(slides.value[0].background).toBe(server.background)
+    expect((await storedDraft()).dirty).toBe(false)
+
+    endClear(true)
+    await retry
+    await reopen()
+
+    expect(slides.value[0].background).toBe(onServed)
+    expect(dirty.value).toBe(true)
+    write.mockRestore()
+    release()
+    vi.unstubAllGlobals()
   })
 })

@@ -313,7 +313,8 @@ const fetchPresentation = async (name, load) => {
       )
     }
 
-    // left dirty, the same draft is found and discarded again on every load
+    // left dirty, the same draft is found and discarded again on every load; so is an
+    // older tick's retry landing over this write, unless it is built on the served base
     await writeDraft({
       ...local,
       dirty: false,

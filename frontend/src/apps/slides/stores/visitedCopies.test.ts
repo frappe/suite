@@ -1,301 +1,57 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const presentationDoc = ref<Record<string, unknown> | null>(null)
-const presentationId = ref('')
-const viewOnly = ref(false)
-const slides = ref<unknown[]>([])
-const loadedChunks: string[] = []
-const state = vi.hoisted(() => ({ user: 'a@example.com' as string | null }))
+import {
+  CHUNK,
+  dataUrl,
+  dataUrls,
+  ENTRY,
+  fake,
+  fetchedUrls,
+  fileFetches,
+  FILES,
+  header,
+  holdFetches,
+  installFakes,
+  keys,
+  loadStore,
+  lockLimits,
+  named,
+  openedNames,
+  refused,
+  requests,
+  seedFile,
+  seedNode,
+  seedShell,
+  SHELL_KEY,
+  shellFetches,
+  shellResponse,
+  showPresentation,
+  stalledBodies,
+  state,
+  TWO_MINUTES,
+  visit,
+  VISITED,
+  visited,
+} from './visitedCopies.fakes'
 
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId, viewOnly }))
-vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
-vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (src: string) => src }))
-vi.mock('@/apps/slides/utils/loadedAssets', () => ({ loadedAssets: () => loadedChunks }))
-vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({ default: {} }))
-vi.mock('@/platform/session', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/platform/session')>()),
-  getCookieSessionUser: () => state.user,
-}))
+installFakes()
 
-const VISITED = 'slides-visited'
-const SHELL_KEY = '/slides-visited-shell'
-const ENTRY = '/assets/suite/frontend/assets/index-a1.js'
-const STYLE = '/assets/suite/frontend/assets/index-c3.css'
-const CHUNK = '/assets/suite/frontend/assets/SlidesSurface-d4.js'
-const FILES = [ENTRY, STYLE, CHUNK]
-
-function dataUrl(node: string, id: string) {
-  const [url] = dataUrls(node, id)
-  return url
-}
-
-function dataUrls(node: string, id: string) {
-  return [
-    `/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=${id}`,
-    `/api/suite/drive/nodes/${node}?expand=access%2Cpreview%2Cbreadcrumbs`,
-    `/api/suite/drive/nodes/${node}/media`,
-  ]
-}
-
-// what the Cache API does: a handle outlives a delete of its name, and match gives a fresh copy
-class FakeCache {
-  store = new Map<string, Response>()
-  putHook: ((key: string) => void | Promise<void>) | null = null
-  afterPut: ((key: string) => void) | null = null
-  async keys() {
-    return [...this.store.keys()].map((key) => ({ url: `${location.origin}${key}` }))
-  }
-  async match(key: string) {
-    return this.store.get(key)?.clone()
-  }
-  async put(key: string, response: Response) {
-    await this.putHook?.(key)
-    // a real put reads the whole body first, so a body that errors rejects the put
-    const body = await response.arrayBuffer()
-    const { status, headers } = response
-    this.store.set(key, new Response(body.byteLength ? body : null, { status, headers }))
-    this.afterPut?.(key)
-  }
-  async delete(key: string) {
-    return this.store.delete(key)
+// lets everything that can move without the test's say-so move
+async function settle() {
+  for (let turn = 0; turn < 200; turn++) {
+    await Promise.resolve()
   }
 }
 
-const named = new Map<string, FakeCache>()
-const openedNames: string[] = []
-const requests: { url: string; isMarked: boolean }[] = []
-const refused = new Set<string>()
-let shell: () => Response
-let holdFetch: Promise<unknown> | null
-let clock: number
-let lockRequests: number
-let hasWholeBodies: boolean
-const stalledBodies = new Set<string>()
-const TWO_MINUTES = 120_000
-const lockLimits = new Set<() => void>()
-
-// what fetch gives: abort errors a body still on its way; one received whole is past that
-function bodyFor(url: string, text: string, signal?: AbortSignal | null) {
-  const isWhole = hasWholeBodies
-  return new ReadableStream({
-    start(controller) {
-      if (!isWhole) {
-        signal?.addEventListener('abort', () =>
-          controller.error(new DOMException('aborted', 'AbortError')),
-        )
-      }
-    },
-    pull(controller) {
-      if (stalledBodies.has(url)) {
-        return new Promise<void>(() => {})
-      }
-
-      controller.enqueue(new TextEncoder().encode(text))
-      controller.close()
-    },
-  })
-}
-
-async function afterTurn(before: Promise<unknown>, run: () => Promise<unknown>) {
-  await before
-  return run()
-}
-
-// one holder at a time, across every tab, in the order they asked
-function fakeLocks() {
-  let tail: Promise<unknown> = Promise.resolve()
-  return {
-    request(_name: string, run: () => Promise<unknown>) {
-      lockRequests++
-      const turn = afterTurn(tail, run)
-      tail = turn.catch(() => {})
-      return turn
-    },
+function watchDone(run: Promise<unknown>) {
+  let isDone = false
+  async function finish() {
+    await run
+    isDone = true
   }
+
+  return { done: finish(), isDone: () => isDone }
 }
-
-function holdFetches() {
-  let release = () => {}
-
-  holdFetch = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  return () => release()
-}
-
-function open(name = VISITED) {
-  const cache = named.get(name) ?? new FakeCache()
-  named.set(name, cache)
-  return cache
-}
-
-function visited() {
-  return open()
-}
-
-function keys() {
-  return [...visited().store.keys()]
-}
-
-function fetchedUrls() {
-  return requests.map((request) => request.url)
-}
-
-function shellFetches() {
-  return fetchedUrls().filter((url) => url.startsWith('/d/'))
-}
-
-function fileFetches() {
-  return fetchedUrls().filter((url) => url.startsWith('/assets/'))
-}
-
-function header(key: string, name: string) {
-  return visited().store.get(key)?.headers.get(name)
-}
-
-function shellHtml(token = 'tok1') {
-  return `<html><head>
-    <script>window.csrf_token = '${token}'</script>
-    <script type="module" src="${ENTRY}"></script>
-    <link rel="stylesheet" href="${STYLE}">
-  </head></html>`
-}
-
-function shellResponse(token = 'tok1', headers: Record<string, string> = {}, status = 200) {
-  return new Response(shellHtml(token), {
-    status,
-    headers: { 'Content-Type': 'text/html', 'X-Suite-Build': '100', ...headers },
-  })
-}
-
-function seedNode(node: string, time: number) {
-  visited().store.set(
-    `/d/${node}`,
-    new Response(null, {
-      headers: { 'x-visited-node': node, 'x-visited-time': String(time) },
-    }),
-  )
-  for (const url of dataUrls(node, `id-${node}`)) {
-    visited().store.set(url, new Response('old', { headers: { 'x-visited-node': node } }))
-  }
-}
-
-function seedShell(build = '100', token = 'tok1') {
-  visited().store.set(
-    SHELL_KEY,
-    new Response(shellHtml(token), {
-      headers: { 'x-visited-build': build, 'x-visited-csrf': token, 'Content-Type': 'text/html' },
-    }),
-  )
-}
-
-function seedFile(path: string, build: string) {
-  visited().store.set(path, new Response('old file', { headers: { 'x-visited-build': build } }))
-}
-
-async function loadStore() {
-  vi.resetModules()
-  return import('./visitedCopies')
-}
-
-function showPresentation(node = 'n1', id = 'p1', doc: Record<string, unknown> = {}) {
-  presentationId.value = id
-  presentationDoc.value = { node, is_composite: 0, ...doc }
-}
-
-async function visit(node = 'n1', id = 'p1') {
-  const { rememberVisit } = await loadStore()
-  showPresentation(node, id)
-  await rememberVisit(id)
-}
-
-beforeEach(() => {
-  named.clear()
-  openedNames.length = 0
-  requests.length = 0
-  refused.clear()
-  loadedChunks.splice(0, loadedChunks.length, CHUNK)
-  localStorage.clear()
-  state.user = 'a@example.com'
-  shell = () => shellResponse()
-  holdFetch = null
-  clock = 1000
-  lockRequests = 0
-  hasWholeBodies = false
-  stalledBodies.clear()
-  lockLimits.clear()
-  window.csrf_token = 'tok1'
-  delete window.disable_slides_service_worker
-  vi.stubEnv('VITE_SLIDES_SW', '1')
-  vi.stubGlobal('__SUITE_BUILD__', '100')
-  vi.spyOn(Date, 'now').mockImplementation(() => clock)
-  vi.spyOn(console, 'warn').mockImplementation(() => {})
-  // the wait for an idle moment has its own test
-  vi.stubGlobal('requestIdleCallback', (run: () => void) => run())
-  vi.stubGlobal('setTimeout', (run: () => void, wait?: number) => {
-    if (wait === TWO_MINUTES) {
-      lockLimits.add(run)
-      return run
-    }
-
-    queueMicrotask(run)
-    return 0
-  })
-  vi.stubGlobal('clearTimeout', (timer: () => void) => lockLimits.delete(timer))
-  vi.stubGlobal('navigator', {
-    ...navigator,
-    onLine: true,
-    serviceWorker: { controller: {}, addEventListener: () => {} },
-    locks: fakeLocks(),
-  })
-  vi.stubGlobal('caches', {
-    open: async (name: string) => {
-      openedNames.push(name)
-      return open(name)
-    },
-    has: async (name: string) => named.has(name),
-    delete: async (name: string) => named.delete(name),
-  })
-  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-    // frappe-ui asks for its translations on import
-    if (url.includes('get_boot_translations')) {
-      return new Response('{}')
-    }
-
-    requests.push({ url, isMarked: new Headers(init?.headers).has('x-slides-pin') })
-    await holdFetch
-    if (init?.signal?.aborted) {
-      throw new DOMException('aborted', 'AbortError')
-    }
-
-    if (url.startsWith('/d/')) {
-      return shell()
-    }
-
-    if (refused.has(url)) {
-      return new Response('', { status: 403 })
-    }
-
-    if (url.startsWith('/api/')) {
-      return new Response(bodyFor(url, `{"url":"${url}"}`, init?.signal), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
-
-    return new Response(bodyFor(url, 'file', init?.signal), {
-      status: 200,
-      headers: { 'Content-Type': 'text/javascript' },
-    })
-  })
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllEnvs()
-  vi.unstubAllGlobals()
-})
 
 describe('a first visit', () => {
   it('stores the shell, the files, the data and the marker', async () => {
@@ -327,7 +83,7 @@ describe('a first visit', () => {
   })
 
   it('takes the csrf label from the fetched shell, never from the page', async () => {
-    shell = () => shellResponse('rotated')
+    fake.shell = () => shellResponse('rotated')
 
     await visit()
 
@@ -349,7 +105,7 @@ describe('a later visit', () => {
   it('refetches the data and moves the time, with no shell or file GET', async () => {
     await visit()
     requests.length = 0
-    clock = 5000
+    fake.clock = 5000
 
     await visit()
 
@@ -374,7 +130,7 @@ describe('a later visit', () => {
     await visit()
     requests.length = 0
     window.csrf_token = 'tok2'
-    shell = () => shellResponse('tok2')
+    fake.shell = () => shellResponse('tok2')
 
     await visit()
 
@@ -402,7 +158,7 @@ describe('a later visit', () => {
     expect(requests).toEqual([])
 
     cancelVisit()
-    clock = 5000
+    fake.clock = 5000
     await rememberVisit('p1')
 
     expect(fetchedUrls().sort()).toEqual(dataUrls('n1', 'p1').sort())
@@ -457,7 +213,7 @@ describe('a shell it must not store', () => {
     await visit()
     const before = keys()
     window.csrf_token = 'tok2'
-    shell = make
+    fake.shell = make
 
     await visit('n2', 'p2')
 
@@ -637,12 +393,13 @@ describe('a failed data put', () => {
     expect(keys()).toContain(dataUrl('other', 'id-other'))
   })
 
-  it('leaves a lane landing late with no marker, for the next capture to sweep', async () => {
+  it('waits for a lane still landing, so nothing of the node stays', async () => {
     const [first, , media] = dataUrls('n1', 'p1')
     let land!: () => void
     const held = new Promise<void>((resolve) => {
       land = resolve
     })
+    let hasFailed = false
 
     visited().putHook = (key) => {
       if (key === first) {
@@ -650,21 +407,46 @@ describe('a failed data put', () => {
       }
 
       if (key === media) {
+        hasFailed = true
         throw new TypeError('network')
       }
     }
 
-    await visit()
+    const watched = watchDone(visit())
+    await vi.waitFor(() => expect(hasFailed).toBe(true))
+    await settle()
+    expect(watched.isDone()).toBe(false)
+
     land()
-    await vi.waitFor(() => expect(keys()).toContain(first))
+    await watched.done
 
     expect(keys()).not.toContain('/d/n1')
-
-    visited().putHook = null
-    await visit('n2', 'p2')
-
     expect(keys()).not.toContain(first)
-    expect(keys()).toContain('/d/n2')
+  })
+
+  it('lets the time limit free a failed capture with a lane stalled on a body', async () => {
+    const [first, , media] = dataUrls('n1', 'p1')
+    stalledBodies.add(media)
+    let hasFailed = false
+    visited().putHook = (key) => {
+      if (key === first) {
+        hasFailed = true
+        throw new TypeError('network')
+      }
+    }
+
+    const watched = watchDone(visit())
+    await vi.waitFor(() => expect(hasFailed).toBe(true))
+    await settle()
+    expect(watched.isDone()).toBe(false)
+
+    const [limit] = lockLimits
+    limit()
+    await watched.done
+
+    expect(keys()).not.toContain('/d/n1')
+    expect(keys()).not.toContain(media)
+    expect(lockLimits.size).toBe(0)
   })
 })
 
@@ -756,6 +538,34 @@ describe('a full disk', () => {
 
     expect(keys()).not.toContain('/d/n1')
     expect(keys()).toContain('/d/newer')
+  })
+
+  it('gives up no copy for a capture stopped while it waited for the lock', async () => {
+    visited().store.delete(CHUNK)
+    fake.hasWholeBodies = true
+    let isStopped = false
+    visited().putHook = (key) => {
+      if (key === CHUNK) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+    }
+
+    const store = await loadStore()
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      locks: {
+        request(_name: string, run: () => Promise<unknown>) {
+          store.cancelVisit()
+          isStopped = true
+          return run()
+        },
+      },
+    })
+    showPresentation()
+    await store.rememberVisit('p1')
+
+    expect(isStopped).toBe(true)
+    expect(keys()).toContain('/d/older')
   })
 
   it('never asks the browser to keep a visited copy', async () => {
@@ -877,264 +687,6 @@ describe('a change during the capture', () => {
     await capture
 
     expect(keys()).toEqual([])
-  })
-})
-
-describe('a change during the puts', () => {
-  type Store = Awaited<ReturnType<typeof loadStore>>
-
-  const changes: [string, (store: Store) => void][] = [
-    ['an abort', ({ cancelVisit }) => cancelVisit()],
-    [
-      'a user change',
-      () => {
-        state.user = 'b@example.com'
-      },
-    ],
-    [
-      'a new pin',
-      () =>
-        localStorage.setItem(
-          `slides-offline-copy:${presentationId.value}`,
-          JSON.stringify({ node: 'n1', keys: [] }),
-        ),
-    ],
-  ]
-
-  async function changeAtPut(put: string, change: (store: Store) => void, id = 'p1') {
-    const store = await loadStore()
-    showPresentation('n1', id)
-    let isDone = false
-    visited().putHook = (key) => {
-      if (key === put && !isDone) {
-        isDone = true
-        change(store)
-      }
-    }
-
-    await store.rememberVisit(id)
-  }
-
-  function expectNoData() {
-    expect(keys()).not.toContain('/d/n1')
-    for (const url of dataUrls('n1', 'p1')) {
-      expect(keys()).not.toContain(url)
-    }
-  }
-
-  it.each(changes)('stores no shell or data after %s during a file', async (_label, change) => {
-    await changeAtPut(CHUNK, change)
-
-    expect(keys()).not.toContain(SHELL_KEY)
-    expectNoData()
-  })
-
-  async function expectOldCopy() {
-    expect(keys()).toContain('/d/n1')
-    for (const url of dataUrls('n1', 'id-n1')) {
-      expect(await visited().store.get(url)!.clone().text()).toBe('old')
-    }
-  }
-
-  it.each(changes)('keeps the old copy after %s during the shell', async (_, change) => {
-    seedNode('n1', 500)
-
-    await changeAtPut(SHELL_KEY, change, 'id-n1')
-
-    await expectOldCopy()
-  })
-
-  it.each([
-    ['a file', CHUNK],
-    ['the shell', SHELL_KEY],
-  ])('keeps the old copy on an abort during %s with the bodies received', async (_, put) => {
-    hasWholeBodies = true
-    seedNode('n1', 500)
-
-    await changeAtPut(put, ({ cancelVisit }) => cancelVisit(), 'id-n1')
-
-    await expectOldCopy()
-  })
-
-  it.each(changes)('stores no marker after %s during the data', async (_label, change) => {
-    await changeAtPut(dataUrl('n1', 'p1'), change)
-
-    expect(keys()).not.toContain('/d/n1')
-  })
-
-  it.each([
-    ['still on their way', false],
-    ['received whole', true],
-  ])('removes the old copy on an abort during the data, bodies %s', async (_, isWhole) => {
-    hasWholeBodies = isWhole
-    seedNode('n1', 500)
-
-    await changeAtPut(dataUrl('n1', 'id-n1'), ({ cancelVisit }) => cancelVisit(), 'id-n1')
-
-    expect(keys()).not.toContain('/d/n1')
-    for (const url of dataUrls('n1', 'id-n1')) {
-      expect(keys()).not.toContain(url)
-    }
-  })
-
-  it('removes a marker that an abort lands behind', async () => {
-    seedNode('n1', 500)
-
-    await changeAtPut('/d/n1', ({ cancelVisit }) => cancelVisit(), 'id-n1')
-
-    expect(keys()).not.toContain('/d/n1')
-    for (const url of dataUrls('n1', 'id-n1')) {
-      expect(keys()).not.toContain(url)
-    }
-  })
-
-  it('cancels the data bodies a stopped store never read', async () => {
-    const cancelled: string[] = []
-    const serve = fetch
-    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-      const response = await serve(url, init)
-      if (!dataUrls('n1', 'p1').includes(url)) {
-        return response
-      }
-
-      const body = new ReadableStream({
-        cancel() {
-          cancelled.push(url)
-        },
-      })
-      return new Response(body, { status: response.status, headers: response.headers })
-    })
-
-    await changeAtPut(CHUNK, () => {
-      state.user = 'b@example.com'
-    })
-
-    expect(cancelled.sort()).toEqual(dataUrls('n1', 'p1').sort())
-  })
-})
-
-describe('two tabs', () => {
-  // the first tab's capture, stopped just before its marker lands
-  async function firstTabAtItsMarker() {
-    const tab = await loadStore()
-    let release!: () => void
-    const held = new Promise<void>((resolve) => {
-      release = resolve
-    })
-
-    let isAtMarker = false
-    visited().putHook = (key) => {
-      if (key === '/d/n1') {
-        isAtMarker = true
-        return held
-      }
-    }
-
-    showPresentation('n1', 'p1')
-    const capture = tab.rememberVisit('p1')
-    await vi.waitFor(() => expect(isAtMarker).toBe(true))
-    return { capture, release }
-  }
-
-  // it either finishes, without a lock, or queues behind the holder
-  async function finishedOrQueued(other: Promise<unknown>) {
-    await Promise.race([other, vi.waitFor(() => expect(lockRequests).toBe(2))])
-  }
-
-  it('makes a second trim wait for the first marker, so all the data stays', async () => {
-    const first = await firstTabAtItsMarker()
-    const tab = await loadStore()
-    showPresentation('n2', 'p2')
-
-    const second = tab.rememberVisit('p2')
-    await finishedOrQueued(second)
-    first.release()
-    await Promise.all([first.capture, second])
-
-    expect(keys()).toContain('/d/n1')
-    expect(keys()).toContain('/d/n2')
-    for (const url of [...dataUrls('n1', 'p1'), ...dataUrls('n2', 'p2')]) {
-      expect(keys()).toContain(url)
-    }
-  })
-
-  it('makes a forget wait, so no marker lands over removed data', async () => {
-    const first = await firstTabAtItsMarker()
-    const tab = await loadStore()
-
-    const forgetting = tab.forgetVisitedNode('n1')
-    await finishedOrQueued(forgetting)
-    first.release()
-    await Promise.all([first.capture, forgetting])
-
-    expect(keys()).not.toContain('/d/n1')
-    for (const url of dataUrls('n1', 'p1')) {
-      expect(keys()).not.toContain(url)
-    }
-  })
-
-  it('lets an abort free a holder stalled on a body', async () => {
-    const [, , media] = dataUrls('n1', 'p1')
-    stalledBodies.add(media)
-    const stalled = await loadStore()
-    showPresentation('n1', 'p1')
-    const capture = stalled.rememberVisit('p1')
-    await vi.waitFor(() => expect(lockRequests).toBe(1))
-    await vi.waitFor(() => expect(keys()).toContain(dataUrl('n1', 'p1')))
-
-    const tab = await loadStore()
-    showPresentation('n2', 'p2')
-    const second = tab.rememberVisit('p2')
-    await vi.waitFor(() => expect(lockRequests).toBe(2))
-    stalled.cancelVisit()
-    await Promise.all([capture, second])
-
-    expect(keys()).not.toContain('/d/n1')
-    expect(keys()).toContain('/d/n2')
-  })
-
-  it('frees a holder stalled on a body once its time is up, so a forget can finish', async () => {
-    const [, , media] = dataUrls('n1', 'p1')
-    stalledBodies.add(media)
-    const stalled = await loadStore()
-    showPresentation('n1', 'p1')
-    const capture = stalled.rememberVisit('p1')
-    await vi.waitFor(() => expect(keys()).toContain(dataUrl('n1', 'p1')))
-
-    const tab = await loadStore()
-    let hasForgotten = false
-    async function forget() {
-      await tab.forgetVisitedNode('n2')
-      hasForgotten = true
-    }
-
-    const forgetting = forget()
-    await vi.waitFor(() => expect(lockRequests).toBe(2))
-    await new Promise((resolve) => queueMicrotask(() => resolve(null)))
-    expect(hasForgotten).toBe(false)
-
-    expect(lockLimits.size).toBe(1)
-    const [limit] = lockLimits
-    limit()
-    await Promise.all([capture, forgetting])
-
-    expect(hasForgotten).toBe(true)
-    expect(keys()).not.toContain('/d/n1')
-  })
-
-  it('runs the clock only while holding the lock, and leaves none behind', async () => {
-    const release = holdFetches()
-    const tab = await loadStore()
-    showPresentation('n1', 'p1')
-    const capture = tab.rememberVisit('p1')
-    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0))
-    expect(lockLimits.size).toBe(0)
-
-    release()
-    await capture
-
-    expect(keys()).toContain('/d/n1')
-    expect(lockLimits.size).toBe(0)
   })
 })
 
