@@ -352,7 +352,7 @@ describe('Slides offline copy', () => {
     })
   })
 
-  it('keeps the bytes of a picture whose read has not answered when a saved copy opens', async () => {
+  it('keeps the bytes of a picture Drive refused when a saved copy opens', async () => {
     const pinnedPicture = '/private/files/m1.png'
     const deleted: string[] = []
     vi.stubGlobal('caches', {
@@ -369,11 +369,11 @@ describe('Slides offline copy', () => {
     const next = fakeServer.opens + 1
     const record = `${RECORD_PREFIX}p${next}`
     localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
-    const waiting = {
+    const refused = {
       id: 'media-node-1',
       src: ref(null),
       cacheKey: ref('media-node-1'),
-      status: ref('loading'),
+      status: ref('refused'),
       refresh: async () => {},
     }
 
@@ -385,7 +385,7 @@ describe('Slides offline copy', () => {
           elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
         },
       ],
-      media: () => waiting as never,
+      media: () => refused as never,
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
