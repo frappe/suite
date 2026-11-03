@@ -5,9 +5,9 @@ import { computed, ref } from 'vue'
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
-import { getSessionUser } from '@/boot/session'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
+import { getCookieSessionUser } from '@/platform/session'
 import { translate } from '@/platform/translation'
 
 import { draftOutcome, needsServerCheck } from './draftOutcome'
@@ -376,7 +376,7 @@ const rowKeys = (rows) => rows.map(rowKey).join('\n')
 
 // true when this user's push put exactly these rows on the server
 const holdsOwnRows = (doc, rows) =>
-  doc.modified_by === getSessionUser() && rowKeys(doc.slides || []) === rowKeys(rows)
+  doc.modified_by === getCookieSessionUser() && rowKeys(doc.slides || []) === rowKeys(rows)
 
 // the push the client gave up on; the server may still take it in, and edits since build on it
 let lastFailedPush = null

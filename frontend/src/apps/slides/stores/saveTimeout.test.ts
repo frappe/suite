@@ -28,7 +28,10 @@ vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { quer
 vi.mock('@/apps/slides/stores/slide', () => ({ slides: ref([]) }))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: { clearHistory: vi.fn() } }))
 vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: unknown[]) => els }))
-vi.mock('@/boot/session', () => ({ getSessionUser: () => 'me@example.com' }))
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  getCookieSessionUser: () => 'me@example.com',
+}))
 vi.mock('@/apps/slides/stores/saving', () => ({
   markDirty: vi.fn(),
   markClean: vi.fn(),

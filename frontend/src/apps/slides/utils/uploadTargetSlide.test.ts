@@ -13,7 +13,10 @@ vi.mock('@/apps/slides/stores/presentation', () => ({
 }))
 vi.mock('@/apps/slides/stores/slide', () => ({ currentSlide }))
 vi.mock('@/apps/slides/stores/element', () => ({ addMediaElement, replaceMediaElement }))
-vi.mock('@/boot/session', () => ({ session: { user: { sessionUser: 'u1' } } }))
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  useSession: () => ({ user: { value: { id: 'u1' } } }),
+}))
 vi.mock('frappe-ui', () => ({
   call: vi.fn(),
   toast: { promise: (promise: Promise<unknown>) => promise },

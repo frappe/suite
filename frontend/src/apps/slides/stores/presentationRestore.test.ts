@@ -32,7 +32,10 @@ vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { quer
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: {} }))
 vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: any) => els }))
-vi.mock('@/boot/session', () => ({ getSessionUser: () => 'me@example.com' }))
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  getCookieSessionUser: () => 'me@example.com',
+}))
 vi.mock('@/apps/slides/stores/saving', () => ({
   markDirty,
   markClean,

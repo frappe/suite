@@ -15,19 +15,25 @@ vi.mock('@/apps/slides/stores/element', () => ({
 vi.mock('frappe-ui', () => ({ toast: {}, FileUploadHandler: class {} }))
 vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({ default: {} }))
 vi.mock('@/apps/slides/utils/bundledFonts', () => ({ loadBundledFonts: async () => {} }))
-vi.mock('@/boot/session', () => ({
-  session: {
-    user: {
-      get sessionUser() {
-        return state.user
+vi.mock('@/platform/session', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/platform/session')>()
+  return {
+    ...original,
+    getCookieSessionUser: () => state.user,
+    useSession: () => ({
+      ...original.useSession(),
+      user: {
+        get value() {
+          if (!state.user) {
+            return null
+          }
+
+          return { id: state.user }
+        },
       },
-    },
-  },
-}))
-vi.mock('@/platform/session', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/platform/session')>()),
-  getCookieSessionUser: () => state.user,
-}))
+    }),
+  }
+})
 vi.mock('@/apps/slides/utils/startupRequests', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/apps/slides/utils/startupRequests')>()),
   delay: async () => {},

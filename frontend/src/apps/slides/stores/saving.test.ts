@@ -32,7 +32,10 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 }))
 
 let sessionUser: string | null = 'me@example.com'
-vi.mock('@/boot/session', () => ({ getSessionUser: () => sessionUser }))
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  getCookieSessionUser: () => sessionUser,
+}))
 
 const {
   saveCurrentState,

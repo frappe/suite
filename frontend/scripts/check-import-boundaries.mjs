@@ -239,16 +239,7 @@ const moduleGraphDebtGroups = [
     owner: 'Slides frontend owner',
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
-    entries: [
-      'slides/router.ts|@/router',
-      'slides/stores/presentation.js|@/boot/session',
-      'slides/stores/presentationRestore.test.ts|@/boot/session',
-      'slides/stores/saveTimeout.test.ts|@/boot/session',
-      'slides/stores/saving.js|@/boot/session',
-      'slides/stores/saving.test.ts|@/boot/session',
-      'slides/utils/mediaUploads.js|@/boot/session',
-      'slides/utils/uploadTargetSlide.test.ts|@/boot/session',
-    ],
+    entries: ['slides/router.ts|@/router'],
   },
   {
     owner: 'Writer frontend owner',

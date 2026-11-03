@@ -12,7 +12,7 @@ import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import { draftsDbName, isOutOfSpace } from '@/apps/slides/utils/slidesCaches'
-import { getSessionUser } from '@/boot/session'
+import { getCookieSessionUser } from '@/platform/session'
 
 const STORE = 'presentations'
 
@@ -20,7 +20,7 @@ let db = null
 let dbOwner = null
 
 function draftsOwner() {
-  return getSessionUser() || 'Guest'
+  return getCookieSessionUser() || 'Guest'
 }
 
 async function openDB() {
@@ -140,7 +140,10 @@ const getPresentationFromLocalDB = async (id) => {
     req.onsuccess = () => {
       const record = req.result
       // a record another user of this browser left is not ours
-      if (record?.user && record.user !== getSessionUser()) return resolve(null)
+      if (record?.user && record.user !== getCookieSessionUser()) {
+        return resolve(null)
+      }
+
       resolve(record)
     }
 
@@ -306,7 +309,7 @@ const takeSnapshot = () => {
 
   return {
     id: presentationId.value,
-    user: getSessionUser(),
+    user: getCookieSessionUser(),
     content: getLatestSlideContent(),
     updatedAt: Date.now(),
     dirty: true,
