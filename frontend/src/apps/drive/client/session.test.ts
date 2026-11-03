@@ -298,6 +298,32 @@ describe('document session media', () => {
         session.dispose()
       })
 
+      it('stops the retry when the session is disposed', async () => {
+        const { session, answers, failures } = await openedWithHeldRead()
+        session.media('waiting')
+        await vi.advanceTimersByTimeAsync(0)
+        failures[0](failed)
+        await vi.advanceTimersByTimeAsync(0)
+
+        session.dispose()
+        await vi.advanceTimersByTimeAsync(MEDIA_REFRESH_MS)
+
+        expect(answers).toHaveLength(1)
+      })
+
+      it('starts no retry for a read that fails after the session is disposed', async () => {
+        const { session, answers, failures } = await openedWithHeldRead()
+        session.media('waiting')
+        await vi.advanceTimersByTimeAsync(0)
+
+        session.dispose()
+        failures[0](failed)
+        await vi.advanceTimersByTimeAsync(0)
+        await vi.advanceTimersByTimeAsync(MEDIA_REFRESH_MS)
+
+        expect(answers).toHaveLength(1)
+      })
+
       it('waits longer after each read that fails, capped at 30 seconds', async () => {
         const { session, answers, failures } = await openedWithHeldRead()
         session.media('waiting')
