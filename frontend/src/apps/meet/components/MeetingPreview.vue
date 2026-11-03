@@ -159,7 +159,7 @@ const terminalGuestSession = ref<StoredGuestSession | null>(null);
 
 onMounted(() => {
 	const guestSession = readGuestSession(props.meetingId);
-	const savedGuestName = guestSession?.guestName;
+	const savedGuestName = guestSession?.guestName || props.currentUserName;
 	if (savedGuestName && !session.isLoggedIn) {
 		guestName.value = savedGuestName;
 	}

@@ -91,8 +91,7 @@
 				:userAvatar="currentUser.userAvatar.value"
 				:currentUserName="
 					currentUser.currentUser.value?.full_name ||
-					currentUser.currentUser.value?.name ||
-					'You'
+					currentUser.currentUser.value?.name
 				"
 				:guestAuthToken="connectionState.guestAuthToken"
 				:isWaitingForApproval="lobbyStore.isWaitingForApproval"
