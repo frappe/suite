@@ -130,6 +130,10 @@ beforeEach(() => {
   responses = {}
   vi.stubGlobal('caches', {
     open: async (name: string) => {
+      if (name === 'slides-api') {
+        return new FakeCache()
+      }
+
       if (name !== 'slides-visited') {
         return cache
       }
@@ -155,6 +159,10 @@ beforeEach(() => {
   presentationDoc.value = { node: 'n1', is_composite: 0, modified: '2026-08-17 10:00:00' }
   presentationId.value = 'p1'
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url.includes('get_templates')) {
+      return json()
+    }
+
     if (url.startsWith('/d/')) {
       startupFetched.push(url)
 
@@ -488,23 +496,45 @@ describe('a pin and the visited copies', () => {
     expect(seeded.has('/d/n2')).toBe(true)
   })
 
-  it('a pin at the quota clears the visited copies and retries', async () => {
-    await seedVisited()
-    const put = cache.put.bind(cache)
-    let failures = 0
-    cache.put = async (key, response) => {
-      if (key.startsWith('/private/files/') && failures++ === 0) {
-        throw new DOMException('full', 'QuotaExceededError')
+  it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
+    'a pin refused with %s clears the visited copies and retries',
+    async (name) => {
+      await seedVisited()
+      const put = cache.put.bind(cache)
+      let failures = 0
+      cache.put = async (key, response) => {
+        if (key.startsWith('/private/files/') && failures++ === 0) {
+          throw new DOMException('full', name)
+        }
+
+        return put(key, response)
       }
 
-      return put(key, response)
-    }
+      const result = await saveOfflineCopy('p1')
 
-    const result = await saveOfflineCopy('p1')
+      expect(deletedCaches).toEqual(['slides-visited'])
+      expect(result).toEqual({ ok: true, failed: [], count: 2 })
+    },
+  )
 
-    expect(deletedCaches).toEqual(['slides-visited'])
-    expect(result).toEqual({ ok: true, failed: [], count: 2 })
-  })
+  it.each(['AbortError', 'NetworkError'])(
+    'a pin whose body fails with %s clears nothing',
+    async (name) => {
+      await seedVisited()
+      const put = cache.put.bind(cache)
+      cache.put = async (key, response) => {
+        if (key.startsWith('/private/files/')) {
+          throw new DOMException('aborted', name)
+        }
+
+        return put(key, response)
+      }
+
+      await saveOfflineCopy('p1')
+
+      expect(deletedCaches).toEqual([])
+    },
+  )
 
   it('start-up at the quota clears the visited copies and retries', async () => {
     const put = cache.put.bind(cache)

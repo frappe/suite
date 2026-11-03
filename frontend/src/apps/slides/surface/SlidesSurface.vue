@@ -65,7 +65,6 @@ import {
   resumeWrites,
   retireDraft,
   saveChanges,
-  saveCurrentState,
   saveFailed,
   saveRefused,
   stopWrites,
@@ -653,7 +652,7 @@ function reloadAfterAccessBack() {
       translate('Your latest changes could not be kept on this device. Reload anyway?'),
     )
   if (!isSafe) {
-    // the toast closes on any press, and it is the way back to Reload
+    // pressing Reload closed the toast, and it is the way back to Reload
     showAccessBack()
     return
   }
@@ -852,7 +851,7 @@ onBeforeUnmount(() => {
   dismissOnlyCopy()
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
-  void saveCurrentState().finally(() => {
+  void saveChanges().finally(() => {
     releaseContext()
     releaseMedia()
     resumeWrites(props.session.contentDocname)

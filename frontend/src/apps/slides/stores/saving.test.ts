@@ -331,6 +331,23 @@ describe('saveCurrentState', () => {
       await saving
     })
 
+    it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
+      'clears the visited copies and lands a draft refused with %s',
+      async (name) => {
+        failFirstWrites(1, new DOMException('full', name))
+        slides.value[0].background = '#123456ff'
+        markDirty()
+
+        await saveCurrentState()
+
+        expect(deleted).toEqual(['slides-visited'])
+        const local = (await getPresentationFromLocalDB('p1')) as {
+          content: { background: string }[]
+        }
+        expect(local.content[0].background).toBe('#123456ff')
+      },
+    )
+
     it('clears the visited copies and lands the draft on the retry', async () => {
       failFirstWrites(1, quotaError())
       let draftAtPush: { content: { background: string }[] } | null = null
@@ -708,16 +725,19 @@ describe('saveCurrentState', () => {
       expect(local).toMatchObject({ dirty: true })
     })
 
-    it('leaves the visited copies alone on any other failure', async () => {
-      failFirstWrites(Number.POSITIVE_INFINITY, new DOMException('broken', 'UnknownError'))
-      markDirty()
+    it.each(['AbortError', 'NetworkError', 'InvalidStateError'])(
+      'leaves the visited copies alone on %s',
+      async (name) => {
+        failFirstWrites(Number.POSITIVE_INFINITY, new DOMException('broken', name))
+        markDirty()
 
-      const saving = saveCurrentState()
+        const saving = saveCurrentState()
 
-      await vi.waitFor(() => expect(pushes).toBe(1))
-      await saving
-      expect(deleted).toEqual([])
-    })
+        await vi.waitFor(() => expect(pushes).toBe(1))
+        await saving
+        expect(deleted).toEqual([])
+      },
+    )
   })
 
   it('keeps writing the draft while a push is stuck', async () => {

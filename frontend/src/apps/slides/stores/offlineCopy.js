@@ -10,7 +10,7 @@ import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources, entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import {
-  isQuotaError,
+  isOutOfSpace,
   PIN_HEADER,
   PINNED_CACHE_NAME,
   RECORD_PREFIX,
@@ -204,7 +204,7 @@ function deleteUnshared(cache, id, keys) {
 
 // a pin comes before any visited copy
 async function clearVisitedOnQuota(err) {
-  if (!isQuotaError(err)) {
+  if (!isOutOfSpace(err)) {
     throw err
   }
 
@@ -361,7 +361,7 @@ const saveOfflineCopy = async (id) => {
           return
         }
 
-        if (isQuotaError(err)) {
+        if (isOutOfSpace(err)) {
           // every later put fails the same way
           recordFailure(progress, target, QUOTA)
           controller.abort(QUOTA)

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { API_CACHE_NAME, PINNED_CACHE_NAME, VISITED_CACHE_NAME } from './utils/slidesCaches'
+import { warmAssets } from './utils/startupRequests'
+
+vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({}))
+vi.mock('@/apps/slides/utils/bundledFonts', () => ({ loadBundledFonts: async () => {} }))
 
 vi.mock('workbox-range-requests', () => ({
   createPartialResponse: async (_request: Request, response: Response) => response,
@@ -50,7 +54,8 @@ beforeEach(() => {
       opened.set(name, entries)
       return {
         match: async (request: Request) => entries.get(request.url),
-        put: async (request: Request, response: Response) => entries.set(request.url, response),
+        put: async (request: Request | string, response: Response) =>
+          entries.set(new URL((request as Request).url ?? request, location.origin).href, response),
         keys: async () => [],
         delete: async () => true,
       }
@@ -416,6 +421,108 @@ describe('a presentation opened online, offline', () => {
     await expect(dispatch(get('/d/n1'))).rejects.toThrow()
     await expect(dispatch(get('/d/n1/quarterly-plan'))).rejects.toThrow()
     expect(fetches).toHaveLength(2)
+  })
+
+  describe('the templates a warm stores', () => {
+    const TEMPLATES = '/api/method/suite.slides.doctype.presentation.presentation.get_templates'
+
+    function serverAnswers(answer: () => Response) {
+      const requests: { url: string; isMarked: boolean }[] = []
+      vi.stubGlobal('fetch', async (url: string, init: { headers: Record<string, string> }) => {
+        requests.push({ url, isMarked: init.headers['x-slides-pin'] === '1' })
+        return answer()
+      })
+      return requests
+    }
+
+    function goneOffline() {
+      vi.stubGlobal('fetch', async () => {
+        throw new TypeError('Failed to fetch')
+      })
+    }
+
+    function json(label: string, status = 200) {
+      return new Response(label, { status, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    it('answers an entered tab offline from what was stored', async () => {
+      const requests = serverAnswers(() => json('{"message":["a layout"]}'))
+
+      await warmAssets()
+
+      expect(requests).toEqual([{ url: TEMPLATES, isMarked: true }])
+      goneOffline()
+      listeners.get('message')!({
+        data: 'slides-entered',
+        source: { id: 'tab' },
+        ports: [],
+        waitUntil: () => {},
+      })
+      const response = await dispatch(get(TEMPLATES), 'tab')
+      expect(await response!.text()).toBe('{"message":["a layout"]}')
+    })
+
+    it.each([
+      ['a refusal', () => json('{"exc_type":"PermissionError"}', 403)],
+      ['an error', () => json('{"exc_type":"Oops"}', 500)],
+      ['a page that is not JSON', () => text('<html>login</html>')],
+    ])('stores nothing from %s', async (_name, answer) => {
+      serverAnswers(answer)
+
+      await warmAssets()
+
+      expect(opened.get(API_CACHE_NAME)?.size).toBe(0)
+    })
+
+    it('stores nothing when the fetch fails', async () => {
+      goneOffline()
+
+      await warmAssets()
+
+      expect(opened.get(API_CACHE_NAME)?.size).toBe(0)
+    })
+
+    it('resolves and clears nothing when the put fails', async () => {
+      serverAnswers(() => json('[]'))
+      const deleted: string[] = []
+      vi.stubGlobal('caches', {
+        open: async () => ({
+          put: async () => {
+            throw new DOMException('full', 'InvalidAccessError')
+          },
+        }),
+        delete: async (name: string) => {
+          deleted.push(name)
+          return true
+        },
+      })
+
+      await expect(warmAssets()).resolves.toBeDefined()
+
+      expect(deleted).toEqual([])
+    })
+
+    it('resolves when the cache cannot be opened', async () => {
+      serverAnswers(() => json('[]'))
+      vi.stubGlobal('caches', {
+        open: async () => {
+          throw new DOMException('broken', 'UnknownError')
+        },
+      })
+
+      await expect(warmAssets()).resolves.toBeDefined()
+    })
+
+    it('does not bring the cache back after a wipe during the fetch', async () => {
+      serverAnswers(() => {
+        opened.delete(API_CACHE_NAME)
+        return json('{"message":["old user"]}')
+      })
+
+      await warmAssets()
+
+      expect(opened.has(API_CACHE_NAME)).toBe(false)
+    })
   })
 
   it('falls back to slides-api when the document misses the visited copy', async () => {

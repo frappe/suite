@@ -83,7 +83,8 @@ export function clearStaleRecovery(node: string): void {
 function differs(copy: RecoveryCopy, isShown: (slides: unknown[]) => boolean) {
   try {
     return !isShown(copy.slides)
-  } catch {
+  } catch (err) {
+    console.warn('Could not compare a recovery copy: ', err)
     return true
   }
 }

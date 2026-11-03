@@ -288,6 +288,11 @@ async function fakeFetch(url: string, init?: RequestInit) {
     return new Response('{}')
   }
 
+  // the warm before the capture, not part of it
+  if (url.includes('get_templates')) {
+    return new Response('[]', { headers: { 'Content-Type': 'application/json' } })
+  }
+
   requests.push({ url, isMarked: new Headers(init?.headers).has('x-slides-pin') })
   await fake.holdFetch
   if (init?.signal?.aborted) {

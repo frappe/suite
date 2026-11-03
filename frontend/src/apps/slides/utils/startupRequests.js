@@ -1,5 +1,6 @@
+import { api } from '@/apps/slides/client/api'
 import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
-import { PIN_HEADER } from '@/apps/slides/utils/slidesCaches'
+import { API_CACHE_NAME, PIN_HEADER } from '@/apps/slides/utils/slidesCaches'
 import { isCacheable } from '@/apps/slides/utils/slidesRequests'
 
 const CONCURRENCY = 4
@@ -47,11 +48,23 @@ export async function waitForController() {
   return !!navigator.serviceWorker.controller
 }
 
+// a first-ever open isn't controlled, so the worker can't store these for it
+async function warmTemplates() {
+  const url = api.templates.list.path
+  // held across the fetch, so a wipe during it isn't undone by opening the name again
+  const cache = await caches.open(API_CACHE_NAME)
+  const response = await fetchCacheable(url, 'api')
+  if (response) {
+    await cache.put(url, response)
+  }
+}
+
 // the slideshow chunk and the fonts load lazily
 export function warmAssets() {
   return Promise.all([
     import('@/apps/slides/pages/Slideshow.vue').catch(() => {}),
     loadBundledFonts().catch(() => {}),
+    warmTemplates().catch(() => {}),
   ])
 }
 

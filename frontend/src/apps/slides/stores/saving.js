@@ -11,7 +11,7 @@ import { slides } from '@/apps/slides/stores/slide'
 import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
-import { draftsDbName, isQuotaError } from '@/apps/slides/utils/slidesCaches'
+import { draftsDbName, isOutOfSpace } from '@/apps/slides/utils/slidesCaches'
 import { getSessionUser } from '@/boot/session'
 
 const STORE = 'presentations'
@@ -109,7 +109,7 @@ const writeDraft = (record, epoch) => {
 
   return write()
     .catch(async (err) => {
-      if (!isQuotaError(err)) {
+      if (!isOutOfSpace(err)) {
         throw err
       }
 

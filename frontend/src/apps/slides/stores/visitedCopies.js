@@ -3,7 +3,7 @@ import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { slidesWorkerEnabled } from '@/apps/slides/utils/serviceWorker'
 import {
-  isQuotaError,
+  isOutOfSpace,
   RECORD_PREFIX,
   VISITED_CACHE_NAME,
   VISITED_NODE_HEADER,
@@ -204,7 +204,7 @@ function putterFor(cache, node, isWanted) {
     try {
       await cache.put(key, response)
     } catch (err) {
-      if (!isQuotaError(err) || !isWanted()) {
+      if (!isOutOfSpace(err) || !isWanted()) {
         throw err
       }
 

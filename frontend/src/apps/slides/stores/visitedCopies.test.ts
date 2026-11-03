@@ -511,21 +511,43 @@ describe('a full disk', () => {
     seedNode('newer', 20)
   })
 
-  it('drops the oldest node and retries the put once', async () => {
-    let failures = 0
-    visited().putHook = (key) => {
-      if (key === '/d/n1' && failures++ === 0) {
-        throw new DOMException('full', 'QuotaExceededError')
+  it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
+    'drops the oldest node and retries a put refused with %s once',
+    async (name) => {
+      let failures = 0
+      visited().putHook = (key) => {
+        if (key === '/d/n1' && failures++ === 0) {
+          throw new DOMException('full', name)
+        }
       }
-    }
 
-    await visit()
+      await visit()
 
-    expect(keys()).toContain('/d/n1')
-    expect(keys()).not.toContain('/d/older')
-    expect(keys()).toContain('/d/newer')
-    expect(failures).toBe(2)
-  })
+      expect(keys()).toContain('/d/n1')
+      expect(keys()).not.toContain('/d/older')
+      expect(keys()).toContain('/d/newer')
+      expect(failures).toBe(2)
+    },
+  )
+
+  it.each(['AbortError', 'NetworkError'])(
+    'evicts nothing when a body fails with %s',
+    async (name) => {
+      let failures = 0
+      visited().putHook = (key) => {
+        if (key === '/d/n1') {
+          failures++
+          throw new DOMException('aborted', name)
+        }
+      }
+
+      await visit()
+
+      expect(failures).toBe(1)
+      expect(keys()).toContain('/d/older')
+      expect(keys()).toContain('/d/newer')
+    },
+  )
 
   it('stops quietly when the retry fails too', async () => {
     visited().putHook = (key) => {

@@ -19,7 +19,9 @@ const saves: unknown[] = []
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
 const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
+const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
 let isRefusing = false
+let isFailingTemplates = false
 
 interface MenuEntry {
   label: string
@@ -47,13 +49,16 @@ vi.mock('@/api', async () => {
   const { createTransport } = await import('@/platform/transport')
   const { api: slides } = await import('../client/api')
   const { registration } = await import('../client/policy')
-  return {
-    api: { slides },
-    ...createApiClient(
-      { slides: async () => registration },
-      { persistence: false, transport: createTransport({ fetch: server.fetch }) },
-    ),
+  const engine = createApiClient(
+    { slides: async () => registration },
+    { persistence: false, transport: createTransport({ fetch: server.fetch }) },
+  )
+
+  forgetTemplates.run = () => {
+    engine.invalidate((reference) => reference.id === 'get_templates')
   }
+
+  return { api: { slides }, ...engine }
 })
 vi.mock('frappe-ui', () => {
   const passthrough = {
@@ -248,7 +253,7 @@ const {
   saveRefused,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
-const { initPresentationDoc, inReadonlyMode, viewOnly } =
+const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
   await import('@/apps/slides/stores/presentation')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
@@ -299,12 +304,21 @@ async function openedSurface({
         return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })
       }
 
-      saves.push(JSON.parse(String(init?.body)))
+      const body = JSON.parse(String(init?.body))
+      // an earlier open's leaving push can land here
+      if (body.name === docname) {
+        saves.push(body)
+      }
+
       const version = saves.length + 1
       return answer({ modified: `M${version}` })
     }
 
     if (url.includes('get_templates')) {
+      if (isFailingTemplates) {
+        throw new TypeError('Failed to fetch')
+      }
+
       return answer([])
     }
 
@@ -705,6 +719,7 @@ describe('Slides push refused by the server', () => {
 
   afterEach(() => {
     isRefusing = false
+    isFailingTemplates = false
     served.modified = 'M1'
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -841,6 +856,60 @@ describe('Slides push refused by the server', () => {
     const draft = (await getPresentationFromLocalDB(docname)) as { dirty: boolean }
     expect(draft.dirty).toBe(false)
     expect(dirty.value).toBe(false)
+  })
+
+  describe('leaving', () => {
+    async function left() {
+      const docname = mounted?.docname as string
+      mounted?.app.unmount()
+      mounted = null
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+      return docname
+    }
+
+    it('sends nothing and leaves no dirty draft when nothing was edited', async () => {
+      mounted = await openedSurface()
+
+      const docname = await left()
+
+      expect(saves).toEqual([])
+      const draft = await getPresentationFromLocalDB(docname)
+      expect(draft).not.toEqual(expect.objectContaining({ dirty: true }))
+    })
+
+    it('still pushes an edit', async () => {
+      mounted = await openedSurface()
+      duplicateSlide()
+
+      await left()
+
+      expect(saves).toHaveLength(1)
+      expect((saves[0] as { slides: unknown[] }).slides).toHaveLength(served.slides.length + 1)
+    })
+  })
+
+  describe('templates that fail to load', () => {
+    beforeEach(() => {
+      forgetTemplates.run()
+      isFailingTemplates = true
+    })
+
+    it('shows no toast offline', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+
+      mounted = await openedSurface()
+      await loadTemplates()
+
+      expect(toast.error).not.toHaveBeenCalled()
+    })
+
+    it('still says so online', async () => {
+      mounted = await openedSurface()
+      await loadTemplates()
+
+      expect(toast.error).toHaveBeenCalledWith('Failed to fetch')
+    })
   })
 
   async function draftDirty() {
@@ -1673,10 +1742,12 @@ describe('Slides push refused by the server', () => {
 
     it('opens over a copy it cannot compare, and keeps the copy', async () => {
       keepRecovery('node-1', [null])
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       mounted = await openedSurface()
       await nextTick()
 
+      expect(warn).toHaveBeenCalled()
       expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
       expect(readRecovery('node-1')).toEqual([
         expect.objectContaining({ slides: [null], sticky: true }),

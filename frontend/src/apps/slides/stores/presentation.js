@@ -483,7 +483,9 @@ const loadTemplates = async () => {
   try {
     templateList.value = await client.query(api.slides.templates.list, {}, { cache: 'prefer' })
   } catch (error) {
-    toast.error(error.message || 'Could not load templates')
+    if (navigator.onLine) {
+      toast.error(error.message || 'Could not load templates')
+    }
   }
 }
 

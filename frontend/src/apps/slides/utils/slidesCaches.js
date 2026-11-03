@@ -8,8 +8,16 @@ export const VISITED_CACHE_NAME = 'slides-visited'
 
 export const PIN_HEADER = 'x-slides-pin'
 
-export function isQuotaError(err) {
-  return err?.name === 'QuotaExceededError'
+// measured on a full disk in Chrome on macOS; an aborted capture gives NetworkError or AbortError
+const OUT_OF_SPACE_ERRORS = [
+  'QuotaExceededError',
+  'InvalidAccessError',
+  'DataError',
+  'UnknownError',
+]
+
+export function isOutOfSpace(err) {
+  return OUT_OF_SPACE_ERRORS.includes(err?.name)
 }
 
 export const VISITED_NODE_HEADER = 'x-visited-node'
