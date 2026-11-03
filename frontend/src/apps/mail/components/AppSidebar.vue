@@ -461,7 +461,7 @@ const unifiedSidebarItems = computed(() => {
       ),
     },
     ...(custom.length
-      ? [{ label: __('Your folders'), key: 'folders', items: custom.map(toItem) }]
+      ? [{ label: __('My folders'), key: 'folders', items: custom.map(toItem) }]
       : []),
   ]
 })
@@ -551,7 +551,7 @@ const sidebarItems = computed(() => {
     // as a list that had failed to load: a New Folder row sits under it instead, and the heading's
     // "+" would only repeat it.
     {
-      label: __('Your folders'),
+      label: __('My folders'),
       key: 'folders',
       items: yourFolders.length
         ? yourFolders
