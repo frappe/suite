@@ -184,3 +184,9 @@ export function upgradingBanner(): Banner {
     ),
   }
 }
+
+/** An old spreadsheet the converter refused; `reason` reaches System Managers only. */
+export function notUpgradedBanner(reason: string | null): Banner {
+  const text = __("This spreadsheet couldn't be upgraded, so it stays read-only.")
+  return { text: reason ? `${text} ${__('Reason: {0}.', [reason])}` : text }
+}

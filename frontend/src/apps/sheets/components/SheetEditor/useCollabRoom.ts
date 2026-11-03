@@ -17,6 +17,7 @@ import { toast } from 'frappe-ui'
 import { computed, shallowRef } from 'vue'
 import * as Y from 'yjs'
 
+import type { api, OutputOf } from '@/api'
 import { type CollabSession, type LostAccess, type RoomStatus } from '@/platform/collab'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -25,13 +26,14 @@ import {
   bannerFor,
   editingStateOf,
   hasUnsentWork,
+  notUpgradedBanner,
   saveStateOf,
   upgradingBanner,
 } from '../../collab/messages'
 import { createPeople } from '../../collab/people'
 import { GUEST_USER, readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
-import { isLiveNow, openSheetRoom, type SheetRoom } from '../../collab/room'
+import { openSheetRoom, type SheetRoom } from '../../collab/room'
 import {
   selectionFromIds,
   selectionToIds,
@@ -43,6 +45,7 @@ import { createUndo, type Undo } from '../../collab/undo'
 import type { WorkbookClient } from '../../core/client'
 
 type RemoteChange = Parameters<Parameters<SheetRoom['glue']['onRemote']>[0]>[0]
+export type SheetConversion = OutputOf<typeof api.sheets.documents.conversion>
 
 export interface CollabRoomOptions {
   session: CollabSession
@@ -54,9 +57,10 @@ export interface CollabRoomOptions {
   onRemote: (change: RemoteChange) => void
   /** The room asks to be opened again (a quarantine, a restore elsewhere): remount the editor. */
   onReopen: () => void
+  /** Asks the server how the conversion of a sheet the room could not open stands. */
+  readConversion: () => Promise<SheetConversion>
   /** Tests pass fakes. */
   open?: typeof openSheetRoom
-  probe?: typeof isLiveNow
   retryMs?: number
   commitSoonMs?: number
 }
@@ -75,14 +79,15 @@ export function useCollabRoom({
   getSelection,
   onRemote,
   onReopen,
+  readConversion,
   open = openSheetRoom,
-  probe = isLiveNow,
   retryMs = CONVERSION_RETRY_MS,
   commitSoonMs = COMMIT_SOON_MS,
 }: CollabRoomOptions) {
   const sheet = shallowRef<SheetRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
-  const waiting = shallowRef(false)
+  // Set while the sheet opens from its old body: its conversion waits, or was refused.
+  const conversion = shallowRef<SheetConversion | null>(null)
   const canUndo = shallowRef(false)
   const canRedo = shallowRef(false)
   const presenceTick = shallowRef(0)
@@ -109,7 +114,10 @@ export function useCollabRoom({
   async function openNow(client: WorkbookClient): Promise<'live' | 'disabled' | 'unconverted'> {
     const opened = await open({ session, client, stores: getStores() })
     if (opened.state !== 'live') {
-      if (opened.state === 'unconverted') waitForConversion()
+      if (opened.state === 'unconverted') {
+        conversion.value = { state: 'pending' }
+        void waitForConversion()
+      }
       return opened.state
     }
     if (closed) {
@@ -120,17 +128,14 @@ export function useCollabRoom({
     return 'live'
   }
 
-  // The editor shows the old body read-only meanwhile; once the sheet opens
-  // live, the editor is opened again on it.
-  function waitForConversion() {
-    waiting.value = true
-    retry = setTimeout(async () => {
-      if (closed) return
-      const live = await probe(session).catch(() => false)
-      if (closed) return
-      if (live) onReopen()
-      else waitForConversion()
-    }, retryMs)
+  // The editor shows the old body read-only meanwhile. A converted sheet is
+  // opened again live; a refused one stays read-only and is not asked again.
+  async function waitForConversion() {
+    const answer = await readConversion().catch(() => null)
+    if (closed) return
+    if (answer?.state === 'converted') return onReopen()
+    if (answer) conversion.value = answer
+    if (answer?.state !== 'refused') retry = setTimeout(() => void waitForConversion(), retryMs)
   }
 
   function attach(s: SheetRoom) {
@@ -220,11 +225,13 @@ export function useCollabRoom({
   // This tab's own edits the server has not taken; other tabs' are theirs.
   const hasUnsent = () => !!status.value && hasUnsentWork(status.value)
   const editingState = computed(() => {
-    if (waiting.value) return 'closed'
+    if (conversion.value) return 'closed'
     return status.value ? editingStateOf(status.value) : 'editing'
   })
   const banner = computed(() => {
-    if (waiting.value) return upgradingBanner()
+    if (conversion.value?.state === 'refused')
+      return notUpgradedBanner(conversion.value.reason ?? null)
+    if (conversion.value) return upgradingBanner()
     return status.value ? bannerFor(status.value) : null
   })
 
@@ -311,7 +318,7 @@ export function useCollabRoom({
   return {
     open: openRoom,
     isLive,
-    waiting,
+    conversion,
     dispatch,
     commit,
     localOnly,

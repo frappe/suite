@@ -789,6 +789,7 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
 
+import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -1064,6 +1065,12 @@ const collab = useCollabRoom({
   },
   onRemote: (change) => _onRemoteChange(change),
   onReopen: () => emit('reopen'),
+  readConversion: () =>
+    client.query(
+      api.sheets.documents.conversion,
+      { name: props.id },
+      { context: props.requestContext },
+    ),
 })
 // The side stores a collab doc fills: the live room's, and a version's.
 function _glueStores() {

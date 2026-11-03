@@ -7,6 +7,8 @@ import type {
   AiAssistOutput,
   GetAiSettingsInput,
   GetAiSettingsOutput,
+  GetConversionInput,
+  GetConversionOutput,
   GetLinkPreviewInput,
   GetLinkPreviewOutput,
   GetSheetInput,
@@ -49,6 +51,37 @@ export const operationGetSheet: Validators<GetSheetInput, GetSheetOutput> = {
         type: 'object',
       },
       'get_sheet output',
+    )
+  },
+}
+
+export const operationGetConversion: Validators<GetConversionInput, GetConversionOutput> = {
+  validateInput(value: unknown): asserts value is GetConversionInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { name: { title: 'Name', type: 'string' } },
+        required: ['name'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'get_conversion input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is GetConversionOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          state: { enum: ['converted', 'pending', 'refused'], title: 'State', type: 'string' },
+          reason: { title: 'Reason', type: 'string' },
+        },
+        required: ['state'],
+        title: 'SheetConversion',
+        type: 'object',
+      },
+      'get_conversion output',
     )
   },
 }
