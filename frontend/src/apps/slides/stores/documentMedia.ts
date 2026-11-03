@@ -39,6 +39,12 @@ export function isMediaRefused(id: string) {
   return documentMedia?.(id).status.value === 'refused'
 }
 
+/** Calls back when Drive's answer for any of these nodes changes; returns the stop. */
+export function onMediaStatusChange(ids: string[], changed: () => void) {
+  const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
+  return watch(() => handles.map((handle) => handle.status.value).join(), changed)
+}
+
 const SETTLE_TIMEOUT = 30_000
 
 function loadingIds(handles: MediaHandle[]) {

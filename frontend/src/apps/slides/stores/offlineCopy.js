@@ -1,6 +1,11 @@
 import { ref } from 'vue'
 
-import { isMediaNodeId, isMediaRefused, mediaSettled } from '@/apps/slides/stores/documentMedia'
+import {
+  isMediaNodeId,
+  isMediaRefused,
+  mediaSettled,
+  onMediaStatusChange,
+} from '@/apps/slides/stores/documentMedia'
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { forgetVisitedNode } from '@/apps/slides/stores/visitedCopies'
@@ -475,8 +480,9 @@ const getOfflineStatus = (id) => {
   const record = readRecord(id)
   if (!record) return 'none'
 
-  // Drive won't sign it, so it has no key to find and no way to be in this copy
-  if (mediaNodeIds().some(isMediaRefused)) {
+  // offline, no row means the list this copy holds predates the picture; online it
+  // means Drive refused it for good, and no update could add it
+  if (!navigator.onLine && mediaNodeIds().some(isMediaRefused)) {
     return 'outdated'
   }
 
@@ -486,17 +492,22 @@ const getOfflineStatus = (id) => {
 
 const offlineCopyStatus = ref('none')
 
-async function refreshOfflineStatus(id) {
+let stopFollowingMedia = null
+
+function refreshOfflineStatus(id) {
+  stopFollowingMedia?.()
   offlineCopyStatus.value = id ? getOfflineStatus(id) : 'none'
   if (offlineCopyStatus.value === 'none') {
     return
   }
 
-  // a picture still loading has no key yet, so the answer above left it out
-  await mediaSettled(mediaNodeIds())
-  if (id === presentationId.value) {
-    offlineCopyStatus.value = getOfflineStatus(id)
-  }
+  // a picture still loading has no key yet, so the answer above left it out;
+  // a read that fails changes no status, and the next one settles it
+  stopFollowingMedia = onMediaStatusChange(mediaNodeIds(), () => {
+    if (id === presentationId.value) {
+      offlineCopyStatus.value = getOfflineStatus(id)
+    }
+  })
 }
 
 export {

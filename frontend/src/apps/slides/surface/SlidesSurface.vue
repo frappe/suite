@@ -560,6 +560,9 @@ function unloadState(): DocumentSaveState {
 function warnBeforeUnload(event: Event) {
   resolveDocumentUnload({ state: unloadState, retainRecovery: retainOrWarn }, event)
 }
+
+// what a refused picture means for the copy depends on which of these it is
+watch(online, () => refreshOfflineStatus(presentationId.value))
 function setOnline() {
   online.value = true
 }

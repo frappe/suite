@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, type Component } from 'vue'
+import { nextTick, ref, type Component } from 'vue'
 
 import {
   fakeServer,
@@ -37,6 +37,8 @@ const {
 } = await import('@/apps/slides/stores/saving')
 const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
   await import('@/apps/slides/stores/presentation')
+const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
+const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
@@ -348,6 +350,49 @@ describe('Slides offline copy', () => {
 
       expect(visits.cancel).toHaveBeenCalledOnce()
     })
+  })
+
+  it('takes a refused picture as missing from the copy only while offline', async () => {
+    function goes(state: 'online' | 'offline') {
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        get: () => state === 'online',
+      })
+      window.dispatchEvent(new Event(state))
+    }
+
+    const next = fakeServer.opens + 1
+    localStorage.setItem(`${RECORD_PREFIX}p${next}`, JSON.stringify({ node: 'node-1', keys: [] }))
+    const refused = {
+      id: 'media-node-1',
+      src: ref(null),
+      cacheKey: ref('media-node-1'),
+      status: ref('refused'),
+      refresh: async () => {},
+    }
+    mounted = await openedSurface({
+      slides: [
+        {
+          clientId: 'c1',
+          background: '#ffffffff',
+          elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
+        },
+      ],
+      media: () => refused as never,
+    })
+    await vi.waitFor(() => expect(offlineCopyStatus.value).toBe('available'))
+
+    try {
+      goes('offline')
+      await nextTick()
+      expect(offlineCopyStatus.value).toBe('outdated')
+
+      goes('online')
+      await nextTick()
+      expect(offlineCopyStatus.value).toBe('available')
+    } finally {
+      delete (navigator as { onLine?: unknown }).onLine
+    }
   })
 
   it('tells the worker when the presentation opens and closes', async () => {

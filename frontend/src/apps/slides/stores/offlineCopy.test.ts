@@ -683,12 +683,47 @@ describe('offline status', () => {
       expect(offlineCopyStatus.value).toBe('outdated')
     })
 
-    it('is outdated when Drive will not sign one, as offline with no row for it', async () => {
+    it('is outdated offline when the list it holds has no row for one', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      vi.stubGlobal('navigator', { ...navigator, onLine: false })
+
+      refreshOfflineStatus('p1')
+      driveAnswers(null, 'refused')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('outdated')
+    })
+
+    it('stays available online when Drive refuses one, as no update could add it', async () => {
       await saveOfflineCopy('p1')
       slides.value = slidesWith(['/files/a.png', 'media-node-1'])
 
       refreshOfflineStatus('p1')
       driveAnswers(null, 'refused')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('available')
+    })
+
+    it('keeps its status while a read leaves one waiting', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+
+      refreshOfflineStatus('p1')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('available')
+    })
+
+    it('follows a later read with no change to the slides', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      refreshOfflineStatus('p1')
+      driveAnswers(null, 'refused')
+      await settled()
+
+      driveAnswers(picture, 'ready')
       await settled()
 
       expect(offlineCopyStatus.value).toBe('outdated')

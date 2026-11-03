@@ -247,7 +247,11 @@ function answer(message: unknown) {
   return new Response(JSON.stringify({ message }), { status: 200 })
 }
 
-function session(docname: string, access: Ref<{ role: number }>): DocumentSession {
+function session(
+  docname: string,
+  access: Ref<{ role: number }>,
+  media: DocumentSession['media'],
+): DocumentSession {
   return {
     nodeId: 'node-1',
     contentDoctype: 'Presentation',
@@ -257,7 +261,7 @@ function session(docname: string, access: Ref<{ role: number }>): DocumentSessio
     access,
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
-    media: () => undefined,
+    media,
   } as unknown as DocumentSession
 }
 
@@ -266,11 +270,13 @@ export async function openedSurface({
   role = 50,
   slides = served.slides,
   firstLoad,
+  media = (() => undefined) as unknown as DocumentSession['media'],
 }: {
   path?: string
   role?: number
   slides?: unknown[]
   firstLoad?: Promise<void | Response>
+  media?: DocumentSession['media']
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -311,7 +317,7 @@ export async function openedSurface({
     return answer({ ...structuredClone(served), slides, name: docname })
   })
   const access = ref({ role })
-  const opened = session(docname, access)
+  const opened = session(docname, access, media)
   const view = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
