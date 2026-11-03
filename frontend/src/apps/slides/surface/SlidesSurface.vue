@@ -54,7 +54,6 @@ import {
   presentationId,
   resetEditorState,
   setDocumentContext,
-  showsSlides,
   slidesLength,
   startLoad,
   viewOnly,
@@ -62,13 +61,10 @@ import {
 import {
   dirty,
   isSaving,
-  lastPushWasFor,
   resumeWrites,
-  retireDraft,
   saveChanges,
   saveFailed,
   saveRefused,
-  stopWrites,
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
@@ -101,17 +97,8 @@ import {
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
-import {
-  clearStaleRecovery,
-  downloadRecovery,
-  downloadSlides,
-  forgetRecovery,
-  keepOutlivedRecovery,
-  keepRecovery,
-  readRecovery,
-  removeNewestRecovery,
-} from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
+import { useUnsavedRecovery } from './useUnsavedRecovery'
 
 type Panel = DocumentPanel
 
@@ -149,51 +136,27 @@ const {
   take: takeGuestName,
 } = useDriveGuestName()
 const exporting = ref(false)
-const hasRecovery = ref(readRecovery(props.session.nodeId).length > 0)
-// access narrowed and no copy could be stored: the slides on screen are the only copy
-const isOnlyCopy = ref(false)
-let onlyCopyToast: string | number | undefined
-// in the hold, or as the only copy, the live slides can go out with nothing stored
-const canDownloadChanges = computed(
-  () => hasRecovery.value || saveRefused.value || isOnlyCopy.value,
-)
-const isSlideInteractionActive = ref(false)
-const access = createSlidesAccess(props.session, {
-  narrowed() {
-    // First, so no snapshot and no push leaves after this point. `stopWrites`
-    // also cancels a save under way and retires the draft, so it never replays,
-    // unless no copy of an unread draft fits: that one stays for the next load
-    // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
-    const unsaved =
-      !!slides.value?.length &&
-      (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
-    viewOnly.value = true
-    void stopWrites(props.session.contentDocname, unsaved ? undefined : keepUnreadDraft)
-    if (!unsaved) {
-      toast.warning('Editing access changed. This presentation is now view only.')
-      return
-    }
-
-    isOnlyCopy.value = !retainRecovery()
-
-    if (isOnlyCopy.value) {
-      cancelRunningLoad()
-      showOnlyCopy(translate('Editing access changed. Download your changes before you reload.'))
-      return
-    }
-
-    showKept('Editing access changed. Your unsaved changes are kept on this device.')
-  },
-  widened() {
-    if (isOnlyCopy.value && !retainRecovery()) {
-      showAccessBack()
-      return
-    }
-
-    isOnlyCopy.value = false
-    loadAfterAccessBack()
-  },
+const {
+  isOnlyCopy,
+  canDownloadChanges,
+  narrowed,
+  widened,
+  keepSticky,
+  retainRecovery,
+  retainOrWarn,
+  reloadAfterAccessBack,
+  downloadChanges,
+  discardChanges,
+  settleCopies,
+  dismissToasts,
+} = useUnsavedRecovery(props.session, {
+  isWritable: () => access.writable.value,
+  isEditable: () => editable.value,
+  load,
+  cancelRunningLoad,
 })
+const isSlideInteractionActive = ref(false)
+const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
 const editable = computed(
@@ -339,36 +302,6 @@ function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
 }
 
-let hasSettledCopies = false
-
-// A save that lands with edit access makes the recovery copy stale.
-watch(isSaving, (now, before) => {
-  if (!before || now || saveFailed.value || !editable.value || !hasRecovery.value) return
-
-  // the last surface's push can land during this one's first load
-  if (!hasSettledCopies) return
-
-  // a push of the presentation left behind says nothing about this one
-  if (!lastPushWasFor(props.session.contentDocname)) return
-
-  clearStaleRecovery(props.session.nodeId)
-  syncHasRecovery()
-})
-
-let refusalToast: string | number | undefined
-watch(saveRefused, (isRefused) => {
-  if (isRefused) {
-    showRefusal()
-  } else if (refusalToast !== undefined) {
-    toast.dismiss(refusalToast)
-    refusalToast = undefined
-  }
-})
-watch(isOnlyCopy, (isOnly) => {
-  if (!isOnly) {
-    dismissOnlyCopy()
-  }
-})
 function showPanel(next: Panel | null) {
   panel.value = next
   if (next === 'comments') void loadComments()
@@ -506,9 +439,8 @@ async function load() {
 
     // the server copy replaced the slides on screen
     isOnlyCopy.value = false
-    if (doc && !hasSettledCopies) {
-      hasSettledCopies = true
-      keepOutlivedRecovery(props.session.nodeId, showsSlides)
+    if (doc) {
+      settleCopies()
     }
 
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
@@ -570,197 +502,6 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
     compositePlaceholder: entry.status,
   }
 }
-function retainRecovery() {
-  if (!slides.value?.length) {
-    return true
-  }
-
-  try {
-    // with writes stopped no draft holds these slides, so a landed save can't make them stale
-    keepRecovery(props.session.nodeId, liveSlides(), {
-      sticky: !access.writable.value || isOnlyCopy.value,
-    })
-    hasRecovery.value = true
-    return true
-  } catch {
-    return false
-  }
-}
-
-function keepSticky(content: unknown[]) {
-  keepRecovery(props.session.nodeId, content, { sticky: true })
-  hasRecovery.value = true
-}
-
-// a draft from a killed tab that the first load had not reached when access narrowed
-function keepUnreadDraft(content: unknown[]) {
-  try {
-    keepSticky(content)
-    showKept(
-      translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
-    )
-    return true
-  } catch {
-    return false
-  }
-}
-
-function showKept(message: string) {
-  toast.warning(message, {
-    duration: Number.POSITIVE_INFINITY,
-    action: {
-      label: 'Download my changes',
-      onClick: downloadChanges,
-    },
-  })
-}
-
-function retainOrWarn() {
-  const isKept = retainRecovery()
-  if (!isKept) {
-    toast.error('Your latest changes could not be kept on this device.')
-  }
-
-  return isKept
-}
-
-// the server copy is the truth now: reload it rather than replay anything,
-// though a dirty draft left for lack of room loads like any other
-function loadAfterAccessBack() {
-  resumeWrites(props.session.contentDocname)
-  toast.info('You can edit this presentation again.')
-  void load()
-}
-
-function showAccessBack() {
-  showOnlyCopy(translate('Editing access is back. Download your changes before you reload.'), {
-    label: translate('Reload'),
-    onClick: reloadAfterAccessBack,
-  })
-}
-
-function reloadAfterAccessBack() {
-  const isSafe =
-    retainRecovery() ||
-    window.confirm(
-      translate('Your latest changes could not be kept on this device. Reload anyway?'),
-    )
-  if (!isSafe) {
-    // pressing Reload closed the toast, and it is the way back to Reload
-    showAccessBack()
-    return
-  }
-
-  loadAfterAccessBack()
-}
-
-function syncHasRecovery() {
-  hasRecovery.value = readRecovery(props.session.nodeId).length > 0
-}
-
-function liveSlides() {
-  return JSON.parse(JSON.stringify(slides.value)) as unknown[]
-}
-
-function showRefusal() {
-  let message = translate(
-    'This presentation changed elsewhere. Your changes are kept on this device.',
-  )
-  try {
-    keepSticky(liveSlides())
-  } catch {
-    message = translate(
-      'This presentation changed elsewhere. Download your changes before you reload.',
-    )
-  }
-
-  refusalToast = toast.warning(message, {
-    duration: Number.POSITIVE_INFINITY,
-    action: stayingDownload(),
-    cancel: { label: translate('Reload'), onClick: () => void load() },
-  })
-}
-
-function stayingDownload() {
-  return {
-    label: translate('Download'),
-    onClick: (event: Event) => {
-      // the toast stays: a download can't be confirmed, and Reload is still the way on
-      event.preventDefault()
-      downloadChanges()
-    },
-  }
-}
-
-function dismissOnlyCopy() {
-  if (onlyCopyToast !== undefined) {
-    toast.dismiss(onlyCopyToast)
-    onlyCopyToast = undefined
-  }
-}
-
-function showOnlyCopy(message: string, cancel?: { label: string; onClick: () => void }) {
-  dismissOnlyCopy()
-  // its "kept" and its bare Reload no longer hold
-  if (refusalToast !== undefined) {
-    toast.dismiss(refusalToast)
-    refusalToast = undefined
-  }
-
-  onlyCopyToast = toast.warning(message, {
-    duration: Number.POSITIVE_INFINITY,
-    action: stayingDownload(),
-    cancel,
-  })
-}
-
-function downloadChanges() {
-  const title = props.session.title.value
-  if (saveRefused.value || isOnlyCopy.value) {
-    downloadSlides(liveSlides(), title)
-    return
-  }
-
-  if (!downloadRecovery(props.session.nodeId, title)) {
-    syncHasRecovery()
-    toast.error('No recovery copy is kept for this presentation.')
-  }
-}
-
-async function discardChanges() {
-  if (!window.confirm(translate("Discard your kept changes? This can't be undone."))) {
-    return
-  }
-
-  if (saveRefused.value) {
-    forgetRecovery(props.session.nodeId, liveSlides())
-    syncHasRecovery()
-    await retireDraft(props.session.contentDocname)
-    if (access.writable.value) {
-      resumeWrites(props.session.contentDocname)
-    }
-
-    await load()
-    return
-  }
-
-  if (isOnlyCopy.value) {
-    if (access.writable.value) {
-      resumeWrites(props.session.contentDocname)
-    }
-
-    await load()
-    return
-  }
-
-  removeNewestRecovery(props.session.nodeId)
-  syncHasRecovery()
-  // the edits on screen would go into a copy again on leaving
-  if (!access.writable.value) {
-    await load()
-  }
-}
-
 const saveState = computed<DocumentSaveState>(() => {
   if (isSaving.value) {
     return 'saving'
@@ -860,11 +601,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
-  if (refusalToast !== undefined) {
-    toast.dismiss(refusalToast)
-  }
-
-  dismissOnlyCopy()
+  dismissToasts()
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveChanges().finally(() => {
