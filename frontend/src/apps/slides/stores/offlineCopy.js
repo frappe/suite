@@ -183,14 +183,14 @@ function getLoadOptions() {
 }
 
 // what opening /d/<node> offline reads, under the keys the worker looks them up by
-async function fetchStartup(node, id, pinned, signal) {
+async function fetchStartup(node, id, pinned, loadOptions, signal) {
   const shell = await fetchShell(node, signal)
   const html = await shell.clone().text()
   const assets = [...new Set([...entryAssets(html), ...loadedAssets()])]
   // content-hashed, so a pinned asset is already current
   const kept = assets.filter((asset) => pinned.has(asset))
   const requests = [
-    ...startupUrls(node, id, getLoadOptions()).map((url) => [url, 'api']),
+    ...startupUrls(node, id, loadOptions).map((url) => [url, 'api']),
     ...assets.filter((asset) => !pinned.has(asset)).map((asset) => [asset, 'asset']),
   ]
   const { responses, missing } = await fetchAllCacheable(requests, signal)
@@ -329,6 +329,8 @@ function releaseRun(current) {
 const saveOfflineCopy = async (id) => {
   if (offlineCopyProgress.value.running) return null
   const node = presentationDoc.value?.node
+  // read now, as leaving during the run blanks what they come from
+  const loadOptions = getLoadOptions()
   forgotten.delete(node)
   const current = claimRun(id, node)
   const { controller } = current
@@ -358,7 +360,7 @@ const saveOfflineCopy = async (id) => {
 
     const cache = await openPinnedCache()
     const pinned = await pinnedPaths(cache)
-    const startup = await fetchStartup(node, id, pinned, signal)
+    const startup = await fetchStartup(node, id, pinned, loadOptions, signal)
 
     const previous = startupKeys(readRecord(id))
     const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
@@ -475,12 +477,14 @@ async function warmOfflineCopyAssets(id) {
   if (run) return
 
   refreshed.set(id, new Set(mediaNodeIds()))
+  const loadOptions = getLoadOptions()
   const current = claimRun(id, record.node)
   const { signal } = current.controller
   try {
     await warmAssets()
     const cache = await openPinnedCache()
-    const startup = await fetchStartup(record.node, id, await pinnedPaths(cache), signal)
+    const pinned = await pinnedPaths(cache)
+    const startup = await fetchStartup(record.node, id, pinned, loadOptions, signal)
     const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
     await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record), signal)
   } catch (err) {

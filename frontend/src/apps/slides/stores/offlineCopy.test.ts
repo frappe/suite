@@ -1012,6 +1012,48 @@ describe('offline status', () => {
 
 // what opening the presentation at /d/<node> offline needs (DESIGN-slides-offline §3)
 describe('the start-up copy', () => {
+  describe('of a composite whose viewer leaves during the run', () => {
+    function compositeKey(id: string) {
+      return recordOf(id).keys.filter((key: string) => key.includes('composite'))
+    }
+
+    afterEach(() => {
+      viewOnly.value = false
+    })
+
+    it.each([
+      ['a save', 'l1', (id: string) => saveOfflineCopy(id)],
+      ['a visit', 'l2', (id: string) => warmOfflineCopyAssets(id)],
+    ])('keeps the composite file through %s', async (_label, id, runIt) => {
+      viewOnly.value = true
+      presentationDoc.value = { node: 'n1', is_composite: 1, modified: '2026-08-17 10:00:00' }
+      presentationId.value = id
+      await saveOfflineCopy(id)
+      const held = compositeKey(id)
+      expect(held).toHaveLength(1)
+      const { promise: answered, resolve: answer } = Promise.withResolvers<void>()
+      const next = fetch
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+        if (url === '/d/n1') {
+          await answered
+        }
+
+        return next(url, init)
+      })
+
+      const running = runIt(id)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      presentationDoc.value = null
+      presentationId.value = null as never
+      viewOnly.value = false
+      answer()
+      await running
+
+      expect(compositeKey(id)).toEqual(held)
+      expect(cache.has(held[0])).toBe(true)
+    })
+  })
+
   it('stores the shell once under /d/<node>, whichever view the pin starts from', async () => {
     history.replaceState(null, '', '/d/n1/present')
 
