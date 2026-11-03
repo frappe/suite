@@ -3,6 +3,9 @@
   "ignore": [
     "frappe-ui/**"
   ],
+  "ignoreIssues": {
+    "e2e/meet/network/run.mjs": ["unlisted"]
+  },
   "tags": [
     "-lintignore"
   ],
@@ -48,7 +51,6 @@
         "meet/**/*.{ts,mjs}",
         "unified-frontend/**/*.ts"
       ],
-      "ignoreDependencies": ["unplugin-icons", "unplugin-vue-components"],
       "playwright": {
         "config": [
           "{drive-backed-apps,meet}/playwright.config.ts",
