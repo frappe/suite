@@ -351,7 +351,11 @@ const saveCurrentState = async () => {
   ticksAtGate.set(idAtSnapshot, tick)
 
   if (savingFor.value) {
-    queuedSnapshots.set(idAtSnapshot, snapshot)
+    // only its own push can take it; this draft stays dirty for the next tick otherwise
+    if (savingFor.value === idAtSnapshot) {
+      queuedSnapshots.set(idAtSnapshot, snapshot)
+    }
+
     return
   }
   // if offline, stay dirty so we retry once back online

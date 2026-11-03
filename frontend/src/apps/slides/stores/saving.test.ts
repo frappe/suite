@@ -962,6 +962,40 @@ describe('saveCurrentState', () => {
     expect(pushes).toBe(3)
   })
 
+  it("does not send an edit that waited behind another presentation's push", async () => {
+    markDirty()
+    let land!: () => void
+    serverSave = () =>
+      new Promise((resolve) => {
+        land = () => resolve('M2')
+      })
+
+    const leaving = saveCurrentState()
+    await vi.waitFor(() => expect(land).toBeDefined())
+
+    presentationId.value = 'p2'
+    presentationDoc.value = { modified: 'M9' }
+    slides.value = [{ clientId: 'c2', background: '#111111ff', elements: [] }]
+    markDirty()
+    await saveCurrentState()
+    land()
+    await leaving
+
+    const pushed: string[] = []
+    serverSave = async (id, content) => {
+      pushed.push(`${id} ${content[0].background}`)
+      presentationId.value = 'p3'
+      slides.value = []
+      return 'M10'
+    }
+
+    slides.value = [{ clientId: 'c2', background: '#222222ff', elements: [] }]
+    markDirty()
+    await saveCurrentState()
+
+    expect(pushed).toEqual(['p2 #222222ff'])
+  })
+
   describe('a push that fails after the editor moved on', () => {
     async function failedAfterMoving() {
       markDirty()
