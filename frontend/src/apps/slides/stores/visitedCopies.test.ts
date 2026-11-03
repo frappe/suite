@@ -51,7 +51,10 @@ class FakeCache {
   }
   async put(key: string, response: Response) {
     await this.putHook?.(key)
-    this.store.set(key, response)
+    // a real put reads the whole body first, so a body that errors rejects the put
+    const body = await response.arrayBuffer()
+    const { status, headers } = response
+    this.store.set(key, new Response(body.byteLength ? body : null, { status, headers }))
     this.afterPut?.(key)
   }
   async delete(key: string) {
@@ -66,6 +69,49 @@ const refused = new Set<string>()
 let shell: () => Response
 let holdFetch: Promise<unknown> | null
 let clock: number
+let lockRequests: number
+let hasWholeBodies: boolean
+const stalledBodies = new Set<string>()
+
+// what fetch gives: abort errors a body still on its way; one received whole is past that
+function bodyFor(url: string, text: string, signal?: AbortSignal | null) {
+  const isWhole = hasWholeBodies
+  return new ReadableStream({
+    start(controller) {
+      if (!isWhole) {
+        signal?.addEventListener('abort', () =>
+          controller.error(new DOMException('aborted', 'AbortError')),
+        )
+      }
+    },
+    pull(controller) {
+      if (stalledBodies.has(url)) {
+        return new Promise<void>(() => {})
+      }
+
+      controller.enqueue(new TextEncoder().encode(text))
+      controller.close()
+    },
+  })
+}
+
+async function afterTurn(before: Promise<unknown>, run: () => Promise<unknown>) {
+  await before
+  return run()
+}
+
+// one holder at a time, across every tab, in the order they asked
+function fakeLocks() {
+  let tail: Promise<unknown> = Promise.resolve()
+  return {
+    request(_name: string, run: () => Promise<unknown>) {
+      lockRequests++
+      const turn = afterTurn(tail, run)
+      tail = turn.catch(() => {})
+      return turn
+    },
+  }
+}
 
 function holdFetches() {
   let release = () => {}
@@ -173,6 +219,9 @@ beforeEach(() => {
   shell = () => shellResponse()
   holdFetch = null
   clock = 1000
+  lockRequests = 0
+  hasWholeBodies = false
+  stalledBodies.clear()
   window.csrf_token = 'tok1'
   delete window.disable_slides_service_worker
   vi.stubEnv('VITE_SLIDES_SW', '1')
@@ -189,6 +238,7 @@ beforeEach(() => {
     ...navigator,
     onLine: true,
     serviceWorker: { controller: {}, addEventListener: () => {} },
+    locks: fakeLocks(),
   })
   vi.stubGlobal('caches', {
     open: async (name: string) => {
@@ -219,13 +269,16 @@ beforeEach(() => {
     }
 
     if (url.startsWith('/api/')) {
-      return new Response(`{"url":"${url}"}`, {
+      return new Response(bodyFor(url, `{"url":"${url}"}`, init?.signal), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     }
 
-    return new Response('file', { status: 200, headers: { 'Content-Type': 'text/javascript' } })
+    return new Response(bodyFor(url, 'file', init?.signal), {
+      status: 200,
+      headers: { 'Content-Type': 'text/javascript' },
+    })
   })
 })
 
@@ -570,6 +623,36 @@ describe('a failed data put', () => {
     expect(keys()).toContain('/d/other')
     expect(keys()).toContain(dataUrl('other', 'id-other'))
   })
+
+  it('leaves a lane landing late with no marker, for the next capture to sweep', async () => {
+    const [first, , media] = dataUrls('n1', 'p1')
+    let land!: () => void
+    const held = new Promise<void>((resolve) => {
+      land = resolve
+    })
+
+    visited().putHook = (key) => {
+      if (key === first) {
+        return held
+      }
+
+      if (key === media) {
+        throw new TypeError('network')
+      }
+    }
+
+    await visit()
+    land()
+    await vi.waitFor(() => expect(keys()).toContain(first))
+
+    expect(keys()).not.toContain('/d/n1')
+
+    visited().putHook = null
+    await visit('n2', 'p2')
+
+    expect(keys()).not.toContain(first)
+    expect(keys()).toContain('/d/n2')
+  })
 })
 
 describe('the limit', () => {
@@ -696,6 +779,17 @@ describe('forgetting a node', () => {
     expect(keys()).toContain(ENTRY)
   })
 
+  it('lets the same open capture it again', async () => {
+    const { forgetVisitedNode, rememberVisit } = await loadStore()
+    showPresentation()
+    await rememberVisit('p1')
+
+    await forgetVisitedNode('n1')
+    await rememberVisit('p1')
+
+    expect(keys()).toContain('/d/n1')
+  })
+
   it('never creates the cache', async () => {
     const { forgetVisitedNode } = await loadStore()
 
@@ -757,21 +851,6 @@ describe('a change during the capture', () => {
       named.delete(VISITED)
     })
     expect(named.get(VISITED)).toBeUndefined()
-  })
-
-  it('stops when the page moves to another presentation', async () => {
-    const release = holdFetches()
-    const { rememberVisit } = await loadStore()
-    showPresentation()
-    const first = rememberVisit('p1')
-    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0))
-    showPresentation('n2', 'p2')
-    const second = rememberVisit('p2')
-    release()
-    await Promise.all([first, second])
-
-    expect(keys()).not.toContain('/d/n1')
-    expect(keys()).toContain('/d/n2')
   })
 
   it('stops when the surface goes away', async () => {
@@ -837,15 +916,31 @@ describe('a change during the puts', () => {
     expectNoData()
   })
 
-  it.each(changes.slice(1))('keeps the old copy after %s during the shell', async (_, change) => {
-    seedNode('n1', 500)
-
-    await changeAtPut(SHELL_KEY, change, 'id-n1')
-
+  async function expectOldCopy() {
     expect(keys()).toContain('/d/n1')
     for (const url of dataUrls('n1', 'id-n1')) {
       expect(await visited().store.get(url)!.clone().text()).toBe('old')
     }
+  }
+
+  it.each(changes)('keeps the old copy after %s during the shell', async (_, change) => {
+    seedNode('n1', 500)
+
+    await changeAtPut(SHELL_KEY, change, 'id-n1')
+
+    await expectOldCopy()
+  })
+
+  it.each([
+    ['a file', CHUNK],
+    ['the shell', SHELL_KEY],
+  ])('keeps the old copy on an abort during %s with the bodies received', async (_, put) => {
+    hasWholeBodies = true
+    seedNode('n1', 500)
+
+    await changeAtPut(put, ({ cancelVisit }) => cancelVisit(), 'id-n1')
+
+    await expectOldCopy()
   })
 
   it.each(changes)('stores no marker after %s during the data', async (_label, change) => {
@@ -854,10 +949,25 @@ describe('a change during the puts', () => {
     expect(keys()).not.toContain('/d/n1')
   })
 
-  it('removes the old copy on an abort during the data', async () => {
+  it.each([
+    ['still on their way', false],
+    ['received whole', true],
+  ])('removes the old copy on an abort during the data, bodies %s', async (_, isWhole) => {
+    hasWholeBodies = isWhole
     seedNode('n1', 500)
 
     await changeAtPut(dataUrl('n1', 'id-n1'), ({ cancelVisit }) => cancelVisit(), 'id-n1')
+
+    expect(keys()).not.toContain('/d/n1')
+    for (const url of dataUrls('n1', 'id-n1')) {
+      expect(keys()).not.toContain(url)
+    }
+  })
+
+  it('removes a marker that an abort lands behind', async () => {
+    seedNode('n1', 500)
+
+    await changeAtPut('/d/n1', ({ cancelVisit }) => cancelVisit(), 'id-n1')
 
     expect(keys()).not.toContain('/d/n1')
     for (const url of dataUrls('n1', 'id-n1')) {
@@ -887,6 +997,100 @@ describe('a change during the puts', () => {
     })
 
     expect(cancelled.sort()).toEqual(dataUrls('n1', 'p1').sort())
+  })
+})
+
+describe('two tabs', () => {
+  // the first tab's capture, stopped just before its marker lands
+  async function firstTabAtItsMarker() {
+    const tab = await loadStore()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    let isAtMarker = false
+    visited().putHook = (key) => {
+      if (key === '/d/n1') {
+        isAtMarker = true
+        return held
+      }
+    }
+
+    showPresentation('n1', 'p1')
+    const capture = tab.rememberVisit('p1')
+    await vi.waitFor(() => expect(isAtMarker).toBe(true))
+    return { capture, release }
+  }
+
+  // it either finishes, without a lock, or queues behind the holder
+  async function finishedOrQueued(other: Promise<unknown>) {
+    await Promise.race([other, vi.waitFor(() => expect(lockRequests).toBe(2))])
+  }
+
+  it('makes a second trim wait for the first marker, so all the data stays', async () => {
+    const first = await firstTabAtItsMarker()
+    const tab = await loadStore()
+    showPresentation('n2', 'p2')
+
+    const second = tab.rememberVisit('p2')
+    await finishedOrQueued(second)
+    first.release()
+    await Promise.all([first.capture, second])
+
+    expect(keys()).toContain('/d/n1')
+    expect(keys()).toContain('/d/n2')
+    for (const url of [...dataUrls('n1', 'p1'), ...dataUrls('n2', 'p2')]) {
+      expect(keys()).toContain(url)
+    }
+  })
+
+  it('makes a forget wait, so no marker lands over removed data', async () => {
+    const first = await firstTabAtItsMarker()
+    const tab = await loadStore()
+
+    const forgetting = tab.forgetVisitedNode('n1')
+    await finishedOrQueued(forgetting)
+    first.release()
+    await Promise.all([first.capture, forgetting])
+
+    expect(keys()).not.toContain('/d/n1')
+    for (const url of dataUrls('n1', 'p1')) {
+      expect(keys()).not.toContain(url)
+    }
+  })
+
+  it('lets an abort free a holder stalled on a body', async () => {
+    const [, , media] = dataUrls('n1', 'p1')
+    stalledBodies.add(media)
+    const stalled = await loadStore()
+    showPresentation('n1', 'p1')
+    const capture = stalled.rememberVisit('p1')
+    await vi.waitFor(() => expect(lockRequests).toBe(1))
+    await vi.waitFor(() => expect(keys()).toContain(dataUrl('n1', 'p1')))
+
+    const tab = await loadStore()
+    showPresentation('n2', 'p2')
+    const second = tab.rememberVisit('p2')
+    await vi.waitFor(() => expect(lockRequests).toBe(2))
+    stalled.cancelVisit()
+    await Promise.all([capture, second])
+
+    expect(keys()).not.toContain('/d/n1')
+    expect(keys()).toContain('/d/n2')
+  })
+})
+
+describe('cancelling bodies', () => {
+  it('never rejects, even on a body that already failed', async () => {
+    const { cancelBodies } = await import('@/apps/slides/utils/startupRequests')
+    const failed = new ReadableStream({
+      start(controller) {
+        controller.error(new Error('failed'))
+      },
+    })
+
+    await expect(cancelBodies([new Response(failed)])).resolves.toBeUndefined()
   })
 })
 

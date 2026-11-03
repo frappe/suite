@@ -92,5 +92,5 @@ export async function fetchAllCacheable(requests, signal) {
 }
 
 export async function cancelBodies(responses) {
-  await Promise.all([...responses].map((response) => response.body?.cancel()))
+  await Promise.allSettled([...responses].map((response) => response.body?.cancel()))
 }

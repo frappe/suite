@@ -350,7 +350,13 @@ describe('a presentation opened online, offline', () => {
     vi.stubGlobal('clients', { claim: async () => {}, matchAll: async () => [] })
     visited.set(SHELL, text('shared shell'))
     visited.set('/d/n1', new Response(null, { status: 200 }))
-    visited.set(API, text('{"visited":1}', 'application/json'))
+    visited.set(
+      API,
+      new Response('{"visited":1}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'x-visited-node': 'n1' },
+      }),
+    )
     visited.set(ASSET, text('chunk', 'text/javascript'))
   })
 
@@ -388,6 +394,14 @@ describe('a presentation opened online, offline', () => {
     expect(await (await dispatch(get(API)))!.text()).toBe('{"visited":1}')
     expect(await (await dispatch(get(ASSET)))!.text()).toBe('chunk')
     expect(fetches).toEqual([])
+  })
+
+  it('never answers data whose node has no marker, and still answers its files', async () => {
+    visited.delete('/d/n1')
+
+    await expect(dispatch(get(API))).rejects.toThrow()
+    expect(fetches).toEqual([`${location.origin}${API}`])
+    expect(await (await dispatch(get(ASSET)))!.text()).toBe('chunk')
   })
 
   it('still answers once the browser restarts the worker', async () => {

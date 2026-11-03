@@ -12,6 +12,8 @@ export function isQuotaError(err) {
   return err?.name === 'QuotaExceededError'
 }
 
+export const VISITED_NODE_HEADER = 'x-visited-node'
+
 // every visited presentation opens this one shell, see stores/visitedCopies.js
 export const VISITED_SHELL_KEY = '/slides-visited-shell'
 

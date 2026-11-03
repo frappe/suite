@@ -10,6 +10,7 @@ import {
   PINNED_CACHE_NAME,
   SHELL_CACHE_NAME,
   VISITED_CACHE_NAME,
+  VISITED_NODE_HEADER,
   VISITED_SHELL_KEY,
 } from './utils/slidesCaches'
 import { getRequestType, isBundleAsset, isCacheable, shellKey } from './utils/slidesRequests'
@@ -231,7 +232,14 @@ async function getVisitedResponse(request, url) {
       return null
     }
 
-    return matchVisited(`${url.pathname}${url.search}`)
+    const entry = await matchVisited(`${url.pathname}${url.search}`)
+    const node = entry?.headers.get(VISITED_NODE_HEADER)
+    // data with no marker is what a stopped capture left, maybe half of it
+    if (node && !(await matchVisited(`/d/${node}`))) {
+      return null
+    }
+
+    return entry
   }
 
   if (marker && (await matchVisited(marker))) {

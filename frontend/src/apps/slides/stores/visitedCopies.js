@@ -6,6 +6,7 @@ import {
   isQuotaError,
   RECORD_PREFIX,
   VISITED_CACHE_NAME,
+  VISITED_NODE_HEADER,
   VISITED_SHELL_KEY,
 } from '@/apps/slides/utils/slidesCaches'
 import { shellKey } from '@/apps/slides/utils/slidesRequests'
@@ -26,11 +27,10 @@ const IDLE_TIMEOUT = 5000
 
 const BUILD_HEADER = 'x-visited-build'
 const CSRF_HEADER = 'x-visited-csrf'
-const NODE_HEADER = 'x-visited-node'
 const TIME_HEADER = 'x-visited-time'
 
-// nodes captured or being captured in this open
-const remembered = new Set()
+// the node captured or being captured in this open
+let remembered = null
 
 // the capture in flight: { id, node, controller }
 let visit = null
@@ -122,6 +122,16 @@ async function deleteOtherBuildFiles(cache) {
   }
 }
 
+// tabs take turns, so one's removals can't fall between another's data and its marker;
+// the browser frees it with the tab, and an abort errors the bodies a holder waits on
+function holdingLock(run) {
+  if (!navigator.locks) {
+    return run()
+  }
+
+  return navigator.locks.request(VISITED_CACHE_NAME, run)
+}
+
 // every marker and data entry; a marker's key is its own shell key
 async function readNodeEntries(cache) {
   const keys = (await cacheKeys(cache)).filter((key) => !key.startsWith('/assets/'))
@@ -130,7 +140,7 @@ async function readNodeEntries(cache) {
       const headers = (await cache.match(key))?.headers
       return {
         key,
-        node: headers?.get(NODE_HEADER),
+        node: headers?.get(VISITED_NODE_HEADER),
         time: Number(headers?.get(TIME_HEADER)),
         isMarker: shellKey(key) === key,
       }
@@ -231,9 +241,21 @@ async function dropCopy({ shell, responses }) {
   await cancelBodies(bodies.filter((response) => !response.body?.locked))
 }
 
-// a stop before the data keeps the old copy, a failed data put removes it, a closed tab mixes them
-async function storeCopy(cache, node, copy, isWanted) {
-  const { shell, html, files, dataUrls, responses } = copy
+async function storeData(cache, node, { dataUrls, responses }, put) {
+  try {
+    await runPool(dataUrls, (url) =>
+      put(url, withHeaders(responses.get(url), { [VISITED_NODE_HEADER]: node })),
+    )
+  } catch (err) {
+    await removeNode(cache, node)
+    throw err
+  }
+}
+
+// a stop before the data keeps the old copy, an abort or a failed put in it removes it,
+// a closed tab mixes them
+async function storeCopy(cache, node, copy, isWanted, signal) {
+  const { shell, html, files, responses } = copy
   const put = putterFor(cache, node)
   const fileLabel = { [BUILD_HEADER]: String(__SUITE_BUILD__) }
   await runPool(files, (file) => put(file, withHeaders(responses.get(file), fileLabel)))
@@ -251,18 +273,15 @@ async function storeCopy(cache, node, copy, isWanted) {
     return
   }
 
-  try {
-    await runPool(dataUrls, (url) =>
-      put(url, withHeaders(responses.get(url), { [NODE_HEADER]: node })),
-    )
-  } catch (err) {
-    await removeNode(cache, node)
-    throw err
+  await storeData(cache, node, copy, put)
+  if (isWanted()) {
+    const headers = { [VISITED_NODE_HEADER]: node, [TIME_HEADER]: String(Date.now()) }
+    await put(`/d/${node}`, new Response(null, { headers }))
   }
 
-  if (isWanted()) {
-    const headers = { [NODE_HEADER]: node, [TIME_HEADER]: String(Date.now()) }
-    await put(`/d/${node}`, new Response(null, { headers }))
+  // a marker that landed behind the abort goes too
+  if (signal.aborted) {
+    await removeNode(cache, node)
   }
 }
 
@@ -290,22 +309,18 @@ async function capture(id, node, signal) {
   }
 
   try {
-    await storeCopy(cache, node, copy, isWanted)
+    await holdingLock(async () => {
+      await storeCopy(cache, node, copy, isWanted, signal)
+      await trim(cache)
+    })
   } finally {
     await dropCopy(copy)
   }
-
-  if (signal.aborted) {
-    await removeNode(cache, node)
-    return
-  }
-
-  await trim(cache)
 }
 
 function cancelVisit() {
   visit?.controller.abort()
-  remembered.clear()
+  remembered = null
 }
 
 // nothing awaits this and nothing reads it; a failure only means no copy this time
@@ -330,23 +345,22 @@ async function runVisit(current) {
 }
 
 async function rememberVisit(id) {
-  if (visit && visit.id !== id) {
-    cancelVisit()
-  }
-
   const node = presentationDoc.value?.node
-  if (remembered.has(node) || !isEligible(id)) {
+  if (remembered === node || !isEligible(id)) {
     return
   }
 
-  remembered.add(node)
+  remembered = node
   visit = { id, node, controller: new AbortController() }
   await runVisit(visit)
 }
 
 // a refused open or a new pin
 async function forgetVisitedNode(node) {
-  remembered.delete(node)
+  if (remembered === node) {
+    remembered = null
+  }
+
   if (visit?.node === node) {
     cancelVisit()
   }
@@ -354,7 +368,7 @@ async function forgetVisitedNode(node) {
   try {
     if (await caches.has(VISITED_CACHE_NAME)) {
       const cache = await caches.open(VISITED_CACHE_NAME)
-      await removeNode(cache, node)
+      await holdingLock(() => removeNode(cache, node))
     }
   } catch (err) {
     console.warn('Slides visited copy failed:', err)
