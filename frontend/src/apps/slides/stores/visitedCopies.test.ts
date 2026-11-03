@@ -72,6 +72,8 @@ let clock: number
 let lockRequests: number
 let hasWholeBodies: boolean
 const stalledBodies = new Set<string>()
+const TWO_MINUTES = 120_000
+const lockLimits = new Set<() => void>()
 
 // what fetch gives: abort errors a body still on its way; one received whole is past that
 function bodyFor(url: string, text: string, signal?: AbortSignal | null) {
@@ -222,6 +224,7 @@ beforeEach(() => {
   lockRequests = 0
   hasWholeBodies = false
   stalledBodies.clear()
+  lockLimits.clear()
   window.csrf_token = 'tok1'
   delete window.disable_slides_service_worker
   vi.stubEnv('VITE_SLIDES_SW', '1')
@@ -230,10 +233,16 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   // the wait for an idle moment has its own test
   vi.stubGlobal('requestIdleCallback', (run: () => void) => run())
-  vi.stubGlobal('setTimeout', (run: () => void) => {
+  vi.stubGlobal('setTimeout', (run: () => void, wait?: number) => {
+    if (wait === TWO_MINUTES) {
+      lockLimits.add(run)
+      return run
+    }
+
     queueMicrotask(run)
     return 0
   })
+  vi.stubGlobal('clearTimeout', (timer: () => void) => lockLimits.delete(timer))
   vi.stubGlobal('navigator', {
     ...navigator,
     onLine: true,
@@ -404,7 +413,11 @@ describe('a later visit', () => {
     const { cancelVisit, rememberVisit } = await loadStore()
     showPresentation()
     const timers: (() => void)[] = []
-    vi.stubGlobal('setTimeout', (run: () => void) => {
+    vi.stubGlobal('setTimeout', (run: () => void, wait?: number) => {
+      if (wait === TWO_MINUTES) {
+        return 0
+      }
+
       if (timers.length) {
         queueMicrotask(run)
       } else {
@@ -1078,6 +1091,50 @@ describe('two tabs', () => {
 
     expect(keys()).not.toContain('/d/n1')
     expect(keys()).toContain('/d/n2')
+  })
+
+  it('frees a holder stalled on a body once its time is up, so a forget can finish', async () => {
+    const [, , media] = dataUrls('n1', 'p1')
+    stalledBodies.add(media)
+    const stalled = await loadStore()
+    showPresentation('n1', 'p1')
+    const capture = stalled.rememberVisit('p1')
+    await vi.waitFor(() => expect(keys()).toContain(dataUrl('n1', 'p1')))
+
+    const tab = await loadStore()
+    let hasForgotten = false
+    async function forget() {
+      await tab.forgetVisitedNode('n2')
+      hasForgotten = true
+    }
+
+    const forgetting = forget()
+    await vi.waitFor(() => expect(lockRequests).toBe(2))
+    await new Promise((resolve) => queueMicrotask(() => resolve(null)))
+    expect(hasForgotten).toBe(false)
+
+    expect(lockLimits.size).toBe(1)
+    const [limit] = lockLimits
+    limit()
+    await Promise.all([capture, forgetting])
+
+    expect(hasForgotten).toBe(true)
+    expect(keys()).not.toContain('/d/n1')
+  })
+
+  it('runs the clock only while holding the lock, and leaves none behind', async () => {
+    const release = holdFetches()
+    const tab = await loadStore()
+    showPresentation('n1', 'p1')
+    const capture = tab.rememberVisit('p1')
+    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0))
+    expect(lockLimits.size).toBe(0)
+
+    release()
+    await capture
+
+    expect(keys()).toContain('/d/n1')
+    expect(lockLimits.size).toBe(0)
   })
 })
 

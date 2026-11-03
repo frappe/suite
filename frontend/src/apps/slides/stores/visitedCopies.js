@@ -24,6 +24,7 @@ import { getCookieSessionUser } from '@/platform/session'
 const LIMIT = 20
 const SETTLE_TIME = 3000
 const IDLE_TIMEOUT = 5000
+const LOCK_LIMIT = 120_000
 
 const BUILD_HEADER = 'x-visited-build'
 const CSRF_HEADER = 'x-visited-csrf'
@@ -285,7 +286,19 @@ async function storeCopy(cache, node, copy, isWanted, signal) {
   }
 }
 
-async function capture(id, node, signal) {
+// a body that stalls with no abort would hold up every other tab's removals
+async function storeWithinLimit(cache, node, copy, isWanted, controller) {
+  const limit = setTimeout(() => controller.abort(), LOCK_LIMIT)
+  try {
+    await storeCopy(cache, node, copy, isWanted, controller.signal)
+    await trim(cache)
+  } finally {
+    clearTimeout(limit)
+  }
+}
+
+async function capture(id, node, controller) {
+  const { signal } = controller
   const user = getCookieSessionUser()
   function isWanted() {
     return !signal.aborted && getCookieSessionUser() === user && !hasPin(id)
@@ -309,10 +322,7 @@ async function capture(id, node, signal) {
   }
 
   try {
-    await holdingLock(async () => {
-      await storeCopy(cache, node, copy, isWanted, signal)
-      await trim(cache)
-    })
+    await holdingLock(() => storeWithinLimit(cache, node, copy, isWanted, controller))
   } finally {
     await dropCopy(copy)
   }
@@ -331,7 +341,7 @@ async function runVisit(current) {
     await delay(SETTLE_TIME)
     await whenIdle()
     if (!signal.aborted) {
-      await capture(current.id, node, signal)
+      await capture(current.id, node, controller)
     }
   } catch (err) {
     if (!signal.aborted) {

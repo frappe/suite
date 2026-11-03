@@ -260,6 +260,17 @@ function copyDiscarded(name, content) {
   }
 }
 
+// local content skips the load pipeline; migrate it here too
+function parsedLocalSlides(content) {
+  const parsed = JSON.parse(JSON.stringify(content))
+  for (const slide of parsed) {
+    slide.background = normalizeColor(slide.background)
+    slide.elements = parseElements(slide.elements, slide)
+  }
+
+  return parsed
+}
+
 // touches no editor state, so a save during the load still targets what is on screen
 const fetchPresentation = async (name, load) => {
   const doc = structuredClone(await fetchDoc(name))
@@ -288,15 +299,10 @@ const fetchPresentation = async (name, load) => {
       doc.modified = local.baseModified ?? ''
     }
 
-    const restored = JSON.parse(JSON.stringify(local.content))
-    // local content skips the load pipeline; migrate + dedup it here too
-    for (const slide of restored) {
-      slide.background = normalizeColor(slide.background)
-      slide.elements = parseElements(slide.elements, slide)
-    }
+    const restored = parsedLocalSlides(local.content)
     const repaired = ensureUniqueClientIds(restored)
-    // a clean copy is what the last successful save sent, so it is the
-    // server content at baseModified and there is nothing to push
+    // a clean row here is what the last successful save sent, since a retired one
+    // is discarded: it is the server content at baseModified, with nothing to push
     return { doc, content: restored, dirty: local.dirty || repaired }
   }
 
@@ -412,6 +418,13 @@ const pushSlides = async (id, rows, baseModified, cancel) => {
   return response.modified
 }
 
+// as a load would read `content` and a push send it: a server row has its own name and types
+function showsSlides(content) {
+  return (
+    rowKeys(parsedLocalSlides(content).map(toSlideRow)) === rowKeys(slides.value.map(toSlideRow))
+  )
+}
+
 const savePresentationDoc = async (id, updatedSlides, baseModified, cancel) => {
   const rows = updatedSlides.map(toSlideRow)
   let modified
@@ -514,6 +527,7 @@ export {
   inReadonlyMode,
   savePresentationDoc,
   initPresentationDoc,
+  showsSlides,
   startLoad,
   resetEditorState,
   pageTitle,

@@ -24,6 +24,14 @@ describe('what a load does with the draft it found', () => {
       false,
     ],
     [
+      'retired, past the served version',
+      { dirty: false, retired: true, baseModified: 'M3' },
+      false,
+      false,
+      'discard',
+      false,
+    ],
+    [
       'clean, past the served version',
       { dirty: false, baseModified: 'M3' },
       false,

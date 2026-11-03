@@ -18,6 +18,7 @@ const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 const saves: unknown[] = []
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
 const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
+const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 let isRefusing = false
 
 interface MenuEntry {
@@ -197,11 +198,20 @@ for (const path of [
   '@/apps/slides/components/PropertiesPanel.vue',
   '@/apps/slides/components/Toolbar.vue',
   '@/apps/slides/components/LayoutDialog.vue',
-  '@/apps/slides/components/ThemeDialog.vue',
   './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
+  default: {
+    emits: ['update'],
+    setup(_: unknown, { emit }: SetupContext) {
+      themeChange.update = (theme) => emit('update', theme)
+      return () => null
+    },
+  },
+}))
 
 vi.doMock('./SlidesVersionsPanel.vue', () => ({
   default: {
@@ -238,7 +248,7 @@ const {
   saveRefused,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
-const { initPresentationDoc, inReadonlyMode, startLoad, viewOnly } =
+const { initPresentationDoc, inReadonlyMode, viewOnly } =
   await import('@/apps/slides/stores/presentation')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
@@ -971,6 +981,7 @@ describe('Slides push refused by the server', () => {
     const UNSTORED = 'Editing access changed. Download your changes before you reload.'
     const VIEW_ONLY = 'Editing access changed. This presentation is now view only.'
     const BACK_UNSTORED = 'Editing access is back. Download your changes before you reload.'
+    const UNREAD = 'Editing access changed. Unsaved changes from earlier are kept on this device.'
 
     async function narrowedWithEdits(afterOpening = () => {}) {
       mounted = await openedSurface()
@@ -1198,14 +1209,14 @@ describe('Slides push refused by the server', () => {
       expect(readRecovery('node-1')).toEqual([])
     })
 
-    function seedDraft() {
+    function seedDraft(baseModified = 'M0') {
       const nextOpen = opens + 1
       return writeDraft({
         id: `p${nextOpen}`,
         content: [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
         dirty: true,
         updatedAt: 1,
-        baseModified: 'M0',
+        baseModified,
       })
     }
 
@@ -1231,7 +1242,8 @@ describe('Slides push refused by the server', () => {
       expect(copy.sticky).toBe(true)
       expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(false)
-      refusalToast(KEPT)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      expect(refusalToast(KEPT)).toBeUndefined()
+      refusalToast(UNREAD)?.action.onClick(new MouseEvent('click', { cancelable: true }))
       expect(await downloadedSlides()).toEqual(copy.slides)
     })
 
@@ -1288,7 +1300,7 @@ describe('Slides push refused by the server', () => {
       await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
 
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
-      expect(refusalToast(KEPT)).toBeUndefined()
+      expect(refusalToast(UNREAD)).toBeUndefined()
     })
 
     function failDraftWrites() {
@@ -1423,30 +1435,6 @@ describe('Slides push refused by the server', () => {
       expect(thumbnails(mounted?.root as Element)).toHaveLength(3)
     })
 
-    it('holds on to the only copy when a later load takes over', async () => {
-      await narrowedWithEdits(fillTheStore)
-      widen()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
-      let release!: () => void
-      mounted?.loads.push(
-        new Promise((resolve) => {
-          release = resolve
-        }),
-      )
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
-      await vi.waitFor(() =>
-        expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
-      )
-
-      startLoad()
-      release()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      await nextTick()
-
-      expect(editorSlides.value).toHaveLength(3)
-      expect(downloadButton()).not.toBeNull()
-    })
-
     it('still holds the only copy when access narrows again with the flags clean', async () => {
       await savedJustAsAccessWent()
       widen()
@@ -1486,6 +1474,254 @@ describe('Slides push refused by the server', () => {
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
 
       expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([[{ clientId: 'older' }]])
+    })
+
+    it('loads the server copy after a discard while view only, so leaving keeps nothing', async () => {
+      await narrowedWithEdits()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await nextTick()
+
+      menuItem('Discard my changes')?.click()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+      expect(readRecovery('node-1')).toEqual([])
+
+      await mounted?.router.push('/d/node-2')
+
+      expect(window.confirm).toHaveBeenCalledTimes(1)
+      expect(readRecovery('node-1')).toEqual([])
+    })
+
+    it('pushes a draft left for lack of room once access returns', async () => {
+      await seedDraft('M1')
+      fillTheStore()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+      mounted.access.value = { role: 10 }
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(1))
+      vi.mocked(Storage.prototype.setItem).mockRestore()
+
+      widen()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(1))
+      await vi.waitFor(() => expect(saves).toHaveLength(1), { timeout: 3000 })
+
+      expect(JSON.stringify(saves[0])).toContain('killed')
+      expect(toast.warning).toHaveBeenCalledWith(VIEW_ONLY)
+    })
+
+    it('shows the server copy when access returns over an older stored document', async () => {
+      mounted = await openedSurface()
+      await writeDraft({
+        id: mounted.docname,
+        content: [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
+        dirty: true,
+        updatedAt: 1,
+        baseModified: 'M9',
+      })
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(async () =>
+        expect((await getPresentationFromLocalDB(mounted?.docname as string))?.dirty).toBe(false),
+      )
+
+      widen()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(JSON.stringify(editorSlides.value)).not.toContain('killed')
+      expect(dirty.value).toBe(false)
+      expect(readRecovery('node-1')).toHaveLength(1)
+    })
+
+    it('offers Reload from the menu only while the only copy waits with access back', async () => {
+      await narrowedWithEdits(fillTheStore)
+      await nextTick()
+      expect(menuItem('Reload')).toBeUndefined()
+
+      widen()
+      await nextTick()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      menuItem('Reload')?.click()
+      expect(confirm).toHaveBeenCalledTimes(1)
+      expect(editorSlides.value).toHaveLength(3)
+
+      confirm.mockReturnValue(true)
+      menuItem('Reload')?.click()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+      await nextTick()
+      expect(menuItem('Reload')).toBeUndefined()
+    })
+
+    it('writes no theme over the only copy from a dialog left open', async () => {
+      await savedJustAsAccessWent()
+      widen()
+      const shownBefore = editorSlides.value.length
+      const reads = server.fetch.mock.calls.length
+
+      themeChange.update('Dark')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(server.fetch.mock.calls.length).toBe(reads)
+      expect(editorSlides.value).toHaveLength(shownBefore)
+    })
+
+    it('closes the refusal when the only copy takes over', async () => {
+      await refused()
+      fillTheStore()
+      vi.mocked(toast.dismiss).mockClear()
+      vi.mocked(toast.warning).mockClear()
+      vi.mocked(toast.warning).mockReturnValue('only copy')
+
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+
+      await nextTick()
+      expect(toast.dismiss).toHaveBeenCalledWith('refusal')
+      expect(refusalToast(UNSTORED)).toBeDefined()
+      expect(vi.mocked(toast.warning).mock.calls).toHaveLength(1)
+    })
+  })
+
+  describe('a copy that outlived its page', () => {
+    const rows = [
+      {
+        name: 'row-1',
+        client_id: 'c1',
+        background: '#FFF',
+        elements: JSON.stringify([
+          { id: 'e1', type: 'shape', shapeType: 'circle', fillColor: 'red', top: 1, left: 2 },
+        ]),
+        transition: null,
+        transition_duration: '0.5',
+        fade_unmatched_elements: 0,
+        advance_after: null,
+      },
+    ]
+
+    async function saveLanded(count: number) {
+      await vi.waitFor(() => expect(saves.length).toBeGreaterThanOrEqual(count), { timeout: 3000 })
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+      await nextTick()
+    }
+
+    // the copy a closing page keeps, with what its push had sent by then
+    async function closedWithCopy() {
+      mounted = await openedSurface({ slides: rows })
+      duplicateSlide()
+      window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+      const [copy] = readRecovery('node-1')
+      expect(copy.sticky).toBe(false)
+      await saveLanded(1)
+      const { slides: sent } = saves[0] as { slides: Record<string, unknown>[] }
+      mounted.app.unmount()
+      mounted = null
+      // the unmount sends what it holds, and that landing must not reach the next open
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+      saves.length = 0
+      localStorage.clear()
+      return { copy, sent }
+    }
+
+    it('keeps a copy that differs from the load through the first landed save', async () => {
+      keepRecovery('node-1', [{ clientId: 'gone', background: '#000000ff', elements: [] }])
+      mounted = await openedSurface()
+      const [kept] = readRecovery('node-1')
+      expect(kept.sticky).toBe(true)
+
+      duplicateSlide()
+      await saveLanded(1)
+
+      expect(readRecovery('node-1')).toHaveLength(1)
+    })
+
+    it.each<[string, 'server' | 'draft']>([
+      ['the server took its push', 'server'],
+      ['its draft restores', 'draft'],
+    ])('clears a copy with the same content when %s', async (_name, route) => {
+      const { copy, sent } = await closedWithCopy()
+      keepRecovery('node-1', copy.slides)
+      if (route === 'draft') {
+        const nextOpen = opens + 1
+        await writeDraft({
+          id: `p${nextOpen}`,
+          content: copy.slides,
+          dirty: true,
+          updatedAt: 1,
+          baseModified: 'M1',
+        })
+      }
+
+      // what the server stores: each row gets a name, and numbers come back as strings
+      const stored = sent.map((row, position) => ({
+        ...row,
+        name: row.client_id,
+        idx: position + 1,
+        transition_duration: String(row.transition_duration),
+      }))
+      mounted = await openedSurface({ slides: stored })
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+      const [same] = readRecovery('node-1')
+      expect(same.sticky).toBe(false)
+
+      duplicateSlide()
+      await saveLanded(1)
+
+      expect(readRecovery('node-1')).toEqual([])
+    })
+
+    it('still clears a same-page copy on the next landed save after the first', async () => {
+      mounted = await openedSurface()
+      duplicateSlide()
+      await saveLanded(1)
+      duplicateSlide()
+      window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+      const [ownPage] = readRecovery('node-1')
+      expect(ownPage.sticky).toBe(false)
+
+      await saveLanded(2)
+
+      expect(readRecovery('node-1')).toEqual([])
+    })
+
+    it('holds off a landing from the last surface until the first load has compared', async () => {
+      keepRecovery('node-1', [{ clientId: 'gone', background: '#000000ff', elements: [] }])
+      let release!: () => void
+      mounted = await openedSurface({
+        firstLoad: new Promise<void>((resolve) => {
+          release = resolve
+        }),
+      })
+      saveFailed.value = false
+      isSaving.value = true
+      await nextTick()
+      isSaving.value = false
+      await nextTick()
+
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+
+      const [held] = readRecovery('node-1')
+      expect(held.sticky).toBe(true)
+    })
+
+    it('leaves a copy alone when the surface goes before its first load ends', async () => {
+      keepRecovery('node-1', [{ clientId: 'gone' }])
+      let release!: () => void
+      mounted = await openedSurface({
+        firstLoad: new Promise<void>((resolve) => {
+          release = resolve
+        }),
+      })
+
+      mounted.app.unmount()
+      mounted = null
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const [untouched] = readRecovery('node-1')
+      expect(untouched.sticky).toBe(false)
     })
   })
 

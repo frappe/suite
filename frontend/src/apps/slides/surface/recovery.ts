@@ -3,10 +3,11 @@
  * per person, when unsaved work cannot reach the server. They are never replayed
  * automatically. The person takes one out as a JSON file, which removes nothing
  * since a browser save can't be confirmed, or dismisses it. A copy the unload guard
- * keeps in a writable tab is also removed once the presentation saves again with edit
- * access: its draft still holds the edits, so it is then stale. A sticky copy, kept
- * when the server refused, a draft was discarded or writes had stopped, is not: it may
- * hold edits that are nowhere else.
+ * keeps in a writable tab is also removed once the same page saves again with edit
+ * access: that save holds the edits, so it is then stale. A sticky copy, kept when the
+ * server refused, a draft was discarded or writes had stopped, is not: it may hold edits
+ * that are nowhere else. Nor is a copy that outlived its page and differs from what the
+ * next open showed, since the unload guard writes no draft: it turns sticky then.
  */
 import { getCookieSessionUser } from '@/platform/session'
 
@@ -76,6 +77,17 @@ export function clearStaleRecovery(node: string): void {
   const sticky = copies.filter((copy) => copy.sticky)
   if (sticky.length < copies.length) {
     writeCopies(node, sticky)
+  }
+}
+
+/** Run before the open's first save can land; on a full store the copy just stays as it was. */
+export function keepOutlivedRecovery(node: string, isShown: (slides: unknown[]) => boolean): void {
+  const copies = readRecovery(node)
+  const kept = copies.map((copy) => ({ ...copy, sticky: copy.sticky || !isShown(copy.slides) }))
+  try {
+    writeCopies(node, kept)
+  } catch {
+    // removed by the next landed save, as it would have been
   }
 }
 

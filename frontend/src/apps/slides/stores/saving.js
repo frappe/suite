@@ -411,14 +411,15 @@ async function retireDraft(id, keepContent) {
   }
 
   // on a full store the record goes, so it can't replay either way
-  await savePresentationToLocalDB({ ...local, dirty: false, updatedAt: Date.now() })
+  await savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
     .catch(() => deletePresentationFromLocalDB(id))
     .catch(() => {})
 }
 
 // Edit access is gone. No save starts, the one under way is aborted and lands
 // nothing, and the draft is retired so it never replays: the edits live on only
-// in the explicit recovery copy the surface keeps.
+// in the explicit recovery copy the surface keeps. The exception is a draft
+// `keepContent` found no room for: it stays, and a later load treats it as any other
 async function stopWrites(id, keepContent) {
   if (!id) return
   stopped.add(id)

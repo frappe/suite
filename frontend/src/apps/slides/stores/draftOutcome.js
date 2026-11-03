@@ -11,6 +11,10 @@ export function needsServerCheck(local, servedModified, hasLanded) {
 
 // keep: stays on its own base; restore: built on what was served; discard: the server copy wins
 export function draftOutcome(local, servedModified, hasLanded, hasServerAnswered) {
+  if (local?.retired) {
+    return 'discard'
+  }
+
   // the worker may replay a document older than the last save; the copy that
   // save left behind is then the truth, and unsynced edits ride along in it
   const isServedStale = local?.baseModified > servedModified

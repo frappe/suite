@@ -54,6 +54,7 @@ import {
   presentationId,
   resetEditorState,
   setDocumentContext,
+  showsSlides,
   slidesLength,
   startLoad,
   viewOnly,
@@ -102,6 +103,7 @@ import {
   downloadRecovery,
   downloadSlides,
   forgetRecovery,
+  keepOutlivedRecovery,
   keepRecovery,
   readRecovery,
   removeNewestRecovery,
@@ -168,7 +170,8 @@ let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
-    // also cancels a save under way and retires the draft, so it never replays.
+    // also cancels a save under way and retires the draft, so it never replays,
+    // unless no copy of an unread draft fits: that one stays for the next load
     // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
     const unsaved =
       !!slides.value?.length &&
@@ -188,7 +191,7 @@ const access = createSlidesAccess(props.session, {
       return
     }
 
-    showKept()
+    showKept('Editing access changed. Your unsaved changes are kept on this device.')
   },
   widened() {
     if (isOnlyCopy.value && !retainRecovery()) {
@@ -259,6 +262,11 @@ async function writeTheme(
 ) {
   showThemeDialog.value = false
   showThemeChange.value = false
+  // a dialog stays open through a change of access
+  if (!editable.value) {
+    return
+  }
+
   try {
     await flushEdits()
     restoring.value = true
@@ -298,6 +306,12 @@ const presentationMenu = computed(() => [
         condition: () => canDownloadChanges.value,
         onClick: discardChanges,
       },
+      {
+        label: translate('Reload'),
+        icon: 'lucide-refresh-cw',
+        condition: () => isOnlyCopy.value && access.writable.value,
+        onClick: reloadAfterAccessBack,
+      },
     ],
   },
   { group: '', options: driveActions.value.node },
@@ -333,9 +347,15 @@ const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
 }
+
+let hasSettledCopies = false
+
 // A save that lands with edit access makes the recovery copy stale.
 watch(isSaving, (now, before) => {
   if (!before || now || saveFailed.value || !editable.value || !hasRecovery.value) return
+
+  // the last surface's push can land during this one's first load
+  if (!hasSettledCopies) return
 
   clearStaleRecovery(props.session.nodeId)
   syncHasRecovery()
@@ -491,8 +511,10 @@ async function load() {
     if (run !== latestLoad) return
 
     // the server copy replaced the slides on screen
-    if (doc) {
-      isOnlyCopy.value = false
+    isOnlyCopy.value = false
+    if (doc && !hasSettledCopies) {
+      hasSettledCopies = true
+      keepOutlivedRecovery(props.session.nodeId, showsSlides)
     }
 
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
@@ -562,7 +584,7 @@ function retainRecovery() {
 
   try {
     // with writes stopped no draft holds these slides, so a landed save can't make them stale
-    keepRecovery(props.session.nodeId, JSON.parse(JSON.stringify(slides.value)) as unknown[], {
+    keepRecovery(props.session.nodeId, liveSlides(), {
       sticky: !access.writable.value || isOnlyCopy.value,
     })
     hasRecovery.value = true
@@ -581,15 +603,17 @@ function keepSticky(content: unknown[]) {
 function keepUnreadDraft(content: unknown[]) {
   try {
     keepSticky(content)
-    showKept()
+    showKept(
+      translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
+    )
     return true
   } catch {
     return false
   }
 }
 
-function showKept() {
-  toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
+function showKept(message: string) {
+  toast.warning(message, {
     duration: Number.POSITIVE_INFINITY,
     action: {
       label: 'Download my changes',
@@ -607,7 +631,8 @@ function retainOrWarn() {
   return isKept
 }
 
-// the server copy is the truth now: reload it rather than replay anything
+// the server copy is the truth now: reload it rather than replay anything,
+// though a dirty draft left for lack of room loads like any other
 function loadAfterAccessBack() {
   resumeWrites(props.session.contentDocname)
   toast.info('You can edit this presentation again.')
@@ -649,8 +674,7 @@ function showRefusal() {
     'This presentation changed elsewhere. Your changes are kept on this device.',
   )
   try {
-    keepRecovery(props.session.nodeId, liveSlides(), { sticky: true })
-    hasRecovery.value = true
+    keepSticky(liveSlides())
   } catch {
     message = translate(
       'This presentation changed elsewhere. Download your changes before you reload.',
@@ -684,6 +708,12 @@ function dismissOnlyCopy() {
 
 function showOnlyCopy(message: string, cancel?: { label: string; onClick: () => void }) {
   dismissOnlyCopy()
+  // its "kept" and its bare Reload no longer hold
+  if (refusalToast !== undefined) {
+    toast.dismiss(refusalToast)
+    refusalToast = undefined
+  }
+
   onlyCopyToast = toast.warning(message, {
     duration: Number.POSITIVE_INFINITY,
     action: stayingDownload(),
@@ -728,6 +758,10 @@ async function discardChanges() {
 
   removeNewestRecovery(props.session.nodeId)
   syncHasRecovery()
+  // the edits on screen would go into a copy again on leaving
+  if (!access.writable.value) {
+    await load()
+  }
 }
 
 const saveState = computed<DocumentSaveState>(() => {
