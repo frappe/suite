@@ -41,7 +41,7 @@ function hasPin(id) {
   return localStorage.getItem(key) !== null
 }
 
-function isEligible(id) {
+export function isEligible(id) {
   return (
     slidesWorkerEnabled() &&
     'serviceWorker' in navigator &&
@@ -63,6 +63,11 @@ function whenIdle() {
       setTimeout(resolve, IDLE_TIMEOUT)
     }
   })
+}
+
+export async function afterPageSettles() {
+  await delay(SETTLE_TIME)
+  await whenIdle()
 }
 
 function withHeaders(response, added) {
@@ -338,8 +343,7 @@ async function runVisit(current) {
   const { node, controller } = current
   const { signal } = controller
   try {
-    await delay(SETTLE_TIME)
-    await whenIdle()
+    await afterPageSettles()
     if (!signal.aborted) {
       await capture(current.id, node, controller)
     }

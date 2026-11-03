@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { API_CACHE_NAME, PINNED_CACHE_NAME, VISITED_CACHE_NAME } from './utils/slidesCaches'
+import {
+  API_CACHE_NAME,
+  MEDIA_CACHE_NAME,
+  PINNED_CACHE_NAME,
+  VISITED_CACHE_NAME,
+} from './utils/slidesCaches'
 import { warmAssets } from './utils/startupRequests'
 
 vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({}))
@@ -13,6 +18,7 @@ vi.mock('workbox-range-requests', () => ({
 const listeners = new Map<string, (event: any) => void>()
 const pinned = new Map<string, Response>()
 const visited = new Map<string, Response>()
+const storedMedia = new Map<string, Response>()
 const opened = new Map<string, Map<string, Response>>()
 let respond: (url: string) => Promise<Response>
 let online: boolean
@@ -34,6 +40,7 @@ const PINNED_KEY = '/private/files/a.png'
 beforeEach(() => {
   pinned.clear()
   visited.clear()
+  storedMedia.clear()
   opened.clear()
   fetches = []
   online = true
@@ -47,6 +54,10 @@ beforeEach(() => {
 
       if (cacheName === VISITED_CACHE_NAME) {
         return visited.get(key)
+      }
+
+      if (cacheName === MEDIA_CACHE_NAME) {
+        return storedMedia.get(key)
       }
     },
     open: async (name: string) => {
@@ -115,6 +126,34 @@ describe('pinned media', () => {
 
 // The shell document is the whole suite's. A stored copy would keep serving old
 // code after a flip or a deploy (unified frontend spec §14.9).
+describe('a signed picture the page stored', () => {
+  const SIGNED = `${location.origin}/private/files/blob1/logo.png?e=2&s=second`
+
+  beforeEach(() => {
+    storedMedia.set('/private/files/blob1/logo.png', body('stored'))
+  })
+
+  it('answers offline under a signature it was not stored with', async () => {
+    online = false
+
+    const response = await respond(SIGNED)
+
+    expect(await response.text()).toBe('stored')
+  })
+
+  it('stays out of the way online', () => {
+    expect(respond(SIGNED)).toBeNull()
+  })
+
+  it('fails offline when nothing was stored', async () => {
+    online = false
+    storedMedia.clear()
+    networkFails = true
+
+    await expect(respond(SIGNED)).rejects.toThrow('Failed to fetch')
+  })
+})
+
 describe('the shell document', () => {
   const dispatch = (request: Pick<Request, 'url' | 'method' | 'mode' | 'headers' | 'referrer'>) => {
     let answered = false

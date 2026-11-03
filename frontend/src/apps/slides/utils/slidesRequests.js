@@ -9,9 +9,13 @@ export const MEDIA_PROXY_PATH = '/api/method/suite.slides.api.file.get_media_fil
 // set by suite/www/suite.py on the shell it renders to a logged-out visitor
 const GUEST_HEADER = 'x-suite-guest'
 
-const isMedia = (url) =>
-  url.pathname.startsWith(MEDIA_PROXY_PATH) ||
-  (url.pathname.startsWith('/private/files/') && url.searchParams.has(SLIDES_MEDIA_PARAM))
+export function isMedia(url) {
+  return (
+    url.pathname.startsWith(MEDIA_PROXY_PATH) ||
+    (url.pathname.startsWith('/private/files/') && url.searchParams.has(SLIDES_MEDIA_PARAM))
+  )
+}
+
 const isAPI = (url) => url.pathname.startsWith('/api/method/suite.slides.')
 
 // every file under the bundle path is content-hashed, so a hit can never be stale

@@ -12,6 +12,7 @@ import {
   VISITED_CACHE_NAME,
   VISITED_NODE_HEADER,
   VISITED_SHELL_KEY,
+  withCachedTime,
 } from './utils/slidesCaches'
 import { getRequestType, isBundleAsset, isCacheable, shellKey } from './utils/slidesRequests'
 
@@ -76,18 +77,6 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(handleSWActivate())
 })
 
-const getModifiedResponse = (response) => {
-  const responseToCache = response.clone()
-  const headers = new Headers(responseToCache.headers)
-  headers.set('x-cached-time', Date.now().toString())
-
-  return new Response(responseToCache.body, {
-    status: responseToCache.status,
-    statusText: responseToCache.statusText,
-    headers: headers,
-  })
-}
-
 // what each open page last said it is, see getRequestType
 const slidesClientState = new Map()
 
@@ -113,7 +102,7 @@ const addCacheEntry = async (type, cache, request, response) => {
   if (!isCacheable(type, response)) return
 
   // clone response and add cache timestamp header
-  const modifiedResponse = getModifiedResponse(response)
+  const modifiedResponse = withCachedTime(response.clone())
   await cache.put(request, modifiedResponse)
 }
 
@@ -262,6 +251,15 @@ async function getOfflineResponse(event, type, url) {
   const visited = await getVisitedResponse(event.request, url)
   if (visited) {
     return respondFromCache(event, visited)
+  }
+
+  // a signed picture's signature changes, so the page stored it under its file path
+  const stored =
+    type === 'other' &&
+    key &&
+    (await caches.match(key, { cacheName: MEDIA_CACHE_NAME }).catch(() => null))
+  if (stored) {
+    return respondFromCache(event, stored)
   }
 
   if (type === 'other' || type === 'shell') {

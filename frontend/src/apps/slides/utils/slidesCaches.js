@@ -8,6 +8,18 @@ export const VISITED_CACHE_NAME = 'slides-visited'
 
 export const PIN_HEADER = 'x-slides-pin'
 
+// the worker's sweep ages a slides-media entry by this header
+export function withCachedTime(response) {
+  const headers = new Headers(response.headers)
+  headers.set('x-cached-time', Date.now().toString())
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
 // measured on a full disk in Chrome on macOS; an aborted capture gives NetworkError or AbortError
 const OUT_OF_SPACE_ERRORS = [
   'QuotaExceededError',

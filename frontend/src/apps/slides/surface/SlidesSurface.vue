@@ -78,6 +78,7 @@ import {
 } from '@/apps/slides/stores/slide'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
+import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { useHideRail } from '@/platform/rail'
@@ -822,6 +823,7 @@ watch([slides, () => presentationDoc.value?.modified], () => {
 
   if (access.readable.value && getCookieSessionUser()) {
     void rememberVisit(presentationId.value)
+    void storeVisitedMedia(presentationId.value)
   }
 })
 onMounted(() => {
@@ -839,6 +841,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   cancelVisit()
+  stopVisitedMedia()
   void postToServiceWorker('slides-left')
   if (autosaveTimer) window.clearInterval(autosaveTimer)
   window.removeEventListener('online', setOnline)
