@@ -20,9 +20,10 @@ import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
+import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
-import type { AreaDefinition } from '@/platform/contracts'
+import type { AreaDefinition, PaletteSearchSource } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
@@ -194,6 +195,12 @@ export function driveNodeRoute(
   // The history entry carries the title, so the tab names the node before
   // its page loads.
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
+}
+
+/** Drive's nodes by name, for the command palette on pages with no search of their own. */
+export const drivePaletteSearch: PaletteSearchSource = {
+  label: () => __('Drive'),
+  use: (term) => usePaletteSearch(term, driveNodeRoute),
 }
 
 /** A document menu item, in frappe-ui Dropdown's shape. */

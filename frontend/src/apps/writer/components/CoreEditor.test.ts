@@ -51,7 +51,8 @@ vi.mock('@/apps/writer/composables/useUsers', () => ({
   useUsers: () => ({ users: ref([]) }),
   searchMentions: () => [],
 }))
-vi.mock('@/stores/root', () => ({ useRootStore: () => ({ paletteOpen: false }) }))
+const rootStore = vi.hoisted(() => ({ paletteOpen: false }))
+vi.mock('@/stores/root', () => ({ useRootStore: () => rootStore }))
 
 const mounted: App[] = []
 
@@ -138,4 +139,21 @@ describe('CoreEditor cover', () => {
       })
     },
   )
+})
+
+describe('CoreEditor Cmd+K', () => {
+  it('opens the suite palette from inside the editor, since Writer binds no Cmd+K of its own', async () => {
+    rootStore.paletteOpen = false
+    const { root } = mountWithCover()
+    await nextTick()
+    const event = new KeyboardEvent('keydown', {
+      key: 'k',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    root.querySelector('[data-editor]')!.dispatchEvent(event)
+    expect(rootStore.paletteOpen).toBe(true)
+    expect(event.defaultPrevented).toBe(true)
+  })
 })
