@@ -4,7 +4,7 @@ import { ref } from 'vue'
 const presentationDoc = ref<Record<string, unknown> | null>(null)
 export const presentationId = ref('')
 const viewOnly = ref(false)
-const slides = ref<unknown[]>([])
+export const slides = ref<unknown[]>([])
 const loadedChunks: string[] = []
 export const state = { user: 'a@example.com' as string | null }
 
@@ -66,6 +66,7 @@ export const named = new Map<string, FakeCache>()
 export const openedNames: string[] = []
 export const requests: { url: string; isMarked: boolean }[] = []
 export const refused = new Set<string>()
+export const answers = new Map<string, string>()
 export const fake = {
   shell: () => new Response() as Response,
   holdFetch: null as Promise<unknown> | null,
@@ -217,6 +218,8 @@ function resetState() {
   openedNames.length = 0
   requests.length = 0
   refused.clear()
+  answers.clear()
+  slides.value = []
   loadedChunks.splice(0, loadedChunks.length, CHUNK)
   localStorage.clear()
   state.user = 'a@example.com'
@@ -270,7 +273,7 @@ function dataResponse(url: string, signal?: AbortSignal | null) {
   }
 
   if (url.startsWith('/api/')) {
-    return new Response(bodyFor(url, `{"url":"${url}"}`, signal), {
+    return new Response(bodyFor(url, answers.get(url) ?? `{"url":"${url}"}`, signal), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })

@@ -959,6 +959,23 @@ describe('the start-up copy', () => {
     expect(recordedKeys('w1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
   })
 
+  it('asks again on a visit once a picture is added, and for nothing else', async () => {
+    const list = '/api/suite/drive/nodes/n1/media'
+    await saveOfflineCopy('a1')
+    await warmOfflineCopyAssets('a1')
+    await warmOfflineCopyAssets('a1')
+    const keysBefore = recordOf('a1').keys
+    const asked = startupFetched.filter((url) => url === list).length
+
+    slides.value = [...slides.value, ...slidesWith(['node1234'])]
+    await warmOfflineCopyAssets('a1')
+    await warmOfflineCopyAssets('a1')
+
+    expect(startupFetched.filter((url) => url === list).length).toBe(asked + 1)
+    expect(recordOf('a1').keys).toEqual(keysBefore)
+    expect(localStorage.getItem('slides-offline-copy:a1')).toContain('"node":"n1"')
+  })
+
   it('refreshes nothing for a presentation with no offline copy', async () => {
     await warmOfflineCopyAssets('p1')
 

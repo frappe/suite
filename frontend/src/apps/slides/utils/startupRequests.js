@@ -93,7 +93,7 @@ export async function fetchShell(node, signal) {
   throw new Error(`The presentation page could not be stored (${response.status})`)
 }
 
-async function fetchCacheable(url, type, signal) {
+export async function fetchCacheable(url, type, signal) {
   const response = await fetch(url, { headers: { [PIN_HEADER]: '1' }, signal }).catch(() => null)
 
   if (response?.status === HTTP_OK && isCacheable(type, response)) {

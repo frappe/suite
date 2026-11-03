@@ -433,16 +433,23 @@ async function removeNodeOfflineCopy(node) {
   }
 }
 
-const refreshed = new Set()
+// the media ids each presentation's start-up copy was last refreshed with
+const refreshed = new Map()
+
+// a picture added since then has no row in the media list that copy holds
+function needsRefresh(id) {
+  const known = refreshed.get(id)
+  return !known || mediaNodeIds().some((nodeId) => !known.has(nodeId))
+}
 
 // an online visit replaces the start-up copy, so after a deploy it holds the new build
 async function warmOfflineCopyAssets(id) {
   const record = readRecord(id)
-  if (!record?.node || !navigator.onLine || refreshed.has(id)) return
+  if (!record?.node || !navigator.onLine || !needsRefresh(id)) return
 
   if (run) return
 
-  refreshed.add(id)
+  refreshed.set(id, new Set(mediaNodeIds()))
   const current = claimRun(id, record.node)
   const { signal } = current.controller
   try {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  answers,
   CHUNK,
   dataUrl,
   dataUrls,
@@ -26,6 +27,7 @@ import {
   shellFetches,
   shellResponse,
   showPresentation,
+  slides,
   stalledBodies,
   state,
   TWO_MINUTES,
@@ -774,5 +776,199 @@ describe('rememberVisit', () => {
     await capture
 
     expect(requests.length).toBeGreaterThan(0)
+  })
+})
+
+describe('a picture added after the capture', () => {
+  const [, , MEDIA] = dataUrls('n1', 'p1')
+  const LISTED = '{"rows":["node1234"]}'
+
+  async function loadStores() {
+    const { rememberVisit } = await loadStore()
+    const pictures = await import('./visitedMedia')
+    localStorage.setItem('slides-caches-user', state.user as string)
+    showPresentation()
+    return { rememberVisit, ...pictures }
+  }
+
+  function addPicture(id = 'node1234') {
+    slides.value = [...slides.value, { elements: [{ type: 'image', src: id }] }]
+    answers.set(MEDIA, `{"rows":["${id}"]}`)
+  }
+
+  async function storedList() {
+    return visited().store.get(MEDIA)?.clone().text()
+  }
+
+  function listFetches() {
+    return fetchedUrls().filter((url) => url === MEDIA).length
+  }
+
+  it('reaches the copy, past the worker, and changes nothing else', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    await rememberVisit('p1')
+    const time = header('/d/n1', 'x-visited-time')
+    const before = keys().sort()
+    fake.clock = 2000
+    requests.length = 0
+    addPicture()
+
+    await storeVisitedMedia('p1')
+
+    expect(await storedList()).toBe(LISTED)
+    expect(header(MEDIA, 'x-visited-node')).toBe('n1')
+    expect(requests).toEqual([{ url: MEDIA, isMarked: true }])
+    expect(header('/d/n1', 'x-visited-time')).toBe(time)
+    expect(keys().sort()).toEqual(before)
+  })
+
+  it('is not overwritten by a capture that fetched before the upload', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    const gate = Promise.withResolvers<void>()
+    const realFetch = fetch
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url === ENTRY) {
+        await gate.promise
+      }
+
+      return realFetch(url, init)
+    })
+    const capturing = rememberVisit('p1')
+    await vi.waitFor(() => expect(fetchedUrls()).toContain(MEDIA))
+    // the capture's answer is built by now, with no row for the picture
+    await settle()
+    // the slow part of a first store, so the refresh below gets its turn inside the settle
+    await storeVisitedMedia('p1')
+    addPicture()
+
+    const storing = storeVisitedMedia('p1')
+    await settle()
+    gate.resolve()
+    await Promise.all([capturing, storing])
+
+    expect(await storedList()).toBe(LISTED)
+  })
+
+  it('asks once per new picture in an open', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    await rememberVisit('p1')
+    requests.length = 0
+    addPicture()
+
+    await storeVisitedMedia('p1')
+    await storeVisitedMedia('p1')
+    expect(listFetches()).toBe(1)
+
+    addPicture('node5678')
+    await storeVisitedMedia('p1')
+    expect(listFetches()).toBe(2)
+    expect(await storedList()).toBe('{"rows":["node5678"]}')
+  })
+
+  it('keeps the later answer when the earlier one arrives last', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    await rememberVisit('p1')
+    const gate = Promise.withResolvers<void>()
+    const realFetch = fetch
+    let asked = 0
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const response = await realFetch(url, init)
+      if (url === MEDIA && ++asked === 1) {
+        await gate.promise
+      }
+
+      return response
+    })
+    addPicture()
+    const first = storeVisitedMedia('p1')
+    await vi.waitFor(() => expect(asked).toBe(1))
+    addPicture('node5678')
+    const second = storeVisitedMedia('p1')
+
+    await settle()
+    gate.resolve()
+    await Promise.all([first, second])
+
+    expect(await storedList()).toBe('{"rows":["node5678"]}')
+  })
+
+  it('stores nothing for a presentation with no finished copy', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    refused.add(dataUrl('n1', 'p1'))
+    await rememberVisit('p1')
+    addPicture()
+
+    await storeVisitedMedia('p1')
+
+    expect(visited().store.has(MEDIA)).toBe(false)
+  })
+
+  it('keeps the old list and every other presentation when the put fails', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    seedNode('n2', 500)
+    await rememberVisit('p1')
+    const before = keys().sort()
+    const old = await storedList()
+    visited().putHook = () => {
+      throw new DOMException('full', 'QuotaExceededError')
+    }
+
+    addPicture()
+
+    await storeVisitedMedia('p1')
+
+    expect(await storedList()).toBe(old)
+    expect(keys().sort()).toEqual(before)
+    expect(console.warn).toHaveBeenCalled()
+  })
+
+  it('takes no lock while the answer stalls', async () => {
+    const { rememberVisit, stopVisitedMedia, storeVisitedMedia } = await loadStores()
+    await rememberVisit('p1')
+    const old = await storedList()
+    const locks = fake.lockRequests
+    stalledBodies.add(MEDIA)
+    addPicture()
+
+    const storing = storeVisitedMedia('p1')
+    await vi.waitFor(() => expect(listFetches()).toBe(2))
+    await settle()
+    expect(fake.lockRequests).toBe(locks)
+
+    stopVisitedMedia()
+    await storing
+    expect(await storedList()).toBe(old)
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('does not bring back a cache wiped during the fetch', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    await rememberVisit('p1')
+    const release = holdFetches()
+    addPicture()
+
+    const storing = storeVisitedMedia('p1')
+    await vi.waitFor(() => expect(listFetches()).toBe(2))
+    named.delete(VISITED)
+    release()
+    await storing
+
+    expect(named.has(VISITED)).toBe(false)
+  })
+
+  it('stores nothing once another user signed in during the fetch', async () => {
+    const { rememberVisit, storeVisitedMedia } = await loadStores()
+    await rememberVisit('p1')
+    const old = await storedList()
+    const release = holdFetches()
+    addPicture()
+
+    const storing = storeVisitedMedia('p1')
+    await vi.waitFor(() => expect(listFetches()).toBe(2))
+    state.user = 'b@example.com'
+    release()
+    await storing
+
+    expect(await storedList()).toBe(old)
   })
 })

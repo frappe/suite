@@ -1,6 +1,11 @@
 import { isMediaNodeId, mediaSettled } from '@/apps/slides/stores/documentMedia'
 import { slides } from '@/apps/slides/stores/slide'
-import { afterPageSettles, isEligible } from '@/apps/slides/stores/visitedCopies'
+import {
+  afterPageSettles,
+  canStoreOpen,
+  isEligible,
+  refreshVisitedMedia,
+} from '@/apps/slides/stores/visitedCopies'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
@@ -16,7 +21,7 @@ import { runPool } from '@/apps/slides/utils/startupRequests'
 import { getCookieSessionUser } from '@/platform/session'
 
 // a page not yet controlled by the worker asks for its pictures past it, so the
-// page stores them itself; this open's tries and its stop: { controller, tried, settled }
+// page stores them itself; this open's tries and its stop: { controller, tried, listed, settled }
 let current = null
 
 // a request the worker sees as media finds its exact url; any other, as a signed one, its file path
@@ -79,6 +84,12 @@ async function storeUnlessFull(cache, target, isWanted, signal) {
   }
 }
 
+function shownNodeIds() {
+  return collectMediaSources(slides.value)
+    .map(({ src }) => src)
+    .filter(isMediaNodeId)
+}
+
 async function targetsOnceReady(open, user, isWanted) {
   await open.settled
   if (!isWanted()) {
@@ -87,11 +98,7 @@ async function targetsOnceReady(open, user, isWanted) {
 
   open.claimed ??= claimSlidesCachesFor(user)
   await open.claimed
-  const nodeIds = collectMediaSources(slides.value)
-    .map(({ src }) => src)
-    .filter(isMediaNodeId)
-  await mediaSettled(nodeIds, open.controller.signal)
-
+  await mediaSettled(shownNodeIds(), open.controller.signal)
   if (!isWanted()) {
     return []
   }
@@ -99,26 +106,57 @@ async function targetsOnceReady(open, user, isWanted) {
   return untriedTargets(open)
 }
 
+// one at a time, so an earlier answer can't land over a later one
+async function refreshListAfter(before, isWanted, signal) {
+  await before
+  await refreshVisitedMedia(isWanted, signal)
+}
+
+function refreshListForNewIds(open, id, isWanted) {
+  const newIds = shownNodeIds().filter((nodeId) => !open.listed.has(nodeId))
+  if (newIds.length && isWanted() && isEligible(id)) {
+    for (const nodeId of newIds) {
+      open.listed.add(nodeId)
+    }
+
+    open.listing = refreshListAfter(open.listing, isWanted, open.controller.signal)
+  }
+
+  return open.listing
+}
+
+async function storePictures(targets, isWanted, signal) {
+  if (targets.length) {
+    const cache = await caches.open(MEDIA_CACHE_NAME)
+    await runPool(targets, (target) => storeUnlessFull(cache, target, isWanted, signal))
+  }
+}
+
 // best effort: nothing else in the browser's storage is given up for a picture
 async function storeVisitedMedia(id) {
-  if (!isEligible(id)) {
+  if (!canStoreOpen()) {
     return
   }
 
-  current ??= { controller: new AbortController(), tried: new Set(), settled: afterPageSettles() }
+  current ??= {
+    controller: new AbortController(),
+    tried: new Set(),
+    listed: new Set(),
+    settled: afterPageSettles(),
+  }
   const open = current
   const { signal } = open.controller
   const user = getCookieSessionUser()
   function isWanted() {
-    return !signal.aborted && isEligible(id) && getCookieSessionUser() === user
+    return !signal.aborted && canStoreOpen() && getCookieSessionUser() === user
   }
 
   try {
     const targets = await targetsOnceReady(open, user, isWanted)
-    if (targets.length) {
-      const cache = await caches.open(MEDIA_CACHE_NAME)
-      await runPool(targets, (target) => storeUnlessFull(cache, target, isWanted, signal))
-    }
+    await Promise.all([
+      refreshListForNewIds(open, id, isWanted),
+      storePictures(targets, isWanted, signal),
+    ])
   } catch (err) {
     if (!signal.aborted) {
       console.warn('Slides pictures not stored:', err)

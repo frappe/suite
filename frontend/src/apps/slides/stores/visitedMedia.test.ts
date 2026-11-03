@@ -98,6 +98,7 @@ beforeEach(() => {
   })
   vi.stubGlobal('caches', {
     open: async (name: string) => openNamed(name),
+    has: async (name: string) => named.has(name),
     delete: async (name: string) => named.delete(name),
   })
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -166,7 +167,9 @@ describe('pictures of a presentation opened online', () => {
     await storeVisitedMedia('p1')
 
     release()
-    expect(fetched).toEqual(['/private/files/blob1/logo.png?e=1&s=first'])
+    expect(fetched.filter((url) => url.startsWith('/private/'))).toEqual([
+      '/private/files/blob1/logo.png?e=1&s=first',
+    ])
     expect([...media().store.keys()]).toEqual(['/private/files/blob1/logo.png'])
   })
 
@@ -274,7 +277,6 @@ describe('pictures of a presentation opened online', () => {
         window.disable_slides_service_worker = true
       },
     ],
-    ['with a pin', () => localStorage.setItem('slides-offline-copy:p1', '{}')],
   ])('does nothing %s', async (_name, arrange) => {
     show('/private/files/a.png')
     arrange()
@@ -283,6 +285,31 @@ describe('pictures of a presentation opened online', () => {
 
     expect(fetched).toEqual([])
     expect(named.has('slides-media')).toBe(false)
+  })
+})
+
+describe('a pinned presentation', () => {
+  beforeEach(() => {
+    localStorage.setItem('slides-offline-copy:p1', '{"keys":[]}')
+  })
+
+  it('stores a picture it shows, in the shared cache alone', async () => {
+    show('/private/files/a.png')
+
+    await storeVisitedMedia('p1')
+
+    expect([...named.keys()]).toEqual(['slides-media'])
+    expect(await media().store.get(OWNED_URL)?.text()).toBe('picture')
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBe('{"keys":[]}')
+  })
+
+  it('asks for no visited list', async () => {
+    show('node1234')
+
+    await storeVisitedMedia('p1')
+
+    expect(fetched.filter((url) => url.startsWith('/api/'))).toEqual([])
+    expect(named.has('slides-visited')).toBe(false)
   })
 })
 

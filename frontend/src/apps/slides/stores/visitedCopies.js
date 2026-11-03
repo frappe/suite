@@ -1,6 +1,6 @@
 import { presentationDoc } from '@/apps/slides/stores/presentation'
 import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
-import { entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
+import { entryAssets, mediaListUrl, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { slidesWorkerEnabled } from '@/apps/slides/utils/serviceWorker'
 import {
   isOutOfSpace,
@@ -14,6 +14,7 @@ import {
   cancelBodies,
   delay,
   fetchAllCacheable,
+  fetchCacheable,
   fetchShell,
   runPool,
   waitForController,
@@ -33,7 +34,7 @@ const TIME_HEADER = 'x-visited-time'
 // the node captured or being captured in this open
 let remembered = null
 
-// the capture in flight: { id, node, controller }
+// the capture in flight: { id, node, controller, done }
 let visit = null
 
 function hasPin(id) {
@@ -41,7 +42,8 @@ function hasPin(id) {
   return localStorage.getItem(key) !== null
 }
 
-export function isEligible(id) {
+// what a page may store for the open presentation, pinned or not
+export function canStoreOpen() {
   return (
     slidesWorkerEnabled() &&
     'serviceWorker' in navigator &&
@@ -50,9 +52,12 @@ export function isEligible(id) {
     navigator.onLine &&
     !!getCookieSessionUser() &&
     !!presentationDoc.value?.node &&
-    !presentationDoc.value.is_composite &&
-    !hasPin(id)
+    !presentationDoc.value.is_composite
   )
+}
+
+export function isEligible(id) {
+  return canStoreOpen() && !hasPin(id)
 }
 
 function whenIdle() {
@@ -366,7 +371,39 @@ async function rememberVisit(id) {
 
   remembered = node
   visit = { id, node, controller: new AbortController() }
-  await runVisit(visit)
+  visit.done = runVisit(visit)
+  await visit.done
+}
+
+// only under a marker, so nothing brings back a copy removed in the meantime
+async function replaceMediaList(url, node, response, isWanted) {
+  if (!isWanted() || !(await caches.has(VISITED_CACHE_NAME))) {
+    return
+  }
+
+  const cache = await caches.open(VISITED_CACHE_NAME)
+  if (await cache.match(`/d/${node}`)) {
+    await cache.put(url, withHeaders(response, { [VISITED_NODE_HEADER]: node }))
+  }
+}
+
+// a picture added after the capture has no row in the list it stored; read whole
+// before the lock, so a stalled body can't hold up other tabs. A failure keeps the old list
+async function refreshVisitedMedia(isWanted, signal) {
+  const node = presentationDoc.value.node
+  try {
+    await visit?.done
+    const url = mediaListUrl(node)
+    const response = await fetchCacheable(url, 'api', signal)
+    if (response) {
+      const whole = new Response(await response.arrayBuffer(), response)
+      await holdingLock(() => replaceMediaList(url, node, whole, isWanted))
+    }
+  } catch (err) {
+    if (!signal.aborted) {
+      console.warn('Slides visited copy failed:', err)
+    }
+  }
 }
 
 // a refused open or a new pin
@@ -389,4 +426,4 @@ async function forgetVisitedNode(node) {
   }
 }
 
-export { cancelVisit, forgetVisitedNode, rememberVisit }
+export { cancelVisit, forgetVisitedNode, refreshVisitedMedia, rememberVisit }
