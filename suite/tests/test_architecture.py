@@ -229,6 +229,7 @@ BASELINE_DEBT = {
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive._core.versions",
             "suite/slides/tests/test_drive_adoption.py|import|suite.drive.framework",
+            "suite/slides/tests/test_public_link.py|import|suite.drive.http",
             # Ticket 29 activated the registry, so a deck fixture is a Drive
             # node and `make_public` is a `Drive Grant`, not a `Drive Permission`
             # row. `suite.drive` exposes no grant workflow, so the shared Slides
