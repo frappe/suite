@@ -6,6 +6,7 @@ import { isCacheable } from '@/apps/slides/utils/slidesRequests'
 const CONCURRENCY = 4
 const HTTP_OK = 200
 const CONTROLLER_WAIT = 3000
+const TEMPLATES_LIMIT = 5000
 
 export function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -53,9 +54,16 @@ async function warmTemplates() {
   const url = api.templates.list.path
   // held across the fetch, so a wipe during it isn't undone by opening the name again
   const cache = await caches.open(API_CACHE_NAME)
-  const response = await fetchCacheable(url, 'api')
-  if (response) {
-    await cache.put(url, response)
+  // this is awaited inside a pin run, and nothing else aborts a run no later action claims
+  const controller = new AbortController()
+  const limit = setTimeout(() => controller.abort(), TEMPLATES_LIMIT)
+  try {
+    const response = await fetchCacheable(url, 'api', controller.signal)
+    if (response) {
+      await cache.put(url, response)
+    }
+  } finally {
+    clearTimeout(limit)
   }
 }
 

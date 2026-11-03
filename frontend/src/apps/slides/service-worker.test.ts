@@ -513,6 +513,71 @@ describe('a presentation opened online, offline', () => {
       await expect(warmAssets()).resolves.toBeDefined()
     })
 
+    describe('when the network stalls', () => {
+      const stored: string[] = []
+
+      function aborted(signal: AbortSignal, stop: (reason: DOMException) => void) {
+        signal.addEventListener('abort', () => stop(new DOMException('aborted', 'AbortError')))
+      }
+
+      // what a browser's cache.put does: it reads the body before the entry exists
+      function serverStalls(answer: (signal: AbortSignal) => Promise<Response>) {
+        vi.stubGlobal('fetch', (_url: string, init: { signal: AbortSignal }) => answer(init.signal))
+        vi.stubGlobal('caches', {
+          open: async () => ({
+            put: async (url: string, response: Response) => {
+              await response.arrayBuffer()
+              stored.push(url)
+            },
+          }),
+        })
+      }
+
+      async function expectFreedAtTheLimit() {
+        let isDone = false
+        const warm = (async () => {
+          await warmAssets()
+          isDone = true
+        })()
+
+        await vi.advanceTimersByTimeAsync(4999)
+        expect(isDone).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        await new Promise((resolve) => setImmediate(resolve))
+
+        expect(isDone).toBe(true)
+        await warm
+        expect(stored).toEqual([])
+      }
+
+      beforeEach(async () => {
+        stored.length = 0
+        await import('@/apps/slides/pages/Slideshow.vue')
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('gives up on a fetch that never answers and stores nothing', async () => {
+        serverStalls((signal) => new Promise((_resolve, reject) => aborted(signal, reject)))
+
+        await expectFreedAtTheLimit()
+      })
+
+      it('gives up on a body that never ends and stores nothing', async () => {
+        serverStalls(async (signal) => {
+          const endless = new ReadableStream({
+            start: (controller) => aborted(signal, (reason) => controller.error(reason)),
+          })
+          return new Response(endless, { headers: { 'Content-Type': 'application/json' } })
+        })
+
+        await expectFreedAtTheLimit()
+      })
+    })
+
     it('does not bring the cache back after a wipe during the fetch', async () => {
       serverAnswers(() => {
         opened.delete(API_CACHE_NAME)
