@@ -70,7 +70,24 @@ interface LocalProducerState {
 	paused: boolean;
 }
 
+export interface AudioDiagnosticSample {
+	capturedAt: string;
+	streams: readonly Omit<RTCStatsStreamSample, "trackSettings">[];
+	transportReports?: RTCStatsSample["transportReports"];
+	playback: {
+		participantId: string;
+		paused: boolean;
+		muted: boolean;
+		volume: number;
+		readyState: number;
+		currentTime: number;
+		error: number | null;
+	}[];
+	error?: string;
+}
+
 export interface ConnectionDiagnostics {
+	audioSamples?: AudioDiagnosticSample[];
 	connectionStatus: ReturnType<SFUClient["getConnectionStatus"]>;
 	transportStats: ReturnType<TransportManager["getTransportStats"]>;
 	networkStats: Awaited<ReturnType<TransportManager["getNetworkStats"]>> | null;
@@ -81,10 +98,21 @@ export type RTCStatsReport = Readonly<{
 	type?: string;
 	timestamp?: number;
 	isRemote?: boolean;
+	kind?: string;
+	mediaType?: string;
+	mediaSourceId?: string;
 	codecId?: string;
 	mimeType?: string;
 	remoteId?: string;
 	localId?: string;
+	audioLevel?: number;
+	totalAudioEnergy?: number;
+	totalSamplesDuration?: number;
+	totalSamplesSent?: number;
+	silentConcealedSamples?: number;
+	concealmentEvents?: number;
+	insertedSamplesForDeceleration?: number;
+	removedSamplesForAcceleration?: number;
 	bytesSent?: number;
 	bytesReceived?: number;
 	packetsLost?: number;
@@ -123,10 +151,21 @@ const RTC_STATS_REPORT_KEYS = [
 	"type",
 	"timestamp",
 	"isRemote",
+	"kind",
+	"mediaType",
+	"mediaSourceId",
 	"codecId",
 	"mimeType",
 	"remoteId",
 	"localId",
+	"audioLevel",
+	"totalAudioEnergy",
+	"totalSamplesDuration",
+	"totalSamplesSent",
+	"silentConcealedSamples",
+	"concealmentEvents",
+	"insertedSamplesForDeceleration",
+	"removedSamplesForAcceleration",
 	"bytesSent",
 	"bytesReceived",
 	"packetsLost",
@@ -174,6 +213,9 @@ type RTCStatsStreamSample = Readonly<{
 	participantId?: string;
 	paused: boolean;
 	muted: boolean;
+	trackEnabled: boolean | null;
+	trackState: string;
+	producerId?: string;
 	trackSettings: Readonly<MediaTrackSettings>;
 	reports: readonly RTCStatsReport[];
 }>;
@@ -1148,6 +1190,8 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 							source,
 							paused: producer.paused,
 							muted: producer.track?.muted ?? false,
+							trackEnabled: producer.track?.enabled ?? null,
+							trackState: producer.track?.readyState ?? "missing",
 							trackSettings: Object.freeze({
 								...(producer.track?.getSettings?.() ?? {}),
 							}),
@@ -1177,6 +1221,9 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 							participantId: entry.participantId,
 							paused: entry.consumer.paused,
 							muted: entry.track?.muted ?? false,
+							trackEnabled: entry.track?.enabled ?? null,
+							trackState: entry.track?.readyState ?? "missing",
+							producerId: entry.producerId,
 							trackSettings: Object.freeze({
 								...(entry.track?.getSettings?.() ?? {}),
 							}),
@@ -1208,7 +1255,49 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		});
 	}
 
+	private async sampleAudioDiagnostics(): Promise<AudioDiagnosticSample> {
+		const playback = Array.from(this.videoManager.audioElements, ([participantId, element]) => ({
+			participantId,
+			paused: element.paused,
+			muted: element.muted,
+			volume: element.volume,
+			readyState: element.readyState,
+			currentTime: element.currentTime,
+			error: element.error?.code ?? null,
+		}));
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const sample = await Promise.race([
+				this.sampleRTCStats(),
+				new Promise<never>((_resolve, reject) => {
+					timeout = setTimeout(() => reject(new Error("Audio statistics timed out")), 1500);
+				}),
+			]);
+			return {
+				capturedAt: new Date().toISOString(),
+				playback,
+				transportReports: sample.transportReports,
+				// Device identifiers and constraints aren't needed to diagnose audio flow.
+				streams: sample.streams
+					.filter((stream) => stream.kind === "audio")
+					.map(({ trackSettings: _settings, ...stream }) => stream),
+			};
+		} catch {
+			return {
+				capturedAt: new Date().toISOString(),
+				streams: [],
+				playback,
+				error: "Audio statistics unavailable or timed out",
+			};
+		} finally {
+			clearTimeout(timeout);
+		}
+	}
+
 	async getConnectionDiagnostics(): Promise<ConnectionDiagnostics> {
+		const firstAudioSample = await this.sampleAudioDiagnostics();
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+		const secondAudioSample = await this.sampleAudioDiagnostics();
 		let networkStats: ConnectionDiagnostics["networkStats"] = null;
 		try {
 			networkStats = await this.transportManager.getNetworkStats();
@@ -1216,6 +1305,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 			// Diagnostics should still open when a recovering transport disappears.
 		}
 		return {
+			audioSamples: [firstAudioSample, secondAudioSample],
 			connectionStatus: this.sfuClient.getConnectionStatus(),
 			transportStats: this.transportManager.getTransportStats(),
 			networkStats,
