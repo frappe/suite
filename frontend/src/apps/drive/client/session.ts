@@ -250,7 +250,11 @@ export async function openDriveDocumentSession(
         }
       })
       .catch(() => {
-        for (const handle of handles.values()) handle.status.value = 'refused'
+        for (const [id, handle] of handles) {
+          if (asked.has(id)) {
+            handle.status.value = 'refused'
+          }
+        }
       })
       .finally(() => {
         mediaPromise = null

@@ -227,6 +227,7 @@ describe('document session media', () => {
 
     async function openedWithHeldRead() {
       const answers: Array<(media: unknown[]) => void> = []
+      const failures: Array<(error: unknown) => void> = []
       const requester: Transport = {
         request: (operation) => {
           if (operation.id === 'node_get') {
@@ -237,14 +238,30 @@ describe('document session media', () => {
             return Promise.resolve({}) as never
           }
 
-          return new Promise((resolve) => {
+          return new Promise((resolve, reject) => {
             answers.push((media) => resolve({ media }))
+            failures.push(reject)
           }) as never
         },
       }
       const session = await openDriveDocumentSession('root', { client: testClient(requester) })
-      return { session, answers }
+      return { session, answers, failures }
     }
+
+    it('reads again for it when the read fails', async () => {
+      const { session, answers, failures } = await openedWithHeldRead()
+      session.media('shown')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+      const added = session.media('added')
+
+      failures[0](new TypeError('Failed to fetch'))
+
+      await vi.waitFor(() => expect(answers).toHaveLength(2))
+      expect(added.status.value).toBe('loading')
+      answers[1]([row('shown'), row('added')])
+      await vi.waitFor(() => expect(added.status.value).toBe('ready'))
+      session.dispose()
+    })
 
     it('reads again for it, as the answer in flight may be older than the picture', async () => {
       const { session, answers } = await openedWithHeldRead()
