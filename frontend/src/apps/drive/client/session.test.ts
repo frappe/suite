@@ -220,34 +220,84 @@ describe('document session media', () => {
     session.dispose()
   })
 
+  function row(node: string) {
+    return { node, url: `/private/files/b7x2k9q4mz/${node}.png`, expires: 1 }
+  }
+
+  async function openedWithHeldRead() {
+    const answers: Array<(media: unknown[]) => void> = []
+    const failures: Array<(error: unknown) => void> = []
+    const requester: Transport = {
+      request: (operation) => {
+        if (operation.id === 'node_get') {
+          return Promise.resolve(documentNode('root')) as never
+        }
+
+        if (operation.id !== 'node_media') {
+          return Promise.resolve({}) as never
+        }
+
+        return new Promise((resolve, reject) => {
+          answers.push((media) => resolve({ media }))
+          failures.push(reject)
+        }) as never
+      },
+    }
+    const session = await openDriveDocumentSession('root', { client: testClient(requester) })
+    return { session, answers, failures }
+  }
+
+  describe('a read that fails', () => {
+    it.each([
+      ['the network', new TypeError('Failed to fetch')],
+      ['a server error', new TransportError({ type: 'ServerError', message: 'x', status: 503 })],
+      ['a timeout', new TransportError({ type: 'Timeout', message: 'x', status: 408 })],
+    ])('leaves every picture as it was when %s fails it', async (_reason, error) => {
+      const { session, answers, failures } = await openedWithHeldRead()
+      const signed = session.media('signed')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+      answers[0]([row('signed')])
+      await vi.waitFor(() => expect(signed.status.value).toBe('ready'))
+      const waiting = session.media('waiting')
+      await vi.waitFor(() => expect(answers).toHaveLength(2))
+
+      failures[1](error)
+      await new Promise((resolve) => setTimeout(resolve))
+
+      expect(signed.status.value).toBe('ready')
+      expect(signed.src.value).toContain('signed.png')
+      expect(waiting.status.value).toBe('loading')
+      session.dispose()
+    })
+
+    it('leaves the next read to settle a picture it left waiting', async () => {
+      const { session, answers, failures } = await openedWithHeldRead()
+      const waiting = session.media('waiting')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+
+      failures[0](new TypeError('Failed to fetch'))
+      await new Promise((resolve) => setTimeout(resolve))
+      void waiting.refresh()
+      await vi.waitFor(() => expect(answers).toHaveLength(2))
+      answers[1]([row('waiting')])
+
+      await vi.waitFor(() => expect(waiting.status.value).toBe('ready'))
+      session.dispose()
+    })
+
+    it('refuses what it asked about when the server refuses the read', async () => {
+      const { session, answers, failures } = await openedWithHeldRead()
+      const signed = session.media('signed')
+      await vi.waitFor(() => expect(answers).toHaveLength(1))
+
+      failures[0](new TransportError({ type: 'PermissionError', message: 'x', status: 403 }))
+
+      await vi.waitFor(() => expect(signed.status.value).toBe('refused'))
+      session.dispose()
+    })
+  })
+
   describe('a picture added while a read is in flight', () => {
-    function row(node: string) {
-      return { node, url: `/private/files/b7x2k9q4mz/${node}.png`, expires: 1 }
-    }
-
-    async function openedWithHeldRead() {
-      const answers: Array<(media: unknown[]) => void> = []
-      const failures: Array<(error: unknown) => void> = []
-      const requester: Transport = {
-        request: (operation) => {
-          if (operation.id === 'node_get') {
-            return Promise.resolve(documentNode('root')) as never
-          }
-
-          if (operation.id !== 'node_media') {
-            return Promise.resolve({}) as never
-          }
-
-          return new Promise((resolve, reject) => {
-            answers.push((media) => resolve({ media }))
-            failures.push(reject)
-          }) as never
-        },
-      }
-      const session = await openDriveDocumentSession('root', { client: testClient(requester) })
-      return { session, answers, failures }
-    }
-
     it('reads again for it when the read fails', async () => {
       const { session, answers, failures } = await openedWithHeldRead()
       session.media('shown')

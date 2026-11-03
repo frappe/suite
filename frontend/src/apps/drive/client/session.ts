@@ -202,13 +202,7 @@ export async function openDriveDocumentSession(
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
     } catch (error) {
-      let status = 0
-      if (error instanceof TransportError) {
-        status = error.status
-      }
-
-      const isRefusal = status >= MIN_CLIENT_ERROR_STATUS && status < MIN_SERVER_ERROR_STATUS
-      if (!isRefusal || isTransientStatus(status)) return
+      if (!isRefusal(error)) return
 
       // A guest is refused everything; that says nothing about this person's access
       if (!signedIn()) return
@@ -249,7 +243,10 @@ export async function openDriveDocumentSession(
           }
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        // a passing failure says nothing about a picture, so the next read settles it
+        if (!isRefusal(error)) return
+
         for (const [id, handle] of handles) {
           if (asked.has(id)) {
             handle.status.value = 'refused'
@@ -597,6 +594,20 @@ interface InternalMediaHandle {
 /** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
 export function canShare(state: SessionState, access: DriveAccess): boolean {
   return state === 'Active' && canManage({ access })
+}
+
+// the server turned the request away, unlike a network or server failure that passes
+function isRefusal(error: unknown): boolean {
+  if (!(error instanceof TransportError)) {
+    return false
+  }
+
+  const { status } = error
+  return (
+    status >= MIN_CLIENT_ERROR_STATUS &&
+    status < MIN_SERVER_ERROR_STATUS &&
+    !isTransientStatus(status)
+  )
 }
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'
