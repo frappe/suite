@@ -941,17 +941,17 @@ def recorder_replacement_ready(
         operation="replacement_ready",
         operation_id=str(event_sequence),
     )
-    return _callback_response(
-        _apply_replacement_ready(
-            recording_id,
-            event_sequence,
-            interruption_id,
-            endpoint_generation,
-            public_jwk,
-            ready_at,
-            _client(),
-        )
+    result = _apply_replacement_ready(
+        recording_id,
+        event_sequence,
+        interruption_id,
+        endpoint_generation,
+        public_jwk,
+        ready_at,
+        _client(),
     )
+    # Protocol v1 status responses exclude internal grant-delivery metadata.
+    return _callback_response({"status": result["status"]})
 
 
 def _apply_replacement_ready(
