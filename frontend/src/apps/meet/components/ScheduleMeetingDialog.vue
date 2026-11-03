@@ -218,7 +218,6 @@ function submit() {
     {
       loading: __('Scheduling meeting...'),
       error: (error: unknown) => {
-        // Only transport refusals carry user-facing server copy; unexpected failures stay private.
         submitError.value =
           error instanceof TransportError &&
           ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&

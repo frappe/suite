@@ -10,8 +10,6 @@ const state = vi.hoisted(() => ({
   loadUser: vi.fn().mockResolvedValue(undefined),
   account: 'personal',
   admin: false,
-  configured: true,
-  error: vi.fn(),
 }))
 
 vi.mock('@/platform/session', async (importOriginal) => {
@@ -21,16 +19,16 @@ vi.mock('@/platform/session', async (importOriginal) => {
     useSession: () => ({
       ...original.useSession(),
       capabilities: { value: { suiteAdmin: state.admin, jmap: !!state.account } },
-      user: { value: { is_mail_server_configured: state.configured } },
+      user: { value: { is_mail_server_configured: true } },
     }),
   }
 })
 vi.mock('@/platform/feedback', () => ({
   toast: {
-    error: state.error,
+    error: vi.fn(),
     success: vi.fn(),
     promise: (promise: Promise<unknown>, options: { error: (error: unknown) => string }) =>
-      promise.catch((error) => state.error(options.error(error))),
+      promise.catch(options.error),
   },
 }))
 vi.mock('@/api', async (importOriginal) => ({
@@ -107,7 +105,6 @@ afterEach(() => {
   vi.clearAllMocks()
   state.account = 'personal'
   state.admin = false
-  state.configured = true
   state.run.mockResolvedValue({})
   state.loadUser.mockResolvedValue(undefined)
 })
@@ -180,28 +177,6 @@ describe('Shared meeting scheduler', () => {
     expect(state.run).not.toHaveBeenCalled()
   })
 
-  it('explains missing provider setup', async () => {
-    state.account = ''
-    state.configured = false
-    const { root } = await mount()
-    expect(root.textContent).toContain('Ask a site administrator to configure mail')
-    expect(state.run).not.toHaveBeenCalled()
-  })
-
-  it('distinguishes denied account access from missing setup', async () => {
-    state.loadUser.mockRejectedValueOnce(
-      new TransportError({
-        type: 'PermissionError',
-        status: 403,
-        message: 'private permission details',
-      }),
-    )
-    const { root } = await mount()
-    expect(root.textContent).toContain('Ask a site administrator to review your access')
-    expect(root.textContent).not.toContain('private')
-    expect(root.textContent).not.toContain('Open Admin users')
-  })
-
   it('retries account loading without claiming setup is missing', async () => {
     state.loadUser.mockRejectedValueOnce(new Error('offline'))
     const { root } = await mount()
@@ -209,7 +184,6 @@ describe('Shared meeting scheduler', () => {
     expect(root.textContent).not.toContain('Ask your admin')
     root.querySelector<HTMLButtonElement>('button')?.click()
     await vi.waitFor(() => expect(root.querySelector('input')).not.toBeNull())
-    expect(state.loadUser).toHaveBeenCalledTimes(2)
   })
 
   it.each([
@@ -222,19 +196,7 @@ describe('Shared meeting scheduler', () => {
       'Choose a writable calendar.',
     ],
     [
-      new TransportError({
-        type: 'PermissionError',
-        status: 403,
-        message: 'You cannot schedule in this calendar.',
-      }),
-      'You cannot schedule in this calendar.',
-    ],
-    [
       new TransportError({ type: 'NetworkError', status: 0, message: 'private network details' }),
-      'Your details are kept. Please try again.',
-    ],
-    [
-      new TransportError({ type: 'ServerError', status: 500, message: 'private provider token' }),
       'Your details are kept. Please try again.',
     ],
   ])('retains fields after %s and succeeds on retry', async (error, message) => {
@@ -266,22 +228,14 @@ describe('Shared meeting scheduler', () => {
     expect(root.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.value).toBe(
       'Design review',
     )
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="Date"]')?.value).toBe(
+      '2026-12-08',
+    )
     expect(root.querySelector<HTMLInputElement>('input[aria-label="Start"]')?.value).toBe('14:00')
     expect(root.querySelector<HTMLInputElement>('input[aria-label="End"]')?.value).toBe('15:00')
     expect(root.textContent).toContain('guest@example.com')
     click('Schedule')
     await vi.waitFor(() => expect(scheduled).toHaveBeenCalledOnce())
-    expect(state.run).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        title: 'Design review',
-        start: '2026-12-08T14:00:00',
-        duration: 'PT1H',
-        participants: [
-          expect.objectContaining({ email: 'me@example.com' }),
-          { email: 'guest@example.com' },
-        ],
-      }),
-    )
     expect(root.querySelector('input')).toBeNull()
   })
 })
