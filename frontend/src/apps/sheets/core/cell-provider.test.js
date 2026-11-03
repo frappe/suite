@@ -191,6 +191,15 @@ describe('cell provider', () => {
     expect(requestRender).not.toHaveBeenCalled()
   })
 
+  it('reports a failed read of a sheet that never existed', async () => {
+    const onError = vi.fn()
+    const { provider, client } = setup({ onError })
+    client.readViewport.mockRejectedValueOnce(new Error('unknown sheet "Nope"'))
+    provider.getDisplay('Nope', 1, 1)
+    await settle()
+    expect(onError).toHaveBeenCalledTimes(1)
+  })
+
   // A live room's first load renames the starting Sheet1 away while the
   // first paint's read waits for it (reads wait for pending edits).
   it('drops quietly a read of a sheet renamed while the read waited', async () => {
@@ -202,6 +211,7 @@ describe('cell provider', () => {
       requestRender: () => {},
       onError,
     })
+    const read = vi.spyOn(client, 'readViewport')
     provider.getDisplay('Sheet1', 1, 1)
     client.dispatch({
       id: 'rename',
@@ -210,8 +220,9 @@ describe('cell provider', () => {
       type: CommandTypes.renameSheet,
       payload: { sheet: 'Sheet1', name: 'Data' },
     })
-    await client.idle()
-    await settle()
+    // The read went out for Sheet1 and failed: the rename ran first.
+    await vi.waitFor(() => expect(read).toHaveBeenCalled())
+    await expect(read.mock.results[0]?.value).rejects.toThrow('unknown sheet "Sheet1"')
     await settle()
     expect(client.sheets).toEqual(['Data'])
     expect(onError).not.toHaveBeenCalled()
