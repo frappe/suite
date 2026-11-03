@@ -356,19 +356,16 @@ function _toNum(v: unknown) {
 
 // Scatter points as [x, y] from the same row. A value X axis reads X from
 // each point, so Y alone would plot Y against Y. Rows whose X or Y is empty
-// or not a number are left out rather than drawn at 0, as in Excel.
+// or not a number are left out rather than drawn at 0, as in Excel
+// (displayNumber gives NaN for both).
 function _xyPairs(dataRows: Row[], xCol: number, yCol: number): [number, number][] {
   const out: [number, number][] = []
   for (const r of dataRows) {
-    const x = _toNumOrNaN(r[xCol])
-    const y = _toNumOrNaN(r[yCol])
+    const x = displayNumber(r[xCol])
+    const y = displayNumber(r[yCol])
     if (!isNaN(x) && !isNaN(y)) out.push([x, y])
   }
   return out
-}
-
-function _toNumOrNaN(v: unknown) {
-  return v === '' || v == null ? NaN : displayNumber(v)
 }
 
 function _toLabel(v: unknown) {
