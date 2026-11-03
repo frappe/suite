@@ -251,6 +251,7 @@ describe('saveOfflineCopy', () => {
   })
 
   it('asks Drive again for a picture still waiting rather than sitting out the wait', async () => {
+    responses['/private/files/m1.png?signature=s1'] = () => image(30)
     const src = ref<string | null>(null)
     const status = ref<'loading' | 'ready'>('loading')
     const release = setDocumentMedia((id) => ({

@@ -62,9 +62,6 @@ export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise
     return loadingIds(handles)
   }
 
-  // the session reads its media together, so one handle asks for them all
-  void handles.find((handle) => handle.status.value === 'loading')?.refresh()
-
   await new Promise<void>((resolve) => {
     const stop = watch(isSettled, (isNowSettled) => {
       if (isNowSettled) {
@@ -80,6 +77,8 @@ export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise
     }
 
     signal?.addEventListener('abort', finish, { once: true })
+    // the session reads its media together, so one handle asks for them all
+    void handles.find((handle) => handle.status.value === 'loading')?.refresh()
   })
 
   return loadingIds(handles)
