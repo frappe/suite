@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { TransportError } from '@/platform/transport'
+
 const presentationId = ref('p1')
 const presentationDoc = ref<any>({ modified: 'M1' })
 const inReadonlyMode = ref(false)
@@ -42,9 +44,12 @@ const {
   getPresentationFromLocalDB,
   stopWrites,
   resumeWrites,
+  writeDraft,
 } = await import('./saving')
 
-const conflict = () => Object.assign(new Error('stale'), { exc_type: 'TimestampMismatchError' })
+function conflict() {
+  return new TransportError({ type: 'TimestampMismatchError', message: 'stale', status: 417 })
+}
 
 describe('saveCurrentState', () => {
   // a refused base is held for good, so each test opens on a version of its own
@@ -228,13 +233,520 @@ describe('saveCurrentState', () => {
     expect(saveFailed.value).toBe(false)
   })
 
+  describe('a draft write on a full disk', () => {
+    interface Draft {
+      baseModified: string
+      content: Array<{ background: string }>
+    }
+
+    interface FakeTransaction {
+      _execRequestAsync(request: { source: IDBObjectStore; operation(): never }): IDBRequest
+    }
+
+    const put = IDBObjectStore.prototype.put
+    let deleted: string[]
+    let pushes: number
+
+    function readDraft(id: string) {
+      return getPresentationFromLocalDB(id) as Promise<Draft>
+    }
+
+    function quotaError() {
+      return new DOMException('full', 'QuotaExceededError')
+    }
+
+    // what a failed commit does: the request succeeded, and only the abort event fires
+    function abortAfterPut(store: IDBObjectStore, request: IDBRequest, error: DOMException | null) {
+      request.addEventListener('success', () => {
+        Object.defineProperty(store.transaction, 'error', { get: () => error, set() {} })
+        store.transaction.abort()
+      })
+    }
+
+    function failFirstWrites(count: number, error: DOMException | null) {
+      let failures = 0
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        record: unknown,
+        key?: IDBValidKey,
+      ) {
+        const request = put.call(this, record, key)
+        if (failures++ < count) {
+          abortAfterPut(this, request, error)
+        }
+
+        return request
+      })
+    }
+
+    // what a failed request does: its error event bubbles through the transaction, then the abort
+    function failFirstPutRequest(error: DOMException) {
+      let failures = 0
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        record: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (failures++ > 0) {
+          return put.call(this, record, key)
+        }
+
+        const transaction = this.transaction as unknown as FakeTransaction
+        return transaction._execRequestAsync({
+          source: this,
+          operation() {
+            throw error
+          },
+        })
+      })
+    }
+
+    beforeEach(() => {
+      deleted = []
+      pushes = 0
+      vi.stubGlobal('caches', {
+        delete: async (name: string) => {
+          deleted.push(name)
+          return true
+        },
+      })
+      serverSave = async () => {
+        pushes++
+        return 'M2'
+      }
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    })
+
+    it('still pushes when the commit aborts with no error event', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, null)
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(pushes).toBe(1))
+      await saving
+    })
+
+    it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
+      'clears the visited copies and lands a draft refused with %s',
+      async (name) => {
+        failFirstWrites(1, new DOMException('full', name))
+        slides.value[0].background = '#123456ff'
+        markDirty()
+
+        await saveCurrentState()
+
+        expect(deleted).toEqual(['slides-visited'])
+        const local = (await getPresentationFromLocalDB('p1')) as {
+          content: { background: string }[]
+        }
+        expect(local.content[0].background).toBe('#123456ff')
+      },
+    )
+
+    it('clears the visited copies and lands the draft on the retry', async () => {
+      failFirstWrites(1, quotaError())
+      let draftAtPush: { content: { background: string }[] } | null = null
+      serverSave = async () => {
+        draftAtPush = await getPresentationFromLocalDB('p1')
+        return 'M2'
+      }
+
+      slides.value[0].background = '#123456ff'
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(draftAtPush?.content[0].background).toBe('#123456ff'))
+      expect(deleted).toEqual(['slides-visited'])
+      await saving
+    })
+
+    it('clears the visited copies and retries when the put request itself fails', async () => {
+      failFirstPutRequest(quotaError())
+      let draftAtPush: { content: { background: string }[] } | null = null
+      let writesAtPush = 0
+      serverSave = async () => {
+        draftAtPush = await getPresentationFromLocalDB('p1')
+        writesAtPush = vi.mocked(IDBObjectStore.prototype.put).mock.calls.length
+        return 'M2'
+      }
+
+      slides.value[0].background = '#654321ff'
+      markDirty()
+      await saveCurrentState()
+
+      expect(deleted).toEqual(['slides-visited'])
+      expect(writesAtPush).toBe(2)
+      expect(draftAtPush?.content[0].background).toBe('#654321ff')
+    })
+
+    it('retries once, then pushes without the draft', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      let writesAtPush = 0
+      let clearsAtPush: string[] = []
+      serverSave = async () => {
+        writesAtPush = vi.mocked(IDBObjectStore.prototype.put).mock.calls.length
+        clearsAtPush = [...deleted]
+        pushes++
+        return 'M2'
+      }
+
+      markDirty()
+
+      const saving = saveCurrentState()
+
+      await vi.waitFor(() => expect(pushes).toBe(1))
+      expect(writesAtPush).toBe(2)
+      expect(clearsAtPush).toEqual(['slides-visited'])
+      await saving
+    })
+
+    function holdClear() {
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      vi.stubGlobal('caches', {
+        delete: async (name: string) => {
+          deleted.push(name)
+          await held
+          return true
+        },
+      })
+      return release
+    }
+
+    function seedDraft(id: string, background = '#aaaaaaff') {
+      return writeDraft({
+        id,
+        content: [{ clientId: 'c1', background, elements: [] }],
+        dirty: true,
+        updatedAt: 1,
+        baseModified: 'M0',
+      })
+    }
+
+    it('never sends an older tick after a newer one, when the editor moved on', async () => {
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+      const sent: string[] = []
+      let land!: (modified: string) => void
+      serverSave = (_id, content) => {
+        sent.push(content[0].background)
+        if (sent.length > 1) {
+          return Promise.resolve('M3')
+        }
+
+        return new Promise((resolve) => {
+          land = resolve
+        })
+      }
+
+      slides.value[0].background = '#aaaaaaff'
+      markDirty()
+      const older = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+
+      slides.value[0].background = '#bbbbbbff'
+      markDirty()
+      const newer = saveCurrentState()
+      await vi.waitFor(() => expect(sent).toEqual(['#bbbbbbff']))
+
+      slides.value = []
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      releaseClear()
+      await older
+      land('M2')
+      await newer
+
+      expect(sent).toEqual(['#bbbbbbff'])
+      const local = await readDraft('p1')
+      expect(local.content[0].background).toBe('#bbbbbbff')
+      expect(local.baseModified).toBe('M2')
+    })
+
+    it('never sends an older tick on the old base after the newer one landed', async () => {
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+      const sent: string[] = []
+      serverSave = async (_id, content) => {
+        sent.push(content[0].background)
+        return 'M2'
+      }
+
+      slides.value[0].background = '#aaaaaaff'
+      markDirty()
+      const older = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+
+      slides.value[0].background = '#bbbbbbff'
+      markDirty()
+      await saveCurrentState()
+      releaseClear()
+      await older
+
+      expect(sent).toEqual(['#bbbbbbff'])
+      expect(saveFailed.value).toBe(false)
+      const local = await readDraft('p1')
+      expect(local.content[0].background).toBe('#bbbbbbff')
+    })
+
+    it('pushes from the first overlapping tick to finish, with every write failing', async () => {
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      const clears: (() => void)[] = []
+      vi.stubGlobal('caches', {
+        delete: (name: string) => {
+          deleted.push(name)
+          if (clears.length === 2) {
+            return Promise.resolve(true)
+          }
+
+          return new Promise((resolve) => {
+            clears.push(() => resolve(true))
+          })
+        },
+      })
+
+      markDirty()
+      const first = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+      markDirty()
+      const second = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(2))
+
+      clears[0]()
+      await first
+      expect(pushes).toBe(1)
+
+      clears[1]()
+      await second
+    })
+
+    it('lets a newer dirty retry land over the clean write of the push before it', async () => {
+      const sent: string[] = []
+      let land!: (modified: string) => void
+      serverSave = (_id, content) => {
+        sent.push(content[0].background)
+        if (sent.length > 1) {
+          return Promise.reject(conflict())
+        }
+
+        return new Promise((resolve) => {
+          land = resolve
+        })
+      }
+
+      slides.value[0].background = '#aaaaaaff'
+      markDirty()
+      const pushing = saveCurrentState()
+      await vi.waitFor(() => expect(sent).toEqual(['#aaaaaaff']))
+
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+      slides.value[0].background = '#bbbbbbff'
+      markDirty()
+      const retrying = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+
+      slides.value = []
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      land('M2')
+      await pushing
+
+      releaseClear()
+      await retrying
+
+      const local = await readDraft('p1')
+      expect(local).toMatchObject({ dirty: true })
+      expect(local.content[0].background).toBe('#bbbbbbff')
+    })
+
+    it('writes and sends nothing when the writes stop during the clear', async () => {
+      presentationId.value = 'p-stopped-in-clear'
+      failFirstWrites(1, quotaError())
+      const releaseClear = holdClear()
+
+      markDirty()
+      const saving = saveCurrentState()
+      await vi.waitFor(() => expect(deleted).toHaveLength(1))
+      await stopWrites('p-stopped-in-clear')
+      releaseClear()
+      await saving
+
+      expect(pushes).toBe(0)
+      expect(await getPresentationFromLocalDB('p-stopped-in-clear')).toBeFalsy()
+    })
+
+    it('still retries the draft when the clear itself fails', async () => {
+      failFirstWrites(1, quotaError())
+      vi.stubGlobal('caches', {
+        delete: async () => {
+          throw new Error('caches gone')
+        },
+      })
+      let draftAtPush!: Draft
+      serverSave = async () => {
+        draftAtPush = await getPresentationFromLocalDB('p1')
+        return 'M2'
+      }
+
+      slides.value[0].background = '#123456ff'
+      markDirty()
+
+      await saveCurrentState()
+
+      expect(draftAtPush.content[0].background).toBe('#123456ff')
+    })
+
+    it('drops the older draft when the clean write after a landed save fails', async () => {
+      presentationId.value = 'p-landed-full'
+      await seedDraft('p-landed-full')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      markDirty()
+
+      await saveCurrentState()
+
+      expect(pushes).toBe(1)
+      expect(await getPresentationFromLocalDB('p-landed-full')).toBeFalsy()
+    })
+
+    it('drops it too when the editor moved on before the save landed', async () => {
+      presentationId.value = 'p-landed-moved'
+      await seedDraft('p-landed-moved')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      serverSave = async () => {
+        slides.value = []
+        presentationId.value = 'p2'
+        presentationDoc.value = { modified: 'M9' }
+        return 'M2'
+      }
+
+      markDirty()
+
+      await saveCurrentState()
+
+      expect(await getPresentationFromLocalDB('p-landed-moved')).toBeFalsy()
+    })
+
+    it('keeps the draft when an edit arrived during the landed save', async () => {
+      presentationId.value = 'p-landed-edited'
+      await seedDraft('p-landed-edited')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      serverSave = async () => {
+        slides.value[0].background = '#00ff00ff'
+        markDirty()
+        return 'M2'
+      }
+
+      markDirty()
+
+      await saveCurrentState()
+
+      const local = await readDraft('p-landed-edited')
+      expect(local).toMatchObject({ dirty: true })
+      expect(dirty.value).toBe(true)
+    })
+
+    it('keeps the draft when an edit arrived before the editor moved on', async () => {
+      presentationId.value = 'p-edited-moved'
+      await seedDraft('p-edited-moved')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      serverSave = async () => {
+        markDirty()
+        slides.value = []
+        presentationId.value = 'p2'
+        presentationDoc.value = { modified: 'M9' }
+        return 'M2'
+      }
+
+      markDirty()
+
+      await saveCurrentState()
+
+      const local = await readDraft('p-edited-moved')
+      expect(local).toMatchObject({ dirty: true })
+    })
+
+    it('keeps the draft when the writes stop during the clean write', async () => {
+      presentationId.value = 'p-stopped-clean'
+      await seedDraft('p-stopped-clean')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      let releaseClear!: () => void
+      vi.stubGlobal('caches', {
+        delete: (name: string) => {
+          deleted.push(name)
+          if (deleted.length === 1) {
+            return Promise.resolve(true)
+          }
+
+          return new Promise((resolve) => {
+            releaseClear = () => resolve(true)
+          })
+        },
+      })
+      markDirty()
+
+      const saving = saveCurrentState()
+      await vi.waitFor(() => expect(releaseClear).toBeDefined())
+      await stopWrites('p-stopped-clean', () => false)
+      releaseClear()
+      await saving
+      resumeWrites('p-stopped-clean')
+
+      const local = await readDraft('p-stopped-clean')
+      expect(local).toMatchObject({ dirty: true })
+    })
+
+    it('leaves no retired draft to replay when access returns on a full store', async () => {
+      await seedDraft('p-retired-full')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+
+      await stopWrites('p-retired-full')
+      resumeWrites('p-retired-full')
+
+      expect(await getPresentationFromLocalDB('p-retired-full')).toBeFalsy()
+    })
+
+    it('leaves the draft when what keeps its content cannot', async () => {
+      await seedDraft('p-unkept-full')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+
+      await stopWrites('p-unkept-full', () => false)
+      resumeWrites('p-unkept-full')
+
+      const local = await readDraft('p-unkept-full')
+      expect(local).toMatchObject({ dirty: true })
+    })
+
+    it.each(['AbortError', 'NetworkError', 'InvalidStateError'])(
+      'leaves the visited copies alone on %s',
+      async (name) => {
+        failFirstWrites(Number.POSITIVE_INFINITY, new DOMException('broken', name))
+        markDirty()
+
+        const saving = saveCurrentState()
+
+        await vi.waitFor(() => expect(pushes).toBe(1))
+        await saving
+        expect(deleted).toEqual([])
+      },
+    )
+  })
+
   it('keeps writing the draft while a push is stuck', async () => {
     markDirty()
 
-    let release: (modified: string) => void = () => {}
+    let release!: (modified: string) => void
     serverSave = () => new Promise((resolve) => (release = resolve))
     const stuck = saveCurrentState()
-    await new Promise((resolve) => setTimeout(resolve))
+    await vi.waitFor(() => expect(release).toBeDefined())
 
     slides.value[0].background = '#00ff00ff'
     markDirty()
@@ -281,10 +793,10 @@ describe('saveCurrentState', () => {
   it('drops a queued edit once the push it waited on fails', async () => {
     markDirty()
 
-    let fail: (err: Error) => void = () => {}
+    let fail!: (err: Error) => void
     serverSave = () => new Promise((_, reject) => (fail = reject))
     const stuck = saveCurrentState()
-    await new Promise((resolve) => setTimeout(resolve))
+    await vi.waitFor(() => expect(fail).toBeDefined())
 
     slides.value[0].background = '#222222ff'
     markDirty()
@@ -312,6 +824,43 @@ describe('saveCurrentState', () => {
     const local: any = await getPresentationFromLocalDB('p1')
     expect(local.content[0].background).toBe('#333333ff')
     expect(local.dirty).toBe(false)
+  })
+
+  it("leaves nothing queued by a tick during the refused push's draft write", async () => {
+    markDirty()
+
+    let refuse!: (err: Error) => void
+
+    serverSave = () =>
+      new Promise((_, reject) => {
+        refuse = reject
+      })
+    const stuck = saveCurrentState()
+    await vi.waitFor(() => expect(refuse).toBeDefined())
+
+    slides.value[0].background = '#222222ff'
+    markDirty()
+    refuse(conflict())
+    const tick = saveCurrentState()
+    await Promise.all([stuck, tick])
+
+    // the reload clears the hold, and the next push lands after the editor moved on
+    clearSaveFailure()
+    slides.value[0].background = '#333333ff'
+    markDirty()
+    const sent: string[] = []
+    serverSave = async (_id, content) => {
+      sent.push(content[0].background)
+      slides.value = []
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      return 'M2'
+    }
+
+    await saveCurrentState()
+
+    // sent as a tail, the queued edit would overwrite this one
+    expect(sent).toEqual(['#333333ff'])
   })
 
   it('keeps the tail on the new base when its own push dies', async () => {

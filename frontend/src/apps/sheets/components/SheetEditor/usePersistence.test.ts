@@ -15,7 +15,6 @@ const nodeRequire = createRequire(import.meta.url)
 const server = vi.hoisted(() => ({
   calls: [] as Array<{ method: string; args: Record<string, unknown>; context?: unknown }>,
   answer: (_method: string): unknown => ({}),
-  visits: [] as string[],
 }))
 
 vi.mock('@/api', async () => {
@@ -36,11 +35,6 @@ vi.mock('@/api', async () => {
     client: { query: send, mutation: send },
   }
 })
-vi.mock('./driveVisit', () => ({
-  recordVisit: async (node: string) => {
-    server.visits.push(node)
-  },
-}))
 vi.mock('../../utils/compress.js', () => ({
   isDecompressionSupported: () => false,
   decodeFromDownload: async (value: string) => value,
@@ -71,7 +65,6 @@ const writes = () => server.calls.filter((call) => call.method !== 'suite.sheets
 beforeEach(() => {
   started.length = 0
   server.calls = []
-  server.visits = []
   server.answer = (method) =>
     method === 'suite.sheets.api.get_sheet'
       ? {
@@ -86,16 +79,10 @@ beforeEach(() => {
 })
 
 describe('Sheets old body', () => {
-  it("records a Drive visit on the sheet's node, and none for a legacy sheet or when the caller records it", async () => {
+  // The /d/ surface's Drive session records the visit.
+  it('only reads the sheet: it records no Drive visit', async () => {
     await persistence().loadSheet('sheet-1')
-    await persistence({ recordVisits: false }).loadSheet('sheet-1')
-    server.answer = () => ({ name: 'sheet-2', title: 'Old', sheets_data: '{}', node: null })
-    await persistence().loadSheet('sheet-2')
-
-    expect(server.visits).toEqual(['node-1'])
-    expect(server.calls.map((call) => call.method)).not.toContain(
-      'suite.drive.api.files.track_visit',
-    )
+    expect(server.calls.map((call) => call.method)).toEqual(['suite.sheets.api.get_sheet'])
   })
 
   it('keeps the whole workbook as JSON for a recovery copy', async () => {

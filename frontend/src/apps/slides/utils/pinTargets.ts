@@ -31,6 +31,10 @@ export const collectMediaSources = (slides: Slide[]): MediaSource[] => {
   return sources
 }
 
+export function mediaListUrl(node: string): string {
+  return buildUrl(api.drive.nodes.media, { node })
+}
+
 // the reads a /d/<node> page starts with, by the urls the client requests them by
 export function startupUrls(
   node: string,

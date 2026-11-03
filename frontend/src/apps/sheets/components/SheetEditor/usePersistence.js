@@ -6,7 +6,6 @@ import { base64ToBytes, bytesToBase64, ENGINE_VERSION } from '../../core/snapsho
 import { decodeFromDownload, isDecompressionSupported } from '../../utils/compress.js'
 import { applyLegacyPlan, planLegacySheet } from '../../utils/legacy-sheet'
 import { isRefusal } from '../../utils/relay.js'
-import { recordVisit } from './driveVisit'
 
 // The sheet's old body (`sheets_data`), read-only. The live room saves every
 // edit (useCollabRoom.ts); this only shows a sheet the room can't open — a
@@ -18,8 +17,6 @@ import { recordVisit } from './driveVisit'
 // freeze panes / hidden cols/rows to silently disappear on load.
 //
 // Options, all optional:
-//   - `recordVisits` — record a Drive visit when a linked sheet loads. The `/d/`
-//     surface passes false: its Drive session records the visit itself.
 //   - `requestContext` — use the open document's Drive access scope. The `/d/`
 //     surface passes the Drive session's, which adds its link credentials.
 export function usePersistence({
@@ -41,7 +38,6 @@ export function usePersistence({
   getViewState,
   applyViewState,
   currentTitle,
-  recordVisits = true,
   requestContext,
 }) {
   // Surfaces "couldn't open this sheet" cases (404 / 403 / network) to the
@@ -77,8 +73,6 @@ export function usePersistence({
           context: requestContext,
         },
       )
-      // A sheet Drive owns has a node; a legacy sheet has none and no Recents row.
-      if (recordVisits && doc.node) recordVisit(doc.node).catch(() => {})
       const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved = JSON.parse(plain || '{}')
       if (saved.formats) formats.restore(saved.formats)

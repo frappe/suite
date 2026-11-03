@@ -1,9 +1,9 @@
-import { COLORS } from './constants.js'
+import { COLORS, FRAME_W, GRID_LINE } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
 
-// Selection frame width (painters/selection-painter.ts): the editor's border
-// takes its place, so opening the editor doesn't move the frame.
-const FRAME_W = 2
+// The editor's border takes the selection frame's place (FRAME_W centred on
+// the gridline, GRID_LINE after the cell edge), so opening the editor doesn't
+// move the frame.
 // Inter's metrics as shares of the font size, for when no canvas can measure.
 const FALLBACK = { ascent: 0.96875, descent: 0.2421875, cap: 0.727 }
 
@@ -25,7 +25,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     'position:absolute',
     'display:none',
     'box-sizing:border-box',
-    `border:2px solid ${COLORS.selBorder}`,
+    `border:${FRAME_W}px solid ${COLORS.selBorder}`,
     'background:var(--surface-base, #FFFFFF)',
     'padding:0 4px',
     'font:13px InterVar,Inter,ui-sans-serif,system-ui,sans-serif',
@@ -54,16 +54,17 @@ export function createOverlay(parent: HTMLElement): Overlay {
   ): void {
     // The text has to stay where the canvas drew it (cell-painter.ts): 4px
     // in from the left, capitals centred on the white area below the
-    // gridline. The border sits on the selection frame, one (zoomed) pixel
-    // outside the cell box.
+    // gridline. The border sits on the selection frame, so its outer edge
+    // starts a quarter of a (zoomed) pixel before the cell edge.
     borderW = FRAME_W * zoom
-    const out = borderW / 2
-    el.style.left = x - out + 'px'
-    el.style.top = y - out + 'px'
+    const outer = GRID_LINE * zoom - borderW / 2
+    const inner = outer + borderW
+    el.style.left = x + outer + 'px'
+    el.style.top = y + outer + 'px'
     el.style.width = w + borderW + 'px'
     el.style.height = h + borderW + 'px'
     el.style.borderWidth = borderW + 'px'
-    el.style.paddingLeft = el.style.paddingRight = 4 * zoom - out + 'px'
+    el.style.paddingLeft = el.style.paddingRight = 4 * zoom - inner + 'px'
     el.style.fontWeight = fmt.bold ? 'bold' : 'normal'
     el.style.fontStyle = fmt.italic ? 'italic' : 'normal'
     // Same size the canvas draws (chipFont clamps it to 8…72 before zoom).
@@ -84,7 +85,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     const lineH = Math.round(size * 1.3)
     const m = _metrics(size)
     const baselineInLine = (lineH - m.ascent - m.descent) / 2 + m.ascent
-    const contentTop = out // border top (y - out + borderW) relative to y
+    const contentTop = inner // the border's inner top edge, relative to y
     const capCentre = (h + zoom) / 2
     el.style.lineHeight = lineH + 'px'
     el.style.paddingTop = Math.max(0, capCentre + m.cap / 2 - baselineInLine - contentTop) + 'px'

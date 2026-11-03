@@ -3,19 +3,32 @@ import { ref } from 'vue'
 import { isMediaNodeId, mediaSettled } from '@/apps/slides/stores/documentMedia'
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
-import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
+import { forgetVisitedNode } from '@/apps/slides/stores/visitedCopies'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources, entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
-import { PIN_HEADER, PINNED_CACHE_NAME, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
-import { isCacheable, isMediaContentType } from '@/apps/slides/utils/slidesRequests'
+import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
+import {
+  isOutOfSpace,
+  PIN_HEADER,
+  PINNED_CACHE_NAME,
+  RECORD_PREFIX,
+} from '@/apps/slides/utils/slidesCaches'
+import { isMediaContentType } from '@/apps/slides/utils/slidesRequests'
+import {
+  cancelBodies,
+  delay,
+  fetchAllCacheable,
+  fetchShell,
+  runPool,
+  waitForController,
+  warmAssets,
+} from '@/apps/slides/utils/startupRequests'
 
-const CONCURRENCY = 4
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
 const TIMEOUT = 'timeout'
-const HTTP_OK = 200
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
@@ -104,8 +117,6 @@ function unsignedSources(ids) {
   return [...sources.values()]
 }
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
 const openPinnedCache = () => caches.open(PINNED_CACHE_NAME)
 
 const isMediaResponse = (response) => response.status === 200 && isMediaContentType(response)
@@ -138,7 +149,10 @@ const pinTarget = async (cache, target, signal) => {
 
 // the status a picture failed with, or null once it is stored and listed
 async function storeTarget(cache, id, record, target, signal) {
-  const result = await pinTarget(cache, target, signal)
+  const result = await pinTarget(cache, target, signal).catch(async (err) => {
+    await clearVisitedOnQuota(err)
+    return pinTarget(cache, target, signal)
+  })
   if (!result.ok) {
     return result.status
   }
@@ -157,72 +171,14 @@ const recordFailure = (progress, target, status) => {
   progress.failed.push({ slideIndex: target.slideIndex, src: target.src, status })
 }
 
-const runPool = async (items, worker) => {
-  let next = 0
-  const lanes = Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
-    while (next < items.length) {
-      const item = items[next++]
-      await worker(item)
-    }
-  })
-  await Promise.all(lanes)
-}
-
-// an uncontrolled page's fetches bypass the worker
-const waitForController = async () => {
-  if (!navigator.serviceWorker) return false
-  if (navigator.serviceWorker.controller) return true
-  const claimed = new Promise((resolve) =>
-    navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }),
-  )
-  await Promise.race([claimed, delay(3000)])
-  return !!navigator.serviceWorker.controller
-}
-
-// the slideshow chunk and the fonts load lazily
-const warmAssets = () =>
-  Promise.all([
-    import('@/apps/slides/pages/Slideshow.vue').catch(() => {}),
-    loadBundledFonts().catch(() => {}),
-  ])
-
 function getLoadOptions() {
   return { readonly: viewOnly.value, composite: !!presentationDoc.value?.is_composite }
-}
-
-// a shell from another build would pair its code with this page's chunks
-async function fetchShell(node, signal) {
-  const response = await fetch(`/d/${node}`, { signal })
-  const build = Number(response.headers.get('X-Suite-Build'))
-
-  if (
-    response.status === HTTP_OK &&
-    isCacheable('shell', response) &&
-    build === Number(__SUITE_BUILD__)
-  ) {
-    return response
-  }
-
-  await response.body?.cancel()
-  throw new Error(`The presentation page could not be stored (${response.status})`)
-}
-
-async function fetchCacheable(url, type, signal) {
-  const response = await fetch(url, { signal }).catch(() => null)
-
-  if (response?.status === HTTP_OK && isCacheable(type, response)) {
-    return response
-  }
-
-  await response?.body?.cancel()
-  return null
 }
 
 // what opening /d/<node> offline reads, under the keys the worker looks them up by
 async function fetchStartup(node, id, pinned, signal) {
   const shell = await fetchShell(node, signal)
   const html = await shell.clone().text()
-  const responses = new Map([[`/d/${node}`, shell]])
   const assets = [...new Set([...entryAssets(html), ...loadedAssets()])]
   // content-hashed, so a pinned asset is already current
   const kept = assets.filter((asset) => pinned.has(asset))
@@ -230,19 +186,11 @@ async function fetchStartup(node, id, pinned, signal) {
     ...startupUrls(node, id, getLoadOptions()).map((url) => [url, 'api']),
     ...assets.filter((asset) => !pinned.has(asset)).map((asset) => [asset, 'asset']),
   ]
-  const missing = []
-  await runPool(requests, async ([url, type]) => {
-    const response = await fetchCacheable(url, type, signal)
-
-    if (response) {
-      responses.set(url, response)
-    } else {
-      missing.push(url)
-    }
-  })
+  const { responses, missing } = await fetchAllCacheable(requests, signal)
+  responses.set(`/d/${node}`, shell)
 
   if (missing.length) {
-    await Promise.all([...responses.values()].map((response) => response.body?.cancel()))
+    await cancelBodies(responses.values())
     const urls = missing.join(', ')
     throw new Error(`The presentation's start-up files could not be stored: ${urls}`)
   }
@@ -254,8 +202,27 @@ function deleteUnshared(cache, id, keys) {
   return Promise.all(unsharedKeys(id, keys).map((key) => cache.delete(key)))
 }
 
+// a pin comes before any visited copy
+async function clearVisitedOnQuota(err) {
+  if (!isOutOfSpace(err)) {
+    throw err
+  }
+
+  await clearVisitedCopies().catch(() => {})
+}
+
+async function putPinned(cache, key, response) {
+  const retry = response.clone()
+  try {
+    await cache.put(key, response)
+  } catch (err) {
+    await clearVisitedOnQuota(err)
+    await cache.put(key, retry)
+  }
+}
+
 async function firstFailedPut(cache, entries) {
-  const puts = entries.map(([key, response]) => cache.put(key, response))
+  const puts = entries.map(([key, response]) => putPinned(cache, key, response))
   return (await Promise.allSettled(puts)).find((put) => put.status === 'rejected')
 }
 
@@ -394,7 +361,7 @@ const saveOfflineCopy = async (id) => {
           return
         }
 
-        if (err?.name === 'QuotaExceededError') {
+        if (isOutOfSpace(err)) {
           // every later put fails the same way
           recordFailure(progress, target, QUOTA)
           controller.abort(QUOTA)
@@ -410,7 +377,12 @@ const saveOfflineCopy = async (id) => {
     if (signal.aborted && signal.reason !== QUOTA) return null
 
     const count = targets.length + unsigned.length
-    return { ok: progress.failed.length === 0, failed: [...progress.failed], count }
+    const ok = progress.failed.length === 0
+    if (ok) {
+      await forgetVisitedNode(node)
+    }
+
+    return { ok, failed: [...progress.failed], count }
   } catch (err) {
     if (signal.aborted) {
       return null
@@ -452,6 +424,7 @@ const removeOfflineCopy = async (id) => {
 // every copy of the node, found by the node because a refused open never learns the docname
 async function removeNodeOfflineCopy(node) {
   forget(node)
+  await forgetVisitedNode(node)
   const ids = Object.entries(readAllRecords())
     .filter(([, record]) => record.node === node)
     .map(([id]) => id)
@@ -460,16 +433,23 @@ async function removeNodeOfflineCopy(node) {
   }
 }
 
-const refreshed = new Set()
+// the media ids each presentation's start-up copy was last refreshed with
+const refreshed = new Map()
+
+// a picture added since then has no row in the media list that copy holds
+function needsRefresh(id) {
+  const known = refreshed.get(id)
+  return !known || mediaNodeIds().some((nodeId) => !known.has(nodeId))
+}
 
 // an online visit replaces the start-up copy, so after a deploy it holds the new build
 async function warmOfflineCopyAssets(id) {
   const record = readRecord(id)
-  if (!record?.node || !navigator.onLine || refreshed.has(id)) return
+  if (!record?.node || !navigator.onLine || !needsRefresh(id)) return
 
   if (run) return
 
-  refreshed.add(id)
+  refreshed.set(id, new Set(mediaNodeIds()))
   const current = claimRun(id, record.node)
   const { signal } = current.controller
   try {

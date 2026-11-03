@@ -2,7 +2,7 @@ import { defineComponent, h } from 'vue'
 
 import { router } from '@/apps/slides/router'
 import { trackLoadedAssets } from '@/apps/slides/utils/loadedAssets'
-import { claimSlidesCachesFor } from '@/apps/slides/utils/serviceWorker'
+import { claimSlidesCachesFor, clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import type { DocumentTypeDefinition } from '@/platform/contracts'
 import { getCookieSessionUser } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -13,6 +13,9 @@ router.beforeEach(async () => {
 
   if (user) {
     await claimSlidesCachesFor(user).catch(() => {})
+  } else if (navigator.onLine) {
+    // a Desk logout or a lapsed session; the copies refill on the next visit
+    await clearVisitedCopies().catch(() => {})
   }
 })
 

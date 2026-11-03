@@ -11,11 +11,9 @@
 
 import { computed, nextTick, reactive, watch } from 'vue'
 
-import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
 import { formatsAfterSort } from '../../engine/sortFilter.js'
 import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { parseCellId } from '../../utils/cells.js'
-import { overlayRectStyle } from '../../utils/overlay-rect.js'
 
 // The panel renders at FILTER_PANEL_W px outer width (260 content + 24 padding +
 // 2 border, content-box). clampFilterLeft keeps its full width inside the grid
@@ -141,32 +139,15 @@ export function useSortFilter({
     }
   })
 
-  // Outline drawn around the active filter's rectangle so its extent is visible
-  // (Google-Sheets-style). Mirrors the pivot highlight: bounding box from the
-  // range's top-left / bottom-right cell rects, clamped to the header strips so
-  // it never paints over the row-number gutter or column-header row when the
-  // range is scrolled partly out of view.
-  const filterHighlightStyle = computed(() => {
-    void renderVersion.value
-    const grid = getGrid()
-    if (!showSortFilter.value || !grid || !filterRange.value) return null
-    const { r0, c0, r1, c1 } = filterRange.value
-    const tl = grid.getCellRect?.(r0, c0)
-    const br = grid.getCellRect?.(r1, c1)
-    if (!tl || !br) return null
-    const zoom = grid.getZoom?.() ?? 1
-    // `|| Infinity` treats a 0/undefined viewport (before the first layout) as
-    // "unclamped" — a 0 would otherwise collapse the overlay to nothing.
-    const vp = grid.getViewportSize?.()
-    const viewW = vp?.w || Infinity
-    const viewH = vp?.h || Infinity
-    return overlayRectStyle(tl, br, {
-      headerX: ROW_HEADER_W * zoom,
-      headerY: COL_HEADER_H * zoom,
-      viewW,
-      viewH,
-    })
-  })
+  // The active filter's range is outlined on the canvas, under the selection
+  // (canvas/painters/selection-painter.ts drawFilterOutline). The engine
+  // moves its range in place on row/column inserts, so the grid gets a copy
+  // after every paint; it ignores one that hasn't changed.
+  watch(
+    () => (showSortFilter.value && filterRange.value ? { ...filterRange.value } : null),
+    (range) => getGrid()?.setFilterRange?.(range ?? null),
+    { immediate: true },
+  )
 
   // ── Sort & Filter ─────────────────────────────────────────────────────────────
 
@@ -439,7 +420,6 @@ export function useSortFilter({
     filterConfig,
     visibleFilterCols,
     filterPanelStyle,
-    filterHighlightStyle,
     detectContiguousBlock,
     openFilterPanel,
     openQuickFilterForActive,

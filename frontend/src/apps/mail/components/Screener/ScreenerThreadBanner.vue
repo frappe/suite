@@ -7,30 +7,33 @@
 	     under their name (MailThread). -->
   <div role="region" :aria-label="__('Unknown sender')">
     <div class="bg-surface-gray-1 flex items-center gap-3 rounded-6 px-3 py-2">
-      <!-- On the first line, however many the question takes: mt-0.5 centres the 16px icon on
-           text-p-sm's 19.5px line. The buttons stay centred, on the question as a whole. -->
-      <UserRoundSearch class="text-ink-gray-5 mt-0.5 size-4 shrink-0 self-start" />
-      <!-- Wraps rather than truncates: the address is what the question is about, and an
-           address breaks anywhere rather than run past the buttons. -->
-      <div
-        class="text-p-sm text-ink-gray-8 min-w-0 flex-1 [overflow-wrap:anywhere]"
-        :title="emails"
-      >
-        {{ __('Do you want mail from') }}
-        <template v-if="senders.length === 1">
-          <span class="!font-medium">{{ senders[0].email }}</span
-          >?
-        </template>
-        <template v-else-if="senders.length === 2">
-          <span class="!font-medium">{{ nameOf(senders[0]) }}</span>
-          {{ __('and') }}
-          <span class="!font-medium">{{ nameOf(senders[1]) }}</span
-          >?
-        </template>
-        <template v-else>
-          <span class="!font-medium">{{ nameOf(senders[0]) }}</span>
-          {{ __('and {0} others', [String(senders.length - 1)]) }}?
-        </template>
+      <!-- The icon and the question are one block, centred against the taller buttons. Inside it
+           the icon stays on the first line, however many the question takes: mt-0.5 centres the
+           16px icon on text-p-sm's 19.5px line. -->
+      <div class="flex min-w-0 flex-1 items-start gap-3">
+        <UserRoundSearch class="text-ink-gray-5 mt-0.5 size-4 shrink-0" />
+        <!-- Wraps rather than truncates: the address is what the question is about, and an
+             address breaks anywhere rather than run past the buttons. -->
+        <div
+          class="text-p-sm text-ink-gray-8 min-w-0 flex-1 [overflow-wrap:anywhere]"
+          :title="emails"
+        >
+          {{ __('Do you want mail from') }}
+          <template v-if="senders.length === 1">
+            <span class="!font-medium">{{ senders[0].email }}</span
+            >?
+          </template>
+          <template v-else-if="senders.length === 2">
+            <span class="!font-medium">{{ nameOf(senders[0]) }}</span>
+            {{ __('and') }}
+            <span class="!font-medium">{{ nameOf(senders[1]) }}</span
+            >?
+          </template>
+          <template v-else>
+            <span class="!font-medium">{{ nameOf(senders[0]) }}</span>
+            {{ __('and {0} others', [String(senders.length - 1)]) }}?
+          </template>
+        </div>
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <Button variant="outline" :label="__('No')" @click="emit('deny')" />

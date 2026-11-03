@@ -22,6 +22,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (src: str
 const { slidesDocument } = await import('./index')
 
 const pinned = new Map<string, Response>()
+const wiped: string[] = []
 
 function pin(docname: string, node: string) {
   const keys = [`/d/${node}`, `/private/files/${docname}.png`]
@@ -46,12 +47,16 @@ beforeEach(() => {
   localStorage.clear()
   pinned.clear()
   state.user = null
+  wiped.length = 0
+  vi.stubGlobal('navigator', { ...navigator, onLine: true })
   vi.stubGlobal('caches', {
     open: async () => ({
       delete: async (key: string) => pinned.delete(key),
       keys: async () => [],
     }),
+    has: async () => false,
     delete: async (name: string) => {
+      wiped.push(name)
       if (name === 'slides-pinned') {
         pinned.clear()
       }
@@ -100,13 +105,55 @@ describe('a navigation', () => {
     expect(pinned.size).toBe(4)
   })
 
-  it('clears nothing without a signed-in user', async () => {
+  it('clears only the visited copies without a signed-in user', async () => {
     localStorage.setItem('slides-caches-user', 'a@example.com')
 
     await navigate()
 
+    expect(wiped).toEqual(['slides-visited'])
     expect(hasCopy('p1')).toBe(true)
     expect(pinned.size).toBe(4)
+  })
+
+  it('clears nothing offline without a signed-in user', async () => {
+    vi.stubGlobal('navigator', { ...navigator, onLine: false })
+
+    await navigate()
+
+    expect(wiped).toEqual([])
+    expect(hasCopy('p1')).toBe(true)
+  })
+
+  it('clears the visited copies when another user arrives, before the guard lets a page load', async () => {
+    localStorage.setItem('slides-caches-user', 'a@example.com')
+    state.user = 'b@example.com'
+    let release = () => {}
+
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal('caches', {
+      delete: async (name: string) => {
+        wiped.push(name)
+        await held
+        return true
+      },
+    })
+    let isThrough = false
+    async function runGuards() {
+      await navigate()
+      isThrough = true
+    }
+
+    const guards = runGuards()
+    await vi.waitFor(() => expect(wiped).toContain('slides-visited'))
+
+    expect(isThrough).toBe(false)
+
+    release()
+    await guards
+
+    expect(isThrough).toBe(true)
   })
 
   it('still lets the navigation through when clearing fails', async () => {

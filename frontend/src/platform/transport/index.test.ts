@@ -102,6 +102,18 @@ describe('transport', () => {
     ]).toEqual(['application/octet-stream', 'csrf', 'c1'])
   })
 
+  it('gives a framework error its exc_type as the type', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      response({ exc_type: 'TimestampMismatchError' }, 417),
+    )
+    const client = createTransport({ fetch: fetcher })
+
+    await expect(client.request(getNode, { node: 'n1' })).rejects.toMatchObject({
+      type: 'TimestampMismatchError',
+      status: 417,
+    })
+  })
+
   it('classifies errors by errors[0].type instead of status', async () => {
     const client = createTransport({
       fetch: async () => response({ errors: [{ type: 'DriveConflict', message: 'Changed' }] }, 417),

@@ -1,21 +1,19 @@
 import { cellId } from '../../utils/cells.js'
-import { COL_HEADER_H, COLORS, ROW_HEADER_W, SEL_ALPHA } from '../constants.js'
+import { COL_HEADER_H, COLORS, FRAME_W, GRID_LINE, ROW_HEADER_W, SEL_ALPHA } from '../constants.js'
 import type { Geometry } from '../geometry.js'
 import type { Cell } from '../selection.js'
 import type { CellBlock, CellProvider } from '../types.js'
 
-// The selection frame is drawn on the cell's gridlines: a 2px stroke centred
-// on the integer cell edge covers the 1px gridline plus one pixel beside it,
-// so it is crisp at DPR 1 and 2 and no grey line shows next to it.
-const FRAME_W = 2
-// A range larger than the active cell also gets a thinner outline: 1px on
-// the gridline pixels themselves, so it covers them and stays crisp.
+// Every selection line is centred on the gridline (GRID_LINE: edge + 0.5),
+// so it reaches past it equally on both sides. FRAME_W is the active cell's
+// frame, and the copy / formula range borders.
+// A range larger than the active cell also gets a thinner outline: 1px,
+// exactly on the gridline pixels, so it covers them and stays crisp.
 const OUTLINE_W = 1
-// Fill handle: a square centred on the line under the selection's
+// Fill handle: a square centred on the gridlines' crossing at the selection's
 // bottom-right corner, with a 1px ring in the cell colour so it reads against
-// it. On the 2px frame (centred on an integer edge) it is 6px; on the 1px
-// outline (centred on a pixel's middle) 7px, so it stays on whole pixels.
-const HANDLE = 6
+// it. 7px centred on a half pixel lands on whole pixels at DPR 1 and 2.
+const HANDLE = 7
 const HANDLE_RING = 1
 
 export interface SelectionPainter {
@@ -39,6 +37,7 @@ export interface SelectionPainter {
   drawMarchingAnts(rect: CellBlock, phase: number): void
   drawPickerFill(rect: CellBlock): void
   drawPickerBorder(rect: CellBlock): void
+  drawFilterOutline(rect: CellBlock): void
 }
 
 export function createSelectionPainter(
@@ -89,7 +88,7 @@ export function createSelectionPainter(
     ctx.save()
     ctx.strokeStyle = COLORS.selBorder
     ctx.lineWidth = OUTLINE_W
-    ctx.strokeRect(x + 0.5, y + 0.5, w, h)
+    ctx.strokeRect(x + GRID_LINE, y + GRID_LINE, w, h)
     ctx.restore()
   }
 
@@ -119,13 +118,14 @@ export function createSelectionPainter(
 
     const x = colX(sel.c),
       y = rowY(sel.r)
-    // A cell starting on a header edge would lose the outer half of its frame
-    // to the clip, so that half may overlap the header. Not at a freeze line:
+    // A cell starting on a header edge would lose the part of its frame past the
+    // edge (FRAME_W / 2 - GRID_LINE) to the clip, so that part may overlap the
+    // header. Not at a freeze line:
     // the separator drawn after this covers the frame there anyway.
     let clipX = sel.c < fc ? ROW_HEADER_W : mainX
     let clipY = sel.r < fr ? COL_HEADER_H : mainY
-    if (x === ROW_HEADER_W && clipX === ROW_HEADER_W) clipX -= FRAME_W / 2
-    if (y === COL_HEADER_H && clipY === COL_HEADER_H) clipY -= FRAME_W / 2
+    if (x === ROW_HEADER_W && clipX === ROW_HEADER_W) clipX -= FRAME_W / 2 - GRID_LINE
+    if (y === COL_HEADER_H && clipY === COL_HEADER_H) clipY -= FRAME_W / 2 - GRID_LINE
     ctx.save()
     ctx.beginPath()
     ctx.rect(clipX, clipY, Math.max(0, cssW - clipX), Math.max(0, cssH - clipY))
@@ -138,23 +138,25 @@ export function createSelectionPainter(
       bottom = rowY(sr1) + rh(sr1)
     ctx.strokeStyle = COLORS.selBorder
     ctx.lineWidth = FRAME_W
-    ctx.strokeRect(x, y, mergedW, mergedH)
+    ctx.strokeRect(x + GRID_LINE, y + GRID_LINE, mergedW, mergedH)
     ctx.lineWidth = 1
-    // The handle sits on the frame where the active cell reaches the
-    // selection's right / bottom edge, else on the range outline.
-    _drawFillHandle(right, bottom, x + mergedW === right, y + mergedH === bottom)
+    _drawFillHandle(right, bottom)
     ctx.restore()
   }
 
-  function _drawFillHandle(hx: number, hy: number, onFrameX: boolean, onFrameY: boolean): void {
-    const w = onFrameX ? HANDLE : HANDLE + 1
-    const h = onFrameY ? HANDLE : HANDLE + 1
-    const x = hx - HANDLE / 2,
-      y = hy - HANDLE / 2
+  // `hx`, `hy`: the selection's right and bottom cell edges.
+  function _drawFillHandle(hx: number, hy: number): void {
+    const x = hx + GRID_LINE - HANDLE / 2,
+      y = hy + GRID_LINE - HANDLE / 2
     ctx.fillStyle = COLORS.white
-    ctx.fillRect(x - HANDLE_RING, y - HANDLE_RING, w + 2 * HANDLE_RING, h + 2 * HANDLE_RING)
+    ctx.fillRect(
+      x - HANDLE_RING,
+      y - HANDLE_RING,
+      HANDLE + 2 * HANDLE_RING,
+      HANDLE + 2 * HANDLE_RING,
+    )
     ctx.fillStyle = COLORS.selHandle
-    ctx.fillRect(x, y, w, h)
+    ctx.fillRect(x, y, HANDLE, HANDLE)
   }
 
   // Copy outline and formula range border sit where the selection frame does.
@@ -168,7 +170,7 @@ export function createSelectionPainter(
     ctx.strokeStyle = COLORS.selBorder
     ctx.setLineDash([4, 4])
     ctx.lineDashOffset = -phase
-    ctx.strokeRect(x, y, w, h)
+    ctx.strokeRect(x + GRID_LINE, y + GRID_LINE, w, h)
     ctx.restore()
   }
 
@@ -193,7 +195,21 @@ export function createSelectionPainter(
     ctx.strokeStyle = COLORS.pickerBorder
     ctx.lineWidth = FRAME_W
     ctx.setLineDash([6, 4])
-    ctx.strokeRect(x, y, w, h)
+    ctx.strokeRect(x + GRID_LINE, y + GRID_LINE, w, h)
+    ctx.restore()
+  }
+
+  // An active filter's range: 1px on its gridline pixels, like the range
+  // outline. The renderer draws it before the selection, which covers it.
+  function drawFilterOutline({ r0, c0, r1, c1 }: CellBlock): void {
+    const x = colX(c0),
+      y = rowY(r0)
+    const w = colX(c1) + cw(c1) - x
+    const h = rowY(r1) + rh(r1) - y
+    ctx.save()
+    ctx.strokeStyle = COLORS.filterOutline
+    ctx.lineWidth = OUTLINE_W
+    ctx.strokeRect(x + GRID_LINE, y + GRID_LINE, w, h)
     ctx.restore()
   }
 
@@ -204,5 +220,6 @@ export function createSelectionPainter(
     drawMarchingAnts,
     drawPickerFill,
     drawPickerBorder,
+    drawFilterOutline,
   }
 }

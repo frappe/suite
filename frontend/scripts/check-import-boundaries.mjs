@@ -204,9 +204,6 @@ const moduleGraphDebtGroups = [
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
       'sheets/components/SheetEditor/index.vue|@/boot/session',
-      'sheets/components/SheetEditor/index.vue|@/composables/useSettingsMenuOption',
-      'sheets/components/SheetEditor/index.vue|@/composables/useThemeMenuOption',
-      'sheets/components/SheetEditor/index.vue|@/utils/confirmLeave',
       'sheets/components/SheetEditor/useAiAssist.js|@/stores/root',
     ],
   },
@@ -346,7 +343,6 @@ const unstableFrappeUIDebtGroups = [
       'sheets/components/SheetEditor/FilterPanel.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/PivotDialog.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/PivotFieldPicker.vue|frappe-ui/experimental',
-      'sheets/components/SheetEditor/SheetTopbar.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/ValidationDialog.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/index.vue|frappe-ui/experimental',
     ],

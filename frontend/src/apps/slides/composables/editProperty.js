@@ -1,6 +1,7 @@
 import { batchCommand, editElementCommand, editSlideCommand } from '@/apps/slides/stores/commands'
 import { activeElementIds, activeElements } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { markDirty } from '@/apps/slides/stores/saving'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 const editableElements = () => activeElements.value.filter((el) => !el.locked)
@@ -25,9 +26,21 @@ const pushToHistory = (commands) => {
 const bindProperty = (getTargets, property, buildCommand, recordCommands) => {
   let snapshots = null
 
-  const setEach = (fn) => getTargets().forEach(fn)
+  function setEach(fn) {
+    for (const target of getTargets()) {
+      fn(target)
+    }
 
-  const set = (value) => setEach((target) => (target[property] = value))
+    markDirty()
+  }
+
+  function set(value) {
+    if (getTargets().every((target) => target[property] === value)) return
+
+    setEach((target) => {
+      target[property] = value
+    })
+  }
 
   const begin = (properties = [property]) => {
     snapshots = getTargets().map((target) => ({

@@ -74,6 +74,8 @@ class FakeCache {
 }
 
 let cache: FakeCache
+let visitedCache: FakeCache | null
+const deletedCaches: string[] = []
 let responses: Record<string, () => Response | Error>
 let shell: () => Response
 const fetched: string[] = []
@@ -117,6 +119,8 @@ const slidesWith = (...srcs: string[][]) =>
 
 beforeEach(() => {
   cache = new FakeCache()
+  visitedCache = null
+  deletedCaches.length = 0
   fetched.length = 0
   startupFetched.length = 0
   loadedChunks.splice(0, loadedChunks.length, LAZY_CHUNK)
@@ -124,7 +128,29 @@ beforeEach(() => {
   vi.stubGlobal('__SUITE_BUILD__', '100')
   localStorage.clear()
   responses = {}
-  vi.stubGlobal('caches', { open: async () => cache })
+  vi.stubGlobal('caches', {
+    open: async (name: string) => {
+      if (name === 'slides-api') {
+        return new FakeCache()
+      }
+
+      if (name !== 'slides-visited') {
+        return cache
+      }
+
+      visitedCache ??= new FakeCache()
+      return visitedCache
+    },
+    has: async (name: string) => name !== 'slides-visited' || visitedCache !== null,
+    delete: async (name: string) => {
+      deletedCaches.push(name)
+      if (name === 'slides-visited') {
+        visitedCache = null
+      }
+
+      return true
+    },
+  })
   vi.stubGlobal('navigator', {
     ...navigator,
     onLine: true,
@@ -133,6 +159,10 @@ beforeEach(() => {
   presentationDoc.value = { node: 'n1', is_composite: 0, modified: '2026-08-17 10:00:00' }
   presentationId.value = 'p1'
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (url.includes('get_templates')) {
+      return json()
+    }
+
     if (url.startsWith('/d/')) {
       startupFetched.push(url)
 
@@ -434,6 +464,133 @@ describe('pruneOfflineCopy', () => {
   it('does nothing for a presentation with no offline copy', async () => {
     await expect(pruneOfflineCopy('p1')).resolves.toBeUndefined()
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
+})
+
+describe('a pin and the visited copies', () => {
+  function visitedEntry(node: string) {
+    return new Response('old', { headers: { 'x-visited-node': node } })
+  }
+
+  async function seedVisited() {
+    visitedCache = new FakeCache()
+    // what the store reads back: a clone for each match, a path for each key
+    visitedCache.keys = async () => [...visitedCache!.store.keys()].map((url) => ({ url }))
+    Object.assign(visitedCache, {
+      match: async (key: string) =>
+        visitedCache!.store.get(new URL(key, 'http://localhost').href)?.clone(),
+    })
+    await visitedCache.put('/d/n1', visitedEntry('n1'))
+    await visitedCache.put('/api/suite/drive/nodes/n1/media', visitedEntry('n1'))
+    await visitedCache.put('/d/n2', visitedEntry('n2'))
+    return visitedCache
+  }
+
+  it('Save copy drops the visited copy of that node only', async () => {
+    const seeded = await seedVisited()
+
+    await saveOfflineCopy('p1')
+
+    expect(seeded.has('/d/n1')).toBe(false)
+    expect(seeded.has('/api/suite/drive/nodes/n1/media')).toBe(false)
+    expect(seeded.has('/d/n2')).toBe(true)
+  })
+
+  it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
+    'a pin refused with %s clears the visited copies and retries',
+    async (name) => {
+      await seedVisited()
+      const put = cache.put.bind(cache)
+      let failures = 0
+      cache.put = async (key, response) => {
+        if (key.startsWith('/private/files/') && failures++ === 0) {
+          throw new DOMException('full', name)
+        }
+
+        return put(key, response)
+      }
+
+      const result = await saveOfflineCopy('p1')
+
+      expect(deletedCaches).toEqual(['slides-visited'])
+      expect(result).toEqual({ ok: true, failed: [], count: 2 })
+    },
+  )
+
+  it.each(['AbortError', 'NetworkError'])(
+    'a pin whose body fails with %s clears nothing',
+    async (name) => {
+      await seedVisited()
+      const put = cache.put.bind(cache)
+      cache.put = async (key, response) => {
+        if (key.startsWith('/private/files/')) {
+          throw new DOMException('aborted', name)
+        }
+
+        return put(key, response)
+      }
+
+      await saveOfflineCopy('p1')
+
+      expect(deletedCaches).toEqual([])
+    },
+  )
+
+  it('start-up at the quota clears the visited copies and retries', async () => {
+    const put = cache.put.bind(cache)
+    let failures = 0
+    cache.put = async (key, response) => {
+      if (key === '/d/n1' && failures++ === 0) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+
+      return put(key, response)
+    }
+
+    const result = await saveOfflineCopy('p1')
+
+    expect(deletedCaches).toEqual(['slides-visited'])
+    expect(result?.ok).toBe(true)
+    expect(cache.has('/d/n1')).toBe(true)
+  })
+
+  it('a refused node loses its pin and its visited copy', async () => {
+    await saveOfflineCopy('p1')
+    const seeded = await seedVisited()
+
+    await removeNodeOfflineCopy('n1')
+
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+    expect(cache.has('/d/n1')).toBe(false)
+    expect(seeded.has('/d/n1')).toBe(false)
+    expect(seeded.has('/d/n2')).toBe(true)
+  })
+
+  it('a refused node with no pin still loses its visited copy', async () => {
+    const seeded = await seedVisited()
+
+    await removeNodeOfflineCopy('n1')
+
+    expect(seeded.has('/d/n1')).toBe(false)
+  })
+
+  it('marks what a pin fetches, so the worker stays out of it', async () => {
+    const original = fetch
+    const unmarked: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const isStartup =
+        url.startsWith('/d/') || url.startsWith('/api/') || url.startsWith('/assets/')
+      if (isStartup && !new Headers(init?.headers).has('x-slides-pin')) {
+        unmarked.push(url)
+      }
+
+      return original(url, init)
+    })
+
+    await saveOfflineCopy('p1')
+
+    expect(startupFetched.length).toBeGreaterThan(0)
+    expect(unmarked).toEqual([])
   })
 })
 
@@ -800,6 +957,23 @@ describe('the start-up copy', () => {
     await Promise.all([warming, saving])
 
     expect(recordedKeys('w1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+  })
+
+  it('asks again on a visit once a picture is added, and for nothing else', async () => {
+    const list = '/api/suite/drive/nodes/n1/media'
+    await saveOfflineCopy('a1')
+    await warmOfflineCopyAssets('a1')
+    await warmOfflineCopyAssets('a1')
+    const keysBefore = recordOf('a1').keys
+    const asked = startupFetched.filter((url) => url === list).length
+
+    slides.value = [...slides.value, ...slidesWith(['node1234'])]
+    await warmOfflineCopyAssets('a1')
+    await warmOfflineCopyAssets('a1')
+
+    expect(startupFetched.filter((url) => url === list).length).toBe(asked + 1)
+    expect(recordOf('a1').keys).toEqual(keysBefore)
+    expect(localStorage.getItem('slides-offline-copy:a1')).toContain('"node":"n1"')
   })
 
   it('refreshes nothing for a presentation with no offline copy', async () => {
