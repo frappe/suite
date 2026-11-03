@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-import { isMediaNodeId, mediaSettled } from '@/apps/slides/stores/documentMedia'
+import { isMediaNodeId, isMediaRefused, mediaSettled } from '@/apps/slides/stores/documentMedia'
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { forgetVisitedNode } from '@/apps/slides/stores/visitedCopies'
@@ -474,14 +474,29 @@ const getOfflineStatus = (id) => {
   if (id !== presentationId.value) return 'none'
   const record = readRecord(id)
   if (!record) return 'none'
+
+  // Drive won't sign it, so it has no key to find and no way to be in this copy
+  if (mediaNodeIds().some(isMediaRefused)) {
+    return 'outdated'
+  }
+
   const pinned = new Set(record.keys)
   return getMediaTargets().every((target) => pinned.has(target.key)) ? 'available' : 'outdated'
 }
 
 const offlineCopyStatus = ref('none')
 
-const refreshOfflineStatus = (id) => {
+async function refreshOfflineStatus(id) {
   offlineCopyStatus.value = id ? getOfflineStatus(id) : 'none'
+  if (offlineCopyStatus.value === 'none') {
+    return
+  }
+
+  // a picture still loading has no key yet, so the answer above left it out
+  await mediaSettled(mediaNodeIds())
+  if (id === presentationId.value) {
+    offlineCopyStatus.value = getOfflineStatus(id)
+  }
 }
 
 export {

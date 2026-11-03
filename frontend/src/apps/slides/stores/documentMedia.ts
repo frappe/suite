@@ -35,6 +35,10 @@ export const mediaNodeUrl = (id: string): string => {
   return handle.src.value ?? ''
 }
 
+export function isMediaRefused(id: string) {
+  return documentMedia?.(id).status.value === 'refused'
+}
+
 const SETTLE_TIMEOUT = 30_000
 
 function loadingIds(handles: MediaHandle[]) {

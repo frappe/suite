@@ -639,6 +639,93 @@ describe('offline status', () => {
     presentationId.value = 'p2'
     expect(statusOf('p1')).toBe('none')
   })
+
+  describe('a picture named by its Drive node', () => {
+    const picture = '/private/files/m1.png?signature=s1'
+    let release: (() => void) | null = null
+    const src = ref<string | null>(null)
+    const status = ref<'loading' | 'ready' | 'refused'>('loading')
+
+    function driveAnswers(url: string | null, answer: 'ready' | 'refused') {
+      src.value = url
+      status.value = answer
+    }
+
+    async function settled() {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    beforeEach(() => {
+      src.value = null
+      status.value = 'loading'
+      release = setDocumentMedia((id) => ({
+        id,
+        src,
+        status,
+        cacheKey: ref(id),
+        refresh: async () => {},
+      }))
+      slides.value = slidesWith(['/files/a.png'])
+    })
+
+    afterEach(() => {
+      release?.()
+    })
+
+    it('is outdated once Drive signs one added since the pin', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+
+      refreshOfflineStatus('p1')
+      driveAnswers(picture, 'ready')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('outdated')
+    })
+
+    it('is outdated when Drive will not sign one, as offline with no row for it', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+
+      refreshOfflineStatus('p1')
+      driveAnswers(null, 'refused')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('outdated')
+    })
+
+    it('stays available once Drive signs one the pin holds', async () => {
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      responses[picture] = () => image(30)
+      driveAnswers(picture, 'ready')
+      await saveOfflineCopy('p1')
+      status.value = 'loading'
+      src.value = null
+
+      refreshOfflineStatus('p1')
+      driveAnswers(picture, 'ready')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('available')
+    })
+
+    it('leaves the status of the presentation opened since alone', async () => {
+      await saveOfflineCopy('p1')
+      presentationId.value = 'p2'
+      await saveOfflineCopy('p2')
+      presentationId.value = 'p1'
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      refreshOfflineStatus('p1')
+
+      presentationId.value = 'p2'
+      slides.value = slidesWith(['/files/a.png'])
+      refreshOfflineStatus('p2')
+      driveAnswers(picture, 'ready')
+      await settled()
+
+      expect(offlineCopyStatus.value).toBe('available')
+    })
+  })
 })
 
 // what opening the presentation at /d/<node> offline needs (DESIGN-slides-offline §3)
