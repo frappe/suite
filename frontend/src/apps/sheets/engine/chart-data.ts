@@ -175,7 +175,10 @@ function _cartesianOption(
           textBorderWidth: 2,
         }
       : { show: false },
-    data: dataRows.map((r) => _toNum(r[colIdx])),
+    data:
+      kind === 'scatter'
+        ? _xyPairs(dataRows, encoding.x, colIdx)
+        : dataRows.map((r) => _toNum(r[colIdx])),
   }))
 
   const showGrid = config.options?.gridLines !== false
@@ -349,6 +352,23 @@ function _toNum(v: unknown) {
   if (v === '' || v == null) return 0
   const n = displayNumber(v)
   return isNaN(n) ? 0 : n
+}
+
+// Scatter points as [x, y] from the same row. A value X axis reads X from
+// each point, so Y alone would plot Y against Y. Rows whose X or Y is empty
+// or not a number are left out rather than drawn at 0, as in Excel.
+function _xyPairs(dataRows: Row[], xCol: number, yCol: number): [number, number][] {
+  const out: [number, number][] = []
+  for (const r of dataRows) {
+    const x = _toNumOrNaN(r[xCol])
+    const y = _toNumOrNaN(r[yCol])
+    if (!isNaN(x) && !isNaN(y)) out.push([x, y])
+  }
+  return out
+}
+
+function _toNumOrNaN(v: unknown) {
+  return v === '' || v == null ? NaN : displayNumber(v)
 }
 
 function _toLabel(v: unknown) {
