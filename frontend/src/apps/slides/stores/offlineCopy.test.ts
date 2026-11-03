@@ -250,6 +250,27 @@ describe('saveOfflineCopy', () => {
     expect(recordedKeys('p1')).toEqual(['/private/files/a.png'])
   })
 
+  it('asks Drive again for a picture still waiting rather than sitting out the wait', async () => {
+    const src = ref<string | null>(null)
+    const status = ref<'loading' | 'ready'>('loading')
+    const release = setDocumentMedia((id) => ({
+      id,
+      src,
+      status,
+      cacheKey: ref(id),
+      async refresh() {
+        src.value = '/private/files/m1.png?signature=s1'
+        status.value = 'ready'
+      },
+    }))
+    slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+
+    const result = await saveOfflineCopy('p1')
+    release()
+
+    expect(result).toEqual({ ok: true, failed: [], count: 2 })
+  })
+
   it('loads the slideshow chunk so present works offline', async () => {
     await saveOfflineCopy('p1')
 
