@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   computed,
   createApp,
@@ -6,6 +6,7 @@ import {
   h,
   nextTick,
   ref,
+  type Component,
   type Ref,
   type SetupContext,
 } from 'vue'
@@ -20,6 +21,7 @@ const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
 const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
+const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
 let isRefusing = false
 let isFailingTemplates = false
 
@@ -200,13 +202,16 @@ vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
 })
 for (const path of [
   '@/apps/slides/components/SlideContainer.vue',
-  '@/apps/slides/components/PropertiesPanel.vue',
   '@/apps/slides/components/Toolbar.vue',
   '@/apps/slides/components/LayoutDialog.vue',
   './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
+  default: { render: () => propertiesPanel.real && h(propertiesPanel.real) },
+}))
 
 vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
   default: {
@@ -259,6 +264,7 @@ const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
+const { setActiveElements } = await import('@/apps/slides/stores/element')
 
 function answer(message: unknown) {
   return new Response(JSON.stringify({ message }), { status: 200 })
@@ -886,6 +892,88 @@ describe('Slides push refused by the server', () => {
 
       expect(saves).toHaveLength(1)
       expect((saves[0] as { slides: unknown[] }).slides).toHaveLength(served.slides.length + 1)
+    })
+  })
+
+  describe('leaving with the real properties panel', () => {
+    const base = { width: 100, height: 100, left: 0, top: 0, opacity: 50, zIndex: 1 }
+    const elements = [
+      { ...base, id: 'shape', type: 'shape' },
+      { ...base, id: 'text', type: 'text', content: '<p style="line-height: 1.5;">Hello</p>' },
+      { ...base, id: 'image', type: 'image', attachmentName: 'a.png', src: '/a.png' },
+      { ...base, id: 'video', type: 'video', attachmentName: 'a.mp4', src: '/a.mp4' },
+      {
+        ...base,
+        id: 'table',
+        type: 'table',
+        content:
+          '<table style="min-width: 25px;"><colgroup><col style="min-width: 25px;"></colgroup><tbody><tr><td colspan="1" rowspan="1"><p style="line-height: 1.5;">Cell</p></td></tr></tbody></table>',
+      },
+    ]
+    const withElements = [
+      {
+        clientId: 'c1',
+        background: '#ffffffff',
+        transition: 'Fade',
+        transitionDuration: 1,
+        elements,
+      },
+    ]
+
+    function opacityField(root: Element) {
+      const row = [...root.querySelectorAll('span')].find((el) => el.textContent === 'Opacity')
+      return row?.parentElement?.querySelector('input') as HTMLInputElement
+    }
+
+    async function left() {
+      mounted?.app.unmount()
+      mounted = null
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+    }
+
+    beforeAll(async () => {
+      const panel = await vi.importActual<{ default: Component }>(
+        '@/apps/slides/components/PropertiesPanel.vue',
+      )
+      propertiesPanel.real = panel.default
+    })
+
+    afterAll(() => {
+      propertiesPanel.real = null
+    })
+
+    afterEach(() => setActiveElements([]))
+
+    it('pushes an arrow step made with focus still in the field', async () => {
+      mounted = await openedSurface({ slides: withElements })
+      setActiveElements(['shape'])
+      await nextTick()
+
+      const field = opacityField(mounted.root)
+      field.focus()
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      await left()
+
+      expect(saves).toHaveLength(1)
+      const [saved] = (saves[0] as { slides: Array<{ elements: string }> }).slides
+      const pushed: typeof elements = JSON.parse(saved.elements)
+      expect(pushed.find((el) => el.id === 'shape')?.opacity).toBe(51)
+    })
+
+    it('sends nothing when every panel was shown and nothing was edited', async () => {
+      mounted = await openedSurface({ slides: withElements })
+      const selections = [...elements.map((el) => [el.id]), ['shape', 'image'], []]
+      for (const selection of selections) {
+        setActiveElements(selection)
+        await nextTick()
+      }
+
+      expect(dirty.value).toBe(false)
+
+      await left()
+
+      expect(saves).toEqual([])
     })
   })
 
