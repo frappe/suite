@@ -140,8 +140,11 @@ export function createCellProvider({
       // records fresh misses, so nothing to do here.
       if (cache.fill(box.sheet, box.r1, box.c1, result, version)) requestRender()
     } catch (e) {
-      // Not retried: the next paint that misses asks again.
-      if (!disposed) onError(e)
+      // Not retried: the next paint that misses asks again. A read waits for
+      // the edits before it, so its sheet may be gone by the time it runs (a
+      // live room's first load renames the starting Sheet1); the repaint for
+      // the new sheet list reads what is there now.
+      if (!disposed && client.sheets.includes(box.sheet)) onError(e)
     } finally {
       inFlight = false
       // Misses recorded while this read was out (a scroll, say).

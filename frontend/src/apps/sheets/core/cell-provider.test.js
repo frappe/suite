@@ -1,7 +1,28 @@
+import fs from 'node:fs'
+import { createRequire } from 'node:module'
+import { initSync } from '@ironcalc/wasm'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createCellProvider } from './cell-provider.js'
+import { createWorkbookClient } from './client.js'
+import { CommandTypes } from './commands.js'
 import { createDisplayCache } from './display-cache.js'
+import { createWorkerHost } from './worker.js'
+
+const require = createRequire(import.meta.url)
+initSync({ module: fs.readFileSync(require.resolve('@ironcalc/wasm/wasm_bg.wasm')) })
+
+// Stands in for a Worker: the real host, answering on a later task.
+function fakePort() {
+  const host = createWorkerHost()
+  const port = {
+    onmessage: null,
+    postMessage(message) {
+      setTimeout(() => port.onmessage?.({ data: host.handle(structuredClone(message)) }), 0)
+    },
+  }
+  return port
+}
 
 // A client stub whose readViewport answers with "r{row}c{col}" per cell,
 // and whose version can be bumped by hand.
@@ -9,6 +30,7 @@ function stubClient() {
   let version = 0
   const listeners = new Set()
   const client = {
+    sheets: ['Sheet1'],
     reads: [],
     getVersion: () => version,
     onVersion(cb) {
@@ -162,11 +184,39 @@ describe('cell provider', () => {
   it('reports a failed read and does not repaint', async () => {
     const onError = vi.fn()
     const { provider, client, requestRender } = setup({ onError })
-    client.readViewport.mockRejectedValueOnce(new Error('unknown sheet'))
-    provider.getDisplay('Nope', 1, 1)
+    client.readViewport.mockRejectedValueOnce(new Error('read failed'))
+    provider.getDisplay('Sheet1', 1, 1)
     await settle()
     expect(onError).toHaveBeenCalledTimes(1)
     expect(requestRender).not.toHaveBeenCalled()
+  })
+
+  // A live room's first load renames the starting Sheet1 away while the
+  // first paint's read waits for it (reads wait for pending edits).
+  it('drops quietly a read of a sheet renamed while the read waited', async () => {
+    const onError = vi.fn()
+    const client = await createWorkbookClient({ port: fakePort() })
+    const provider = createCellProvider({
+      client,
+      cache: createDisplayCache(),
+      requestRender: () => {},
+      onError,
+    })
+    provider.getDisplay('Sheet1', 1, 1)
+    client.dispatch({
+      id: 'rename',
+      actor: 'test',
+      ts: 1,
+      type: CommandTypes.renameSheet,
+      payload: { sheet: 'Sheet1', name: 'Data' },
+    })
+    await client.idle()
+    await settle()
+    await settle()
+    expect(client.sheets).toEqual(['Data'])
+    expect(onError).not.toHaveBeenCalled()
+    provider.dispose()
+    client.terminate()
   })
 
   it('catches the cache up to a client that is already past version 0', async () => {
