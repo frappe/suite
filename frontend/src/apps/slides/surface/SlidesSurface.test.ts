@@ -1565,6 +1565,49 @@ describe('Slides push refused by the server', () => {
       expect(editorSlides.value).toHaveLength(shownBefore)
     })
 
+    async function discardedARefusal() {
+      isRefusing = false
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      await nextTick()
+      menuItem('Discard my changes')?.click()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+      saves.length = 0
+    }
+
+    it('saves again after discarding a refusal once access is back on a full store', async () => {
+      await refused()
+      fillTheStore()
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+
+      await nextTick()
+      widen()
+      await nextTick()
+      await discardedARefusal()
+
+      duplicateSlide()
+      await vi.waitFor(() => expect(saves).toHaveLength(1), { timeout: 3000 })
+    })
+
+    it('keeps writes stopped after discarding a refusal while view only', async () => {
+      await refused()
+      fillTheStore()
+      if (mounted) {
+        mounted.access.value = { role: 10 }
+      }
+
+      await nextTick()
+      await discardedARefusal()
+
+      viewOnly.value = false
+      duplicateSlide()
+      await saveCurrentState()
+
+      expect(saves).toEqual([])
+    })
+
     it('closes the refusal when the only copy takes over', async () => {
       await refused()
       fillTheStore()
@@ -1605,6 +1648,15 @@ describe('Slides push refused by the server', () => {
       await nextTick()
     }
 
+    async function closedAndSettled() {
+      mounted?.app.unmount()
+      mounted = null
+      // the unmount sends what it holds, and that landing must not reach the next open
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      await vi.waitFor(() => expect(isSaving.value).toBe(false))
+      saves.length = 0
+    }
+
     // the copy a closing page keeps, with what its push had sent by then
     async function closedWithCopy() {
       mounted = await openedSurface({ slides: rows })
@@ -1614,15 +1666,23 @@ describe('Slides push refused by the server', () => {
       expect(copy.sticky).toBe(false)
       await saveLanded(1)
       const { slides: sent } = saves[0] as { slides: Record<string, unknown>[] }
-      mounted.app.unmount()
-      mounted = null
-      // the unmount sends what it holds, and that landing must not reach the next open
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      await vi.waitFor(() => expect(isSaving.value).toBe(false))
-      saves.length = 0
+      await closedAndSettled()
       localStorage.clear()
       return { copy, sent }
     }
+
+    it('opens over a copy it cannot compare, and keeps the copy', async () => {
+      keepRecovery('node-1', [null])
+
+      mounted = await openedSurface()
+      await nextTick()
+
+      expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
+      expect(readRecovery('node-1')).toEqual([
+        expect.objectContaining({ slides: [null], sticky: true }),
+      ])
+      await closedAndSettled()
+    })
 
     it('keeps a copy that differs from the load through the first landed save', async () => {
       keepRecovery('node-1', [{ clientId: 'gone', background: '#000000ff', elements: [] }])

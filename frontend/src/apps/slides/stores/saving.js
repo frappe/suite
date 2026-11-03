@@ -56,10 +56,6 @@ async function changeDraftStore(change, allowed) {
       resolve(true)
     }
 
-    tx.onerror = () => {
-      reject(tx.error)
-    }
-
     tx.onabort = () => {
       reject(tx.error)
     }

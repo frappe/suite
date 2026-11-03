@@ -80,10 +80,18 @@ export function clearStaleRecovery(node: string): void {
   }
 }
 
+function differs(copy: RecoveryCopy, isShown: (slides: unknown[]) => boolean) {
+  try {
+    return !isShown(copy.slides)
+  } catch {
+    return true
+  }
+}
+
 /** Run before the open's first save can land; on a full store the copy just stays as it was. */
 export function keepOutlivedRecovery(node: string, isShown: (slides: unknown[]) => boolean): void {
   const copies = readRecovery(node)
-  const kept = copies.map((copy) => ({ ...copy, sticky: copy.sticky || !isShown(copy.slides) }))
+  const kept = copies.map((copy) => ({ ...copy, sticky: copy.sticky || differs(copy, isShown) }))
   try {
     writeCopies(node, kept)
   } catch {

@@ -743,6 +743,10 @@ async function discardChanges() {
     forgetRecovery(props.session.nodeId, liveSlides())
     syncHasRecovery()
     await retireDraft(props.session.contentDocname)
+    if (access.writable.value) {
+      resumeWrites(props.session.contentDocname)
+    }
+
     await load()
     return
   }

@@ -239,6 +239,10 @@ describe('saveCurrentState', () => {
       content: Array<{ background: string }>
     }
 
+    interface FakeTransaction {
+      _execRequestAsync(request: { source: IDBObjectStore; operation(): never }): IDBRequest
+    }
+
     const put = IDBObjectStore.prototype.put
     let deleted: string[]
     let pushes: number
@@ -272,6 +276,28 @@ describe('saveCurrentState', () => {
         }
 
         return request
+      })
+    }
+
+    // what a failed request does: its error event bubbles through the transaction, then the abort
+    function failFirstPutRequest(error: DOMException) {
+      let failures = 0
+      vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        record: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (failures++ > 0) {
+          return put.call(this, record, key)
+        }
+
+        const transaction = this.transaction as unknown as FakeTransaction
+        return transaction._execRequestAsync({
+          source: this,
+          operation() {
+            throw error
+          },
+        })
       })
     }
 
@@ -321,6 +347,25 @@ describe('saveCurrentState', () => {
       await vi.waitFor(() => expect(draftAtPush?.content[0].background).toBe('#123456ff'))
       expect(deleted).toEqual(['slides-visited'])
       await saving
+    })
+
+    it('clears the visited copies and retries when the put request itself fails', async () => {
+      failFirstPutRequest(quotaError())
+      let draftAtPush: { content: { background: string }[] } | null = null
+      let writesAtPush = 0
+      serverSave = async () => {
+        draftAtPush = await getPresentationFromLocalDB('p1')
+        writesAtPush = vi.mocked(IDBObjectStore.prototype.put).mock.calls.length
+        return 'M2'
+      }
+
+      slides.value[0].background = '#654321ff'
+      markDirty()
+      await saveCurrentState()
+
+      expect(deleted).toEqual(['slides-visited'])
+      expect(writesAtPush).toBe(2)
+      expect(draftAtPush?.content[0].background).toBe('#654321ff')
     })
 
     it('retries once, then pushes without the draft', async () => {
