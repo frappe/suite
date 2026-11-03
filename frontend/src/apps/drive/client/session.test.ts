@@ -224,7 +224,7 @@ describe('document session media', () => {
     return { node, url: `/private/files/b7x2k9q4mz/${node}.png`, expires: 1 }
   }
 
-  async function openedWithHeldRead() {
+  async function openedWithHeldRead(window?: Window) {
     const answers: Array<(media: unknown[]) => void> = []
     const failures: Array<(error: unknown) => void> = []
     const requester: Transport = {
@@ -243,7 +243,10 @@ describe('document session media', () => {
         }) as never
       },
     }
-    const session = await openDriveDocumentSession('root', { client: testClient(requester) })
+    const session = await openDriveDocumentSession('root', {
+      client: testClient(requester),
+      window,
+    })
     return { session, answers, failures }
   }
 
@@ -270,14 +273,85 @@ describe('document session media', () => {
       session.dispose()
     })
 
-    it('leaves the next read to settle a picture it left waiting', async () => {
-      const { session, answers, failures } = await openedWithHeldRead()
+    describe('and is not retried by hand', () => {
+      const failed = new TypeError('Failed to fetch')
+
+      beforeEach(() => {
+        vi.useFakeTimers()
+      })
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('reads again well before the ten minute read and settles a picture left waiting', async () => {
+        const { session, answers, failures } = await openedWithHeldRead()
+        const waiting = session.media('waiting')
+        await vi.advanceTimersByTimeAsync(0)
+
+        failures[0](failed)
+        await vi.advanceTimersByTimeAsync(30_000)
+        answers[1]([row('waiting')])
+        await vi.advanceTimersByTimeAsync(0)
+
+        expect(waiting.status.value).toBe('ready')
+        session.dispose()
+      })
+
+      it('waits longer after each read that fails, up to a minute', async () => {
+        const { session, answers, failures } = await openedWithHeldRead()
+        session.media('waiting')
+        await vi.advanceTimersByTimeAsync(0)
+        const gaps: number[] = []
+
+        for (let read = 0; read < 6; read++) {
+          failures[read](failed)
+          let gap = 0
+          while (answers.length === read + 1 && gap < MEDIA_REFRESH_MS) {
+            await vi.advanceTimersByTimeAsync(1_000)
+            gap += 1_000
+          }
+
+          gaps.push(gap)
+        }
+
+        expect(gaps[0]).toBeLessThanOrEqual(5_000)
+        expect(gaps[3]).toBeGreaterThan(gaps[0])
+        expect(gaps).toEqual([...gaps].sort((one, other) => one - other))
+        expect(gaps[5]).toBeLessThanOrEqual(60_000)
+        session.dispose()
+      })
+
+      it('starts the wait over once a read answers', async () => {
+        const { session, answers, failures } = await openedWithHeldRead()
+        const waiting = session.media('waiting')
+        await vi.advanceTimersByTimeAsync(0)
+        for (let read = 0; read < 3; read++) {
+          failures[read](failed)
+          await vi.advanceTimersByTimeAsync(60_000)
+        }
+
+        answers[3]([row('waiting')])
+        await vi.advanceTimersByTimeAsync(0)
+        void waiting.refresh()
+        await vi.advanceTimersByTimeAsync(0)
+        failures[4](failed)
+        await vi.advanceTimersByTimeAsync(5_000)
+
+        expect(answers).toHaveLength(6)
+        session.dispose()
+      })
+    })
+
+    it('reads again when the browser comes back online', async () => {
+      const browser = new EventTarget()
+      const { session, answers, failures } = await openedWithHeldRead(browser as Window)
       const waiting = session.media('waiting')
       await vi.waitFor(() => expect(answers).toHaveLength(1))
-
       failures[0](new TypeError('Failed to fetch'))
       await new Promise((resolve) => setTimeout(resolve))
-      void waiting.refresh()
+
+      browser.dispatchEvent(new Event('online'))
       await vi.waitFor(() => expect(answers).toHaveLength(2))
       answers[1]([row('waiting')])
 

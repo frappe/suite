@@ -24,6 +24,9 @@ import { canManage, type DriveAccess, type DriveBreadcrumb, type DriveNode } fro
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
+const MEDIA_RETRY_MS = 2_000
+const MEDIA_RETRY_GROWTH = 2
+const MEDIA_RETRY_MAX_MS = 30_000
 const MIN_CLIENT_ERROR_STATUS = 400
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
 export type MediaStatus = 'loading' | 'ready' | 'refused'
@@ -185,6 +188,8 @@ export async function openDriveDocumentSession(
   const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
+  let failedReads = 0
+  let mediaRetry: ReturnType<typeof setTimeout> | undefined
   const refreshAccess = async () => {
     if (disposed) return
     try {
@@ -215,6 +220,8 @@ export async function openDriveDocumentSession(
     if (disposed) return
     if (mediaPromise) return mediaPromise
 
+    clearTimeout(mediaRetry)
+
     // a handle made after the read began may name a picture newer than its answer
     const asked = new Set(handles.keys())
 
@@ -229,6 +236,7 @@ export async function openDriveDocumentSession(
         },
       )
       .then(({ media }) => {
+        failedReads = 0
         const seen = new Set<string>()
         for (const row of media ?? []) {
           seen.add(row.node)
@@ -244,8 +252,13 @@ export async function openDriveDocumentSession(
         }
       })
       .catch((error) => {
+        if (disposed) return
+
         // a passing failure says nothing about a picture, so the next read settles it
-        if (!isRefusal(error)) return
+        if (!isRefusal(error)) {
+          retryMedia()
+          return
+        }
 
         for (const [id, handle] of handles) {
           if (asked.has(id)) {
@@ -261,6 +274,12 @@ export async function openDriveDocumentSession(
         }
       })
     return mediaPromise
+  }
+
+  function retryMedia() {
+    const delay = Math.min(MEDIA_RETRY_MS * MEDIA_RETRY_GROWTH ** failedReads, MEDIA_RETRY_MAX_MS)
+    failedReads += 1
+    mediaRetry = setTimeout(() => void refreshMedia(), delay)
   }
 
   function hasLoadingBeyond(asked: Set<string>) {
@@ -299,6 +318,13 @@ export async function openDriveDocumentSession(
   }, MEDIA_REFRESH_MS)
   const onFocus = () => void refreshAccess()
   targetWindow?.addEventListener('focus', onFocus)
+  function onOnline() {
+    if (handles.size) {
+      void refreshMedia()
+    }
+  }
+
+  targetWindow?.addEventListener('online', onOnline)
   // A share write can lower the caller's own access: react before the dialog closes.
   const stopAccessChanges = onAccessChange(nodeId, () => void refreshAccess())
   return {
@@ -510,7 +536,9 @@ export async function openDriveDocumentSession(
       controller.abort()
       clearEvery(accessTimer)
       clearEvery(mediaTimer)
+      clearTimeout(mediaRetry)
       targetWindow?.removeEventListener('focus', onFocus)
+      targetWindow?.removeEventListener('online', onOnline)
       stopAccessChanges()
     },
   }
