@@ -8,7 +8,6 @@ from frappe.tests import IntegrationTestCase
 from suite import content
 from suite.composition.demo import drive as demo
 from suite.composition.demo.cast import PEOPLE, email_of
-from suite.content import log
 from suite.drive import MANAGE, READ
 from suite.drive._core.access import effective_role
 from suite.drive.framework import principals_for
@@ -37,28 +36,34 @@ def node_titled(title: str) -> frappe._dict:
     )
 
 
+def restore_branding(previous: dict) -> None:
+    frappe.db.set_single_value("Suite Settings", previous)
+    frappe.db.commit()
+
+
+def drop_shared_root() -> None:
+    if root := active_shared_root():
+        drop_root(root)
+    frappe.db.commit()
+
+
+def reset_demo() -> None:
+    frappe.set_user("Administrator")
+    demo.reset()
+
+
 class TestDemoSeed(IntegrationTestCase):
     def setUp(self):
         if frappe.db.exists("User", {"name": ["in", EMAILS]}):
             self.skipTest("This site holds Northwind accounts, and the test would remove them")
-        self.previous_mode = log.mode(APP)
-        self.previous_branding = branding()
-        self.had_shared_root = bool(active_shared_root())
         patcher = patch.dict(frappe.local.conf, {"mail": None})
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.addCleanup(self.restore_site)
-        log.set_mode(APP, "on")
+        self.addCleanup(restore_branding, branding())
+        if not active_shared_root():
+            self.addCleanup(drop_shared_root)
+        self.addCleanup(reset_demo)
         frappe.db.set_single_value("Suite Settings", BRANDING)
-        frappe.db.commit()
-
-    def restore_site(self):
-        frappe.set_user("Administrator")
-        demo.reset()
-        if not self.had_shared_root and (root := active_shared_root()):
-            drop_root(root)
-        log.set_mode(APP, self.previous_mode)
-        frappe.db.set_single_value("Suite Settings", self.previous_branding)
         frappe.db.commit()
 
     def test_seed_fills_the_site_and_reset_removes_it(self):
