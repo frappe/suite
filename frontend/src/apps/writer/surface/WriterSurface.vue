@@ -42,6 +42,7 @@ import RecoveryPreview from '@/apps/writer/recovery/RecoveryPreview.vue'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
 import { watchConversion, type CollabRoom } from '@/platform/collab'
+import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -93,6 +94,7 @@ interface EditorSurface {
 }
 
 const props = defineProps<{ session: DocumentSession }>()
+useHideRail()
 
 /** The editor that shows this document, with the props only it takes. */
 type EditorView =

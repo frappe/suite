@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, nextTick, onUnmounted, ref, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
+import { railHidden } from '@/platform/rail'
 
 import { readRecovery } from './recovery'
 import SheetsSurface from './SheetsSurface.vue'
@@ -127,6 +128,17 @@ const settle = async () => {
 /** The "Download my changes" toast, if one was shown. */
 const downloadOffer = () =>
   toast.warning.mock.calls.find(([, options]) => options?.action?.label === 'Download my changes')
+
+it('hides the rail while the spreadsheet is open', async () => {
+  await mountSurface()
+
+  expect(railHidden.value).toBe(true)
+
+  unmount?.()
+  unmount = undefined
+
+  expect(railHidden.value).toBe(false)
+})
 
 describe('SheetsSurface losing edit access in the live room', () => {
   it('offers edits that did not reach the server as a download, though the room keeps them too', async () => {

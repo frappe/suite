@@ -2,6 +2,8 @@ import { toast } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
+import { railHidden } from '@/platform/rail'
+
 import {
   buttonLabelled,
   discardCopies,
@@ -85,6 +87,13 @@ async function downloadedChanges(afterClose: (root: Element) => unknown = () => 
 }
 
 describe('Writer surface', () => {
+  it('hides the rail while the document is open', async () => {
+    liveRoom()
+    await openedSurface()
+
+    expect(railHidden.value).toBe(true)
+  })
+
   it('asks to keep the tab open, with no Reload, and warns on leaving, when typing after a lost right is kept nowhere', async () => {
     const room = stoppedRoom()
     room.status = {

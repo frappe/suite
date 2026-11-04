@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
+import { useHideRail } from '@/platform/rail'
 import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
@@ -38,6 +39,7 @@ interface SheetEditorHandle {
 const props = defineProps<{
   session: DocumentSession
 }>()
+useHideRail()
 const editor = ref<SheetEditorHandle | null>(null)
 const panel = ref<DocumentPanel | null>(null)
 // A restore, or edit access coming back, reloads the server workbook: the

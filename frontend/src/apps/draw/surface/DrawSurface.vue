@@ -4,12 +4,14 @@ import { onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 
 import { driveNodeRoute, useDriveDocumentCreation, type DocumentSession } from '@/apps/drive'
+import { useHideRail } from '@/platform/rail'
 import { translate as __ } from '@/platform/translation'
 
 import DrawEditor from '../App.vue'
 import { DRAWING_PERSISTENCE, DrawingPersistence } from '../canvas/persistence'
 
 const props = defineProps<{ session: DocumentSession }>()
+useHideRail()
 const router = useRouter()
 const creation = useDriveDocumentCreation()
 const recovering = ref(false)
