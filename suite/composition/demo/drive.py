@@ -156,6 +156,9 @@ def reset() -> None:
                 for grant_name in grants:
                     revoke_grant(grant_name, admin)
                 frappe.delete_doc("User Group", group, ignore_permissions=True)
+        # Deleting a User only unlinks its Contact.
+        for contact in frappe.get_all("Contact", filters={"user": ["in", emails]}, pluck="name"):
+            frappe.delete_doc("Contact", contact, ignore_permissions=True)
         for person in PEOPLE:
             if frappe.db.exists("User", person.email):
                 frappe.delete_doc("User", person.email, ignore_permissions=True)
