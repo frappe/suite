@@ -52,7 +52,7 @@ from frappe import _
 from werkzeug.wrappers import Response
 
 from suite.drive import framework
-from suite.drive._core import access, archive, comments, content, previews, roots, versions
+from suite.drive._core import access, comments, content, downloads, previews, roots, versions
 from suite.drive._core import activity as activity_core
 from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
@@ -352,27 +352,20 @@ def node_copy(node: Given = None, parent_node: Given = None, title: Given = None
     return shapes.node_shape(node_core.stored(copied))
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(methods=["POST"])
 @_route
-def node_archive_start(node: Given = None) -> shapes.ArchiveStatus:
-    """Build one bounded folder archive synchronously."""
-    return archive.start(_principals(), shapes.required_text(node, "node"))
+def download_start(nodes: Given = None) -> shapes.DownloadShape:
+    """Queue one zip of the selected nodes; the caller's inbox says when it is ready."""
+    return shapes.download_shape(downloads.start(_principals(), shapes.identifiers(nodes, "nodes")))
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
+@frappe.whitelist(methods=["GET"])
 @_route
-def node_archive_status(node: Given = None) -> shapes.ArchiveStatus:
-    """Report this caller's current folder archive build."""
-    return archive.status(_principals(), shapes.required_text(node, "node"))
-
-
-@frappe.whitelist(allow_guest=True, methods=["GET"])
-@_route
-def node_archive_download(node: Given = None) -> Response:
-    """Send a ready folder archive, redirecting to the driver's signed URL when it has one."""
+def download_content(download: Given = None) -> Response:
+    """Send the caller's ready zip, redirecting to the driver's signed URL when it has one."""
     from frappe.storage.serve import stream_blob
 
-    blob, filename = archive.download(_principals(), shapes.required_text(node, "node"))
+    blob, filename = downloads.ready_blob(_principals(), shapes.required_text(download, "download"))
     return stream_blob(
         blob,
         filename,
@@ -1321,7 +1314,7 @@ def node_delete_favourite(node: Given = None) -> shapes.Count:
 @_route
 def notifications_list(
     limit: Given = None, cursor: Given = None, unread: Given = None
-) -> shapes.Page[shapes.NotificationShape]:
+) -> shapes.Page[shapes.NotificationShape | shapes.DownloadNotificationShape]:
     """Page the caller's own inbox. A notification points at one activity row."""
     result = activity_core.notifications(
         _principals(),

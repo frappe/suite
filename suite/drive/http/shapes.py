@@ -122,6 +122,15 @@ class NotificationShape(TypedDict):
     actor: Person
 
 
+class DownloadNotificationShape(TypedDict):
+    """A notification that the caller's own download is ready, or that it failed."""
+
+    name: str
+    read: int
+    creation: str | None
+    download: DownloadShape
+
+
 class Page[T](TypedDict):
     rows: list[T]
     next_cursor: str | None
@@ -619,11 +628,20 @@ class CommentEdit(TypedDict):
     text: str
 
 
-class ArchiveStatus(TypedDict):
-    status: Literal["building", "ready", "failed"]
-    file_name: str | None
+class StartDownload(TypedDict):
+    nodes: list[str]
+
+
+class DownloadShape(TypedDict):
+    name: str
+    # The zip's file name.
+    title: str
+    status: Literal["Preparing", "Ready", "Failed"]
     size: int | None
+    expires_at: str | None
     error: str | None
+    # Where the ready zip is sent from; None until it is Ready.
+    url: str | None
 
 
 class RootUsageQuery(TypedDict, total=False):
@@ -836,10 +854,36 @@ def _masked_detail(detail: Mapping) -> dict:
     return answer
 
 
-def notification_shapes(rows: list[Mapping]) -> list[NotificationShape]:
+def notification_shapes(rows: list[Mapping]) -> list[NotificationShape | DownloadNotificationShape]:
     """Shape a page of notifications with one lookup of the people who acted."""
-    known = people({row["activity"].get("actor") for row in rows})
-    return [notification_shape(row, known) for row in rows]
+    known = people({row["activity"].get("actor") for row in rows if row.get("activity")})
+    return [
+        download_notification_shape(row) if row.get("download") else notification_shape(row, known)
+        for row in rows
+    ]
+
+
+def download_notification_shape(row: Mapping) -> DownloadNotificationShape:
+    return {
+        "name": row.get("name"),
+        "read": int(row.get("read") or 0),
+        "creation": stamp(row.get("creation")),
+        "download": download_shape(row["download"]),
+    }
+
+
+def download_shape(row: Mapping) -> DownloadShape:
+    """Return one download. Its `url` is the content route, once the zip is ready."""
+    ready = row.get("status") == "Ready"
+    return {
+        "name": row.get("name"),
+        "title": row.get("title"),
+        "status": row.get("status"),
+        "size": row.get("size") if ready else None,
+        "expires_at": stamp(row.get("expires_at")),
+        "error": row.get("error") or None,
+        "url": f"/api/suite/drive/downloads/{row['name']}/content" if ready else None,
+    }
 
 
 def notification_shape(row: Mapping, known: Mapping[str, Person]) -> NotificationShape:

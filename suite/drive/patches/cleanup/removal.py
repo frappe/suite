@@ -60,9 +60,10 @@ RETAINED_DOCTYPES_STEP_3 = (
     "Drive Entity Log",
 )
 
-# The six "Legacy ..." columns on `Drive Notification` (§3.11, §14.10).
-# Dropping these is what lets `activity` become required: the writers that
-# inserted rows with no `activity` went with the legacy backend.
+# The six "Legacy ..." columns on `Drive Notification` (§3.11, §14.10). The
+# writers that filled them went with the legacy backend. `activity` stays
+# optional: a notification points at an activity or at a download, and the
+# DocType controller requires exactly one of them.
 NOTIFICATION_LEGACY_COLUMNS = (
     "from_user",
     "type",
@@ -321,8 +322,8 @@ def phase_custom_fields(env) -> PhaseResult:
 
 
 def phase_legacy_doctypes(env) -> PhaseResult:
-    """§14.10 step 3: the legacy Drive doctypes, the old notification
-    columns, then `Drive Notification.activity` becomes required."""
+    """§14.10 step 3: the legacy Drive doctypes, then the old notification
+    columns."""
     result = PhaseResult()
     result.doctypes_dropped = env.schema.drop_doctypes(RETAINED_DOCTYPES_STEP_3)
     _verify_gone(env.schema.doctypes_present(RETAINED_DOCTYPES_STEP_3), "the step-3 doctypes")
@@ -331,7 +332,6 @@ def phase_legacy_doctypes(env) -> PhaseResult:
         env.schema.columns_present("Drive Notification", NOTIFICATION_LEGACY_COLUMNS),
         "Drive Notification's legacy columns",
     )
-    env.schema.require_field("Drive Notification", "activity")
     result.completed = True
     return result
 

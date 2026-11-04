@@ -318,7 +318,6 @@ class TestPhaseLegacyDoctypes(unittest.TestCase):
         self.assertEqual(result.columns_dropped, 6)
         self.assertEqual(schema.doctypes, {"Drive Node"})
         self.assertEqual(schema.columns["Drive Notification"], {"activity", "to_user", "read"})
-        self.assertIn(("Drive Notification", "activity"), schema.required_fields)
 
     def test_a_partial_pre_state_from_an_earlier_interrupted_attempt_completes_cleanly(self):
         # Finding: an earlier attempt already dropped 2 of the 3 step-3

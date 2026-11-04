@@ -476,11 +476,12 @@ def notifications(
     window = page_limit(limit)
     offset = decode_cursor(cursor)
     rows, seen = _visible_notifications(principals, only_unread=only_unread, limit=window, offset=offset)
-    wanted = list({row.activity.node for row in rows})
+    on_nodes = [row for row in rows if row.activity]
+    wanted = list({row.activity.node for row in on_nodes})
     fields = ["name", "title", "kind"]
     found = frappe.get_all("Drive Node", filters={"name": ["in", wanted]}, fields=fields) if wanted else []
     nodes = {node.name: node for node in found}
-    for row in rows:
+    for row in on_nodes:
         node = nodes[row.activity.node]
         row.node_title, row.node_kind = node.title, node.kind
     return page_of(rows, offset, seen, window)
@@ -493,17 +494,23 @@ def _visible_notifications(
     limit: int | None,
     offset: int = 0,
 ) -> tuple[list[dict], int]:
-    """Return the visible pointers, and how many rows the SQL window held."""
+    """Return the visible pointers, and how many rows the SQL window held.
+
+    A pointer names an activity on a node, or one of the caller's own downloads.
+    """
+    from suite.drive._core import downloads
+
     _require_person(principals)
-    # §14.6 drops the legacy inbox: those rows carry no activity pointer, so
-    # the inbox starts empty after Build. Saying so in SQL is what keeps
-    # `unread_count` from reading every one of them to reach the same answer.
-    filters: dict[str, Any] = {"to_user": principals.user, "activity": ["is", "set"]}
+    # §14.6 drops the legacy inbox: those rows point at nothing, so the inbox
+    # starts empty after Build. Saying so in SQL is what keeps `unread_count`
+    # from reading every one of them to reach the same answer.
+    filters: dict[str, Any] = {"to_user": principals.user}
     if only_unread:
         filters["read"] = 0
     options = {
         "filters": filters,
-        "fields": ["name", "activity", "to_user", "read", "creation"],
+        "or_filters": {"activity": ["is", "set"], "download": ["is", "set"]},
+        "fields": ["name", "activity", "download", "to_user", "read", "creation"],
         "order_by": "creation desc",
     }
     if limit is not None:
@@ -512,6 +519,13 @@ def _visible_notifications(
     rows = frappe.get_all("Drive Notification", **options)
     visible = []
     for row in rows:
+        if row.download:
+            try:
+                row.download = downloads.get(principals, row.download)
+            except DriveNotFound:
+                continue
+            visible.append(row)
+            continue
         activity = frappe.db.get_value(
             "Drive Activity",
             row.activity,
@@ -523,7 +537,7 @@ def _visible_notifications(
         activity.detail = _json_value(activity.detail, {})
         row.activity = activity
         visible.append(row)
-    _quote_comments_as_they_are([row.activity for row in visible])
+    _quote_comments_as_they_are([row.activity for row in visible if row.activity])
     return visible, len(rows)
 
 
@@ -587,10 +601,10 @@ def mark_read(principals: Principals, notifications: Iterable[str] | str | None 
 def discard_personal_records(user: str) -> dict[str, int]:
     """Delete one person's private Drive records during offboarding.
 
-    Recents, favourites, and the notification inbox are keyed by email, not by
-    a root id. Archiving the Personal Root leaves them behind, so a User row
-    recreated on the same address would read the previous person's open
-    history, stars, and inbox. Grants, comments, activity, and versions are
+    Recents, favourites, downloads, and the notification inbox are keyed by
+    email, not by a root id. Archiving the Personal Root leaves them behind, so
+    a User row recreated on the same address would read the previous person's
+    open history, stars, zips, and inbox. Grants, comments, activity, and versions are
     deliberately kept: they are attributed history and specified access that
     the archived tree still needs (spec sections 3.2 and 9.5).
 
@@ -604,6 +618,7 @@ def discard_personal_records(user: str) -> dict[str, int]:
         ("Drive Recent", "user"),
         ("Drive Favourite", "user"),
         ("Drive Notification", "to_user"),
+        ("Drive Download", "requester"),
     ):
         removed[doctype] = _delete_personal_rows(doctype, fieldname, user)
     return removed

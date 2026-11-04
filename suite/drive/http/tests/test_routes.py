@@ -491,29 +491,34 @@ class TestContentAnswer(BoundaryCase):
         self.assertEqual(routes._disposition_names("\n\t"), {"filename": "download"})
 
 
-class TestArchiveRoutes(BoundaryCase):
-    def test_start_and_status_are_thin_workflow_calls(self):
-        ready = {"status": "ready", "file_name": "Folder.zip", "size": 12, "error": None}
-        with patch.object(routes.archive, "start", return_value=ready) as start:
-            self.assertEqual(routes.node_archive_start(node="f1"), ready)
-        start.assert_called_once_with(SOMEONE, "f1")
+class TestDownloadRoutes(BoundaryCase):
+    def test_a_download_is_queued_for_the_named_nodes_and_answers_preparing(self):
+        queued = frappe._dict(
+            name="d1",
+            title="Talks.zip",
+            status="Preparing",
+            size=None,
+            expires_at=None,
+            error=None,
+        )
+        with patch.object(routes.downloads, "start", return_value=queued) as start:
+            answer = routes.download_start(nodes=["n1", "n2", "n1"])
+        start.assert_called_once_with(SOMEONE, ("n1", "n2"))
+        self.assertEqual(answer["status"], "Preparing")
+        self.assertIsNone(answer["url"])
 
-        with patch.object(routes.archive, "status", return_value=ready) as status:
-            self.assertEqual(routes.node_archive_status(node="f1"), ready)
-        status.assert_called_once_with(SOMEONE, "f1")
-
-    def test_download_sends_the_ready_private_blob(self):
+    def test_the_content_route_sends_the_ready_private_blob(self):
         blob = frappe._dict(name="blob-1")
         request = MagicMock()
         request.environ = {"REQUEST_METHOD": "GET"}
         with local_attribute("request", request):
-            with patch.object(routes.archive, "download", return_value=(blob, "Folder.zip")) as download:
+            with patch.object(routes.downloads, "ready_blob", return_value=(blob, "Talks.zip")) as ready:
                 with patch("frappe.storage.serve.stream_blob", return_value=Response(b"zip")) as streamed:
-                    answer = routes.node_archive_download(node="f1")
-        download.assert_called_once_with(SOMEONE, "f1")
+                    answer = routes.download_content(download="d1")
+        ready.assert_called_once_with(SOMEONE, "d1")
         streamed.assert_called_once_with(
             blob,
-            "Folder.zip",
+            "Talks.zip",
             as_attachment=True,
             environ=request.environ,
             allow_native_redirect=True,

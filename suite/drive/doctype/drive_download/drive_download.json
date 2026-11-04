@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-04 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "requester",
+  "title",
+  "status",
+  "nodes",
+  "members",
+  "blob",
+  "size",
+  "expires_at",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "requester",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Requester",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "default": "Preparing",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Preparing\nReady\nFailed",
+   "reqd": 1
+  },
+  {
+   "fieldname": "nodes",
+   "fieldtype": "JSON",
+   "label": "Nodes",
+   "reqd": 1
+  },
+  {
+   "fieldname": "members",
+   "fieldtype": "JSON",
+   "label": "Members"
+  },
+  {
+   "fieldname": "blob",
+   "fieldtype": "Link",
+   "label": "Blob",
+   "options": "File Blob",
+   "search_index": 1
+  },
+  {
+   "fieldname": "size",
+   "fieldtype": "Int",
+   "label": "Size",
+   "length": 20
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-04 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Drive",
+ "name": "Drive Download",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

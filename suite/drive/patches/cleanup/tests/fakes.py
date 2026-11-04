@@ -133,7 +133,6 @@ class FakeSchema:
         self.doctypes = set(doctypes or ())
         self.columns: dict[str, set[str]] = {k: set(v) for k, v in (columns or {}).items()}
         self.singles: dict[str, set[str]] = {k: set(v) for k, v in (singles or {}).items()}
-        self.required_fields: set[tuple[str, str]] = set()
 
     def drop_custom_fields(self, fieldnames: tuple[str, ...]) -> int:
         dropped = 0
@@ -178,9 +177,6 @@ class FakeSchema:
                 dropped += 1
         self.singles[doctype] = held
         return dropped
-
-    def require_field(self, doctype: str, fieldname: str) -> None:
-        self.required_fields.add((doctype, fieldname))
 
     def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
         return frozenset(name for name in fieldnames if name in self.custom_fields)
