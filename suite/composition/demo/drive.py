@@ -3,12 +3,14 @@
 Run with `pilot -b suite frappe --site suite.localhost execute suite.composition.demo.drive.seed`.
 The six fixed accounts are reserved for this dataset, so anything they own counts as demo data.
 Reset removes their Mail, purges their personal roots and Shared-root nodes, restores the
-workspace name and logo, then removes their groups and accounts. Other users and the site's
-Shared root are retained. Each completed batch is committed, so a failed run can be removed with
-reset. Internal Drive helpers fill gaps in its facade, which composition may reach.
+workspace name and logo, then removes their groups and accounts.
+Reset permanently deletes the demo folders with everything in them, including files other users
+added. Other users' accounts, their files outside the demo folders and the site's Shared root are
+retained. Each completed batch is committed, so a failed run can be removed with reset.
+Internal Drive helpers fill gaps in its facade, which composition may reach.
 When the site has a `mail` server configured, the seed ends with `suite.composition.demo.mail.seed`.
-Each seed generates a new password for the six users and prints it once; nothing stores it. Mail does
-not need it, so retrying `mail.seed` works without it. To get a new one, run reset, then seed.
+Each seed generates a new password for the six users and prints it once; nothing stores it. Mail
+does not need it, so retrying `mail.seed` works without it. To get a new one, run reset, then seed.
 """
 
 import json
@@ -32,6 +34,9 @@ WORKSPACE = "Northwind Labs"
 PREFIX = f"{WORKSPACE} - "
 LOGO = "northwind-labs-logo.png"
 PREVIOUS_BRANDING = "northwind_demo_previous_branding"
+RESET_WARNING = (
+    "Reset permanently deletes the demo folders with everything in them, including files other users added."
+)
 TEAMS = ("Product", "Design", "Engineering", "Marketing", "Finance")
 PERSONAL_FILES = {
     "maya": "Northwind brand cover.png",
@@ -93,7 +98,7 @@ def seed() -> None:
                 print(
                     "Northwind demo data already exists. To start over, run "
                     "suite.composition.demo.drive.reset, then seed. "
-                    "To retry only Mail, run suite.composition.demo.mail.seed."
+                    f"{RESET_WARNING} To retry only Mail, run suite.composition.demo.mail.seed."
                 )
                 return
             print("Creating Northwind demo users...")
@@ -124,13 +129,17 @@ def seed() -> None:
             frappe.db.rollback()
             print(
                 "Seed failed. Completed batches remain; to start over, run reset, then seed. "
+                f"{RESET_WARNING} "
                 "If only Mail failed, suite.composition.demo.mail.seed adds what is missing."
             )
             raise
 
 
 def reset() -> None:
-    """Permanently remove the reserved Northwind accounts, their Mail and their Drive content."""
+    """Permanently remove the reserved Northwind accounts, their Mail and their Drive content.
+
+    This deletes the demo folders with everything in them, including files other users added.
+    """
     with acting_as("Administrator"):
         try:
             if frappe.conf.mail:
