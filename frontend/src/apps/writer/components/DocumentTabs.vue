@@ -51,8 +51,15 @@
 
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import type { ContextMenuOptions } from 'frappe-ui'
-import { ContextMenu, TabList, Tabs, TabTrigger, TextInput, vOnOutsideClick } from 'frappe-ui'
+import {
+  ContextMenu,
+  TabList,
+  Tabs,
+  TabTrigger,
+  TextInput,
+  vOnOutsideClick,
+  type ContextMenuOptions,
+} from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { useDocumentTabs } from './useDocumentTabs'
