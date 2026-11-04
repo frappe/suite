@@ -104,6 +104,8 @@ class TestSuiteCloudClient(UnitTestCase):
         self.assertEqual(self.request.args[0], "DELETE")
 
     def test_errors_are_raised_as_the_type_suite_cloud_named(self) -> None:
+        # The real flag would refuse every later login in this process
+        self.enterContext(patch.object(frappe.cache, "set_value"))
         cases = [
             (409, "DuplicateEntryError", frappe.DuplicateEntryError),
             (429, "TooManyRequestsError", frappe.TooManyRequestsError),
