@@ -85,10 +85,11 @@ export const COLORS = {
   get filterOutline() {
     return _token('--ink-green-3', '#15803D')
   },
-  // Separators between selected headers: gridLine is the tint's own grey, so
-  // it would vanish on it.
+  // Separators between selected headers: one step past the tint on the same
+  // surface scale, so they show on it in both themes. gridLine is the tint's
+  // own grey in light mode, and --outline-gray-3 is in dark mode.
   get activeHeaderLine() {
-    return _token('--outline-gray-3', '#C7C7C7')
+    return _token('--surface-gray-5', '#C7C7C7')
   },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')

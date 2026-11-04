@@ -1,7 +1,7 @@
 // Every row and column header a selection covers is marked the same way, so
 // the selection reads in the headers even after a drag: a grey tint and a
 // dark semibold label. Headers outside the selection stay plain.
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { COL_HEADER_H, COLORS } from './constants.js'
 import { createHeaderPainter } from './painters/header-painter.js'
@@ -108,3 +108,44 @@ describe('selected header tint', () => {
     expect([row3[1], row3[3]]).toEqual([73, 23])
   })
 })
+
+// The values frappe-ui gives the tokens the header colours read, in each
+// theme (read from the running app). The tint and its separators must differ
+// in both, or selected headers read as one merged block.
+const PALETTE = {
+  light: {
+    '--outline-gray-2': 'oklch(0.913 0 0)',
+    '--outline-gray-3': 'oklch(0.83 0 0)',
+    '--surface-gray-4': 'oklch(0.913 0 0)',
+    '--surface-gray-5': 'oklch(0.83 0 0)',
+  },
+  dark: {
+    '--outline-gray-2': 'oklch(0.341 0 0)',
+    '--outline-gray-3': 'oklch(0.379 0 0)',
+    '--surface-gray-4': 'oklch(0.379 0 0)',
+    '--surface-gray-5': 'oklch(0.457 0 0)',
+  },
+}
+
+describe.each(['light', 'dark'] as const)(
+  'separators between selected headers, %s theme',
+  (theme) => {
+    const root = document.documentElement.style
+    beforeEach(() => {
+      for (const [name, value] of Object.entries(PALETTE[theme])) root.setProperty(name, value)
+    })
+    afterEach(() => {
+      for (const name of Object.keys(PALETTE[theme])) root.removeProperty(name)
+    })
+
+    it('differ from the tint', () => {
+      const { rows, cols } = separators()
+      for (const line of [rows['2'], rows['3'], cols['B'], cols['C']])
+        expect(line).not.toBe(COLORS.activeHeader)
+    })
+
+    it.runIf(theme === 'light')('keep the light look from before', () => {
+      expect(separators().rows['2']).toBe('oklch(0.83 0 0)')
+    })
+  },
+)
