@@ -70,7 +70,7 @@ class TestSuiteCloudConfig(IntegrationTestCase):
                 frappe.ValidationError, "Suite Settings", is_suite_cloud_configured, raise_exception=True
             )
 
-    def test_a_secret_missing_from_the_password_store_counts_as_blank(self) -> None:
+    def test_a_secret_missing_from_the_password_store_still_counts_as_configured(self) -> None:
         self.settings(
             suite_cloud_url="https://cloud.test", suite_cloud_tenant="key", suite_cloud_secret="secret"
         )
@@ -78,11 +78,20 @@ class TestSuiteCloudConfig(IntegrationTestCase):
         frappe.clear_document_cache("Suite Settings", "Suite Settings")
 
         with patch.dict(frappe.local.conf, {key: None for key in SITE_CONFIG}):
-            self.assertFalse(is_suite_cloud_configured())
+            self.assertTrue(is_suite_cloud_configured())
 
         frappe.local.request_cache.clear()
         with patch.dict(frappe.local.conf, SITE_CONFIG):
             self.assertEqual(get_suite_cloud_config("suite_cloud_secret"), "config-secret")
+
+    def test_asking_for_the_url_does_not_read_the_secret(self) -> None:
+        self.settings(
+            suite_cloud_url="https://cloud.test", suite_cloud_tenant="key", suite_cloud_secret="secret"
+        )
+        frappe.clear_document_cache("Suite Settings", "Suite Settings")
+
+        with patch.dict(frappe.local.conf, {"encryption_key": "not-a-key"}):
+            self.assertEqual(get_suite_cloud_config("suite_cloud_url"), "https://cloud.test")
 
     def test_an_unknown_key_is_refused(self) -> None:
         self.assertRaisesRegex(frappe.ValidationError, "not found", get_suite_cloud_config, "server_url")

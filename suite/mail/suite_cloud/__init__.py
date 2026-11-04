@@ -209,5 +209,10 @@ def get_client() -> SuiteCloudClient:
         return dev_suite_cloud.DevSuiteCloud()  # type: ignore[return-value]
     is_suite_cloud_configured(raise_exception=True)
     url, tenant, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)
+    if not secret:
+        # Deferred, so it outlives the rollback; raised, so no message follows the ping to the user
+        log_mail_error("Suite Cloud secret can't be read", defer_insert=True)
+        raise SuiteCloudUnavailableError(_("This site can't read its Suite Cloud secret."))
+
     # The same Verify SSL as the JMAP URL: Suite Cloud and the cluster share a deployment.
     return SuiteCloudClient(url, tenant, secret, verify_ssl=bool(cint(get_config("verify_ssl"))))
