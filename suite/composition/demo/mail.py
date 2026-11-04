@@ -6,10 +6,11 @@ The domain, accounts and mailing lists are made with Stalwart's management API a
 the `mail` site config. Each account is linked like any self-managed one: User Settings holds
 the address and a Stalwart app password, and Mail signs in with those. The seed reaches each
 account through the admin's master login, so the account's own secret is random and never read,
-and a retry against existing accounts needs no password from the operator. Mail is imported with JMAP Email/import so it keeps its
-past dates; events go through Calendar's invite flow, so every participant holds a copy with the
-same UID. Seeding again adds only what is missing. To start over, run
-suite.composition.demo.drive.reset, then seed; reset removes the accounts, lists and domain.
+and a retry against existing accounts needs no password from the operator. Mail is imported with
+JMAP Email/import so it keeps its past dates; events go through Calendar's invite flow, so every
+participant holds a copy with the same UID. Seeding again adds only what is missing. To start
+over, run suite.composition.demo.drive.reset, then seed; reset removes the accounts, lists and
+domain.
 """
 
 import re
@@ -30,11 +31,13 @@ from suite import mail as mail_product
 from suite.composition.demo import agenda, assets, inbox
 from suite.composition.demo.cast import (
     DOMAIN,
+    EMAILS,
     EVERYONE,
     PEOPLE,
     PEOPLE_BY_KEY,
     Person,
     acting_as,
+    email_of,
 )
 
 LISTS = {
@@ -66,9 +69,7 @@ def seed() -> None:
             scheduled = schedule(stalwart, now)
             frappe.db.commit()
             print(f"Imported {delivered} messages; {scheduled} calendar copies are in place.")
-            print(
-                f"Mail and Calendar are ready at {get_url()}/mail for {', '.join(p.email for p in PEOPLE)}."
-            )
+            print(f"Mail and Calendar are ready at {get_url()}/mail for {', '.join(EMAILS)}.")
 
 
 def reset() -> None:
@@ -139,7 +140,7 @@ class Stalwart:
         lists = {row.get("emailAddress") for row in self.get_all("MailingList")}
         for name, (description, members) in LISTS.items():
             if f"{name}@{DOMAIN}" not in lists:
-                recipients = {PEOPLE_BY_KEY[key].email: True for key in members}
+                recipients = {email_of(key): True for key in members}
                 payload = {"name": name, "domainId": domain, "description": description}
                 self.create("MailingList", {**payload, "recipients": recipients})
 
@@ -252,7 +253,7 @@ def accept_colleagues() -> None:
     """Let colleagues and the team lists past screening, so live mail between them lands in Inbox."""
     from suite.mail.api.mail import screen_email_addresses
 
-    addresses = [person.email for person in PEOPLE] + [f"{name}@{DOMAIN}" for name in LISTS]
+    addresses = [*EMAILS, *(f"{name}@{DOMAIN}" for name in LISTS)]
     for person in PEOPLE:
         with acting_as(person.email):
             account = personal_account(person.email)
@@ -388,7 +389,7 @@ def schedule(stalwart: Stalwart, now: datetime) -> int:
     for event in agenda.EVENTS:
         ics = calendar_file(event, monday, now, method="REQUEST" if event.attendees else "PUBLISH")
         for key in event.participants:
-            email = PEOPLE_BY_KEY[key].email
+            email = email_of(key)
             blob = stalwart.mailbox(email).upload(ics, "text/calendar")
             with acting_as(email):
                 add_invite_to_calendar(personal_account(email), blob)

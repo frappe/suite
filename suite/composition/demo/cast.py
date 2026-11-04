@@ -40,6 +40,7 @@ PEOPLE = (
 )
 PEOPLE_BY_KEY = {person.key: person for person in PEOPLE}
 EVERYONE = tuple(PEOPLE_BY_KEY)
+EMAILS = tuple(person.email for person in PEOPLE)
 
 
 def email_of(key: str) -> str:

@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 from suite import content, drive
 from suite.composition.demo import drive as demo
-from suite.composition.demo.cast import PEOPLE, acting_as, email_of
+from suite.composition.demo.cast import EMAILS, acting_as, email_of
 from suite.drive import MANAGE, READ, UPLOAD
 from suite.drive._core import nodes
 from suite.drive._core.access import effective_role, grant
@@ -18,7 +18,6 @@ from suite.suite_core import storage
 from suite.tests.utils import ensure_user
 from suite.writer.content import APP
 
-EMAILS = [person.email for person in PEOPLE]
 BRANDING = {"workspace_name": "Before Northwind", "workspace_logo": "/files/before-northwind.png"}
 
 

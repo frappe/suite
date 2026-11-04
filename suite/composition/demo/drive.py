@@ -23,7 +23,7 @@ from frappe.utils import get_url
 from suite import drive
 from suite.api.account import delete_logo_file
 from suite.composition.demo import assets, content, mail
-from suite.composition.demo.cast import PEOPLE, acting_as, email_of
+from suite.composition.demo.cast import EMAILS, PEOPLE, acting_as, email_of
 from suite.drive._core import activity, comments, nodes
 from suite.drive._core.access import grant, revoke_grant
 from suite.drive._core.roots import archive_personal_root, create_root, purge_root
@@ -144,7 +144,6 @@ def reset() -> None:
         try:
             if frappe.conf.mail:
                 mail.reset()
-            emails = [person.email for person in PEOPLE]
             admin = principals_for("Administrator")
             # Pick all Shared roots, including archived ones, and shallow nodes first.
             # Descendants are removed by their parent's purge, including embedded media.
@@ -152,7 +151,7 @@ def reset() -> None:
             shared_nodes = (
                 frappe.get_all(
                     "Drive Node",
-                    filters={"root": ["in", shared_roots], "owner": ["in", emails]},
+                    filters={"root": ["in", shared_roots], "owner": ["in", EMAILS]},
                     fields=["name", "path"],
                 )
                 if shared_roots
@@ -188,12 +187,12 @@ def reset() -> None:
                         revoke_grant(grant_name, admin)
                     frappe.delete_doc("User Group", group, ignore_permissions=True)
             # Deleting a User only unlinks its Contact.
-            for contact in frappe.get_all("Contact", filters={"user": ["in", emails]}, pluck="name"):
+            for contact in frappe.get_all("Contact", filters={"user": ["in", EMAILS]}, pluck="name"):
                 frappe.delete_doc("Contact", contact, ignore_permissions=True)
             for person in PEOPLE:
                 if frappe.db.exists("User", person.email):
                     frappe.delete_doc("User", person.email, ignore_permissions=True)
-            storage.forget_users(emails)
+            storage.forget_users(EMAILS)
             frappe.db.commit()
             print("Removed Northwind demo users, groups, personal roots, and organization content.")
         except Exception:
@@ -202,10 +201,9 @@ def reset() -> None:
 
 
 def _exists() -> bool:
-    emails = [person.email for person in PEOPLE]
     return bool(
-        frappe.db.exists("User", {"name": ["in", emails]})
-        or frappe.db.exists("Drive Root", {"user": ["in", emails]})
+        frappe.db.exists("User", {"name": ["in", EMAILS]})
+        or frappe.db.exists("Drive Root", {"user": ["in", EMAILS]})
         or frappe.db.exists("User Group", {"name": ["in", [PREFIX + team for team in TEAMS]]})
     )
 

@@ -1,7 +1,7 @@
 """Product-neutral combined storage policy; Mail itself is never quota-gated (spec §6-7)."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 import frappe
 from frappe import _
@@ -87,7 +87,7 @@ def initialize_user_limit(user: str, *, cap: int | None = None, use_default: boo
     doc.save(ignore_permissions=True)
 
 
-def forget_users(users: list[str]) -> None:
+def forget_users(users: Iterable[str]) -> None:
     """Drop deleted users' limits and Mail usage, the inverse of `initialize_user_limit`."""
     doc, policy, measurements = state(lock=True)
     limits = policy.get("users", {})
