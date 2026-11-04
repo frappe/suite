@@ -34,7 +34,7 @@
       <!-- Accounts: tap to switch, as the sidebar's account submenu does on desktop, in its
 			     order: the reader's own account first, the rest as they come, then every account at
 			     once where the app offers it. -->
-      <MobileSettingsCard v-if="accounts.length > 1 || alwaysShowAccounts" :label="__('Accounts')">
+      <MobileSettingsCard v-if="accounts.length > 1" :label="__('Accounts')">
         <MobileSettingsRow
           v-for="account in orderedAccounts"
           :key="account.id"
@@ -144,8 +144,6 @@ import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDia
 const props = defineProps<{
   accounts: any[]
   accountId?: string
-  /** Mail lists the one account too; the calendar only lists a choice. */
-  alwaysShowAccounts?: boolean
   /** Offers every account at once above the accounts, and whether that is what is showing. */
   allAccounts?: { active: boolean }
   logout: { submit: () => void }

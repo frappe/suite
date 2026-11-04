@@ -29,6 +29,7 @@ interface CalendarEvent {
   id: string
   title?: string
   start: string
+  time_zone?: string | null
   duration?: string
   show_without_time?: boolean | 0 | 1
   participants?: CalendarEventParticipant[]
@@ -59,6 +60,7 @@ const isCalendarEvent = (value: unknown): value is CalendarEvent =>
   typeof value.id === 'string' &&
   'start' in value &&
   typeof value.start === 'string' &&
+  (!('time_zone' in value) || isOptionalString(value.time_zone)) &&
   (!('title' in value) || isOptionalString(value.title)) &&
   (!('duration' in value) || isOptionalString(value.duration)) &&
   (!('show_without_time' in value) ||
@@ -96,13 +98,17 @@ const upcomingEvents = useQuery(api.calendar.events.window, () =>
     : false,
 )
 
+// JMAP start is wall time in the event's zone; floating events use the browser zone.
+const eventStart = (event: CalendarEvent) =>
+  event.time_zone ? dayjs.tz(event.start, event.time_zone).local() : dayjs(event.start)
+
 const meetings = computed(() => {
   const currentTime = dayjs(now.value)
   const data: unknown = upcomingEvents.data
   const events = Array.isArray(data) ? data.filter(isCalendarEvent) : []
   return events
     .filter((event) => {
-      const start = dayjs(event.start)
+      const start = eventStart(event)
       const end = start.add(dayjs.duration(event.duration || 'PT0S'))
       return (
         getMeetingUrl(event) &&
@@ -111,12 +117,12 @@ const meetings = computed(() => {
         start.valueOf() <= eventWindow.value.to.getTime()
       )
     })
-    .sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
-    .slice(0, 4)
+    .sort((left, right) => eventStart(left).valueOf() - eventStart(right).valueOf())
+    .slice(0, 3)
 })
 
-const formatMeetingMonth = (event: CalendarEvent) => dayjs(event.start).format('MMM')
-const formatMeetingDay = (event: CalendarEvent) => dayjs(event.start).format('D')
+const formatMeetingMonth = (event: CalendarEvent) => eventStart(event).format('MMM')
+const formatMeetingDay = (event: CalendarEvent) => eventStart(event).format('D')
 const eventParticipants = (event: CalendarEvent) => {
   const participants = new Map<string, { email: string; name: string; image?: string }>()
   for (const participant of event.participants || []) {
@@ -146,7 +152,7 @@ const isAllDayEvent = (event: CalendarEvent) => {
 const formatMeetingTime = (event: CalendarEvent) => {
   if (isAllDayEvent(event)) return __('All day')
 
-  const start = dayjs(event.start)
+  const start = eventStart(event)
   const end = start.add(dayjs.duration(event.duration || 'PT0S'))
   return `${start.format('h:mm a')} – ${end.format('h:mm a')}`
 }

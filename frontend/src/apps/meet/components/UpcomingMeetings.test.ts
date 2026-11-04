@@ -8,6 +8,7 @@ interface MeetingEvent {
   title: string
   start: string
   duration: string
+  time_zone?: string
   links?: { href: string }[]
   participants?: { email: string; _name: string }[]
 }
@@ -167,6 +168,102 @@ describe('Meet upcoming list', () => {
     for (const date of ['2026-10-31', '2026-11-01', '2026-11-02'])
       expect(root.textContent).toContain(date)
     expect(root.textContent).not.toContain('2026-11-03')
+  })
+
+  it('finds the fourth event after three events without Meet fields', async () => {
+    state.events = [
+      ...['One', 'Two', 'Three'].map((title, index) => ({
+        id: title,
+        title,
+        start: `2026-09-30T${String(index + 9).padStart(2, '0')}:00:00`,
+        duration: 'PT1H',
+      })),
+      {
+        id: 'fourth',
+        title: 'Fourth event meeting',
+        start: '2026-09-30T14:00:00',
+        duration: 'PT1H',
+        links: [{ href: '/meet/abcd-efgh-ijkl' }],
+      },
+    ]
+    const root = await mount()
+    expect(root.textContent).toContain('Fourth event meeting')
+    expect(root.querySelectorAll('button[aria-label^="Join "]')).toHaveLength(1)
+  })
+
+  it('shows only the three earliest meetings after filtering nonmeetings', async () => {
+    state.events = [14, 11, 13, 12].map((hour) => ({
+      id: String(hour),
+      title: `Meeting at ${hour}`,
+      start: `2026-09-30T${hour}:00:00`,
+      duration: 'PT1H',
+      links: [{ href: '/meet/abcd-efgh-ijkl' }],
+    }))
+    const root = await mount()
+    expect(
+      [...root.querySelectorAll('button[aria-label^="Join "]')].map((row) =>
+        row.getAttribute('aria-label'),
+      ),
+    ).toEqual(['Join Meeting at 11', 'Join Meeting at 12', 'Join Meeting at 13'])
+    expect(root.textContent).not.toContain('Meeting at 14')
+  })
+
+  it('includes an ongoing meeting using its event timezone', async () => {
+    vi.setSystemTime(new Date('2026-09-30T08:00:00Z'))
+    state.events = [
+      {
+        id: 'zoned',
+        title: 'Pacific meeting',
+        start: '2026-09-30T01:30:00',
+        time_zone: 'America/Los_Angeles',
+        duration: 'PT1H',
+        links: [{ href: '/meet/abcd-efgh-ijkl' }],
+      },
+    ]
+    const root = await mount()
+    expect(root.textContent).toContain('Pacific meeting')
+  })
+
+  it('orders zoned meetings by instant and excludes meetings beyond the local horizon', async () => {
+    vi.setSystemTime(new Date('2026-09-30T08:00:00Z'))
+    state.events = [
+      {
+        id: 'later-zone',
+        title: 'Later instant',
+        start: '2026-09-30T03:00:00',
+        time_zone: 'America/Los_Angeles',
+        duration: 'PT1H',
+        links: [{ href: '/meet/abcd-efgh-ijkl' }],
+      },
+      {
+        id: 'earlier-zone',
+        title: 'Earlier instant',
+        start: '2026-09-30T09:00:00',
+        time_zone: 'UTC',
+        duration: 'PT1H',
+        links: [{ href: '/meet/abcd-efgh-ijkl' }],
+      },
+      {
+        id: 'outside',
+        title: 'Outside horizon',
+        start: '2026-10-01T23:59:00',
+        time_zone: 'Pacific/Honolulu',
+        duration: 'PT1H',
+        links: [{ href: '/meet/abcd-efgh-ijkl' }],
+      },
+    ]
+    const root = await mount()
+    expect(
+      [...root.querySelectorAll('button[aria-label^="Join "]')].map((row) =>
+        row.getAttribute('aria-label'),
+      ),
+    ).toEqual(['Join Earlier instant', 'Join Later instant'])
+    expect(root.textContent).not.toContain('Outside horizon')
+  })
+
+  it('hides the section when there are no events', async () => {
+    state.events = []
+    expect((await mount()).querySelector('section')).toBeNull()
   })
 
   it('shows a failed request and lets the user retry', async () => {

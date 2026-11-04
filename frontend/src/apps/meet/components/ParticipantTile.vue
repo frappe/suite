@@ -125,7 +125,7 @@
         @click="handleMute"
       >
         <template #icon>
-          <lucide-mic-off class="w-3.5 h-3.5" />
+          <lucide-mic-off class="w-3.5 h-3.5 -scale-x-100" />
         </template>
       </Button>
       <Button
