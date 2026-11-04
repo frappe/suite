@@ -332,7 +332,7 @@ def _check_preparing(requester: str, links: str | None) -> None:
 
     Every Guest is one requester, so Guests are counted per set of links.
     """
-    filters = {"requester": requester, "status": "Preparing"}
+    filters: dict[str, str | None] = {"requester": requester, "status": "Preparing"}
     if requester == "Guest":
         filters["links"] = links
     if frappe.db.count("Drive Download", filters) >= MAX_PREPARING_DOWNLOADS:
