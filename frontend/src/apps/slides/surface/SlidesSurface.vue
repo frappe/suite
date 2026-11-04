@@ -140,6 +140,7 @@ const {
 const exporting = ref(false)
 const {
   isOnlyCopy,
+  clearOnlyCopy,
   canDownloadChanges,
   narrowed,
   widened,
@@ -439,8 +440,7 @@ async function load() {
     )
     if (run !== latestLoad) return
 
-    // the server copy replaced the slides on screen
-    isOnlyCopy.value = false
+    clearOnlyCopy()
     if (doc) {
       settleCopies()
     }

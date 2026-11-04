@@ -1,5 +1,5 @@
 import { toast } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, readonly, ref, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { showsSlides, viewOnly } from '@/apps/slides/stores/presentation'
@@ -311,6 +311,11 @@ export function useUnsavedRecovery(
     }
   }
 
+  // the server copy replaced the slides on screen
+  function clearOnlyCopy() {
+    isOnlyCopy.value = false
+  }
+
   function settleCopies() {
     if (hasSettledCopies) {
       return
@@ -329,7 +334,8 @@ export function useUnsavedRecovery(
   }
 
   return {
-    isOnlyCopy,
+    isOnlyCopy: readonly(isOnlyCopy),
+    clearOnlyCopy,
     canDownloadChanges,
     narrowed,
     widened,
