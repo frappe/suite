@@ -135,13 +135,25 @@ test("losing edit access freezes the editor and cancels the pending save", async
 	expect(seen.errors).toEqual([]);
 });
 
+function isPush(url: URL) {
+	return url.pathname.endsWith("/updates");
+}
+
 test("a toolbar-only change is saved before leaving the document", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.locator(`[data-node='${doc.name}']`).click();
 	const editor = page.getByRole("textbox", { name: "Document editor" });
 	await editor.click();
+	await page.route(isPush, async (route) => {
+		if (route.request().method() === "POST") {
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
+
+		await route.continue();
+	});
+	const saving = page.waitForRequest((request) => request.method() === "POST" && isPush(new URL(request.url())));
 	await page.getByRole("button", { name: /bullet list/i }).click();
-	await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+	await saving;
 
 	let asked = "";
 	page.once("dialog", async (dialog) => {
@@ -150,7 +162,7 @@ test("a toolbar-only change is saved before leaving the document", async ({ page
 	});
 	await page.goBack();
 
-	// The change is saved, so there's nothing to recover and no reason to ask
+	// The save was still going when the page left, so the leave waits for it instead of asking
 	await expect(page).not.toHaveURL(new RegExp(`/d/${doc.name}`));
 	expect(asked).toBe("");
 	await expect.poll(storedHtml).toContain("<ul");
