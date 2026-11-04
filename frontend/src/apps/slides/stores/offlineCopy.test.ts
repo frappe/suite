@@ -233,7 +233,7 @@ describe('saveOfflineCopy', () => {
     expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/m1.png'])
   })
 
-  it('collects no picture Drive refused, and does not wait for it', async () => {
+  it('reports a picture Drive refused as not saved, without waiting for it', async () => {
     const release = setDocumentMedia((id) => ({
       id,
       src: ref(null),
@@ -246,7 +246,11 @@ describe('saveOfflineCopy', () => {
     const result = await saveOfflineCopy('p1')
     release()
 
-    expect(result).toEqual({ ok: true, failed: [], count: 1 })
+    expect(result).toEqual({
+      ok: false,
+      failed: [{ slideIndex: 0, src: 'media-node-1', status: 'refused' }],
+      count: 2,
+    })
     expect(recordedKeys('p1')).toEqual(['/private/files/a.png'])
   })
 

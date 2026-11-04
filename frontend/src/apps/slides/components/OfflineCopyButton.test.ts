@@ -9,6 +9,7 @@ interface DialogAction {
 
 const presentationDoc = ref<Record<string, unknown>>({})
 const presentationId = ref('c1')
+const saveCopy = vi.fn()
 
 vi.mock('@/apps/slides/stores/presentation', () => ({
   presentationDoc,
@@ -46,6 +47,12 @@ vi.mock('frappe-ui', () => ({
   }),
 }))
 
+vi.mock('@/apps/slides/stores/offlineCopy', async (original) => ({
+  ...(await original<typeof import('@/apps/slides/stores/offlineCopy')>()),
+  saveOfflineCopy: saveCopy,
+}))
+
+const { toast } = await import('frappe-ui')
 const { default: OfflineCopyButton } = await import('./OfflineCopyButton.vue')
 const { refreshOfflineStatus } = await import('@/apps/slides/stores/offlineCopy')
 
@@ -98,5 +105,53 @@ describe('an earlier offline copy of a composite', () => {
       .click()
 
     await vi.waitFor(() => expect(localStorage.getItem(RECORD)).toBeNull())
+  })
+})
+
+describe('a save that left pictures out', () => {
+  let app: App
+
+  async function saveAnswering(result: Record<string, unknown>) {
+    saveCopy.mockResolvedValue(result)
+    const host = document.body.appendChild(document.createElement('div'))
+    app = createApp(OfflineCopyButton)
+    app.mount(host)
+    host.querySelector<HTMLElement>('[data-trigger]')!.click()
+    await nextTick()
+    ;[...document.querySelectorAll<HTMLElement>('section button')]
+      .find((button) => button.textContent === 'Save copy')!
+      .click()
+    await vi.waitFor(() => expect(toast.warning).toHaveBeenCalled())
+  }
+
+  beforeEach(() => {
+    presentationDoc.value = { node: 'n1' }
+    refreshOfflineStatus('c1')
+    vi.mocked(toast.warning).mockClear()
+  })
+
+  afterEach(() => {
+    app.unmount()
+    document.body.innerHTML = ''
+  })
+
+  it("doesn't blame the connection when Drive refused them", async () => {
+    await saveAnswering({ ok: false, count: 2, failed: [{ status: 'refused' }] })
+
+    expect(toast.warning).toHaveBeenCalledWith('1 of 2 images not saved', {
+      description: 'You may not have access to them.',
+    })
+  })
+
+  it('suggests a retry when any of them could still come', async () => {
+    await saveAnswering({
+      ok: false,
+      count: 3,
+      failed: [{ status: 'refused' }, { status: 'network' }],
+    })
+
+    expect(toast.warning).toHaveBeenCalledWith('2 of 3 images not saved', {
+      description: 'Check your connection and try again.',
+    })
   })
 })

@@ -83,7 +83,9 @@ const reportSave = (result: SaveResult) => {
     })
   } else if (result.failed?.length) {
     toast.warning(`${result.failed.length} of ${result.count} images not saved`, {
-      description: 'Check your connection and try again.',
+      description: result.failed.every((failure) => failure.status === 'refused')
+        ? 'You may not have access to them.'
+        : 'Check your connection and try again.',
     })
   } else {
     toast.success('Available offline', {

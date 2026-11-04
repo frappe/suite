@@ -32,6 +32,7 @@ import {
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
 const TIMEOUT = 'timeout'
+const REFUSED = 'refused'
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
@@ -362,6 +363,7 @@ const saveOfflineCopy = async (id) => {
     await warmAssets()
     // a node-id picture has no url until Drive signs it
     const unsigned = unsignedSources(await mediaSettled(mediaNodeIds(), signal))
+    const refused = unsignedSources(mediaNodeIds().filter(isMediaRefused))
     // the slides on screen may now be another presentation's
     if (signal.aborted || presentationDoc.value?.node !== node) {
       return null
@@ -371,6 +373,9 @@ const saveOfflineCopy = async (id) => {
     progress.total = targets.length
     for (const source of unsigned) {
       recordFailure(progress, source, TIMEOUT)
+    }
+    for (const source of refused) {
+      recordFailure(progress, source, REFUSED)
     }
 
     const cache = await openPinnedCache()
@@ -418,7 +423,7 @@ const saveOfflineCopy = async (id) => {
     // the ledger is current, so a cancelled run needs no report
     if (signal.aborted && signal.reason !== QUOTA) return null
 
-    const count = targets.length + unsigned.length
+    const count = targets.length + unsigned.length + refused.length
     const ok = progress.failed.length === 0
     if (ok) {
       await forgetVisitedNode(node)
