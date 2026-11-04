@@ -3,7 +3,7 @@
     <slot name="toolbar">
       <WriterToolbar v-if="editable && editor" :editor :settings :is-painting />
     </slot>
-    <DocumentTabs v-if="editor && !hasCover()" :editor />
+    <DocumentTabs v-if="editor && !hasCover()" :editor :editable="!!editable" />
     <div class="flex flex-1 overflow-hidden">
       <div class="relative flex flex-1 min-w-0">
         <div

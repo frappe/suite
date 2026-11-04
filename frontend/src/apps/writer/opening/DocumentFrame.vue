@@ -4,6 +4,8 @@
     <div v-if="hasToolbar" class="shrink-0 border-b border-outline-gray-1 px-3">
       <slot name="toolbar"><div class="h-9" /></slot>
     </div>
+    <!-- The tab row's place, for the same reason -->
+    <div v-if="hasToolbar" class="hidden h-9 shrink-0 border-b border-outline-gray-1 md:block" />
     <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
       <div class="flex min-h-full flex-col md:grid md:grid-rows-[1fr]" :style="editorColumns()">
         <div class="hidden md:block" />

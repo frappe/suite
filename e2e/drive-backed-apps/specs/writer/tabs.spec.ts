@@ -18,7 +18,7 @@ function tabPanel(page: Page, label: string) {
 
 // Typing a first line and pressing Enter renames an "Untitled" tab to that line.
 async function addTab(page: Page, text: string) {
-	// The tab row appears with the second tab, so the first one comes from the Insert menu.
+	// The tab row is hidden on a phone, where a tab comes from the Insert menu.
 	const addButton = page.getByRole("button", { name: "Add tab" });
 	if (await addButton.isVisible()) {
 		await addButton.click();
@@ -114,11 +114,7 @@ test("the tab menu button renames the active tab", async ({ owner, run }) => {
 
 	await addTab(page, "alpha");
 	await addTab(page, "bravo");
-	// The menu button only exists on the active tab, which is the one just added.
-	const menuButton = page.getByRole("button", { name: "Tab options" });
-	await expect(menuButton).toHaveCount(1);
-
-	await menuButton.click();
+	await tocTabs(page).filter({ hasText: "bravo" }).click({ button: "right" });
 	await page.getByRole("menuitem", { name: "Rename" }).click();
 
 	const input = page.getByRole("textbox", { name: "Tab name" });
