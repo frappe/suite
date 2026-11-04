@@ -2,11 +2,14 @@ import frappe
 from frappe.model.document import Document
 from pypika import Order
 
-from suite.drive.utils import WRITER_CONTENT_DOCTYPE
 from suite.suite_core import suite_email
 
 
 def get_link(entity):
+    # Not at the top: the worker imports this module before a site is set up, and
+    # suite.drive.utils needs a site to import.
+    from suite.drive.utils import WRITER_CONTENT_DOCTYPE
+
     if entity.content_doctype == WRITER_CONTENT_DOCTYPE:
         return "/writer/w/" + entity.name
     type_ = {True: "f", bool(entity.is_folder): "d"}

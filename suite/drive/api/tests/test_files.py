@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import zipfile
 from contextlib import contextmanager
 from io import BytesIO
@@ -780,6 +782,15 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
         self.assertEqual(rows[writer.name]["content_doctype"], WRITER_CONTENT_DOCTYPE)
         self.assertEqual(rows[writer.name]["content_docname"], writer_doc.name)
+
+    def test_share_notification_job_loads_before_a_site_is_set_up(self):
+        """The worker unpickles the job, which imports this module, with no site yet."""
+        result = subprocess.run(
+            [sys.executable, "-c", "import suite.drive.api.notifications"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_trash_and_restore_preserve_status(self):
         with (
