@@ -136,18 +136,21 @@ test("losing edit access freezes the editor and cancels the pending save", async
 });
 
 test("a toolbar-only change is saved before leaving the document", async ({ page }) => {
-	const editor = await openDocument(page);
+	await page.goto(`/drive/f/${home.name}?view=list`);
+	await page.locator(`[data-node='${doc.name}']`).click();
+	const editor = page.getByRole("textbox", { name: "Document editor" });
 	await editor.click();
 	await page.getByRole("button", { name: /bullet list/i }).click();
+	await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
 	let asked = "";
 	page.once("dialog", async (dialog) => {
 		asked = dialog.message();
 		await dialog.dismiss();
 	});
-	await page.getByRole("navigation", { name: "Areas" }).getByRole("link", { name: "Drive" }).click();
+	await page.goBack();
 
-	// The room saves the change on the way out, so there's nothing to recover and no reason to ask
+	// The change is saved, so there's nothing to recover and no reason to ask
 	await expect(page).not.toHaveURL(new RegExp(`/d/${doc.name}`));
 	expect(asked).toBe("");
 	await expect.poll(storedHtml).toContain("<ul");
