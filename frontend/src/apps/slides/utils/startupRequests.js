@@ -1,6 +1,7 @@
 import { api } from '@/apps/slides/client/api'
 import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
-import { API_CACHE_NAME, PIN_HEADER } from '@/apps/slides/utils/slidesCaches'
+import { fetchPinned } from '@/apps/slides/utils/offlineRequests'
+import { API_CACHE_NAME } from '@/apps/slides/utils/slidesCaches'
 import { isCacheable } from '@/apps/slides/utils/slidesRequests'
 
 const CONCURRENCY = 4
@@ -78,7 +79,7 @@ export function warmAssets() {
 
 // a shell from another build would pair its code with this page's chunks
 export async function fetchShell(node, signal) {
-  const response = await fetch(`/d/${node}`, { headers: { [PIN_HEADER]: '1' }, signal })
+  const response = await fetchPinned(`/d/${node}`, signal)
   const build = Number(response.headers.get('X-Suite-Build'))
 
   if (
@@ -94,7 +95,7 @@ export async function fetchShell(node, signal) {
 }
 
 export async function fetchCacheable(url, type, signal) {
-  const response = await fetch(url, { headers: { [PIN_HEADER]: '1' }, signal }).catch(() => null)
+  const response = await fetchPinned(url, signal).catch(() => null)
 
   if (response?.status === HTTP_OK && isCacheable(type, response)) {
     return response
