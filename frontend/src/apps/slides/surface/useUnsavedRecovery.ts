@@ -57,12 +57,13 @@ export function useUnsavedRecovery(
       !!slides.value?.length &&
       (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
     viewOnly.value = true
-    void stopWrites(session.contentDocname, unsaved ? undefined : keepUnreadDraft)
     if (!unsaved) {
+      void stopWritesKeepingUnread()
       toast.warning('Editing access changed. This presentation is now view only.')
       return
     }
 
+    void stopWrites(session.contentDocname)
     isOnlyCopy.value = !retainRecovery()
 
     if (isOnlyCopy.value) {
@@ -140,12 +141,17 @@ export function useUnsavedRecovery(
   function keepUnreadDraft(content: unknown[]) {
     try {
       keepSticky(content)
-      showKept(
-        translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
-      )
       return true
     } catch {
       return false
+    }
+  }
+
+  async function stopWritesKeepingUnread() {
+    if (await stopWrites(session.contentDocname, keepUnreadDraft)) {
+      showKept(
+        translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
+      )
     }
   }
 
