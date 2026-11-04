@@ -10,6 +10,7 @@ from suite.suite_core.administration import guard_user_change, list_users, requi
 from suite.suite_core.storage import (
     check_addition,
     effective_limit,
+    forget_users,
     personal_mail_usage,
     set_default,
     state,
@@ -230,6 +231,25 @@ class TestAdministrationAccess(IntegrationTestCase):
     def test_recovery_administrator_can_administer_without_mail_configuration(self):
         with self.set_user("Administrator"):
             self.assertEqual(require_admin(), "Administrator")
+
+
+class TestForgetUsers(IntegrationTestCase):
+    def test_forgetting_a_user_leaves_a_site_never_measured_unmeasured(self):
+        doc, _policy, _measurements = state()
+        kept = {"policy": doc.policy, "measurements": doc.measurements}
+        self.addCleanup(frappe.db.set_value, "Suite Storage State", "site", kept)
+        limits = {"users": {"gone@example.test": {"cap": None}, "stays@example.test": {"cap": GB}}}
+        frappe.db.set_value(
+            "Suite Storage State",
+            "site",
+            {"policy": frappe.as_json(limits), "measurements": frappe.as_json({"site_mail": None})},
+        )
+
+        forget_users(["gone@example.test"])
+
+        _doc, policy, measurements = state()
+        self.assertEqual(policy["users"], {"stays@example.test": {"cap": GB}})
+        self.assertIsNone(personal_mail_usage(measurements, "stays@example.test"))
 
 
 class TestPersonalMailUsage(TestCase):

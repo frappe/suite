@@ -271,3 +271,118 @@ test("the document actions fit on one row of a 320 px screen", async ({ page }) 
 	}
 	expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
+
+test("the name box keeps one width, so the formula bar never moves", async ({
+	page,
+}) => {
+	await openSheet(page);
+	const nameBox = page.getByRole("textbox", { name: "Name box" });
+	const formulaBar = page.getByRole("textbox", {
+		name: "Cell value or formula",
+	});
+	const left = async () => (await formulaBar.boundingBox())!.x;
+	const width = async () => (await nameBox.boundingBox())!.width;
+	const fits = () =>
+		nameBox.evaluate(
+			(box: HTMLInputElement) => box.scrollWidth <= box.clientWidth,
+		);
+
+	const start = { left: await left(), width: await width() };
+	for (const reference of [
+		"C5",
+		"D48:J48",
+		"A50:Z50",
+		"50:50",
+		"1:1",
+		"B:Z",
+		"A1",
+	]) {
+		await nameBox.fill(reference);
+		await nameBox.press("Enter");
+		await expect(nameBox).toHaveValue(reference);
+		expect(await width(), reference).toBe(start.width);
+		expect(await left(), reference).toBe(start.left);
+	}
+
+	// A typical range fits in full; a longer one ends in an ellipsis.
+	await nameBox.evaluate(
+		(box: HTMLInputElement) => (box.value = "AA100:AB200"),
+	);
+	expect(await fits()).toBe(true);
+	await nameBox.evaluate(
+		(box: HTMLInputElement) => (box.value = "AAA100000:ABC200000"),
+	);
+	expect(await fits()).toBe(false);
+	expect(
+		await nameBox.evaluate((box) => getComputedStyle(box).textOverflow),
+	).toBe("ellipsis");
+
+	// Focused, the box shows the whole reference over the formula bar, which stays put.
+	await nameBox.fill("AAA100000:ABC200000");
+	expect(await fits()).toBe(true);
+	expect(await left()).toBe(start.left);
+	await nameBox.press("Escape");
+	await expect(nameBox).toHaveValue("A1");
+	expect(await width()).toBe(start.width);
+
+	// A phone keeps one, narrower width too.
+	await page.setViewportSize({ width: 360, height: 640 });
+	// The phone shell mounts the editor again.
+	await expect(formulaBar).toBeVisible({ timeout: 20_000 });
+	await expect(page.locator(".sn-canvas-loading")).toHaveCount(0, {
+		timeout: 20_000,
+	});
+	const phone = { left: await left(), width: await width() };
+	expect(phone.width).toBeLessThan(start.width);
+	for (const reference of ["D48:J48", "C5"]) {
+		await nameBox.fill(reference);
+		await nameBox.press("Enter");
+		expect(await width(), reference).toBe(phone.width);
+		expect(await left(), reference).toBe(phone.left);
+	}
+});
+
+test("font size steps with − and +, takes a typed size and lists common sizes, one undo each", async ({
+	page,
+}) => {
+	await openSheet(page);
+	const size = page.getByRole("spinbutton", { name: "Font size" });
+	const undo = page.getByRole("button", { name: "Undo", exact: true });
+	await expect(size).toHaveValue("13");
+
+	await page.getByRole("button", { name: "Increase font size" }).click();
+	await expect(size).toHaveValue("14");
+	await undo.click();
+	await expect(size).toHaveValue("13");
+
+	// Enter applies the size and blurs the field; that is still one step.
+	await size.fill("20");
+	await size.press("Enter");
+	await expect(size).toHaveValue("20");
+	await undo.click();
+	await expect(size).toHaveValue("13");
+
+	await size.click();
+	await page.getByRole("button", { name: "24", exact: true }).click();
+	await expect(size).toHaveValue("24");
+	await expect(page.locator(".sn-font-sizes")).toHaveCount(0);
+	await undo.click();
+	await expect(size).toHaveValue("13");
+});
+
+test("every control in both toolbar rows is 28 px tall", async ({ page }) => {
+	await openSheet(page);
+	const heights = await page
+		.locator(
+			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible:not(.sn-formula-input), .sn-formula-wrap",
+		)
+		.evaluateAll((els) =>
+			els
+				.map(
+					(el) =>
+						`${el.getAttribute("aria-label") ?? el.textContent?.trim()}=${Math.round(el.getBoundingClientRect().height)}`,
+				)
+				.filter((s) => !s.endsWith("=28")),
+		);
+	expect(heights).toEqual([]);
+});

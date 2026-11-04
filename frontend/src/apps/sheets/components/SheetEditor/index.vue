@@ -119,7 +119,8 @@
         :format-menu-options="formatMenuOptions"
         @number-format="toggleNumberFmt"
         @adjust-decimals="adjustDecimals"
-        @font-size-input="onFontSizeInput"
+        @adjust-font-size="adjustFontSize"
+        @set-font-size="setFontSize"
         @toggle-format="toggleFmt"
         @set-color="setColor"
         @undo="undo"
@@ -130,19 +131,22 @@
       >
         <!-- The formula bar: name box, then fx and the cell's value -->
         <template #formula>
-          <Tooltip :text="__('Type a cell or range, then Enter')">
+          <!-- A fixed width; a long reference ends in an ellipsis, and the
+               tooltip and the focused box show all of it. -->
+          <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
             <input
               class="sn-cell-ref"
               name="name-box"
               :aria-label="__('Name box')"
-              :value="nameBox"
-              :style="{ '--sn-name-ch': nameBox.length + 1 }"
+              :value="nameBoxText"
+              :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
               spellcheck="false"
               autocomplete="off"
               @focus="$event.target.select()"
+              @input="nameBoxTyped = $event.target.value"
               @keydown.enter.prevent="onNameBoxEnter"
-              @keydown.esc.prevent="onNameBoxDone($event)"
-              @blur="$event.target.value = nameBox"
+              @keydown.esc.prevent="onNameBoxDone"
+              @blur="nameBoxTyped = null"
             />
           </Tooltip>
           <div class="sn-formula-wrap">
@@ -305,12 +309,14 @@
         <div
           v-for="cur in visibleRemoteCursors"
           :key="cur.user"
-          class="sn-remote-cursor"
-          :class="{ 'sn-remote-cursor--moved': cur.justMoved }"
+          class="sn-remote-cursor sn-peer"
+          :class="{
+            'sn-remote-cursor--moved': cur.justMoved,
+            'sn-remote-cursor--named': cur.label,
+          }"
           :style="cur.style"
-          :title="cur.fullName"
         >
-          <span class="sn-remote-cursor-label">{{ cur.firstName }}</span>
+          <span v-if="cur.label" class="sn-remote-cursor-label">{{ cur.label }}</span>
         </div>
 
         <!-- Pivot highlight overlay — thin coloured border drawn over the
@@ -787,6 +793,7 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { useCurrentUser } from '@/boot/session'
+import { colourStyle } from '@/platform/collab/colours'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -1171,6 +1178,10 @@ const xlsxInputRef = ref(null)
 const activeCell = ref('A1')
 // What the name box shows: the active cell, or the selected range.
 const nameBox = ref('A1')
+// What the person has typed into it, so the focused box grows to fit; null
+// when they are not typing.
+const nameBoxTyped = ref(null)
+const nameBoxText = computed(() => nameBoxTyped.value ?? nameBox.value)
 const formulaValue = ref('')
 const canUndo = ref(false)
 const canRedo = ref(false)
@@ -2446,7 +2457,7 @@ const {
 // so you can see at a glance who's looking at which tab without having
 // to switch. Caps at 3 dots + "+N" overflow per tab.
 const peersBySubSheet = computed(() => {
-  const out = new Map() // name → Array<{user, color, full_name}>
+  const out = new Map() // name → Array<{user, colour, full_name}>
   for (const u of presentUsers.value) {
     if (!u.sub_sheet) continue
     if (!out.has(u.sub_sheet)) out.set(u.sub_sheet, [])
@@ -2499,17 +2510,14 @@ const visibleRemoteCursors = computed(() => {
       _lastRemoteRC.set(user, stamp)
       return {
         user,
-        firstName: cursor.firstName || cursor.initials,
-        initials: cursor.initials,
-        color: cursor.color,
-        fullName: cursor.fullName,
+        label: cursor.label,
         justMoved,
         style: {
           left: tl.x + 'px',
           top: tl.y + 'px',
           width: width + 'px',
           height: height + 'px',
-          '--rc': cursor.color,
+          ...colourStyle(cursor.colour),
         },
       }
     })
@@ -3926,10 +3934,10 @@ function onNameBoxEnter(e) {
     if (range.r0 !== range.r1 || range.c0 !== range.c1 || range.mode !== 'cell')
       grid.setSelection(range)
   }
-  onNameBoxDone(e)
+  onNameBoxDone()
 }
-function onNameBoxDone(e) {
-  e.target.value = nameBox.value
+function onNameBoxDone() {
+  nameBoxTyped.value = null
   canvasRef.value?.focus()
 }
 
@@ -4149,9 +4157,9 @@ function adjustFontSize(delta) {
   isDirty.value = true
 }
 
-// Set font size on the selection directly to whatever the user typed. Clamped
-// to [8, 72] to match adjustFontSize. Called from the toolbar's font-size
-// input on commit (Enter / blur).
+// Set font size on the selection directly. Clamped to [8, 72] to match
+// adjustFontSize. Called from the toolbar's font-size field (a typed size on
+// Enter or blur) and its list of common sizes.
 function setFontSize(px) {
   const n = _clampFont(parseInt(px, 10) || 13)
   _recordScopedFormatOp(
@@ -4164,12 +4172,6 @@ function setFontSize(px) {
   syncFlags()
   recordAction?.('setFontSize', [n])
   isDirty.value = true
-}
-function onFontSizeInput(e) {
-  setFontSize(e.target.value)
-  // Snap the displayed value back to the clamped result.
-  e.target.value = activeFormat.value.fontSize || 13
-  e.target.blur()
 }
 
 // ── Hyperlink ─────────────────────────────────────────────────────────────────

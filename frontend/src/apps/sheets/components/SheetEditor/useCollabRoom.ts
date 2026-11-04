@@ -17,6 +17,7 @@ import { toast } from 'frappe-ui'
 import { computed, shallowRef } from 'vue'
 
 import { type CollabSession, type LostAccess, type RoomStatus } from '@/platform/collab'
+import { GUEST_USER } from '@/platform/collab/colours'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -28,7 +29,7 @@ import {
   upgradingBanner,
 } from '../../collab/messages'
 import { createPeople } from '../../collab/people'
-import { GUEST_USER, readPresence, sendSelection } from '../../collab/presence'
+import { readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
 import { isLiveNow, openSheetRoom, type SheetRoom } from '../../collab/room'
 import {
