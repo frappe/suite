@@ -855,8 +855,9 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - Root nodes never appear as ordinary rows [T006].
 - Row menu: Open, Open in new tab, Download, Rename, Move, Make a copy,
   Star/Unstar, Share, Move to trash [T006].
-- Download is unavailable for links. Folder Download shows only when the
-  folder-archive routes exist [T006, Drive §11.2].
+- Download is unavailable for links. Folder Download shows only to a
+  signed-in person. It builds a zip in the background, and a notification
+  links the zip when it is ready (section 5.8) [T006, Drive §11.2].
 - The `access` expansion hides every action the row's role does not allow
   [T006, Drive §4.2].
 - Share shows only to users with MANAGE (section 7.2) [T006, T008].
@@ -903,12 +904,19 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   then toggle rows. Back exits selection mode [T006].
 - In selection mode checkboxes appear. The bulk bar replaces the toolbar at
   equal height and does not move the list [T006].
-- The active-node bulk bar holds only **Move** and **Move to trash**. One
-  gesture is one `POST /nodes/batch` request [T006, Drive §11.5].
+- The active-node bulk bar holds **Move**, **Download**, **Star** (or
+  **Unstar** when every selected row is starred) and **Move to trash**.
+  Move and Move to trash are one `POST /nodes/batch` request [T006,
+  Drive §11.5].
+- **Download** sends one `POST /downloads` for the whole selection. A
+  single file downloads at once. Anything else becomes one zip, named after
+  the selection's folder or "Suite download". A toast says the zip is being
+  prepared; a notification links it when ready [Drive §11.2].
+- **Star** and **Unstar** send one favourite request per row that needs to
+  change. Download and Star show only to a signed-in person.
 - An action is enabled only when every selected row's access permits it.
   The server rechecks every node [T006].
-- Rename, copy, star, share, download and open stay single-row actions
-  [T006].
+- Rename, copy, share and open stay single-row actions [T006].
 - Trash replaces the bar with Restore and Delete forever (section 6)
   [T006, T007].
 - Batch results follow section 6.11 [T006, T007].
@@ -2518,7 +2526,7 @@ Where the asks land [T019]:
 | D3 | `kind=folder` filter inside the SQL window on children | T006 | 5.7, 6.9 | shipped (`20befde95`) [T019] | specified [Drive §5.3, §11.2] |
 | D4 | Page-batched `expand=access` on every node-valued view | T006 | 5.4 | shipped (`20befde95`) [T019] | specified [Drive §11.2, §11.3] |
 | D5 | Batched `expand=breadcrumbs` on `views/search` | T006 | 5.4, 5.10 | shipped (`20befde95`) [T019] | specified [Drive §5.7, §11.3] |
-| D6 | Folder archive build, status and download routes | T005, T006 | 5.6 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
+| D6 | Background zip downloads for a folder or a selection | T005, T006 | 5.6 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
 | D7 | Payload-free, after-commit `drive:changed` realtime event | T006 | 5.9 | shipped (`20befde95`) [T019] | specified [Drive §9.5] |
 | D7a | Node event with `{node, parent, root, modified, action}` and per-folder rooms | SSC | 5.9 | none | superseded by D7 [T006] |
 | D8 | `opened_at` on `views/recents` rows | T012 | 11.1 | shipped (`20befde95`) [T019] | specified [Drive §9.5, §11.2] |
