@@ -13,7 +13,6 @@ from suite.mail.api import admin
 from suite.mail.api.account import set_reset_password_key
 from suite.mail.tests.test_suite_cloud_directory import DOMAIN, SuiteCloudTestCase
 
-OLD_PASSWORD = "a-strong-password-9"
 NEW_PASSWORD = "Another-strong-pw-9"
 
 
@@ -38,8 +37,8 @@ class TestResetPassword(SuiteCloudTestCase):
             backup_email="reset-member@backup.test",
             first_name="Reset",
             last_name="Member",
-            password=OLD_PASSWORD,
         )
+        self.mail_password = self.fake.passwords[self.email]
         set_request(path="/random")
         frappe.local.response = frappe._dict()
         frappe.local.cookie_manager = CookieManager()
@@ -64,7 +63,7 @@ class TestResetPassword(SuiteCloudTestCase):
             events.update_password(NEW_PASSWORD, key=key),
             "The reset password link has either been used before or is invalid",
         )
-        self.assertEqual(self.fake.passwords[self.email], OLD_PASSWORD)
+        self.assertEqual(self.fake.passwords[self.email], self.mail_password)
 
     def test_an_expired_reset_link_leaves_the_mail_password_alone(self) -> None:
         expiry = frappe.db.get_single_value("System Settings", "reset_password_link_expiry_duration")
@@ -78,4 +77,4 @@ class TestResetPassword(SuiteCloudTestCase):
         self.assertEqual(
             events.update_password(NEW_PASSWORD, key=key), "The reset password link has been expired"
         )
-        self.assertEqual(self.fake.passwords[self.email], OLD_PASSWORD)
+        self.assertEqual(self.fake.passwords[self.email], self.mail_password)

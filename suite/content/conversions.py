@@ -2,7 +2,8 @@
 
 `run_pending` is the scheduled job's loop: it pages through the app's documents that have no log, newest
 first, and hands each to `convert_document`, which converts one document. It passes over a document this
-converter refused unless the row changed after the refused attempt began.
+converter refused unless the row changed after the refused attempt began. `run_one` takes one document the
+same way, for the job an import queues.
 
 `convert_document` runs the app's converter on the old body the app's `read_old` answers, and installs
 the answer in one transaction under the row's lock: the app's `check` refuses before the first write,
@@ -81,42 +82,65 @@ def run_pending(app: str, conversion: Conversion) -> None:
     """Convert the app's documents that have no log, page by page, until none is left or time runs out."""
     convert.clear_block("scheduler")
     deadline = time.monotonic() + convert.RUN_FOR
-    missing = convert.missing_prerequisite(app)
-    if missing:
-        convert.log_reason(app, missing)
+    if not has_prerequisites(app):
         return
 
     page = convert.pending_page(app, conversion.version, None)
-    if not page:
-        return
-
-    fault = selftest.self_test_fault()
-    if fault:
-        convert.log_reason(app, f"the collaboration self-test fails: {fault}")
-        return
-
-    if not convert.converter_ready(app, conversion):
+    if not page or not converter_runs(app, conversion):
         return
 
     while page and convert_page(app, page, deadline):
         page = convert.pending_page(app, conversion.version, page[-1])
 
 
+def run_one(app: str, conversion: Conversion, node: str) -> None:
+    """Convert `node` now, behind the checks `run_pending` makes; a document this can't convert waits for that run."""
+    if has_prerequisites(app) and converter_runs(app, conversion):
+        convert_node(app, node)
+
+
+def has_prerequisites(app: str) -> bool:
+    """Whether the site has what the app's conversion needs; logs what it lacks."""
+    missing = convert.missing_prerequisite(app)
+    if missing:
+        convert.log_reason(app, missing)
+
+    return not missing
+
+
+def converter_runs(app: str, conversion: Conversion) -> bool:
+    """Whether the self-test passes and this version's converter is here; logs why not."""
+    fault = selftest.self_test_fault()
+    if fault:
+        convert.log_reason(app, f"the collaboration self-test fails: {fault}")
+        return False
+
+    return convert.converter_ready(app, conversion)
+
+
 def convert_page(app: str, page: list[frappe._dict], deadline: float) -> bool:
     """Convert each document on `page`; False once time runs out, the app pauses or the converter changes."""
     for row in page:
-        # Locks the app row before read_old's document row; run_converter's or mark_checked's commit releases it
-        if time.monotonic() > deadline or not convert.may_convert(app, lock=True):
+        if time.monotonic() > deadline or not convert_node(app, row.node):
             return False
 
-        try:
-            convert_document(app, row.node)
-        except convert.ConverterChanged as changed:
-            convert.log_reason(app, str(changed))
-            return False
-        except Exception as error:
-            frappe.db.rollback()
-            convert.log_reason(app, f"{row.node}: {type(error).__name__}")
+    return True
+
+
+def convert_node(app: str, node: str) -> bool:
+    """Convert one document, logging what fails on it; False once the app pauses or the converter changes."""
+    # Locks the app row before read_old's document row; run_converter's or mark_checked's commit releases it
+    if not convert.may_convert(app, lock=True):
+        return False
+
+    try:
+        convert_document(app, node)
+    except convert.ConverterChanged as changed:
+        convert.log_reason(app, str(changed))
+        return False
+    except Exception as error:
+        frappe.db.rollback()
+        convert.log_reason(app, f"{node}: {type(error).__name__}")
 
     return True
 

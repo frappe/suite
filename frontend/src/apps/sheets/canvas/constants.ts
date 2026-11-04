@@ -20,16 +20,14 @@ export {
   DEFAULT_TOTAL_COLS,
 } from '../core/view-model.js'
 
-// Frappe Espresso palette — resolved hex values mirroring the frappe-ui
-// semantic tokens (surface-*, outline-*, ink-*). Canvas can't read CSS vars,
-// so these are baked in. Keep in sync with --ink-/--outline-/--surface-.
+// Frappe Espresso palette, read from the frappe-ui design tokens (--surface-*,
+// --outline-*, --ink-*). The canvas API can't use CSS variables, so each
+// colour reads its token from <html> with getComputedStyle at paint time and
+// follows the theme. The hex values are fallbacks for when no frappe-ui
+// stylesheet is loaded (tests).
 //
 // Selection accent is intentionally monochrome (Espresso black + neutral grays)
 // rather than blue, to match Frappe Sheets's black-and-grey theme.
-// Resolve frappe-ui design tokens (--surface-*, --outline-*, --ink-*).
-// Canvas API cannot read CSS variables directly, so we resolve them dynamically
-// from document.documentElement via getComputedStyle so canvas rendering stays
-// 100% aligned with frappe-ui design tokens in both light and dark modes.
 function _token(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
   const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -85,10 +83,11 @@ export const COLORS = {
   get filterOutline() {
     return _token('--ink-green-3', '#15803D')
   },
-  // Separators between selected headers: gridLine is the tint's own grey, so
-  // it would vanish on it.
+  // Separators between selected headers: one step past the tint on the same
+  // surface scale, so they show on it in both themes. gridLine is the tint's
+  // own grey in light mode, and --outline-gray-3 is in dark mode.
   get activeHeaderLine() {
-    return _token('--outline-gray-3', '#C7C7C7')
+    return _token('--surface-gray-5', '#C7C7C7')
   },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')

@@ -19,6 +19,7 @@ from suite import drive
 from suite.content import (
     capacity,
     compaction,
+    convert,
     copies,
     jobs,
     live,
@@ -81,6 +82,32 @@ def start(app: str, node: str) -> None:
     """Make a new document collaborative from its first edit, while collaboration is on."""
     if log.enabled(app):
         log.create(app, node)
+
+
+def convert_soon(app: str, node: str) -> None:
+    """Queue an imported document's conversion for when its import commits, so it opens for editing in
+    seconds rather than at the next scheduled run."""
+    if spec_of(app).conversion is None or not convert.may_convert(app):
+        return
+
+    # The collab queue, with the other jobs that run a Node child: not the scheduled run's long queue, where
+    # it could wait minutes behind that run. Only a hint: the scheduled run converts it anyway, so a queue
+    # that refuses it never fails the import
+    try:
+        scheduling.enqueue(
+            jobs.CONVERT_ONE,
+            f"suite-convert-{app}-{node}",
+            timeout=convert.TIMEOUT,
+            app=app,
+            node=node,
+            enqueue_after_commit=True,
+        )
+    except Exception:
+        frappe.log_error(
+            title="Collab conversion: import request failed",
+            message=f"{app} document {node}\n{frappe.get_traceback()}",
+            reference_doctype="Suite Collab Settings",
+        )
 
 
 def copy(app: str, source_node: str, node: str) -> None:
@@ -313,6 +340,7 @@ class ContentCallbacks:
         self.base_on_purge = declared(spec.on_purge, "on_purge")
         self.base_used_nodes = declared(spec.used_nodes, "used_nodes")
         self.base_remap_media = declared(spec.remap_media, "remap_media")
+        self.base_import_from_file = spec.import_from_file
 
     def app(self) -> str:
         """Return the app whose editor keeps the spec's doctype."""
@@ -342,6 +370,13 @@ class ContentCallbacks:
         except NotReady as unready:
             raise drive.DriveConflict(_("This document cannot be copied right now")) from unready
 
+        return docname
+
+    def import_from_file(self, file_node: str, node: str) -> str:
+        """Import the file into the app's row, and queue its conversion for when the import commits."""
+        import_row = declared(self.base_import_from_file, "import_from_file")
+        docname = import_row(file_node, node)
+        convert_soon(self.app(), node)
         return docname
 
     def export(self, docname: str, file_format: str) -> tuple[IO[bytes], str]:
@@ -443,6 +478,7 @@ def with_content(spec: drive.ContentTypeSpec) -> drive.ContentTypeSpec:
         spec,
         create_empty=callbacks.create_empty,
         duplicate=callbacks.duplicate,
+        import_from_file=callbacks.import_from_file if spec.import_from_file else None,
         export=callbacks.export,
         version_bytes=callbacks.version_bytes,
         restore_version=callbacks.restore_version,
