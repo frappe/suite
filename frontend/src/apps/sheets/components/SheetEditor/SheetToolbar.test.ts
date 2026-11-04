@@ -10,6 +10,7 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/TextInput')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Tooltip')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Popover')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/ItemListRow')),
 }))
 
 vi.stubGlobal(
@@ -43,7 +44,7 @@ function mountRow(props: Record<string, unknown> = {}) {
     onNumberFormat: vi.fn(),
     onToggleFormatPainter: vi.fn(),
     onAdjustFontSize: vi.fn(),
-    onFontSize: vi.fn(),
+    onSetFontSize: vi.fn(),
   }
   const clearFormatting = vi.fn()
   const root = document.createElement('div')
@@ -161,15 +162,6 @@ describe('SheetToolbar (row 2)', () => {
     expect(handlers.onAdjustDecimals).toHaveBeenCalledWith(-1)
   })
 
-  it('draws its buttons and fields 28 px tall (frappe-ui sm)', () => {
-    const { root } = mountRow()
-    const tall = [...root.querySelectorAll<HTMLElement>('button, input')].filter((el) =>
-      /\bh-8\b/.test(`${el.className} ${el.parentElement?.className ?? ''}`),
-    )
-    expect(tall.map((el) => el.getAttribute('aria-label') ?? el.textContent?.trim())).toEqual([])
-    expect(button(root, 'Bold').className).toMatch(/\bh-7\b/)
-  })
-
   it('steps the font size by 1 with − and +, and stops at 8 and 72', () => {
     const { root, handlers } = mountRow({ activeFormat: { fontSize: 13 } })
     button(root, 'Decrease font size').click()
@@ -190,8 +182,8 @@ describe('SheetToolbar (row 2)', () => {
     field.focus()
     field.click()
     await settle()
-    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
-    expect(options.map((o) => o.textContent?.trim())).toEqual([
+    const sizes = [...document.querySelectorAll<HTMLButtonElement>('.sn-font-sizes button')]
+    expect(sizes.map((o) => o.textContent?.trim())).toEqual([
       '8',
       '9',
       '10',
@@ -202,14 +194,45 @@ describe('SheetToolbar (row 2)', () => {
       '24',
       '36',
     ])
-    expect(
-      options.find((o) => o.getAttribute('aria-selected') === 'true')?.textContent?.trim(),
-    ).toBe('14')
+    expect(sizes.find((o) => o.getAttribute('aria-current') === 'true')?.textContent?.trim()).toBe(
+      '14',
+    )
     expect(document.activeElement).toBe(field)
-    options.find((o) => o.textContent?.trim() === '18')!.click()
+    sizes.find((o) => o.textContent?.trim() === '18')!.click()
     await settle()
-    expect(handlers.onFontSize).toHaveBeenCalledWith(18)
-    expect(document.querySelector('[role="option"]')).toBeNull()
+    expect(handlers.onSetFontSize.mock.calls).toEqual([[18]])
+    expect(document.querySelector('.sn-font-sizes')).toBeNull()
+  })
+
+  it('applies a typed size once, clamped, and drops it when a listed size is picked', async () => {
+    const { root, handlers } = mountRow({ activeFormat: { fontSize: 13 } })
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    const type = (text: string) => {
+      field.value = text
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    // Enter blurs the field, and the blur's change applies the size.
+    field.focus()
+    type('100')
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onSetFontSize.mock.calls).toEqual([[72]])
+    // A change with nothing typed applies nothing.
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onSetFontSize).toHaveBeenCalledOnce()
+
+    handlers.onSetFontSize.mockClear()
+    field.click()
+    await settle()
+    type('2')
+    const size24 = [...document.querySelectorAll<HTMLButtonElement>('.sn-font-sizes button')].find(
+      (o) => o.textContent?.trim() === '24',
+    )!
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    size24.dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
+    size24.click()
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onSetFontSize.mock.calls).toEqual([[24]])
   })
 
   it('opens the Format menu from the Format button', async () => {

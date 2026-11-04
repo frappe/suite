@@ -363,11 +363,15 @@ test("font size steps with − and +, takes a typed size and lists common sizes,
 	await expect(size).toHaveValue("13");
 
 	await size.click();
-	await page.getByRole("option", { name: "24", exact: true }).click();
+	await page.getByRole("button", { name: "24", exact: true }).click();
 	await expect(size).toHaveValue("24");
-	await expect(page.getByRole("option")).toHaveCount(0);
+	await expect(page.locator(".sn-font-sizes")).toHaveCount(0);
+	await undo.click();
+	await expect(size).toHaveValue("13");
+});
 
-	// Both rows: every control is 28 px tall.
+test("every control in both toolbar rows is 28 px tall", async ({ page }) => {
+	await openSheet(page);
 	const heights = await page
 		.locator(
 			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible:not(.sn-formula-input), .sn-formula-wrap",

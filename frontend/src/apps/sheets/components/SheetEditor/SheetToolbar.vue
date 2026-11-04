@@ -130,25 +130,32 @@
                     :min="FONT_MIN"
                     :max="FONT_MAX"
                     @click="sizesOpen = true"
-                    @change="emit('font-size-input', $event)"
-                    @keydown.enter.prevent="onFontSizeEnter"
-                    @keydown.esc="sizesOpen = false"
+                    @input="onSizeInput($event.target as HTMLInputElement)"
+                    @change="applyTypedSize"
+                    @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                   />
                 </Tooltip>
               </div>
             </template>
-            <div class="sn-font-sizes" role="listbox" :aria-label="__('Font size')">
-              <button
+            <!-- A pointer shortcut: typing and the field's arrow keys cover the
+                 keyboard. mousedown.prevent keeps the caret in the field. -->
+            <div class="sn-font-sizes" role="group" :aria-label="__('Font size')">
+              <ItemListRow
                 v-for="n in FONT_SIZES"
                 :key="n"
+                as="button"
                 type="button"
-                role="option"
-                class="sn-font-sizes-item"
-                :aria-selected="n === fontSize"
-                @click="pickFontSize(n)"
+                class="justify-center tabular-nums"
+                :selected="n === fontSize"
+                :active="n === hoveredSize"
+                :aria-current="n === fontSize || undefined"
+                @mouseenter="hoveredSize = n"
+                @mouseleave="hoveredSize = null"
+                @mousedown.prevent
+                @click="setFontSize(n)"
               >
                 {{ n }}
-              </button>
+              </ItemListRow>
             </div>
           </Popover>
           <Button
@@ -333,8 +340,16 @@
 // Row 2 of the top area. It renders the active cell's format and the menus the
 // editor builds, and reports every action back; the formatting itself stays
 // in the editor.
-import { Button, Dropdown, Popover, TextInput, Tooltip, type DropdownOptions } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import {
+  Button,
+  Dropdown,
+  ItemListRow,
+  Popover,
+  TextInput,
+  Tooltip,
+  type DropdownOptions,
+} from 'frappe-ui'
+import { computed, nextTick, ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -373,9 +388,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'number-format': [type: 'percentage']
   'adjust-decimals': [delta: number]
-  'font-size-input': [e: Event]
   'adjust-font-size': [delta: number]
-  'font-size': [px: number]
+  'set-font-size': [px: number]
   'toggle-format': [key: 'bold' | 'italic' | 'strikethrough']
   'set-color': [key: 'color' | 'backgroundColor', value: string]
   undo: []
@@ -394,13 +408,32 @@ const FONT_MAX = 72
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 18, 24, 36]
 const fontSize = computed(() => props.activeFormat.fontSize || 13)
 const sizesOpen = ref(false)
-function pickFontSize(n: number) {
-  sizesOpen.value = false
-  emit('font-size', n)
+const hoveredSize = ref<number | null>(null)
+// What the person has typed into the field, until it is applied or dropped.
+const typedSize = ref<string | null>(null)
+let sizeField: HTMLInputElement | null = null
+
+function onSizeInput(field: HTMLInputElement) {
+  sizeField = field
+  typedSize.value = field.value
 }
-function onFontSizeEnter(e: KeyboardEvent) {
+// Applies a size the selection doesn't have yet, then shows the size the
+// cell got (72 after typing 100, the old size after an unchanged pick).
+async function setFontSize(n: number) {
+  typedSize.value = null
   sizesOpen.value = false
-  emit('font-size-input', e)
+  if (n !== fontSize.value) emit('set-font-size', n)
+  await nextTick()
+  if (sizeField) sizeField.value = String(fontSize.value)
+}
+// The field's change: Enter blurs it, and a blur after an edit sends one.
+// Only a typed size counts, clamped as the editor clamps it.
+function applyTypedSize() {
+  sizesOpen.value = false
+  if (typedSize.value === null) return
+  const n = parseInt(typedSize.value, 10)
+  if (Number.isFinite(n)) setFontSize(Math.max(FONT_MIN, Math.min(FONT_MAX, n)))
+  else setFontSize(fontSize.value)
 }
 
 // Lucide draws each currency the toolbar offers, so the button keeps the
@@ -531,27 +564,6 @@ const currencyIcon = computed(
   flex-direction: column;
   min-width: 56px;
   padding: 4px;
-}
-.sn-font-sizes-item {
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-gray-8);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  cursor: pointer;
-}
-.sn-font-sizes-item:hover,
-.sn-font-sizes-item:focus-visible {
-  background: var(--surface-gray-2);
-  outline: none;
-}
-.sn-font-sizes-item[aria-selected='true'] {
-  font-weight: 600;
-  color: var(--ink-gray-9);
 }
 .sn-font-size :deep(input::-webkit-outer-spin-button),
 .sn-font-size :deep(input::-webkit-inner-spin-button) {

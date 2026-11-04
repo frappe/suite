@@ -119,9 +119,8 @@
         :format-menu-options="formatMenuOptions"
         @number-format="toggleNumberFmt"
         @adjust-decimals="adjustDecimals"
-        @font-size-input="onFontSizeInput"
         @adjust-font-size="adjustFontSize"
-        @font-size="setFontSize"
+        @set-font-size="setFontSize"
         @toggle-format="toggleFmt"
         @set-color="setColor"
         @undo="undo"
@@ -4161,9 +4160,9 @@ function adjustFontSize(delta) {
   isDirty.value = true
 }
 
-// Set font size on the selection directly to whatever the user typed. Clamped
-// to [8, 72] to match adjustFontSize. Called from the toolbar's font-size
-// input on commit (Enter / blur).
+// Set font size on the selection directly. Clamped to [8, 72] to match
+// adjustFontSize. Called from the toolbar's font-size field (a typed size on
+// Enter or blur) and its list of common sizes.
 function setFontSize(px) {
   const n = _clampFont(parseInt(px, 10) || 13)
   _recordScopedFormatOp(
@@ -4176,12 +4175,6 @@ function setFontSize(px) {
   syncFlags()
   recordAction?.('setFontSize', [n])
   isDirty.value = true
-}
-function onFontSizeInput(e) {
-  setFontSize(e.target.value)
-  // Snap the displayed value back to the clamped result.
-  e.target.value = activeFormat.value.fontSize || 13
-  e.target.blur()
 }
 
 // ── Hyperlink ─────────────────────────────────────────────────────────────────
