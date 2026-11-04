@@ -21,7 +21,8 @@ def get_suite_cloud_config(key: str | tuple[str, ...] | None = None) -> dict[str
     for field in SUITE_CLOUD_CONFIG_KEYS:
         value = settings.get(field)
         if value and field == "suite_cloud_secret":
-            value = settings.get_password(field)
+            value = settings.get_password(field, raise_exception=False)
+
         config[field] = value or frappe.conf.get(field)
 
     if not key:
