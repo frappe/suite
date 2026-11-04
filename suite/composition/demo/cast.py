@@ -1,4 +1,4 @@
-"""The six Northwind people: the one place their names, addresses and password are written."""
+"""The six Northwind people: the one place their names and addresses are written."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import frappe
 
 DOMAIN = "northwind.test"
-PASSWORD = "NorthwindDemo!2026"
 
 
 @dataclass(frozen=True)

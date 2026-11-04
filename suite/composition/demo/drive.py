@@ -7,9 +7,12 @@ workspace name and logo, then removes their groups and accounts. Other users and
 Shared root are retained. Each completed batch is committed, so a failed run can be removed with
 reset. Internal Drive helpers fill gaps in its facade, which composition may reach.
 When the site has a `mail` server configured, the seed ends with `suite.composition.demo.mail.seed`.
+Each seed generates a new password for the six users and prints it once; nothing stores it. Mail does
+not need it, so retrying `mail.seed` works without it. To get a new one, run reset, then seed.
 """
 
 import json
+import secrets
 from io import BytesIO
 
 import frappe
@@ -18,7 +21,7 @@ from frappe.utils import get_url
 from suite import drive
 from suite.api.account import delete_logo_file
 from suite.composition.demo import assets, content, mail
-from suite.composition.demo.cast import PASSWORD, PEOPLE, acting_as, email_of
+from suite.composition.demo.cast import PEOPLE, acting_as, email_of
 from suite.drive._core import activity, comments, nodes
 from suite.drive._core.access import grant, revoke_grant
 from suite.drive._core.roots import archive_personal_root, create_root, purge_root
@@ -94,7 +97,8 @@ def seed() -> None:
                 )
                 return
             print("Creating Northwind demo users...")
-            _users_and_groups()
+            password = secrets.token_urlsafe(16)
+            _users_and_groups(password)
             _branding()
             frappe.db.commit()
             shared = frappe.db.get_value("Drive Root", {"kind": "Shared", "state": "Active"})
@@ -108,7 +112,8 @@ def seed() -> None:
             personal_nodes = _personal_content(uploaded)
             _sharing_and_activity(personal_nodes, shared_nodes, folders)
             frappe.db.commit()
-            print(f"\nNorthwind Labs is ready: {get_url()}\nPassword for all six users: {PASSWORD}\n")
+            print(f"\nNorthwind Labs is ready: {get_url()}")
+            print(f"Password for all six users, shown only now: {password}\n")
             print(f"{'User':30} {'Name':20} Role")
             for person in PEOPLE:
                 print(f"{person.email:30} {person.name:20} {person.job}")
@@ -196,7 +201,7 @@ def _exists() -> bool:
     )
 
 
-def _users_and_groups() -> None:
+def _users_and_groups(password: str) -> None:
     for person in PEOPLE:
         user = frappe.get_doc(
             {
@@ -206,7 +211,7 @@ def _users_and_groups() -> None:
                 "last_name": person.last,
                 "enabled": 1,
                 "send_welcome_email": 0,
-                "new_password": PASSWORD,
+                "new_password": password,
             }
         ).insert(ignore_permissions=True)
         user.add_roles("Suite User")

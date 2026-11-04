@@ -58,6 +58,11 @@ class TestDemoData(unittest.TestCase):
         self.assertTrue(all(files.values()))
         self.assertTrue(files["Equipment policy.pdf"].startswith(b"%PDF"))
 
+    def test_each_stalwart_account_gets_its_own_secret(self):
+        payloads = [mail.account_payload(person, "domain") for person in PEOPLE]
+        account_secrets = {payload["credentials"]["0"]["secret"] for payload in payloads}
+        self.assertEqual(len(account_secrets), len(PEOPLE))
+
     def test_mail_and_invitations_build_for_real_participants(self):
         now = datetime.now(ZoneInfo("UTC"))
         letters = [*mail.letters(now), *mail.invitations(now)]

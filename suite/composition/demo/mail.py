@@ -4,13 +4,16 @@ Run after suite.composition.demo.drive.seed:
 `pilot -b suite frappe --site suite.localhost execute suite.composition.demo.mail.seed`.
 The domain, accounts and mailing lists are made with Stalwart's management API as the admin in
 the `mail` site config. Each account is linked like any self-managed one: User Settings holds
-the address and a Stalwart app password. Mail is imported with JMAP Email/import so it keeps its
+the address and a Stalwart app password, and Mail signs in with those. The seed reaches each
+account through the admin's master login, so the account's own secret is random and never read,
+and a retry against existing accounts needs no password from the operator. Mail is imported with JMAP Email/import so it keeps its
 past dates; events go through Calendar's invite flow, so every participant holds a copy with the
 same UID. Seeding again adds only what is missing. To start over, run
 suite.composition.demo.drive.reset, then seed; reset removes the accounts, lists and domain.
 """
 
 import re
+import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from email.message import EmailMessage
@@ -28,7 +31,6 @@ from suite.composition.demo import agenda, assets, inbox
 from suite.composition.demo.cast import (
     DOMAIN,
     EVERYONE,
-    PASSWORD,
     PEOPLE,
     PEOPLE_BY_KEY,
     Person,
@@ -218,7 +220,7 @@ def account_payload(person: Person, domain: str) -> dict:
         "name": person.key,
         "domainId": domain,
         "description": person.name,
-        "credentials": {"0": {"@type": "Password", "secret": PASSWORD}},
+        "credentials": {"0": {"@type": "Password", "secret": secrets.token_urlsafe(32)}},
         "roles": {"@type": "User"},
         "locale": "en_US",
     }
