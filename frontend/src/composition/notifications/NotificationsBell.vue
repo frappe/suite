@@ -127,14 +127,21 @@ async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
   }
-  // Someone mentioned without access can't load the node, and lands on the page that says so
-  const node = await loadDriveNodeSummary(notification.activity.node).catch(() => ({
-    name: notification.activity.node,
-    title: notification.node_title,
-    kind: notification.node_kind,
-  }))
+  // Someone mentioned without access can't load the node. The page they land on says whom to ask.
+  let mentionedBy: string | undefined
+  const node = await loadDriveNodeSummary(notification.activity.node).catch(() => {
+    mentionedBy = notification.actor.full_name
+    return {
+      name: notification.activity.node,
+      title: notification.node_title,
+      kind: notification.node_kind,
+    }
+  })
   open.value = false
-  await router.push(driveNodeRoute(node))
+  const destination = driveNodeRoute(node)
+  await router.push(
+    mentionedBy ? { ...destination, state: { ...destination.state, mentionedBy } } : destination,
+  )
 }
 
 async function markAllRead() {

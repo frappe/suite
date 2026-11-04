@@ -331,7 +331,9 @@ describe('DocumentHost', () => {
     await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
 
     open.state.value = 'Refused'
-    await vi.waitFor(() => expect(root.textContent).toContain('You do not have access'))
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(testState.nodeLocked).toHaveBeenCalledOnce()
@@ -408,7 +410,9 @@ describe('DocumentHost', () => {
       testState.open.mockRejectedValue(refusal(status, 'Refused'))
       const { root, app } = await mountHost()
 
-      await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+      await vi.waitFor(() =>
+        expect(root.textContent).toContain('You don’t have access to this document.'),
+      )
       expect(testState.forget).toHaveBeenCalledExactlyOnceWith('node-1')
       app.unmount()
     },
@@ -418,9 +422,35 @@ describe('DocumentHost', () => {
     testState.open.mockRejectedValue(refusal(403, 'Refused'))
     const { root, app } = await mountHost()
 
-    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
     expect(testState.forget).not.toHaveBeenCalled()
     app.unmount()
+  })
+
+  it.each([403, 404, 410])('a %i names no internal id and offers no retry', async (status) => {
+    testState.open.mockRejectedValue(refusal(status, 'Drive node node-1 was not found'))
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
+    expect(root.textContent).not.toContain('node-1')
+    expect(root.textContent).not.toContain('not found')
+    expect(root.textContent).not.toContain('Ask')
+    expect(root.querySelector('button')).toBeNull()
+    app.unmount()
+  })
+
+  it('asks the person who mentioned the reader when the bell led here', async () => {
+    window.history.replaceState({ mentionedBy: 'Sam Rao' }, '')
+    testState.open.mockRejectedValue(refusal(404, 'Refused'))
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Ask Sam Rao to share it.'))
+    app.unmount()
+    window.history.replaceState(null, '')
   })
 
   it('forgets the node when an open document is refused', async () => {
@@ -449,6 +479,7 @@ describe('DocumentHost', () => {
     const { root, app } = await mountHost()
 
     await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    expect(root.querySelector('button')).not.toBeNull()
     expect(testState.forget).not.toHaveBeenCalled()
     app.unmount()
   })

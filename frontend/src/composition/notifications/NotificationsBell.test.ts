@@ -64,7 +64,10 @@ vi.mock('vue-router', () => ({
 }))
 vi.mock('@/apps/drive', () => ({
   DRIVE_ROLES: { read: 10, comment: 20, upload: 30, edit: 40, manage: 50 },
-  driveNodeRoute: (node: { name: string }) => `/d/${node.name}/item`,
+  driveNodeRoute: (node: { name: string }) => ({
+    path: `/d/${node.name}/item`,
+    state: { openingTitle: 'Title' },
+  }),
   driveNotifications: () => ({
     test: 'feed',
   }),
@@ -165,7 +168,10 @@ describe('Notifications bell', () => {
       notifications: ['notice-1'],
     })
     expect(state.loadNode).toHaveBeenCalledWith('node-1')
-    expect(state.push).toHaveBeenCalledWith('/d/node-1/item')
+    expect(state.push).toHaveBeenCalledWith({
+      path: '/d/node-1/item',
+      state: { openingTitle: 'Title' },
+    })
     expect(state.markRead.mock.invocationCallOrder[0]!).toBeLessThan(
       state.loadNode.mock.invocationCallOrder[0]!,
     )
@@ -184,7 +190,11 @@ describe('Notifications bell', () => {
     row?.click()
     await vi.waitFor(() => expect(state.push).toHaveBeenCalled())
 
-    expect(state.push).toHaveBeenCalledWith(`/d/${mentionNotification().activity.node}/item`)
+    const notification = mentionNotification()
+    expect(state.push).toHaveBeenCalledWith({
+      path: `/d/${notification.activity.node}/item`,
+      state: { openingTitle: 'Title', mentionedBy: notification.actor.full_name },
+    })
   })
 
   it('marks every remaining row only through the explicit action', async () => {
