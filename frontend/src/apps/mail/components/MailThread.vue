@@ -182,8 +182,9 @@
                           <MailDate :datetime="mail.received_at" />
                         </div>
                         <div v-if="!readonly" class="flex items-center gap-1">
-                          <!-- .stop: this row folds the message when pressed. -->
-                          <div v-if="!mail.draft" class="flex" @click.stop>
+                          <!-- .stop: this row folds the message when pressed. A message alone
+                               has the button beside Forward, so it needs no second one here. -->
+                          <div v-if="!mail.draft && thread.length > 1" class="flex" @click.stop>
                             <ReactionPicker @pick="(emoji: string) => react(mail, emoji)" />
                           </div>
                           <MailActions
@@ -435,9 +436,10 @@
                                         'flex gap-1 sm:-mr-1.5'
                                 "
                               >
-                                <!-- .stop: this row folds the message when pressed. -->
+                                <!-- .stop: this row folds the message when pressed. A message alone
+                                     has the button beside Forward, so it needs no second one here. -->
                                 <div
-                                  v-if="!isCollapsed(mail) && !mail.draft"
+                                  v-if="!isCollapsed(mail) && !mail.draft && thread.length > 1"
                                   class="flex"
                                   @click.stop
                                 >
