@@ -91,7 +91,7 @@ export const INSERTS: readonly Insert[] = [
     insert: (editor) => editor.chain().focus().setPageBreak().run(),
   },
   {
-    label: 'Tab',
+    label: 'Add tab',
     icon: 'lucide-panel-top',
     group: 'Blocks',
     isAvailable: has('createTab'),

@@ -1,26 +1,24 @@
 <template>
-  <!-- As tall as the row, so each tab centres in it and underlines on its border. -->
   <div
-    v-if="tabs.length || editable"
-    class="hidden h-9 shrink-0 items-stretch gap-1 border-b border-outline-gray-1 px-3 md:flex"
+    v-if="tabs.length"
+    class="hidden h-9 shrink-0 items-center border-b border-outline-gray-1 px-3 md:flex"
     @drop.prevent="onDrop"
     @dragover.prevent
   >
     <Tabs
-      v-if="tabs.length"
       :model-value="activeTabId"
-      class="flex min-w-0 items-stretch"
+      class="min-w-0"
       @update:model-value="selectTab(String($event))"
     >
-      <div class="h-full min-w-0 overflow-x-auto [scrollbar-width:none]">
-        <TabList variant="underline" size="sm" class="h-full data-[slot=tab-list]:border-b-0">
+      <div class="min-w-0 overflow-x-auto [scrollbar-width:none]">
+        <TabList variant="ghost" size="sm">
           <template v-for="(tab, index) in tabs" :key="tab.id">
             <span v-if="isDropBefore(index)" class="drop-mark" aria-hidden="true" />
             <TextInput
-              v-if="renamingId === tab.id && isRenameReady"
+              v-if="isRenaming(tab.id)"
               v-model="renamedLabel"
               v-on-outside-click="() => finishRenaming()"
-              class="shrink-0 self-center"
+              class="shrink-0"
               :style="{ width: `${Math.max(renamedLabel.length + 4, 10)}ch` }"
               size="sm"
               autofocus
@@ -28,11 +26,13 @@
               @keydown.enter="finishRenaming()"
               @keydown.esc="stopRenaming()"
             />
-            <ContextMenu v-else :options="tabActions(tab.id)">
+            <!-- Stays mounted while renaming: Tabs selects the first tab when the selected trigger goes away. -->
+            <ContextMenu :options="tabActions(tab.id)">
               <TabTrigger
+                v-show="!isRenaming(tab.id)"
                 :value="tab.id"
                 :label="tab.label"
-                class="shrink-0 items-center self-stretch"
+                class="shrink-0"
                 :class="tab.id === draggedId && 'opacity-40'"
                 :draggable="editable"
                 @dblclick="editable && startRenaming(tab.id)"
@@ -46,41 +46,12 @@
         </TabList>
       </div>
     </Tabs>
-    <template v-if="editable">
-      <Button
-        v-if="tabs.length"
-        class="shrink-0 self-center"
-        variant="ghost"
-        size="sm"
-        icon="lucide-plus"
-        :tooltip="__('Add tab')"
-        :aria-label="__('Add tab')"
-        @click="addTab"
-      />
-      <Button
-        v-else
-        class="shrink-0 self-center !text-ink-gray-5"
-        variant="ghost"
-        size="sm"
-        icon-left="lucide-plus"
-        :label="__('Add tab')"
-        @click="addTab"
-      />
-    </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import {
-  Button,
-  ContextMenu,
-  TabList,
-  Tabs,
-  TabTrigger,
-  TextInput,
-  vOnOutsideClick,
-} from 'frappe-ui'
+import { ContextMenu, TabList, Tabs, TabTrigger, TextInput, vOnOutsideClick } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { useDocumentTabs } from './useDocumentTabs'
@@ -93,14 +64,14 @@ function selectTab(id: string) {
   if (id !== activeTabId.value) props.editor.commands.changeTab(id)
 }
 
-function addTab() {
-  props.editor.commands.createTab({ label: 'Untitled' })
-}
-
 const renamingId = ref<string | null>(null)
 const renamedLabel = ref('')
 // The field waits for the closing menu, whose click would otherwise count as a click outside it
 const isRenameReady = ref(false)
+
+function isRenaming(id: string) {
+  return renamingId.value === id && isRenameReady.value
+}
 
 async function startRenaming(id: string) {
   renamingId.value = id
@@ -198,8 +169,8 @@ function tabActions(id: string) {
 </script>
 
 <style scoped>
-/* No position of its own: the sliding underline measures tabs against the list. */
+/* No position of its own: the sliding highlight measures tabs against the list. */
 .drop-mark {
-  @apply -mx-px my-2 w-0.5 shrink-0 bg-surface-gray-7;
+  @apply -mx-px h-4 w-0.5 shrink-0 bg-surface-gray-7;
 }
 </style>

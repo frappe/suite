@@ -18,14 +18,8 @@ function tabPanel(page: Page, label: string) {
 
 // Typing a first line and pressing Enter renames an "Untitled" tab to that line.
 async function addTab(page: Page, text: string) {
-	// The tab row is hidden on a phone, where a tab comes from the Insert menu.
-	const addButton = page.getByRole("button", { name: "Add tab" });
-	if (await addButton.isVisible()) {
-		await addButton.click();
-	} else {
-		await page.getByRole("button", { name: "Insert" }).click();
-		await page.getByRole("menuitem", { name: "Tab", exact: true }).click();
-	}
+	await page.getByRole("button", { name: "Insert" }).click();
+	await page.getByRole("menuitem", { name: "Add tab" }).click();
 	await writerEditor(page).click();
 	await page.keyboard.type(text);
 	await page.keyboard.press("Enter");
@@ -101,10 +95,7 @@ test("mobile tab bar reflects added tabs and switches the active tab", async ({
 	await expect(editor).not.toContainText("third", { useInnerText: true });
 });
 
-// The tab menu is reachable by right-click, but also from an explicit "..."
-// button on the active tab — the only affordance touch users and anyone who
-// doesn't think to right-click will find.
-test("the tab menu button renames the active tab", async ({ owner, run }) => {
+test("the tab's right-click menu renames it", async ({ owner, run }) => {
 	const { page } = owner;
 	const file = await createWriterDocument(
 		page.request,

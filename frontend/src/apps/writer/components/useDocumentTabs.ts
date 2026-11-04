@@ -1,16 +1,16 @@
 import type { Editor } from '@tiptap/core'
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 
-import { FIRST_TAB_ID, listTabs } from '@/apps/writer/extensions/tabs'
+import { listTabs } from '@/apps/writer/extensions/tabs'
 
-/** A document's tabs and the one on screen. The first tab alone is just the document, so it lists none. */
+/** A document's tabs and the one on screen. A single tab is just the document, so it lists none. */
 export function useDocumentTabs(editor: Editor) {
   const tabs = shallowRef<ReturnType<typeof listTabs>>([])
   const activeTabId = ref<string>()
 
   function updateTabs() {
     const all = listTabs(editor)
-    tabs.value = all.length === 1 && all[0]?.id === FIRST_TAB_ID ? [] : all
+    tabs.value = all.length > 1 ? all : []
   }
 
   function onTabChanged(event: Event) {
