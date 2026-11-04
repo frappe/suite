@@ -215,6 +215,17 @@ def standard_fields(row, *, owner: str | None = None) -> dict:
     }
 
 
+def rerun_node_fields(doctype: str, fields: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the mapped fields a rerun holds a stored node to.
+
+    Rewriting a deck's rows moves `Presentation.modified` (§14.7) and not its
+    node's stamps, so after that the deck no longer derives them.
+    """
+    if doctype != "Presentation":
+        return fields
+    return tuple(field for field in fields if field not in {"content_modified", "modified"})
+
+
 def expected_node(
     row,
     *,

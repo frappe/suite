@@ -878,7 +878,9 @@ class FakeContent:
             self.slide_rows = {name: row for name, row in self.slide_rows.items() if row.parent != docname}
             self.media_rows = [row for row in self.media_rows if row.deck != docname]
 
-    def update_slides(self, rows):
+    def update_slides(self, deck, rows, modified):
+        key = ("Presentation", deck)
+        self.document_rows[key] = replace(self.document_rows[key], modified=modified)
         for row in rows:
             source = self.slide_rows[row["name"]]
             self.slide_rows[row["name"]] = replace(
@@ -1184,8 +1186,8 @@ class FakeContentTarget:
     def adopt_media_node(self, name, values):
         self.node_rows[name].update(values)
 
-    def update_slides(self, rows):
-        self.content.update_slides(rows)
+    def update_slides(self, deck, rows, modified):
+        self.content.update_slides(deck, rows, modified)
 
     def update_writer_body(self, name, content, html):
         self.content.update_writer_body(name, content, html)

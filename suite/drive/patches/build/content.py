@@ -7,6 +7,7 @@ from suite.drive.patches.build.content_mapping import (
     docshare_role,
     exact_fields,
     expected_node,
+    rerun_node_fields,
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.mapping import GENERAL, merged_role
@@ -227,7 +228,7 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     root = _ensure_personal_root(env, row.owner, reserve)
     node, renamed = _orphan_node(env, row, root)
     if stored:
-        exact_fields(stored, node, ORPHAN_FIELDS, f"orphan node {row.name}")
+        exact_fields(stored, node, rerun_node_fields(row.doctype, ORPHAN_FIELDS), f"orphan node {row.name}")
         if not row.node:
             reserve(1)
             target.write_content_link(row.doctype, row.name, stored["name"])

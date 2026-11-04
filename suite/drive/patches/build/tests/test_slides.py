@@ -1,6 +1,7 @@
 """Slides media, preview, body rewrite, and rerun behavior."""
 
 import io
+import itertools
 import json
 import struct
 import tempfile
@@ -11,9 +12,10 @@ from pathlib import Path
 
 from PIL import Image
 
+from suite.drive.patches.build.content import link_content_documents
 from suite.drive.patches.build.ports import REMOVED, ContentRow, MediaFileRow, SlideRow, TreeRow
 from suite.drive.patches.build.report import build_report
-from suite.drive.patches.build.slide_journal import SlideBody
+from suite.drive.patches.build.slide_journal import SlideBody, SlidePreimageJournal
 from suite.drive.patches.build.slides import SLIDE_FIELDS, BuildSlidesError, convert_slides_and_templates
 from suite.drive.patches.build.state import ContentConversion
 from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
@@ -22,6 +24,40 @@ S3_URL = "/api/method/suite.drive.api.s3.fetch"
 
 STAMP = "2024-01-02 03:04:05.000000"
 OWNER = "owner@example.com"
+
+
+class SimulatedCrash(Exception):
+    """The process died, so nothing since the last commit reached the disk."""
+
+
+def crash_on_commit(target, source, number):
+    durable = (dict(source.slide_rows), dict(source.document_rows))
+    commit = target.commit
+    commits = itertools.count(1)
+
+    def crashing():
+        nonlocal durable
+        if next(commits) == number:
+            source.slide_rows = dict(durable[0])
+            source.document_rows = dict(durable[1])
+
+            raise SimulatedCrash
+
+        commit()
+        durable = (dict(source.slide_rows), dict(source.document_rows))
+
+    target.commit = crashing
+    return commit
+
+
+def ticking_clock():
+    ticks = itertools.count(1)
+
+    def tick():
+        micros = next(ticks)
+        return f"2026-01-01 00:00:00.{micros:06d}"
+
+    return tick
 
 
 def deck(name="deck-1", **values):
@@ -110,13 +146,14 @@ class SlidesTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
 
-    def environment(self, source):
+    def environment(self, source, clock=None):
         target = FakeContentTarget(content=source)
         env = build_environment(
             self.path,
             content=source,
             content_target=target,
             content_ready=True,
+            clock=clock,
         )
         self.document_node(target, "deck-node", "deck-1", "Deck")
         return env, target
@@ -2059,6 +2096,128 @@ class SlidesTest(unittest.TestCase):
         second = convert_slides_and_templates(env)
         self.assertEqual(self.media_children(target, consumer.node), copies)
         self.assertEqual(second.media_nodes_relocated, 1)
+
+    # -- a rewritten deck refuses a push built on its old stamp
+
+    def stamp_of(self, source, name="deck-1"):
+        return source.document_rows[("Presentation", name)].modified
+
+    def deck_of_two_slides(self):
+        body = json.dumps([{"src": "/files/media-a.png"}])
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, body), SlideRow("slide-2", "deck-1", 2, body)],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        return source, body
+
+    def test_a_rewritten_deck_moves_its_stamp_and_an_untouched_one_keeps_it(self):
+        untouched = json.dumps([{"type": "text"}])
+        source = FakeContent(
+            documents=[deck(), deck("deck-2", node="deck-2-node")],
+            slides=[
+                SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": "/files/media-a.png"}])),
+                SlideRow("slide-2", "deck-2", 1, untouched),
+            ],
+            media=[media("media-a", blob="blob-a")],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source, ticking_clock())
+        self.document_node(target, "deck-2-node", "deck-2", "Deck 2")
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": "media-a"}])
+        self.assertGreater(self.stamp_of(source), STAMP)
+        self.assertEqual(source.slide_rows["slide-2"].elements, untouched)
+        self.assertEqual(self.stamp_of(source, "deck-2"), STAMP)
+
+    def test_a_clean_rerun_moves_no_stamp(self):
+        source, _body = self.deck_of_two_slides()
+        env, target = self.environment(source, ticking_clock())
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        convert_slides_and_templates(env)
+        moved = self.stamp_of(source)
+
+        convert_slides_and_templates(env)
+
+        self.assertGreater(moved, STAMP)
+        self.assertEqual(self.stamp_of(source), moved)
+
+    def test_no_crash_leaves_a_rewritten_row_on_the_old_stamp_and_a_resume_finishes(self):
+        base = self.path
+        reached_part_way = False
+        for number in itertools.count(1):
+            self.path = base / str(number)
+            self.path.mkdir()
+            source, body = self.deck_of_two_slides()
+            env, target = self.environment(source, ticking_clock())
+            env.slide_journal = SlidePreimageJournal(self.path / "journal")
+            target.add_blob("blob-a", b"a", mime_type="image/png")
+            commit = crash_on_commit(target, source, number)
+            try:
+                convert_slides_and_templates(env, batch_size=1)
+            except SimulatedCrash:
+                pass
+            else:
+                break
+
+            rewritten = sum(row.elements != body for row in source.slide_rows.values())
+            reached_part_way = reached_part_way or rewritten == 1
+            if rewritten:
+                self.assertGreater(self.stamp_of(source), STAMP, f"crash at commit {number}")
+
+            target.commit = commit
+            result = convert_slides_and_templates(env, batch_size=1)
+
+            self.assertEqual(result.slide_elements_rewritten, 2)
+            for row in source.slide_rows.values():
+                self.assertEqual(json.loads(row.elements), [{"src": "media-a"}])
+
+            self.assertGreater(self.stamp_of(source), STAMP, f"resume after commit {number}")
+
+        self.assertTrue(reached_part_way)
+
+    def test_a_rewritten_template_deck_passes_its_rerun(self):
+        template = deck("template", node=None, title="Template", is_template=1)
+        source = FakeContent(
+            documents=[template],
+            slides=[SlideRow("slide-1", "template", 1, json.dumps([{"src": "/files/own.png"}]))],
+            media=[media("own", deck_name="template", blob="blob-a", url="/files/own.png")],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source, ticking_clock())
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        convert_slides_and_templates(env)
+        moved = self.stamp_of(source, "template")
+
+        convert_slides_and_templates(env)
+
+        self.assertGreater(moved, STAMP)
+        self.assertEqual(target.node_rows["template"]["modified"], STAMP)
+        self.assertEqual(self.stamp_of(source, "template"), moved)
+
+    def test_a_rewritten_orphan_deck_passes_its_rerun(self):
+        orphan = deck("orphan", node=None, title="Orphan")
+        source = FakeContent(
+            documents=[orphan],
+            slides=[SlideRow("slide-1", "orphan", 1, json.dumps([{"src": "/files/own.png"}]))],
+            media=[media("own", deck_name="orphan", blob="blob-a", url="/files/own.png")],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source, ticking_clock())
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        link_content_documents(env)
+        convert_slides_and_templates(env)
+        moved = self.stamp_of(source, "orphan")
+
+        result = link_content_documents(env)
+
+        self.assertGreater(moved, STAMP)
+        self.assertEqual(result.issues_total, 0)
+        self.assertEqual(target.node_rows["orphan"]["modified"], STAMP)
 
 
 if __name__ == "__main__":

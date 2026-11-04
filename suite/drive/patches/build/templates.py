@@ -10,6 +10,7 @@ from suite.drive.patches.build.content_mapping import (
     compact_settings,
     exact_fields,
     expected_node,
+    rerun_node_fields,
     standard_fields,
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
@@ -289,7 +290,9 @@ def _presentation_template(env, place, row, title) -> int:
     )
     found = target.nodes((row.name,)).get(row.name)
     if found:
-        exact_fields(found, node, NODE_FIELDS, f"Presentation template node {row.name}")
+        fields = rerun_node_fields(row.doctype, NODE_FIELDS)
+        exact_fields(found, node, fields, f"Presentation template node {row.name}")
+
     if row.node and row.node != row.name:
         raise InvalidLegacyContent(f"Presentation template {row.name} links another node")
     grants = _missing_template_grants(env, row.name, row.owner)

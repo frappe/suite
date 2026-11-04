@@ -955,7 +955,9 @@ class ContentTarget(Protocol):
 
     def adopt_media_node(self, name: str, values: dict) -> None: ...
 
-    def update_slides(self, rows: list[dict]) -> None: ...
+    def update_slides(self, deck: str, rows: list[dict], modified: str) -> None:
+        """Rewrite a deck's rows and move its stamp in one transaction."""
+        ...
 
     def update_writer_body(self, name: str, content: str | None, html: str | None) -> None: ...
 
@@ -2120,7 +2122,9 @@ class SiteContentTarget:
         # Build write keeps it off: §14.7 preserves the source stamps.
         frappe.db.set_value("Drive Node", name, dict(values), update_modified=False)
 
-    def update_slides(self, rows: list[dict]) -> None:
+    def update_slides(self, deck: str, rows: list[dict], modified: str) -> None:
+        """Stamp in the rows' transaction: no rewritten row is durable on a stamp an old draft can push on."""
+        frappe.db.set_value("Presentation", deck, "modified", modified, update_modified=False)
         for row in rows:
             frappe.db.set_value(
                 "Slide",

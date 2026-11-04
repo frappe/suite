@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from unittest.mock import call as expected_call
 
 import frappe
 
@@ -293,6 +294,26 @@ class TestBotoBucket(unittest.TestCase):
         self.client.copy.assert_called_once_with(
             {"Bucket": "drive-bucket", "Key": "src"}, "drive-bucket", "dst"
         )
+
+
+class TestRewrittenSlides(StubbedDatabase):
+    def test_the_stamp_and_the_rows_are_one_uncommitted_write(self):
+        rows = [{"name": "slide-1", "elements": "[]", "background": None}]
+
+        SiteContentTarget().update_slides("deck-1", rows, "2026-11-04 10:00:00.000000")
+
+        self.assertCountEqual(
+            self.db.set_value.call_args_list,
+            [
+                expected_call(
+                    "Presentation", "deck-1", "modified", "2026-11-04 10:00:00.000000", update_modified=False
+                ),
+                expected_call(
+                    "Slide", "slide-1", {"elements": "[]", "background": None}, update_modified=False
+                ),
+            ],
+        )
+        self.db.commit.assert_not_called()
 
 
 class TestTheKeyPrefix(unittest.TestCase):

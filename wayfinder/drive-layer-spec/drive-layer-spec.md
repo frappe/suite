@@ -4616,6 +4616,11 @@ From the [012] amendment to [011]:
   `attachmentName` is dropped. `Slide.background` and legacy `/files/`
   paths are rewritten the same way. A legacy `poster` may be a dict, not a
   string.
+- A deck whose `Slide` rows are rewritten moves `Presentation.modified`, in
+  the same transaction as the rows, so a push built on the old stamp is
+  refused and can't restore old links. This is the one source stamp Build
+  moves. `modified_by`, the deck's node stamps, and every deck it doesn't
+  rewrite keep theirs.
 - **Pictures another document owns.** A deck or a Writer document can show
   a picture that is filed under a different deck or document; the legacy
   embed routes served it to anyone who could read the picture. The new
