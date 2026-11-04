@@ -185,7 +185,6 @@ def _exists() -> bool:
     return bool(
         frappe.db.exists("User", {"name": ["in", emails]})
         or frappe.db.exists("Drive Root", {"user": ["in", emails]})
-        or frappe.db.exists("Drive Node", {"owner": ["in", emails]})
         or frappe.db.exists("User Group", {"name": ["in", [PREFIX + team for team in TEAMS]]})
     )
 
