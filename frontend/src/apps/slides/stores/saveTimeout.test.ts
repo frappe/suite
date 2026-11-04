@@ -28,7 +28,10 @@ vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { quer
 vi.mock('@/apps/slides/stores/slide', () => ({ slides: ref([]) }))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: { clearHistory: vi.fn() } }))
 vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: unknown[]) => els }))
-vi.mock('@/boot/session', () => ({ getSessionUser: () => 'me@example.com' }))
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  getCookieSessionUser: () => 'me@example.com',
+}))
 vi.mock('@/apps/slides/stores/saving', () => ({
   markDirty: vi.fn(),
   markClean: vi.fn(),
@@ -164,6 +167,45 @@ describe('savePresentationDoc', () => {
     } finally {
       server.answer = null
     }
+    expect(presentationDoc.value.modified).toBe('M1')
+  })
+
+  it('stays refused on a presentation rewritten under the same last editor', async () => {
+    presentationDoc.value = { name: 'p1', modified: 'M1' }
+    server.answer = (options) => {
+      if (
+        options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation'
+      ) {
+        return {
+          modified: 'M2',
+          modified_by: 'me@example.com',
+          slides: [
+            {
+              ...row,
+              background: 'node-1',
+              elements: JSON.stringify([{ type: 'image', src: 'node-1' }]),
+            },
+          ],
+        }
+      }
+
+      throw stale()
+    }
+
+    const draft = {
+      ...slide,
+      background: '/files/a.png',
+      elements: [{ type: 'image', src: '/files/a.png', attachmentName: 'a.png' }],
+    }
+
+    try {
+      await expect(savePresentationDoc('p1', [draft], 'M1')).rejects.toMatchObject({
+        type: 'TimestampMismatchError',
+      })
+    } finally {
+      server.answer = null
+    }
+
     expect(presentationDoc.value.modified).toBe('M1')
   })
 

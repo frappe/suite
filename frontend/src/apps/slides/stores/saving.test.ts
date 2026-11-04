@@ -32,7 +32,10 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 }))
 
 let sessionUser: string | null = 'me@example.com'
-vi.mock('@/boot/session', () => ({ getSessionUser: () => sessionUser }))
+vi.mock('@/platform/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/platform/session')>()),
+  getCookieSessionUser: () => sessionUser,
+}))
 
 const {
   saveCurrentState,
@@ -41,6 +44,7 @@ const {
   dirty,
   saveFailed,
   clearSaveFailure,
+  saveRefused,
   getPresentationFromLocalDB,
   stopWrites,
   resumeWrites,
@@ -329,6 +333,51 @@ describe('saveCurrentState', () => {
 
       await vi.waitFor(() => expect(pushes).toBe(1))
       await saving
+    })
+
+    it('leaves the next presentation refused when a delayed push lands', async () => {
+      let freeSpace!: () => void
+
+      const clearing = new Promise<void>((resolve) => {
+        freeSpace = resolve
+      })
+      vi.stubGlobal('caches', {
+        delete: async (name: string) => {
+          deleted.push(name)
+          await clearing
+          return true
+        },
+      })
+      failFirstWrites(1, new DOMException('full', 'QuotaExceededError'))
+      markDirty()
+
+      const leaving = saveCurrentState()
+      await vi.waitFor(() => expect(deleted.length).toBeGreaterThan(0))
+
+      slides.value = [{ clientId: 'c2', background: '#00ff00ff', elements: [] }]
+      presentationId.value = 'p2'
+      presentationDoc.value = { modified: 'M9' }
+      markDirty()
+      serverSave = async () => {
+        throw conflict()
+      }
+
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await saveCurrentState()
+      expect(saveRefused.value).toBe(true)
+
+      const pushed: string[] = []
+      serverSave = async (id) => {
+        pushed.push(id)
+        return 'M2'
+      }
+
+      freeSpace()
+      await leaving
+
+      expect(pushed).toEqual(['p1'])
+      expect(saveRefused.value).toBe(true)
+      expect(saveFailed.value).toBe(true)
     })
 
     it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
@@ -885,7 +934,7 @@ describe('saveCurrentState', () => {
     expect(local.content[0].background).toBe('#00ff00ff')
     expect(local.dirty).toBe(true)
     expect(local.baseModified).toBe('M2')
-    expect(saveFailed.value).toBe(true)
+    expect(saveFailed.value).toBe(false)
   })
 
   it('waits longer after each failed push', async () => {
@@ -911,6 +960,89 @@ describe('saveCurrentState', () => {
     vi.advanceTimersByTime(500)
     await saveCurrentState()
     expect(pushes).toBe(3)
+  })
+
+  it("does not send an edit that waited behind another presentation's push", async () => {
+    markDirty()
+    let land!: () => void
+    serverSave = () =>
+      new Promise((resolve) => {
+        land = () => resolve('M2')
+      })
+
+    const leaving = saveCurrentState()
+    await vi.waitFor(() => expect(land).toBeDefined())
+
+    presentationId.value = 'p2'
+    presentationDoc.value = { modified: 'M9' }
+    slides.value = [{ clientId: 'c2', background: '#111111ff', elements: [] }]
+    markDirty()
+    await saveCurrentState()
+    land()
+    await leaving
+
+    const pushed: string[] = []
+    serverSave = async (id, content) => {
+      pushed.push(`${id} ${content[0].background}`)
+      presentationId.value = 'p3'
+      slides.value = []
+      return 'M10'
+    }
+
+    slides.value = [{ clientId: 'c2', background: '#222222ff', elements: [] }]
+    markDirty()
+    await saveCurrentState()
+
+    expect(pushed).toEqual(['p2 #222222ff'])
+  })
+
+  describe('a push that fails after the editor moved on', () => {
+    async function failedAfterMoving() {
+      markDirty()
+
+      serverSave = async () => {
+        slides.value = []
+        presentationId.value = 'p2'
+        presentationDoc.value = { modified: 'M9' }
+        throw new Error('500')
+      }
+
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await saveCurrentState()
+      error.mockRestore()
+      slides.value = [{ clientId: 'c2', background: '#00ff00ff', elements: [] }]
+    }
+
+    it('does not show as failed on the presentation now open', async () => {
+      await failedAfterMoving()
+
+      expect(saveFailed.value).toBe(false)
+    })
+
+    it('keeps its edits for the next open of its own presentation', async () => {
+      await failedAfterMoving()
+
+      expect(await getPresentationFromLocalDB('p1')).toMatchObject({
+        dirty: true,
+        content: [{ clientId: 'c1' }],
+      })
+    })
+
+    it('does not hold back the first push of the presentation now open', async () => {
+      await failedAfterMoving()
+
+      const pushed: string[] = []
+      serverSave = async (id) => {
+        pushed.push(id)
+        return 'M10'
+      }
+
+      markDirty()
+      await saveCurrentState()
+
+      expect(pushed).toEqual(['p2'])
+    })
   })
 
   it('pushes on request without waiting out the backoff', async () => {

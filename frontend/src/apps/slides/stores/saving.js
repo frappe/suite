@@ -12,7 +12,7 @@ import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import { draftsDbName, isOutOfSpace } from '@/apps/slides/utils/slidesCaches'
-import { getSessionUser } from '@/boot/session'
+import { getCookieSessionUser } from '@/platform/session'
 
 const STORE = 'presentations'
 
@@ -20,7 +20,7 @@ let db = null
 let dbOwner = null
 
 function draftsOwner() {
-  return getSessionUser() || 'Guest'
+  return getCookieSessionUser() || 'Guest'
 }
 
 async function openDB() {
@@ -140,7 +140,10 @@ const getPresentationFromLocalDB = async (id) => {
     req.onsuccess = () => {
       const record = req.result
       // a record another user of this browser left is not ours
-      if (record?.user && record.user !== getSessionUser()) return resolve(null)
+      if (record?.user && record.user !== getCookieSessionUser()) {
+        return resolve(null)
+      }
+
       resolve(record)
     }
 
@@ -158,7 +161,10 @@ const getPresentationFromLocalDB = async (id) => {
 // explicit dirty flag set by every mutation path
 const dirty = ref(false)
 
-const isSaving = ref(false)
+// whose push is running; there is one at a time, whichever presentation is open
+const savingFor = ref(null)
+
+const isSaving = computed(() => !!savingFor.value && savingFor.value === presentationId.value)
 
 // edits the gate turned away; a push landing after the editor left carries them out
 const queuedSnapshots = new Map()
@@ -300,7 +306,7 @@ const takeSnapshot = () => {
 
   return {
     id: presentationId.value,
-    user: getSessionUser(),
+    user: getCookieSessionUser(),
     content: getLatestSlideContent(),
     updatedAt: Date.now(),
     dirty: true,
@@ -344,8 +350,12 @@ const saveCurrentState = async () => {
 
   ticksAtGate.set(idAtSnapshot, tick)
 
-  if (isSaving.value) {
-    queuedSnapshots.set(idAtSnapshot, snapshot)
+  if (savingFor.value) {
+    // only its own push can take it; this draft stays dirty for the next tick otherwise
+    if (savingFor.value === idAtSnapshot) {
+      queuedSnapshots.set(idAtSnapshot, snapshot)
+    }
+
     return
   }
   // if offline, stay dirty so we retry once back online
@@ -353,16 +363,16 @@ const saveCurrentState = async () => {
   if (snapshot.baseModified === refusedBase.value) return
   if (Date.now() < retryAt) return
 
-  isSaving.value = true
+  savingFor.value = idAtSnapshot
 
   try {
     // only mark clean once the server actually has the changes,
     // and only if no edit arrived while this save was in flight
     if (!(await syncSnapshotToServer(snapshot, idAtSnapshot, generationAtSnapshot, epoch))) return
-    clearSaveFailure()
-
-    // dirty belongs to another presentation now, so it isn't ours to clear
+    // dirty and the failure belong to another presentation now, so they aren't ours to clear
     if (presentationId.value !== idAtSnapshot) return
+
+    clearSaveFailure()
     if (generationFor(idAtSnapshot) === generationAtSnapshot) markClean()
   } catch (err) {
     // the writes stopped mid-push: nothing of this save may land, the failure included
@@ -371,17 +381,19 @@ const saveCurrentState = async () => {
     queuedSnapshots.delete(idAtSnapshot)
     // keep dirty so autosave retries; log once per outage
     if (!saveFailed.value) console.error('Save failed: ', err)
+
+    // its draft stays dirty for its next open; the failure isn't the open presentation's
+    if (presentationId.value !== idAtSnapshot) return
+
     saveFailed.value = true
     if (err?.type === 'TimestampMismatchError') {
-      if (presentationId.value !== idAtSnapshot) return
-
       await holdRefused(snapshot, epoch)
     } else {
       retryDelay = Math.min(retryDelay * 2 || 500, MAX_RETRY_MS)
       retryAt = Date.now() + retryDelay
     }
   } finally {
-    isSaving.value = false
+    savingFor.value = null
   }
 }
 
@@ -439,6 +451,7 @@ export {
   retireDraft,
   resumeWrites,
   isSaving,
+  savingFor,
   dirty,
   markDirty,
   markClean,

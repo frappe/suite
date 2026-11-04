@@ -1,6 +1,6 @@
 import { FileUploadHandler, toast } from 'frappe-ui'
 
-import { session } from '@/boot/session'
+import { useSession } from '@/platform/session'
 
 import { isMediaNodeId, mediaNodeUrl } from '../stores/documentMedia'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
@@ -122,7 +122,7 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
   if (fileUrl.startsWith('/private')) {
     const name = sourcePresentation ? sourcePresentation.name : presentationId.value
     const owner = sourcePresentation ? sourcePresentation.owner : presentationDoc.value?.owner
-    const user = session.user?.sessionUser
+    const user = useSession().user.value?.id
 
     if (isMediaOwner(owner, user)) {
       // a duplicate borrows its source's thumbnail url, so the proxy can't serve it

@@ -66,7 +66,11 @@ function session(role: number, canShare = true) {
 
 function mount(
   doc: ReturnType<typeof session>,
-  props: { saveState?: DocumentSaveState; viewOnly?: boolean; centerTitle?: boolean } = {},
+  props: {
+    saveState?: DocumentSaveState
+    viewOnly?: boolean
+    layout?: 'default' | 'centered' | 'compact'
+  } = {},
   slots: Record<string, () => VNode> = {},
 ) {
   const panel = ref<DocumentPanel | null>(null)
@@ -214,7 +218,7 @@ describe('DocumentHeader', () => {
     expect(root.querySelector('[class*="md:"][class*="flex-1"]')).toBeNull()
     cleanup?.()
 
-    const centered = mount(session(40), { centerTitle: true }).root
+    const centered = mount(session(40), { layout: 'centered' }).root
     expect(titleGroup(centered).classList).toContain('md:contents')
     expect(titleGroup(centered).firstElementChild!.classList).toContain('md:flex-1')
     expect(centered.querySelector('header > div:last-child')!.classList).toContain('md:flex-1')
@@ -275,7 +279,7 @@ describe('DocumentHeader, compact (Sheets)', () => {
             titleLabel: 'Spreadsheet title',
             saveState: 'clean',
             panels: ['comments', 'versions'],
-            compact,
+            layout: compact ? 'compact' : 'default',
           },
           { menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit') },
         ),

@@ -229,11 +229,11 @@ def _convert_deck(env, deck, batch_size, result):
         )
         updates.append({"name": slide.name, "elements": after.elements, "background": after.background})
         if len(updates) >= batch_size:
-            target.update_slides(updates)
+            target.update_slides(deck.name, updates, env.now())
             target.commit()
             updates = []
     if updates:
-        target.update_slides(updates)
+        target.update_slides(deck.name, updates, env.now())
         target.commit()
     # The target port mutates fakes and SQL immediately. Rebuild planned values
     # so recovery also covers a crash after SQL and before the state write.

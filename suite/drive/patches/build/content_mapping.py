@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from suite.drive._core.roles import EDIT, MANAGE, READ
+from suite.drive.patches.build.ports import ContentRow
+from suite.drive.patches.build.slide_journal import SlidePreimageJournal
 
 MAX_SHEETS_DATA_BYTES = 75 * 1024 * 1024
 MAX_VERSION_SEQ = 2_147_483_647
@@ -213,6 +215,19 @@ def standard_fields(row, *, owner: str | None = None) -> dict:
         "docstatus": 0,
         "idx": 0,
     }
+
+
+def rerun_node_fields(
+    row: ContentRow, fields: tuple[str, ...], journal: SlidePreimageJournal
+) -> tuple[str, ...]:
+    """Return the mapped fields a rerun holds a stored node to.
+
+    Rewriting a deck's rows moves `Presentation.modified` (§14.7) and not its
+    node's stamps, so a deck with journal transitions no longer derives them.
+    """
+    if row.doctype != "Presentation" or not journal.transitions(row.name):
+        return fields
+    return tuple(field for field in fields if field not in {"content_modified", "modified"})
 
 
 def expected_node(

@@ -35,21 +35,43 @@ export const mediaNodeUrl = (id: string): string => {
   return handle.src.value ?? ''
 }
 
-const SETTLE_TIMEOUT = 30_000
-
-function loadingIds(handles: MediaHandle[]) {
-  return handles.filter((handle) => handle.status.value === 'loading').map((handle) => handle.id)
+export function isMediaRefused(id: string) {
+  return documentMedia?.(id).status.value === 'refused'
 }
 
-/** Resolves with the media nodes still loading once Drive has answered for every one, on abort, or after 30s. */
+export function isMediaReady(id: string) {
+  return documentMedia?.(id).status.value === 'ready'
+}
+
+export function isMediaUnanswered(id: string) {
+  return documentMedia?.(id).status.value === 'unanswered'
+}
+
+/** Calls back when Drive's answer for any of these nodes changes; returns the stop. */
+export function onMediaStatusChange(ids: string[], changed: () => void) {
+  const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
+  return watch(() => handles.map((handle) => handle.status.value).join(), changed)
+}
+
+const SETTLE_TIMEOUT = 30_000
+
+function isWaiting(handle: MediaHandle) {
+  return handle.status.value === 'loading' || handle.status.value === 'unanswered'
+}
+
+function waitingIds(handles: MediaHandle[]) {
+  return handles.filter(isWaiting).map((handle) => handle.id)
+}
+
+/** Resolves with the media nodes still waiting once Drive has answered for every one, on abort, or after 30s. */
 export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise<string[]> {
   const handles = ids.flatMap((id) => documentMedia?.(id) ?? [])
   function isSettled() {
-    return handles.every((handle) => handle.status.value !== 'loading')
+    return !handles.some(isWaiting)
   }
 
   if (signal?.aborted || isSettled()) {
-    return loadingIds(handles)
+    return waitingIds(handles)
   }
 
   await new Promise<void>((resolve) => {
@@ -67,7 +89,9 @@ export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise
     }
 
     signal?.addEventListener('abort', finish, { once: true })
+    // the session reads its media together, so one handle asks for them all
+    void handles.find(isWaiting)?.refresh()
   })
 
-  return loadingIds(handles)
+  return waitingIds(handles)
 }

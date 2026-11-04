@@ -1,6 +1,13 @@
 import { ref } from 'vue'
 
-import { isMediaNodeId, mediaSettled } from '@/apps/slides/stores/documentMedia'
+import {
+  isMediaNodeId,
+  isMediaReady,
+  isMediaRefused,
+  isMediaUnanswered,
+  mediaSettled,
+  onMediaStatusChange,
+} from '@/apps/slides/stores/documentMedia'
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { forgetVisitedNode } from '@/apps/slides/stores/visitedCopies'
@@ -176,14 +183,14 @@ function getLoadOptions() {
 }
 
 // what opening /d/<node> offline reads, under the keys the worker looks them up by
-async function fetchStartup(node, id, pinned, signal) {
+async function fetchStartup(node, id, pinned, loadOptions, signal) {
   const shell = await fetchShell(node, signal)
   const html = await shell.clone().text()
   const assets = [...new Set([...entryAssets(html), ...loadedAssets()])]
   // content-hashed, so a pinned asset is already current
   const kept = assets.filter((asset) => pinned.has(asset))
   const requests = [
-    ...startupUrls(node, id, getLoadOptions()).map((url) => [url, 'api']),
+    ...startupUrls(node, id, loadOptions).map((url) => [url, 'api']),
     ...assets.filter((asset) => !pinned.has(asset)).map((asset) => [asset, 'asset']),
   ]
   const { responses, missing } = await fetchAllCacheable(requests, signal)
@@ -265,23 +272,59 @@ async function pinnedPaths(cache) {
   return new Set((await cache.keys()).map((request) => new URL(request.url).pathname))
 }
 
-// bytes the presentation no longer shows go, and its ledger stops listing them
-const pruneOfflineCopy = async (id, targets = null) => {
+function orphanKeys(id) {
   const record = readRecord(id)
-  if (!record) return
+  // a picture with no signed url has no key, so its bytes would pass for orphans, and
+  // refused may only mean an expired session; the next open tries again
+  if (!record || id !== presentationId.value || !mediaNodeIds().every(isMediaReady)) {
+    return []
+  }
 
-  const needed = new Set((targets ?? getMediaTargets()).map((target) => target.key))
-  const orphans = new Set(
-    unsharedKeys(
-      id,
-      record.keys.filter((key) => isMediaKey(key) && !needed.has(key)),
-    ),
+  const needed = new Set(getMediaTargets().map((target) => target.key))
+  return unsharedKeys(
+    id,
+    record.keys.filter((key) => isMediaKey(key) && !needed.has(key)),
   )
-  if (!orphans.size) return
+}
 
-  const cache = await openPinnedCache()
-  await Promise.all([...orphans].map((key) => cache.delete(key)))
-  writeRecord(id, { ...record, keys: record.keys.filter((key) => !orphans.has(key)) })
+// the worker serves the pinned document first, so it must stop naming the bytes before they go;
+// the deletes hold the run slot, so no save or visit writes back a list read before them
+async function pruneOfflineCopy(id) {
+  if (!readRecord(id)) {
+    return
+  }
+
+  await mediaSettled(mediaNodeIds())
+  if (!orphanKeys(id).length) {
+    return
+  }
+
+  await run?.done
+  if (run || !orphanKeys(id).length) {
+    return
+  }
+
+  const loadOptions = getLoadOptions()
+  const record = readRecord(id)
+  const current = claimRun(id, record.node)
+  const { signal } = current.controller
+  try {
+    await refreshStartup(id, record, loadOptions, signal)
+    if (signal.aborted || forgotten.has(record.node)) {
+      return
+    }
+
+    const orphans = new Set(orphanKeys(id))
+    const cache = await openPinnedCache()
+    await Promise.all([...orphans].map((key) => cache.delete(key)))
+
+    const latest = readRecord(id)
+    if (latest) {
+      writeRecord(id, { ...latest, keys: latest.keys.filter((key) => !orphans.has(key)) })
+    }
+  } finally {
+    releaseRun(current)
+  }
 }
 
 // a save and a visit's refresh share one slot; a later run stops the one before and waits for it
@@ -305,6 +348,8 @@ function releaseRun(current) {
 const saveOfflineCopy = async (id) => {
   if (offlineCopyProgress.value.running) return null
   const node = presentationDoc.value?.node
+  // read now, as leaving during the run blanks what they come from
+  const loadOptions = getLoadOptions()
   forgotten.delete(node)
   const current = claimRun(id, node)
   const { controller } = current
@@ -321,7 +366,8 @@ const saveOfflineCopy = async (id) => {
     await warmAssets()
     // a node-id picture has no url until Drive signs it
     const unsigned = unsignedSources(await mediaSettled(mediaNodeIds(), signal))
-    if (signal.aborted) {
+    // the slides on screen may now be another presentation's
+    if (signal.aborted || presentationDoc.value?.node !== node) {
       return null
     }
 
@@ -333,13 +379,13 @@ const saveOfflineCopy = async (id) => {
 
     const cache = await openPinnedCache()
     const pinned = await pinnedPaths(cache)
-    const startup = await fetchStartup(node, id, pinned, signal)
-
-    await pruneOfflineCopy(id, targets)
+    const startup = await fetchStartup(node, id, pinned, loadOptions, signal)
 
     const previous = startupKeys(readRecord(id))
     const media = targets.map((target) => target.key).filter((key) => pinned.has(key))
-    const record = { node, keys: [...startup.keys, ...media] }
+    // only an open deletes, so what the presentation no longer shows stays listed until then
+    const held = readRecord(id)?.keys.filter(isMediaKey) ?? []
+    const record = { node, keys: [...new Set([...startup.keys, ...media, ...held])] }
     await putStartup(cache, id, record, startup, previous, signal)
     navigator.storage?.persist?.().catch(() => {})
 
@@ -442,6 +488,15 @@ function needsRefresh(id) {
   return !known || mediaNodeIds().some((nodeId) => !known.has(nodeId))
 }
 
+async function refreshStartup(id, record, loadOptions, signal) {
+  await warmAssets()
+  const cache = await openPinnedCache()
+  const pinned = await pinnedPaths(cache)
+  const startup = await fetchStartup(record.node, id, pinned, loadOptions, signal)
+  const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
+  await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record), signal)
+}
+
 // an online visit replaces the start-up copy, so after a deploy it holds the new build
 async function warmOfflineCopyAssets(id) {
   const record = readRecord(id)
@@ -450,14 +505,11 @@ async function warmOfflineCopyAssets(id) {
   if (run) return
 
   refreshed.set(id, new Set(mediaNodeIds()))
+  const loadOptions = getLoadOptions()
   const current = claimRun(id, record.node)
   const { signal } = current.controller
   try {
-    await warmAssets()
-    const cache = await openPinnedCache()
-    const startup = await fetchStartup(record.node, id, await pinnedPaths(cache), signal)
-    const keys = [...startup.keys, ...record.keys.filter(isMediaKey)]
-    await putStartup(cache, id, { ...record, keys }, startup, startupKeys(record), signal)
+    await refreshStartup(id, record, loadOptions, signal)
   } catch (err) {
     if (signal.aborted) {
       return
@@ -474,14 +526,39 @@ const getOfflineStatus = (id) => {
   if (id !== presentationId.value) return 'none'
   const record = readRecord(id)
   if (!record) return 'none'
+
+  // offline, no row means the list this copy holds predates the picture; online it
+  // means Drive won't give it to this user as of this read, so no update could add it
+  if (!navigator.onLine && mediaNodeIds().some(isMediaRefused)) {
+    return 'outdated'
+  }
+
+  // with no key for this picture, nothing shows the copy holds it
+  if (mediaNodeIds().some(isMediaUnanswered)) {
+    return 'outdated'
+  }
+
   const pinned = new Set(record.keys)
   return getMediaTargets().every((target) => pinned.has(target.key)) ? 'available' : 'outdated'
 }
 
 const offlineCopyStatus = ref('none')
 
-const refreshOfflineStatus = (id) => {
+let stopFollowingMedia = null
+
+function refreshOfflineStatus(id) {
+  stopFollowingMedia?.()
   offlineCopyStatus.value = id ? getOfflineStatus(id) : 'none'
+  if (offlineCopyStatus.value === 'none') {
+    return
+  }
+
+  // a picture still loading has no key yet, so the answer above left it out
+  stopFollowingMedia = onMediaStatusChange(mediaNodeIds(), () => {
+    if (id === presentationId.value) {
+      offlineCopyStatus.value = getOfflineStatus(id)
+    }
+  })
 }
 
 export {

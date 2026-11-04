@@ -24,9 +24,13 @@ import { canManage, type DriveAccess, type DriveBreadcrumb, type DriveNode } fro
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
+const MEDIA_RETRY_MS = 2_000
+const MEDIA_RETRY_GROWTH = 2
+const MEDIA_RETRY_MAX_MS = 30_000
 const MIN_CLIENT_ERROR_STATUS = 400
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
-export type MediaStatus = 'loading' | 'ready' | 'refused'
+/** `unanswered`: a read for this picture failed in passing and none has answered for it yet. */
+export type MediaStatus = 'loading' | 'unanswered' | 'ready' | 'refused'
 export interface MediaHandle {
   readonly id: string
   readonly src: Readonly<Ref<string | null>>
@@ -185,6 +189,8 @@ export async function openDriveDocumentSession(
   const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
+  let failedReads = 0
+  let mediaRetry: ReturnType<typeof setTimeout> | undefined
   const refreshAccess = async () => {
     if (disposed) return
     try {
@@ -202,13 +208,7 @@ export async function openDriveDocumentSession(
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
     } catch (error) {
-      let status = 0
-      if (error instanceof TransportError) {
-        status = error.status
-      }
-
-      const isRefusal = status >= MIN_CLIENT_ERROR_STATUS && status < MIN_SERVER_ERROR_STATUS
-      if (!isRefusal || isTransientStatus(status)) return
+      if (!isRefusal(error)) return
 
       // A guest is refused everything; that says nothing about this person's access
       if (!signedIn()) return
@@ -220,6 +220,12 @@ export async function openDriveDocumentSession(
   const refreshMedia = async () => {
     if (disposed) return
     if (mediaPromise) return mediaPromise
+
+    clearTimeout(mediaRetry)
+
+    // a handle made after the read began may name a picture newer than its answer
+    const asked = new Set(handles.keys())
+
     mediaPromise = requester
       .query(
         api.drive.nodes.media,
@@ -231,6 +237,7 @@ export async function openDriveDocumentSession(
         },
       )
       .then(({ media }) => {
+        failedReads = 0
         const seen = new Set<string>()
         for (const row of media ?? []) {
           seen.add(row.node)
@@ -240,16 +247,53 @@ export async function openDriveDocumentSession(
           handle.status.value = 'ready'
         }
         for (const [id, handle] of handles) {
-          if (!seen.has(id)) handle.status.value = 'refused'
+          if (!seen.has(id) && asked.has(id)) {
+            handle.status.value = 'refused'
+          }
         }
       })
-      .catch(() => {
-        for (const handle of handles.values()) handle.status.value = 'refused'
+      .catch((error) => {
+        if (disposed) return
+
+        // a passing failure says nothing about a picture, so the next read settles it
+        if (!isRefusal(error)) {
+          markUnanswered(asked)
+          retryMedia()
+          return
+        }
+
+        for (const [id, handle] of handles) {
+          if (asked.has(id)) {
+            handle.status.value = 'refused'
+          }
+        }
       })
       .finally(() => {
         mediaPromise = null
+
+        if (hasLoadingBeyond(asked)) {
+          void refreshMedia()
+        }
       })
     return mediaPromise
+  }
+
+  function markUnanswered(asked: Set<string>) {
+    for (const [id, handle] of handles) {
+      if (asked.has(id) && handle.status.value === 'loading') {
+        handle.status.value = 'unanswered'
+      }
+    }
+  }
+
+  function retryMedia() {
+    const delay = Math.min(MEDIA_RETRY_MS * MEDIA_RETRY_GROWTH ** failedReads, MEDIA_RETRY_MAX_MS)
+    failedReads += 1
+    mediaRetry = setTimeout(() => void refreshMedia(), delay)
+  }
+
+  function hasLoadingBeyond(asked: Set<string>) {
+    return [...handles].some(([id, handle]) => !asked.has(id) && handle.status.value === 'loading')
   }
   function getHandle(id: string): InternalMediaHandle {
     let handle = handles.get(id)
@@ -284,6 +328,13 @@ export async function openDriveDocumentSession(
   }, MEDIA_REFRESH_MS)
   const onFocus = () => void refreshAccess()
   targetWindow?.addEventListener('focus', onFocus)
+  function onOnline() {
+    if (handles.size) {
+      void refreshMedia()
+    }
+  }
+
+  targetWindow?.addEventListener('online', onOnline)
   // A share write can lower the caller's own access: react before the dialog closes.
   const stopAccessChanges = onAccessChange(nodeId, () => void refreshAccess())
   return {
@@ -495,7 +546,9 @@ export async function openDriveDocumentSession(
       controller.abort()
       clearEvery(accessTimer)
       clearEvery(mediaTimer)
+      clearTimeout(mediaRetry)
       targetWindow?.removeEventListener('focus', onFocus)
+      targetWindow?.removeEventListener('online', onOnline)
       stopAccessChanges()
     },
   }
@@ -579,6 +632,20 @@ interface InternalMediaHandle {
 /** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
 export function canShare(state: SessionState, access: DriveAccess): boolean {
   return state === 'Active' && canManage({ access })
+}
+
+// the server turned the request away, unlike a network or server failure that passes
+function isRefusal(error: unknown): boolean {
+  if (!(error instanceof TransportError)) {
+    return false
+  }
+
+  const { status } = error
+  return (
+    status >= MIN_CLIENT_ERROR_STATUS &&
+    status < MIN_SERVER_ERROR_STATUS &&
+    !isTransientStatus(status)
+  )
 }
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'

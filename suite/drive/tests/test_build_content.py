@@ -55,11 +55,15 @@ from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.ports import SiteContentRows
 from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_4, phase_content_history
 from suite.drive.patches.cleanup.tests.fakes import FakeSchema, cleanup_environment
+from suite.slides.api.slides import save_slides
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
 STAMP = "2024-01-02 03:04:05.000000"
 OLDER = "2024-01-01 00:00:00.000000"
+LATER = "2024-01-03 00:00:00.000000"
+LATEST = "2024-01-04 00:00:00.000000"
+DURABLE = "build_durable"
 
 # The target tables ticket 28 writes. `tearDown` empties them by prefix, and
 # the rerun comparison reads them back whole.
@@ -122,6 +126,27 @@ def png_bytes(size: tuple[int, int], seed: str) -> bytes:
     output = io.BytesIO()
     Image.new("RGB", size, (digest[0], digest[1], digest[2])).save(output, "PNG")
     return output.getvalue()
+
+
+class SimulatedCrash(Exception):
+    """The process died, so nothing since the last commit stays."""
+
+
+class TargetCrashingOnCommit(SiteContentTarget):
+    """A commit is a savepoint here, since the test run owns the real transaction."""
+
+    def __init__(self, crash_when):
+        super().__init__()
+        self.crash_when = crash_when
+        frappe.db.savepoint(DURABLE)
+
+    def commit(self) -> None:
+        if self.crash_when():
+            frappe.db.rollback(save_point=DURABLE)
+
+            raise SimulatedCrash
+
+        frappe.db.savepoint(DURABLE)
 
 
 class BuildContentCase(IntegrationTestCase):
@@ -388,7 +413,7 @@ class BuildContentCase(IntegrationTestCase):
             background=background,
         )
 
-    def environment(self, target=None):
+    def environment(self, target=None, clock=None):
         return BuildEnvironment(
             storage=None,
             files=None,
@@ -398,7 +423,7 @@ class BuildContentCase(IntegrationTestCase):
             content_target=target or SiteContentTarget(),
             slide_journal=self.journal,
             docshare_journal=self.docshare_journal,
-            clock=lambda: STAMP,
+            clock=clock or (lambda: STAMP),
             make_id=self.gid,
         )
 
@@ -522,10 +547,10 @@ class BuildContentCase(IntegrationTestCase):
             "slides": (first.name, second.name),
         }
 
-    def convert_all(self):
+    def convert_all(self, clock=None):
         """Steps 7, 8, and 10 in the accepted order."""
         convert_history_and_comments(self.environment())
-        convert_slides_and_templates(self.environment())
+        convert_slides_and_templates(self.environment(clock=clock))
         return link_content_documents(self.environment())
 
     # -- readers
@@ -1134,7 +1159,7 @@ class TestContentLinksAndSources(BuildContentCase):
         self.assertGreaterEqual(checked, 10)
 
     def test_sources_survive_except_slide_bodies_new_links_and_docshares(self):
-        """§16: only `node` links, journaled Slide bodies, and shares may change.
+        """§16: only `node` links, journaled Slide bodies, a rewritten deck's stamp, and shares may change.
 
         The `DocShare` row is the one source row Build removes. §5.13's read
         guards fail closed on a share for a governed doctype and
@@ -1147,8 +1172,10 @@ class TestContentLinksAndSources(BuildContentCase):
         before = self.source_snapshot()
         share_key = ("DocShare", self.prefix + "share")
         self.assertIn(share_key, before)
+        node_stamps = ["modified", "content_modified"]
+        node_before = frappe.db.get_value("Drive Node", deck["node"], node_stamps)
 
-        self.convert_all()
+        self.convert_all(clock=lambda: LATER)
 
         after = self.source_snapshot()
         self.assertEqual(sorted(after), sorted(key for key in before if key != share_key))
@@ -1162,14 +1189,15 @@ class TestContentLinksAndSources(BuildContentCase):
             {
                 ("Writer Document", self.prefix + "wdoc"): {"node"},
                 ("Sheet", self.prefix + "sheet"): {"node"},
-                ("Presentation", deck["docname"]): {"node"},
+                ("Presentation", deck["docname"]): {"node", "modified"},
                 ("Slide", deck["slides"][0]): {"elements", "background"},
             },
         )
-        self.assertEqual(
+        self.assertGreater(
             after[("Presentation", deck["docname"])]["modified"],
             before[("Presentation", deck["docname"])]["modified"],
         )
+        self.assertEqual(frappe.db.get_value("Drive Node", deck["node"], node_stamps), node_before)
         self.assertEqual(
             frappe.db.get_value("Drive Grant", {"node": fixture["writer"], "principal": GENERAL}, "role"),
             READ,
@@ -1183,6 +1211,84 @@ class TestContentLinksAndSources(BuildContentCase):
 
 class TestSlideMedia(BuildContentCase):
     """§11 and §12: media children, previews, and the durable journal."""
+
+    def test_a_push_on_the_old_stamp_is_refused_after_a_rewrite(self):
+        deck = self.deck_fixture()
+        first = deck["slides"][0]
+        old_stamp = frappe.db.get_value("Presentation", deck["docname"], "modified")
+        old_elements = frappe.db.get_value("Slide", first, "elements")
+
+        convert_slides_and_templates(self.environment(clock=lambda: LATER))
+        rewritten = frappe.db.get_value("Slide", first, "elements")
+
+        self.assertNotEqual(rewritten, old_elements)
+        with self.assertRaises(frappe.TimestampMismatchError):
+            save_slides(deck["docname"], [{"name": first, "elements": old_elements}], str(old_stamp))
+
+        self.assertEqual(frappe.db.get_value("Slide", first, "elements"), rewritten)
+
+    def test_a_rollback_between_stamp_and_rows_leaves_both_old(self):
+        deck = self.deck_fixture()
+        first = deck["slides"][0]
+        stamp = frappe.db.get_value("Presentation", deck["docname"], "modified")
+        elements = frappe.db.get_value("Slide", first, "elements")
+        set_value = frappe.db.set_value
+        stamp_at_the_rows: list[object] = []
+
+        def fail_on_a_slide(doctype, *args, **kwargs):
+            if doctype == "Slide":
+                stamp_at_the_rows.append(frappe.db.get_value("Presentation", deck["docname"], "modified"))
+
+                raise SimulatedCrash
+
+            return set_value(doctype, *args, **kwargs)
+
+        frappe.db.savepoint(DURABLE)
+        row = {"name": first, "elements": "[]", "background": None}
+        with patch.object(frappe.db, "set_value", fail_on_a_slide), self.assertRaises(SimulatedCrash):
+            SiteContentTarget().update_slides(deck["docname"], [row], LATER)
+
+        frappe.db.rollback(save_point=DURABLE)
+
+        self.assertNotEqual(stamp_at_the_rows, [stamp])
+        self.assertEqual(frappe.db.get_value("Presentation", deck["docname"], "modified"), stamp)
+        self.assertEqual(frappe.db.get_value("Slide", first, "elements"), elements)
+
+    def test_a_crash_between_batches_then_a_rerun_rewrites_every_row(self):
+        deck = self.deck_fixture()
+        docname = deck["docname"]
+        elements = [{"type": "image", "src": deck["media_url"], "attachmentName": "a.png"}]
+        third = self.slide(self.prefix + "s3", docname, 3, json.dumps(elements), background=deck["media_url"])
+        names = (deck["slides"][0], third.name)
+        stamp = frappe.db.get_value("Presentation", docname, "modified")
+        old = {name: frappe.db.get_value("Slide", name, "elements") for name in names}
+
+        def rewritten():
+            return [name for name in names if frappe.db.get_value("Slide", name, "elements") != old[name]]
+
+        target = TargetCrashingOnCommit(lambda: len(rewritten()) == len(names))
+        with self.assertRaises(SimulatedCrash):
+            convert_slides_and_templates(self.environment(target, clock=lambda: LATER), batch_size=1)
+
+        self.assertEqual(len(rewritten()), 1)
+        self.assertNotEqual(frappe.db.get_value("Presentation", docname, "modified"), stamp)
+
+        convert_slides_and_templates(self.environment(clock=lambda: LATEST), batch_size=1)
+
+        for name in names:
+            body = json.loads(frappe.db.get_value("Slide", name, "elements"))
+            self.assertEqual(body, [{"type": "image", "src": deck["keeper"]}])
+
+        self.assertNotEqual(frappe.db.get_value("Presentation", docname, "modified"), stamp)
+
+    def test_a_clean_rerun_moves_no_stamp(self):
+        deck = self.deck_fixture()
+        convert_slides_and_templates(self.environment(clock=lambda: LATER))
+        stamp = frappe.db.get_value("Presentation", deck["docname"], "modified")
+
+        convert_slides_and_templates(self.environment(clock=lambda: LATEST))
+
+        self.assertEqual(frappe.db.get_value("Presentation", deck["docname"], "modified"), stamp)
 
     def test_one_media_child_per_deck_and_blob(self):
         deck = self.deck_fixture()

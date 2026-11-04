@@ -1,248 +1,24 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref, type Component } from 'vue'
+
 import {
-  computed,
-  createApp,
-  defineComponent,
-  h,
-  nextTick,
-  ref,
-  type Component,
-  type Ref,
-  type SetupContext,
-} from 'vue'
-import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+  fakeServer,
+  forgetTemplates,
+  openedSurface,
+  propertiesPanel,
+  saves,
+  served,
+  server,
+  shown,
+  signedIn,
+  startsFromEmptyStore,
+  themeChange,
+  thumbnails,
+  versionsPanel,
+  visits,
+  warms,
+} from './SlidesSurface.fakes'
 
-import type { DocumentSession } from '@/apps/drive'
-import { translationPlugin } from '@/platform/translation'
-
-const server = vi.hoisted(() => ({ fetch: vi.fn() }))
-const saves: unknown[] = []
-const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
-const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
-const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
-const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
-const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
-let isRefusing = false
-let isFailingTemplates = false
-
-interface MenuEntry {
-  label: string
-  condition?: () => boolean
-  onClick: () => void
-  options?: MenuEntry[]
-}
-
-const served = {
-  node: 'node-1',
-  owner: 'me@example.com',
-  title: 'Quarterly plan',
-  modified: 'M1',
-  modified_by: 'me@example.com',
-  is_composite: 0,
-  theme: null,
-  slides: [
-    { clientId: 'c1', background: '#ffffffff', elements: [] },
-    { clientId: 'c2', background: '#ffffffff', elements: [] },
-  ],
-}
-
-vi.mock('@/api', async () => {
-  const { createApiClient } = await import('@/platform/server-state')
-  const { createTransport } = await import('@/platform/transport')
-  const { api: slides } = await import('../client/api')
-  const { registration } = await import('../client/policy')
-  const engine = createApiClient(
-    { slides: async () => registration },
-    { persistence: false, transport: createTransport({ fetch: server.fetch }) },
-  )
-
-  forgetTemplates.run = () => {
-    engine.invalidate((reference) => reference.id === 'get_templates')
-  }
-
-  return { api: { slides }, ...engine }
-})
-vi.mock('frappe-ui', () => {
-  const passthrough = {
-    setup:
-      (_: unknown, { slots }: SetupContext) =>
-      () =>
-        h('div', slots.default?.()),
-  }
-  return {
-    ...Object.fromEntries(
-      [
-        'Badge',
-        'Button',
-        'Checkbox',
-        'Combobox',
-        'ContextMenu',
-        'Dialog',
-        'FileUploader',
-        'Popover',
-        'Select',
-        'Skeleton',
-        'Switch',
-        'TabButtons',
-        'TextInput',
-        'Tooltip',
-      ].map((name) => [name, passthrough]),
-    ),
-    // the menu's choices render as buttons, so a test can pick one
-    Dropdown: {
-      props: { options: { type: Array, default: () => [] } },
-      setup:
-        (props: { options: MenuEntry[] }, { slots }: SetupContext) =>
-        () =>
-          h('div', [
-            slots.default?.(),
-            ...props.options
-              .flatMap((entry) => entry.options ?? [entry])
-              .filter((option) => option.condition?.() !== false)
-              .map((option) => h('button', { onClick: option.onClick }, option.label)),
-          ]),
-    },
-    FileUploadHandler: class {},
-    dialog: vi.fn(),
-    toast: {
-      error: vi.fn(),
-      warning: vi.fn(),
-      info: vi.fn(),
-      success: vi.fn(),
-      dismiss: vi.fn(),
-    },
-    useKeyboardShortcut: vi.fn(),
-    usePageMeta: vi.fn(),
-  }
-})
-vi.mock('@/platform/session', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/platform/session')>()
-  return {
-    ...original,
-    useSession: () => ({
-      ...original.useSession(),
-      user: {
-        get value() {
-          return { id: signedIn.user }
-        },
-      },
-    }),
-  }
-})
-const warms = vi.hoisted(() => [] as Promise<void>[])
-vi.mock('@/apps/slides/stores/offlineCopy', async (importOriginal) => {
-  const store = await importOriginal<typeof import('@/apps/slides/stores/offlineCopy')>()
-  function warmOfflineCopyAssets(id: string) {
-    const warm = store.warmOfflineCopyAssets(id)
-    warms.push(warm)
-    return warm
-  }
-
-  return { ...store, warmOfflineCopyAssets }
-})
-const visits = vi.hoisted(() => ({
-  remember: vi.fn((_id: string) => Promise.resolve()),
-  cancel: vi.fn(),
-}))
-vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/apps/slides/stores/visitedCopies')>()),
-  rememberVisit: visits.remember,
-  cancelVisit: visits.cancel,
-}))
-vi.mock('@/apps/slides/router', () => ({
-  router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
-}))
-vi.mock('@/apps/drive', () => ({
-  GUEST_NAME_LIMIT: 50,
-  DriveDocumentHeader: {
-    props: { recoverable: Boolean },
-    emits: ['download-changes', 'update:panel'],
-    setup:
-      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
-      () =>
-        h('header', [
-          slots.actions?.(),
-          slots.primary?.(),
-          slots.icon?.({ icon: '' }),
-          h('button', {
-            'data-download-changes': '',
-            hidden: !props.recoverable,
-            onClick: () => emit('download-changes'),
-          }),
-          h('button', { 'data-versions': '', onClick: () => emit('update:panel', 'versions') }),
-        ]),
-  },
-  DriveCommentAuthor: { render: () => null },
-  useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
-  useDriveGuestName: () => ({
-    shown: ref(false),
-    text: ref(''),
-    atLimit: ref(false),
-    maxLength: 50,
-    take: () => undefined,
-  }),
-}))
-// a thumbnail that isn't the current slide asks the surface to change to it
-vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
-  const { slides } = await import('@/apps/slides/stores/slide')
-  return {
-    default: defineComponent({
-      emits: ['changeSlide'],
-      setup:
-        (_, { emit }) =>
-        () =>
-          h(
-            'nav',
-            slides.value.map((_slide, index) =>
-              h('button', { onClick: () => emit('changeSlide', index) }),
-            ),
-          ),
-    }),
-  }
-})
-for (const path of [
-  '@/apps/slides/components/SlideContainer.vue',
-  '@/apps/slides/components/Toolbar.vue',
-  '@/apps/slides/components/LayoutDialog.vue',
-  './ExportView.vue',
-]) {
-  vi.doMock(path, () => ({ default: { render: () => null } }))
-}
-
-vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
-  default: { render: () => propertiesPanel.real && h(propertiesPanel.real) },
-}))
-
-vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
-  default: {
-    emits: ['update'],
-    setup(_: unknown, { emit }: SetupContext) {
-      themeChange.update = (theme) => emit('update', theme)
-      return () => null
-    },
-  },
-}))
-
-vi.doMock('./SlidesVersionsPanel.vue', () => ({
-  default: {
-    props: { flush: { type: Function, default: null } },
-    setup(props: { flush: () => Promise<void> }) {
-      versionsPanel.flush = props.flush
-      return () => null
-    },
-  },
-}))
-
-vi.doMock('@/apps/slides/components/OfflineCopyButton.vue', () => ({
-  default: { render: () => h('button', { 'data-offline-copy': '' }) },
-}))
-
-vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
-  __esModule: true,
-  default: { render: () => h('div', { 'data-show': '' }) },
-}))
-
-const { default: SlidesSurface } = await import('./SlidesSurface.vue')
 const {
   duplicateSlide,
   saveSlide,
@@ -256,123 +32,18 @@ const {
   saveCurrentState,
   saveFailed,
   saveRefused,
+  savingFor,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
 const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
   await import('@/apps/slides/stores/presentation')
+const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
+const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { setActiveElements } = await import('@/apps/slides/stores/element')
-
-function answer(message: unknown) {
-  return new Response(JSON.stringify({ message }), { status: 200 })
-}
-
-function session(docname: string, access: Ref<{ role: number }>): DocumentSession {
-  return {
-    nodeId: 'node-1',
-    contentDoctype: 'Presentation',
-    contentDocname: docname,
-    title: ref('Quarterly plan'),
-    state: ref('Active'),
-    access,
-    refreshAccess: async () => {},
-    credentials: { context: undefined, heldContext: undefined },
-    media: () => undefined,
-  } as unknown as DocumentSession
-}
-
-// each test opens its own presentation, so no draft carries over between them
-let opens = 0
-
-async function openedSurface({
-  path = '',
-  role = 50,
-  slides = served.slides,
-  firstLoad,
-}: {
-  path?: string
-  role?: number
-  slides?: unknown[]
-  firstLoad?: Promise<void | Response>
-} = {}) {
-  const docname = `p${++opens}`
-  const loads: Array<Promise<void | Response>> = []
-  if (firstLoad) {
-    loads.push(firstLoad)
-  }
-
-  server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-    if (url.includes('save_slides')) {
-      if (isRefusing) {
-        return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })
-      }
-
-      const body = JSON.parse(String(init?.body))
-      // an earlier open's leaving push can land here
-      if (body.name === docname) {
-        saves.push(body)
-      }
-
-      const version = saves.length + 1
-      return answer({ modified: `M${version}` })
-    }
-
-    if (url.includes('get_templates')) {
-      if (isFailingTemplates) {
-        throw new TypeError('Failed to fetch')
-      }
-
-      return answer([])
-    }
-
-    const held = loads.shift()
-    const heldAnswer = held && (await held)
-    if (heldAnswer) {
-      return heldAnswer
-    }
-
-    return answer({ ...structuredClone(served), slides, name: docname })
-  })
-  const access = ref({ role })
-  const opened = session(docname, access)
-  const view = { render: () => null }
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      {
-        path: '/d/:node',
-        component: SlidesSurface,
-        props: () => ({ session: opened }),
-        children: [
-          { path: 'present', name: 'slides-slideshow', component: view },
-          { path: ':slug?', name: 'document-host', component: view },
-        ],
-      },
-    ],
-  })
-  await router.push(`/d/node-1${path}`)
-  const app = createApp(defineComponent({ setup: () => () => h(RouterView) }))
-  app.use(router).use(translationPlugin)
-  const root = document.createElement('div')
-  document.body.append(root)
-  app.mount(root)
-  if (!firstLoad) {
-    await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
-  }
-
-  return { app, root, docname, router, access, loads }
-}
-
-function shown() {
-  return document.querySelector('[data-show]') !== null
-}
-
-function thumbnails(root: Element) {
-  return [...root.querySelectorAll<HTMLButtonElement>('nav button')]
-}
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
@@ -520,6 +191,20 @@ describe('Slides Present button', () => {
 })
 
 // the offline copy (DESIGN-slides-offline §1, §5)
+function answersStartupReads() {
+  vi.stubGlobal('__SUITE_BUILD__', '100')
+  vi.stubGlobal('fetch', async (url: string) => {
+    if (url.startsWith('/d/')) {
+      return new Response('<html></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', 'X-Suite-Build': '100' },
+      })
+    }
+
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+  })
+}
+
 describe('Slides offline copy', () => {
   const posted: string[] = []
   const register = vi.fn(async () => ({}))
@@ -615,7 +300,7 @@ describe('Slides offline copy', () => {
       fetched.push(url)
       return new Response('', { status: 404 })
     })
-    const next = opens + 1
+    const next = fakeServer.opens + 1
     localStorage.setItem(
       `slides-offline-copy:p${next}`,
       JSON.stringify({ node: 'node-1', keys: [] }),
@@ -647,7 +332,7 @@ describe('Slides offline copy', () => {
       ['a viewer', 10],
     ])('is remembered for %s', async (_label, role) => {
       signedIn.user = 'someone@example.com'
-      const next = opens + 1
+      const next = fakeServer.opens + 1
       const docname = `p${next}`
       mounted = await openedSurface({ role })
 
@@ -681,6 +366,142 @@ describe('Slides offline copy', () => {
     })
   })
 
+  it('keeps the bytes of a picture Drive refused when a saved copy opens', async () => {
+    const pinnedPicture = '/private/files/m1.png'
+    const deleted: string[] = []
+    vi.stubGlobal('caches', {
+      open: async () => ({
+        keys: async () => [],
+        put: async () => {},
+        delete: async (key: string) => {
+          deleted.push(key)
+          return true
+        },
+      }),
+      match: async () => undefined,
+      delete: async () => true,
+    })
+    answersStartupReads()
+    const next = fakeServer.opens + 1
+    const record = `${RECORD_PREFIX}p${next}`
+    localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
+    const refused = {
+      id: 'media-node-1',
+      src: ref(null),
+      cacheKey: ref('media-node-1'),
+      status: ref('refused'),
+      refresh: async () => {},
+    }
+
+    mounted = await openedSurface({
+      slides: [
+        {
+          clientId: 'c1',
+          background: '#ffffffff',
+          elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
+        },
+      ],
+      media: () => refused as never,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(deleted).toEqual([])
+    expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toContain(pinnedPicture)
+  })
+
+  describe('a saved composite copy opens', () => {
+    const pinnedPicture = '/private/files/b.png'
+    const groupSlides = [{ name: 'a1', idx: 1, parent: 'a', background: '#ffffffff', elements: [] }]
+
+    function pinnedThenOpened(composite: Record<string, unknown[] | Error>) {
+      const deleted: string[] = []
+      vi.stubGlobal('caches', {
+        open: async () => ({
+          keys: async () => [],
+          put: async () => {},
+          delete: async (key: string) => {
+            deleted.push(key)
+            return true
+          },
+        }),
+        match: async () => undefined,
+        delete: async () => true,
+      })
+      answersStartupReads()
+      const next = fakeServer.opens + 1
+      const record = `${RECORD_PREFIX}p${next}`
+      localStorage.setItem(record, JSON.stringify({ node: 'node-1', keys: [pinnedPicture] }))
+
+      return { deleted, record, opening: openedSurface({ composite }) }
+    }
+
+    it('keeps the pictures of a group a dropped connection left out', async () => {
+      const { deleted, record, opening } = pinnedThenOpened({
+        a: groupSlides,
+        b: new TypeError('Failed to fetch'),
+      })
+
+      mounted = await opening
+      const root = mounted.root
+      await vi.waitFor(() => expect(root.textContent).toContain('2 · failed'), { timeout: 5000 })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      expect(deleted).toEqual([])
+      expect(JSON.parse(localStorage.getItem(record) ?? '{}').keys).toContain(pinnedPicture)
+    })
+
+    it('clears a picture no group shows once every group has loaded', async () => {
+      const { deleted, opening } = pinnedThenOpened({ a: groupSlides, b: groupSlides })
+
+      mounted = await opening
+
+      await vi.waitFor(() => expect(deleted).toEqual([pinnedPicture]))
+    })
+  })
+
+  it('takes a refused picture as missing from the copy only while offline', async () => {
+    function goes(state: 'online' | 'offline') {
+      Object.defineProperty(navigator, 'onLine', {
+        configurable: true,
+        get: () => state === 'online',
+      })
+      window.dispatchEvent(new Event(state))
+    }
+
+    const next = fakeServer.opens + 1
+    localStorage.setItem(`${RECORD_PREFIX}p${next}`, JSON.stringify({ node: 'node-1', keys: [] }))
+    const refused = {
+      id: 'media-node-1',
+      src: ref(null),
+      cacheKey: ref('media-node-1'),
+      status: ref('refused'),
+      refresh: async () => {},
+    }
+    mounted = await openedSurface({
+      slides: [
+        {
+          clientId: 'c1',
+          background: '#ffffffff',
+          elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
+        },
+      ],
+      media: () => refused as never,
+    })
+    await vi.waitFor(() => expect(offlineCopyStatus.value).toBe('available'))
+
+    try {
+      goes('offline')
+      await nextTick()
+      expect(offlineCopyStatus.value).toBe('outdated')
+
+      goes('online')
+      await nextTick()
+      expect(offlineCopyStatus.value).toBe('available')
+    } finally {
+      delete (navigator as { onLine?: unknown }).onLine
+    }
+  })
+
   it('tells the worker when the presentation opens and closes', async () => {
     mounted = await openedSurface()
     await vi.waitFor(() => expect(posted).toEqual(['slides-entered']))
@@ -706,29 +527,13 @@ describe('Slides push refused by the server', () => {
 
   let files: ReturnType<typeof vi.fn<(file: File) => string>>
 
+  startsFromEmptyStore()
+
   beforeEach(() => {
-    vi.clearAllMocks()
-    vi.mocked(toast.warning).mockReturnValue('refusal')
-    localStorage.clear()
     files = vi.fn((_file: File) => 'blob:recovery')
 
     URL.createObjectURL = files as unknown as typeof URL.createObjectURL
     URL.revokeObjectURL = () => {}
-
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{"message":"pong"}')),
-    )
-  })
-
-  afterEach(() => {
-    isRefusing = false
-    isFailingTemplates = false
-    served.modified = 'M1'
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
   })
 
   function refusalToast(message: string) {
@@ -739,14 +544,14 @@ describe('Slides push refused by the server', () => {
 
   async function refused(message = REFUSED) {
     mounted = await openedSurface()
-    isRefusing = true
+    fakeServer.isRefusing = true
     duplicateSlide()
     await vi.waitFor(() => expect(refusalToast(message)).toBeDefined(), { timeout: 3000 })
     return refusalToast(message) as RefusalActions
   }
 
   function serverMoves() {
-    isRefusing = false
+    fakeServer.isRefusing = false
     served.modified = 'M2'
   }
 
@@ -819,7 +624,7 @@ describe('Slides push refused by the server', () => {
 
   it('finds the copy of a killed tab when the draft goes, beside an older one', async () => {
     keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
-    const nextOpen = opens + 1
+    const nextOpen = fakeServer.opens + 1
     await writeDraft({
       id: `p${nextOpen}`,
       content: [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
@@ -980,7 +785,7 @@ describe('Slides push refused by the server', () => {
   describe('templates that fail to load', () => {
     beforeEach(() => {
       forgetTemplates.run()
-      isFailingTemplates = true
+      fakeServer.isFailingTemplates = true
     })
 
     it('shows no toast offline', async () => {
@@ -1155,6 +960,62 @@ describe('Slides push refused by the server', () => {
         mounted.access.value = { role: 50 }
       }
     }
+
+    describe('with the last presentation still pushing', () => {
+      let land!: () => void
+
+      async function openedDuringItsPush() {
+        mounted = await openedSurface()
+        const answerAtServer = server.fetch.getMockImplementation()
+        const held = new Promise<Response>((resolve) => {
+          land = () => resolve(new Response('{}', { status: 500 }))
+        })
+        server.fetch.mockImplementation((url: string, init?: RequestInit) => {
+          if (url.includes('save_slides')) {
+            return held
+          }
+
+          return answerAtServer?.(url, init)
+        })
+        duplicateSlide()
+        await vi.waitFor(() => expect(isSaving.value).toBe(true), { timeout: 3000 })
+        mounted.app.unmount()
+        mounted.root.remove()
+
+        mounted = await openedSurface()
+      }
+
+      afterEach(async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        land()
+        await vi.waitFor(() => expect(savingFor.value).toBeNull())
+        vi.mocked(console.error).mockRestore()
+      })
+
+      it('takes a clean presentation as having nothing unsaved when access narrows', async () => {
+        await openedDuringItsPush()
+        const copies = readRecovery('node-1').length
+        vi.mocked(toast.warning).mockClear()
+
+        if (mounted) {
+          mounted.access.value = { role: 10 }
+        }
+
+        await nextTick()
+
+        expect(toast.warning).toHaveBeenCalledWith(VIEW_ONLY)
+        expect(readRecovery('node-1')).toHaveLength(copies)
+      })
+
+      it('still asks the browser to confirm closing the tab', async () => {
+        await openedDuringItsPush()
+
+        const unload = new Event('beforeunload', { cancelable: true })
+        window.dispatchEvent(unload)
+
+        expect(unload.defaultPrevented).toBe(true)
+      })
+    })
 
     it('says the copy is kept when it is', async () => {
       await narrowedWithEdits()
@@ -1367,7 +1228,7 @@ describe('Slides push refused by the server', () => {
     })
 
     function seedDraft(baseModified = 'M0') {
-      const nextOpen = opens + 1
+      const nextOpen = fakeServer.opens + 1
       return writeDraft({
         id: `p${nextOpen}`,
         content: [{ clientId: 'killed', background: '#00ff00ff', elements: [] }],
@@ -1723,7 +1584,7 @@ describe('Slides push refused by the server', () => {
     })
 
     async function discardedARefusal() {
-      isRefusing = false
+      fakeServer.isRefusing = false
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       await nextTick()
       menuItem('Discard my changes')?.click()
@@ -1783,165 +1644,41 @@ describe('Slides push refused by the server', () => {
     })
   })
 
-  describe('a copy that outlived its page', () => {
-    const rows = [
-      {
-        name: 'row-1',
-        client_id: 'c1',
-        background: '#FFF',
-        elements: JSON.stringify([
-          { id: 'e1', type: 'shape', shapeType: 'circle', fillColor: 'red', top: 1, left: 2 },
-        ]),
-        transition: null,
-        transition_duration: '0.5',
-        fade_unmatched_elements: 0,
-        advance_after: null,
-      },
-    ]
-
-    async function saveLanded(count: number) {
-      await vi.waitFor(() => expect(saves.length).toBeGreaterThanOrEqual(count), { timeout: 3000 })
-      await vi.waitFor(() => expect(isSaving.value).toBe(false))
-      await nextTick()
-    }
-
-    async function closedAndSettled() {
-      mounted?.app.unmount()
-      mounted = null
-      // the unmount sends what it holds, and that landing must not reach the next open
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      await vi.waitFor(() => expect(isSaving.value).toBe(false))
-      saves.length = 0
-    }
-
-    // the copy a closing page keeps, with what its push had sent by then
-    async function closedWithCopy() {
-      mounted = await openedSurface({ slides: rows })
-      duplicateSlide()
-      window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
-      const [copy] = readRecovery('node-1')
-      expect(copy.sticky).toBe(false)
-      await saveLanded(1)
-      const { slides: sent } = saves[0] as { slides: Record<string, unknown>[] }
-      await closedAndSettled()
-      localStorage.clear()
-      return { copy, sent }
-    }
-
-    it('opens over a copy it cannot compare, and keeps the copy', async () => {
-      keepRecovery('node-1', [null])
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-      mounted = await openedSurface()
-      await nextTick()
-
-      expect(warn).toHaveBeenCalled()
-      expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
-      expect(readRecovery('node-1')).toEqual([
-        expect.objectContaining({ slides: [null], sticky: true }),
-      ])
-      await closedAndSettled()
+  it('takes a failed push from the last surface as nothing about the one now open', async () => {
+    mounted = await openedSurface()
+    const left = mounted.docname
+    const answerAtServer = server.fetch.getMockImplementation()
+    let failPush!: () => void
+    const held = new Promise<Response>((resolve) => {
+      failPush = () => resolve(new Response('{}', { status: 500 }))
     })
-
-    it('keeps a copy that differs from the load through the first landed save', async () => {
-      keepRecovery('node-1', [{ clientId: 'gone', background: '#000000ff', elements: [] }])
-      mounted = await openedSurface()
-      const [kept] = readRecovery('node-1')
-      expect(kept.sticky).toBe(true)
-
-      duplicateSlide()
-      await saveLanded(1)
-
-      expect(readRecovery('node-1')).toHaveLength(1)
-    })
-
-    it.each<[string, 'server' | 'draft']>([
-      ['the server took its push', 'server'],
-      ['its draft restores', 'draft'],
-    ])('clears a copy with the same content when %s', async (_name, route) => {
-      const { copy, sent } = await closedWithCopy()
-      keepRecovery('node-1', copy.slides)
-      if (route === 'draft') {
-        const nextOpen = opens + 1
-        await writeDraft({
-          id: `p${nextOpen}`,
-          content: copy.slides,
-          dirty: true,
-          updatedAt: 1,
-          baseModified: 'M1',
-        })
+    server.fetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('save_slides')) {
+        return held
       }
 
-      // what the server stores: each row gets a name, and numbers come back as strings
-      const stored = sent.map((row, position) => ({
-        ...row,
-        name: row.client_id,
-        idx: position + 1,
-        transition_duration: String(row.transition_duration),
-      }))
-      mounted = await openedSurface({ slides: stored })
-      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
-      const [same] = readRecovery('node-1')
-      expect(same.sticky).toBe(false)
-
-      duplicateSlide()
-      await saveLanded(1)
-
-      expect(readRecovery('node-1')).toEqual([])
+      return answerAtServer?.(url, init)
     })
+    duplicateSlide()
+    await vi.waitFor(() => expect(isSaving.value).toBe(true), { timeout: 3000 })
+    mounted.app.unmount()
+    mounted.root.remove()
 
-    it('still clears a same-page copy on the next landed save after the first', async () => {
-      mounted = await openedSurface()
-      duplicateSlide()
-      await saveLanded(1)
-      duplicateSlide()
-      window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
-      const [ownPage] = readRecovery('node-1')
-      expect(ownPage.sticky).toBe(false)
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
+    mounted = await openedSurface()
+    keepRecovery('node-1', [{ clientId: 'kept-by-this-page' }])
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    failPush()
+    await vi.waitFor(() => expect(savingFor.value).toBeNull())
+    await nextTick()
+    error.mockRestore()
 
-      await saveLanded(2)
-
-      expect(readRecovery('node-1')).toEqual([])
-    })
-
-    it('holds off a landing from the last surface until the first load has compared', async () => {
-      keepRecovery('node-1', [{ clientId: 'gone', background: '#000000ff', elements: [] }])
-      let release!: () => void
-      mounted = await openedSurface({
-        firstLoad: new Promise<void>((resolve) => {
-          release = resolve
-        }),
-      })
-      saveFailed.value = false
-      isSaving.value = true
-      await nextTick()
-      isSaving.value = false
-      await nextTick()
-
-      release()
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
-
-      const [held] = readRecovery('node-1')
-      expect(held.sticky).toBe(true)
-    })
-
-    it('leaves a copy alone when the surface goes before its first load ends', async () => {
-      keepRecovery('node-1', [{ clientId: 'gone' }])
-      let release!: () => void
-      mounted = await openedSurface({
-        firstLoad: new Promise<void>((resolve) => {
-          release = resolve
-        }),
-      })
-
-      mounted.app.unmount()
-      mounted = null
-      release()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-
-      const [untouched] = readRecovery('node-1')
-      expect(untouched.sticky).toBe(false)
-    })
+    expect(saveFailed.value).toBe(false)
+    expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([
+      [{ clientId: 'older' }],
+      [{ clientId: 'kept-by-this-page' }],
+    ])
+    expect(await getPresentationFromLocalDB(left)).toMatchObject({ dirty: true })
   })
 
   it('leaves a sticky copy after a download outside the hold', async () => {
