@@ -9731,9 +9731,18 @@
                 "enum": [
                   "Preparing",
                   "Ready",
-                  "Failed"
+                  "Failed",
+                  "Expired"
                 ],
                 "title": "Status",
+                "type": "string"
+              },
+              "delivery": {
+                "enum": [
+                  "Inbox",
+                  "Page"
+                ],
+                "title": "Delivery",
                 "type": "string"
               },
               "size": {
@@ -9785,6 +9794,7 @@
               "name",
               "title",
               "status",
+              "delivery",
               "size",
               "expires_at",
               "error",
@@ -10072,9 +10082,18 @@
             "enum": [
               "Preparing",
               "Ready",
-              "Failed"
+              "Failed",
+              "Expired"
             ],
             "title": "Status",
+            "type": "string"
+          },
+          "delivery": {
+            "enum": [
+              "Inbox",
+              "Page"
+            ],
+            "title": "Delivery",
             "type": "string"
           },
           "size": {
@@ -10126,6 +10145,7 @@
           "name",
           "title",
           "status",
+          "delivery",
           "size",
           "expires_at",
           "error",
@@ -10138,8 +10158,114 @@
         "DriveNotFound",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveForbidden",
         "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "download_get",
+      "kind": "query",
+      "publicName": "downloads.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "downloads/{download}",
+      "pathParams": [
+        "download"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Preparing",
+              "Ready",
+              "Failed",
+              "Expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "delivery": {
+            "enum": [
+              "Inbox",
+              "Page"
+            ],
+            "title": "Delivery",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status",
+          "delivery",
+          "size",
+          "expires_at",
+          "error",
+          "url"
+        ],
+        "title": "DownloadShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound"
       ],
       "entity": null,
       "nodeParams": [],

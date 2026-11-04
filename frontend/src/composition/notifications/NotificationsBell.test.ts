@@ -94,6 +94,7 @@ vi.mock('@/api', async () => ({
       mentionNotification(),
       downloadNotification('notice-3', 'Ready'),
       downloadNotification('notice-4', 'Failed'),
+      downloadNotification('notice-5', 'Expired'),
     ],
     status: 'success',
     error: null,
@@ -191,6 +192,21 @@ describe('Notifications bell', () => {
     )
     expect(row?.textContent).toContain('An item in folder Talks cannot be read')
   })
+  it('says an expired zip has expired, and its row opens nothing', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" has expired'),
+    )
+
+    row?.click()
+    await vi.waitFor(() =>
+      expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-5'] }),
+    )
+
+    expect(assign).not.toHaveBeenCalled()
+  })
   it('marks every remaining row only through the explicit action', async () => {
     state.markRead.mockResolvedValue({
       read: 1,
@@ -267,7 +283,7 @@ function notification(
     },
   }
 }
-function downloadNotification(name: string, status: 'Ready' | 'Failed') {
+function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expired') {
   const ready = status === 'Ready'
   return {
     name,
@@ -277,6 +293,7 @@ function downloadNotification(name: string, status: 'Ready' | 'Failed') {
       name,
       title: 'Talks.zip',
       status,
+      delivery: 'Inbox',
       size: ready ? 2048 : null,
       expires_at: new Date().toISOString(),
       error: ready ? null : 'An item in folder Talks cannot be read',

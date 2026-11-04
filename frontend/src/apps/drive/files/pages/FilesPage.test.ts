@@ -13,6 +13,8 @@ const server = vi.hoisted(() => ({
   calls: [] as Array<{ id: string; input: Record<string, unknown> }>,
   /** The answer to a download request: a Preparing download, or an error to throw. */
   download: null as null | (() => unknown),
+  /** The answers to polling a download, one per poll. */
+  polls: [] as unknown[],
 }))
 
 vi.mock('@/platform/transport', async (original) => {
@@ -54,6 +56,8 @@ vi.mock('@/platform/transport', async (original) => {
           }
           case 'download_start':
             return server.download?.()
+          case 'download_get':
+            return server.polls.shift()
           case 'node_put_favourite':
           case 'node_delete_favourite': {
             const starred = node(input.node)
@@ -241,6 +245,8 @@ afterEach(() => {
   server.calls = []
   server.folderRole = 30
   server.download = null
+  server.polls = []
+  vi.useRealTimers()
   feedback.toasts.length = 0
   listing.rows = []
   listing.menu = null
@@ -401,6 +407,7 @@ const preparing = {
   name: 'download-1',
   title: 'Photos.zip',
   status: 'Preparing',
+  delivery: 'Inbox',
   size: null,
   expires_at: null,
   error: null,
@@ -433,6 +440,44 @@ describe('Downloading a folder', () => {
         options: { description: 'You will get a notification when the zip is ready.' },
       },
     ])
+  })
+
+  it('waits on the page for a zip asked for through a share link, then downloads it', async () => {
+    const url = '/api/suite/drive/downloads/download-1/content'
+    server.download = () => ({ ...preparing, delivery: 'Page' })
+    server.polls = [
+      { ...preparing, delivery: 'Page' },
+      { ...preparing, delivery: 'Page', status: 'Ready', size: 2048, url },
+    ]
+    const assign = vi.fn()
+    await mount('/drive/f/folder-5/drafts')
+    await vi.waitFor(() => expect(titles()).toEqual(['Photos']))
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+
+    const downloading = menuItem('photos', 'Download')?.onClick()
+    await vi.advanceTimersByTimeAsync(4000)
+    await downloading
+
+    expect(server.calls.filter((call) => call.id === 'download_get')).toHaveLength(2)
+    expect(assign).toHaveBeenCalledWith(url)
+    expect(feedback.toasts).toEqual([
+      {
+        kind: 'info',
+        message: 'Preparing “Photos” for download',
+        options: { description: 'The download starts here when the zip is ready.' },
+      },
+    ])
+  })
+
+  it('downloads a zip that is already ready at once', async () => {
+    const url = '/api/suite/drive/downloads/download-1/content'
+    server.download = () => ({ ...preparing, status: 'Ready', size: 2048, url })
+
+    const assign = await download()
+
+    expect(assign).toHaveBeenCalledWith(url)
+    expect(feedback.toasts).toEqual([])
   })
 
   it('shows the reason when Drive refuses the download', async () => {

@@ -9,6 +9,8 @@ import type {
   CommentPatchOutput,
   DownloadContentInput,
   DownloadContentOutput,
+  DownloadGetInput,
+  DownloadGetOutput,
   DownloadStartInput,
   DownloadStartOutput,
   GrantDeleteInput,
@@ -4116,13 +4118,18 @@ export const operationNotificationsList: Validators<
             properties: {
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
-              status: { enum: ['Preparing', 'Ready', 'Failed'], title: 'Status', type: 'string' },
+              status: {
+                enum: ['Preparing', 'Ready', 'Failed', 'Expired'],
+                title: 'Status',
+                type: 'string',
+              },
+              delivery: { enum: ['Inbox', 'Page'], title: 'Delivery', type: 'string' },
               size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
               expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
               error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
               url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
             },
-            required: ['name', 'title', 'status', 'size', 'expires_at', 'error', 'url'],
+            required: ['name', 'title', 'status', 'delivery', 'size', 'expires_at', 'error', 'url'],
             title: 'DownloadShape',
             type: 'object',
           },
@@ -4287,17 +4294,63 @@ export const operationDownloadStart: Validators<DownloadStartInput, DownloadStar
         properties: {
           name: { title: 'Name', type: 'string' },
           title: { title: 'Title', type: 'string' },
-          status: { enum: ['Preparing', 'Ready', 'Failed'], title: 'Status', type: 'string' },
+          status: {
+            enum: ['Preparing', 'Ready', 'Failed', 'Expired'],
+            title: 'Status',
+            type: 'string',
+          },
+          delivery: { enum: ['Inbox', 'Page'], title: 'Delivery', type: 'string' },
           size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
           expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
           error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
         },
-        required: ['name', 'title', 'status', 'size', 'expires_at', 'error', 'url'],
+        required: ['name', 'title', 'status', 'delivery', 'size', 'expires_at', 'error', 'url'],
         title: 'DownloadShape',
         type: 'object',
       },
       'download_start output',
+    )
+  },
+}
+
+export const operationDownloadGet: Validators<DownloadGetInput, DownloadGetOutput> = {
+  validateInput(value: unknown): asserts value is DownloadGetInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { download: { type: 'string' } },
+        required: ['download'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'download_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DownloadGetOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          status: {
+            enum: ['Preparing', 'Ready', 'Failed', 'Expired'],
+            title: 'Status',
+            type: 'string',
+          },
+          delivery: { enum: ['Inbox', 'Page'], title: 'Delivery', type: 'string' },
+          size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+        },
+        required: ['name', 'title', 'status', 'delivery', 'size', 'expires_at', 'error', 'url'],
+        title: 'DownloadShape',
+        type: 'object',
+      },
+      'download_get output',
     )
   },
 }

@@ -45,9 +45,9 @@ const ROLE_PHRASES: Record<number, () => string> = {
 export function notificationSentence(notification: DriveNotification): string {
   if ('download' in notification) {
     const { title, status } = notification.download
-    return status === 'Failed'
-      ? __('Could not prepare "{0}"', [title])
-      : __('"{0}" is ready to download', [title])
+    if (status === 'Failed') return __('Could not prepare "{0}"', [title])
+    if (status === 'Expired') return __('"{0}" has expired. Download the items again.', [title])
+    return __('"{0}" is ready to download', [title])
   }
   const sentence = SENTENCES[notification.activity.action]
   return sentence(notification.actor.full_name, notification.node_title, notification)

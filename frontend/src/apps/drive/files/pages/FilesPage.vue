@@ -277,6 +277,7 @@ import {
   type MovedItem,
 } from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
+import { settledDownload } from '../features/downloads'
 import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
@@ -926,15 +927,15 @@ const bulkActions = computed(() => {
           disabled: !allow('move'),
           onClick: beginBulkMove,
         },
-        // A zip arrives through the inbox, and Star is personal: both need a session.
+        {
+          label: __('Download'),
+          icon: 'lucide-download',
+          disabled: !allow('download'),
+          onClick: () => downloadRows(selectedRows.value),
+        },
+        // A star is personal, so it needs a session.
         ...(signedIn.value
           ? [
-              {
-                label: __('Download'),
-                icon: 'lucide-download',
-                disabled: !allow('download'),
-                onClick: () => downloadRows(selectedRows.value),
-              },
               {
                 label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
                 icon: 'lucide-star',
@@ -1571,24 +1572,36 @@ async function setStar(row: DriveNode, starred: boolean) {
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
 }
+/** A folder or a link downloads in a zip; anything else downloads its own bytes. */
+const ZIPPED_KINDS = new Set(['folder', 'link'])
 async function download(row: DriveNode): Promise<void> {
-  if (row.kind === 'folder') return downloadRows([row])
+  if (ZIPPED_KINDS.has(row.kind)) return downloadRows([row])
   window.location.assign(nodeContentUrl(row.name, { download: true }))
 }
 /**
  * One file downloads at once. Anything else becomes one zip that Drive builds
- * in the background; a notification links to it when it is ready (Drive spec
- * §11.2).
+ * in the background (Drive spec §11.2). A notification links an Inbox zip;
+ * for a Page zip, asked for through a share link, this page waits for it.
  */
 async function downloadRows(rows: readonly DriveNode[]): Promise<void> {
   const [only] = rows
-  if (rows.length === 1 && only && only.kind !== 'folder') return download(only)
+  if (rows.length === 1 && only && !ZIPPED_KINDS.has(only.kind)) return download(only)
   const name = subject(rows.map(itemOf))
   try {
-    await downloadMutation.run({ nodes: rows.map((row) => row.name) })
-    toast.info(__('Preparing {0} for download', [name]), {
-      description: __('You will get a notification when the zip is ready.'),
-    })
+    const asked = await downloadMutation.run({ nodes: rows.map((row) => row.name) })
+    if (asked.status === 'Preparing') {
+      toast.info(__('Preparing {0} for download', [name]), {
+        description:
+          asked.delivery === 'Inbox'
+            ? __('You will get a notification when the zip is ready.')
+            : __('The download starts here when the zip is ready.'),
+      })
+      if (asked.delivery === 'Inbox') return
+    }
+    const settled = await settledDownload(asked)
+    if (settled.url) window.location.assign(settled.url)
+    else
+      toast.error(__('Could not download {0}', [name]), { description: settled.error ?? undefined })
   } catch (error) {
     const reason = error instanceof Error ? error.message : undefined
     toast.error(__('Could not download {0}', [name]), { description: reason })

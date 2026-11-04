@@ -2491,7 +2491,8 @@ export type NotificationsListOutputDownloadNotificationShape = {
 export type NotificationsListOutputDownloadShape = {
   name: string
   title: string
-  status: 'Preparing' | 'Ready' | 'Failed'
+  status: 'Preparing' | 'Ready' | 'Failed' | 'Expired'
+  delivery: 'Inbox' | 'Page'
   size: number | null
   expires_at: string | null
   error: string | null
@@ -2628,7 +2629,8 @@ export type DownloadStartInput = { nodes: Array<string> }
 export type DownloadStartOutput = {
   name: string
   title: string
-  status: 'Preparing' | 'Ready' | 'Failed'
+  status: 'Preparing' | 'Ready' | 'Failed' | 'Expired'
+  delivery: 'Inbox' | 'Page'
   size: number | null
   expires_at: string | null
   error: string | null
@@ -2636,7 +2638,7 @@ export type DownloadStartOutput = {
 }
 
 export type DownloadStartError =
-  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveForbidden' | 'DriveConflict'
+  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveConflict'
 
 const operationDownloadStart: MutationRef<
   DownloadStartInput,
@@ -2653,8 +2655,38 @@ const operationDownloadStart: MutationRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveForbidden', 'DriveConflict'],
+  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveConflict'],
   loadValidators: async () => (await import('./validators')).operationDownloadStart,
+}
+
+export type DownloadGetInput = { download: string }
+
+export type DownloadGetOutput = {
+  name: string
+  title: string
+  status: 'Preparing' | 'Ready' | 'Failed' | 'Expired'
+  delivery: 'Inbox' | 'Page'
+  size: number | null
+  expires_at: string | null
+  error: string | null
+  url: string | null
+}
+
+export type DownloadGetError = 'DriveNotFound'
+
+const operationDownloadGet: QueryRef<DownloadGetInput, DownloadGetOutput, DownloadGetError> = {
+  id: 'download_get',
+  owner: 'drive',
+  kind: 'query',
+  publicName: 'downloads.get',
+  method: 'GET',
+  path: 'downloads/{download}',
+  prefix: '/api/suite/drive/',
+  pathParams: ['download'],
+  nodeParams: [],
+  entity: null,
+  errors: ['DriveNotFound'],
+  loadValidators: async () => (await import('./validators')).operationDownloadGet,
 }
 
 export type DownloadContentInput = { download: string }
@@ -3097,6 +3129,7 @@ export const api = {
   },
   downloads: {
     start: operationDownloadStart,
+    get: operationDownloadGet,
     content: operationDownloadContent,
   },
   roots: {

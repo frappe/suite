@@ -64,10 +64,14 @@ describe('nodeActions', () => {
     ])
   })
 
-  it('offers a visitor without a session a file download but no folder download, because a zip arrives in the inbox', () => {
-    expect(nodeActions(node('file', 'Active', DRIVE_ROLES.read), false).download).toBe(true)
-    expect(nodeActions(node('folder', 'Active', DRIVE_ROLES.read), false).download).toBe(false)
-    expect(nodeActions(node('folder', 'Active', DRIVE_ROLES.read), true).download).toBe(true)
+  it('offers Download of every Active kind to anyone who can read it, with or without a session', () => {
+    for (const kind of ['file', 'folder', 'document', 'link']) {
+      for (const signedIn of [true, false]) {
+        expect(
+          nodeActions(node(kind, 'Active', DRIVE_ROLES.read, 'token'), signedIn).download,
+        ).toBe(true)
+      }
+    }
   })
 
   it('offers a commenting Suite Admin sharing, restore and delete forever, but no edits', () => {

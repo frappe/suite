@@ -127,7 +127,7 @@ async function openNotification(notification: DriveNotification) {
     await markRead.run({ notifications: [notification.name] })
   }
   if ('download' in notification) {
-    // A failed download has nothing to open; reading it is enough.
+    // A failed or expired download has nothing to open; reading it is enough.
     if (!notification.download.url) return
     open.value = false
     window.location.assign(notification.download.url)
