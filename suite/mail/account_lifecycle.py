@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.sessions import clear_sessions
 from frappe.utils import add_to_date, now_datetime, validate_email_address
+from frappe.utils.password import remove_encrypted_password
 from frappe.utils.password import update_password as set_local_password
 
 from suite.mail.directory import get_active_domain_names, provision_account, set_account_enabled
@@ -83,8 +84,6 @@ def replace_temporary_password(user: str) -> dict:
     set_local_password(user, temporary)
     clear_sessions(user=user, force=True)
     clear_jmap_session(user)
-    from frappe.utils.password import remove_encrypted_password
-
     frappe.db.set_value("User", user, "api_key", None)
     remove_encrypted_password("User", user, "api_secret")
     frappe.db.delete("OAuth Bearer Token", {"user": user})
@@ -174,9 +173,14 @@ def complete_password_change(user: str, password: str, *, allow_expired: bool = 
     clear_jmap_session(user)
 
 
-def delete(user: str, confirmation: str) -> dict:
-    from frappe.utils.password import remove_encrypted_password
+def clear_local_credential(user_settings: str) -> None:
+    """Blank the Mail address and app password that one User Settings row holds."""
+    settings = frappe.get_doc("User Settings", user_settings)
+    settings._db_set(username=None, app_password=None)
+    remove_encrypted_password("User Settings", user_settings, "app_password")
 
+
+def delete(user: str, confirmation: str) -> dict:
     from suite.mail.directory import delete_account_by_email
     from suite.mail.events import delete_user_accounts
 
@@ -202,9 +206,7 @@ def delete(user: str, confirmation: str) -> dict:
     try:
         delete_account_by_email(address)
         provider_deleted = True
-        settings = frappe.get_doc("User Settings", {"user": user})
-        settings._db_set(username=None, app_password=None)
-        remove_encrypted_password("User Settings", settings.name, "app_password")
+        clear_local_credential(frappe.get_doc("User Settings", {"user": user}).name)
         delete_user_accounts(frappe.get_doc("User", user))
         clear_jmap_session(user)
         clear_sessions(user=user, force=True)
@@ -251,8 +253,6 @@ def forget_local_account(user: str) -> None:
 
     Accounts of other people that the user can reach stay. The caller removes the server's account.
     """
-    from frappe.utils.password import remove_encrypted_password
-
     from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
     from suite.mail.store import get_account_namespace
     from suite.store import destroy_namespace, get_blob_base_path, get_data_base_path, get_search_base_path
@@ -266,8 +266,7 @@ def forget_local_account(user: str) -> None:
         for base_path in (get_data_base_path(), get_blob_base_path(), get_search_base_path()):
             destroy_namespace(base_path, get_account_namespace(account))
     if name := frappe.db.get_value("User Settings", {"user": user}):
-        frappe.db.set_value("User Settings", name, {"username": None, "app_password": None})
-        remove_encrypted_password("User Settings", name, "app_password")
+        clear_local_credential(name)
     clear_jmap_session(user)
 
 
