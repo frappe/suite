@@ -126,11 +126,11 @@
                     size="sm"
                     variant="outline"
                     :aria-label="__('Font size')"
-                    :model-value="fontSize"
+                    :model-value="typedSize ?? fontSize"
                     :min="FONT_MIN"
                     :max="FONT_MAX"
                     @click="sizesOpen = true"
-                    @input="onSizeInput($event.target as HTMLInputElement)"
+                    @input="typedSize = ($event.target as HTMLInputElement).value"
                     @change="applyTypedSize"
                     @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                   />
@@ -145,7 +145,7 @@
                 :key="n"
                 as="button"
                 type="button"
-                class="justify-center tabular-nums"
+                class="text-center tabular-nums"
                 :selected="n === fontSize"
                 :active="n === hoveredSize"
                 :aria-current="n === fontSize || undefined"
@@ -349,7 +349,7 @@ import {
   Tooltip,
   type DropdownOptions,
 } from 'frappe-ui'
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -410,21 +410,15 @@ const fontSize = computed(() => props.activeFormat.fontSize || 13)
 const sizesOpen = ref(false)
 const hoveredSize = ref<number | null>(null)
 // What the person has typed into the field, until it is applied or dropped.
+// The field shows it, else the selection's size.
 const typedSize = ref<string | null>(null)
-let sizeField: HTMLInputElement | null = null
 
-function onSizeInput(field: HTMLInputElement) {
-  sizeField = field
-  typedSize.value = field.value
-}
-// Applies a size the selection doesn't have yet, then shows the size the
-// cell got (72 after typing 100, the old size after an unchanged pick).
-async function setFontSize(n: number) {
+// Applies a size the selection doesn't have yet; dropping the typed text
+// shows the size the cell got (72 after typing 100).
+function setFontSize(n: number) {
   typedSize.value = null
   sizesOpen.value = false
   if (n !== fontSize.value) emit('set-font-size', n)
-  await nextTick()
-  if (sizeField) sizeField.value = String(fontSize.value)
 }
 // The field's change: Enter blurs it, and a blur after an edit sends one.
 // Only a typed size counts, clamped as the editor clamps it.
