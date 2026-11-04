@@ -1474,12 +1474,14 @@ class TestTemplates(BuildContentCase):
         )
         self.assertEqual(
             [(row.principal, row.role) for row in grants],
-            [(GENERAL, READ), (self.owner, MANAGE)],
+            [(GENERAL, READ), (PUBLIC, READ), (self.owner, MANAGE)],
         )
         self.assert_controller_accepts("Drive Node", name)
 
         listed = views(principals_for_principal(GENERAL), "templates", limit=200)
+        anonymous = views(principals_for_principal(PUBLIC), "templates", limit=200)
         self.assertIn(name, [row.name for row in listed["rows"]])
+        self.assertIn(name, [row.name for row in anonymous["rows"]])
 
     def test_step_10_keeps_both_template_kinds_where_step_8_put_them(self):
         """§14.7 owns a template; §14.6's orphan rule must leave it alone.

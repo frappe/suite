@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from suite.drive._core.roles import EDIT, MANAGE, READ
+from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
 from suite.drive.patches.build.content import BuildContentError, link_content_documents
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
-from suite.drive.patches.build.mapping import GENERAL
+from suite.drive.patches.build.mapping import GENERAL, PUBLIC
 from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, TreeRow, WriterTemplateRow
 from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.patches.build.state import ContentConversion
@@ -199,6 +199,27 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(node["mime"], "frappe/slides")
         self.assertEqual(node["content_docname"], row.name)
         self.assertEqual(source.document_rows[(row.doctype, row.name)].node, row.name)
+
+    def test_a_file_less_template_deck_stays_open_to_guests(self):
+        row = presentation_template("deck-template")
+        source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        convert_templates(env)
+        self.assertEqual(target.grant_roles(row.name, (GENERAL, PUBLIC)), {GENERAL: READ, PUBLIC: READ})
+
+        convert_templates(env)
+        self.assertEqual(self.node_grants(target, row.name), 3)
+
+    def test_a_writer_template_gains_no_guest_access(self):
+        # The old `template_has_permission` refused Guest
+        row = writer_template("writer-template")
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        convert_templates(env)
+
+        self.assertEqual(target.grant_roles(row.name, (PUBLIC,)), {})
 
     def test_duplicate_template_titles_are_deduped_in_source_order(self):
         first = writer_template("writer-a", title="Common")
@@ -489,6 +510,20 @@ class TemplateTest(unittest.TestCase):
         with self.assertRaisesRegex(InvalidLegacyContent, "conflicting"):
             convert_templates(env)
 
+    def test_a_template_deck_with_a_public_deny_is_refused(self):
+        row = presentation_template("deck-template")
+        source = FakeContent(documents=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+        target.grant_rows["stale"] = {
+            "name": "stale",
+            "node": row.name,
+            "principal": PUBLIC,
+            "role": NONE,
+        }
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "conflicting"):
+            convert_templates(env)
+
     # -- source shapes
 
     def test_a_presentation_template_without_a_title_uses_its_source_id(self):
@@ -670,6 +705,8 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
         self.assertEqual(target.grant_roles(node, (GENERAL,))[GENERAL], READ)
         self.assertEqual(target.grant_roles(node, (OWNER,))[OWNER], MANAGE)
+        # A guest row on its `File` is §14.5's to map, this phase adds none
+        self.assertEqual(target.grant_roles(node, (PUBLIC,)), {})
         self.assertEqual(self.node_grants(target, node), 2)
         self.assertEqual(
             [(issue.source, issue.reason, issue.phase) for issue in result.issues],

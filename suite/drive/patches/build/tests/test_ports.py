@@ -557,6 +557,29 @@ class TestSiteTree(StubbedDatabase):
 
         self.assertEqual(self.db.get_value.call_args.args[1], [["name", "=", "f1"], ["name", "like", "bld%"]])
 
+    def test_a_site_without_the_flag_column_has_no_public_deck(self):
+        self.db.has_column.return_value = False
+        self.assertFalse(SiteTree().is_public_deck("f1"))
+        self.db.get_value.assert_not_called()
+
+    def test_the_flag_is_read_from_the_deck_the_file_backs(self):
+        self.db.has_column.return_value = True
+        file = frappe._dict(content_doctype="Presentation", content_docname="deck-1")
+        self.db.get_value.side_effect = [file, 1]
+        self.assertTrue(SiteTree("bld").is_public_deck("f1"))
+        self.assertEqual(
+            self.db.get_value.call_args_list[0].args[1], [["name", "=", "f1"], ["name", "like", "bld%"]]
+        )
+        self.assertEqual(self.db.get_value.call_args.args, ("Presentation", "deck-1", "is_public"))
+
+        self.db.get_value.side_effect = [file, 0]
+        self.assertFalse(SiteTree("bld").is_public_deck("f1"))
+
+    def test_a_file_backing_another_doctype_is_not_a_public_deck(self):
+        self.db.has_column.return_value = True
+        self.db.get_value.side_effect = [frappe._dict(content_doctype="Sheet", content_docname="s1")]
+        self.assertFalse(SiteTree().is_public_deck("f1"))
+
     def test_production_reads_both_lookups_unnarrowed(self):
         self.db.get_value.return_value = None
         SiteTree().sheet_entity("sheet-1")
