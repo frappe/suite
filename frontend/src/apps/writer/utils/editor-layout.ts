@@ -1,7 +1,6 @@
 import { cssLineHeight } from './typography'
 
 export type LayoutSettings = {
-  wide?: boolean
   font_family?: string
   font_size?: number
   line_height?: number | string
@@ -15,11 +14,8 @@ export const EDITOR_TEXT_CLASS =
   'grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:relative prose-th:relative'
 
 /** The editor's three columns: margin, text, and the comments margin. */
-export function editorColumns(settings?: LayoutSettings) {
-  const textWidth = settings?.wide ? '100ch' : '48rem'
-  return {
-    gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${textWidth}) minmax(0, 1fr)`,
-  }
+export function editorColumns() {
+  return { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 48rem) minmax(0, 1fr)' }
 }
 
 export function editorTextStyle(settings?: LayoutSettings) {

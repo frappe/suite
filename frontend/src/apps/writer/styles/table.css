@@ -7,6 +7,25 @@
   outline-offset: -1px;
 }
 
+/* A table too wide for the page scrolls in its card and fades the side with more to see */
+.prose-v3.ProseMirror .tableWrapper:is(.has-more-before, .has-more-after) {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--table-fade-before, 0px),
+    #000 calc(100% - var(--table-fade-after, 0px)),
+    transparent
+  );
+}
+
+.prose-v3.ProseMirror .tableWrapper.has-more-before {
+  --table-fade-before: 2.5rem;
+}
+
+.prose-v3.ProseMirror .tableWrapper.has-more-after {
+  --table-fade-after: 2.5rem;
+}
+
 /* Body text at the document's size; prose shrinks a table's text by default */
 .prose-v3.ProseMirror table {
   border-collapse: separate;
@@ -47,10 +66,9 @@
 }
 
 /* The selection: a 1px line around the cell or the run of cells, over a light tint, so it is clear
-   which cells a merge or a colour will take. A cell's ring lies on the rules
-   around it. On the card's edge it keeps a pixel inside the frame, and in a corner it takes the
-   frame's inner radius, or the rounded card would clip it. selectionRing.ts fits the run's box the
-   same way. */
+   which cells a merge or a colour will take. A cell's ring lies on the rules around it. On the
+   card's edge it lies on the frame, and in a corner it takes the frame's radius, or the rounded card
+   would clip it. selectionRing.ts fits the run's box the same way. */
 .prose-v3.ProseMirror .selectedCell::after,
 .prose-v3.ProseMirror .table-selection-box {
   border-radius: 0;
@@ -64,35 +82,35 @@
 }
 
 .prose-v3.ProseMirror tr > :first-child.selectedCell::after {
-  left: 1px;
+  left: 0;
 }
 
 .prose-v3.ProseMirror tr:first-child > .selectedCell::after {
-  top: 1px;
+  top: 0;
 }
 
 .prose-v3.ProseMirror tr > :last-child.selectedCell::after {
-  right: 1px;
+  right: 0;
 }
 
 .prose-v3.ProseMirror tr:last-child > .selectedCell::after {
-  bottom: 1px;
+  bottom: 0;
 }
 
 .prose-v3.ProseMirror tr:first-child > :first-child.selectedCell::after {
-  border-top-left-radius: 11px;
+  border-top-left-radius: 12px;
 }
 
 .prose-v3.ProseMirror tr:first-child > :last-child.selectedCell::after {
-  border-top-right-radius: 11px;
+  border-top-right-radius: 12px;
 }
 
 .prose-v3.ProseMirror tr:last-child > :first-child.selectedCell::after {
-  border-bottom-left-radius: 11px;
+  border-bottom-left-radius: 12px;
 }
 
 .prose-v3.ProseMirror tr:last-child > :last-child.selectedCell::after {
-  border-bottom-right-radius: 11px;
+  border-bottom-right-radius: 12px;
 }
 
 /* Selected cells show as the ring. The unfocused editor's text highlight would mark only part of them */

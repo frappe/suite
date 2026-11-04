@@ -63,7 +63,7 @@
             :aria-label="__('Add column')"
             @click="addLine('column')"
           >
-            <span class="lucide-plus size-3" aria-hidden="true" />
+            <span class="lucide-plus size-3.5" aria-hidden="true" />
           </button>
         </Tooltip>
         <Tooltip :text="__('Add row')" side="bottom">
@@ -74,7 +74,7 @@
             :aria-label="__('Add row')"
             @click="addLine('row')"
           >
-            <span class="lucide-plus size-3" aria-hidden="true" />
+            <span class="lucide-plus size-3.5" aria-hidden="true" />
           </button>
         </Tooltip>
       </template>
@@ -146,6 +146,7 @@ function isFocusLost() {
 }
 
 const GRIP = { long: 20, short: 10, cell: 18 }
+const ADD_STRIP = 20
 
 const rowGrip = computed(() => {
   const { table, row } = boxes.value ?? {}
@@ -172,14 +173,19 @@ const addColumnStrip = computed(() => {
   const { table, windowRight } = boxes.value ?? {}
   if (!table || windowRight === undefined) return null
   // A table wider than the page keeps the strip in the window, over its last column's edge
-  const left = Math.min(table.left + table.width + 8, windowRight - 20)
-  return { left, top: table.top, width: 16, height: table.height }
+  const left = Math.min(table.left + table.width + 8, windowRight - ADD_STRIP - 4)
+  return { left, top: table.top, width: ADD_STRIP, height: table.height }
 })
 
 const addRowStrip = computed(() => {
   const table = boxes.value?.table
   return (
-    table && { left: table.left, top: table.top + table.height + 8, width: table.width, height: 16 }
+    table && {
+      left: table.left,
+      top: table.top + table.height + 8,
+      width: table.width,
+      height: ADD_STRIP,
+    }
   )
 })
 
@@ -214,7 +220,12 @@ function selectLine(axis: Axis, event: PointerEvent) {
 
 function addLine(axis: Axis) {
   const current = target.value
-  if (current) new TableEditing(props.editor, current.cell).addLineAtEnd(axis)
+  if (!current) return
+  const cell = props.editor.view.nodeDOM(current.cell)
+  const frame = cell instanceof Element ? cell.closest('.tableWrapper') : null
+  new TableEditing(props.editor, current.cell).addLineAtEnd(axis)
+  // The new column may be past the card's edge, and the next click should show the next one too
+  if (axis === 'column' && frame) frame.scrollLeft = frame.scrollWidth
 }
 
 function place(box: Box | null | undefined) {

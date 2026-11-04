@@ -343,12 +343,17 @@ const showEditingPaused = computed(
   () => !editable.value && editingPaused.value && writes.writable.value,
 )
 
-const isViewOnly = computed(() => !editable.value && !showEditingPaused.value)
+// Someone who can unlock it isn't only viewing
+const showLocked = computed(() => canEdit.value && isDocumentLocked.value)
+
+const isViewOnly = computed(
+  () => !editable.value && !showEditingPaused.value && !showLocked.value,
+)
 
 // A reader has nothing to save, so only a failed save shows to them
 const headerSaveState = computed(() => {
   if (saveState.value === 'failed') return saveState.value
-  if (savingPaused.value || isViewOnly.value || isWaitingOffline.value) return null
+  if (savingPaused.value || !editable.value || isWaitingOffline.value) return null
   // Edits save as they are typed, so edits still to send read as saving
   return saveState.value === 'unsaved' ? 'saving' : saveState.value
 })
@@ -780,6 +785,13 @@ onBeforeUnmount(() => {
         <Badge
           v-if="showEditingPaused"
           label="Editing paused"
+          theme="gray"
+          variant="subtle"
+          class="shrink-0"
+        />
+        <Badge
+          v-else-if="showLocked"
+          :label="__('Locked')"
           theme="gray"
           variant="subtle"
           class="shrink-0"

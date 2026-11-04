@@ -17,7 +17,7 @@ Things checked and found equal or better are not listed. These include DOCX and 
 | # | Section | Why |
 |---|---|---|
 | 1 | Bugs that are broken today | Something visible does nothing or does the wrong thing |
-| 2 | Document settings and print | Needed to format and print a document |
+| 2 | Lock | Needed to protect a finished document |
 | 3 | Version history | The Versions panel is always empty |
 | 4 | Templates | "New from template" stays empty |
 | 5 | Document actions inside the editor | Users must leave the document for common actions |
@@ -39,7 +39,7 @@ Things checked and found equal or better are not listed. These include DOCX and 
 
 - **Before:** a locked document was read-only until the user unlocked it.
 - **Now:** `settings.lock` is ignored, so a locked document opens as editable.
-- **Done:** a locked document opens read-only. The user can unlock it for the current session. See also "Lock and Wide view" in section 2.
+- **Done:** a locked document opens read-only. The user can unlock it for the current session.
 - **Where it was:** `fe/writer/pages/Document.vue` (lock buttons)
 - **Done:** `WriterSurface.vue` treats a truthy `settings.lock` as read-only (`isLocked` in `writerDocument.ts`). Anyone who can edit locks and unlocks it from the document menu.
 - **Where it goes:** `fe/writer/surface/WriterSurface.vue`
@@ -62,18 +62,14 @@ Things checked and found equal or better are not listed. These include DOCX and 
 - **Done:** `autorename` calls `hasDefaultDocumentTitle` from `fe/drive/client/nodes.ts`, next to the default title it checks.
 - **Where it goes:** same file. The default title is in `fe/drive/client/nodes.ts`.
 
-## 2. Document settings and print
+## 2. Lock
 
 | Gap | Before | Now | Done |
 |---|---|---|---|
-| Document settings dialog | Font family, font size, line spacing, and paragraph spacing above and below could be set for the whole document. The palette had a "Document settings" command. | Missing. The toolbar font, size and spacing controls change the selection only. `WriterDocument.update_settings` has no caller. | The dialog sets these defaults for the document. The palette command is back. |
-| Defaults for new documents | An "Everywhere" tab saved defaults to `Drive Settings.writer_settings`. They applied under each document's own settings. | Missing. `writer_settings` is still on the Drive settings route, but Writer reads only the document's own settings. | New documents start with the user's saved defaults. A document's own settings win. |
-| Print header, footer and page numbers | Header and footer text (left and right), page numbers and separator lines could be set, and printing used them. | Missing. `printDoc` still reads these settings, but nobody can set them. | They can be set in the dialog and appear in the printout. |
 | Lock (done) | A document could be locked. It was read-only until unlocked, and a header button unlocked it temporarily. | The document menu has Lock document and Unlock document. There is no temporary unlock. See 1.2. | A menu item locks and unlocks the document. |
-| Wide view | A View menu item set a 100ch column. | A document that is already wide stays wide. Nobody can change it. | The View menu item is back. |
 
-- **Where it was:** `fe/writer/components/WriterSettings.vue`, `fe/writer/components/Navbar.vue` (View submenu), `fe/writer/utils/index.js` (`printDoc`), `fe/writer/pages/Document.vue` (`globalSettings`, lock buttons)
-- **Where it goes:** `fe/writer/surface/WriterSurface.vue` (`settings`), `fe/writer/components/CoreEditor.vue` (`gridStyle`)
+- **Where it was:** `fe/writer/components/Navbar.vue` (View submenu), `fe/writer/pages/Document.vue` (lock buttons)
+- **Where it goes:** `fe/writer/surface/WriterDocumentMenu.vue`
 
 ## 3. Version history
 
@@ -159,6 +155,8 @@ These differ from the old Writer by design. They are not gaps.
 | Old | Now |
 |---|---|
 | `/writer` listed the user's documents, grouped by day, with a New button. | Drive Home, Recents and the type filter replace it. Old paths redirect (`frontend/src/composition/redirects.ts`). |
+| A Settings dialog set the font, size and spacing for a document, defaults for new documents, and print headers and footers. | No dialog. The toolbar formats the selection. A document's saved settings still apply. |
+| A View menu item set a wider text column. | Every document uses the same width, including ones saved as wide. |
 | A `text/markdown` file opened in Writer's rich editor (`fe/writer/components/MarkdownEditor.vue`). | Markdown files open in Drive's Markdown preview. |
 
 ## Search

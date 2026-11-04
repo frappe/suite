@@ -213,7 +213,7 @@ const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...pro
 
 const shouldShowBubbleMenu = bubbleMenuShouldShow()
 
-const gridStyle = computed(() => editorColumns(props.settings))
+const gridStyle = computed(() => editorColumns())
 
 const editorStyle = computed(() => editorTextStyle(props.settings))
 

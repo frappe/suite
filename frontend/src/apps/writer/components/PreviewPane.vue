@@ -32,7 +32,7 @@ defineExpose({ scroller })
   >
     <div
       class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
-      :style="editorColumns(settings)"
+      :style="editorColumns()"
     >
       <div class="hidden md:block" />
       <slot v-if="isLoading" name="loading" />
