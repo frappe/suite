@@ -138,15 +138,15 @@
               class="sn-cell-ref"
               name="name-box"
               :aria-label="__('Name box')"
-              :value="nameBoxTyped ?? nameBox"
-              :style="{ '--sn-name-ch': (nameBoxTyped ?? nameBox).length + 1 }"
+              :value="nameBoxText"
+              :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
               spellcheck="false"
               autocomplete="off"
               @focus="$event.target.select()"
               @input="nameBoxTyped = $event.target.value"
               @keydown.enter.prevent="onNameBoxEnter"
-              @keydown.esc.prevent="onNameBoxDone($event)"
-              @blur="onNameBoxBlur"
+              @keydown.esc.prevent="onNameBoxDone"
+              @blur="nameBoxTyped = null"
             />
           </Tooltip>
           <div class="sn-formula-wrap">
@@ -1181,6 +1181,7 @@ const nameBox = ref('A1')
 // What the person has typed into it, so the focused box grows to fit; null
 // when they are not typing.
 const nameBoxTyped = ref(null)
+const nameBoxText = computed(() => nameBoxTyped.value ?? nameBox.value)
 const formulaValue = ref('')
 const canUndo = ref(false)
 const canRedo = ref(false)
@@ -3933,15 +3934,11 @@ function onNameBoxEnter(e) {
     if (range.r0 !== range.r1 || range.c0 !== range.c1 || range.mode !== 'cell')
       grid.setSelection(range)
   }
-  onNameBoxDone(e)
+  onNameBoxDone()
 }
-function onNameBoxDone(e) {
-  onNameBoxBlur(e)
-  canvasRef.value?.focus()
-}
-function onNameBoxBlur(e) {
-  e.target.value = nameBox.value
+function onNameBoxDone() {
   nameBoxTyped.value = null
+  canvasRef.value?.focus()
 }
 
 const showRenameDialog = ref(false)
