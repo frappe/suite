@@ -28,6 +28,7 @@ import OldCommentExtension from '@/apps/writer/extensions/old-comment'
 import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
 import { WriterPaste } from '@/apps/writer/extensions/paste'
 import { ReceivedContentGuard } from '@/apps/writer/extensions/received-content-guard'
+import { CaretAtEyeLevel } from '@/apps/writer/extensions/caret-at-eye-level'
 import { ScrollToInserted } from '@/apps/writer/extensions/scroll-to-inserted'
 import { WriterSlashCommands } from '@/apps/writer/extensions/slash-commands'
 import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
@@ -73,6 +74,7 @@ const EDITING_EXTENSIONS: AnyExtension[] = [
   BlurredSelection,
   WriterKeyboard,
   WriterPaste,
+  CaretAtEyeLevel,
   ScrollToInserted,
   MediaInsert,
   UndoCaret,

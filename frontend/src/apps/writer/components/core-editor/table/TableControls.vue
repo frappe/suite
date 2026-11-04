@@ -182,7 +182,7 @@ const addRowStrip = computed(() => {
   return (
     table && {
       left: table.left,
-      top: table.top + table.height + 8,
+      top: table.top + table.height + 6,
       width: table.width,
       height: ADD_STRIP,
     }

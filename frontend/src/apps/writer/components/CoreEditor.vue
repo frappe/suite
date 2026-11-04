@@ -239,14 +239,7 @@ function autorename() {
 
   const { $anchor } = instance.view.state.selection
   const inFirstBlock = $anchor.index(0) === 1 && $anchor.depth === 1
-  if (!inFirstBlock) {
-    const isInLastLine =
-      $anchor.depth === 1 && instance.state.doc.childCount - 1 === $anchor.index(0)
-    if (isInLastLine) {
-      scrollParent.value!.scroll(0, scrollParent.value!.scrollHeight)
-    }
-    return
-  }
+  if (!inFirstBlock) return
   if (!hasDefaultDocumentTitle(props.file.doc.file_name)) return
 
   const implicitTitle = instance.state.doc

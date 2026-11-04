@@ -2,28 +2,31 @@
    border, so the cells' offsets, which the selection overlay measures from, stay the same. */
 .prose-v3.ProseMirror .tableWrapper {
   border-radius: 12px;
-  margin: 16px 0;
+  /* The bottom leaves room for the add row button, so it does not sit on the next line */
+  margin: 16px 0 32px;
   outline: 1px solid var(--outline-gray-1);
   outline-offset: -1px;
 }
 
-/* A table too wide for the page scrolls in its card and fades the side with more to see */
+/* A table too wide for the page scrolls in its card and dims the side with more to see */
 .prose-v3.ProseMirror .tableWrapper:is(.has-more-before, .has-more-after) {
   mask-image: linear-gradient(
     to right,
-    transparent,
+    var(--table-fade-start, #000),
     #000 var(--table-fade-before, 0px),
     #000 calc(100% - var(--table-fade-after, 0px)),
-    transparent
+    var(--table-fade-end, #000)
   );
 }
 
 .prose-v3.ProseMirror .tableWrapper.has-more-before {
-  --table-fade-before: 2.5rem;
+  --table-fade-before: 1.5rem;
+  --table-fade-start: rgb(0 0 0 / 0.4);
 }
 
 .prose-v3.ProseMirror .tableWrapper.has-more-after {
-  --table-fade-after: 2.5rem;
+  --table-fade-after: 1.5rem;
+  --table-fade-end: rgb(0 0 0 / 0.4);
 }
 
 /* Body text at the document's size; prose shrinks a table's text by default */
