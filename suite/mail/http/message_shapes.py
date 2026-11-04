@@ -57,8 +57,19 @@ class Copy(TypedDict):
     unscreened: NotRequired[Flag]
 
 
+class Reaction(TypedDict):
+    emoji: str
+    from_name: str | None
+    from_email: str | None
+
+
 class Message(Copy):
     message_id: str | None
+    in_reply_to: str | None
+    # What this mail reacts with, when it is a reaction left standing as a message because its target
+    # isn't here. A reaction whose target is here shows under the target's `reactions` instead.
+    reacts_with: list[str]
+    reactions: NotRequired[list[Reaction]]
     subject: str | None
     html_body: str | None
     text_body: str | None

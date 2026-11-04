@@ -121,6 +121,7 @@ from suite.mail.api.mail import (
     get_unsubscribe_options,
     junk_senders_inbox_mail,
     move_mails,
+    react,
     remove_mails_from_mailbox,
     screen_email_address,
     screen_email_addresses,
@@ -144,6 +145,7 @@ from suite.mail.api.scheduled import (
     reschedule_mail,
     retry_failed_mail,
     send_scheduled_mail_now,
+    undo_reaction,
 )
 from suite.mail.api.sieve import (
     create_automation_script,

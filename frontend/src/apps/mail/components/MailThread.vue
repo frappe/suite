@@ -625,6 +625,18 @@
                             />
                           </div>
                         </div>
+
+                        <!-- Under the message rather than inside its body: the chips are about the
+                             message, not part of what was written. -->
+                        <MessageReactions
+                          v-if="!mail.draft"
+                          :reactions="mail.reactions"
+                          :mail-id="mail.id"
+                          :account="scopeAccountId"
+                          :readonly="readonly"
+                          class="mt-4"
+                          @reload="reload"
+                        />
                       </div>
                     </template>
                   </div>
@@ -744,6 +756,7 @@ import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import SenderCard from '@/apps/mail/components/SenderCard.vue'
@@ -1201,7 +1214,7 @@ const loadThread = () => {
   // mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
   // still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
   // looked and simply not decided yet.
-  if (marksSeen && source.some((mail) => !mail.seen)) setThreadSeen(true)
+  if (marksSeen && source.flatMap(mailCopies).some((copy) => !copy.seen)) setThreadSeen(true)
 }
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
@@ -1244,6 +1257,9 @@ const syncWithSource = () => {
     mail.unscreened = fresh.unscreened
     // A star set or cleared from the list row, or on another device, reaches the open thread.
     mail.flagged = fresh.flagged
+    // A reaction landing on a message already open. It comes with the copy actions have to reach.
+    mail.reactions = fresh.reactions
+    mail.duplicates = fresh.duplicates
   })
 
   // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft

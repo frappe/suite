@@ -15481,6 +15481,31 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -15582,6 +15607,8 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
               "subject",
               "html_body",
               "text_body",
@@ -15592,6 +15619,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -16287,6 +16351,31 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -16388,6 +16477,8 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
               "subject",
               "html_body",
               "text_body",
@@ -16398,6 +16489,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -17365,6 +17493,31 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -17466,6 +17619,8 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
               "subject",
               "html_body",
               "text_body",
@@ -17476,6 +17631,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -18053,6 +18245,31 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -18154,6 +18371,8 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
               "subject",
               "html_body",
               "text_body",
@@ -18164,6 +18383,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -19090,6 +19346,138 @@
           "html_body"
         ],
         "title": "CreateInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "send_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Send At"
+          },
+          "undo_send_period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Send Period"
+          }
+        },
+        "required": [
+          "name",
+          "id",
+          "status",
+          "error",
+          "thread_id",
+          "submission_id",
+          "send_at",
+          "undo_send_period"
+        ],
+        "title": "DraftResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "react",
+      "kind": "mutation",
+      "publicName": "messages.react",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.react",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "emoji": {
+            "title": "Emoji",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "id",
+          "emoji"
+        ],
+        "title": "ReactInput",
         "type": "object"
       },
       "output": {
@@ -21474,6 +21862,46 @@
         ],
         "title": "IdResult",
         "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "undo_reaction",
+      "kind": "mutation",
+      "publicName": "scheduled.undoReaction",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.scheduled.undo_reaction",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "id"
+        ],
+        "title": "IdInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
       },
       "errors": [
         "PermissionError",

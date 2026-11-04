@@ -36,12 +36,12 @@
             </div>
             <Button @click="setRandom">Random</Button>
           </div>
-          <div class="w-96"></div>
+          <div class="w-[calc(100vw-2rem)] sm:w-96"></div>
           <div v-for="(emojis, group) in emojiGroups" :key="group" class="px-3">
             <div class="bg-surface-base text-ink-gray-6 sticky top-0 pb-2 pt-3 text-sm">
               {{ group }}
             </div>
-            <div class="grid w-96 grid-cols-12 place-items-center">
+            <div class="grid w-full grid-cols-8 place-items-center sm:w-96 sm:grid-cols-12">
               <button
                 v-for="_emoji in emojis"
                 :key="_emoji.description"

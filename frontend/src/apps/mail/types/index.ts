@@ -95,11 +95,22 @@ export interface Mail {
   attachments: Attachment[]
   // Set on a bounce: the blob id of its message/delivery-status part (see DeliveryStatusBanner).
   dsn_blob_id?: string | null
-  // The other copies of this same message the account holds — see MailCopy.
+  // The other copies of this same message the account holds, and the reactions folded onto it — see
+  // MailCopy.
   duplicates?: MailCopy[]
+  // The reactions this message has collected, each a mail of its own that the server folds out of
+  // the thread (see collapse_reactions).
+  reactions?: MailReaction[]
   user_image?: string
   collapsed?: boolean
   show?: boolean
+}
+
+/** One person's reaction to a message with one emoji. Reactions add up, so a person can have several. */
+export interface MailReaction {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 /**

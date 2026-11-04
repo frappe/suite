@@ -5351,6 +5351,9 @@ export type GetThreadsOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<GetThreadsOutputReaction>
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5361,6 +5364,12 @@ export type GetThreadsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetThreadsOutputCopy>
   user_image?: string | null
+}
+
+export type GetThreadsOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type GetThreadsOutputRecipient = {
@@ -5488,6 +5497,9 @@ export type GetUnifiedThreadsOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<GetUnifiedThreadsOutputReaction>
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5498,6 +5510,12 @@ export type GetUnifiedThreadsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetUnifiedThreadsOutputCopy>
   user_image?: string | null
+}
+
+export type GetUnifiedThreadsOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type GetUnifiedThreadsOutputRecipient = {
@@ -5718,6 +5736,9 @@ export type GetThreadOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<GetThreadOutputReaction>
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5728,6 +5749,12 @@ export type GetThreadOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetThreadOutputCopy>
   user_image?: string | null
+}
+
+export type GetThreadOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type GetThreadOutputRecipient = {
@@ -5834,6 +5861,9 @@ export type SearchMailsOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<SearchMailsOutputReaction>
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5844,6 +5874,12 @@ export type SearchMailsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<SearchMailsOutputCopy>
   user_image?: string | null
+}
+
+export type SearchMailsOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type SearchMailsOutputRecipient = {
@@ -6123,6 +6159,37 @@ const operationCreateMail: MutationRef<CreateMailInput, CreateMailOutput, Create
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationCreateMail,
+}
+
+export type ReactInput = { account: string; id: string; emoji: string }
+
+export type ReactOutput = {
+  name: string
+  id: string | null
+  status: string
+  error: string | null
+  thread_id: string | null
+  submission_id: string | null
+  send_at: string | null
+  undo_send_period: number | null
+}
+
+export type ReactError = 'PermissionError' | 'ValidationError'
+
+const operationReact: MutationRef<ReactInput, ReactOutput, ReactError> = {
+  id: 'react',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.react',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.react',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationReact,
 }
 
 export type UpdateDraftMailInputDraftAttachment = {
@@ -6859,6 +6926,30 @@ const operationCancelScheduledMail: MutationRef<
   loadValidators: async () => (await import('./validators')).operationCancelScheduledMail,
 }
 
+export type UndoReactionInput = { account: string; id: string }
+
+export type UndoReactionOutput = null
+
+export type UndoReactionError = 'PermissionError' | 'ValidationError'
+
+const operationUndoReaction: MutationRef<UndoReactionInput, UndoReactionOutput, UndoReactionError> =
+  {
+    id: 'undo_reaction',
+    owner: 'mail',
+    kind: 'mutation',
+    publicName: 'scheduled.undoReaction',
+    empty: true,
+    envelope: 'message',
+    method: 'POST',
+    path: '/api/method/suite.mail.api.scheduled.undo_reaction',
+    prefix: '/api/suite/mail/',
+    pathParams: [],
+    nodeParams: [],
+    entity: null,
+    errors: ['PermissionError', 'ValidationError'],
+    loadValidators: async () => (await import('./validators')).operationUndoReaction,
+  }
+
 export type RetryFailedMailInput = { account: string; id: string }
 
 export type RetryFailedMailOutput = { id: string | null }
@@ -7285,6 +7376,7 @@ export const api = {
     unsubscribe: operationUnsubscribeMail,
     deliveryStatus: operationGetDeliveryStatus,
     create: operationCreateMail,
+    react: operationReact,
     updateDraft: operationUpdateDraftMail,
     deleteDraft: operationDeleteMail,
     flag: operationSetFlagged,
@@ -7338,6 +7430,7 @@ export const api = {
     reschedule: operationRescheduleMail,
     sendNow: operationSendScheduledMailNow,
     cancel: operationCancelScheduledMail,
+    undoReaction: operationUndoReaction,
     retry: operationRetryFailedMail,
     dismiss: operationDismissFailedMail,
   },

@@ -267,6 +267,8 @@ import type {
   OngoingCalendarExchangeOutput,
   OngoingExchangeInput,
   OngoingExchangeOutput,
+  ReactInput,
+  ReactOutput,
   RebuildAutomationScriptForAccountInput,
   RebuildAutomationScriptForAccountOutput,
   RegionalPreferencesInput,
@@ -343,6 +345,8 @@ import type {
   SignupOutput,
   SubscribeMailboxInput,
   SubscribeMailboxOutput,
+  UndoReactionInput,
+  UndoReactionOutput,
   UndoScreeningVerdictInput,
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
@@ -7204,6 +7208,9 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
+              in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
+              reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
               text_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Text Body' },
@@ -7240,6 +7247,8 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               'flagged',
               'draft',
               'message_id',
+              'in_reply_to',
+              'reacts_with',
               'subject',
               'html_body',
               'text_body',
@@ -7250,6 +7259,16 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               'dsn_blob_id',
             ],
             title: 'Message',
+            type: 'object',
+          },
+          Reaction: {
+            properties: {
+              emoji: { title: 'Emoji', type: 'string' },
+              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
+            },
+            required: ['emoji', 'from_name', 'from_email'],
+            title: 'Reaction',
             type: 'object',
           },
           Recipient: {
@@ -7471,6 +7490,9 @@ export const operationGetUnifiedThreads: Validators<
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
+              in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
+              reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
               text_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Text Body' },
@@ -7507,6 +7529,8 @@ export const operationGetUnifiedThreads: Validators<
               'flagged',
               'draft',
               'message_id',
+              'in_reply_to',
+              'reacts_with',
               'subject',
               'html_body',
               'text_body',
@@ -7517,6 +7541,16 @@ export const operationGetUnifiedThreads: Validators<
               'dsn_blob_id',
             ],
             title: 'Message',
+            type: 'object',
+          },
+          Reaction: {
+            properties: {
+              emoji: { title: 'Emoji', type: 'string' },
+              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
+            },
+            required: ['emoji', 'from_name', 'from_email'],
+            title: 'Reaction',
             type: 'object',
           },
           Recipient: {
@@ -7879,6 +7913,9 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
+              in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
+              reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
               text_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Text Body' },
@@ -7915,6 +7952,8 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               'flagged',
               'draft',
               'message_id',
+              'in_reply_to',
+              'reacts_with',
               'subject',
               'html_body',
               'text_body',
@@ -7925,6 +7964,16 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               'dsn_blob_id',
             ],
             title: 'Message',
+            type: 'object',
+          },
+          Reaction: {
+            properties: {
+              emoji: { title: 'Emoji', type: 'string' },
+              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
+            },
+            required: ['emoji', 'from_name', 'from_email'],
+            title: 'Reaction',
             type: 'object',
           },
           Recipient: {
@@ -8114,6 +8163,9 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               draft: { enum: [0, 1], title: 'Draft', type: 'integer' },
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
+              in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
+              reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
               text_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Text Body' },
@@ -8150,6 +8202,8 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               'flagged',
               'draft',
               'message_id',
+              'in_reply_to',
+              'reacts_with',
               'subject',
               'html_body',
               'text_body',
@@ -8160,6 +8214,16 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               'dsn_blob_id',
             ],
             title: 'Message',
+            type: 'object',
+          },
+          Reaction: {
+            properties: {
+              emoji: { title: 'Emoji', type: 'string' },
+              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
+            },
+            required: ['emoji', 'from_name', 'from_email'],
+            title: 'Reaction',
             type: 'object',
           },
           Recipient: {
@@ -8570,6 +8634,59 @@ export const operationCreateMail: Validators<CreateMailInput, CreateMailOutput> 
         type: 'object',
       },
       'create_mail output',
+    )
+  },
+}
+
+export const operationReact: Validators<ReactInput, ReactOutput> = {
+  validateInput(value: unknown): asserts value is ReactInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          id: { title: 'Id', type: 'string' },
+          emoji: { title: 'Emoji', type: 'string' },
+        },
+        required: ['account', 'id', 'emoji'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'react input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ReactOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Id' },
+          status: { title: 'Status', type: 'string' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          thread_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Thread Id' },
+          submission_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Submission Id' },
+          send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
+          undo_send_period: {
+            anyOf: [{ type: 'integer' }, { type: 'null' }],
+            title: 'Undo Send Period',
+          },
+        },
+        required: [
+          'name',
+          'id',
+          'status',
+          'error',
+          'thread_id',
+          'submission_id',
+          'send_at',
+          'undo_send_period',
+        ],
+        title: 'DraftResult',
+        type: 'object',
+      },
+      'react output',
     )
   },
 }
@@ -9579,6 +9696,28 @@ export const operationCancelScheduledMail: Validators<
       },
       'cancel_scheduled_mail output',
     )
+  },
+}
+
+export const operationUndoReaction: Validators<UndoReactionInput, UndoReactionOutput> = {
+  validateInput(value: unknown): asserts value is UndoReactionInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          id: { title: 'Id', type: 'string' },
+        },
+        required: ['account', 'id'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'undo_reaction input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UndoReactionOutput {
+    assertSchema(value, { type: 'null' }, 'undo_reaction output')
   },
 }
 

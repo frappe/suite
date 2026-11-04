@@ -227,6 +227,11 @@ class UpdateInput(ComposeInput):
     submit: NotRequired[bool]
 
 
+class ReactInput(AccountInput):
+    id: str
+    emoji: str
+
+
 class SubmissionsInput(AccountInput):
     undo_status: NotRequired[str | None]
     identity_id: NotRequired[str | None]
@@ -356,6 +361,7 @@ _OPERATIONS: tuple[
     ),
     (mail.get_delivery_status, "query", "messages.deliveryStatus", IdInput, DeliveryReport, None),
     (mail.create_mail, "mutation", "messages.create", CreateInput, DraftResult, None),
+    (mail.react, "mutation", "messages.react", ReactInput, DraftResult, None),
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),
     (mail.set_flagged, "mutation", "messages.flag", FlagInput, FlagResult, None),
@@ -412,6 +418,7 @@ _OPERATIONS: tuple[
     ),
     (scheduled.send_scheduled_mail_now, "mutation", "scheduled.sendNow", IdInput, SendResult, None),
     (scheduled.cancel_scheduled_mail, "mutation", "scheduled.cancel", IdInput, IdResult, None),
+    (scheduled.undo_reaction, "mutation", "scheduled.undoReaction", IdInput, type(None), None),
     (scheduled.retry_failed_mail, "mutation", "scheduled.retry", IdInput, IdResult, None),
     (scheduled.dismiss_failed_mail, "mutation", "scheduled.dismiss", IdInput, type(None), None),
 )
