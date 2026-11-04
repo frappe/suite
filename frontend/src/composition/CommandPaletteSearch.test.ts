@@ -39,7 +39,7 @@ const net = vi.hoisted(() => {
     creation: null,
     modified: null,
     content_modified: null,
-    breadcrumbs: [{ name: personalRoot, title: 'Aanya', kind: 'folder' }],
+    breadcrumbs: [{ name: personalRoot, title: 'Aanya', kind: 'folder', role: 50 }],
   })
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(status === 200 ? { data } : data), { status })

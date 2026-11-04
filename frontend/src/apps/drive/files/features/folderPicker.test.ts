@@ -30,7 +30,7 @@ const net = vi.hoisted(() => {
     name: string,
     title: string,
     parent: string | null,
-    breadcrumbs: Array<{ name: string; title: string; kind: string }>,
+    breadcrumbs: Array<{ name: string; title: string; kind: string; role: number }>,
   ) => ({
     name,
     title,
@@ -52,7 +52,7 @@ const net = vi.hoisted(() => {
     access: { role: 50 },
     breadcrumbs,
   })
-  const top = { name: 'mine', title: 'Aanya', kind: 'folder' }
+  const top = { name: 'mine', title: 'Aanya', kind: 'folder', role: 50 }
   const nodes = new Map([
     ['mine', folder('mine', 'Aanya', null, [])],
     ['projects', folder('projects', 'Projects', 'mine', [top])],
@@ -61,15 +61,15 @@ const net = vi.hoisted(() => {
       'launch',
       folder('launch', 'Launch', 'projects', [
         top,
-        { name: 'projects', title: 'Projects', kind: 'folder' },
+        { name: 'projects', title: 'Projects', kind: 'folder', role: 50 },
       ]),
     ],
     [
       'assets',
       folder('assets', 'Assets', 'launch', [
         top,
-        { name: 'projects', title: 'Projects', kind: 'folder' },
-        { name: 'launch', title: 'Launch', kind: 'folder' },
+        { name: 'projects', title: 'Projects', kind: 'folder', role: 50 },
+        { name: 'launch', title: 'Launch', kind: 'folder', role: 50 },
       ]),
     ],
   ])
@@ -97,7 +97,7 @@ const net = vi.hoisted(() => {
       const name = `new-${created.push(input)}`
       const crumbs = [
         ...parent.breadcrumbs,
-        { name: parent.name, title: parent.title, kind: 'folder' },
+        { name: parent.name, title: parent.title, kind: 'folder', role: 50 },
       ]
       nodes.set(name, folder(name, input.title, parent.name, crumbs))
       previews.set(name, { gains: [], role_now: 50, role_after: 50 })

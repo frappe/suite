@@ -15,7 +15,7 @@ import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/clie
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
 import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
-import type { DriveBreadcrumb, DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
@@ -213,7 +213,8 @@ export interface DriveDocumentAction {
 /**
  * A document's own Drive actions for its menu: `back` to the folder it is in,
  * and its `node` actions, Duplicate and Delete. Each shows only when the caller
- * may take it. Call it in a component's setup.
+ * may take it: Duplicate copies into the folder, so it needs UPLOAD there.
+ * Call it in a component's setup.
  */
 export function useDriveDocumentActions(
   session: DocumentSession,
@@ -221,12 +222,13 @@ export function useDriveDocumentActions(
   const account = useSession()
   const actions = documentActions(session)
   return computed(() => {
-    const isFiled = session.folder.value !== null
+    const folder = session.folder.value
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
+    const canUploadToFolder = folder !== null && folder.role >= DRIVE_ROLES.upload
     return {
-      back: actionsWhere([[isFiled, actions.back]]),
+      back: actionsWhere([[folder !== null, actions.back]]),
       node: actionsWhere([
-        [isFiled && can.copy, actions.duplicate],
+        [canUploadToFolder && can.copy, actions.duplicate],
         [can.trash, actions.delete],
       ]),
     }

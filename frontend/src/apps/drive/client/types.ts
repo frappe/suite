@@ -33,6 +33,8 @@ export interface DriveBreadcrumb {
   title: string
   /** A file under a content document has the document as its last step, not a folder. */
   kind: string
+  /** The caller's role at this step, one of `DRIVE_ROLES`. */
+  role: number
 }
 
 export interface DrivePreview {

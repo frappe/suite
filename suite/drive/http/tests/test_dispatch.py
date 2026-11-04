@@ -1798,6 +1798,24 @@ class TestGrantedCollaborator(DriveHTTPCase):
         self.assertEqual(answer["access"]["source_node"], self.folder)
         self.assertEqual(answer["access"]["source_principal"], STRANGER)
 
+    def test_each_breadcrumb_carries_the_callers_role_there(self):
+        # The owner's root is not the editor's to see, so both trails start at the shared folder.
+        node = self.data(
+            self.drive(
+                "GET", f"{PREFIX}/nodes/{self.file}", query={"expand": "breadcrumbs"}, sid=self.stranger_sid
+            )
+        )
+        listed = self.data(
+            self.drive(
+                "GET",
+                f"{PREFIX}/nodes/{self.folder}/children",
+                query={"expand": "breadcrumbs"},
+                sid=self.stranger_sid,
+            )
+        )
+        for trail in (node["breadcrumbs"], listed["rows"][0]["breadcrumbs"]):
+            self.assertEqual([(step["name"], step["role"]) for step in trail], [(self.folder, EDIT)])
+
     def test_a_link_that_ties_an_own_grant_is_not_named_as_the_source(self):
         # §5.1 makes pass 1 the answer when it ties pass 2, and `via_link` says
         # so. The source fields have to agree: naming the deeper link while

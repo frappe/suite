@@ -13,6 +13,7 @@ export type NodeCreateCreateFolderOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateFolderOutputPerson = {
@@ -83,6 +84,7 @@ export type NodeCreateCreateFileOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateFileOutputPerson = {
@@ -161,6 +163,7 @@ export type NodeCreateCreateLinkOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateLinkOutputPerson = {
@@ -236,6 +239,7 @@ export type NodeCreateCreateDocumentOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateDocumentOutputPerson = {
@@ -370,7 +374,12 @@ export type NodeGetOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodeGetOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodeGetOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodeGetOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -428,7 +437,12 @@ export type NodePatchRenameOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchRenameOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchRenameOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchRenameOutputPerson = {
   id: string
@@ -511,7 +525,12 @@ export type NodePatchMoveOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchMoveOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchMoveOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchMoveOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -590,7 +609,12 @@ export type NodePatchTrashOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchTrashOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchTrashOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchTrashOutputPerson = {
   id: string
@@ -673,7 +697,12 @@ export type NodePatchRestoreOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchRestoreOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchRestoreOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchRestoreOutputPerson = {
   id: string
@@ -756,7 +785,12 @@ export type NodePatchStampOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchStampOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchStampOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchStampOutputPerson = {
   id: string
@@ -903,7 +937,12 @@ export type NodeChildrenOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodeChildrenOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodeChildrenOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodeChildrenOutputNodeShape = {
   name: string
@@ -981,7 +1020,12 @@ export type NodeCopyOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodeCopyOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodeCopyOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodeCopyOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -1141,7 +1185,12 @@ export type NodePutContentOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePutContentOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePutContentOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePutContentOutputPerson = {
   id: string
@@ -1377,7 +1426,12 @@ export type UploadFinishOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type UploadFinishOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type UploadFinishOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type UploadFinishOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -1869,7 +1923,12 @@ export type ViewListOutputArchivedRootShape = {
   quota_bytes: number
 }
 
-export type ViewListOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type ViewListOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type ViewListOutputNodeShape = {
   name: string

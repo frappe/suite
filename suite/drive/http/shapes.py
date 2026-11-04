@@ -60,6 +60,9 @@ class BreadcrumbShape(TypedDict):
     # A file under a content document has the document as its last crumb, and
     # a document is not a folder a client can list or link to as one.
     kind: str
+    # The caller's role at this step, so a client knows what it may do in the
+    # folder a node sits in (Duplicate needs UPLOAD there) without another read.
+    role: int
 
 
 class PreviewShape(TypedDict):
