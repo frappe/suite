@@ -1,13 +1,15 @@
+import io
 import uuid
 from unittest.mock import patch
 
 import frappe
+import openpyxl
 import pycrdt
 from bs4 import BeautifulSoup
 from frappe.tests import IntegrationTestCase
 
 from suite import drive
-from suite.content import capacity, conversions, convert, log, logged, tables
+from suite.content import capacity, conversions, convert, log, logged, scheduling, tables
 from suite.content.conversions import ConversionRefused
 from suite.sheets import content as sheets_content
 from suite.sheets.content import conversion
@@ -23,6 +25,22 @@ from suite.sheets.doctype.sheet.storage import encode_sheets_data
 from suite.tests.utils import ensure_user
 
 OWNER = "sheets-collab-owner@example.com"
+# The job an import queues, by the path the queue names it by
+CONVERT_ONE = "suite.content.jobs.convert_one"
+
+
+def xlsx_bytes() -> bytes:
+    """A two-sheet workbook with text, a number and a formula."""
+    book = openpyxl.Workbook()
+    data = book.active
+    data.title = "Data"
+    data.append(["Name", "Amount"])
+    data.append(["Rent", 1200])
+    data.append(["Total", "=SUM(B2:B2)"])
+    book.create_sheet("Second")["A1"] = "hello"
+    stream = io.BytesIO()
+    book.save(stream)
+    return stream.getvalue()
 
 
 class TestConverter(IntegrationTestCase):
@@ -242,3 +260,80 @@ class TestConvertDocument(IntegrationTestCase):
         lowest = min(docname, twin.name)
 
         self.assertEqual(conversion.read_old(node).docname, lowest)
+
+    def imported(self, title: str, raw: bytes, refused: bool = False) -> tuple[str, list[dict]]:
+        """Import `raw` as "Open as spreadsheet" does; the node, and the conversions the import queued.
+
+        `refused` makes the queue raise, as a full queue or a Redis outage does."""
+        root = drive.ensure_personal_root(OWNER)
+        parent = frappe.db.get_value("Drive Root", root, "node")
+        source = drive.store_file(parent, title, io.BytesIO(raw))
+        refusal = frappe.QueueOverloaded if refused else None
+        with patch.object(scheduling, "enqueue", side_effect=refusal) as enqueue:
+            node = drive.import_document(
+                parent, f"Imported {uuid.uuid4().hex[:8]}", content_doctype="Sheet", from_node=source
+            )
+        frappe.db.commit()
+        self.addCleanup(self.delete_log, node)
+        queued = [call.kwargs for call in enqueue.call_args_list if call.args[0] == CONVERT_ONE]
+        return node, queued
+
+    def run_queued(self, queued: list[dict]) -> None:
+        """Run the queued jobs as the worker would."""
+        for kwargs in queued:
+            frappe.get_attr(CONVERT_ONE)(app=kwargs["app"], node=kwargs["node"])
+
+    def test_an_imported_xlsx_is_converted_by_the_job_its_import_queues(self):
+        node, queued = self.imported("book.xlsx", xlsx_bytes())
+
+        self.assertEqual(len(queued), 1)
+        self.assertEqual((queued[0]["app"], queued[0]["node"]), (sheets_content.APP, node))
+        self.assertTrue(queued[0]["enqueue_after_commit"])
+        self.run_queued(queued)
+
+        snapshot = logged.live_checkpoint(sheets_content.APP, node)
+        assert snapshot is not None
+        self.assertEqual(
+            cells_of(snapshot[1]),
+            {
+                "Data": {
+                    "A1": "Name",
+                    "B1": "Amount",
+                    "A2": "Rent",
+                    "B2": "1200",
+                    "A3": "Total",
+                    "B3": "=SUM(B2:B2)",
+                },
+                "Second": {"A1": "hello"},
+            },
+        )
+        self.assertEqual(self.records(node), (("converted", None),))
+
+    def test_an_imported_csv_is_converted_by_the_job_its_import_queues(self):
+        node, queued = self.imported("list.csv", b"Name,Amount\nRent,1200\n")
+
+        self.assertEqual(len(queued), 1)
+        self.run_queued(queued)
+
+        snapshot = logged.live_checkpoint(sheets_content.APP, node)
+        assert snapshot is not None
+        [cells] = cells_of(snapshot[1]).values()
+        self.assertEqual(cells, {"A1": "Name", "B1": "Amount", "A2": "Rent", "B2": "1200"})
+
+    def test_the_job_converts_an_import_its_importer_cannot_edit(self):
+        # A worker runs a job as the user who queued it: one who uploaded through a share link has no Edit
+        node, queued = self.imported("book.xlsx", xlsx_bytes())
+        stranger = "sheets-collab-stranger@example.com"
+        ensure_user(stranger)
+        frappe.set_user(stranger)
+
+        self.run_queued(queued)
+
+        self.assertIsNotNone(log.find(sheets_content.APP, node))
+        self.assertEqual(self.records(node), (("converted", None),))
+
+    def test_an_import_survives_a_queue_that_refuses_its_conversion(self):
+        node, _queued = self.imported("list.csv", b"Name,Amount\nRent,1200\n", refused=True)
+
+        self.assertEqual(frappe.db.get_value("Drive Node", node, "content_doctype"), "Sheet")
+        self.assertIsNone(log.find(sheets_content.APP, node))

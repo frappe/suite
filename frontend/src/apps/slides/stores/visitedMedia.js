@@ -8,14 +8,10 @@ import {
 } from '@/apps/slides/stores/visitedCopies'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
+import { fetchPinned } from '@/apps/slides/utils/offlineRequests'
 import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
 import { claimSlidesCachesFor } from '@/apps/slides/utils/serviceWorker'
-import {
-  isOutOfSpace,
-  MEDIA_CACHE_NAME,
-  PIN_HEADER,
-  withCachedTime,
-} from '@/apps/slides/utils/slidesCaches'
+import { isOutOfSpace, MEDIA_CACHE_NAME, withCachedTime } from '@/apps/slides/utils/slidesCaches'
 import { isCacheable, isMedia } from '@/apps/slides/utils/slidesRequests'
 import { runPool } from '@/apps/slides/utils/startupRequests'
 import { getCookieSessionUser } from '@/platform/session'
@@ -61,8 +57,7 @@ async function storeTarget(cache, { key, url }, isWanted, signal) {
     return
   }
 
-  // the header keeps the worker out, so a store doesn't depend on who controls the page
-  const response = await fetch(url, { headers: { [PIN_HEADER]: '1' }, signal })
+  const response = await fetchPinned(url, signal)
   if (isWanted() && response.ok && isCacheable('media', response)) {
     await cache.put(key, withCachedTime(response))
   } else {

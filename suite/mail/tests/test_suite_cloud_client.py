@@ -34,6 +34,8 @@ class TestSuiteCloudClient(UnitTestCase):
         self.client = SuiteCloudClient("https://cloud.frappemail.com", "key", "secret")
         self.addCleanup(patch.stopall)
         patch("suite.mail.suite_cloud.log_mail_error").start()
+        # A suspension refusal writes this flag to the shared cache, where it outlives the test.
+        self.addCleanup(frappe.cache.delete_value, "suite:provider_suspended")
 
     def _call(self, response: requests.Response, method: str = "mail.domains.get_domain", **params):
         params = params or {"domain": "acme.com", "description": None}

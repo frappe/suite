@@ -1,7 +1,8 @@
 // Every row and column header a selection covers is marked the same way, so
 // the selection reads in the headers even after a drag: a grey tint and a
 // dark semibold label. Headers outside the selection stay plain.
-import { describe, expect, it } from 'vitest'
+import { cssVariables } from 'frappe-ui/tailwind/tokens'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { COL_HEADER_H, COLORS } from './constants.js'
 import { createHeaderPainter } from './painters/header-painter.js'
@@ -67,12 +68,35 @@ function separators() {
   return { rows, cols }
 }
 
+// Puts frappe-ui's token values for a theme on <html>, the way its stylesheet
+// does: light on :root, dark over it. Without them every colour reads its hex
+// fallback, and the tint and separator fallbacks always differ, so the check
+// would pass without testing anything.
+const style = document.documentElement.style
+function applyTheme(theme: 'light' | 'dark'): void {
+  const vars =
+    theme === 'light' ? cssVariables.light : { ...cssVariables.light, ...cssVariables.dark }
+  for (const [name, value] of Object.entries(vars)) style.setProperty(name, String(value))
+}
+
 describe('separators between selected headers', () => {
-  it('stay visible on the tint', () => {
+  afterEach(() => {
+    style.cssText = ''
+  })
+
+  it.each(['light', 'dark'] as const)('stay visible on the tint in %s mode', (theme) => {
+    applyTheme(theme)
     const { rows, cols } = separators()
-    expect(COLORS.activeHeaderLine).not.toBe(COLORS.activeHeader)
-    for (const row of ['2', '3']) expect(rows[row], `row ${row}`).toBe(COLORS.activeHeaderLine)
-    for (const col of ['B', 'C']) expect(cols[col], `col ${col}`).toBe(COLORS.activeHeaderLine)
+    for (const line of [rows['2'], rows['3'], cols['B'], cols['C']]) {
+      expect(line).toBe(COLORS.activeHeaderLine)
+      expect(line).not.toBe(COLORS.activeHeader)
+    }
+  })
+
+  it('keep their light-mode colour', () => {
+    // #1129 shipped the light separators on --outline-gray-3.
+    applyTheme('light')
+    expect(separators().rows['2']).toBe(cssVariables.light['--outline-gray-3'])
   })
 
   it('stay the plain gridline colour outside the selection', () => {

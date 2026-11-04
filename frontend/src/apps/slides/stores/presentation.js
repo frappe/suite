@@ -5,6 +5,7 @@ import { computed, ref } from 'vue'
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
+import { serverAnswers } from '@/apps/slides/utils/offlineRequests'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
 import { getCookieSessionUser } from '@/platform/session'
@@ -220,30 +221,6 @@ const isLatestLoad = (load) => load === latestLoad
 // Guest-reachable, so a share link's holder loads the deck to edit it too.
 const fetchDoc = (name) =>
   client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
-
-const PROBE_TIMEOUT_MS = 2000
-
-// ping isn't a slides request, so none of the worker's stored answers can stand in for it
-async function serverAnswers() {
-  if (!navigator.onLine) {
-    return false
-  }
-
-  try {
-    const response = await fetch('/api/method/ping', {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    })
-    if (!response.ok || response.redirected) {
-      return false
-    }
-
-    const { message } = await response.json()
-    return message === 'pong'
-  } catch {
-    return false
-  }
-}
 
 // false leaves the draft in place: with no copy, it is the only place the edits live
 function copyDiscarded(name, content) {

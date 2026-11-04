@@ -2264,6 +2264,21 @@ class SlidesTest(unittest.TestCase):
 
         self.assertEqual(env.state.content().issues_total, 1)
 
+    def test_a_journal_fault_on_a_template_rerun_reaches_the_state(self):
+        source = FakeContent(
+            documents=[deck("template", node=None, title="Template", is_template=1)],
+            slides=[SlideRow("slide-1", "template", 1, '[{"type":"text"}]')],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, _ = self.environment(source, ticking_clock())
+        convert_slides_and_templates(env)
+        env.slide_journal.transitions = Mock(side_effect=JournalConflictError("broken chain"))
+
+        with self.assertRaisesRegex(BuildSlidesError, "broken chain"):
+            convert_slides_and_templates(env)
+
+        self.assertEqual(env.state.content().issues_total, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

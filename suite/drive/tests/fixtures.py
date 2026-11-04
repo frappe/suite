@@ -41,8 +41,12 @@ def drop_personal_root(user: str) -> None:
     state. Drop the pair instead and start from no root.
     """
     root = personal_root_for(user)
-    if not root:
-        return
+    if root:
+        drop_root(root)
+
+
+def drop_root(root: str) -> None:
+    """Remove one root and every node charged to it."""
     nodes = sorted({root, *frappe.get_all("Drive Node", filters={"root": root}, pluck="name")})
     # `Drive DAV Lock.entity` and `Drive DAV Property.entity` are Links to
     # `Drive Node`, and a version row is written on every replacing PUT. A

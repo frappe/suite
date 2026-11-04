@@ -147,11 +147,16 @@
    read as places to type. */
 .sn-cell-ref {
   box-sizing: border-box;
-  /* As wide as its reference (--sn-name-ch: its length + 1, set in index.vue;
-     a ch is a digit, letters run a little wider), 72px to 220px. ISSUES #105 */
-  width: min(220px, max(72px, calc(var(--sn-name-ch, 3) * 1ch + 18px)));
-  height: 32px;
+  /* One width for every selection, so the value field beside it never moves
+     while you select, drag or scroll (Excel and LibreOffice do the same). It
+     fits AA100:AB200; a longer reference ends in an ellipsis. The phone
+     layout in SheetToolbar.vue sets a narrower --sn-name-w and --sn-name-pad. */
+  --sn-name-w: calc(12ch + 18px);
+  --sn-name-pad: 18px;
+  width: var(--sn-name-w);
+  height: 28px;
   padding: 0 8px;
+  text-overflow: ellipsis;
   flex-shrink: 0;
   font: inherit;
   font-size: 13px;
@@ -167,7 +172,18 @@
 .sn-cell-ref:hover {
   border-color: var(--outline-gray-4);
 }
+/* Focused, it grows to show the whole reference (--sn-name-ch: its length
+   + 1, set in index.vue) over the value field. The negative margin keeps
+   its place in the row at --sn-name-w, so nothing after it moves. */
 .sn-cell-ref:focus {
+  --sn-name-full: min(
+    240px,
+    max(var(--sn-name-w), calc(var(--sn-name-ch, 3) * 1ch + var(--sn-name-pad)))
+  );
+  position: relative;
+  z-index: 2;
+  width: var(--sn-name-full);
+  margin-right: calc(var(--sn-name-w) - var(--sn-name-full));
   border-color: var(--outline-gray-5);
   box-shadow: 0 0 0 2px var(--outline-gray-2);
 }
@@ -177,7 +193,7 @@
   position: relative;
   flex: 1;
   min-width: 160px;
-  height: 32px;
+  height: 28px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -339,20 +355,22 @@
   height: 12px;
 }
 
-/* Remote selection rectangle — solid 2px border in the peer's hashed
-   colour plus a soft fill so multi-cell ranges read as a region, not just
-   an outline. `color-mix` falls back to a transparent rect on browsers
-   that don't support it (all evergreen browsers do, and we use Chromium /
-   WebKit / Firefox latest). */
+/* Remote selection rectangle: a 2px outline in the peer's colour and their
+   selection shade behind the range, so it reads as a region. Colours are
+   Writer's (`.sn-peer` in SheetEditor.global.css picks the theme's shades). */
 .sn-remote-cursor {
   position: absolute;
   pointer-events: none;
   box-sizing: border-box;
   border: 2px solid var(--rc);
-  background: color-mix(in srgb, var(--rc) 10%, transparent);
+  background: var(--rc-selection);
   /* Default: no animation. The class below opts in for one paint cycle
      when the peer actually changes cells (vs. local scroll). */
   transition: none;
+}
+/* The box carrying a cell's shared label draws over the others there. */
+.sn-remote-cursor--named {
+  z-index: 1;
 }
 .sn-remote-cursor--moved {
   transition:
@@ -361,19 +379,22 @@
     width 0.12s ease-out,
     height 0.12s ease-out;
 }
+/* The name flag, styled as Writer's caret label: tint behind, ink text,
+   a 1px ring in the solid colour. */
 .sn-remote-cursor-label {
   position: absolute;
   top: -18px;
-  left: -1px;
-  background: var(--rc);
-  color: var(--surface-base);
+  left: -2px;
+  background: var(--rc-tint);
+  box-shadow: inset 0 0 0 1px var(--rc);
+  color: var(--rc-ink);
   font-size: 10px;
   font-weight: 600;
   padding: 1px 5px;
   border-radius: 3px 3px 3px 0;
   white-space: nowrap;
   line-height: 16px;
-  max-width: 140px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

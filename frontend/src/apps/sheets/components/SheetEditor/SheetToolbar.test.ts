@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, isRef, nextTick, ref } from 'vue'
 
 import SheetToolbar from './SheetToolbar.vue'
 
@@ -10,6 +10,7 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/TextInput')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Tooltip')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Popover')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/ItemListRow')),
 }))
 
 vi.stubGlobal(
@@ -42,6 +43,8 @@ function mountRow(props: Record<string, unknown> = {}) {
     onAdjustDecimals: vi.fn(),
     onNumberFormat: vi.fn(),
     onToggleFormatPainter: vi.fn(),
+    onAdjustFontSize: vi.fn(),
+    onSetFontSize: vi.fn(),
   }
   const clearFormatting = vi.fn()
   const root = document.createElement('div')
@@ -69,7 +72,8 @@ function mountRow(props: Record<string, unknown> = {}) {
           borderDropdownOptions: [{ label: 'All borders', onClick: vi.fn() }],
           formatMenuOptions: [{ label: 'Clear formatting', onClick: clearFormatting }],
           ...handlers,
-          ...props,
+          // A ref prop stays live, so a test can change it after mounting.
+          ...Object.fromEntries(Object.entries(props).map(([k, v]) => [k, isRef(v) ? v.value : v])),
         },
         {
           formula: () => [
@@ -108,7 +112,9 @@ describe('SheetToolbar (row 2)', () => {
       'Percent',
       'Fewer decimal places',
       'More decimal places',
+      'Decrease font size',
       'Font size',
+      'Increase font size',
       'Bold',
       'Italic',
       'Strikethrough',
@@ -155,6 +161,93 @@ describe('SheetToolbar (row 2)', () => {
     expect(handlers['onUpdate:showSortFilter']).toHaveBeenCalledWith(true)
     expect(handlers.onMerge).toHaveBeenCalledOnce()
     expect(handlers.onAdjustDecimals).toHaveBeenCalledWith(-1)
+  })
+
+  it('steps the font size by 1 with − and +, and stops at 8 and 72', () => {
+    const { root, handlers } = mountRow({ activeFormat: { fontSize: 13 } })
+    button(root, 'Decrease font size').click()
+    button(root, 'Increase font size').click()
+    expect(handlers.onAdjustFontSize.mock.calls).toEqual([[-1], [1]])
+    cleanup?.()
+    const low = mountRow({ activeFormat: { fontSize: 8 } })
+    expect(button(low.root, 'Decrease font size').disabled).toBe(true)
+    expect(button(low.root, 'Increase font size').disabled).toBe(false)
+    cleanup?.()
+    const high = mountRow({ activeFormat: { fontSize: 72 } })
+    expect(button(high.root, 'Increase font size').disabled).toBe(true)
+  })
+
+  it('lists common font sizes when the size field is clicked, and keeps the caret there', async () => {
+    const { root, handlers } = mountRow({ activeFormat: { fontSize: 14 } })
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    field.focus()
+    field.click()
+    await settle()
+    const sizes = [...document.querySelectorAll<HTMLButtonElement>('.sn-font-sizes button')]
+    expect(sizes.map((o) => o.textContent?.trim())).toEqual([
+      '8',
+      '9',
+      '10',
+      '11',
+      '12',
+      '14',
+      '18',
+      '24',
+      '36',
+    ])
+    expect(sizes.find((o) => o.getAttribute('aria-current') === 'true')?.textContent?.trim()).toBe(
+      '14',
+    )
+    expect(document.activeElement).toBe(field)
+    sizes.find((o) => o.textContent?.trim() === '18')!.click()
+    await settle()
+    expect(handlers.onSetFontSize.mock.calls).toEqual([[18]])
+    expect(document.querySelector('.sn-font-sizes')).toBeNull()
+  })
+
+  it('applies a typed size once, clamped, and drops it when a listed size is picked', async () => {
+    const { root, handlers } = mountRow({ activeFormat: { fontSize: 13 } })
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    const type = (text: string) => {
+      field.value = text
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    // Enter blurs the field, and the blur's change applies the size.
+    field.focus()
+    type('100')
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onSetFontSize.mock.calls).toEqual([[72]])
+    // A change with nothing typed applies nothing.
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onSetFontSize).toHaveBeenCalledOnce()
+
+    handlers.onSetFontSize.mockClear()
+    field.click()
+    await settle()
+    type('2')
+    const size24 = [...document.querySelectorAll<HTMLButtonElement>('.sn-font-sizes button')].find(
+      (o) => o.textContent?.trim() === '24',
+    )!
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    size24.dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
+    size24.click()
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onSetFontSize.mock.calls).toEqual([[24]])
+  })
+
+  it('shows the size of the next selection after an edit that changed nothing', async () => {
+    const activeFormat = ref({ fontSize: 13 })
+    const { root } = mountRow({ activeFormat })
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    // Typed back to the size it had: the browser sends no change on blur.
+    field.focus()
+    field.value = '13'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    field.dispatchEvent(new Event('blur'))
+    activeFormat.value = { fontSize: 24 }
+    await settle()
+    expect(field.value).toBe('24')
   })
 
   it('opens the Format menu from the Format button', async () => {
