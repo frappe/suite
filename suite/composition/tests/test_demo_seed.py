@@ -117,7 +117,9 @@ class TestDemoSeed(IntegrationTestCase):
 
     def test_seed_fills_the_site_and_reset_removes_it(self):
         frappe.set_user("Guest")
-        demo.seed()
+        # A worker's job on a just-seeded Sheet holds its row, and the reset below can't delete a held row.
+        with patch("frappe.enqueue"):
+            demo.seed()
         self.assertEqual(frappe.session.user, "Guest")
         frappe.set_user("Administrator")
 
