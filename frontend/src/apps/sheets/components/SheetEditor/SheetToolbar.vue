@@ -429,7 +429,9 @@ const currencyIcon = computed(
     min-width: 96px;
   }
   .sn-toolbar :deep(.sn-cell-ref) {
-    width: min(120px, max(60px, calc(var(--sn-name-ch, 3) * 1ch + 14px)));
+    /* Fits A1:B20; a longer reference ends in an ellipsis. */
+    --sn-name-w: calc(8ch + 14px);
+    --sn-name-pad: 14px;
     padding: 0 6px;
   }
   /* Format keeps its icon; the room goes to the tools, which scroll. */

@@ -130,19 +130,22 @@
       >
         <!-- The formula bar: name box, then fx and the cell's value -->
         <template #formula>
-          <Tooltip :text="__('Type a cell or range, then Enter')">
+          <!-- A fixed width; a long reference ends in an ellipsis, and the
+               tooltip and the focused box show all of it. -->
+          <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
             <input
               class="sn-cell-ref"
               name="name-box"
               :aria-label="__('Name box')"
-              :value="nameBox"
-              :style="{ '--sn-name-ch': nameBox.length + 1 }"
+              :value="nameBoxTyped ?? nameBox"
+              :style="{ '--sn-name-ch': (nameBoxTyped ?? nameBox).length + 1 }"
               spellcheck="false"
               autocomplete="off"
               @focus="$event.target.select()"
+              @input="nameBoxTyped = $event.target.value"
               @keydown.enter.prevent="onNameBoxEnter"
               @keydown.esc.prevent="onNameBoxDone($event)"
-              @blur="$event.target.value = nameBox"
+              @blur="onNameBoxBlur"
             />
           </Tooltip>
           <div class="sn-formula-wrap">
@@ -1174,6 +1177,9 @@ const xlsxInputRef = ref(null)
 const activeCell = ref('A1')
 // What the name box shows: the active cell, or the selected range.
 const nameBox = ref('A1')
+// What the person has typed into it, so the focused box grows to fit; null
+// when they are not typing.
+const nameBoxTyped = ref(null)
 const formulaValue = ref('')
 const canUndo = ref(false)
 const canRedo = ref(false)
@@ -3929,8 +3935,12 @@ function onNameBoxEnter(e) {
   onNameBoxDone(e)
 }
 function onNameBoxDone(e) {
-  e.target.value = nameBox.value
+  onNameBoxBlur(e)
   canvasRef.value?.focus()
+}
+function onNameBoxBlur(e) {
+  e.target.value = nameBox.value
+  nameBoxTyped.value = null
 }
 
 const showRenameDialog = ref(false)
