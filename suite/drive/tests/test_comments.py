@@ -970,16 +970,49 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertIsNone(self.role_of(OUTSIDER))
         self.assertEqual(len(self.bell()), before + 1)
 
-    def test_a_bell_from_before_a_revoke_stays_and_says_only_who_mentioned_them(self):
+    def test_a_bell_from_when_they_had_access_hides_once_it_is_revoked(self):
         create_thread(self.owner, self.document.name, "anchor", f"Secret plan @[{MENTIONED}]")
         self.assertEqual(self.role_of(), COMMENT)
+        mentioned = Principals(MENTIONED, (MENTIONED,), ())
+        self.assertEqual(activity.unread_count(mentioned), 1)
 
         revoke(self.document.name, MENTIONED, self.admin)
 
-        rows = self.bell()
+        self.assertEqual((self.bell(), activity.unread_count(mentioned)), ([], 0))
+        self.assertEqual(activity.mark_read(mentioned), 0)
+
+        grant(self.document.name, MENTIONED, READ, self.admin)
+        frappe.db.set_value("Drive Node", self.document.name, "title", "Renamed")
+
+        rows = [row for row in self.bell() if row.activity.action == "comment"]
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].node_title, "Renamed")
+        self.assertIn("Secret plan", rows[0].activity.detail["excerpt"])
+
+    def test_a_mention_without_access_keeps_its_title_until_they_get_access(self):
+        create_thread(self.commenter, self.document.name, "anchor", f"Secret plan @[{MENTIONED}]")
+        frappe.db.set_value("Drive Node", self.document.name, "title", "Renamed")
+
+        self.assertEqual(self.bell()[0].node_title, "Document")
+        self.assertNotIn("Renamed", frappe.as_json(self.bell()))
+
+        grant(self.document.name, MENTIONED, READ, self.admin)
+        restored = next(row for row in self.bell() if row.activity.action == "comment")
+        self.assertEqual(restored.node_title, "Renamed")
+        self.assertIn("Secret plan", restored.activity.detail["excerpt"])
+
+        revoke(self.document.name, MENTIONED, self.admin)
+        rows = [row for row in self.bell() if row.activity.action == "comment"]
+        self.assertEqual([row.node_title for row in rows], ["Document"])
         self.assertEqual(rows[0].activity.detail, {"mentions": [MENTIONED]})
-        self.assertNotIn("Secret plan", frappe.as_json(rows))
+
+    def test_an_older_mention_with_no_saved_title_hides_without_access(self):
+        create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
+        frappe.db.set_value("Drive Notification", {"to_user": MENTIONED}, "title_without_access", None)
+        mentioned = Principals(MENTIONED, (MENTIONED,), ())
+
+        self.assertEqual((self.bell(), activity.unread_count(mentioned)), ([], 0))
+        self.assertEqual(activity.mark_read(mentioned), 0)
 
     def test_a_mention_made_before_a_block_goes_quiet_once_blocked(self):
         create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")

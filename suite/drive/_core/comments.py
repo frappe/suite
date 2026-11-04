@@ -93,7 +93,7 @@ def insert_thread(
     )
     # The owner hears of every new thread on their item, except their own
     owner = [node_row.owner] if node_row.owner != principals.user else []
-    notify_users(activity, [*reached, *owner])
+    notify_users(activity, [*reached, *owner], reached)
     return thread.name
 
 
@@ -174,7 +174,7 @@ def insert_reply(
         },
         via_link=via_link,
     )
-    notify_users(activity, reached)
+    notify_users(activity, reached, reached)
     return comment
 
 
@@ -489,7 +489,7 @@ def write_comment_edit(
         },
         via_link=via_link,
     )
-    notify_users(activity, [user for user in added if user not in named_earlier])
+    notify_users(activity, [user for user in added if user not in named_earlier], added)
 
 
 def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dict:
@@ -728,26 +728,30 @@ def lock_tree_to_share(principals: Principals, node: str, text: str) -> None:
 
 def reach_mentioned(
     principals: Principals, node: frappe._dict, users: list[str], picked: set[str]
-) -> list[str]:
+) -> dict[str, str | None]:
     """The people among `users` a comment notifies, shared with at Comment if the author manages the node.
 
     Someone with access always is. Someone without is only when the author can comment on
     their own access, not a Guest or a share link, named them with `@[…]`, and no block stands.
-    Only MANAGE hands out access, and nobody's role is lowered.
+    Only MANAGE hands out access, and nobody's role is lowered. Each person maps to the node's
+    title if they still can't read it, which is all their notification may ever name.
     """
     from suite.drive.framework import principals_for
 
     may_reach_outsiders = bool(users) and has_own_comment_access(node, principals)
     manages = may_reach_outsiders and check(node, MANAGE, principals)
-    reached = []
+    reached: dict[str, str | None] = {}
     for user in users:
         person = principals_for(user)
+        title = None
         if not check(node, READ, person):
             if not may_reach_outsiders or user not in picked or is_blocked(node, person):
                 continue
             if manages and _principal_kind(user) == "user":
                 grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
-        reached.append(user)
+            else:
+                title = node.title
+        reached[user] = title
     return reached
 
 
@@ -768,7 +772,7 @@ def _insert_comment(
     *,
     author_name: str | None,
     client_id: str | None,
-) -> tuple[str, list[str], list[str]]:
+) -> tuple[str, list[str], dict[str, str | None]]:
     """Insert a comment; answer it, the people it names and the ones to notify."""
     guest_name = _guest_name(principals, author_name)
     mentions, picked = _mentions_by(principals, node, text, via_link)

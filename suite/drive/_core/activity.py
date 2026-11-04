@@ -1,6 +1,6 @@
 """Drive activity, recents, favourites, and notification workflows."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal, get_args
 from uuid import uuid4
 
@@ -385,8 +385,15 @@ def personal_marks(principals: Principals, nodes: Iterable[str]) -> dict[str, di
     return marks
 
 
-def notify_users(activity: str, users: Iterable[str]) -> int:
-    """Create one notification pointer for each distinct existing target user."""
+def notify_users(
+    activity: str, users: Iterable[str], titles_without_access: Mapping[str, str | None] | None = None
+) -> int:
+    """Create one notification pointer for each distinct existing target user.
+
+    `titles_without_access` names the node for the people who can't read it, so
+    their notification never shows a later rename.
+    """
+    titles = titles_without_access or {}
     created = 0
     for user in dict.fromkeys(users):
         if not isinstance(user, str) or not user or not frappe.db.exists("User", user):
@@ -396,7 +403,13 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
         # `notif_activity_user` keeps one row per person per activity even when
         # a concurrent writer inserts the same pair between the check and here.
         _, inserted = _insert_unique(
-            {"doctype": "Drive Notification", "activity": activity, "to_user": user, "read": 0},
+            {
+                "doctype": "Drive Notification",
+                "activity": activity,
+                "to_user": user,
+                "read": 0,
+                "title_without_access": titles.get(user),
+            },
             lambda: frappe.db.get_value(
                 "Drive Notification", {"activity": activity, "to_user": user}, "name"
             ),
@@ -475,13 +488,13 @@ def notifications(
 
     A pointer whose activity is gone, or whose node the caller can no longer
     read, is dropped after the SQL window, so a full page can answer short. A
-    mention stays without Read, stripped to who and where, unless a deny blocks
-    the person.
-    `next_cursor` still advances by the window (§11.4).
+    mention made while the person had no Read stays, stripped to who and where,
+    unless a deny blocks them. `next_cursor` still advances by the window (§11.4).
 
     Each row carries its node's current `node_title` and `node_kind`, read for
-    the whole page in one query. They are joined here, not stored: a
-    notification renders from its activity and its node as they are (§9.5).
+    the whole page in one query, so a notification renders from its activity
+    and its node as they are (§9.5). A caller without Read gets the title saved
+    when they were mentioned, so an old row doesn't tell them of a rename.
     """
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
 
@@ -494,7 +507,8 @@ def notifications(
     nodes = {node.name: node for node in found}
     for row in rows:
         node = nodes[row.activity.node]
-        row.node_title, row.node_kind = node.title, node.kind
+        row.setdefault("node_title", node.title)
+        row.node_kind = node.kind
     return page_of(rows, offset, seen, window)
 
 
@@ -515,7 +529,7 @@ def _visible_notifications(
         filters["read"] = 0
     options = {
         "filters": filters,
-        "fields": ["name", "activity", "to_user", "read", "creation"],
+        "fields": ["name", "activity", "to_user", "read", "creation", "title_without_access"],
         "order_by": "creation desc",
     }
     if limit is not None:
@@ -533,11 +547,13 @@ def _visible_notifications(
         if not activity:
             continue
         activity.detail = _json_value(activity.detail, {})
+        saved_title = row.pop("title_without_access")
         if not _can_read(principals, activity.node):
-            if not _is_mentioned_without_access(principals, activity):
+            if not saved_title or not _is_mentioned_without_access(principals, activity):
                 continue
             # They may hear who mentioned them and where, not what was said
             activity.update(detail={"mentions": [principals.user]}, client=None, via_link=None)
+            row.node_title = saved_title
         row.activity = activity
         visible.append(row)
     _quote_comments_as_they_are([row.activity for row in visible])
