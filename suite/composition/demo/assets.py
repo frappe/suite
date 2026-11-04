@@ -1,6 +1,8 @@
 """Generate small, self-contained Northwind spreadsheets, decks, and uploaded files."""
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from html import escape
 from io import BytesIO
 from pathlib import Path
@@ -12,41 +14,64 @@ from openpyxl.utils import get_column_letter
 from PIL import Image, ImageDraw, ImageFont
 
 from suite import drive
+from suite.composition.demo.cast import PEOPLE_BY_KEY, Person
 
 # PNGs are 256 px renders of the SVG sources beside them; re-render after editing one.
 BRAND = Path(__file__).parent / "brand"
 type Rows = list[list[str | int | float | None]]
-BUDGET: Rows = [
-    ["Q4 2026 operating budget", None, None, None, None],
-    ["Category", "October", "November", "December", "Quarter"],
-    ["People", 42000, 44000, 44000, "=SUM(B3:D3)"],
-    ["Infrastructure", 3200, 3600, 4000, "=SUM(B4:D4)"],
-    ["Research incentives", 900, 1200, 900, "=SUM(B5:D5)"],
-    ["Launch marketing", 800, 2500, 1200, "=SUM(B6:D6)"],
-    ["Travel and equipment", 1800, 2400, 1600, "=SUM(B7:D7)"],
-    ["Total", "=SUM(B3:B7)", "=SUM(C3:C7)", "=SUM(D3:D7)", "=SUM(E3:E7)"],
-    ["Monthly average", "=AVERAGE(B8:D8)"],
-]
-HIRING: Rows = [
-    ["Q4 hiring tracker", None, None, None, None],
-    ["Role", "Team", "Stage", "Annual salary", "Interview score"],
-    ["Backend engineer", "Engineering", "Technical interview", 96000, 4.2],
-    ["Product designer", "Design", "Portfolio review", 88000, 4.5],
-    ["Customer researcher", "Product", "Screening", 72000, 3.8],
-    ["Customer success lead", "Marketing", "Offer", 78000, 4.6],
-    ["Planned salary total", None, None, "=SUM(D3:D6)"],
-    ["Average interview score", None, None, None, "=AVERAGE(E3:E6)"],
-]
-PIPELINE: Rows = [
-    ["November sales pipeline", None, None, None, None],
-    ["Account", "Stage", "Annual value", "Probability", "Weighted value"],
-    ["Cedar Health", "Pilot", 18000, 0.6, "=C3*D3"],
-    ["Atlas Robotics", "Proposal", 24000, 0.4, "=C4*D4"],
-    ["Harbor Studio", "Negotiation", 9600, 0.8, "=C5*D5"],
-    ["Fieldwork Co", "Discovery", 14400, 0.2, "=C6*D6"],
-    ["Total", None, "=SUM(C3:C6)", None, "=SUM(E3:E6)"],
-    ["Average deal", None, "=AVERAGE(C3:C6)"],
-]
+
+
+@dataclass(frozen=True)
+class Sheet:
+    """A workbook's rows, its owner, and the columns (1-based) that are not dollars."""
+
+    rows: Rows
+    owner: Person
+    column_formats: Mapping[int, str] = field(default_factory=dict)
+
+
+BUDGET = Sheet(
+    [
+        ["Q4 2026 operating budget", None, None, None, None],
+        ["Category", "October", "November", "December", "Quarter"],
+        ["People", 42000, 44000, 44000, "=SUM(B3:D3)"],
+        ["Infrastructure", 3200, 3600, 4000, "=SUM(B4:D4)"],
+        ["Research incentives", 900, 1200, 900, "=SUM(B5:D5)"],
+        ["Launch marketing", 800, 2500, 1200, "=SUM(B6:D6)"],
+        ["Travel and equipment", 1800, 2400, 1600, "=SUM(B7:D7)"],
+        ["Total", "=SUM(B3:B7)", "=SUM(C3:C7)", "=SUM(D3:D7)", "=SUM(E3:E7)"],
+        ["Monthly average", "=AVERAGE(B8:D8)"],
+    ],
+    PEOPLE_BY_KEY["sofia"],
+)
+HIRING = Sheet(
+    [
+        ["Q4 hiring tracker", None, None, None, None],
+        ["Role", "Team", "Stage", "Annual salary", "Interview score"],
+        ["Backend engineer", "Engineering", "Technical interview", 96000, 4.2],
+        ["Product designer", "Design", "Portfolio review", 88000, 4.5],
+        ["Customer researcher", "Product", "Screening", 72000, 3.8],
+        ["Customer success lead", "Marketing", "Offer", 78000, 4.6],
+        ["Planned salary total", None, None, "=SUM(D3:D6)"],
+        ["Average interview score", None, None, None, "=AVERAGE(E3:E6)"],
+    ],
+    PEOPLE_BY_KEY["sofia"],
+    {5: "0.0"},
+)
+PIPELINE = Sheet(
+    [
+        ["November sales pipeline", None, None, None, None],
+        ["Account", "Stage", "Annual value", "Probability", "Weighted value"],
+        ["Cedar Health", "Pilot", 18000, 0.6, "=C3*D3"],
+        ["Atlas Robotics", "Proposal", 24000, 0.4, "=C4*D4"],
+        ["Harbor Studio", "Negotiation", 9600, 0.8, "=C5*D5"],
+        ["Fieldwork Co", "Discovery", 14400, 0.2, "=C6*D6"],
+        ["Total", None, "=SUM(C3:C6)", None, "=SUM(E3:E6)"],
+        ["Average deal", None, "=AVERAGE(C3:C6)"],
+    ],
+    PEOPLE_BY_KEY["theo"],
+    {4: "0%"},
+)
 LAUNCH = [
     ("Beacon collections", "Private beta | 2 November 2026", "Evidence beside every decision"),
     (
@@ -111,33 +136,29 @@ EQUIPMENT_POLICY = (
 )
 
 
-def spreadsheet(parent: str, imports: str, title: str, rows: Rows, kind: str) -> str:
+def spreadsheet(parent: str, imports: str, title: str, sheet: Sheet) -> str:
     """Import a styled XLSX and retain the original as an ordinary uploaded file."""
     workbook = Workbook()
-    sheet = workbook.worksheets[0]
-    sheet.title = "Sheet1"
-    for row in rows:
-        sheet.append(row)
-    sheet.merge_cells("A1:E1")
-    sheet.freeze_panes = "B3"
-    sheet.auto_filter.ref = f"A2:E{len(rows)}"
-    for row_number, cells in enumerate(sheet, 1):
+    worksheet = workbook.worksheets[0]
+    worksheet.title = "Sheet1"
+    for row in sheet.rows:
+        worksheet.append(row)
+    worksheet.merge_cells("A1:E1")
+    worksheet.freeze_panes = "B3"
+    worksheet.auto_filter.ref = f"A2:E{len(sheet.rows)}"
+    for row_number, cells in enumerate(worksheet, 1):
         for column, cell in enumerate(cells, 1):
             if row_number <= 2:
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill("solid", fgColor="234D47")
             elif column > 1 and (isinstance(cell.value, int | float) or cell.data_type == "f"):
-                cell.number_format = '"$"#,##0.00'
-                if kind == "pipeline" and column == 4:
-                    cell.number_format = "0%"
-                if kind == "hiring" and column == 5:
-                    cell.number_format = "0.0"
+                cell.number_format = sheet.column_formats.get(column, '"$"#,##0.00')
     for column in range(1, 6):
-        sheet.column_dimensions[get_column_letter(column)].width = 30 if column == 1 else 24
+        worksheet.column_dimensions[get_column_letter(column)].width = 30 if column == 1 else 24
     notes = workbook.create_sheet("Read me")
     notes.append(["Northwind Labs - internal planning"])
     notes.append(["All amounts are USD. Figures and candidates are fictional."])
-    notes.append(["Owner: Sofia Martinez" if kind != "pipeline" else "Owner: Theo Williams"])
+    notes.append([f"Owner: {sheet.owner.name}"])
     stream = BytesIO()
     workbook.save(stream)
     stream.seek(0)

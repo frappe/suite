@@ -311,16 +311,14 @@ def _organization_content(folders: dict[str, str], uploaded: dict[str, bytes]) -
         result["launch deck"] = assets.presentation(launch, "Beacon collections launch", assets.LAUNCH)
         imports = drive.ensure_folder(folders["Marketing"], "Imports")
         result["pipeline"] = assets.spreadsheet(
-            folders["Marketing"], imports, "November sales pipeline", assets.PIPELINE, "pipeline"
+            folders["Marketing"], imports, "November sales pipeline", assets.PIPELINE
         )
     frappe.db.commit()
     with acting_as(email_of("sofia")):
         planning = drive.ensure_folder(folders["Finance"], "Q4 planning")
         imports = drive.ensure_folder(planning, "Imports")
-        result["budget"] = assets.spreadsheet(
-            planning, imports, "Q4 operating budget", assets.BUDGET, "budget"
-        )
-        result["hiring"] = assets.spreadsheet(planning, imports, "Q4 hiring tracker", assets.HIRING, "hiring")
+        result["budget"] = assets.spreadsheet(planning, imports, "Q4 operating budget", assets.BUDGET)
+        result["hiring"] = assets.spreadsheet(planning, imports, "Q4 hiring tracker", assets.HIRING)
     frappe.db.commit()
     return result
 
