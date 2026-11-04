@@ -628,10 +628,9 @@
         </template>
       </Dialog>
 
-      <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
-         from the shortcut registry populated by useShortcuts.js (via useShortcut),
-         so it can never drift from the handlers. -->
-      <KeyboardShortcutsDialog v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
+      <!-- Keyboard shortcut help — Suite's list of frappe-ui's shortcut registry,
+         populated by useShortcuts.js, so it can never drift from the handlers. -->
+      <ShortcutsDialog v-model:open="showShortcutsHelp" />
 
       <!-- Slicers — floating value-filter controls (SlicerPanel.vue) -->
       <SlicerPanel
@@ -781,16 +780,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import {
-  Badge,
-  Button,
-  Dialog,
-  Dropdown,
-  FormControl,
-  KeyboardShortcutsDialog,
-  Spinner,
-  Tooltip,
-} from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -798,6 +788,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
+import { ShortcutsDialog } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
