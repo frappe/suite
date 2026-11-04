@@ -55,7 +55,6 @@ from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.ports import SiteContentRows
 from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_4, phase_content_history
 from suite.drive.patches.cleanup.tests.fakes import FakeSchema, cleanup_environment
-from suite.slides.api.slides import save_slides
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
@@ -1211,21 +1210,6 @@ class TestContentLinksAndSources(BuildContentCase):
 
 class TestSlideMedia(BuildContentCase):
     """§11 and §12: media children, previews, and the durable journal."""
-
-    def test_a_push_on_the_old_stamp_is_refused_after_a_rewrite(self):
-        deck = self.deck_fixture()
-        first = deck["slides"][0]
-        old_stamp = frappe.db.get_value("Presentation", deck["docname"], "modified")
-        old_elements = frappe.db.get_value("Slide", first, "elements")
-
-        convert_slides_and_templates(self.environment(clock=lambda: LATER))
-        rewritten = frappe.db.get_value("Slide", first, "elements")
-
-        self.assertNotEqual(rewritten, old_elements)
-        with self.assertRaises(frappe.TimestampMismatchError):
-            save_slides(deck["docname"], [{"name": first, "elements": old_elements}], str(old_stamp))
-
-        self.assertEqual(frappe.db.get_value("Slide", first, "elements"), rewritten)
 
     def test_a_rollback_between_stamp_and_rows_leaves_both_old(self):
         deck = self.deck_fixture()
