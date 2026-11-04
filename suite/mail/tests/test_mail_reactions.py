@@ -6,10 +6,18 @@ import unittest
 from typing import ClassVar
 from unittest import mock
 
+from jmap.core.errors import CapabilityNotSupportedError
+
 from suite.mail.api import mail as mail_api
 from suite.mail.api.mail import collapse_reactions, reaction_recipients, written_messages
 from suite.mail.jmap import build_email_draft
-from suite.mail.utils.reaction import is_emoji, reaction_bodies, read_reactions
+from suite.mail.utils.reaction import (
+    from_mailing_list,
+    is_emoji,
+    reaction_bodies,
+    reaction_refusal,
+    read_reactions,
+)
 
 # The fields of a message Gmail really sent when reacting with 😂, as Suite formats it.
 GMAIL_REACTION = {
@@ -222,6 +230,7 @@ class ListRows(unittest.TestCase):
                 mail_api, "get_cached_mailboxes", return_value=[{"id": "sent", "role": "sent"}]
             ),
             mock.patch.object(mail_api, "add_user_images_to_emails"),
+            mock.patch.object(mail_api, "get_cached_identities", return_value=[{"email": "me@frappe.io"}]),
         ):
             return mail_api.get_threads("acct", "inbox", limit)
 
@@ -255,9 +264,114 @@ class ListRows(unittest.TestCase):
         ]
         self.assertTrue(self.rows(conversation, limit=1)["has_more"])
 
+    def test_each_message_says_why_it_cannot_be_reacted_to(self):
+        row = self.rows(
+            [
+                stored(
+                    "m1",
+                    "inbox",
+                    "2026-11-01T10:00:00Z",
+                    mailing_list=1,
+                    recipients=[{"type": "To", "email": "me@frappe.io"}],
+                ),
+                stored(
+                    "m2",
+                    "inbox",
+                    "2026-11-02T10:00:00Z",
+                    recipients=[{"type": "To", "email": "me@frappe.io"}],
+                ),
+            ]
+        )["rows"][0]
+        self.assertIsNotNone(row["messages"][0]["cannot_react"])
+        self.assertIsNone(row["messages"][1]["cannot_react"])
+
+    def test_an_account_whose_identities_cannot_be_read_still_lists(self):
+        with mock.patch.object(
+            mail_api, "get_cached_identities", side_effect=CapabilityNotSupportedError("submission")
+        ):
+            conversation = [stored("m1", "inbox", "2026-11-01T10:00:00Z")]
+            mail_api.add_reaction_refusals("acct", conversation)
+        self.assertIsNone(conversation[0]["cannot_react"])
+
     def test_a_reaction_whose_target_is_gone_is_listed_as_the_message_it_then_is(self):
         rows = self.rows([stored("r2", "inbox", "2026-11-04T10:00:00Z", target="gone")])["rows"]
         self.assertEqual([r["id"] for r in rows], ["r2"])
+
+
+class WhenAReactionIsRefused(unittest.TestCase):
+    own: ClassVar[set[str]] = {"me@frappe.io"}
+
+    def message(self, **fields) -> dict:
+        return {
+            "from_email": "ana@example.com",
+            "recipients": [{"type": "To", "email": "ME@frappe.io"}],
+            **fields,
+        }
+
+    def test_mail_addressed_to_you_can_be_reacted_to(self):
+        self.assertIsNone(reaction_refusal(self.message(), self.own))
+
+    def test_being_copied_is_being_addressed(self):
+        message = self.message(recipients=[{"type": "Cc", "email": "me@frappe.io"}])
+        self.assertIsNone(reaction_refusal(message, self.own))
+
+    def test_your_own_mail_can_be_reacted_to(self):
+        message = self.message(from_email="ME@frappe.io", recipients=[{"type": "To", "email": "a@x.io"}])
+        self.assertIsNone(reaction_refusal(message, self.own))
+
+    def test_mail_from_a_list_cannot(self):
+        self.assertIsNotNone(reaction_refusal(self.message(mailing_list=1), self.own))
+
+    def test_mail_you_were_only_bccd_on_cannot(self):
+        message = self.message(recipients=[{"type": "To", "email": "ana@example.com"}])
+        self.assertIsNotNone(reaction_refusal(message, self.own))
+
+    def test_with_your_addresses_unknown_being_addressed_is_not_asked(self):
+        message = self.message(recipients=[{"type": "To", "email": "ana@example.com"}])
+        self.assertIsNone(reaction_refusal(message, set()))
+
+    def recipients(self, count: int) -> list[dict]:
+        others = [{"type": "Cc", "email": f"person{i}@example.com"} for i in range(count - 1)]
+        return [{"type": "To", "email": "me@frappe.io"}, *others]
+
+    def test_twenty_recipients_can_be_reacted_to(self):
+        self.assertIsNone(reaction_refusal(self.message(recipients=self.recipients(20)), self.own))
+
+    def test_twenty_one_recipients_cannot(self):
+        self.assertIsNotNone(reaction_refusal(self.message(recipients=self.recipients(21)), self.own))
+
+    def test_a_person_counted_in_both_to_and_cc_counts_once(self):
+        recipients = [*self.recipients(20), {"type": "To", "email": "person1@example.com"}]
+        self.assertIsNone(reaction_refusal(self.message(recipients=recipients), self.own))
+
+    def test_nineteen_of_your_reactions_leave_room_for_one_more(self):
+        self.assertIsNone(reaction_refusal(self.message(), self.own, 19))
+
+    def test_twenty_of_your_reactions_are_the_limit(self):
+        self.assertIsNotNone(reaction_refusal(self.message(), self.own, 20))
+
+
+class WhatCountsAsAMailingList(unittest.TestCase):
+    def test_a_github_notification(self):
+        # The headers such a notification carries, as a list member receives them.
+        email = {
+            "header:List-Id:asText": "frappe/suite <suite.frappe.github.com>",
+            "header:List-Unsubscribe:asText": "<mailto:unsub@reply.github.com>",
+            "header:Precedence:asText": "list",
+        }
+        self.assertTrue(from_mailing_list(email))
+
+    def test_a_google_group(self):
+        self.assertTrue(from_mailing_list({"header:X-Google-Group-Id:asText": "12345"}))
+
+    def test_bulk_mail_with_no_list_headers(self):
+        self.assertTrue(from_mailing_list({"header:Precedence:asText": " Bulk "}))
+
+    def test_mail_a_person_wrote(self):
+        self.assertFalse(from_mailing_list({"header:List-Id:asText": None, "header:Precedence:asText": None}))
+
+    def test_another_precedence_is_not_a_list(self):
+        self.assertFalse(from_mailing_list({"header:Precedence:asText": "first-class"}))
 
 
 class WhoItGoesTo(unittest.TestCase):

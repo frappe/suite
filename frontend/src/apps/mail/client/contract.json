@@ -15506,6 +15506,25 @@
                 "title": "Reactions",
                 "type": "array"
               },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -15609,6 +15628,7 @@
               "message_id",
               "in_reply_to",
               "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -16376,6 +16396,25 @@
                 "title": "Reactions",
                 "type": "array"
               },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -16479,6 +16518,7 @@
               "message_id",
               "in_reply_to",
               "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -17518,6 +17558,25 @@
                 "title": "Reactions",
                 "type": "array"
               },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -17621,6 +17680,7 @@
               "message_id",
               "in_reply_to",
               "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -18270,6 +18330,25 @@
                 "title": "Reactions",
                 "type": "array"
               },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -18373,6 +18452,7 @@
               "message_id",
               "in_reply_to",
               "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",

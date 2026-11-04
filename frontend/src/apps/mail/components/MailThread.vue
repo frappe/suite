@@ -185,7 +185,10 @@
                           <!-- .stop: this row folds the message when pressed. A message alone
                                has the button beside Forward, so it needs no second one here. -->
                           <div v-if="!mail.draft && thread.length > 1" class="flex" @click.stop>
-                            <ReactionPicker @pick="(emoji: string) => react(mail, emoji)" />
+                            <ReactionPicker
+                              :refusal="mail.cannot_react"
+                              @pick="(emoji: string) => react(mail, emoji)"
+                            />
                           </div>
                           <MailActions
                             :mailbox
@@ -443,7 +446,10 @@
                                   class="flex"
                                   @click.stop
                                 >
-                                  <ReactionPicker @pick="(emoji: string) => react(mail, emoji)" />
+                                  <ReactionPicker
+                                    :refusal="mail.cannot_react"
+                                    @pick="(emoji: string) => react(mail, emoji)"
+                                  />
                                 </div>
                                 <MailActions
                                   :mailbox
@@ -647,6 +653,7 @@
                           v-if="!mail.draft"
                           :reactions="reactionsOn(mail)"
                           :readonly="readonly"
+                          :refusal="mail.cannot_react"
                           class="mt-4"
                           @react="(emoji: string) => react(mail, emoji)"
                         />
@@ -696,6 +703,7 @@
                   @click="action.onClick"
                 />
                 <ReactionPicker
+                  :refusal="thread.at(-1)!.cannot_react"
                   :variant="isMobile ? 'ghost' : 'outline'"
                   :class="{ '!h-16 !w-16 shrink-0 rounded-none': isMobile }"
                   @pick="(emoji: string) => react(thread.at(-1)!, emoji)"

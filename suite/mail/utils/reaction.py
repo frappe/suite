@@ -23,8 +23,28 @@ Nor does either replace an earlier one: Gmail keeps every emoji a person sends, 
 import json
 from html import escape
 
+from frappe import _
+
 REACTION_DISPOSITION = "reaction"
 GMAIL_REACTION_TYPE = "text/vnd.google.email-reaction+json"
+
+# When not to offer a reaction, as Gmail recommends for any client that sends them. A reaction goes
+# where a reply-all would, so on a list it reaches everyone on it, and through a Reply-To address it
+# can land somewhere else entirely: a GitHub notification's posts a comment on the pull request.
+MAX_REACTION_RECIPIENTS = 20
+MAX_OWN_REACTIONS = 20
+
+# Headers that say a message came through a list: RFC 2369's, and those only a list manager adds.
+MAILING_LIST_HEADERS = (
+    "List-Id",
+    "List-Post",
+    "List-Unsubscribe",
+    "Mailing-List",
+    "X-Mailman-Version",
+    "X-Google-Group-Id",
+)
+MAILING_LIST_PRECEDENCES = ("list", "bulk")
+MAILING_LIST_PROPERTIES = [f"header:{name}:asText" for name in (*MAILING_LIST_HEADERS, "Precedence")]
 
 # The longest emoji in Unicode, a kiss with two skin tones, is ten code points. Anything much past
 # that is not one emoji, however emoji-like its characters are.
@@ -126,6 +146,45 @@ def read_reactions(message: dict) -> list[str]:
         return [first_line] if is_emoji(first_line) else []
 
     return []
+
+
+def from_mailing_list(email: dict) -> bool:
+    """Whether an Email, in wire form with `MAILING_LIST_PROPERTIES` among its properties, came
+    through a list."""
+
+    if any(email.get(f"header:{name}:asText") for name in MAILING_LIST_HEADERS):
+        return True
+
+    precedence = (email.get("header:Precedence:asText") or "").strip().lower()
+    return precedence in MAILING_LIST_PRECEDENCES
+
+
+def reaction_refusal(message: dict, own_emails: set[str], own_reactions: int = 0) -> str | None:
+    """Why this message can't be reacted to, in words for the reader, or None if it can.
+
+    `own_emails` are the account's addresses, lowercased; with none known, whether the reader was
+    addressed can't be told and isn't asked. `own_reactions` is how many they have on it already.
+    """
+
+    if message.get("mailing_list"):
+        return _("You can't react to mail from a mailing list.")
+
+    addressed = {
+        (recipient.get("email") or "").lower()
+        for recipient in message.get("recipients") or []
+        if recipient.get("type") in ("To", "Cc")
+    }
+    sender = (message.get("from_email") or "").lower()
+    if own_emails and sender not in own_emails and not addressed & own_emails:
+        return _("You can't react to this message because you aren't in To or Cc.")
+
+    if len(addressed) > MAX_REACTION_RECIPIENTS:
+        return _("This message went to too many people to react to.")
+
+    if own_reactions >= MAX_OWN_REACTIONS:
+        return _("You've reached the limit of reactions on this message.")
+
+    return None
 
 
 def reaction_payload(emoji: str) -> str:

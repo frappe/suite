@@ -101,6 +101,8 @@ export interface Mail {
   // The reactions this message has collected, each a mail of its own that the server folds out of
   // the thread (see collapse_reactions).
   reactions?: MailReaction[]
+  // Why this message can't be reacted to, in words for the reader (see reaction_refusal).
+  cannot_react?: string | null
   user_image?: string
   collapsed?: boolean
   show?: boolean

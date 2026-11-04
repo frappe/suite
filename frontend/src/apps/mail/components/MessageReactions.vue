@@ -20,7 +20,7 @@
       </span>
     </Button>
 
-    <ReactionPicker v-if="!readonly" @pick="(emoji: string) => emit('react', emoji)" />
+    <ReactionPicker v-if="!readonly" :refusal @pick="(emoji: string) => emit('react', emoji)" />
   </div>
 </template>
 
@@ -33,9 +33,10 @@ import type { MailReaction } from '@/apps/mail/types'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { groupReactions } from '@/apps/mail/utils/reactions'
 
-const { reactions, readonly } = defineProps<{
+const { reactions, readonly, refusal } = defineProps<{
   reactions: MailReaction[]
   readonly?: boolean
+  refusal?: string | null
 }>()
 
 const emit = defineEmits<{ react: [emoji: string] }>()

@@ -39,6 +39,7 @@ export function useMessageReactions(account: () => string, reload: () => void) {
     )
 
   async function react(mail: Mail, emoji: string) {
+    if (mail.cannot_react) return raiseToast(mail.cannot_react, 'error')
     if (hasReacted(reactionsOn(mail), emoji, ownEmails.value))
       return raiseToast(__('You already reacted with {0}.', [emoji]))
 
@@ -49,9 +50,14 @@ export function useMessageReactions(account: () => string, reload: () => void) {
       reload()
       if (result.submission_id)
         offerUndo(mail, emoji, result.submission_id, result.undo_send_period)
-    } catch {
+    } catch (error) {
       stopShowing(mail, emoji)
-      raiseToast(__('Could not react to this message.'), 'error')
+      raiseToast(
+        error instanceof Error && error.message
+          ? error.message
+          : __('Could not react to this message.'),
+        'error',
+      )
     }
   }
 

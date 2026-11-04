@@ -94,6 +94,25 @@ describe('useMessageReactions', () => {
     expect(reload).toHaveBeenCalledTimes(2)
   })
 
+  it('sends nothing on a message that cannot be reacted to, and says why', async () => {
+    const { react, reactionsOn } = setup()
+    const message = reactive({ id: 'm1', cannot_react: 'A list.' }) as unknown as Mail
+    await react(message, '🎉')
+    expect(mocks.send).not.toHaveBeenCalled()
+    expect(reactionsOn(message)).toEqual([])
+    expect(mocks.raiseToast).toHaveBeenCalledWith('A list.', 'error')
+  })
+
+  it('shows why the server refused', async () => {
+    mocks.send.mockRejectedValue(new Error('You cannot react to mail from a mailing list.'))
+    const { react } = setup()
+    await react(mail(), '🎉')
+    expect(mocks.raiseToast).toHaveBeenCalledWith(
+      'You cannot react to mail from a mailing list.',
+      'error',
+    )
+  })
+
   it('keeps a reaction on the message it was made on', async () => {
     const { react, reactionsOn } = setup()
     const other = reactive({ id: 'm2', reactions: [] }) as unknown as Mail

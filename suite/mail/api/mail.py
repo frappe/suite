@@ -12,7 +12,8 @@ from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, cint, now, random_string
-from jmap import MethodError
+from jmap import MethodError, RequestError, TransportError
+from jmap.core.errors import CapabilityNotSupportedError
 from werkzeug.wrappers import Response
 
 from suite.mail import classification, unsubscribe
@@ -73,6 +74,7 @@ from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
 from suite.mail.jmap import (
     get_account_client,
+    get_cached_identities,
     get_cached_mailboxes,
     get_identities,
     get_mailbox_id_by_name,
@@ -80,7 +82,15 @@ from suite.mail.jmap import (
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
-from suite.mail.utils.reaction import emoji_key, is_emoji, reaction_bodies, read_reactions
+from suite.mail.utils.reaction import (
+    MAILING_LIST_PROPERTIES,
+    emoji_key,
+    from_mailing_list,
+    is_emoji,
+    reaction_bodies,
+    reaction_refusal,
+    read_reactions,
+)
 from suite.mail.utils.user import can_use_mail, get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -94,10 +104,6 @@ AVATAR_CACHE_TTL = 60 * 60 * 24
 # last moment still reaches the server before the hold elapses. Computed on the server
 # clock: a skewed client clock must not be able to shorten (or invalidate) the hold.
 UNDO_SEND_GRACE_SECONDS = 3
-
-# A reaction goes where a reply-all would, so past this it is an announcement rather than a mark on a
-# message: a mailing list, or a message sent to a whole company.
-MAX_REACTION_RECIPIENTS = 20
 
 # Unified folder bounds. limit/start are user-supplied, and per_account_limit (= start + limit) is fetched
 # from *every* account and merged in memory, so both are clamped. MAX_FETCH caps the deepest reachable
@@ -386,6 +392,7 @@ def get_threads(
     # Avatars for the list-view summary rows, and for each message in the nested threads.
     add_user_images_to_emails(account, threads, is_thread=False)
     add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
+    add_reaction_refusals(account, [m for thread in threads for m in thread["messages"]])
 
     # Counted off what the server returned: a page can hold rows that aren't shown (see above).
     return {"rows": threads, "mailbox": mailbox, "has_more": len(conversations) == limit}
@@ -973,6 +980,7 @@ def get_thread(account: str, thread_id: str) -> list[dict]:
             get_mailbox_id_by_role(account, "sent"),
         )
     )
+    add_reaction_refusals(account, mails)
     return add_user_images_to_emails(account, mails, is_thread=True)
 
 
@@ -1092,6 +1100,7 @@ def serialize_mail(mail: dict) -> dict:
         "text_body": "" if html else mail.get("text_body", ""),
         "in_reply_to": mail.get("in_reply_to"),
         "reacts_with": read_reactions(mail),
+        "mailing_list": cint(mail.get("mailing_list")),
         "unscreened": cint(is_unscreened_message(mail)),
         "attachments": serialize_attachments(mail.get("attachments", [])),
         # The part has no filename, so it never survives `serialize_attachments`: the UI asks for
@@ -1229,10 +1238,22 @@ def react(account: str, id: str, emoji: str) -> dict:
     if not identities:
         frappe.throw(_("This account has no address to send from."))
 
+    # Asked of the server, not the cache: a message cached before this was read doesn't say.
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.mail.email.get(ids=[id], properties=MAILING_LIST_PROPERTIES)
+    email = next(iter(h.result.items), None)
+    own = {i["email"].lower() for i in identities}
+    refusal = reaction_refusal(
+        {**target, "mailing_list": bool(email and from_mailing_list(email.to_wire()))},
+        own,
+        _own_reactions_to(account, target, own),
+    )
+    if refusal:
+        frappe.throw(refusal)
+
     from_email, from_name = reaction_identity(identities, account, target)
     recipients = reaction_recipients(identities, target, from_email)
-    if len(recipients) > MAX_REACTION_RECIPIENTS:
-        frappe.throw(_("This message went to too many people to react to."))
 
     subject = target.get("subject") or ""
     text_body, html_body = reaction_bodies(
@@ -1264,6 +1285,37 @@ def react(account: str, id: str, emoji: str) -> dict:
         "send_at": to_utc_z(doc.send_at),
         "undo_send_period": undo_send_period,
     }
+
+
+def _own_reactions_to(account: str, target: dict, own: set[str]) -> int:
+    """How many reactions the account has on this message already."""
+
+    return sum(
+        len(read_reactions(message))
+        for message in fetch_thread(account, target["thread_id"])
+        if message.get("in_reply_to") == target["message_id"]
+        and (message.get("from_email") or "").lower() in own
+    )
+
+
+def add_reaction_refusals(account: str, mails: list[dict]) -> None:
+    """Say on each message why it can't be reacted to, for the button to show. `react` asks again.
+
+    The list has its mail by now and this only annotates it, so identities that can't be read, as
+    on an account shared without sending, leave the reader's own addresses unknown rather than
+    failing the list.
+    """
+
+    try:
+        own = {i["email"].lower() for i in get_cached_identities(account)}
+    except (MethodError, RequestError, TransportError, CapabilityNotSupportedError, frappe.ValidationError):
+        own = set()
+
+    for mail in mails:
+        own_reactions = sum(
+            (reaction.get("from_email") or "").lower() in own for reaction in mail.get("reactions", [])
+        )
+        mail["cannot_react"] = reaction_refusal(mail, own, own_reactions)
 
 
 def reaction_identity(identities: list[dict], account: str, target: dict) -> tuple[str, str]:
@@ -1707,6 +1759,7 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
 
     add_user_images_to_emails(account, rows, is_thread=False)
     add_user_images_to_emails(account, [m for row in rows for m in row["messages"]], is_thread=True)
+    add_reaction_refusals(account, [m for row in rows for m in row["messages"]])
     return rows, total
 
 

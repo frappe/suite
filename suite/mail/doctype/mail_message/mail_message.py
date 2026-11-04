@@ -56,7 +56,7 @@ from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.quoted_content import strip_quote_trail
-from suite.mail.utils.reaction import read_reactions
+from suite.mail.utils.reaction import MAILING_LIST_PROPERTIES, from_mailing_list, read_reactions
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
 from suite.utils.dt import get_utc_now
@@ -90,6 +90,7 @@ EMAIL_PROPERTIES = [
     "textBody",
     "bodyValues",
     "attachments",
+    *MAILING_LIST_PROPERTIES,
 ]
 
 
@@ -1447,6 +1448,7 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
         "has_attachment": cint(message["hasAttachment"]),
         "keywords": json.dumps(message["keywords"], indent=4),
         "received_after": time_diff_in_seconds(received_at, sent_at),
+        "mailing_list": cint(from_mailing_list(message)),
     }
 
     for key in ["sender", "from"]:

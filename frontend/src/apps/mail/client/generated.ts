@@ -5354,6 +5354,8 @@ export type GetThreadsOutputMessage = {
   in_reply_to: string | null
   reacts_with: Array<string>
   reactions?: Array<GetThreadsOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5500,6 +5502,8 @@ export type GetUnifiedThreadsOutputMessage = {
   in_reply_to: string | null
   reacts_with: Array<string>
   reactions?: Array<GetUnifiedThreadsOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5739,6 +5743,8 @@ export type GetThreadOutputMessage = {
   in_reply_to: string | null
   reacts_with: Array<string>
   reactions?: Array<GetThreadOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5864,6 +5870,8 @@ export type SearchMailsOutputMessage = {
   in_reply_to: string | null
   reacts_with: Array<string>
   reactions?: Array<SearchMailsOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null

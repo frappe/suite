@@ -8,18 +8,16 @@
     <template #default="{ close }">
       <div
         v-if="reaction"
-        class="bg-surface-base flex items-center justify-center gap-2 rounded-full px-2 py-1 shadow-sm"
+        class="bg-surface-base flex items-center justify-center rounded-full p-1 shadow-sm"
       >
-        <div
+        <button
           v-for="r in reactionEmojis"
           :key="r"
-          class="bg-surface-base size-5 cursor-pointer rounded-full text-2xl"
+          class="hover:bg-surface-gray-2 focus-visible:bg-surface-gray-2 flex size-7 items-center justify-center rounded-full text-xl leading-none focus:outline-none"
           @click="() => (emoji = r) && close()"
         >
-          <button>
-            {{ r }}
-          </button>
-        </div>
+          {{ r }}
+        </button>
         <Button class="rounded-full" icon="lucide-plus" @click.stop="() => (reaction = false)" />
       </div>
       <div v-else class="bg-surface-base my-3 max-w-max transform rounded-6 px-4 sm:px-0">

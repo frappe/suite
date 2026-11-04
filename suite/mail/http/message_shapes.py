@@ -70,6 +70,9 @@ class Message(Copy):
     # isn't here. A reaction whose target is here shows under the target's `reactions` instead.
     reacts_with: list[str]
     reactions: NotRequired[list[Reaction]]
+    mailing_list: Flag
+    # Why this message can't be reacted to, in words for the reader.
+    cannot_react: NotRequired[str | None]
     subject: str | None
     html_body: str | None
     text_body: str | None
