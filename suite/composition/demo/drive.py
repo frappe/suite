@@ -82,16 +82,15 @@ CONVERSATIONS = (
 )
 
 
-def seed(fresh: bool = False) -> None:
-    """Create Northwind; refuse an existing dataset unless fresh=True."""
+def seed() -> None:
+    """Create Northwind; refuse an existing dataset. To start over, run reset, then seed."""
     with acting_as("Administrator"):
         try:
-            if fresh:
-                reset()
             if _exists():
                 print(
-                    "Northwind demo data already exists. Run suite.composition.demo.drive.reset first, "
-                    "or seed with fresh=True. To retry only Mail, run suite.composition.demo.mail.seed."
+                    "Northwind demo data already exists. To start over, run "
+                    "suite.composition.demo.drive.reset, then seed. "
+                    "To retry only Mail, run suite.composition.demo.mail.seed."
                 )
                 return
             print("Creating Northwind demo users...")
@@ -115,11 +114,11 @@ def seed(fresh: bool = False) -> None:
                 print(f"{person.email:30} {person.name:20} {person.job}")
             print(f"\nPublished beta brief: {get_url()}{drive.node_url(shared_nodes['launch brief'])}")
             if frappe.conf.mail:
-                mail.seed(fresh=fresh)
+                mail.seed()
         except Exception:
             frappe.db.rollback()
             print(
-                "Seed failed. Completed batches remain; run reset or seed(fresh=True) before retrying. "
+                "Seed failed. Completed batches remain; to start over, run reset, then seed. "
                 "If only Mail failed, suite.composition.demo.mail.seed adds what is missing."
             )
             raise

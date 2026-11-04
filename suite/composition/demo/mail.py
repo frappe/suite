@@ -6,8 +6,8 @@ The domain, accounts and mailing lists are made with Stalwart's management API a
 the `mail` site config. Each account is linked like any self-managed one: User Settings holds
 the address and a Stalwart app password. Mail is imported with JMAP Email/import so it keeps its
 past dates; events go through Calendar's invite flow, so every participant holds a copy with the
-same UID. Seeding again adds only what is missing. fresh=True empties the Northwind mailboxes and
-calendars first; reset removes the accounts, lists and domain.
+same UID. Seeding again adds only what is missing. To start over, run
+suite.composition.demo.drive.reset, then seed; reset removes the accounts, lists and domain.
 """
 
 import re
@@ -46,7 +46,7 @@ CALENDARS = "urn:ietf:params:jmap:calendars"
 MANAGEMENT = "urn:stalwart:jmap"
 
 
-def seed(fresh: bool = False) -> None:
+def seed() -> None:
     """Create the Northwind mailboxes, mail and calendars; add only what is missing."""
     with acting_as("Administrator"):
         missing = [person.email for person in PEOPLE if not frappe.db.exists("User", person.email)]
@@ -57,10 +57,6 @@ def seed(fresh: bool = False) -> None:
             for person in PEOPLE:
                 link(stalwart, person.email)
                 frappe.db.commit()
-            if fresh:
-                for person in PEOPLE:
-                    stalwart.mailbox(person.email).empty()
-                print("Emptied the Northwind mailboxes and calendars.")
             accept_colleagues()
             now = datetime.now(ZoneInfo(get_system_timezone()))
             delivered = deliver(stalwart, [*letters(now), *invitations(now)])
@@ -214,12 +210,6 @@ class Mailbox:
     def import_emails(self, emails: dict[str, dict]) -> None:
         if emails:
             self.call("Email/import", emails=emails)
-
-    def empty(self) -> None:
-        for object_type in ("Email", "CalendarEvent"):
-            ids = self.call(f"{object_type}/query", limit=1000)["ids"]
-            if ids:
-                self.call(f"{object_type}/set", destroy=ids)
 
 
 def account_payload(person: Person, domain: str) -> dict:
