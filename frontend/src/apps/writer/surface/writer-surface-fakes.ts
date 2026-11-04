@@ -90,8 +90,9 @@ export async function fakeDrive() {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
   return {
     DriveDocumentHeader: define({
+      props: ['saveState', 'viewOnly'],
       emits: ['update:panel'],
-      setup: (_, { emit, slots }) => {
+      setup: (props, { emit, slots }) => {
         const openVersions = {
           'data-open-versions': '',
           onClick: () => emit('update:panel', 'versions'),
@@ -101,6 +102,11 @@ export async function fakeDrive() {
           onClick: () => emit('update:panel', 'comments'),
         }
         return () => [
+          render('span', {
+            'data-header': '',
+            'data-save-state': props.saveState,
+            'data-view-only': String(!!props.viewOnly),
+          }),
           render('button', openVersions),
           render('button', openComments),
           slots.actions?.(),

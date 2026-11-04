@@ -71,6 +71,10 @@ export async function mountedSurface(
   return root
 }
 
+export function navigateTo(path: string) {
+  return openedApp!.config.globalProperties.$router.push(path)
+}
+
 export async function openedSurface(...args: Parameters<typeof mountedSurface>) {
   const root = await mountedSurface(...args)
   await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())

@@ -49,7 +49,6 @@ function settingsOf(stored: unknown): WriterSettings {
   return {}
 }
 
-/** Writer keeps editable body state; Drive selects the open document's access scope. */
 function statusOf(error: unknown) {
   if (error instanceof TransportError) {
     return error.status
@@ -58,6 +57,7 @@ function statusOf(error: unknown) {
   return null
 }
 
+/** Writer keeps editable body state; Drive selects the open document's access scope. */
 export function createWriterDocument(
   session: Pick<DocumentSession, 'contentDocname' | 'credentials'>,
 ) {

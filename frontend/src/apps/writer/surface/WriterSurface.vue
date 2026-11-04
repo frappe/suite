@@ -299,20 +299,28 @@ const showEditingPaused = computed(
 )
 
 const headerSaveState = computed(() => {
-  if (savingPaused.value) {
+  if (savingPaused.value || hasFailedToOpen.value) {
     return null
   }
 
   return saveState.value
 })
 
-const isViewOnly = computed(() => !editable.value && !showEditingPaused.value)
+const isViewOnly = computed(
+  () => !editable.value && !showEditingPaused.value && !hasFailedToOpen.value,
+)
 
 const hasLostReadAccess = computed(() => !readable.value)
 const hasFailedToOpen = computed(
   () => collabMode.value === 'failed' || documentResource.readFailure !== null,
 )
-const failureMessage = computed(() => documentResource.readFailure ?? openFailure.value)
+const failureMessage = computed(() => {
+  if (collabMode.value === 'failed') {
+    return openFailure.value
+  }
+
+  return documentResource.readFailure
+})
 useHideRail(() => !hasLostReadAccess.value && !hasFailedToOpen.value)
 const isLoading = computed(() => !documentResource.doc || collabMode.value === 'opening')
 

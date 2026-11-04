@@ -1,3 +1,4 @@
+import { CollabOpenError } from '@suite/collab-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -48,12 +49,24 @@ vi.mock('./VersionPreview.vue', async () =>
 )
 
 const SERVER_FAILURE = 'The server had a problem opening this document. Try again in a moment.'
+const GENERIC_FAILURE = "This document couldn't be opened."
+const SIGNED_OUT = "You're signed out. Sign in to open this document."
+
+function forbidden() {
+  return new TransportError({ type: 'Permission', message: '', status: 403 })
+}
+
 function serverError() {
   return new TransportError({ type: 'Server', message: '', status: 500 })
 }
 
+function headerOf(root: Element) {
+  const header = root.querySelector<HTMLElement>('[data-header]')!
+  return { saveState: header.dataset.saveState, viewOnly: header.dataset.viewOnly }
+}
+
 let rowReads = 0
-function readsRow(fails: () => boolean) {
+function readsRow(fails: () => boolean, failure: () => TransportError = serverError) {
   query.mockImplementation(async (operation: unknown) => {
     if (operation !== api.writer.documents.get) {
       return {}
@@ -61,7 +74,7 @@ function readsRow(fails: () => boolean) {
 
     rowReads++
     if (fails()) {
-      throw serverError()
+      throw failure()
     }
 
     return { name: 'content-1', collab: 1, settings: {}, html: '', content: '' }
@@ -123,5 +136,52 @@ describe('Writer surface failing to open', () => {
     expect(railHidden.value).toBe(true)
     expect(rowReads).toBe(1)
     expect(rooms.opens).toBe(2)
+  })
+
+  it('shows the failed page with no second room when the row read is refused', async () => {
+    liveRoom()
+    readsRow(() => true, forbidden)
+    const root = await mountedSurface()
+
+    await vi.waitFor(() => expect(root.textContent).toContain(GENERIC_FAILURE))
+    expect(buttonLabelled(root, 'Try again')).toBeDefined()
+    expect(railHidden.value).toBe(false)
+    expect(rooms.opens).toBe(1)
+
+    buttonLabelled(root, 'Try again')!.click()
+    await vi.waitFor(() => expect(rowReads).toBe(2))
+    expect(rooms.opens).toBe(1)
+  })
+
+  it("gives the room's reason when the row and the room both fail", async () => {
+    readsRow(() => true, forbidden)
+    rooms.openFailure = new CollabOpenError(401, 'signed_out')
+    const root = await mountedSurface()
+
+    await vi.waitFor(() => expect(root.textContent).toContain(SIGNED_OUT))
+    expect(root.textContent).not.toContain(GENERIC_FAILURE)
+  })
+
+  it('claims nothing in the header on a failed page', async () => {
+    liveRoom()
+    let isFailing = true
+    readsRow(() => isFailing)
+    const root = await mountedSurface()
+    await vi.waitFor(() => expect(buttonLabelled(root, 'Try again')).toBeDefined())
+    expect(headerOf(root)).toEqual({ saveState: undefined, viewOnly: 'false' })
+
+    isFailing = false
+    buttonLabelled(root, 'Try again')!.click()
+    await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())
+    expect(headerOf(root)).toEqual({ saveState: 'clean', viewOnly: 'false' })
+  })
+
+  it('claims nothing in the header when the room fails to open', async () => {
+    readsRow(() => false)
+    rooms.openFailure = serverError()
+    const root = await mountedSurface()
+
+    await vi.waitFor(() => expect(buttonLabelled(root, 'Try again')).toBeDefined())
+    expect(headerOf(root)).toEqual({ saveState: undefined, viewOnly: 'false' })
   })
 })
