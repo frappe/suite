@@ -69,8 +69,9 @@ function separators() {
 }
 
 // Puts frappe-ui's token values for a theme on <html>, the way its stylesheet
-// does: light on :root, dark over it. Without them the colours read their
-// fallbacks, which differ from each other in both themes.
+// does: light on :root, dark over it. Without them every colour reads its hex
+// fallback, and the tint and separator fallbacks always differ, so the check
+// would pass without testing anything.
 const style = document.documentElement.style
 function applyTheme(theme: 'light' | 'dark'): void {
   const vars =
