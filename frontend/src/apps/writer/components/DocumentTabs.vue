@@ -51,6 +51,7 @@
 
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
+import type { ContextMenuOptions } from 'frappe-ui'
 import { ContextMenu, TabList, Tabs, TabTrigger, TextInput, vOnOutsideClick } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
@@ -146,7 +147,7 @@ function copyTabLink(id: string) {
   return navigator.clipboard.writeText(`${page}#${id}`)
 }
 
-function tabActions(id: string) {
+function tabActions(id: string): ContextMenuOptions {
   const copy = { label: 'Copy link', icon: 'lucide-link', onClick: () => copyTabLink(id) }
   if (!props.editable) return [copy]
   return [
