@@ -95,7 +95,7 @@ class TestDemoSeed(IntegrationTestCase):
         ensure_user(self.colleague)
         self.addCleanup(remove_user, self.colleague)
         self.addCleanup(reset_demo)
-        frappe.db.set_single_value("Suite Settings", BRANDING)
+        frappe.db.set_single_value("Suite Settings", {**BRANDING})
         frappe.db.commit()
 
     def store_colleague_files(self) -> tuple[str, str]:
