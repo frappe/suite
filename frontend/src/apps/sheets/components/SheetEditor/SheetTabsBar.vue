@@ -68,8 +68,8 @@
           <span
             v-for="p in peersBySubSheet.get(name)!.slice(0, 3)"
             :key="p.user"
-            class="sn-tab-peer-dot"
-            :style="{ '--rc': p.color }"
+            class="sn-tab-peer-dot sn-peer"
+            :style="colourStyle(p.colour)"
             :title="p.full_name"
           />
           <span
@@ -96,7 +96,9 @@
 // tabs and reports pointer events back.
 import { Button } from 'frappe-ui'
 
-type Peer = { user: string; full_name: string; color: string }
+import { colourStyle, type PeerColour } from '@/platform/collab/colours'
+
+type Peer = { user: string; full_name: string; colour: PeerColour }
 type SelectionStats = { count: number; sum: number | null; avg: number | null }
 
 defineProps<{

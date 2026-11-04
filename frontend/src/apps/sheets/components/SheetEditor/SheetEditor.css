@@ -339,17 +339,15 @@
   height: 12px;
 }
 
-/* Remote selection rectangle — solid 2px border in the peer's hashed
-   colour plus a soft fill so multi-cell ranges read as a region, not just
-   an outline. `color-mix` falls back to a transparent rect on browsers
-   that don't support it (all evergreen browsers do, and we use Chromium /
-   WebKit / Firefox latest). */
+/* Remote selection rectangle: a 2px outline in the peer's colour and their
+   selection shade behind the range, so it reads as a region. Colours are
+   Writer's (`.sn-peer` in SheetEditor.global.css picks the theme's shades). */
 .sn-remote-cursor {
   position: absolute;
   pointer-events: none;
   box-sizing: border-box;
   border: 2px solid var(--rc);
-  background: color-mix(in srgb, var(--rc) 10%, transparent);
+  background: var(--rc-selection);
   /* Default: no animation. The class below opts in for one paint cycle
      when the peer actually changes cells (vs. local scroll). */
   transition: none;
@@ -361,19 +359,22 @@
     width 0.12s ease-out,
     height 0.12s ease-out;
 }
+/* The name flag, styled as Writer's caret label: tint behind, ink text,
+   a 1px ring in the solid colour. */
 .sn-remote-cursor-label {
   position: absolute;
   top: -18px;
-  left: -1px;
-  background: var(--rc);
-  color: var(--surface-base);
+  left: -2px;
+  background: var(--rc-tint);
+  box-shadow: inset 0 0 0 1px var(--rc);
+  color: var(--rc-ink);
   font-size: 10px;
   font-weight: 600;
   padding: 1px 5px;
   border-radius: 3px 3px 3px 0;
   white-space: nowrap;
   line-height: 16px;
-  max-width: 140px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

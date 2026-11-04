@@ -305,7 +305,7 @@
         <div
           v-for="cur in visibleRemoteCursors"
           :key="cur.user"
-          class="sn-remote-cursor"
+          class="sn-remote-cursor sn-peer"
           :class="{ 'sn-remote-cursor--moved': cur.justMoved }"
           :style="cur.style"
           :title="cur.fullName"
@@ -787,6 +787,7 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { useCurrentUser } from '@/boot/session'
+import { colourStyle } from '@/platform/collab/colours'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -2446,7 +2447,7 @@ const {
 // so you can see at a glance who's looking at which tab without having
 // to switch. Caps at 3 dots + "+N" overflow per tab.
 const peersBySubSheet = computed(() => {
-  const out = new Map() // name → Array<{user, color, full_name}>
+  const out = new Map() // name → Array<{user, colour, full_name}>
   for (const u of presentUsers.value) {
     if (!u.sub_sheet) continue
     if (!out.has(u.sub_sheet)) out.set(u.sub_sheet, [])
@@ -2500,8 +2501,6 @@ const visibleRemoteCursors = computed(() => {
       return {
         user,
         firstName: cursor.firstName || cursor.initials,
-        initials: cursor.initials,
-        color: cursor.color,
         fullName: cursor.fullName,
         justMoved,
         style: {
@@ -2509,7 +2508,7 @@ const visibleRemoteCursors = computed(() => {
           top: tl.y + 'px',
           width: width + 'px',
           height: height + 'px',
-          '--rc': cursor.color,
+          ...colourStyle(cursor.colour),
         },
       }
     })

@@ -1,6 +1,8 @@
 // Who else has the spreadsheet open, as the editor draws them (like Google
 // Sheets): an avatar each in the header, and each editor's selected range
 // outlined in their colour on the sheet they are on, their name on hover.
+// Colours are Writer's (platform/collab/colours), so a person has one colour
+// across Suite.
 // Viewers get an avatar but no box: the room sends a tab's selection only
 // while it can write.
 //
@@ -10,11 +12,11 @@
 import type * as Y from 'yjs'
 
 import type { Peer, RoomPresence } from '@/platform/collab'
-import { assignColours } from '@/platform/collab/colours'
+import { GUEST_USER, personKey, roomColours, type PeerColour } from '@/platform/collab/colours'
 
 import { readSavedSelection, selectionFromIds, selectionToIds, type Selection } from './selection'
 
-export const GUEST_USER = 'Guest'
+export { GUEST_USER }
 
 /** An avatar in the header (SheetTopbarActions, SheetTabsBar). */
 export interface PresentUser {
@@ -23,7 +25,7 @@ export interface PresentUser {
   first_name: string
   initials: string
   user_image: string
-  color: string
+  colour: PeerColour
   /** The sheet they are on; null for a viewer, whose selection isn't sent. */
   sub_sheet: string | null
 }
@@ -34,7 +36,7 @@ export interface RemoteCursor {
   col: number
   range: { r0: number; c0: number; r1: number; c1: number }
   subSheet: string
-  color: string
+  colour: PeerColour
   fullName: string
   firstName: string
   initials: string
@@ -45,9 +47,6 @@ export interface Person {
   fullName: string
   image: string
 }
-
-// Who a tab belongs to; every guest tab is its own person.
-const personKey = (user: string, pid: number) => (user === GUEST_USER ? `Guest ${pid}` : user)
 
 function nameOf(user: string, pid: number, person: (user: string) => Person): Person {
   if (user === GUEST_USER) {
@@ -64,26 +63,6 @@ function initialsOf(fullName: string): string {
     .join('')
 }
 
-/**
- * Each tab's colour. People rank by their first tab's arrival, then by key, so
- * every tab ranks the same people the same way (as Writer's carets).
- */
-export function peerColours(peers: Peer[], own: Peer): Map<number, string> {
-  const first = new Map<string, number>()
-  for (const { user, pid, arrival } of [own, ...peers]) {
-    const key = personKey(user, pid)
-    first.set(key, Math.min(arrival ?? Infinity, first.get(key) ?? Infinity))
-  }
-  const ranked = [...first]
-    .sort(([k1, a1], [k2, a2]) => (a1 !== a2 ? Math.sign(a1 - a2) : k1 < k2 ? -1 : +(k1 > k2)))
-    .map(([key]) => key)
-  const colours = assignColours(ranked)
-  const out = new Map<number, string>()
-  for (const { user, pid } of [own, ...peers])
-    out.set(pid, colours.get(personKey(user, pid))!.light.solid)
-  return out
-}
-
 /** Everyone else in the room, read from the room's presence against the doc's row/col ids now. */
 export function readPresence(
   presence: Pick<RoomPresence, 'peers' | 'ownPid' | 'ownArrival' | 'awareness'>,
@@ -97,7 +76,7 @@ export function readPresence(
     arrival: presence.ownArrival,
     idleSince: null,
   }
-  const colours = peerColours(presence.peers, own)
+  const colours = roomColours(presence.peers, own)
   const states = presence.awareness.getStates() as Map<number, { cursor?: unknown }>
   const users: PresentUser[] = []
   const cursors = new Map<string, RemoteCursor>()
@@ -107,7 +86,8 @@ export function readPresence(
     const { fullName, image } = nameOf(peer.user, peer.pid, person)
     const first = fullName.trim().split(/\s+/)[0] || fullName
     const initials = initialsOf(fullName)
-    const color = colours.get(peer.pid)!
+    const colour = colours.get(peer.pid)!
+    const key = personKey(peer.user, peer.pid)
     const sel = selectionFromIds(doc, readSavedSelection(states.get(peer.pid)?.cursor))
     if (sel) {
       cursors.set(String(peer.pid), {
@@ -115,13 +95,12 @@ export function readPresence(
         col: sel.c0,
         range: { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 },
         subSheet: sel.sheet,
-        color,
+        colour,
         fullName,
         firstName: first,
         initials,
       })
     }
-    const key = personKey(peer.user, peer.pid)
     if (seen.has(key)) continue
     seen.add(key)
     users.push({
@@ -130,7 +109,7 @@ export function readPresence(
       first_name: first,
       initials,
       user_image: image,
-      color,
+      colour,
       sub_sheet: sel?.sheet ?? null,
     })
   }

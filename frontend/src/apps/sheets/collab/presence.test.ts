@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import type { Peer } from '@/platform/collab'
+import { roomColours } from '@/platform/collab/colours'
 
-import { peerColours, readPresence, sendSelection } from './presence'
+import { readPresence, sendSelection } from './presence'
 import { addSheet, axis, initDoc } from './schema'
 import { readSavedSelection, selectionToIds } from './selection'
 
@@ -58,7 +59,7 @@ describe('presence', () => {
     expect(users).toEqual([
       expect.objectContaining({ user: 'ann@x', full_name: 'Ann Lee', sub_sheet: 'Sheet1' }),
     ])
-    expect(cursors.get('7')!.color).toBe(users[0]!.color)
+    expect(cursors.get('7')!.colour).toBe(users[0]!.colour)
   })
 
   it('keeps the box on its cells when rows are inserted above it', () => {
@@ -105,15 +106,15 @@ describe('presence', () => {
     expect(readPresence(p, doc, 'me@x', names).cursors.size).toBe(0)
   })
 
-  it('gives each person the same colour in every tab', () => {
-    const ann = peer(3, 'ann@x', 2)
-    const bob = peer(4, 'bob@x', 3)
-    const me = peer(1, 'me@x', 1)
-    const fromMe = peerColours([ann, bob], me)
-    const fromAnn = peerColours([me, bob], ann)
-    expect(fromAnn.get(4)).toBe(fromMe.get(4))
-    expect(fromAnn.get(1)).toBe(fromMe.get(1))
-    expect(new Set(fromMe.values()).size).toBe(3)
+  it('gives each person the colour Writer gives them, both shades', () => {
+    const doc = sheetDoc()
+    const peers = [peer(3, 'ann@x', 2), peer(4, 'bob@x', 3), peer(5, 'Guest', 4)]
+    const p = presenceOf(doc, peers, {})
+    const own = { pid: 1, user: 'me@x', arrival: 1, idleSince: null }
+    const writer = roomColours(peers, own)
+    const { users } = readPresence(p, doc, 'me@x', names)
+    expect(users.map((u) => u.colour)).toEqual([writer.get(3), writer.get(4), writer.get(5)])
+    expect(users[0]!.colour).toHaveProperty('dark.ink')
   })
 
   it("sends this tab's selection by ids", () => {
