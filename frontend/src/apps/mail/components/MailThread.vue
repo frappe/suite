@@ -181,28 +181,33 @@
                           <Badge v-if="mail.draft" :label="__('Draft')" theme="red" class="w-fit" />
                           <MailDate :datetime="mail.received_at" />
                         </div>
-                        <MailActions
-                          v-if="!readonly"
-                          :mailbox
-                          :mail
-                          :draft-mail="draftMails[mail.name]"
-                          :is-collapsed="isCollapsed(mail)"
-                          :show-reply-all="showReplyAll(mail)"
-                          :pop-out-draft
-                          :reply
-                          :reply-all
-                          :forward
-                          :reload-mails="handleReload"
-                          :drop-mail
-                          :thread="thread"
-                          @set-flagged="onSetFlagged"
-                          @sync-unseen="handleSyncUnseen"
-                          @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
-                          @mark-mail-spam="
-                            (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
-                          "
-                          @delete-mail="(m: Mail) => emit('deleteMail', m)"
-                        />
+                        <div v-if="!readonly" class="flex items-center gap-1">
+                          <!-- .stop: this row folds the message when pressed. -->
+                          <div v-if="!mail.draft" class="flex" @click.stop>
+                            <ReactionPicker @pick="(emoji: string) => react(mail, emoji)" />
+                          </div>
+                          <MailActions
+                            :mailbox
+                            :mail
+                            :draft-mail="draftMails[mail.name]"
+                            :is-collapsed="isCollapsed(mail)"
+                            :show-reply-all="showReplyAll(mail)"
+                            :pop-out-draft
+                            :reply
+                            :reply-all
+                            :forward
+                            :reload-mails="handleReload"
+                            :drop-mail
+                            :thread="thread"
+                            @set-flagged="onSetFlagged"
+                            @sync-unseen="handleSyncUnseen"
+                            @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
+                            @mark-mail-spam="
+                              (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
+                            "
+                            @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                          />
+                        </div>
                       </div>
                       <!-- An expanded mail always needs the gap between header and body —
 								     keying it on the preview alone left image-only mails (empty text
@@ -430,6 +435,14 @@
                                         'flex gap-1 sm:-mr-1.5'
                                 "
                               >
+                                <!-- .stop: this row folds the message when pressed. -->
+                                <div
+                                  v-if="!isCollapsed(mail) && !mail.draft"
+                                  class="flex"
+                                  @click.stop
+                                >
+                                  <ReactionPicker @pick="(emoji: string) => react(mail, emoji)" />
+                                </div>
                                 <MailActions
                                   :mailbox
                                   :mail
@@ -630,12 +643,10 @@
                              message, not part of what was written. -->
                         <MessageReactions
                           v-if="!mail.draft"
-                          :reactions="mail.reactions"
-                          :mail-id="mail.id"
-                          :account="scopeAccountId"
+                          :reactions="reactionsOn(mail)"
                           :readonly="readonly"
                           class="mt-4"
-                          @reload="reload"
+                          @react="(emoji: string) => react(mail, emoji)"
                         />
                       </div>
                     </template>
@@ -681,6 +692,11 @@
                   :variant="isMobile ? 'ghost' : 'outline'"
                   :class="{ '!h-16 flex-1 rounded-none': isMobile }"
                   @click="action.onClick"
+                />
+                <ReactionPicker
+                  :variant="isMobile ? 'ghost' : 'outline'"
+                  :class="{ '!h-16 !w-16 shrink-0 rounded-none': isMobile }"
+                  @pick="(emoji: string) => react(thread.at(-1)!, emoji)"
                 />
               </div>
             </div>
@@ -758,6 +774,7 @@ import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
+import ReactionPicker from '@/apps/mail/components/ReactionPicker.vue'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import SenderCard from '@/apps/mail/components/SenderCard.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
@@ -770,6 +787,7 @@ import {
   composeWindowDraft,
   isComposeWindowOpen,
 } from '@/apps/mail/composables/useComposeWindow'
+import { useMessageReactions } from '@/apps/mail/composables/useMessageReactions'
 import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
 import { useUnsubscribe } from '@/apps/mail/composables/useUnsubscribe'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
@@ -1551,6 +1569,15 @@ const handleReload = (isUndo = false) => {
   }
   reload()
 }
+// Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
+// added to it out of sight. The fresh rows sync in place (see syncWithSource).
+const { reactionsOn, react } = useMessageReactions(
+  () => scopeAccountId.value,
+  () => {
+    if (messages?.length) emit('reloadMails')
+    else void threadFallback.refetch().catch(() => {})
+  },
+)
 const replyForwardActions = computed(() =>
   [
     {
