@@ -19562,10 +19562,6 @@
       },
       "output": {
         "properties": {
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
           "id": {
             "anyOf": [
               {
@@ -19577,21 +19573,6 @@
             ],
             "title": "Id"
           },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
           "thread_id": {
             "anyOf": [
               {
@@ -19602,52 +19583,13 @@
               }
             ],
             "title": "Thread Id"
-          },
-          "submission_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Submission Id"
-          },
-          "send_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Send At"
-          },
-          "undo_send_period": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Undo Send Period"
           }
         },
         "required": [
-          "name",
           "id",
-          "status",
-          "error",
-          "thread_id",
-          "submission_id",
-          "send_at",
-          "undo_send_period"
+          "thread_id"
         ],
-        "title": "DraftResult",
+        "title": "SendResult",
         "type": "object"
       },
       "errors": [
@@ -21942,46 +21884,6 @@
         ],
         "title": "IdResult",
         "type": "object"
-      },
-      "errors": [
-        "PermissionError",
-        "ValidationError"
-      ],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "undo_reaction",
-      "kind": "mutation",
-      "publicName": "scheduled.undoReaction",
-      "page": null,
-      "envelope": "message",
-      "method": "POST",
-      "path": "/api/method/suite.mail.api.scheduled.undo_reaction",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "properties": {
-          "account": {
-            "title": "Account",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "account",
-          "id"
-        ],
-        "title": "IdInput",
-        "type": "object"
-      },
-      "output": {
-        "type": "null"
       },
       "errors": [
         "PermissionError",

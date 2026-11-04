@@ -1,8 +1,8 @@
 import { toast } from 'frappe-ui'
-import { reactive } from 'vue'
+import { inject, reactive } from 'vue'
 
 import { api, useMutation } from '@/api'
-import type { Mail, MailReaction } from '@/apps/mail/types'
+import type { Mail, MailReaction, UserResource } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useOwnEmails, useUndo } from '@/apps/mail/utils/composables'
 import { hasReacted } from '@/apps/mail/utils/reactions'
@@ -12,16 +12,20 @@ import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
  * Reacting to the messages of one open conversation.
  *
  * A message can be reacted to from its header, from its chips, and, for the newest, from beside
- * Forward, so what the reader just sent is held here for all of them, until the thread comes back
- * with it. A reaction is a mail of its own, folded onto its target by the server (see
- * collapse_reactions). Delivered mail can't be recalled, so the only way to take one back is the
- * Undo on the toast, while the server still holds it.
+ * Forward, so what the reader just reacted with is held here for all of them, until the thread comes
+ * back with it. A reaction is a mail of its own, folded onto its target by the server (see
+ * collapse_reactions).
+ *
+ * Delivered mail can't be recalled, so the only way to take a reaction back is the Undo on the toast.
+ * Unlike a sent mail, the wait is held here and not on the server: a reaction nothing has been told
+ * about yet is not a pending send, so it doesn't bring the Outbox out to show it. Closing the page
+ * during the wait drops the reaction, which is the cheaper way for this to fail.
  */
 export function useMessageReactions(account: () => string, reload: () => void) {
+  const user = inject<UserResource>('$user')
   const ownEmails = useOwnEmails()
   const { setUndoAction, retireUndoAction } = useUndo()
   const send = useMutation(api.mail.messages.react)
-  const undo = useMutation(api.mail.scheduled.undoReaction)
 
   const sending = reactive(new Map<string, MailReaction[]>())
 
@@ -38,51 +42,44 @@ export function useMessageReactions(account: () => string, reload: () => void) {
       (sending.get(mail.id) ?? []).filter((reaction) => reaction.emoji !== emoji),
     )
 
-  async function react(mail: Mail, emoji: string) {
-    if (mail.cannot_react) return raiseToast(mail.cannot_react, 'error')
+  // As for a sent mail (see useComposeMail): Undo on the toast and in the ⌘Z slot for the same time,
+  // whichever fires taking the other with it. It outlives the view, as the wait does.
+  function react(mail: Mail, emoji: string) {
+    if (mail.cannot_react) return void raiseToast(mail.cannot_react, 'error')
     if (hasReacted(reactionsOn(mail), emoji, ownEmails.value))
-      return raiseToast(__('You already reacted with {0}.', [emoji]))
+      return void raiseToast(__('You already reacted with {0}.', [emoji]))
 
     const from_email = [...ownEmails.value][0] ?? null
     sending.set(mail.id, [...(sending.get(mail.id) ?? []), { emoji, from_name: null, from_email }])
-    try {
-      const result = await send.run({ account: account(), id: mail.id, emoji })
-      reload()
-      if (result.submission_id)
-        offerUndo(mail, emoji, result.submission_id, result.undo_send_period)
-    } catch (error) {
-      stopShowing(mail, emoji)
-      raiseToast(
-        error instanceof Error && error.message
-          ? error.message
-          : __('Could not react to this message.'),
-        'error',
-      )
-    }
-  }
 
-  // As for a sent mail (see useComposeMail): Undo on the toast and in the ⌘Z slot for as long as the
-  // server holds delivery, whichever fires taking the other with it.
-  function offerUndo(mail: Mail, emoji: string, submissionId: string, period?: number | null) {
     const accountId = account()
-    const windowMs = (period ?? undoSendPeriodOf()) * 1000
+    const windowMs = undoSendPeriodOf(user?.data) * 1000
+
+    const deliver = async () => {
+      retireUndoAction(undoNow)
+      try {
+        await send.run({ account: accountId, id: mail.id, emoji })
+        reload()
+      } catch (error) {
+        stopShowing(mail, emoji)
+        raiseToast(
+          error instanceof Error && error.message
+            ? error.message
+            : __('Could not react to this message.'),
+          'error',
+        )
+      }
+    }
+    const waiting = setTimeout(() => void deliver(), windowMs)
+
     const undoNow = () => {
-      toast.dismiss(sentToast)
+      clearTimeout(waiting)
+      toast.dismiss(shown)
       retireUndoAction(undoNow)
       stopShowing(mail, emoji)
-      undo
-        .run({ account: accountId, id: submissionId })
-        .then(() => {
-          reload()
-          raiseToast(__('Reaction removed.'))
-        })
-        .catch(() =>
-          raiseToast(__('It was already delivered, so it can’t be taken back.'), 'error'),
-        )
     }
     setUndoAction(undoNow, { outlivesView: true })
-    setTimeout(() => retireUndoAction(undoNow), windowMs)
-    const sentToast = raiseToast(
+    const shown = raiseToast(
       __('Reacted with {0}.', [emoji]),
       'success',
       { label: __('Undo'), onClick: undoNow },

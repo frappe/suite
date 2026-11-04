@@ -6171,16 +6171,7 @@ const operationCreateMail: MutationRef<CreateMailInput, CreateMailOutput, Create
 
 export type ReactInput = { account: string; id: string; emoji: string }
 
-export type ReactOutput = {
-  name: string
-  id: string | null
-  status: string
-  error: string | null
-  thread_id: string | null
-  submission_id: string | null
-  send_at: string | null
-  undo_send_period: number | null
-}
+export type ReactOutput = { id: string | null; thread_id: string | null }
 
 export type ReactError = 'PermissionError' | 'ValidationError'
 
@@ -6934,30 +6925,6 @@ const operationCancelScheduledMail: MutationRef<
   loadValidators: async () => (await import('./validators')).operationCancelScheduledMail,
 }
 
-export type UndoReactionInput = { account: string; id: string }
-
-export type UndoReactionOutput = null
-
-export type UndoReactionError = 'PermissionError' | 'ValidationError'
-
-const operationUndoReaction: MutationRef<UndoReactionInput, UndoReactionOutput, UndoReactionError> =
-  {
-    id: 'undo_reaction',
-    owner: 'mail',
-    kind: 'mutation',
-    publicName: 'scheduled.undoReaction',
-    empty: true,
-    envelope: 'message',
-    method: 'POST',
-    path: '/api/method/suite.mail.api.scheduled.undo_reaction',
-    prefix: '/api/suite/mail/',
-    pathParams: [],
-    nodeParams: [],
-    entity: null,
-    errors: ['PermissionError', 'ValidationError'],
-    loadValidators: async () => (await import('./validators')).operationUndoReaction,
-  }
-
 export type RetryFailedMailInput = { account: string; id: string }
 
 export type RetryFailedMailOutput = { id: string | null }
@@ -7438,7 +7405,6 @@ export const api = {
     reschedule: operationRescheduleMail,
     sendNow: operationSendScheduledMailNow,
     cancel: operationCancelScheduledMail,
-    undoReaction: operationUndoReaction,
     retry: operationRetryFailedMail,
     dismiss: operationDismissFailedMail,
   },

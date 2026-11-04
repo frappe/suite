@@ -6,6 +6,7 @@ import unittest
 from typing import ClassVar
 from unittest import mock
 
+import frappe
 from jmap.core.errors import CapabilityNotSupportedError
 
 from suite.mail.api import mail as mail_api
@@ -372,6 +373,59 @@ class WhatCountsAsAMailingList(unittest.TestCase):
 
     def test_another_precedence_is_not_a_list(self):
         self.assertFalse(from_mailing_list({"header:Precedence:asText": "first-class"}))
+
+
+class Sending(unittest.TestCase):
+    def react(self, status: str = "Submitted", list_mail: bool = False) -> tuple[mock.Mock, mock.Mock, dict]:
+        target = {
+            "id": "m1",
+            "thread_id": "t1",
+            "message_id": "m1@example.com",
+            "subject": "Plans",
+            "from_email": "ana@example.com",
+            "from_name": "Ana",
+            "recipients": [{"type": "To", "email": "me@frappe.io"}],
+        }
+        doc = mock.Mock(status=status, error_message=None, id="r1", thread_id="t1", submission_id="s1")
+        client = mock.MagicMock()
+        batch = client.batch.return_value.__enter__.return_value
+        headers = {"header:List-Id:asText": "a list"} if list_mail else {}
+        batch.mail.email.get.return_value.result.items = [mock.Mock(to_wire=lambda: headers)]
+        create = mock.Mock(return_value=doc)
+        with (
+            mock.patch.object(mail_api, "get_messages", return_value=[target]),
+            mock.patch.object(
+                mail_api, "get_identities", return_value=[{"email": "me@frappe.io", "_name": "Me"}]
+            ),
+            mock.patch.object(mail_api, "get_account_client", return_value=client),
+            mock.patch.object(mail_api, "fetch_thread", return_value=[]),
+            mock.patch.object(mail_api, "get_user_for_jmap_account", return_value="me@frappe.io"),
+            mock.patch.object(mail_api.frappe.db, "get_value", return_value=None),
+            mock.patch.object(mail_api.MailQueue, "_create", create),
+        ):
+            result = mail_api.react("acct", "m1", "\U0001f602")
+        return create, batch, result
+
+    def test_it_goes_now_with_no_hold_that_would_show_in_the_outbox(self):
+        create, _batch, _result = self.react()
+        self.assertIsNone(create.call_args.kwargs.get("send_at"))
+
+    def test_it_leaves_no_record_in_the_outboxs_history(self):
+        _create, batch, _result = self.react()
+        batch.submission.email_submission.set.assert_called_once_with(destroy=["s1"])
+
+    def test_a_send_that_failed_is_reported_and_has_no_record_to_remove(self):
+        with self.assertRaises(frappe.ValidationError):
+            self.react(status="Failed")
+
+    def test_mail_from_a_list_is_refused_before_anything_is_sent(self):
+        target_create = mock.Mock()
+        with (
+            mock.patch.object(mail_api.MailQueue, "_create", target_create),
+            self.assertRaises(frappe.ValidationError),
+        ):
+            self.react(list_mail=True)
+        target_create.assert_not_called()
 
 
 class WhoItGoesTo(unittest.TestCase):

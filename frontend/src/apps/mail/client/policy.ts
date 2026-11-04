@@ -351,8 +351,7 @@ function messageInvalidates(id: string, publicName: string | undefined, input: u
   if ((id === 'create_mail' || id === 'update_draft_mail') && !sends)
     return id === 'create_mail' ? ['mail.get_mailboxes'] : []
   const readers = [...messageReaders]
-  if (sends || id === 'react' || publicName?.startsWith('scheduled.'))
-    readers.push(...outgoingReaders)
+  if (sends || publicName?.startsWith('scheduled.')) readers.push(...outgoingReaders)
   if (sends) readers.push(...peopleReaders)
   // A verdict on a sender, given outright or with a junking.
   if (

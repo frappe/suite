@@ -73,6 +73,7 @@ from suite.mail.doctype.user_account.user_account import (
 from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
 from suite.mail.jmap import (
+    SuiteJMAPClient,
     get_account_client,
     get_cached_identities,
     get_cached_mailboxes,
@@ -1222,8 +1223,9 @@ def react(account: str, id: str, emoji: str) -> dict:
     """React to a message with an emoji.
 
     The client names the message and the emoji; everything else is read off the message. A reaction
-    goes where a reply-all would, as Gmail's does, and is held for the undo-send period: Undo is the
-    only way to take one back, because a delivered mail cannot be (see utils/reaction).
+    goes where a reply-all would, as Gmail's does, and goes now: Undo, the only way to take one back
+    (see utils/reaction), is the client holding this call until its window closes. A hold on the
+    server would make it a pending send, and bring the Outbox out to show it.
     """
 
     emoji = (emoji or "").strip()
@@ -1259,7 +1261,6 @@ def react(account: str, id: str, emoji: str) -> dict:
     text_body, html_body = reaction_bodies(
         emoji, _("{0} reacted via Frappe Mail").format(from_name or from_email)
     )
-    undo_send_period, send_at = get_undo_send_hold()
 
     doc = MailQueue._create(
         user=get_user_for_jmap_account(account, raise_exception=True),
@@ -1272,19 +1273,32 @@ def react(account: str, id: str, emoji: str) -> dict:
         reaction=emoji,
         in_reply_to=target["message_id"],
         recipients=recipients,
-        send_at=send_at,
     )
+    if doc.status != "Submitted":
+        frappe.throw(doc.error_message or _("Could not react to this message."))
 
-    return {
-        "name": doc.name,
-        "id": doc.id,
-        "status": doc.status,
-        "error": doc.error_message,
-        "thread_id": doc.thread_id,
-        "submission_id": doc.submission_id,
-        "send_at": to_utc_z(doc.send_at),
-        "undo_send_period": undo_send_period,
-    }
+    forget_submission(client, doc.submission_id)
+
+    return {"id": doc.id, "thread_id": doc.thread_id}
+
+
+def forget_submission(client: SuiteJMAPClient, submission_id: str | None) -> None:
+    """Keep a reaction out of the Outbox's history, which lists what you sent, not what you marked.
+
+    This removes the record and leaves the delivery alone (RFC 8621 7.5). The reaction has gone out
+    by now, so failing here only leaves a row in the history, and must not report the reaction failed.
+    """
+
+    if not submission_id:
+        return
+
+    try:
+        with client.batch() as b:
+            b.submission.email_submission.set(destroy=[submission_id])
+    except (MethodError, RequestError, TransportError):
+        log_mail_error(
+            _("Failed to remove a reaction from the Outbox"), frappe.get_traceback(with_context=True)
+        )
 
 
 def _own_reactions_to(account: str, target: dict, own: set[str]) -> int:

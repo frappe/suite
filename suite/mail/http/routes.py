@@ -145,7 +145,6 @@ from suite.mail.api.scheduled import (
     reschedule_mail,
     retry_failed_mail,
     send_scheduled_mail_now,
-    undo_reaction,
 )
 from suite.mail.api.sieve import (
     create_automation_script,

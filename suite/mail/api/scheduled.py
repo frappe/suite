@@ -55,7 +55,6 @@ from pydantic import BaseModel, model_validator
 from redis.exceptions import LockError
 
 from suite.mail.bounces import get_reports
-from suite.mail.doctype.mail_message.mail_message import delete_messages, get_messages
 from suite.mail.jmap import (
     SuiteJMAPClient,
     build_submission_envelope,
@@ -71,7 +70,6 @@ from suite.mail.jmap import (
 )
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
-from suite.mail.utils.reaction import read_reactions
 from suite.mail.utils.validation import JMAPId, UtcZ
 from suite.utils.validation import parse, without_blanks
 
@@ -280,29 +278,6 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
     email_id = _move_email_to_drafts(client, account, submission.get("emailId"))
 
     return {"id": email_id}
-
-
-@frappe.whitelist()
-def undo_reaction(account: str, id: str) -> None:
-    """Takes back a reaction while its delivery is still held. It goes altogether rather than back
-    to Drafts, where a mail you never wrote has no business waiting."""
-
-    _validate_ids(account=account, id=id)
-
-    client = get_account_client(account)
-    submission = _get_submission(client, id)
-    email_id = submission.get("emailId")
-
-    if not read_reactions(next(iter(get_messages(account, [email_id])), {})):
-        frappe.throw(_("Only a reaction can be taken back this way."))
-
-    undo_status = submission.get("undoStatus")
-    if undo_status == "pending":
-        _cancel_submission(client, id)
-    elif undo_status != "canceled":
-        frappe.throw(_("This reaction has already been delivered and can no longer be taken back."))
-
-    delete_messages(account, [email_id])
 
 
 @frappe.whitelist()

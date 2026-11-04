@@ -345,8 +345,6 @@ import type {
   SignupOutput,
   SubscribeMailboxInput,
   SubscribeMailboxOutput,
-  UndoReactionInput,
-  UndoReactionOutput,
   UndoScreeningVerdictInput,
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
@@ -8685,29 +8683,11 @@ export const operationReact: Validators<ReactInput, ReactOutput> = {
       value,
       {
         properties: {
-          name: { title: 'Name', type: 'string' },
           id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Id' },
-          status: { title: 'Status', type: 'string' },
-          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
           thread_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Thread Id' },
-          submission_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Submission Id' },
-          send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
-          undo_send_period: {
-            anyOf: [{ type: 'integer' }, { type: 'null' }],
-            title: 'Undo Send Period',
-          },
         },
-        required: [
-          'name',
-          'id',
-          'status',
-          'error',
-          'thread_id',
-          'submission_id',
-          'send_at',
-          'undo_send_period',
-        ],
-        title: 'DraftResult',
+        required: ['id', 'thread_id'],
+        title: 'SendResult',
         type: 'object',
       },
       'react output',
@@ -9720,28 +9700,6 @@ export const operationCancelScheduledMail: Validators<
       },
       'cancel_scheduled_mail output',
     )
-  },
-}
-
-export const operationUndoReaction: Validators<UndoReactionInput, UndoReactionOutput> = {
-  validateInput(value: unknown): asserts value is UndoReactionInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          account: { title: 'Account', type: 'string' },
-          id: { title: 'Id', type: 'string' },
-        },
-        required: ['account', 'id'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'undo_reaction input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is UndoReactionOutput {
-    assertSchema(value, { type: 'null' }, 'undo_reaction output')
   },
 }
 
