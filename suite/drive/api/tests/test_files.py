@@ -1,3 +1,6 @@
+import subprocess
+import sys
+import zipfile
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +14,8 @@ from werkzeug.wrappers import Request
 
 from suite.drive.api.files import (
     SEARCH_PAGE_LENGTH,
+    _build_zip,
+    _collect_download_files,
     create_auth_token,
     does_entity_exist,
     get_file_content,
@@ -32,6 +37,7 @@ from suite.drive.api.permissions import (
     get_user_access_for_user,
     user_has_permission,
 )
+from suite.drive.api.storage import storage_breakdown
 from suite.drive.overrides.file import File as DriveFile
 from suite.drive.patches.normalize_attachment_file_types import execute as normalize_attachment_file_types
 from suite.drive.utils import (
@@ -40,6 +46,7 @@ from suite.drive.utils import (
     GENERAL_USER,
     STATUS_ACTIVE,
     STATUS_TRASHED,
+    WRITER_CONTENT_DOCTYPE,
     create_drive_file,
     get_user_folder,
 )
@@ -685,6 +692,105 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertFalse(frappe.db.exists("Drive Token", token))
             with self.assertRaises(frappe.PermissionError):
                 get_file_content(self.file.name, token=token)
+
+    def _stored_file(self, file_name, file_type, mime_type, contents=b"", **fields):
+        """A File in the test folder whose bytes are on this site's disk."""
+        url = f"{self.folder.file_url}{frappe.generate_hash(8)}"
+        path = FileManager().get_local_path(url)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+        self.addCleanup(path.unlink, missing_ok=True)
+        return create_drive_file(
+            file_name, self.folder.name, file_type, url, mime_type, len(contents), **fields
+        )
+
+    def _zip_of(self, entity_name):
+        archive = BytesIO()
+        _build_zip(FileManager(), _collect_download_files([entity_name]), archive)
+        with zipfile.ZipFile(archive) as opened:
+            return {name.rsplit("/", 1)[-1]: opened.read(name) for name in opened.namelist()}
+
+    def test_uploaded_word_file_downloads_and_writer_document_does_not(self):
+        word_bytes = b"PK fixture word file"
+        with self.set_user(OWNER):
+            word = self._stored_file(
+                "contract.docx",
+                "Document",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                word_bytes,
+            )
+            writer_doc = frappe.new_doc("Writer Document").insert(ignore_permissions=True)
+            writer = self._stored_file(
+                "notes",
+                "Document",
+                "frappe_doc",
+                content_doctype=WRITER_CONTENT_DOCTYPE,
+                content_docname=writer_doc.name,
+            )
+            legacy_writer = self._stored_file("old notes", "Document", "frappe_doc")
+
+        other_file_path = FileManager().get_local_path(self.file.file_url)
+        other_file_path.parent.mkdir(parents=True, exist_ok=True)
+        other_file_path.write_bytes(b"other file")
+        self.addCleanup(other_file_path.unlink, missing_ok=True)
+        frappe.local.request = Request(EnvironBuilder().get_environ())
+        self.addCleanup(lambda: delattr(frappe.local, "request"))
+
+        with self.set_user(OWNER):
+            for trigger_download in (False, True):
+                response = get_file_content(word.name, trigger_download=trigger_download)
+                response.direct_passthrough = False
+                self.assertEqual(response.get_data(), word_bytes)
+
+            archived = self._zip_of(self.folder.name)
+            self.assertEqual(archived[word.file_name], word_bytes)
+            self.assertNotIn(writer.file_name, archived)
+            self.assertNotIn(legacy_writer.file_name, archived)
+            self.assertEqual(self._zip_of(word.name), {word.file_name: word_bytes})
+            self.assertEqual(list(_collect_download_files([writer.name])), [])
+
+            for not_stored in (writer, legacy_writer):
+                with self.assertRaises(frappe.DoesNotExistError):
+                    get_file_content(not_stored.name)
+
+            # The Office preview's cookieless token fetch passes the same rule.
+            token = create_auth_token(word.name)
+        with self.set_user("Guest"):
+            response = get_file_content(word.name, trigger_download=True, token=token)
+            response.direct_passthrough = False
+            self.assertEqual(response.get_data(), word_bytes)
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                get_file_content(word.name)
+            with self.assertRaises(frappe.PermissionError):
+                self._zip_of(word.name)
+
+    def test_storage_rows_say_which_files_are_writer_documents(self):
+        """Drive opens these rows by their content link, so the rows must carry it."""
+        with self.set_user(OWNER):
+            writer_doc = frappe.new_doc("Writer Document").insert(ignore_permissions=True)
+            writer = self._stored_file(
+                "notes",
+                "Document",
+                "frappe_doc",
+                content_doctype=WRITER_CONTENT_DOCTYPE,
+                content_docname=writer_doc.name,
+            )
+            with patch("suite.drive.api.storage.get_quota", return_value=0):
+                rows = {row["name"]: row for row in storage_breakdown()["entities"]}
+
+        self.assertEqual(rows[writer.name]["content_doctype"], WRITER_CONTENT_DOCTYPE)
+        self.assertEqual(rows[writer.name]["content_docname"], writer_doc.name)
+
+    def test_share_notification_job_loads_before_a_site_is_set_up(self):
+        """The worker unpickles the job, which imports this module, with no site yet."""
+        result = subprocess.run(
+            [sys.executable, "-c", "import suite.drive.api.notifications"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_trash_and_restore_preserve_status(self):
         with (

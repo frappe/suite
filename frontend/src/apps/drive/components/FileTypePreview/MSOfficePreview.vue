@@ -35,6 +35,7 @@
 <script setup>
 import { Button } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import { entitiesDownload } from '@/apps/drive/utils/download'
 const props = defineProps({
   previewEntity: Object,
 })
@@ -63,5 +64,5 @@ const srcUrl = computed(() =>
     ).href
   )
 )
-const download = () => (window.location.ref = srcUrl.value)
+const download = () => entitiesDownload([props.previewEntity])
 </script>

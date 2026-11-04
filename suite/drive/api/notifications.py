@@ -6,7 +6,11 @@ from suite.suite_core import suite_email
 
 
 def get_link(entity):
-    if entity.file_type == "Document":
+    # Not at the top: the worker imports this module before a site is set up, and
+    # suite.drive.utils needs a site to import.
+    from suite.drive.utils import WRITER_CONTENT_DOCTYPE
+
+    if entity.content_doctype == WRITER_CONTENT_DOCTYPE:
         return "/writer/w/" + entity.name
     type_ = {True: "f", bool(entity.is_folder): "d"}
     return entity.file_url if entity.file_type == "Link" else f"/drive/{type_.get(True)}/{entity.name}/"

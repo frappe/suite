@@ -12,6 +12,7 @@ export { default as MoveDialog } from '@/apps/drive/ui/drive/components/MoveDial
 export { default as InfoDialog } from '@/apps/drive/ui/drive/components/InfoDialog.vue'
 
 export { getFileLink, prettyData, copyToClipboard } from '@/apps/drive/ui/drive/js/utils'
+export { opensInWriter } from '@/apps/drive/utils/files'
 export {
   allUsers,
   rename,

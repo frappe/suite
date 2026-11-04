@@ -3,6 +3,7 @@ import slugify from 'slugify'
 import { useTimeAgo } from '@vueuse/core'
 
 import router from '@/apps/drive/router'
+import { opensInWriter } from '@/apps/drive/utils/files'
 
 import dayjs from 'dayjs'
 import localizedFormat from 'dayjs/plugin/localizedFormat'
@@ -23,7 +24,7 @@ export function getFileLink(entity, copy = true) {
     link = `${window.location.origin}/slides/presentation/${entity.content_docname}`
   } else if (entity.content_doctype === 'Sheet') {
     link = `${window.location.origin}/sheets/${entity.content_docname || entity.name}`
-  } else if (entity.file_type === 'Document' || entity.file_type === 'Markdown') {
+  } else if (opensInWriter(entity)) {
     link = `${window.location.origin}/writer/w/${entity.name}`
   } else {
     link = `${window.location.origin}/drive/${getLinkStem(entity)}`
@@ -42,8 +43,6 @@ function getLinkStem(entity) {
     {
       true: 'f',
       [new Boolean(entity.is_folder)]: 'd',
-      [new Boolean(entity.file_type === 'Document' || entity.file_type === 'Markdown')]:
-        'w',
     }[true]
   }/${entity.name}/${slugger(entity.file_name)}`
 }
@@ -127,7 +126,7 @@ export const openEntity = (entity, new_tab = false) => {
     }
   } else if (entity.file_type === 'Presentation') {
     router.push({ name: 'slides-editor', params: { presentationId: entity.name } })
-  } else if (entity.file_type === 'Document' || entity.file_type === 'Markdown') {
+  } else if (opensInWriter(entity)) {
     router.push({ name: 'writer-document', params: { id: entity.name } })
   } else {
     router.push({ name: 'drive-File', params: { entityName: entity.name } })

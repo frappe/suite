@@ -54,7 +54,7 @@ def storage_breakdown():
         "File",
         filters=filters,
         order_by="file_size desc",
-        fields=["name", "file_name", "owner", "file_size", "file_type"],
+        fields=["name", "file_name", "owner", "file_size", "file_type", "content_doctype", "content_docname"],
     )
 
     query = (
