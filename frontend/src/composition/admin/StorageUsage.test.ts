@@ -47,7 +47,7 @@ it.each([
 
 it('keeps actual usage and limit readable above the cap', () => {
   const root = render(12e9, 3e9, 10e9)
-  expect(root.textContent).toBe('')
+  expect(root.textContent).toContain('15 GB of 10 GB used')
   expect(root.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toBe(
     '15 GB of 10 GB used',
   )
@@ -58,7 +58,8 @@ it.each([null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
   (cap) => {
     const root = render(2e9, 3e9, cap)
     expect(root.querySelector('[role="progressbar"]')).toBeNull()
-    expect(root.textContent).toContain(cap === null ? 'No limit' : 'Usage unavailable')
+    expect(root.textContent).toContain('5 GB')
+    expect(root.textContent).toContain(cap === null ? 'No limit' : 'Limit unavailable')
   },
 )
 
@@ -68,7 +69,7 @@ it('does not present incomplete Mail usage as a complete percentage', () => {
   expect(root.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toBe(
     'At least 2 GB of 10 GB used. Partial usage: Mail unavailable; total may be higher.',
   )
-  expect(root.textContent).toBe('')
+  expect(root.textContent).toContain('At least 2 GB of 10 GB used')
 })
 
 it('keeps app names out of the row and reveals their measurements on keyboard focus', async () => {
@@ -100,11 +101,11 @@ it('keeps a zero known lower bound visible without inventing Mail usage', () => 
   const bar = root.querySelector('[role="progressbar"]')
   expect(bar?.getAttribute('aria-valuenow')).toBe('0')
   expect(bar?.getAttribute('aria-valuetext')).toContain('total may be higher')
-  expect(root.textContent).toBe('')
+  expect(root.textContent).toContain('At least 0 MB of 100 GB used')
 })
 
 it('does not invent usage when the Drive measurement is unavailable', () => {
   const root = render(Number.NaN, null, 100e9)
   expect(root.querySelector('[role="progressbar"]')).toBeNull()
-  expect(root.textContent).toBe('Usage unavailable')
+  expect(root.textContent).toContain('Storage usage unavailable')
 })

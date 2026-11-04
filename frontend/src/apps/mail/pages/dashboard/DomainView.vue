@@ -125,13 +125,13 @@ type DomainData = {
 const { domainId } = defineProps<{
   domainId: string
 }>()
-usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 const router = useRouter()
 const showConfirmDialog = ref(false)
 const showEdit = ref(false)
 const domain = useQuery(api.mail.admin.domains.get, () => ({
   domain_id: domainId,
 }))
+usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 watch(
   () => domain.error,
   (error) => {

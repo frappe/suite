@@ -6,19 +6,20 @@
     :button-action="() => (showAdd = true)"
   >
     <div class="flex items-center space-x-3">
-      <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
+      <FormControl v-model="search" :placeholder="__('Search')" class="w-full sm:w-80">
         <template #prefix>
           <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
     </div>
+    <ErrorMessage :message="list.error?.message" />
     <DashboardList
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
-      :loading="list.status !== 'success'"
+      :loading="list.status === 'pending'"
       :row-route="listOptions.getRowRoute"
-      :empty-state="listOptions.emptyState"
+      :empty-state="list.error ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, item }">
         <span
@@ -42,7 +43,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { FormControl, usePageMeta } from 'frappe-ui'
+import { ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'

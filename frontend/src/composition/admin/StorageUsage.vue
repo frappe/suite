@@ -55,8 +55,9 @@ const percent = computed(() => {
     <div
       tabindex="0"
       :aria-label="__('Storage usage')"
-      class="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
+      class="w-full min-w-0 space-y-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
     >
+      <p class="text-p-sm text-ink-gray-6">{{ usageText }}</p>
       <div
         v-if="percent !== null"
         role="progressbar"
@@ -73,7 +74,7 @@ const percent = computed(() => {
         <Progress :value="percent" size="md" aria-hidden="true" />
       </div>
       <span v-else class="text-p-sm text-ink-gray-5">{{
-        user.cap_bytes === null ? __('No limit') : __('Usage unavailable')
+        user.cap_bytes === null ? __('No limit') : __('Limit unavailable')
       }}</span>
     </div>
   </Tooltip>

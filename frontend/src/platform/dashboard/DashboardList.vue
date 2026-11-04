@@ -65,7 +65,7 @@ const widthFor = (row: number, column: number) => `${45 + ((row * 7 + column * 1
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-col">
+  <div class="flex shrink-0 flex-col">
     <List
       v-model:selection="selection"
       :selectable="selectable"

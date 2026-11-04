@@ -201,7 +201,7 @@ async function mount(openActions = true, initialTransferUser?: string) {
   app.use(translationPlugin)
   app.mount(element)
   await vi.waitFor(() => expect(document.body.textContent).toContain('Leah'))
-  if (openActions) await click('Actions for Leah')
+  if (openActions) await click('Actions for leah@example.com')
 }
 async function click(label: string) {
   await vi.waitFor(() => {
