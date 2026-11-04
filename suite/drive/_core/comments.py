@@ -24,7 +24,7 @@ from suite.drive._core.access import (
     mentionable_on,
     require,
 )
-from suite.drive._core.activity import notify_users, record
+from suite.drive._core.activity import has_told_without_access, notify_users, record
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
@@ -46,6 +46,8 @@ _CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 MAX_COMMENT_BYTES = 65_535
 # The characters of a comment its activity keeps, for the notification to quote
 EXCERPT_LENGTH = 140
+MAX_MENTIONS = 50
+MAX_OUTSIDERS_TOLD = 10
 # The most an old Drive commenter's name holds, as the old Data column did
 MAX_AUTHOR_NAME_CHARS = 140
 
@@ -87,7 +89,7 @@ def insert_thread(
             "comment": comment,
             "resolved": False,
             "mentions": mentions,
-            "excerpt": excerpt(text),
+            "excerpt": excerpt(text, mentions),
         },
         via_link=via_link,
     )
@@ -169,7 +171,7 @@ def insert_reply(
             "thread": thread_row.name,
             "comment": comment,
             "resolved": bool(thread_row.resolved),
-            "excerpt": excerpt(text),
+            "excerpt": excerpt(text, mentions),
             "mentions": mentions,
         },
         via_link=via_link,
@@ -441,7 +443,7 @@ def site_time(value: object, timezone: str) -> str:
 
     try:
         converted = datetime.fromtimestamp(value / 1000, UTC).astimezone(ZoneInfo(timezone))
-    except (OSError, OverflowError, ValueError):
+    except OSError, OverflowError, ValueError:
         frappe.throw(_("An old Drive comment time is outside the datetime range"), frappe.ValidationError)
 
     return converted.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -484,7 +486,7 @@ def write_comment_edit(
             "thread": comment_row.thread,
             "comment": comment_row.name,
             "resolved": bool(thread.resolved),
-            "excerpt": excerpt(text),
+            "excerpt": excerpt(text, mentions),
             "mentions": mentions,
         },
         via_link=via_link,
@@ -735,12 +737,16 @@ def reach_mentioned(
     their own access, not a Guest or a share link, named them with `@[…]`, and no block stands.
     Only MANAGE hands out access, and nobody's role is lowered. Each person maps to the node's
     title if they still can't read it, which is all their notification may ever name.
+
+    An author who doesn't manage the node tells at most `MAX_OUTSIDERS_TOLD` people per comment,
+    and each of them once a day per node. The name stays in the comment either way.
     """
     from suite.drive.framework import principals_for
 
     may_reach_outsiders = bool(users) and has_own_comment_access(node, principals)
     manages = may_reach_outsiders and check(node, MANAGE, principals)
     reached: dict[str, str | None] = {}
+    told = 0
     for user in users:
         person = principals_for(user)
         title = None
@@ -749,8 +755,13 @@ def reach_mentioned(
                 continue
             if manages and _principal_kind(user) == "user":
                 grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
+            elif not manages and (
+                told >= MAX_OUTSIDERS_TOLD or has_told_without_access(node.name, principals.user, user)
+            ):
+                continue
             else:
                 title = node["title"]
+                told += 1
         reached[user] = title
     return reached
 
@@ -946,16 +957,28 @@ def mentioned_users(ids: list[str], user_name: Callable[[str], str | None]) -> l
     return list(dict.fromkeys(filter(None, map(user_name, ids))))
 
 
-def excerpt(text: str) -> str:
-    """Answer a comment as one short line of plain text, each mention by name."""
+def excerpt(text: str, mentions: list[str]) -> str:
+    """Answer a comment as one short line of plain text, naming only the people it `mentions`.
+
+    Any other id stays as it was typed, so typing one can't reveal whose it is.
+    """
     plain = html.unescape(strip_html_tags(text))
-    named = people(_BRACKET_MENTION.findall(plain) + _EMAIL_MENTION.findall(plain))
+    named = {user.casefold(): person for user, person in people(mentions).items()}
+
+    def name_of(match: re.Match[str]) -> str:
+        person = named.get(match.group(1).casefold())
+        return f"@{person['full_name']}" if person else match.group(0)
+
     for pattern in (_BRACKET_MENTION, _EMAIL_MENTION):
-        plain = pattern.sub(lambda match: f"@{named[match.group(1)]['full_name']}", plain)
+        plain = pattern.sub(name_of, plain)
     words = " ".join(plain.split())
     if len(words) <= EXCERPT_LENGTH:
         return words
     return words[: EXCERPT_LENGTH - 1].rstrip() + "…"
+
+
+def _written_mentions(text: str) -> list[str]:
+    return [*_BRACKET_MENTION.findall(text), *_EMAIL_MENTION.findall(text), *_DATA_MENTION.findall(text)]
 
 
 def _mentions(node: frappe._dict, text: str) -> tuple[list[str], set[str]]:
@@ -965,7 +988,7 @@ def _mentions(node: frappe._dict, text: str) -> tuple[list[str], set[str]]:
     disabled account reads the same as an account that doesn't exist. The comment's text stays.
     """
     picked = _BRACKET_MENTION.findall(text)
-    written = [*picked, *_EMAIL_MENTION.findall(text), *_DATA_MENTION.findall(text)]
+    written = _written_mentions(text)
     known = {user.casefold(): user for user in mentionable_on(node, written)}
     named = (known.get(user.casefold()) for user in written)
     return list(dict.fromkeys(filter(None, named))), {
@@ -1039,6 +1062,11 @@ def _validate_text(text: object) -> None:
 
     if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
         frappe.throw(_("Drive comment text must be at most 64 KB"), frappe.ValidationError)
+
+    if len({user.casefold() for user in _written_mentions(text)}) > MAX_MENTIONS:
+        frappe.throw(
+            _("A comment can mention at most {0} people").format(MAX_MENTIONS), frappe.ValidationError
+        )
 
 
 def _guest_name(principals: Principals, author_name: str | None) -> str | None:

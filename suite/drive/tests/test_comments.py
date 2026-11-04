@@ -743,7 +743,9 @@ class TestCommentWorkflows(IntegrationTestCase):
 
         detail = activity.notifications(mentioned)["rows"][0].activity.detail
 
-        self.assertEqual((detail["mentions"], detail["excerpt"]), ([MENTIONED], comments.excerpt(words)))
+        self.assertEqual(
+            (detail["mentions"], detail["excerpt"]), ([MENTIONED], comments.excerpt(words, [MENTIONED]))
+        )
 
     def bell(self, user: str = MENTIONED) -> list:
         return activity.notifications(Principals(user, (user,), ()))["rows"]
@@ -765,7 +767,9 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(self.role_of(), COMMENT)
         self.assertEqual([row.activity.action for row in rows], ["comment"])
         self.assertEqual(frappe.parse_json(stored), [MENTIONED])
-        self.assertEqual(rows[0].activity.detail["excerpt"], comments.excerpt(f"Look @[{MENTIONED}]"))
+        self.assertEqual(
+            rows[0].activity.detail["excerpt"], comments.excerpt(f"Look @[{MENTIONED}]", [MENTIONED])
+        )
 
     def test_a_managers_reply_and_edit_that_add_a_mention_share_the_same_way(self):
         thread = create_thread(self.owner, self.document.name, "anchor", "First words").name
@@ -884,7 +888,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(self.role_of(), READ)
 
     def test_a_refused_caller_makes_no_user_lookup(self):
-        words = " ".join(f"@[person{number}@example.com]" for number in range(500))
+        words = " ".join(f"@[person{number}@example.com]" for number in range(comments.MAX_MENTIONS))
         guest = Principals("Guest", (), ("$PUBLIC",))
 
         with self.counting_user_queries() as sql, self.assertRaises(DriveNotFound):
@@ -914,6 +918,62 @@ class TestCommentWorkflows(IntegrationTestCase):
                 self.assertIsNone(self.role_of(DISABLED))
                 self.assertIsNone(self.role_of(WEBSITE_ONLY))
                 self.assertEqual(self.bell(DISABLED) + self.bell(WEBSITE_ONLY), [])
+
+    def test_a_typed_id_shows_no_name_the_picker_would_hide(self):
+        grant(self.document.name, MENTIONED, READ, self.admin)
+        words = f"Hi @[{MENTIONED}] and @[{DISABLED}]"
+        thread = create_thread(self.commenter, self.document.name, "anchor", words).name
+        reply(self.commenter, thread, words)
+
+        name = frappe.db.get_value("User", MENTIONED, "full_name")
+        quoted = [row.activity.detail["excerpt"] for row in self.bell() if "excerpt" in row.activity.detail]
+        self.assertEqual(quoted, [f"Hi @{name} and @[{DISABLED}]"] * 2)
+
+    def test_a_comment_can_mention_at_most_fifty_people(self):
+        def named(count: int) -> str:
+            return " ".join(f"@[person-{index}@example.com]" for index in range(count))
+
+        create_thread(self.owner, self.document.name, "anchor", named(comments.MAX_MENTIONS))
+        with self.assertRaises(frappe.ValidationError):
+            create_thread(self.owner, self.document.name, "anchor", named(comments.MAX_MENTIONS + 1))
+
+    def test_a_commenter_tells_at_most_ten_people_without_access(self):
+        people = [f"drive-told-{index}@example.com" for index in range(comments.MAX_OUTSIDERS_TOLD + 1)]
+        for user in people:
+            ensure_user(user)
+
+        create_thread(self.commenter, self.document.name, "anchor", " ".join(f"@[{user}]" for user in people))
+
+        told = [user for user in people if self.bell(user)]
+        self.assertEqual(len(told), comments.MAX_OUTSIDERS_TOLD)
+
+    def test_a_manager_is_not_limited_by_the_commenter_limit(self):
+        people = [f"drive-told-{index}@example.com" for index in range(comments.MAX_OUTSIDERS_TOLD + 1)]
+        for user in people:
+            ensure_user(user)
+
+        create_thread(self.owner, self.document.name, "anchor", " ".join(f"@[{user}]" for user in people))
+
+        self.assertEqual([user for user in people if self.bell(user)], people)
+
+    def test_an_author_tells_someone_without_access_once_a_day_per_document(self):
+        words = f"Look @[{MENTIONED}]"
+        create_thread(self.commenter, self.document.name, "anchor", words)
+        again = create_thread(self.commenter, self.document.name, "anchor", words)
+
+        self.assertEqual(len(self.bell()), 1)
+        self.assertEqual(again.comments[0].mentions, [MENTIONED])
+
+        frappe.db.set_value(
+            "Drive Notification",
+            {"to_user": MENTIONED},
+            "creation",
+            frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-1, minutes=-1),
+            update_modified=False,
+        )
+        create_thread(self.commenter, self.document.name, "anchor", words)
+
+        self.assertEqual(len(self.bell()), 2)
 
     def test_someone_outside_the_directory_who_the_node_names_can_be_mentioned(self):
         grant(self.document.name, WEBSITE_ONLY, READ, self.admin)
@@ -1125,7 +1185,9 @@ class TestCommentWorkflows(IntegrationTestCase):
         rows = self.bell()
         self.assertEqual(self.role_of(), READ)
         self.assertEqual(len(rows), before + 1)
-        self.assertEqual(rows[0].activity.detail["excerpt"], comments.excerpt(f"Hi @[{MENTIONED}]"))
+        self.assertEqual(
+            rows[0].activity.detail["excerpt"], comments.excerpt(f"Hi @[{MENTIONED}]", [MENTIONED])
+        )
 
     def test_a_notification_quotes_the_comment_as_it_is_now(self):
         grant(self.document.name, MENTIONED, READ, self.admin)  # Without Read a notification quotes nothing

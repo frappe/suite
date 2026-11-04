@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import escape_html, get_fullname, get_url, now_datetime
+from frappe.utils import add_to_date, escape_html, get_fullname, get_url, now_datetime
 
 from suite.drive._core.errors import (
     DriveConflict,
@@ -422,6 +422,26 @@ def notify_users(
     return created
 
 
+def has_told_without_access(node: str, author: str, user: str) -> bool:
+    """Whether `author` already sent `user`, who couldn't read `node`, a notification today."""
+    return bool(
+        frappe.db.sql(
+            """
+            SELECT 1
+            FROM `tabDrive Notification` notification
+            JOIN `tabDrive Activity` activity ON activity.name = notification.activity
+            WHERE notification.to_user = %(user)s
+                AND notification.title_without_access IS NOT NULL
+                AND notification.creation > %(since)s
+                AND activity.node = %(node)s
+                AND activity.actor = %(author)s
+            LIMIT 1
+            """,
+            {"user": user, "node": node, "author": author, "since": add_to_date(now_datetime(), days=-1)},
+        )
+    )
+
+
 # What a share email tells the recipient they may do. A deny shares nothing,
 # so role 0 has no entry and sends no email.
 SHARE_VERBS = {READ: "view", COMMENT: "comment on", UPLOAD: "upload to", EDIT: "edit", MANAGE: "manage"}
@@ -579,14 +599,16 @@ def _quote_comments_as_they_are(activities: Sequence[frappe._dict]) -> None:
     if not quoting:
         return
     wanted = [activity.detail.get("comment") for activity in quoting]
-    found = frappe.get_all("Drive Comment", filters={"name": ["in", wanted]}, fields=["name", "content"])
-    contents = {comment.name: comment.content for comment in found}
+    found = frappe.get_all(
+        "Drive Comment", filters={"name": ["in", wanted]}, fields=["name", "content", "mentions"]
+    )
+    comments = {comment.name: comment for comment in found}
     for activity in quoting:
-        text = contents.get(activity.detail.get("comment"))
-        if text is None:
+        comment = comments.get(activity.detail.get("comment"))
+        if comment is None:
             del activity.detail["excerpt"]
         else:
-            activity.detail["excerpt"] = excerpt(text)
+            activity.detail["excerpt"] = excerpt(comment.content, frappe.parse_json(comment.mentions) or [])
 
 
 def unread_count(principals: Principals) -> int:
