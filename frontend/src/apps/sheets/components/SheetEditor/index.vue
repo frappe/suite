@@ -120,6 +120,8 @@
         @number-format="toggleNumberFmt"
         @adjust-decimals="adjustDecimals"
         @font-size-input="onFontSizeInput"
+        @adjust-font-size="adjustFontSize"
+        @font-size="setFontSize"
         @toggle-format="toggleFmt"
         @set-color="setColor"
         @undo="undo"

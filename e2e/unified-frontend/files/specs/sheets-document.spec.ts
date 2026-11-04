@@ -341,3 +341,44 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 		expect(await left(), reference).toBe(phone.left);
 	}
 });
+
+test("font size steps with − and +, takes a typed size and lists common sizes, one undo each", async ({
+	page,
+}) => {
+	await openSheet(page);
+	const size = page.getByRole("spinbutton", { name: "Font size" });
+	const undo = page.getByRole("button", { name: "Undo", exact: true });
+	await expect(size).toHaveValue("13");
+
+	await page.getByRole("button", { name: "Increase font size" }).click();
+	await expect(size).toHaveValue("14");
+	await undo.click();
+	await expect(size).toHaveValue("13");
+
+	// Enter applies the size and blurs the field; that is still one step.
+	await size.fill("20");
+	await size.press("Enter");
+	await expect(size).toHaveValue("20");
+	await undo.click();
+	await expect(size).toHaveValue("13");
+
+	await size.click();
+	await page.getByRole("option", { name: "24", exact: true }).click();
+	await expect(size).toHaveValue("24");
+	await expect(page.getByRole("option")).toHaveCount(0);
+
+	// Both rows: every control is 28 px tall.
+	const heights = await page
+		.locator(
+			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible:not(.sn-formula-input), .sn-formula-wrap",
+		)
+		.evaluateAll((els) =>
+			els
+				.map(
+					(el) =>
+						`${el.getAttribute("aria-label") ?? el.textContent?.trim()}=${Math.round(el.getBoundingClientRect().height)}`,
+				)
+				.filter((s) => !s.endsWith("=28")),
+		);
+	expect(heights).toEqual([]);
+});

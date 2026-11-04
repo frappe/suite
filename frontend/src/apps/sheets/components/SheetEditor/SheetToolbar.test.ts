@@ -42,6 +42,8 @@ function mountRow(props: Record<string, unknown> = {}) {
     onAdjustDecimals: vi.fn(),
     onNumberFormat: vi.fn(),
     onToggleFormatPainter: vi.fn(),
+    onAdjustFontSize: vi.fn(),
+    onFontSize: vi.fn(),
   }
   const clearFormatting = vi.fn()
   const root = document.createElement('div')
@@ -108,7 +110,9 @@ describe('SheetToolbar (row 2)', () => {
       'Percent',
       'Fewer decimal places',
       'More decimal places',
+      'Decrease font size',
       'Font size',
+      'Increase font size',
       'Bold',
       'Italic',
       'Strikethrough',
@@ -164,6 +168,48 @@ describe('SheetToolbar (row 2)', () => {
     )
     expect(tall.map((el) => el.getAttribute('aria-label') ?? el.textContent?.trim())).toEqual([])
     expect(button(root, 'Bold').className).toMatch(/\bh-7\b/)
+  })
+
+  it('steps the font size by 1 with − and +, and stops at 8 and 72', () => {
+    const { root, handlers } = mountRow({ activeFormat: { fontSize: 13 } })
+    button(root, 'Decrease font size').click()
+    button(root, 'Increase font size').click()
+    expect(handlers.onAdjustFontSize.mock.calls).toEqual([[-1], [1]])
+    cleanup?.()
+    const low = mountRow({ activeFormat: { fontSize: 8 } })
+    expect(button(low.root, 'Decrease font size').disabled).toBe(true)
+    expect(button(low.root, 'Increase font size').disabled).toBe(false)
+    cleanup?.()
+    const high = mountRow({ activeFormat: { fontSize: 72 } })
+    expect(button(high.root, 'Increase font size').disabled).toBe(true)
+  })
+
+  it('lists common font sizes when the size field is clicked, and keeps the caret there', async () => {
+    const { root, handlers } = mountRow({ activeFormat: { fontSize: 14 } })
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    field.focus()
+    field.click()
+    await settle()
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+    expect(options.map((o) => o.textContent?.trim())).toEqual([
+      '8',
+      '9',
+      '10',
+      '11',
+      '12',
+      '14',
+      '18',
+      '24',
+      '36',
+    ])
+    expect(
+      options.find((o) => o.getAttribute('aria-selected') === 'true')?.textContent?.trim(),
+    ).toBe('14')
+    expect(document.activeElement).toBe(field)
+    options.find((o) => o.textContent?.trim() === '18')!.click()
+    await settle()
+    expect(handlers.onFontSize).toHaveBeenCalledWith(18)
+    expect(document.querySelector('[role="option"]')).toBeNull()
   })
 
   it('opens the Format menu from the Format button', async () => {
