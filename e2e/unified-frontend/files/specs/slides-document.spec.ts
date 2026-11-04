@@ -123,8 +123,10 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	await page.waitForTimeout(3_000);
 	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
 
-	const recovery = () =>
-		page.evaluate((node) => localStorage.getItem(`suite:slides-recovery:${node}`), deck.name);
+	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
+	expect(user).toBeDefined();
+	const recoveryKey = `suite:slides-recovery:${decodeURIComponent(user!.value)}:${deck.name}`;
+	const recovery = () => page.evaluate((key) => localStorage.getItem(key), recoveryKey);
 	expect(await recovery()).toContain("rectangle");
 
 	const download = page.waitForEvent("download");
@@ -134,7 +136,7 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	expect(await recovery()).toBeNull();
+	expect(await recovery()).toContain("rectangle");
 
 	// A trashed deck takes no new comments.
 	await page.getByRole("button", { name: "Comments" }).click();
