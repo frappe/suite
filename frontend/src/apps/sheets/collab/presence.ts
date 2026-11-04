@@ -1,6 +1,8 @@
 // Who else has the spreadsheet open, as the editor draws them (like Google
 // Sheets): an avatar each in the header, and each editor's selected range
-// outlined in their colour on the sheet they are on, their name on hover.
+// outlined in their colour on the sheet they are on, with their name on it.
+// Colours are Writer's (platform/collab/colours), so a person has one colour
+// across Suite.
 // Viewers get an avatar but no box: the room sends a tab's selection only
 // while it can write.
 //
@@ -10,11 +12,9 @@
 import type * as Y from 'yjs'
 
 import type { Peer, RoomPresence } from '@/platform/collab'
-import { assignColours } from '@/platform/collab/colours'
+import { GUEST_USER, personKey, roomColours, type PeerColour } from '@/platform/collab/colours'
 
 import { readSavedSelection, selectionFromIds, selectionToIds, type Selection } from './selection'
-
-export const GUEST_USER = 'Guest'
 
 /** An avatar in the header (SheetTopbarActions, SheetTabsBar). */
 export interface PresentUser {
@@ -23,7 +23,7 @@ export interface PresentUser {
   first_name: string
   initials: string
   user_image: string
-  color: string
+  colour: PeerColour
   /** The sheet they are on; null for a viewer, whose selection isn't sent. */
   sub_sheet: string | null
 }
@@ -34,10 +34,14 @@ export interface RemoteCursor {
   col: number
   range: { r0: number; c0: number; r1: number; c1: number }
   subSheet: string
-  color: string
-  fullName: string
-  firstName: string
-  initials: string
+  colour: PeerColour
+  /**
+   * The name label on the range's top-left cell. Everyone whose range starts
+   * on that cell shares one label, on the first of their cursors: "Asha, Ravi",
+   * or "Asha, Ravi +2" once a third name would make it long. The other cursors there get
+   * null, so labels never stack.
+   */
+  label: string | null
 }
 
 /** A person's name and picture; their user id until it is known. */
@@ -45,9 +49,6 @@ export interface Person {
   fullName: string
   image: string
 }
-
-// Who a tab belongs to; every guest tab is its own person.
-const personKey = (user: string, pid: number) => (user === GUEST_USER ? `Guest ${pid}` : user)
 
 function nameOf(user: string, pid: number, person: (user: string) => Person): Person {
   if (user === GUEST_USER) {
@@ -64,24 +65,18 @@ function initialsOf(fullName: string): string {
     .join('')
 }
 
-/**
- * Each tab's colour. People rank by their first tab's arrival, then by key, so
- * every tab ranks the same people the same way (as Writer's carets).
- */
-export function peerColours(peers: Peer[], own: Peer): Map<number, string> {
-  const first = new Map<string, number>()
-  for (const { user, pid, arrival } of [own, ...peers]) {
-    const key = personKey(user, pid)
-    first.set(key, Math.min(arrival ?? Infinity, first.get(key) ?? Infinity))
+// A label always names two people; past this many characters the rest fold into "+N".
+const LABEL_CHARS = 20
+
+// One label's text from the names of the people on its cell, in peer order.
+function labelText(names: string[]): string {
+  const shown = names.slice(0, 2)
+  for (const name of names.slice(2)) {
+    if ([...shown, name].join(', ').length > LABEL_CHARS) break
+    shown.push(name)
   }
-  const ranked = [...first]
-    .sort(([k1, a1], [k2, a2]) => (a1 !== a2 ? Math.sign(a1 - a2) : k1 < k2 ? -1 : +(k1 > k2)))
-    .map(([key]) => key)
-  const colours = assignColours(ranked)
-  const out = new Map<number, string>()
-  for (const { user, pid } of [own, ...peers])
-    out.set(pid, colours.get(personKey(user, pid))!.light.solid)
-  return out
+  const rest = names.length - shown.length
+  return shown.join(', ') + (rest ? ` +${rest}` : '')
 }
 
 /** Everyone else in the room, read from the room's presence against the doc's row/col ids now. */
@@ -97,31 +92,39 @@ export function readPresence(
     arrival: presence.ownArrival,
     idleSince: null,
   }
-  const colours = peerColours(presence.peers, own)
+  const colours = roomColours(presence.peers, own)
   const states = presence.awareness.getStates() as Map<number, { cursor?: unknown }>
   const users: PresentUser[] = []
   const cursors = new Map<string, RemoteCursor>()
+  // Each cell with a label on it: the cursor that carries it, and the name of
+  // each person there (a person with two tabs there is named once).
+  const cells = new Map<string, { labelled: RemoteCursor; names: Map<string, string> }>()
   const seen = new Set<string>()
   for (const peer of presence.peers) {
     if (peer.user === me && me !== GUEST_USER) continue // this person's other tabs
     const { fullName, image } = nameOf(peer.user, peer.pid, person)
     const first = fullName.trim().split(/\s+/)[0] || fullName
     const initials = initialsOf(fullName)
-    const color = colours.get(peer.pid)!
+    const colour = colours.get(peer.pid)!
+    const key = personKey(peer.user, peer.pid)
     const sel = selectionFromIds(doc, readSavedSelection(states.get(peer.pid)?.cursor))
     if (sel) {
-      cursors.set(String(peer.pid), {
+      const cursor: RemoteCursor = {
         row: sel.r0,
         col: sel.c0,
         range: { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 },
         subSheet: sel.sheet,
-        color,
-        fullName,
-        firstName: first,
-        initials,
-      })
+        colour,
+        label: null,
+      }
+      cursors.set(String(peer.pid), cursor)
+      // Guests all share the first name "Guest": name them by their tag.
+      const name = peer.user === GUEST_USER ? fullName : first
+      const cell = JSON.stringify([sel.sheet, sel.r0, sel.c0])
+      const onCell = cells.get(cell)
+      if (!onCell) cells.set(cell, { labelled: cursor, names: new Map([[key, name]]) })
+      else if (!onCell.names.has(key)) onCell.names.set(key, name)
     }
-    const key = personKey(peer.user, peer.pid)
     if (seen.has(key)) continue
     seen.add(key)
     users.push({
@@ -130,10 +133,11 @@ export function readPresence(
       first_name: first,
       initials,
       user_image: image,
-      color,
+      colour,
       sub_sheet: sel?.sheet ?? null,
     })
   }
+  for (const { labelled, names } of cells.values()) labelled.label = labelText([...names.values()])
   return { users, cursors }
 }
 

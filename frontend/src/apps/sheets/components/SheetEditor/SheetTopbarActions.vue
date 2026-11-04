@@ -17,8 +17,8 @@
           ? `${u.full_name} — on ${u.sub_sheet}`
           : u.full_name
       "
-      class="sn-presence-avatar"
-      :style="{ '--rc': u.color }"
+      class="sn-presence-avatar sn-peer"
+      :style="colourStyle(u.colour)"
     />
     <span
       v-if="presentUsers.length > 3"
@@ -35,13 +35,15 @@
 // Import clicks.
 import { Avatar } from 'frappe-ui'
 
+import { colourStyle, type PeerColour } from '@/platform/collab/colours'
+
 type PresentUser = {
   user: string
   initials: string
   user_image?: string | null
   full_name: string
   sub_sheet?: string
-  color: string
+  colour: PeerColour
 }
 
 defineProps<{
