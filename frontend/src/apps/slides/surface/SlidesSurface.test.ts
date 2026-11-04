@@ -1047,6 +1047,15 @@ describe('Slides push refused by the server', () => {
 
         expect(unload.defaultPrevented).toBe(true)
       })
+
+      it('keeps no copy of this clean presentation when the tab closes', async () => {
+        await openedDuringItsPush()
+        const copies = readRecovery('node-1').length
+
+        window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+
+        expect(readRecovery('node-1')).toHaveLength(copies)
+      })
     })
 
     it('says the copy is kept when it is', async () => {

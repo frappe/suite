@@ -561,8 +561,12 @@ function unloadState(): DocumentSaveState {
 
   return saveState.value
 }
+// the warning is for the other push; a clean presentation has nothing of its own to keep
+function retainUnlessClean() {
+  return saveState.value === 'clean' || retainOrWarn()
+}
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: unloadState, retainRecovery: retainOrWarn }, event)
+  resolveDocumentUnload({ state: unloadState, retainRecovery: retainUnlessClean }, event)
 }
 
 // what a refused picture means for the copy depends on which of these it is
