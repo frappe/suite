@@ -293,9 +293,13 @@ def _organization_content(folders: dict[str, str], uploaded: list[tuple[str, byt
         elif person.team == "Marketing":
             launch = drive.ensure_folder(folder, "November launch")
             result["launch brief"] = content.writer(launch, "Beacon beta launch brief", content.MARKETING)
-            # Publishing only this document leaves the restricted team folder private.
+            # Publishing only this document leaves the restricted team folder private. $PUBLIC alone
+            # does not lift the folder's $GENERAL deny for signed-in people, and nearest wins, so
+            # opening it to $GENERAL also needs the team's own grant repeated here.
             frappe.set_user(PEOPLE[0].email)
             _grant(result["launch brief"], "$PUBLIC", drive.READ)
+            _grant(result["launch brief"], "$GENERAL", drive.READ)
+            _grant(result["launch brief"], f"$GROUP:{PREFIX}{person.team}", drive.MANAGE)
             frappe.set_user(person.email)
             result["launch deck"] = assets.presentation(launch, "Beacon collections launch", assets.LAUNCH)
             imports = drive.ensure_folder(folder, "Imports")
