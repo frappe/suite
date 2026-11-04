@@ -12,7 +12,7 @@ from frappe.utils import get_datetime, get_system_timezone
 
 from suite import drive
 from suite.drive._core import activity, comments
-from suite.drive._core.access import grant, revoke
+from suite.drive._core.access import grant, people_on, revoke
 from suite.drive._core.comments import (
     _locked_comment,
     _locked_thread,
@@ -781,8 +781,6 @@ class TestCommentWorkflows(IntegrationTestCase):
                 thread = create_thread(self.owner, self.document.name, "anchor", f"Hi @[{MENTIONED}]").name
                 reply(self.commenter, thread, f"Again @[{MENTIONED}]")
 
-                stored = frappe.get_all("Drive Comment", filters={"thread": thread}, pluck="mentions")
-                self.assertEqual([frappe.parse_json(row) for row in stored], [[], []])
                 self.assertEqual(self.role_of(), NONE if block_on == self.document.name else None)
                 self.assertEqual(self.bell(), [])
                 revoke(block_on, MENTIONED, self.admin)
@@ -831,14 +829,59 @@ class TestCommentWorkflows(IntegrationTestCase):
 
         self.assertEqual(self.bell(), [])
 
-    def test_a_link_commenter_or_guest_never_shares(self):
+    def test_a_link_commenter_or_guest_neither_shares_nor_tells_someone_without_access(self):
+        link = grant(self.document.name, "$LINK", COMMENT, self.admin)["principal"]
+        authors = {
+            "guest": (Principals("Guest", ("Guest",), (link,)), "Sam"),
+            "signed in on the link": (Principals(OUTSIDER, (OUTSIDER,), (link,)), None),
+        }
+        for label, (author, name) in authors.items():
+            with self.subTest(author=label):
+                thread = create_thread(
+                    author, self.document.name, "anchor", f"Hi @[{MENTIONED}]", author_name=name
+                ).name
+                reply(author, thread, f"Again @[{MENTIONED}]", author_name=name)
+
+                self.assertIsNone(self.role_of())
+                self.assertEqual(self.bell(), [])
+
+    def test_a_link_commenter_or_guest_still_tells_someone_with_access(self):
+        grant(self.document.name, MENTIONED, READ, self.admin)
         link = grant(self.document.name, "$LINK", COMMENT, self.admin)["principal"]
         guest = Principals("Guest", ("Guest",), (link,))
 
         create_thread(guest, self.document.name, "anchor", f"Hi @[{MENTIONED}]", author_name="Sam")
 
-        self.assertIsNone(self.role_of())
+        self.assertEqual(self.role_of(), READ)
         self.assertEqual(len(self.bell()), 1)
+
+    def test_a_commenter_cannot_tell_a_block_from_any_other_lack_of_access(self):
+        grant(self.document.name, MENTIONED, NONE, self.admin)
+
+        def posted(person: str) -> dict:
+            thread = create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{person}]")
+            shown = next(
+                row for row in threads(self.commenter, self.document.name) if row.name == thread.name
+            )
+            return {
+                "fields": sorted(shown.comments[0]),
+                "mentions": shown.comments[0].mentions == [person],
+                "content_kept": shown.comments[0].content == f"Hi @[{person}]",
+            }
+
+        self.assertEqual(posted(MENTIONED), posted(OUTSIDER))
+        self.assertEqual(self.bell(), [])
+        self.assertEqual(len(self.bell(OUTSIDER)), 1)
+        self.assertIsNone(frappe.db.get_value("Drive Grant", {"principal": OUTSIDER}, "role"))
+
+    def test_people_on_leaves_out_a_named_person_a_deny_keeps_out(self):
+        grant(self.root.name, MENTIONED, READ, self.admin)
+        self.assertTrue(people_on(self.document.name, self.commenter, [])[MENTIONED])
+
+        grant(self.document.name, MENTIONED, NONE, self.admin)
+
+        self.assertNotIn(MENTIONED, people_on(self.document.name, self.commenter, []))
+        self.assertFalse(people_on(self.document.name, self.commenter, [MENTIONED])[MENTIONED])
 
     def test_a_mention_of_someone_with_access_is_unchanged(self):
         grant(self.document.name, MENTIONED, READ, self.admin)

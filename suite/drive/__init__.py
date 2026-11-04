@@ -507,8 +507,8 @@ def people_on(node: str, users: Iterable[str] = ()) -> dict[str, bool]:
     return _people_on(node, _principals(), users)
 
 
-def blocked_on(node: str, users: Iterable[str]) -> list[str]:
-    """Answer which of `users` are blocked from `node`; a mention reaches none of them. Needs COMMENT."""
+def blocked_on(node: str, users: Iterable[str]) -> list[str] | None:
+    """Answer which of `users` are blocked from `node`, or None unless the caller manages it."""
     from suite.drive._core.access import blocked_on as _blocked_on
 
     return _blocked_on(node, _principals(), users)

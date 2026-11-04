@@ -90,16 +90,23 @@ class TestPeopleOnANode(IntegrationTestCase):
         self.addCleanup(self.restore_owner)
         self.assertEqual(self.found({"q": "Administrator"}), [("Administrator", True)])
 
-    def test_a_person_blocked_from_the_node_is_marked_and_others_are_not(self):
+    def test_only_a_manager_sees_who_is_blocked(self):
         owner = principals_for(OWNER)
+        before = self.rows(self.commenter)
         grant(self.node, STRANGER, NONE, owner)
         self.addCleanup(self.lift_block, owner)
         frappe.db.commit()
 
-        response = self.get({"node": self.node, "q": NODE_MARK}, self.commenter)
+        marks = {row["name"]: row["is_blocked"] for row in self.rows(self.owner)}
+        self.assertEqual(marks, {COMMENTER: False, READER: False, STRANGER: True})
+        # Byte for byte the answer from before the block, in fields as well as values
+        self.assertEqual(self.rows(self.commenter), before)
+        self.assertFalse([row for row in before if "is_blocked" in row])
 
-        marks = {row["name"]: row["is_blocked"] for row in response.json["data"]["rows"]}
-        self.assertEqual(marks, {OWNER: False, READER: False, STRANGER: True})
+    def rows(self, auth: str) -> list[dict]:
+        response = self.get({"node": self.node, "q": NODE_MARK}, auth)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.json["data"]["rows"]
 
     def lift_block(self, owner):
         revoke(self.node, STRANGER, owner)

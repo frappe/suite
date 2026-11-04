@@ -96,8 +96,9 @@ def search(query: str | None = None, cursor: str | None = None, node: str | None
 
     With `node`, the page is for naming someone on that node, as a mention
     does: users only, not the caller, the ones who can open the node first,
-    each marked with `has_access` and `is_blocked`. It adds the people the node names, such as
-    its creator, and is one page with no cursor.
+    each marked with `has_access`. Only someone who manages the node also gets `is_blocked`:
+    to anyone else a block looks like any other lack of access. It adds the people the node
+    names, such as its creator, and is one page with no cursor.
     """
     frappe.only_for("Suite User")
     if node:
@@ -137,12 +138,14 @@ def _search_on(node: str, query: str) -> PeoplePage:
     labels.pop(frappe.session.user, None)
     ranked = sorted(labels, key=lambda user: (not access[user], labels[user].casefold(), user))[:PAGE_SIZE]
     users = _users(ranked)
-    blocked = set(drive.blocked_on(node, [user for user in ranked if not access[user]]))
-    rows_out: list[Person] = [
-        {**users[user], "has_access": access[user], "is_blocked": user in blocked}
-        for user in ranked
-        if user in users
-    ]
+    blocked = drive.blocked_on(node, [user for user in ranked if not access[user]])
+    rows_out: list[Person] = []
+    for user in ranked:
+        if user in users:
+            row: Person = {**users[user], "has_access": access[user]}
+            if blocked is not None:
+                row["is_blocked"] = user in blocked
+            rows_out.append(row)
     return {"rows": rows_out, "next_cursor": None}
 
 

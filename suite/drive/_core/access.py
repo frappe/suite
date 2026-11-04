@@ -618,12 +618,12 @@ def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dic
     """Answer who can read a node, for a picker there: the users it names, and `users`.
 
     The named users are the node's creator and the users its live grants and
-    its ancestors' name. Each named user and each of `users` maps to whether
-    they can read the node now; a deny or an expiry can leave a named user
-    out. A mention picker ranks people by this, so it needs COMMENT, the
-    right to mention anyone here. It answers who can read the node, never
-    their role or where it comes from: that stays with MANAGE and the share
-    dialog (§7.2). `blocked_on` adds only whether a deny decides it.
+    its ancestors' name. Each of `users` maps to whether they can read the
+    node now, and so does each named user who can: a named user who can't is
+    left out, so a deny or an expiry looks like never having been named. A
+    mention picker ranks people by this, so it needs COMMENT, the right to
+    mention anyone here. It answers who can read the node, never their role
+    or where it comes from: that stays with MANAGE and the share dialog (§7.2).
     """
     from suite.drive.framework import principals_for
 
@@ -631,8 +631,11 @@ def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dic
     require(node, COMMENT, principals)
     rows = frappe.db.sql(EXPLAIN_SQL, {"chain": chain_ids(node), "now": now()}, as_dict=True)
     named = [row.principal for row in rows if row.role >= READ and not row.principal.startswith("$")]
-    wanted = dict.fromkeys([node.owner, *named, *users])
-    return {user: check(node, READ, principals_for(user)) for user in wanted}
+    access = {user: check(node, READ, principals_for(user)) for user in dict.fromkeys(users)}
+    for user in dict.fromkeys([node.owner, *named]):
+        if user not in access and check(node, READ, principals_for(user)):
+            access[user] = True
+    return access
 
 
 def is_blocked(node: Mapping, principals: Principals) -> bool:
@@ -644,12 +647,13 @@ def is_blocked(node: Mapping, principals: Principals) -> bool:
     return acc.own == NONE
 
 
-def blocked_on(node_id: str, principals: Principals, users: Iterable[str]) -> list[str]:
-    """Answer which of `users` are blocked from a node, so a comment can say so before it posts."""
+def blocked_on(node_id: str, principals: Principals, users: Iterable[str]) -> list[str] | None:
+    """Answer which of `users` are blocked from a node, or None to anyone who can't manage it."""
     from suite.drive.framework import principals_for
 
     node = _node_or_not_found(node_id)
-    require(node, COMMENT, principals)
+    if not check(node, MANAGE, principals):
+        return None
     return [user for user in users if is_blocked(node, principals_for(user))]
 
 

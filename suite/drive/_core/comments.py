@@ -73,8 +73,8 @@ def insert_thread(
             "client_id": client_id,
         }
     ).insert(ignore_permissions=True)
-    comment, mentions = _insert_comment(
-        principals, thread.name, node_row, text, author_name=author_name, client_id=None
+    comment, mentions, reached = _insert_comment(
+        principals, thread.name, node_row, text, via_link, author_name=author_name, client_id=None
     )
     activity = record(
         principals,
@@ -91,7 +91,7 @@ def insert_thread(
     )
     # The owner hears of every new thread on their item, except their own
     owner = [node_row.owner] if node_row.owner != principals.user else []
-    notify_users(activity, [*mentions, *owner])
+    notify_users(activity, [*reached, *owner])
     return thread.name
 
 
@@ -150,11 +150,12 @@ def insert_reply(
     client_id: str | None,
 ) -> str:
     """Insert a reply into a thread and record it; answer the comment."""
-    comment, mentions = _insert_comment(
+    comment, mentions, reached = _insert_comment(
         principals,
         thread_row.name,
         node,
         text,
+        via_link,
         author_name=author_name,
         client_id=client_id,
     )
@@ -171,7 +172,7 @@ def insert_reply(
         },
         via_link=via_link,
     )
-    notify_users(activity, mentions)
+    notify_users(activity, reached)
     return comment
 
 
@@ -464,9 +465,8 @@ def write_comment_edit(
 ) -> None:
     """Rewrite a comment's text and record it, telling only the people it newly mentions."""
     before = _json_value(comment_row.mentions, [])
-    named = _mentions(text)
-    added = reach_mentioned(principals, node, [user for user in named if user not in before])
-    mentions = [user for user in named if user in before or user in added]
+    mentions = _mentions(text)
+    added = reach_mentioned(principals, node, [user for user in mentions if user not in before], via_link)
     frappe.db.set_value(
         "Drive Comment",
         comment_row.name,
@@ -723,21 +723,25 @@ def lock_tree_to_share(principals: Principals, node: str, text: str) -> None:
         lock_trees(_tree(row))
 
 
-def reach_mentioned(principals: Principals, node: frappe._dict, users: list[str]) -> list[str]:
-    """The people among `users` a comment reaches, shared with at Comment if the author manages the node.
+def reach_mentioned(
+    principals: Principals, node: frappe._dict, users: list[str], via_link: str | None
+) -> list[str]:
+    """The people among `users` a comment notifies, shared with at Comment if the author manages the node.
 
-    A blocked person is left out: no grant, no notification. Anyone else without
-    access stays mentioned, so the bell tells them. Only MANAGE hands out access,
-    so a commenter or a share link never does, and nobody's role is lowered.
+    Someone with access always is. Someone without is only when a signed-in person
+    wrote it on their own access, not a Guest or a share link, and never when blocked.
+    The comment stores every name either way, so what it shows can't give a block away.
+    Only MANAGE hands out access, and nobody's role is lowered.
     """
     from suite.drive.framework import principals_for
 
-    manages = check(node, MANAGE, principals)
+    may_reach_outsiders = via_link is None and principals.user != "Guest"
+    manages = may_reach_outsiders and check(node, MANAGE, principals)
     reached = []
     for user in users:
         person = principals_for(user)
         if not check(node, READ, person):
-            if is_blocked(node, person):
+            if not may_reach_outsiders or is_blocked(node, person):
                 continue
             if manages and _principal_kind(user) == "user":
                 grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
@@ -750,12 +754,15 @@ def _insert_comment(
     thread: str,
     node: frappe._dict,
     text: str,
+    via_link: str | None,
     *,
     author_name: str | None,
     client_id: str | None,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], list[str]]:
+    """Insert a comment; answer it, the people it names and the ones to notify."""
     guest_name = _guest_name(principals, author_name)
-    mentions = reach_mentioned(principals, node, _mentions(text))
+    mentions = _mentions(text)
+    reached = reach_mentioned(principals, node, mentions, via_link)
     # Frappe counts words made only of tags as missing; _validate_text already refuses blank words
     row = frappe.get_doc(
         {
@@ -769,7 +776,7 @@ def _insert_comment(
             "client_id": client_id,
         }
     ).insert(ignore_permissions=True, ignore_mandatory=True)
-    return row.name, mentions
+    return row.name, mentions, reached
 
 
 def first_send(doctype: str, node: str, client_id: str | None, text: str) -> frappe._dict | None:
