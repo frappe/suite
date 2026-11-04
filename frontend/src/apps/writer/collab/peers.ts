@@ -1,9 +1,10 @@
-import { assignColours, type PeerColour } from '@/apps/writer/collab/colours'
+import { GUEST_USER, personKey, roomColours, type PeerColour } from '@/apps/writer/collab/colours'
 import { fullName, lookUp } from '@/apps/writer/composables/useUsers'
 import type { Peer, RoomPresence } from '@/platform/collab'
 import { useSession } from '@/platform/session'
 
-export const GUEST_USER = 'Guest'
+export { GUEST_USER, personKey, roomColours }
+
 const GUEST_TAG_RADIX = 36
 const GUEST_TAG_LENGTH = 4
 
@@ -23,48 +24,6 @@ export async function whenNamed(user: string, named: () => void) {
     await lookUp(user)
     named()
   }
-}
-
-// Who a tab belongs to; every guest tab is its own person
-export function personKey(user: string, peerId: number) {
-  if (user === GUEST_USER) {
-    return `Guest ${peerId}`
-  }
-
-  return user
-}
-
-// Each tab's colour. People rank by their first tab's arrival, then by key, so every tab in the room
-// ranks the same set the same way and a clash moves the later arrival
-export function roomColours(peers: Peer[], own: Peer) {
-  const tabs = [own, ...peers]
-  const firstArrivals = new Map<string, number>()
-  for (const { user, pid, arrival } of tabs) {
-    const key = personKey(user, pid)
-    const first = Math.min(arrival ?? Infinity, firstArrivals.get(key) ?? Infinity)
-    firstArrivals.set(key, first)
-  }
-
-  const ranked = [...firstArrivals].sort(byArrivalThenKey).map(([key]) => key)
-  const colours = assignColours(ranked)
-  const tabColours = new Map<number, PeerColour>()
-  for (const { user, pid } of tabs) {
-    tabColours.set(pid, colours.get(personKey(user, pid))!)
-  }
-
-  return tabColours
-}
-
-// Plain code-unit order for keys, the same in every locale
-function byArrivalThenKey(
-  [key, arrival]: [string, number],
-  [otherKey, otherArrival]: [string, number],
-) {
-  if (arrival !== otherArrival) {
-    return Math.sign(arrival - otherArrival)
-  }
-
-  return Number(key > otherKey) - Number(key < otherKey)
 }
 
 // The colours of everyone in the room, this tab's person included

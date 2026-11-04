@@ -113,3 +113,19 @@ body:has(.dialog-overlay) .sn-filter-overlay {
   cursor: grabbing;
   user-select: none;
 }
+
+/* A collaborator's colour, the shades Writer uses (platform/collab/colours).
+   The element carries both modes' shades from colourStyle(); the theme picks
+   one. Unscoped: the avatars and tab dots live in other components. */
+.sn-peer {
+  --rc: var(--peer-light);
+  --rc-tint: var(--peer-light-tint);
+  --rc-ink: var(--peer-light-ink);
+  --rc-selection: var(--peer-light-selection);
+}
+:root[data-theme='dark'] .sn-peer {
+  --rc: var(--peer-dark);
+  --rc-tint: var(--peer-dark-tint);
+  --rc-ink: var(--peer-dark-ink);
+  --rc-selection: var(--peer-dark-selection);
+}
