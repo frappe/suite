@@ -1,63 +1,21 @@
 // The grid reads its colours from the theme's CSS tokens at paint time, so a
-// theme switch only shows once something repaints. watchTheme tells the grid
-// when the page's theme changes.
+// theme switch only shows once something repaints. Switches come from places
+// that never touch the grid (the command menu, the shortcut, settings), so
+// the grid must repaint on its own.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createGrid } from './index.js'
 import { createMockCtx } from './painters/test-utils.js'
-import { watchTheme } from './theme-watch.js'
 
 // MutationObserver callbacks run as a microtask.
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-describe('watchTheme', () => {
-  const root = document.documentElement
-  afterEach(() => root.setAttribute('data-theme', 'light'))
-
-  it('fires once per theme change, both ways', async () => {
-    root.setAttribute('data-theme', 'light')
-    const onChange = vi.fn()
-    const stop = watchTheme(onChange)
-
-    root.setAttribute('data-theme', 'dark')
-    await flush()
-    expect(onChange).toHaveBeenCalledTimes(1)
-
-    root.setAttribute('data-theme', 'light')
-    await flush()
-    expect(onChange).toHaveBeenCalledTimes(2)
-    stop()
-  })
-
-  it('ignores a write of the same theme', async () => {
-    // The theme module re-applies the theme on every save, often unchanged.
-    root.setAttribute('data-theme', 'dark')
-    const onChange = vi.fn()
-    const stop = watchTheme(onChange)
-    root.setAttribute('data-theme', 'dark')
-    root.setAttribute('data-theme-mode', 'dark')
-    await flush()
-    expect(onChange).not.toHaveBeenCalled()
-    stop()
-  })
-
-  it('stops when told to', async () => {
-    root.setAttribute('data-theme', 'light')
-    const onChange = vi.fn()
-    watchTheme(onChange)()
-    root.setAttribute('data-theme', 'dark')
-    await flush()
-    expect(onChange).not.toHaveBeenCalled()
-  })
-})
-
-// Theme switches come from places that never touch the grid (the command
-// menu, the shortcut, settings), so the grid must repaint on its own.
 describe('the grid on a theme change', () => {
   const root = document.documentElement
   afterEach(() => {
     vi.restoreAllMocks()
     root.setAttribute('data-theme', 'light')
+    root.removeAttribute('data-theme-mode')
   })
 
   function grid() {
@@ -86,6 +44,16 @@ describe('the grid on a theme change', () => {
     root.setAttribute('data-theme', 'light')
     await flush()
     expect(frames).toHaveLength(1)
+    g.destroy()
+  })
+
+  it('asks for no frame when the theme is written unchanged', async () => {
+    // The theme module re-applies the theme on every save, often unchanged.
+    const { g, frames } = grid()
+    root.setAttribute('data-theme', 'light')
+    root.setAttribute('data-theme-mode', 'light')
+    await flush()
+    expect(frames).toHaveLength(0)
     g.destroy()
   })
 

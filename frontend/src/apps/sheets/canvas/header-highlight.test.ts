@@ -1,7 +1,8 @@
 // Every row and column header a selection covers is marked the same way, so
 // the selection reads in the headers even after a drag: a grey tint and a
 // dark semibold label. Headers outside the selection stay plain.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { cssVariables } from 'frappe-ui/tailwind/tokens'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { COL_HEADER_H, COLORS } from './constants.js'
 import { createHeaderPainter } from './painters/header-painter.js'
@@ -67,12 +68,34 @@ function separators() {
   return { rows, cols }
 }
 
+// Puts frappe-ui's token values for a theme on <html>, the way its stylesheet
+// does: light on :root, dark over it. Without them the colours read their
+// fallbacks, which differ from each other in both themes.
+const style = document.documentElement.style
+function applyTheme(theme: 'light' | 'dark'): void {
+  const vars =
+    theme === 'light' ? cssVariables.light : { ...cssVariables.light, ...cssVariables.dark }
+  for (const [name, value] of Object.entries(vars)) style.setProperty(name, String(value))
+}
+
 describe('separators between selected headers', () => {
-  it('stay visible on the tint', () => {
+  afterEach(() => {
+    style.cssText = ''
+  })
+
+  it.each(['light', 'dark'] as const)('stay visible on the tint in %s mode', (theme) => {
+    applyTheme(theme)
     const { rows, cols } = separators()
-    expect(COLORS.activeHeaderLine).not.toBe(COLORS.activeHeader)
-    for (const row of ['2', '3']) expect(rows[row], `row ${row}`).toBe(COLORS.activeHeaderLine)
-    for (const col of ['B', 'C']) expect(cols[col], `col ${col}`).toBe(COLORS.activeHeaderLine)
+    for (const line of [rows['2'], rows['3'], cols['B'], cols['C']]) {
+      expect(line).toBe(COLORS.activeHeaderLine)
+      expect(line).not.toBe(COLORS.activeHeader)
+    }
+  })
+
+  it('keep their light-mode colour', () => {
+    // #1129 shipped the light separators on --outline-gray-3.
+    applyTheme('light')
+    expect(separators().rows['2']).toBe(cssVariables.light['--outline-gray-3'])
   })
 
   it('stay the plain gridline colour outside the selection', () => {
@@ -108,44 +131,3 @@ describe('selected header tint', () => {
     expect([row3[1], row3[3]]).toEqual([73, 23])
   })
 })
-
-// The values frappe-ui gives the tokens the header colours read, in each
-// theme (read from the running app). The tint and its separators must differ
-// in both, or selected headers read as one merged block.
-const PALETTE = {
-  light: {
-    '--outline-gray-2': 'oklch(0.913 0 0)',
-    '--outline-gray-3': 'oklch(0.83 0 0)',
-    '--surface-gray-4': 'oklch(0.913 0 0)',
-    '--surface-gray-5': 'oklch(0.83 0 0)',
-  },
-  dark: {
-    '--outline-gray-2': 'oklch(0.341 0 0)',
-    '--outline-gray-3': 'oklch(0.379 0 0)',
-    '--surface-gray-4': 'oklch(0.379 0 0)',
-    '--surface-gray-5': 'oklch(0.457 0 0)',
-  },
-}
-
-describe.each(['light', 'dark'] as const)(
-  'separators between selected headers, %s theme',
-  (theme) => {
-    const root = document.documentElement.style
-    beforeEach(() => {
-      for (const [name, value] of Object.entries(PALETTE[theme])) root.setProperty(name, value)
-    })
-    afterEach(() => {
-      for (const name of Object.keys(PALETTE[theme])) root.removeProperty(name)
-    })
-
-    it('differ from the tint', () => {
-      const { rows, cols } = separators()
-      for (const line of [rows['2'], rows['3'], cols['B'], cols['C']])
-        expect(line).not.toBe(COLORS.activeHeader)
-    })
-
-    it.runIf(theme === 'light')('keep the light look from before', () => {
-      expect(separators().rows['2']).toBe('oklch(0.83 0 0)')
-    })
-  },
-)
