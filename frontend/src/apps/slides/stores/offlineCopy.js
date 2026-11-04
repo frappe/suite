@@ -109,6 +109,10 @@ function mediaNodeIds() {
     .filter(isMediaNodeId)
 }
 
+function hasRefusedMedia() {
+  return mediaNodeIds().some(isMediaRefused)
+}
+
 // one entry per node Drive never signed
 function unsignedSources(ids) {
   const sources = new Map()
@@ -536,7 +540,7 @@ const getOfflineStatus = (id) => {
 
   // offline, no row means the list this copy holds predates the picture; online it
   // means Drive won't give it to this user as of this read, so no update could add it
-  if (!navigator.onLine && mediaNodeIds().some(isMediaRefused)) {
+  if (!navigator.onLine && hasRefusedMedia()) {
     return 'outdated'
   }
 
@@ -569,6 +573,7 @@ function refreshOfflineStatus(id) {
 }
 
 export {
+  hasRefusedMedia,
   offlineCopyProgress,
   offlineCopyStatus,
   saveOfflineCopy,

@@ -32,6 +32,7 @@ import { computed, ref } from 'vue'
 
 import {
   cancelOfflineCopy,
+  hasRefusedMedia,
   offlineCopyProgress as progress,
   refreshOfflineStatus,
   removeOfflineCopy,
@@ -39,6 +40,7 @@ import {
   offlineCopyStatus as status,
 } from '@/apps/slides/stores/offlineCopy'
 import { presentationId } from '@/apps/slides/stores/presentation'
+import { translate } from '@/platform/translation'
 
 const showDialog = ref(false)
 
@@ -129,6 +131,16 @@ const cancel = ({ close }: DialogActionContext) => {
 const cancelAction: DialogAction = { label: 'Cancel', variant: 'outline' }
 const removeAction: DialogAction = { label: 'Remove copy', variant: 'subtle', onClick: remove }
 
+function availableMessage() {
+  if (hasRefusedMedia()) {
+    return translate(
+      'Saved in this browser. Opens and presents without internet, but some images may be missing.',
+    )
+  }
+
+  return 'Saved in this browser. Opens and presents without internet.'
+}
+
 const dialog = computed((): DialogProps => {
   if (progress.value.running) {
     return {
@@ -143,7 +155,7 @@ const dialog = computed((): DialogProps => {
       title: 'Available offline',
       icon: 'lucide-cloud-check',
       theme: 'blue',
-      message: 'Saved in this browser. Opens and presents without internet.',
+      message: availableMessage(),
       actions: [cancelAction, { ...removeAction, variant: 'solid' }],
     }
   }
