@@ -258,6 +258,14 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	await visitor.close();
 });
 
+test("a sheet whose room can't open keeps the rail", async ({ page }) => {
+	await page.route(/\/content\/[^/]+\/sessions$/, (route) => route.fulfill({ status: 500 }));
+	await page.goto(`/d/${sheet.name}`);
+
+	await expect(page.getByText("Couldn't open this sheet")).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByRole("navigation", { name: "Areas" })).toBeVisible();
+});
+
 test("the document actions fit on one row of a 320 px screen", async ({ page }) => {
 	await page.setViewportSize({ width: 320, height: 640 });
 	await openSheet(page);

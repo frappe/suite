@@ -1,12 +1,14 @@
-import { beforeEach, expect, it, vi } from 'vitest'
-import { createApp } from 'vue'
+import { afterEach, expect, it, vi } from 'vitest'
+import { createApp, nextTick, type App, type Ref } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { railHidden } from '@/platform/rail'
 
 import DrawSurface from './DrawSurface.vue'
 
-const drawing = vi.hoisted(() => ({ readable: true, loadError: false }))
+const drawing = vi.hoisted(() => ({
+  opened: null as { readable: Ref<boolean>; loadError: Ref<boolean> } | null,
+}))
 
 vi.mock('frappe-ui', () => ({ Button: { render: () => null } }))
 vi.mock('@/apps/drive', () => ({ useDriveDocumentCreation: () => ({}), driveNodeRoute: vi.fn() }))
@@ -26,41 +28,60 @@ vi.mock('../canvas/persistence', async () => {
       saving = ref(false)
       error = ref('')
       conflict = ref(false)
-      loadError = ref(drawing.loadError)
+      loadError = ref(false)
       editable = ref(true)
       recoveryAvailable = ref(true)
       recoveryAllowed = ref(true)
       drawingLoading = ref(false)
-      readable = ref(drawing.readable)
+      readable = ref(true)
       saveDrawing = vi.fn()
+      retainRecovery = vi.fn()
       dispose = vi.fn()
+      constructor() {
+        drawing.opened = this
+      }
     },
   }
 })
 
-beforeEach(() => Object.assign(drawing, { readable: true, loadError: false }))
+let app: App | null = null
 
-function railHiddenWhileOpen() {
-  const app = createApp(DrawSurface, { session: {} as DocumentSession })
+function openDrawing() {
+  app = createApp(DrawSurface, { session: {} as DocumentSession })
   app.mount(document.createElement('div'))
-  const isHidden = railHidden.value
-  app.unmount()
-  return isHidden
+  return drawing.opened!
 }
 
-it('hides the rail while the drawing is open', () => {
-  expect(railHiddenWhileOpen()).toBe(true)
+afterEach(() => {
+  app?.unmount()
+  app = null
+})
+
+it('hides the rail while the drawing is open, and gives it back on leaving', () => {
+  openDrawing()
+  expect(railHidden.value).toBe(true)
+
+  app?.unmount()
+  app = null
   expect(railHidden.value).toBe(false)
 })
 
-it('keeps the rail on the load-error page', () => {
-  drawing.loadError = true
+it('brings the rail back when the drawing fails to load', async () => {
+  const opened = openDrawing()
+  expect(railHidden.value).toBe(true)
 
-  expect(railHiddenWhileOpen()).toBe(false)
+  opened.loadError.value = true
+  await nextTick()
+
+  expect(railHidden.value).toBe(false)
 })
 
-it('keeps the rail on the no-permission page', () => {
-  drawing.readable = false
+it('brings the rail back when read access goes', async () => {
+  const opened = openDrawing()
+  expect(railHidden.value).toBe(true)
 
-  expect(railHiddenWhileOpen()).toBe(false)
+  opened.readable.value = false
+  await nextTick()
+
+  expect(railHidden.value).toBe(false)
 })
