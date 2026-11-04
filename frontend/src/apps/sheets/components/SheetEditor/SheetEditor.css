@@ -147,11 +147,16 @@
    read as places to type. */
 .sn-cell-ref {
   box-sizing: border-box;
-  /* As wide as its reference (--sn-name-ch: its length + 1, set in index.vue;
-     a ch is a digit, letters run a little wider), 72px to 220px. ISSUES #105 */
-  width: min(220px, max(72px, calc(var(--sn-name-ch, 3) * 1ch + 18px)));
-  height: 32px;
+  /* One width for every selection, so the value field beside it never moves
+     while you select, drag or scroll (Excel and LibreOffice do the same). It
+     fits AA100:AB200; a longer reference ends in an ellipsis. The phone
+     layout in SheetToolbar.vue sets a narrower --sn-name-w and --sn-name-pad. */
+  --sn-name-w: calc(12ch + 18px);
+  --sn-name-pad: 18px;
+  width: var(--sn-name-w);
+  height: 28px;
   padding: 0 8px;
+  text-overflow: ellipsis;
   flex-shrink: 0;
   font: inherit;
   font-size: 13px;
@@ -167,7 +172,18 @@
 .sn-cell-ref:hover {
   border-color: var(--outline-gray-4);
 }
+/* Focused, it grows to show the whole reference (--sn-name-ch: its length
+   + 1, set in index.vue) over the value field. The negative margin keeps
+   its place in the row at --sn-name-w, so nothing after it moves. */
 .sn-cell-ref:focus {
+  --sn-name-full: min(
+    240px,
+    max(var(--sn-name-w), calc(var(--sn-name-ch, 3) * 1ch + var(--sn-name-pad)))
+  );
+  position: relative;
+  z-index: 2;
+  width: var(--sn-name-full);
+  margin-right: calc(var(--sn-name-w) - var(--sn-name-full));
   border-color: var(--outline-gray-5);
   box-shadow: 0 0 0 2px var(--outline-gray-2);
 }
@@ -177,7 +193,7 @@
   position: relative;
   flex: 1;
   min-width: 160px;
-  height: 32px;
+  height: 28px;
   display: flex;
   align-items: center;
   gap: 10px;

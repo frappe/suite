@@ -9,7 +9,7 @@
       <Button
         :aria-label="__('Undo')"
         variant="ghost"
-        size="md"
+        size="sm"
         icon="lucide-undo-2"
         :tooltip="__('Undo (Ctrl+Z)')"
         :disabled="!canUndo"
@@ -19,7 +19,7 @@
         class="sn-phone-hide"
         :aria-label="__('Redo')"
         variant="ghost"
-        size="md"
+        size="sm"
         icon="lucide-redo-2"
         :tooltip="__('Redo (Ctrl+Y)')"
         :disabled="!canRedo"
@@ -30,7 +30,7 @@
         :aria-label="__('Format painter')"
         :aria-pressed="isPaintingFormat"
         :variant="isPaintingFormat ? 'subtle' : 'ghost'"
-        size="md"
+        size="sm"
         icon="lucide-paint-roller"
         :tooltip="__('Format painter')"
         @click="emit('toggle-format-painter')"
@@ -50,7 +50,7 @@
           <template #default="{ open }">
             <Button
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               icon-right="lucide-chevron-down"
               :aria-label="__('Number format: {0}', [numberFormatLabel])"
               :tooltip="__('Number format: {0}', [numberFormatLabel])"
@@ -62,7 +62,7 @@
           <template #default="{ open }">
             <Button
               :variant="activeNumberFormatType === 'currency' || open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               :icon="currencyIcon"
               :aria-pressed="activeNumberFormatType === 'currency'"
               :aria-label="__('Currency: {0}', [activeCurrencySymbol])"
@@ -72,7 +72,7 @@
         </Dropdown>
         <Button
           :variant="activeNumberFormatType === 'percentage' ? 'subtle' : 'ghost'"
-          size="md"
+          size="sm"
           icon="lucide-percent"
           :aria-label="__('Percent')"
           :aria-pressed="activeNumberFormatType === 'percentage'"
@@ -82,7 +82,7 @@
         <Button
           :aria-label="__('Fewer decimal places')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-decimals-arrow-left"
           :tooltip="__('Fewer decimal places')"
           @click="emit('adjust-decimals', -1)"
@@ -90,7 +90,7 @@
         <Button
           :aria-label="__('More decimal places')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-decimals-arrow-right"
           :tooltip="__('More decimal places')"
           @click="emit('adjust-decimals', +1)"
@@ -100,28 +100,81 @@
       <div class="sn-vr" />
 
       <div class="sn-group" :class="tools" :aria-disabled="readOnly || undefined">
-        <!-- The wrapper carries the sizing: TextInput puts `class` on an inner
-         element that does not get this component's scoped attribute. -->
+        <!-- Font size as in Google: − and + step it by 1, the field takes a
+             typed size (Enter), and clicking the field lists common sizes.
+             A phone keeps only the field, for room. -->
         <div class="sn-font-size">
-          <Tooltip :text="__('Font size')">
-            <TextInput
-              type="number"
-              size="md"
-              variant="ghost"
-              :aria-label="__('Font size')"
-              :model-value="activeFormat.fontSize || 13"
-              min="8"
-              max="72"
-              @change="emit('font-size-input', $event)"
-              @keydown.enter.prevent="emit('font-size-input', $event)"
-            />
-          </Tooltip>
+          <Button
+            class="sn-phone-hide"
+            :aria-label="__('Decrease font size')"
+            variant="ghost"
+            size="sm"
+            icon="lucide-minus"
+            :tooltip="__('Decrease font size')"
+            :disabled="fontSize <= FONT_MIN"
+            @click="emit('adjust-font-size', -1)"
+          />
+          <Popover v-model:open="sizesOpen" trigger="manual" :auto-focus="false" align="center">
+            <template #trigger>
+              <!-- The wrapper carries the sizing: TextInput puts `class` on an
+                   inner element that does not get this component's scoped
+                   attribute. -->
+              <div class="sn-font-size-field">
+                <Tooltip :text="__('Font size')">
+                  <TextInput
+                    type="number"
+                    size="sm"
+                    variant="outline"
+                    :aria-label="__('Font size')"
+                    :model-value="typedSize ?? fontSize"
+                    :min="FONT_MIN"
+                    :max="FONT_MAX"
+                    @click="sizesOpen = true"
+                    @input="typedSize = ($event.target as HTMLInputElement).value"
+                    @change="applyTypedSize"
+                    @blur="typedSize = null"
+                    @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+                  />
+                </Tooltip>
+              </div>
+            </template>
+            <!-- A pointer shortcut: typing and the field's arrow keys cover the
+                 keyboard. mousedown.prevent keeps the caret in the field. -->
+            <div class="sn-font-sizes" role="group" :aria-label="__('Font size')">
+              <ItemListRow
+                v-for="n in FONT_SIZES"
+                :key="n"
+                as="button"
+                type="button"
+                class="text-center tabular-nums"
+                :selected="n === fontSize"
+                :active="n === hoveredSize"
+                :aria-current="n === fontSize || undefined"
+                @mouseenter="hoveredSize = n"
+                @mouseleave="hoveredSize = null"
+                @mousedown.prevent
+                @click="setFontSize(n)"
+              >
+                {{ n }}
+              </ItemListRow>
+            </div>
+          </Popover>
+          <Button
+            class="sn-phone-hide"
+            :aria-label="__('Increase font size')"
+            variant="ghost"
+            size="sm"
+            icon="lucide-plus"
+            :tooltip="__('Increase font size')"
+            :disabled="fontSize >= FONT_MAX"
+            @click="emit('adjust-font-size', 1)"
+          />
         </div>
         <Button
           :aria-label="__('Bold')"
           :variant="activeFormat.bold ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.bold"
-          size="md"
+          size="sm"
           icon="lucide-bold"
           :tooltip="__('Bold (Ctrl+B)')"
           @click="emit('toggle-format', 'bold')"
@@ -130,7 +183,7 @@
           :aria-label="__('Italic')"
           :variant="activeFormat.italic ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.italic"
-          size="md"
+          size="sm"
           icon="lucide-italic"
           :tooltip="__('Italic (Ctrl+I)')"
           @click="emit('toggle-format', 'italic')"
@@ -139,7 +192,7 @@
           :aria-label="__('Strikethrough')"
           :variant="activeFormat.strikethrough ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.strikethrough"
-          size="md"
+          size="sm"
           icon="lucide-strikethrough"
           :tooltip="__('Strikethrough (Ctrl+Shift+X)')"
           @click="emit('toggle-format', 'strikethrough')"
@@ -206,7 +259,7 @@
             <Button
               :aria-label="__('Borders')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               icon="lucide-grid-2x2"
               :tooltip="__('Borders')"
             />
@@ -215,7 +268,7 @@
         <Button
           :aria-label="__('Merge cells')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-table-cells-merge"
           :tooltip="__('Merge or unmerge cells')"
           @click="emit('merge')"
@@ -225,7 +278,7 @@
             <Button
               :aria-label="__('Alignment')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               :icon="hAlignIcon"
               :tooltip="__('Alignment')"
             />
@@ -236,7 +289,7 @@
             <Button
               :aria-label="__('Text wrapping')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               :icon="textWrapIcon"
               :tooltip="__('Text wrapping')"
             />
@@ -250,7 +303,7 @@
         <Button
           :aria-label="__('Sort')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-arrow-down-wide-narrow"
           :tooltip="__('Sort and filter this column (Alt+↓)')"
           @click="emit('sort')"
@@ -259,7 +312,7 @@
           :aria-label="__('Filter')"
           :aria-pressed="showSortFilter"
           :variant="showSortFilter ? 'subtle' : 'ghost'"
-          size="md"
+          size="sm"
           icon="lucide-funnel"
           :tooltip="__('Filter')"
           @click="emit('update:showSortFilter', !showSortFilter)"
@@ -273,7 +326,7 @@
           <Button
             class="sn-format-btn"
             :variant="open ? 'subtle' : 'outline'"
-            size="md"
+            size="sm"
             icon-left="lucide-sliders-horizontal"
             :label="__('Format')"
             :aria-label="__('Format')"
@@ -288,8 +341,16 @@
 // Row 2 of the top area. It renders the active cell's format and the menus the
 // editor builds, and reports every action back; the formatting itself stays
 // in the editor.
-import { Button, Dropdown, TextInput, Tooltip, type DropdownOptions } from 'frappe-ui'
-import { computed } from 'vue'
+import {
+  Button,
+  Dropdown,
+  ItemListRow,
+  Popover,
+  TextInput,
+  Tooltip,
+  type DropdownOptions,
+} from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -328,7 +389,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'number-format': [type: 'percentage']
   'adjust-decimals': [delta: number]
-  'font-size-input': [e: Event]
+  'adjust-font-size': [delta: number]
+  'set-font-size': [px: number]
   'toggle-format': [key: 'bold' | 'italic' | 'strikethrough']
   'set-color': [key: 'color' | 'backgroundColor', value: string]
   undo: []
@@ -340,6 +402,35 @@ const emit = defineEmits<{
 }>()
 
 const tools = computed(() => ({ 'sn-tools--readonly': props.readOnly }))
+
+// The editor clamps every size to 8–72 px.
+const FONT_MIN = 8
+const FONT_MAX = 72
+const FONT_SIZES = [8, 9, 10, 11, 12, 14, 18, 24, 36]
+const fontSize = computed(() => props.activeFormat.fontSize || 13)
+const sizesOpen = ref(false)
+const hoveredSize = ref<number | null>(null)
+// What the person has typed into the field, until it is applied or dropped
+// (a blur drops it after its change, if any). The field shows it, else the
+// selection's size.
+const typedSize = ref<string | null>(null)
+
+// Applies a size the selection doesn't have yet; dropping the typed text
+// shows the size the cell got (72 after typing 100).
+function setFontSize(n: number) {
+  typedSize.value = null
+  sizesOpen.value = false
+  if (n !== fontSize.value) emit('set-font-size', n)
+}
+// The field's change: Enter blurs it, and a blur after an edit sends one.
+// Only a typed size counts, clamped as the editor clamps it.
+function applyTypedSize() {
+  sizesOpen.value = false
+  if (typedSize.value === null) return
+  const n = parseInt(typedSize.value, 10)
+  if (Number.isFinite(n)) setFontSize(Math.max(FONT_MIN, Math.min(FONT_MAX, n)))
+  else setFontSize(fontSize.value)
+}
 
 // Lucide draws each currency the toolbar offers, so the button keeps the
 // same stroke as its neighbours instead of a text glyph.
@@ -429,7 +520,9 @@ const currencyIcon = computed(
     min-width: 96px;
   }
   .sn-toolbar :deep(.sn-cell-ref) {
-    width: min(120px, max(60px, calc(var(--sn-name-ch, 3) * 1ch + 14px)));
+    /* Fits A1:B20; a longer reference ends in an ellipsis. */
+    --sn-name-w: calc(8ch + 14px);
+    --sn-name-pad: 14px;
     padding: 0 6px;
   }
   /* Format keeps its icon; the room goes to the tools, which scroll. */
@@ -443,16 +536,30 @@ const currencyIcon = computed(
   }
 }
 
-/* flex-shrink:0 — the input has no min-content width, so a narrow bar would
-   squeeze it until the size is hidden. */
+/* − field +. flex-shrink:0 — the input has no min-content width, so a
+   narrow bar would squeeze it until the size is hidden. */
 .sn-font-size {
-  width: 52px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sn-font-size-field {
+  width: 38px;
   flex-shrink: 0;
 }
 .sn-font-size :deep(input) {
+  padding-inline: 2px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   -moz-appearance: textfield;
+}
+/* The common sizes, under the field. */
+.sn-font-sizes {
+  display: flex;
+  flex-direction: column;
+  min-width: 56px;
+  padding: 4px;
 }
 .sn-font-size :deep(input::-webkit-outer-spin-button),
 .sn-font-size :deep(input::-webkit-inner-spin-button) {
@@ -467,8 +574,8 @@ const currencyIcon = computed(
    open the ColorPicker popover. */
 .sn-swatch-btn {
   position: relative;
-  height: 32px;
-  width: 32px;
+  height: 28px;
+  width: 28px;
   border-radius: 6px;
   display: inline-flex;
   flex-direction: column;
