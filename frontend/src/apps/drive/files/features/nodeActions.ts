@@ -63,7 +63,8 @@ export function nodeActions(node: ActionNode, signedIn: boolean): NodeActions {
     // Share needs MANAGE (spec §7.2). A link gives at most EDIT, so guests and link-only readers never see it.
     share: manage,
     copyLink: true,
-    download: node.kind !== 'link',
+    // A folder downloads as a zip delivered to the inbox, so it needs a session.
+    download: node.kind === 'folder' ? signedIn : node.kind !== 'link',
     rename: canRename(node),
     move: edit,
     copy: true,

@@ -5,14 +5,14 @@ import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-
 import type { DriveNode } from '@/apps/drive/client/types'
 import { TransportError, type Operation } from '@/platform/transport'
 
-// A Drive server that keeps the caller's Recent and one folder's children.
+// A Drive server that keeps the caller's Recent, stars and one folder's children.
 const server = vi.hoisted(() => ({
   recents: [] as string[],
   nodes: new Map<string, DriveNode>(),
   folderRole: 30,
   calls: [] as Array<{ id: string; input: Record<string, unknown> }>,
-  /** The answer to a folder archive build: a status, or an error to throw. */
-  archive: null as null | (() => unknown),
+  /** The answer to a download request: a Preparing download, or an error to throw. */
+  download: null as null | (() => unknown),
 }))
 
 vi.mock('@/platform/transport', async (original) => {
@@ -52,8 +52,14 @@ vi.mock('@/platform/transport', async (original) => {
             server.recents = server.recents.filter((name) => !named.includes(name))
             return { count: before - server.recents.length }
           }
-          case 'node_archive_start':
-            return server.archive?.()
+          case 'download_start':
+            return server.download?.()
+          case 'node_put_favourite':
+          case 'node_delete_favourite': {
+            const starred = node(input.node)
+            if (starred) starred.favourite = operation.id === 'node_put_favourite'
+            return { count: 1 }
+          }
           default:
             throw new Error(`Unexpected request ${operation.id}`)
         }
@@ -234,7 +240,7 @@ afterEach(() => {
   server.recents = []
   server.calls = []
   server.folderRole = 30
-  server.archive = null
+  server.download = null
   feedback.toasts.length = 0
   listing.rows = []
   listing.menu = null
@@ -391,6 +397,16 @@ describe('Pasting an image', () => {
   })
 })
 
+const preparing = {
+  name: 'download-1',
+  title: 'Photos.zip',
+  status: 'Preparing',
+  size: null,
+  expires_at: null,
+  error: null,
+  url: null,
+}
+
 describe('Downloading a folder', () => {
   async function download() {
     const assign = vi.fn()
@@ -401,37 +417,81 @@ describe('Downloading a folder', () => {
     return assign
   }
 
-  it('shows the folder preparing, then starts the download in the same toast', async () => {
-    server.archive = () => ({ status: 'ready', file_name: 'Photos.zip', size: 10, error: null })
+  it('asks for the zip and says a notification will bring it', async () => {
+    server.download = () => preparing
 
     const assign = await download()
 
-    expect(assign).toHaveBeenCalledWith('/api/suite/drive/nodes/photos/archive/download')
-    const [preparing, started] = feedback.toasts
-    expect(preparing).toMatchObject({
-      kind: 'loading',
-      message: 'Preparing “Photos” for download…',
-    })
-    expect(started).toMatchObject({ kind: 'success', message: 'Downloading “Photos”' })
-    expect(started?.options?.id).toBe(1)
-    expect(feedback.toasts).toHaveLength(2)
+    expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([
+      { id: 'download_start', input: { nodes: ['photos'] } },
+    ])
+    expect(assign).not.toHaveBeenCalled()
+    expect(feedback.toasts).toEqual([
+      {
+        kind: 'info',
+        message: 'Preparing “Photos” for download',
+        options: { description: 'You will get a notification when the zip is ready.' },
+      },
+    ])
   })
 
-  it('replaces the toast with the reason when the folder is too large', async () => {
-    const reason = 'This folder is larger than 512 MB, the most Drive can download at once.'
-    server.archive = () => {
+  it('shows the reason when Drive refuses the download', async () => {
+    const reason = 'Only active Drive items can be downloaded'
+    server.download = () => {
       throw new TransportError({ type: 'DriveConflict', status: 409, message: reason, details: {} })
     }
 
-    const assign = await download()
+    await download()
 
-    expect(assign).not.toHaveBeenCalled()
-    expect(feedback.toasts.slice(1)).toEqual([
-      {
-        kind: 'error',
-        message: 'Could not download “Photos”',
-        options: { id: 1, description: reason },
-      },
+    expect(feedback.toasts).toEqual([
+      { kind: 'error', message: 'Could not download “Photos”', options: { description: reason } },
     ])
+  })
+})
+
+describe('A selection', () => {
+  async function select(...names: string[]): Promise<HTMLElement> {
+    const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    for (const name of names) menuItem(name, 'Select')?.onClick()
+    await nextTick()
+    return root
+  }
+  function bulkButton(root: HTMLElement, label: string): HTMLElement | undefined {
+    return [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === label,
+    )
+  }
+
+  it('downloads as one zip in one request', async () => {
+    server.download = () => ({ ...preparing, title: 'Talks.zip' })
+    const root = await select('a', 'c')
+
+    bulkButton(root, 'Download')?.click()
+
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(1))
+    expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([
+      { id: 'download_start', input: { nodes: ['a', 'c'] } },
+    ])
+    expect(feedback.toasts[0]).toMatchObject({
+      kind: 'info',
+      message: 'Preparing 2 items for download',
+    })
+  })
+
+  it('stars every item, then offers to unstar them all', async () => {
+    const root = await select('a', 'c')
+
+    bulkButton(root, 'Star')?.click()
+
+    await vi.waitFor(() => expect(bulkButton(root, 'Unstar')).toBeDefined())
+    const starred = server.calls.filter((call) => call.id === 'node_put_favourite')
+    expect(starred.map((call) => call.input.node).sort()).toEqual(['a', 'c'])
+
+    bulkButton(root, 'Unstar')?.click()
+
+    await vi.waitFor(() => expect(bulkButton(root, 'Star')).toBeDefined())
+    const unstarred = server.calls.filter((call) => call.id === 'node_delete_favourite')
+    expect(unstarred.map((call) => call.input.node).sort()).toEqual(['a', 'c'])
   })
 })

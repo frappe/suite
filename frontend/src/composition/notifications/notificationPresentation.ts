@@ -1,8 +1,10 @@
 import { DRIVE_ROLES, type DriveNotification } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 
-type Action = DriveNotification['activity']['action']
-type Sentence = (actor: string, title: string, notification: DriveNotification) => string
+/** A notification about somebody's action on an item, as opposed to one about the reader's own download. */
+type ActivityNotification = Extract<DriveNotification, { activity: unknown }>
+type Action = ActivityNotification['activity']['action']
+type Sentence = (actor: string, title: string, notification: ActivityNotification) => string
 
 // Every action has a sentence. A new server action fails the typecheck here, and
 // the response validator refuses an action it does not know, so the bell never
@@ -39,17 +41,29 @@ const ROLE_PHRASES: Record<number, () => string> = {
   [DRIVE_ROLES.manage]: () => __('can manage'),
 }
 
-/** One plain sentence: who did what to which item, for the reader. */
+/** One plain sentence: who did what to which item, or what became of the reader's download. */
 export function notificationSentence(notification: DriveNotification): string {
+  if ('download' in notification) {
+    const { title, status } = notification.download
+    return status === 'Failed'
+      ? __('Could not prepare "{0}"', [title])
+      : __('"{0}" is ready to download', [title])
+  }
   const sentence = SENTENCES[notification.activity.action]
   return sentence(notification.actor.full_name, notification.node_title, notification)
 }
 
-/** The comment a mention quotes, or null when the activity carries none. */
+/** The comment a mention quotes, why a download failed, or null. */
 export function notificationExcerpt(notification: DriveNotification): string | null {
+  if ('download' in notification) return notification.download.error
   if (notification.activity.action !== 'comment') return null
   const excerpt = notification.activity.detail.excerpt
   return typeof excerpt === 'string' && excerpt.trim() ? excerpt : null
+}
+
+/** When the notification arrived, or when its activity happened if the row has no stamp. */
+export function notificationAt(notification: DriveNotification): string | null {
+  return notification.creation || ('activity' in notification ? notification.activity.at : null)
 }
 
 export function notificationTime(value: string | null | undefined, now = new Date()): string {

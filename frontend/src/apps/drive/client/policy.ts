@@ -70,7 +70,8 @@ export const mutationEffects: Readonly<Record<string, Effects | 'none'>> = {
   'node_patch.stamp': { touches: node, invalidates: LISTS },
   node_purge: { touches: node, invalidates: STORAGE },
   node_copy: { invalidates: STORAGE },
-  node_archive_start: { invalidates: ['node_archive_status'] },
+  // The zip is built in the background; its notification arrives with `drive:changed`.
+  download_start: 'none',
   node_put_content: { touches: node, invalidates: [...STORAGE, 'node_versions', 'node_media'] },
   node_preview: { touches: node, invalidates: LISTS },
   // Opening a session reserves storage; chunks only advance that session's bytes.
@@ -165,7 +166,6 @@ export const registration: OwnerRegistration = {
       },
       effects,
       ...(reference.id === 'roots_discover' ? { staleTime: 5 * 60_000 } : {}),
-      ...(reference.id === 'node_archive_status' ? { refetchInterval: 2_000 } : {}),
       ...(reference.id === 'node_children'
         ? {
             member: (row, input) =>

@@ -89,7 +89,12 @@ vi.mock('@/api', async () => ({
     error: null,
   }),
   useInfiniteQuery: () => ({
-    rows: [shareNotification(), mentionNotification()],
+    rows: [
+      shareNotification(),
+      mentionNotification(),
+      downloadNotification('notice-3', 'Ready'),
+      downloadNotification('notice-4', 'Failed'),
+    ],
     status: 'success',
     error: null,
     hasNext: false,
@@ -109,6 +114,7 @@ afterEach(() => {
   state.push.mockReset()
   state.markRead.mockReset()
   state.loadNode.mockReset()
+  vi.restoreAllMocks()
 })
 describe('Notifications bell', () => {
   it('reads each notification as a sentence naming the person and the item', () => {
@@ -163,6 +169,27 @@ describe('Notifications bell', () => {
     expect(state.loadNode.mock.invocationCallOrder[0]!).toBeLessThan(
       state.push.mock.invocationCallOrder[0]!,
     )
+  })
+  it('tells the reader their zip is ready, and its row downloads the zip', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+
+    row?.click()
+    await vi.waitFor(() => expect(assign).toHaveBeenCalled())
+
+    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-3'] })
+    expect(assign).toHaveBeenCalledWith('/api/suite/drive/downloads/notice-3/content')
+    expect(state.loadNode).not.toHaveBeenCalled()
+  })
+  it('says why a download could not be prepared', () => {
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('Could not prepare "Talks.zip"'),
+    )
+    expect(row?.textContent).toContain('An item in folder Talks cannot be read')
   })
   it('marks every remaining row only through the explicit action', async () => {
     state.markRead.mockResolvedValue({
@@ -237,6 +264,23 @@ function notification(
       via_link: null,
       client: null,
       detail,
+    },
+  }
+}
+function downloadNotification(name: string, status: 'Ready' | 'Failed') {
+  const ready = status === 'Ready'
+  return {
+    name,
+    read: 0,
+    creation: new Date().toISOString(),
+    download: {
+      name,
+      title: 'Talks.zip',
+      status,
+      size: ready ? 2048 : null,
+      expires_at: new Date().toISOString(),
+      error: ready ? null : 'An item in folder Talks cannot be read',
+      url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },
   }
 }

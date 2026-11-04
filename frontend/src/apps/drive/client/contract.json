@@ -4788,199 +4788,6 @@
       "bytes": false
     },
     {
-      "id": "node_archive_start",
-      "kind": "mutation",
-      "publicName": "archives.start",
-      "page": null,
-      "envelope": "data",
-      "method": "POST",
-      "path": "nodes/{node}/archive",
-      "pathParams": [
-        "node"
-      ],
-      "query": null,
-      "body": {
-        "additionalProperties": false,
-        "description": "The body of a write that takes nothing but its path: `{}`.",
-        "properties": {},
-        "title": "Empty",
-        "type": "object"
-      },
-      "output": {
-        "properties": {
-          "status": {
-            "enum": [
-              "building",
-              "ready",
-              "failed"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "file_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Name"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "required": [
-          "status",
-          "file_name",
-          "size",
-          "error"
-        ],
-        "title": "ArchiveStatus",
-        "type": "object"
-      },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "node_archive_status",
-      "kind": "query",
-      "publicName": "archives.get",
-      "page": null,
-      "envelope": "data",
-      "method": "GET",
-      "path": "nodes/{node}/archive",
-      "pathParams": [
-        "node"
-      ],
-      "query": null,
-      "body": null,
-      "output": {
-        "properties": {
-          "status": {
-            "enum": [
-              "building",
-              "ready",
-              "failed"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "file_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Name"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "required": [
-          "status",
-          "file_name",
-          "size",
-          "error"
-        ],
-        "title": "ArchiveStatus",
-        "type": "object"
-      },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "node_archive_download",
-      "kind": "query",
-      "publicName": "archives.download",
-      "page": null,
-      "envelope": "data",
-      "method": "GET",
-      "path": "nodes/{node}/archive/download",
-      "pathParams": [
-        "node"
-      ],
-      "query": null,
-      "body": null,
-      "output": null,
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": true,
-      "bytes": true
-    },
-    {
       "id": "node_put_content",
       "kind": "mutation",
       "publicName": "nodes.replaceContent",
@@ -9875,6 +9682,117 @@
             "title": "ActivityShape",
             "type": "object"
           },
+          "DownloadNotificationShape": {
+            "description": "A notification that the caller's own download is ready, or that it failed.",
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "read": {
+                "title": "Read",
+                "type": "integer"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "download": {
+                "$ref": "#/$defs/DownloadShape"
+              }
+            },
+            "required": [
+              "name",
+              "read",
+              "creation",
+              "download"
+            ],
+            "title": "DownloadNotificationShape",
+            "type": "object"
+          },
+          "DownloadShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "Preparing",
+                  "Ready",
+                  "Failed"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "size": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Size"
+              },
+              "expires_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Expires At"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Error"
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Url"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "status",
+              "size",
+              "expires_at",
+              "error",
+              "url"
+            ],
+            "title": "DownloadShape",
+            "type": "object"
+          },
           "NotificationShape": {
             "properties": {
               "name": {
@@ -9957,7 +9875,14 @@
         "properties": {
           "rows": {
             "items": {
-              "$ref": "#/$defs/NotificationShape"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NotificationShape"
+                },
+                {
+                  "$ref": "#/$defs/DownloadNotificationShape"
+                }
+              ]
             },
             "title": "Rows",
             "type": "array"
@@ -10106,6 +10031,142 @@
       "nodeParams": [],
       "stream": false,
       "bytes": false
+    },
+    {
+      "id": "download_start",
+      "kind": "mutation",
+      "publicName": "downloads.start",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "downloads",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes"
+        ],
+        "title": "StartDownload",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Preparing",
+              "Ready",
+              "Failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status",
+          "size",
+          "expires_at",
+          "error",
+          "url"
+        ],
+        "title": "DownloadShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "download_content",
+      "kind": "query",
+      "publicName": "downloads.content",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "downloads/{download}/content",
+      "pathParams": [
+        "download"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [
+        "DriveNotFound"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "roots_discover",

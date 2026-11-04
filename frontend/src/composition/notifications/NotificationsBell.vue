@@ -80,7 +80,7 @@
               {{ notificationExcerpt(notification) }}
             </span>
             <span class="mt-1 block text-xs text-ink-gray-5">
-              {{ notificationTime(notification.creation || notification.activity.at) }}
+              {{ notificationTime(notificationAt(notification)) }}
             </span>
           </span>
         </button>
@@ -105,6 +105,7 @@ import { useRouter } from 'vue-router'
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, loadDriveNodeSummary, type DriveNotification } from '@/apps/drive'
 import {
+  notificationAt,
   notificationExcerpt,
   notificationSentence,
   notificationTime,
@@ -124,6 +125,13 @@ const unread = computed(() => count.data?.unread ?? 0)
 async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
+  }
+  if ('download' in notification) {
+    // A failed download has nothing to open; reading it is enough.
+    if (!notification.download.url) return
+    open.value = false
+    window.location.assign(notification.download.url)
+    return
   }
   const node = await loadDriveNodeSummary(notification.activity.node)
   open.value = false

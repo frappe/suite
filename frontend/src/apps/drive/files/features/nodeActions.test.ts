@@ -64,6 +64,12 @@ describe('nodeActions', () => {
     ])
   })
 
+  it('offers a visitor without a session a file download but no folder download, because a zip arrives in the inbox', () => {
+    expect(nodeActions(node('file', 'Active', DRIVE_ROLES.read), false).download).toBe(true)
+    expect(nodeActions(node('folder', 'Active', DRIVE_ROLES.read), false).download).toBe(false)
+    expect(nodeActions(node('folder', 'Active', DRIVE_ROLES.read), true).download).toBe(true)
+  })
+
   it('offers a commenting Suite Admin sharing, restore and delete forever, but no edits', () => {
     const admin = (state: string): ActionNode => ({
       ...node('file', state, DRIVE_ROLES.comment),

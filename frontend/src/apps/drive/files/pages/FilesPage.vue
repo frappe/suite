@@ -256,7 +256,6 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { archiveDownloadUrl } from '@/apps/drive/client/archives'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
@@ -266,6 +265,7 @@ import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
+import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
@@ -687,8 +687,8 @@ const trashMutation = useMutation(api.drive.nodes.trash)
 const starMutation = useMutation(api.drive.nodes.star)
 const unstarMutation = useMutation(api.drive.nodes.unstar)
 const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
-// The download reports its own outcome, in the toast that showed it preparing.
-const archiveMutation = useMutation(api.drive.archives.start, { silent: true })
+// The download reports its own refusal, in a toast that names what was asked for.
+const downloadMutation = useMutation(api.drive.downloads.start, { silent: true })
 const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
@@ -926,6 +926,23 @@ const bulkActions = computed(() => {
           disabled: !allow('move'),
           onClick: beginBulkMove,
         },
+        // A zip arrives through the inbox, and Star is personal: both need a session.
+        ...(signedIn.value
+          ? [
+              {
+                label: __('Download'),
+                icon: 'lucide-download',
+                disabled: !allow('download'),
+                onClick: () => downloadRows(selectedRows.value),
+              },
+              {
+                label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
+                icon: 'lucide-star',
+                disabled: !allow('star'),
+                onClick: () => starRows(selectedRows.value),
+              },
+            ]
+          : []),
         {
           label: 'Move to trash',
           icon: 'lucide-trash-2',
@@ -1536,7 +1553,15 @@ async function removeFromRecent(rows: readonly DriveNode[]) {
   clearSelected()
 }
 async function toggleStar(row: DriveNode) {
-  const starred = !row.favourite
+  await setStar(row, !row.favourite)
+}
+/** Stars every selected item, or unstars them all when every one is already starred. */
+async function starRows(rows: readonly DriveNode[]) {
+  const starred = !rows.every((row) => row.favourite)
+  const changing = rows.filter((row) => !!row.favourite !== starred)
+  await Promise.allSettled(changing.map((row) => setStar(row, starred)))
+}
+async function setStar(row: DriveNode, starred: boolean) {
   const result = starred
     ? await starMutation.run({ node: row.name })
     : await unstarMutation.run({ node: row.name })
@@ -1546,26 +1571,27 @@ async function toggleStar(row: DriveNode) {
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
 }
-async function download(row: DriveNode) {
-  if (row.kind === 'folder') return downloadFolder(row)
+async function download(row: DriveNode): Promise<void> {
+  if (row.kind === 'folder') return downloadRows([row])
   window.location.assign(nodeContentUrl(row.name, { download: true }))
 }
 /**
- * Drive zips a folder while the request waits, and refuses one over its size
- * cap (spec §11.2). One toast follows that request: preparing, then the
- * download starting, or the server's reason, which names the cap.
+ * One file downloads at once. Anything else becomes one zip that Drive builds
+ * in the background; a notification links to it when it is ready (Drive spec
+ * §11.2).
  */
-async function downloadFolder(folder: DriveNode) {
-  const name = subject([itemOf(folder)])
-  const id = toast.loading(`Preparing ${name} for download…`)
+async function downloadRows(rows: readonly DriveNode[]): Promise<void> {
+  const [only] = rows
+  if (rows.length === 1 && only && only.kind !== 'folder') return download(only)
+  const name = subject(rows.map(itemOf))
   try {
-    const built = await archiveMutation.run({ node: folder.name })
-    if (built.status !== 'ready') throw new Error(built.error ?? 'The folder could not be zipped.')
-    toast.success(`Downloading ${name}`, { id })
-    window.location.assign(archiveDownloadUrl(folder.name))
+    await downloadMutation.run({ nodes: rows.map((row) => row.name) })
+    toast.info(__('Preparing {0} for download', [name]), {
+      description: __('You will get a notification when the zip is ready.'),
+    })
   } catch (error) {
     const reason = error instanceof Error ? error.message : undefined
-    toast.error(`Could not download ${name}`, { id, description: reason })
+    toast.error(__('Could not download {0}', [name]), { description: reason })
   }
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
