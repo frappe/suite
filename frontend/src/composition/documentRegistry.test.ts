@@ -2,13 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { documentTypes, findDocumentType } from './documentRegistry'
 
-// what the Slides store's editor imports need, so the store itself loads for real
-vi.mock('@/apps/slides/stores/presentation', async () => {
-  const { ref } = await import('vue')
-  return { presentationDoc: ref(null), presentationId: ref(null), viewOnly: ref(false) }
-})
-vi.mock('@/apps/slides/stores/slide', async () => ({ slides: (await import('vue')).ref([]) }))
-vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (src: string) => src }))
+vi.mock('frappe-ui', () => ({ toast: {}, FileUploadHandler: class {} }))
 
 function record(node: string) {
   return JSON.stringify({ node, keys: [] })

@@ -157,7 +157,7 @@ describe('a copy that outlived its page', () => {
       }),
     })
     saveFailed.value = false
-    savingFor.value = mounted.docname
+    savingFor.value = mounted.docname as never
     await nextTick()
     savingFor.value = null
     await nextTick()
