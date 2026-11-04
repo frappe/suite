@@ -9,7 +9,7 @@
       <Button
         :aria-label="__('Undo')"
         variant="ghost"
-        size="md"
+        size="sm"
         icon="lucide-undo-2"
         :tooltip="__('Undo (Ctrl+Z)')"
         :disabled="!canUndo"
@@ -19,7 +19,7 @@
         class="sn-phone-hide"
         :aria-label="__('Redo')"
         variant="ghost"
-        size="md"
+        size="sm"
         icon="lucide-redo-2"
         :tooltip="__('Redo (Ctrl+Y)')"
         :disabled="!canRedo"
@@ -30,7 +30,7 @@
         :aria-label="__('Format painter')"
         :aria-pressed="isPaintingFormat"
         :variant="isPaintingFormat ? 'subtle' : 'ghost'"
-        size="md"
+        size="sm"
         icon="lucide-paint-roller"
         :tooltip="__('Format painter')"
         @click="emit('toggle-format-painter')"
@@ -50,7 +50,7 @@
           <template #default="{ open }">
             <Button
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               icon-right="lucide-chevron-down"
               :aria-label="__('Number format: {0}', [numberFormatLabel])"
               :tooltip="__('Number format: {0}', [numberFormatLabel])"
@@ -62,7 +62,7 @@
           <template #default="{ open }">
             <Button
               :variant="activeNumberFormatType === 'currency' || open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               :icon="currencyIcon"
               :aria-pressed="activeNumberFormatType === 'currency'"
               :aria-label="__('Currency: {0}', [activeCurrencySymbol])"
@@ -72,7 +72,7 @@
         </Dropdown>
         <Button
           :variant="activeNumberFormatType === 'percentage' ? 'subtle' : 'ghost'"
-          size="md"
+          size="sm"
           icon="lucide-percent"
           :aria-label="__('Percent')"
           :aria-pressed="activeNumberFormatType === 'percentage'"
@@ -82,7 +82,7 @@
         <Button
           :aria-label="__('Fewer decimal places')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-decimals-arrow-left"
           :tooltip="__('Fewer decimal places')"
           @click="emit('adjust-decimals', -1)"
@@ -90,7 +90,7 @@
         <Button
           :aria-label="__('More decimal places')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-decimals-arrow-right"
           :tooltip="__('More decimal places')"
           @click="emit('adjust-decimals', +1)"
@@ -106,7 +106,7 @@
           <Tooltip :text="__('Font size')">
             <TextInput
               type="number"
-              size="md"
+              size="sm"
               variant="ghost"
               :aria-label="__('Font size')"
               :model-value="activeFormat.fontSize || 13"
@@ -121,7 +121,7 @@
           :aria-label="__('Bold')"
           :variant="activeFormat.bold ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.bold"
-          size="md"
+          size="sm"
           icon="lucide-bold"
           :tooltip="__('Bold (Ctrl+B)')"
           @click="emit('toggle-format', 'bold')"
@@ -130,7 +130,7 @@
           :aria-label="__('Italic')"
           :variant="activeFormat.italic ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.italic"
-          size="md"
+          size="sm"
           icon="lucide-italic"
           :tooltip="__('Italic (Ctrl+I)')"
           @click="emit('toggle-format', 'italic')"
@@ -139,7 +139,7 @@
           :aria-label="__('Strikethrough')"
           :variant="activeFormat.strikethrough ? 'subtle' : 'ghost'"
           :aria-pressed="!!activeFormat.strikethrough"
-          size="md"
+          size="sm"
           icon="lucide-strikethrough"
           :tooltip="__('Strikethrough (Ctrl+Shift+X)')"
           @click="emit('toggle-format', 'strikethrough')"
@@ -206,7 +206,7 @@
             <Button
               :aria-label="__('Borders')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               icon="lucide-grid-2x2"
               :tooltip="__('Borders')"
             />
@@ -215,7 +215,7 @@
         <Button
           :aria-label="__('Merge cells')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-table-cells-merge"
           :tooltip="__('Merge or unmerge cells')"
           @click="emit('merge')"
@@ -225,7 +225,7 @@
             <Button
               :aria-label="__('Alignment')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               :icon="hAlignIcon"
               :tooltip="__('Alignment')"
             />
@@ -236,7 +236,7 @@
             <Button
               :aria-label="__('Text wrapping')"
               :variant="open ? 'subtle' : 'ghost'"
-              size="md"
+              size="sm"
               :icon="textWrapIcon"
               :tooltip="__('Text wrapping')"
             />
@@ -250,7 +250,7 @@
         <Button
           :aria-label="__('Sort')"
           variant="ghost"
-          size="md"
+          size="sm"
           icon="lucide-arrow-down-wide-narrow"
           :tooltip="__('Sort and filter this column (Alt+↓)')"
           @click="emit('sort')"
@@ -259,7 +259,7 @@
           :aria-label="__('Filter')"
           :aria-pressed="showSortFilter"
           :variant="showSortFilter ? 'subtle' : 'ghost'"
-          size="md"
+          size="sm"
           icon="lucide-funnel"
           :tooltip="__('Filter')"
           @click="emit('update:showSortFilter', !showSortFilter)"
@@ -273,7 +273,7 @@
           <Button
             class="sn-format-btn"
             :variant="open ? 'subtle' : 'outline'"
-            size="md"
+            size="sm"
             icon-left="lucide-sliders-horizontal"
             :label="__('Format')"
             :aria-label="__('Format')"
@@ -469,8 +469,8 @@ const currencyIcon = computed(
    open the ColorPicker popover. */
 .sn-swatch-btn {
   position: relative;
-  height: 32px;
-  width: 32px;
+  height: 28px;
+  width: 28px;
   border-radius: 6px;
   display: inline-flex;
   flex-direction: column;

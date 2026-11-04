@@ -7,7 +7,7 @@
         <Button
           class="sn-menubar-trigger sn-menubar-wide"
           variant="ghost"
-          size="md"
+          size="sm"
           :label="menu.label"
           :data-menu="menu.key"
         />
@@ -20,7 +20,7 @@
         <Button
           class="sn-menubar-trigger sn-menubar-narrow"
           variant="ghost"
-          size="md"
+          size="sm"
           icon-left="lucide-menu"
           :label="__('Menu')"
         />

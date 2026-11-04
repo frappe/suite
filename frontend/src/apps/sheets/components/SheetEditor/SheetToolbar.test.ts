@@ -157,6 +157,15 @@ describe('SheetToolbar (row 2)', () => {
     expect(handlers.onAdjustDecimals).toHaveBeenCalledWith(-1)
   })
 
+  it('draws its buttons and fields 28 px tall (frappe-ui sm)', () => {
+    const { root } = mountRow()
+    const tall = [...root.querySelectorAll<HTMLElement>('button, input')].filter((el) =>
+      /\bh-8\b/.test(`${el.className} ${el.parentElement?.className ?? ''}`),
+    )
+    expect(tall.map((el) => el.getAttribute('aria-label') ?? el.textContent?.trim())).toEqual([])
+    expect(button(root, 'Bold').className).toMatch(/\bh-7\b/)
+  })
+
   it('opens the Format menu from the Format button', async () => {
     const { root, clearFormatting } = mountRow()
     const format = [...root.querySelectorAll('button')].find(

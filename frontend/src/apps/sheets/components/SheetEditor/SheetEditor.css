@@ -154,7 +154,7 @@
   --sn-name-w: calc(12ch + 18px);
   --sn-name-pad: 18px;
   width: var(--sn-name-w);
-  height: 32px;
+  height: 28px;
   padding: 0 8px;
   text-overflow: ellipsis;
   flex-shrink: 0;
@@ -193,7 +193,7 @@
   position: relative;
   flex: 1;
   min-width: 160px;
-  height: 32px;
+  height: 28px;
   display: flex;
   align-items: center;
   gap: 10px;
