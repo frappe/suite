@@ -51,14 +51,15 @@ export function useUnsavedRecovery(
   function narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
     // also cancels a save under way and retires the draft, so it never replays,
-    // unless no copy of an unread draft fits: that one stays for the next load
+    // unless no copy of an unread draft fits or the store refuses both ways of
+    // retiring it: that one stays for the next load
     // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
     const unsaved =
       !!slides.value?.length &&
       (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
     viewOnly.value = true
     if (!unsaved) {
-      void stopWritesKeepingUnread()
+      void stopWrites(session.contentDocname, keepUnreadDraft)
       toast.warning('Editing access changed. This presentation is now view only.')
       return
     }
@@ -141,18 +142,14 @@ export function useUnsavedRecovery(
   function keepUnreadDraft(content: unknown[]) {
     try {
       keepSticky(content)
-      return true
     } catch {
       return false
     }
-  }
 
-  async function stopWritesKeepingUnread() {
-    if (await stopWrites(session.contentDocname, keepUnreadDraft)) {
-      showKept(
-        translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
-      )
-    }
+    showKept(
+      translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
+    )
+    return true
   }
 
   function showKept(message: string) {

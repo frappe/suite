@@ -1429,6 +1429,29 @@ describe('Slides push refused by the server', () => {
       expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
     })
 
+    it('keeps the copy and says so when the draft can be neither rewritten nor removed', async () => {
+      await seedDraft()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+      const writes = failDraftWrites()
+      const removes = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(() => {
+        throw new DOMException('broken', 'UnknownError')
+      })
+
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(() => expect(refusalToast(UNREAD)).toBeDefined())
+      await vi.waitFor(() => expect(removes).toHaveBeenCalled())
+      writes.mockRestore()
+      removes.mockRestore()
+
+      const [copy] = readRecovery('node-1')
+      expect(copy.sticky).toBe(true)
+      expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
+      expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+    })
+
     it('stays view only when access returns and the store is still full', async () => {
       await narrowedWithEdits(fillTheStore)
       widen()

@@ -397,35 +397,32 @@ const saveCurrentState = async () => {
   }
 }
 
-// `keepContent` answers false to leave the draft in place, as the only place its edits live;
-// resolves to whether a draft was retired
+// `keepContent` answers false to leave the draft in place, as the only place its edits live
 async function retireDraft(id, keepContent) {
   const local = await getPresentationFromLocalDB(id).catch(() => null)
   if (!local?.dirty || (keepContent && !keepContent(local.content))) {
-    return false
+    return
   }
 
   // if that write fails the record goes, so it can't replay; if that fails too, it stays as it was
-  try {
-    await savePresentationToLocalDB({
-      ...local,
-      dirty: false,
-      retired: true,
-      updatedAt: Date.now(),
-    }).catch(() => deletePresentationFromLocalDB(id))
-    return true
-  } catch {
-    return false
-  }
+  await savePresentationToLocalDB({
+    ...local,
+    dirty: false,
+    retired: true,
+    updatedAt: Date.now(),
+  })
+    .catch(() => deletePresentationFromLocalDB(id))
+    .catch(() => null)
 }
 
 // Edit access is gone. No save starts, the one under way is aborted and lands
 // nothing, and the draft is retired so it never replays: the edits live on only
 // in the explicit recovery copy the surface keeps. The exception is a draft
-// `keepContent` found no room for: it stays, and a later load treats it as any other
+// `keepContent` found no room for, or one that can be neither rewritten nor removed:
+// it stays, and a later load treats it as any other, so it can replay once access widens
 async function stopWrites(id, keepContent) {
   if (!id) {
-    return false
+    return
   }
 
   stopped.add(id)
@@ -434,7 +431,7 @@ async function stopWrites(id, keepContent) {
   draftGenerations.delete(id)
   saveAborts.get(id)?.abort()
   saveAborts.delete(id)
-  return retireDraft(id, keepContent)
+  await retireDraft(id, keepContent)
 }
 
 // Edit access is back. The caller reloads from the server; the old epoch stays
