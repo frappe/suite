@@ -94,7 +94,6 @@ interface EditorSurface {
 }
 
 const props = defineProps<{ session: DocumentSession }>()
-useHideRail()
 
 /** The editor that shows this document, with the props only it takes. */
 type EditorView =
@@ -311,6 +310,7 @@ const isViewOnly = computed(() => !editable.value && !showEditingPaused.value)
 
 const hasLostReadAccess = computed(() => !readable.value)
 const hasFailedToOpen = computed(() => collabMode.value === 'failed')
+useHideRail(() => !hasLostReadAccess.value && !hasFailedToOpen.value)
 const isLoading = computed(() => !documentResource.doc || collabMode.value === 'opening')
 
 const editorFile = computed(() => editorFileOf(props.session, editable.value))

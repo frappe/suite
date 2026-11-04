@@ -31,6 +31,7 @@ const editor = await vi.hoisted(async () => {
     /** This tab's own edits that have not reached the server. */
     unsent: false,
     draft: null as Draft | null,
+    hasLoadError: false,
     loseAccess: vi.fn(),
   })
 })
@@ -55,6 +56,9 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         isCollab: true,
         get saveState() {
           return editor.saveState
+        },
+        get hasLoadError() {
+          return editor.hasLoadError
         },
         // What the editor reported before the surface offered the download
         // regardless: in Chromium the room keeps unsent work on the device
@@ -102,7 +106,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.value = 'Active'
   role.value = 40
-  Object.assign(editor, { saveState: 'clean', unsent: false, draft: null })
+  Object.assign(editor, { saveState: 'clean', unsent: false, draft: null, hasLoadError: false })
 })
 afterEach(() => unmount?.())
 
@@ -136,6 +140,24 @@ it('hides the rail while the spreadsheet is open', async () => {
 
   unmount?.()
   unmount = undefined
+
+  expect(railHidden.value).toBe(false)
+})
+
+it('keeps the rail on the load-error page', async () => {
+  await mountSurface()
+
+  editor.hasLoadError = true
+  await nextTick()
+
+  expect(railHidden.value).toBe(false)
+})
+
+it('keeps the rail on the no-permission page', async () => {
+  await mountSurface()
+
+  role.value = 0
+  await settle()
 
   expect(railHidden.value).toBe(false)
 })

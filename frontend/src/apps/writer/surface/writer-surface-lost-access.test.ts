@@ -94,6 +94,17 @@ describe('Writer surface', () => {
     expect(railHidden.value).toBe(true)
   })
 
+  it('keeps the rail on the no-permission page', async () => {
+    liveRoom()
+    const access = ref({ role: 50 })
+    await openedSurface(undefined, '/d/node-1', undefined, access)
+
+    access.value = { role: 0 }
+    await nextTick()
+
+    expect(railHidden.value).toBe(false)
+  })
+
   it('asks to keep the tab open, with no Reload, and warns on leaving, when typing after a lost right is kept nowhere', async () => {
     const room = stoppedRoom()
     room.status = {

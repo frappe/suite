@@ -28,6 +28,8 @@ interface SheetEditorHandle {
   hasUnsentWork(): boolean
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
+  /** True while the editor shows its load-error page instead of the sheet. */
+  readonly hasLoadError: boolean
   /** True while the sheet is in a live room (collab on). */
   readonly isCollab: boolean
   /** Restores a version through the live room; rejects with the message to show. */
@@ -39,7 +41,6 @@ interface SheetEditorHandle {
 const props = defineProps<{
   session: DocumentSession
 }>()
-useHideRail()
 const editor = ref<SheetEditorHandle | null>(null)
 const panel = ref<DocumentPanel | null>(null)
 // A restore, or edit access coming back, reloads the server workbook: the
@@ -83,6 +84,7 @@ const access = createSheetAccess(props.session, {
   },
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
+useHideRail(() => (access.readable.value || copying.value) && !editor.value?.hasLoadError)
 const cursor = computed<CellAnchor | null>(() =>
   editor.value
     ? {

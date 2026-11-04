@@ -1,7 +1,7 @@
 import { fakeSocket } from '@suite/collab-client/test-support'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { expect, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { createApp, defineComponent, h, nextTick, ref, type App } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { Doc } from 'yjs'
 
@@ -21,6 +21,8 @@ Element.prototype.scrollIntoView = () => {}
 
 const { default: WriterSurface } = await import('./WriterSurface.vue')
 const { discardCopy, listCopies } = await import('@/apps/writer/recovery/copies')
+
+let openedApp: App | null = null
 
 export async function openedSurface(
   versions?: Versions,
@@ -55,7 +57,8 @@ export async function openedSurface(
   const root = document.createElement('div')
   document.body.append(root)
   const shell = defineComponent({ setup: () => () => h(RouterView) })
-  createApp(shell).use(router).use(translationPlugin).mount(root)
+  openedApp = createApp(shell).use(router).use(translationPlugin)
+  openedApp.mount(root)
   await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())
   await nextTick()
   return root
@@ -74,6 +77,8 @@ export function versionRow(root: Element, label: string) {
 }
 
 export function resetSurface() {
+  openedApp?.unmount()
+  openedApp = null
   document.body.innerHTML = ''
   rooms.next = null
   stored.html = ''

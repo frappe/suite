@@ -11,7 +11,6 @@ import DrawEditor from '../App.vue'
 import { DRAWING_PERSISTENCE, DrawingPersistence } from '../canvas/persistence'
 
 const props = defineProps<{ session: DocumentSession }>()
-useHideRail()
 const router = useRouter()
 const creation = useDriveDocumentCreation()
 const recovering = ref(false)
@@ -30,6 +29,7 @@ const {
   drawingLoading,
   readable,
 } = persistence
+useHideRail(() => readable.value && !loadError.value)
 
 function reload() {
   location.reload()

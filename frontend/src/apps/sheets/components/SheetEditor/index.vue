@@ -3712,6 +3712,9 @@ defineExpose({
   currentSheet,
   saveState,
   flushSave,
+  get hasLoadError() {
+    return loadError.value !== null
+  },
   /** True while the sheet is in a live room: versions restore through it. */
   get isCollab() {
     return collabOn.value
