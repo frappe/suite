@@ -757,10 +757,25 @@ describe('saveCurrentState', () => {
       await seedDraft('p-retired-full')
       failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
 
-      await stopWrites('p-retired-full')
+      expect(await stopWrites('p-retired-full')).toBe(true)
       resumeWrites('p-retired-full')
 
       expect(await getPresentationFromLocalDB('p-retired-full')).toBeFalsy()
+    })
+
+    it('answers that no draft was retired when it can be neither rewritten nor removed', async () => {
+      await seedDraft('p-stuck')
+      failFirstWrites(Number.POSITIVE_INFINITY, quotaError())
+      const remove = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(() => {
+        throw new DOMException('broken', 'UnknownError')
+      })
+
+      expect(await stopWrites('p-stuck')).toBe(false)
+      resumeWrites('p-stuck')
+      expect(remove).toHaveBeenCalled()
+
+      const local = await readDraft('p-stuck')
+      expect(local).toMatchObject({ dirty: true })
     })
 
     it('leaves the draft when what keeps its content cannot', async () => {

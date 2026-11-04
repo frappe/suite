@@ -405,11 +405,13 @@ async function retireDraft(id, keepContent) {
     return false
   }
 
-  // if that write fails the record goes, so it can't replay either way
-  await savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
+  // if that write fails the record goes, so it can't replay; if that fails too, it stays as it was
+  return savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
     .catch(() => deletePresentationFromLocalDB(id))
-    .catch(() => {})
-  return true
+    .then(
+      () => true,
+      () => false,
+    )
 }
 
 // Edit access is gone. No save starts, the one under way is aborted and lands
