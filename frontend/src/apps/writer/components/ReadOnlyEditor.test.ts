@@ -6,7 +6,8 @@ import type { EditorFile, WriterDocument } from '@/apps/writer/surface/writerDoc
 
 import ReadOnlyEditor from './ReadOnlyEditor.vue'
 
-vi.mock('./ToC.vue', () => ({ default: { render: () => null } }))
+vi.mock('./DocumentTabs.vue', () => ({ default: { render: () => null } }))
+vi.mock('./DocumentOutline.vue', () => ({ default: { render: () => null } }))
 vi.mock('./ToCMobile.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/drive', () => ({
   hasDefaultDocumentTitle: () => false,

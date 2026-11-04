@@ -143,7 +143,7 @@ test.describe("Writer collaboration", () => {
 				proxy.liftLimit();
 
 				// The tab retries on its own backoff, up to half a minute
-				await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({
+				await expect(owner.page.locator('[data-save-state="clean"]')).toBeVisible({
 					timeout: 45_000,
 				});
 				await expect(refusalBanner).toBeHidden();

@@ -283,7 +283,7 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(collaborator.page, "Typed while offline");
 		await typeParagraph(owner.page, "Typed while the other tab was offline");
 		await expectSaved(owner.page);
-		await expect(collaborator.page.getByText("Saved", { exact: true })).toBeHidden();
+		await expect(collaborator.page.locator('[data-save-state="clean"]')).toBeHidden();
 
 		await collaborator.context.setOffline(false);
 
@@ -398,11 +398,11 @@ test.describe("Writer collaboration", () => {
 		const second = await owner.context.newPage();
 		await openWriterDocument(second, node);
 		await expectSaving(second);
-		await expect(second.getByText("Saved", { exact: true })).toBeHidden();
+		await expect(second.locator('[data-save-state="clean"]')).toBeHidden();
 		expect(await editorBlocks(second)).not.toContain("Held in the first tab");
 
 		await owner.page.unroute(PUSHES, dropPushes);
-		await expect(second.getByText("Saved", { exact: true })).toBeVisible({ timeout: 60_000 });
+		await expect(second.locator('[data-save-state="clean"]')).toBeVisible({ timeout: 60_000 });
 		await expectSaved(owner.page);
 	});
 
@@ -459,7 +459,7 @@ function editorKind() {
 }
 
 async function expectSaving(page: Page): Promise<void> {
-	await expect(page.getByText("Saving…", { exact: true })).toBeVisible();
+	await expect(page.locator('[data-save-state="saving"]')).toBeVisible();
 }
 
 function boldMention(page: Page) {

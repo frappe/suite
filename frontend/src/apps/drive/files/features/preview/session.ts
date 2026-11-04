@@ -3,6 +3,7 @@ import { computed, readonly, ref, type Ref } from 'vue'
 import { api, client, onTouch } from '@/api'
 import { onAccessChange } from '@/apps/drive/client/accessChanges'
 import { folderOf } from '@/apps/drive/client/nodes'
+import { createStar } from '@/apps/drive/client/star'
 import {
   canShare,
   documentCredentials,
@@ -10,6 +11,7 @@ import {
   type MediaHandle,
 } from '@/apps/drive/client/session'
 import type { DriveBreadcrumb, DriveNode, DrivePreview } from '@/apps/drive/client/types'
+import { getCookieSessionUser } from '@/platform/session'
 
 import { presentShareDialog } from '../share/present'
 
@@ -30,11 +32,6 @@ export interface FilePreviewSession extends DocumentSession {
   /** The node whose trashing trashed the file: the file itself, a folder it is in, or `null` while Active. Follows a refresh. */
   readonly trashRoot: Readonly<Ref<string | null>>
   readonly preview: Readonly<Ref<DrivePreview | null>>
-  /**
-   * The caller's own star on the file. Writable, so a star toggle can show
-   * the new state before the server answers and put it back on a refusal.
-   */
-  readonly favourite: Ref<boolean>
   refreshPreview(): Promise<void>
 }
 
@@ -69,7 +66,13 @@ export async function openFilePreviewSession(
   const parent = ref(initial.parent_node)
   const folder = ref<DriveBreadcrumb | null>(folderOf(initial))
   const trashRoot = ref(initial.trash_root)
-  const favourite = ref(initial.favourite ?? false)
+  const star = createStar(
+    client,
+    nodeId,
+    initial.favourite ?? false,
+    () => state.value === 'Active' && !access.value.via_link && !!getCookieSessionUser(),
+    controller.signal,
+  )
   const size = ref(initial.size)
   let disposed = false
   /** Counts reads, so an answer that comes back after a newer one never puts older state back. */
@@ -112,7 +115,7 @@ export async function openFilePreviewSession(
       access.value = node.access ?? {}
       state.value = sessionState(node)
       preview.value = node.preview ?? null
-      favourite.value = node.favourite ?? false
+      star.isStarred.value = node.favourite ?? false
       size.value = node.size
     } catch {
       if (read !== reads || disposed) return
@@ -146,7 +149,8 @@ export async function openFilePreviewSession(
     root: initial.root,
     trashRoot: readonly(trashRoot),
     preview: readonly(preview),
-    favourite,
+    editedAt: initial.content_modified ?? initial.modified,
+    ...star,
     title: readonly(title),
     state: readonly(state),
     access: readonly(access),

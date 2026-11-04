@@ -15,12 +15,19 @@
       <span v-else class="ml-2 h-4 w-40 animate-pulse rounded-4 bg-surface-gray-3" />
     </div>
     <div class="flex shrink-0 items-center gap-1" aria-hidden="true">
+      <span class="me-1 h-3 w-20 animate-pulse rounded-3 bg-surface-gray-3 max-md:hidden" />
       <span
-        v-for="action in 3"
-        :key="action"
+        v-for="panel in 2"
+        :key="panel"
         class="size-7 animate-pulse rounded-4 bg-surface-gray-3"
       />
-      <span class="ml-1 h-7 w-20 animate-pulse rounded-4 bg-surface-gray-3 max-md:w-7" />
+      <span class="h-7 w-14 animate-pulse rounded-4 bg-surface-gray-3 max-md:w-7" />
+      <span
+        v-for="action in 2"
+        :key="action"
+        class="size-7 animate-pulse rounded-4 bg-surface-gray-3 max-md:hidden"
+      />
+      <span class="size-7 animate-pulse rounded-4 bg-surface-gray-3" />
     </div>
   </header>
 </template>

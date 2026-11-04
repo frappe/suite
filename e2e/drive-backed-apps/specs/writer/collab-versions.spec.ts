@@ -318,7 +318,7 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
-	test("the Versions panel takes the table of contents' place on the right and moves the text like it", async ({
+	test("the Versions panel opens on the right and moves the text with it", async ({
 		owner,
 	}) => {
 		const { page } = owner;
@@ -331,16 +331,6 @@ test.describe("Writer collaboration", () => {
 		await page.keyboard.type("## Second heading");
 		await expectSaved(page);
 		await saveNamedVersion(owner.context.request, node, "One");
-		const showToc = page.getByRole("button", { name: "Show table of contents" });
-		if (await showToc.isVisible()) {
-			await showToc.click();
-		}
-
-		const tocHeading = page.getByText("Table of contents", { exact: true });
-		const tocEntry = page.getByRole("link", { name: "First heading" });
-		const tocEntryBox = (await tocEntry.boundingBox())!;
-		const tocHeadingBox = (await tocHeading.boundingBox())!;
-		const tocGap = tocEntryBox.y - tocHeadingBox.y;
 		const centredLine = page
 			.getByLabel("Document editor")
 			.locator("p", { hasText: "Centred text" });
@@ -405,9 +395,6 @@ test.describe("Writer collaboration", () => {
 		const headingBox = (await versionsPanel
 			.getByRole("heading", { name: "Versions" })
 			.boundingBox())!;
-		const firstRowBox = (await versionsPanel
-			.getByRole("button", { name: "Current version", exact: true })
-			.boundingBox())!;
 		expect(
 			await versionsPanel
 				.getByRole("button", { name: "Current version", exact: true })
@@ -417,7 +404,6 @@ test.describe("Writer collaboration", () => {
 					return range.getBoundingClientRect().x;
 				}),
 		).toBe(headingBox.x);
-		expect(firstRowBox.y - headingBox.y).toBe(tocGap);
 
 		await page
 			.getByRole("button", { name: /comments/i })
@@ -434,10 +420,6 @@ test.describe("Writer collaboration", () => {
 				return range.getBoundingClientRect().x;
 			}),
 		).toBe(commentsHeading.x);
-		expect(
-			(await comments.getByRole("button", { name: "Add a comment" }).boundingBox())!.y -
-				commentsHeading.y,
-		).toBe(tocGap);
 
 		const closing = sampleMotion();
 		await page.getByRole("button", { name: "Close panel" }).click();

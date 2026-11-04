@@ -206,7 +206,7 @@ test("a person who holds only an edit link opens and saves the deck", async ({ b
 	const answer = await saved;
 	expect(answer.status()).toBe(200);
 	expect(await answer.request().headerValue("x-drive-links")).toBe(code);
-	await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 	expect(seen.errors).toEqual([]);
 	await visitor.close();
@@ -267,7 +267,7 @@ test("restores a saved version and reloads the deck", async ({ page }) => {
 	await versions.getByRole("button", { name: "Close versions" }).click();
 
 	await addRectangle(page);
-	await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
 	await expect.poll(() => rectangles(api, deck.content_docname!)).toBe(1);
 	await expect(page.locator(SHAPE_RECT).first()).toBeVisible();
 

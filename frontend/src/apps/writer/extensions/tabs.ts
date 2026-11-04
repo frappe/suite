@@ -17,6 +17,15 @@ declare module '@tiptap/core' {
   interface Storage {
     tab: { activeTabId: string | null }
   }
+  interface Commands<ReturnType> {
+    tab: {
+      changeTab: (tabId: string, changed?: boolean) => ReturnType
+      reorderTab: (tabId: string, newIndex: number) => ReturnType
+      renameTab: (tabId: string, newLabel: string, refocus?: boolean) => ReturnType
+      deleteTab: (tabId: string) => ReturnType
+      createTab: (attrs?: { id?: string; label?: string; order?: number }) => ReturnType
+    }
+  }
 }
 
 // Tabs are always direct children of the doc

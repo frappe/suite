@@ -39,7 +39,8 @@ vi.mock('frappe-ui/editor', async (importOriginal) => {
   }
 })
 vi.mock('./core-editor/WriterToolbar.vue', () => ({ default: { render: () => null } }))
-vi.mock('./ToC.vue', () => ({ default: { render: () => h('nav', { 'data-toc': '' }) } }))
+vi.mock('./DocumentTabs.vue', () => ({ default: { render: () => h('nav', { 'data-tabs': '' }) } }))
+vi.mock('./DocumentOutline.vue', () => ({ default: { render: () => null } }))
 vi.mock('./ToCMobile.vue', () => ({
   default: { render: () => h('nav', { 'data-toc-mobile': '' }) },
 }))
@@ -102,7 +103,7 @@ function shown(root: Element) {
   const scroller = root.querySelector<HTMLElement>('#editor-scroll-container')!
   return {
     isEditorShown: scroller.style.display !== 'none',
-    isTocInvisible: root.querySelector('[data-toc]')!.classList.contains('invisible'),
+    hasTabs: root.querySelector('[data-tabs]') !== null,
     hasMobileToc: root.querySelector('[data-toc-mobile]') !== null,
   }
 }
@@ -115,7 +116,7 @@ describe('CoreEditor cover', () => {
       await nextTick()
       expect(shown(root)).toEqual({
         isEditorShown: true,
-        isTocInvisible: false,
+        hasTabs: true,
         hasMobileToc: true,
       })
 
@@ -124,7 +125,7 @@ describe('CoreEditor cover', () => {
       expect(root.textContent).toContain(COVERS[kind])
       expect(shown(root)).toEqual({
         isEditorShown: false,
-        isTocInvisible: true,
+        hasTabs: false,
         hasMobileToc: false,
       })
 
@@ -132,7 +133,7 @@ describe('CoreEditor cover', () => {
       await nextTick()
       expect(shown(root)).toEqual({
         isEditorShown: true,
-        isTocInvisible: false,
+        hasTabs: true,
         hasMobileToc: true,
       })
     },

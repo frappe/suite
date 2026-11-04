@@ -4,7 +4,7 @@ import { Button, Dropdown, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
+import { api, useInfiniteQuery, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DocumentSession } from '@/apps/drive/client/session'
@@ -93,8 +93,6 @@ const inTrashedFolder = computed(
 )
 const trash = useTrashActions(() => (trashed.value ? file.value.root : null))
 const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
-const starMutation = useMutation(api.drive.nodes.star)
-const unstarMutation = useMutation(api.drive.nodes.unstar)
 
 const header = ref<{ focusTitle(): void } | null>(null)
 const upload = ref<{ pick(): void } | null>(null)
@@ -172,15 +170,6 @@ const menu = computed(() => [
   ...(canReplace.value
     ? [{ label: 'Upload new version', icon: 'lucide-upload', onClick: () => upload.value?.pick() }]
     : []),
-  ...(can.value.star
-    ? [
-        {
-          label: file.value.favourite.value ? 'Unstar' : 'Star',
-          icon: 'lucide-star',
-          onClick: toggleStar,
-        },
-      ]
-    : []),
   {
     label: 'Details',
     icon: 'lucide-info',
@@ -211,18 +200,6 @@ async function deleteForever() {
   const result = await trash.purge([item.value])
   if (!result?.ok.length) return
   await router.replace(trashLocation(file.value, discovered.data))
-}
-
-/** The menu shows the new state at once, and the old one again if the server refuses. */
-async function toggleStar() {
-  const favourite = file.value.favourite
-  const starred = !favourite.value
-  try {
-    favourite.value = starred
-    await (starred ? starMutation : unstarMutation).run({ node: props.session.nodeId })
-  } catch {
-    favourite.value = !starred
-  }
 }
 
 async function move() {
@@ -344,6 +321,8 @@ const source = computed(() =>
           aria-label="Download"
           :href="downloadUrl"
         />
+      </template>
+      <template #menu>
         <Dropdown :options="menu" align="end">
           <Button
             variant="ghost"

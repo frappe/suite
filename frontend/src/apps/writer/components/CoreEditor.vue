@@ -3,20 +3,22 @@
     <slot name="toolbar">
       <WriterToolbar v-if="editable && editor" :editor :settings :is-painting />
     </slot>
+    <DocumentTabs v-if="editor && !hasCover()" :editor />
     <div class="flex flex-1 overflow-hidden">
-      <ToC v-if="editor" :editor :anchors :class="hasCover() && 'invisible'" />
       <div class="relative flex flex-1 min-w-0">
         <div
           v-show="!hasCover()"
           id="editor-scroll-container"
-          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-1"
+          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden"
         >
           <div
             class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
             :style="gridStyle"
             @click="onBackgroundClick"
           >
-            <div class="hidden md:block" />
+            <div class="hidden md:block [container-type:inline-size]">
+              <DocumentOutline v-if="editor" :editor :anchors />
+            </div>
             <div class="flex flex-col grow min-w-0">
               <FTextEditor
                 ref="textEditor"
@@ -105,7 +107,8 @@ import TableControls from './core-editor/table/TableControls.vue'
 import WriterBubbleMenu from './core-editor/WriterBubbleMenu.vue'
 import WriterToolbar from './core-editor/WriterToolbar.vue'
 import MentionMenu from './MentionMenu.vue'
-import ToC from './ToC.vue'
+import DocumentOutline from './DocumentOutline.vue'
+import DocumentTabs from './DocumentTabs.vue'
 import ToCMobile from './ToCMobile.vue'
 
 const props = withDefaults(

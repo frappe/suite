@@ -57,6 +57,12 @@ function session(role: number, canShare = true) {
     state: ref('Active'),
     access: ref({ role }),
     canShare: ref(canShare),
+    editedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    isStarred: ref(false),
+    canStar: ref(true),
+    setStarred: vi.fn(async function (this: { isStarred: { value: boolean } }, next: boolean) {
+      this.isStarred.value = next
+    }),
     rename: vi.fn(async function (this: { title: { value: string } }, title: string) {
       this.title.value = title
     }),
@@ -67,7 +73,8 @@ function session(role: number, canShare = true) {
 function mount(
   doc: ReturnType<typeof session>,
   props: {
-    saveState?: DocumentSaveState
+    saveState?: DocumentSaveState | null
+    saveNote?: string
     viewOnly?: boolean
     layout?: 'default' | 'centered' | 'compact'
   } = {},
@@ -118,11 +125,71 @@ describe('DocumentHeader', () => {
     expect(root.textContent).not.toContain('Saved')
   })
 
-  it('shows the spreadsheet icon, the title and the save status', () => {
+  it('shows the spreadsheet icon, the title and when it was last edited', () => {
     const { root, title } = mount(session(40), { saveState: 'clean' })
     expect(root.querySelector('.file-icon-sheet.text-ink-green-6')).not.toBeNull()
     expect(title.value).toBe('Budget')
-    expect(root.textContent).toContain('Saved')
+    expect(root.textContent).toContain('Edited 3h ago')
+    expect(root.textContent).not.toContain('Saved')
+  })
+
+  it('says just now once this tab edits the document', async () => {
+    const saveState = ref<DocumentSaveState>('clean')
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({
+      setup: () => () =>
+        h(DocumentHeader, {
+          session: session(40) as unknown as DocumentSession,
+          titleLabel: 'Spreadsheet title',
+          saveState: saveState.value,
+        }),
+    })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+
+    saveState.value = 'saving'
+    await nextTick()
+    saveState.value = 'clean'
+    await nextTick()
+
+    expect(root.textContent).toContain('Edited just now')
+  })
+
+  it('says why saving is held up in place of the edited time', () => {
+    const { root } = mount(session(40), { saveState: 'unsaved', saveNote: 'Changes will sync' })
+    expect(root.textContent).toContain('Changes will sync')
+    expect(root.textContent).not.toContain('Edited')
+  })
+
+  it('says nothing about edits for content with no save state', () => {
+    const { root } = mount(session(40), { saveState: null })
+    expect(root.textContent).not.toContain('Edited')
+  })
+
+  it('stars and unstars, and offers no star to someone who cannot keep one', async () => {
+    const doc = session(40)
+    const { button } = mount(doc)
+    button('Star')!.click()
+    expect(doc.setStarred).toHaveBeenCalledWith(true)
+    await nextTick()
+    expect(button('Unstar')!.getAttribute('aria-pressed')).toBe('true')
+    cleanup?.()
+
+    const linkOnly = session(40)
+    linkOnly.canStar.value = false
+    expect(mount(linkOnly).button('Star')).toBeNull()
+  })
+
+  it('copies the address of the page', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { button } = mount(session(40))
+    button('Copy link')!.click()
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href))
   })
 
   it('renames on blur, and Escape puts the old title back', async () => {
@@ -245,24 +312,34 @@ describe('DocumentHeader', () => {
   })
 
   it.each([
-    ['solid, with its label', {}, true],
+    ['with its label', {}, true],
     [
-      'an icon on every width, after a primary action',
+      'as an icon on every width, after a primary action',
       { primary: () => h('button', 'Present') },
       false,
     ],
-  ])('shows Share %s', (_label, slots, isSolid) => {
+  ])('shows Share %s', (_label, slots, hasLabel) => {
     const sharer = session(40)
     const { root, button } = mount(sharer, {}, slots)
-    const solid = [...root.querySelectorAll('button')].find(
-      (el) => el.textContent === 'Share' && el.getAttribute('variant') === 'solid',
-    )
+    const labelled = [...root.querySelectorAll('button')].find((el) => el.textContent === 'Share')
 
-    expect(!!solid).toBe(isSolid)
-    expect(button('Share')!.classList.contains('md:hidden')).toBe(isSolid)
-    solid?.click()
+    expect(!!labelled).toBe(hasLabel)
+    expect(button('Share')!.classList.contains('md:hidden')).toBe(hasLabel)
+    labelled?.click()
     button('Share')!.click()
-    expect(sharer.share).toHaveBeenCalledTimes(isSolid ? 2 : 1)
+    expect(sharer.share).toHaveBeenCalledTimes(hasLabel ? 2 : 1)
+  })
+
+  it('puts the menu after Star and before the primary action', () => {
+    const { root } = mount(
+      session(40),
+      {},
+      { menu: () => h('button', 'Menu'), primary: () => h('button', 'Present') },
+    )
+    const labels = [...root.querySelectorAll('header > div:last-child button')].map(
+      (el) => el.getAttribute('aria-label') ?? el.textContent,
+    )
+    expect(labels.slice(-4)).toEqual(['Copy link', 'Star', 'Menu', 'Present'])
   })
 
   it('puts the primary action last', () => {
@@ -296,24 +373,23 @@ describe('DocumentHeader, compact (Sheets)', () => {
       root.remove()
     }
     const header = root.querySelector('header')!
-    const saved = [...header.querySelectorAll('span')].find(
-      (el) => el.textContent?.trim() === 'Saved',
+    const edited = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'Edited 3h ago',
     )!
-    return { header, saved, menus: header.querySelector('nav')! }
+    return { header, edited, menus: header.querySelector('nav')! }
   }
 
-  it('puts Saved beside the title, then the menus', () => {
-    const { header, saved, menus } = mountWithMenus(true)
+  it('puts the edited time beside the title, then the menus', () => {
+    const { header, edited, menus } = mountWithMenus(true)
     const left = header.firstElementChild!
-    expect(left.contains(saved)).toBe(true)
-    expect(saved.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(left.contains(edited)).toBe(true)
+    expect(edited.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(left.contains(menus)).toBe(true)
   })
 
-  it('stays as it was for every other app', () => {
-    const { header, saved } = mountWithMenus(false)
-    // The save status sits on the right, before the panel toggles.
-    expect(header.firstElementChild!.contains(saved)).toBe(false)
-    expect(header.lastElementChild!.contains(saved)).toBe(true)
+  it('puts the edited time on the right for every other app', () => {
+    const { header, edited } = mountWithMenus(false)
+    expect(header.firstElementChild!.contains(edited)).toBe(false)
+    expect(header.lastElementChild!.contains(edited)).toBe(true)
   })
 })

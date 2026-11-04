@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { useEventListener, useNow } from '@vueuse/core'
+import { useEventListener } from '@vueuse/core'
 import { Badge, Button, dialog, toast } from 'frappe-ui'
 import {
   computed,
@@ -83,7 +83,6 @@ import VersionPreview from './VersionPreview.vue'
 import { convertedVersion, fetchVersion, readVersionBody, storedVersionHTML } from './versions'
 import { createWriterDocument, editorFileOf, isLocked, type EditorFile } from './writerDocument'
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
-import { editedLabel } from './editedLabel'
 import { createWriteGate } from './writes'
 
 const READ = 10
@@ -352,21 +351,6 @@ const showLocked = computed(() => canEdit.value && isDocumentLocked.value)
 const isViewOnly = computed(
   () => !isLoading.value && !editable.value && !showEditingPaused.value && !showLocked.value,
 )
-
-// Saves nearly always go through, so only a failed one is worth saying
-const headerSaveState = computed(() => (saveState.value === 'failed' ? saveState.value : null))
-
-// Starts from the server, then follows this tab's edits. Someone else's show at the next open.
-const lastEditedHere = shallowRef<Date | null>(null)
-watch(saveState, (state) => {
-  if (state === 'saving' || state === 'unsaved') lastEditedHere.value = new Date()
-})
-const now = useNow({ interval: 60_000 })
-const editedNote = computed(() => {
-  const saved = documentResource.doc?.content_modified
-  const edited = lastEditedHere.value ?? (saved ? new Date(saved) : null)
-  return edited ? editedLabel(edited, now.value) : ''
-})
 
 const hasLostReadAccess = computed(() => !readable.value)
 const hasFailedToOpen = computed(() => collabMode.value === 'failed')
@@ -787,7 +771,8 @@ onBeforeUnmount(() => {
       v-model:panel="panel"
       :session="session"
       title-label="Document title"
-      :save-state="headerSaveState"
+      :save-state="saveState"
+      :save-note="saveNote"
       :view-only="isViewOnly"
       :panels="shownPanels"
     >
@@ -808,20 +793,9 @@ onBeforeUnmount(() => {
         />
       </template>
       <template #actions>
-        <span
-          v-if="saveNote"
-          class="mr-1 whitespace-nowrap text-sm text-ink-gray-5"
-          aria-live="polite"
-        >
-          {{ saveNote }}
-        </span>
-        <span
-          v-else-if="editedNote && !isLoading && saveState !== 'failed'"
-          class="mr-1 whitespace-nowrap text-sm text-ink-gray-5 max-md:hidden"
-        >
-          {{ editedNote }}
-        </span>
         <UsersBar v-if="peers.length" :users="peers" />
+      </template>
+      <template #menu>
         <WriterDocumentMenu
           v-if="readable"
           :session="session"

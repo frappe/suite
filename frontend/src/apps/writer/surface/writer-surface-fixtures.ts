@@ -78,7 +78,6 @@ export function resetSurface() {
   document.body.innerHTML = ''
   rooms.next = null
   rooms.held = null
-  stored.contentModified = null
   stored.html = ''
   stored.collab = 0
   realEditors.isOn = false

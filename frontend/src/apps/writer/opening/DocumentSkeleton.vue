@@ -12,11 +12,6 @@
         </div>
       </div>
     </template>
-    <template #rail>
-      <span class="flex size-7 items-center justify-center" aria-hidden="true">
-        <Skeleton class="size-4 rounded-3" />
-      </span>
-    </template>
     <div class="min-w-0 grow px-5 pt-10" aria-hidden="true">
       <Skeleton class="mb-5 h-6 w-2/5 rounded-4" />
       <div v-for="(lines, paragraph) in PARAGRAPHS" :key="paragraph" class="mb-5">

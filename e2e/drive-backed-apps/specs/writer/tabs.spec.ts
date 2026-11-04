@@ -7,7 +7,7 @@ import {
 } from "../../helpers/writer";
 import type { Page } from "@playwright/test";
 
-// Tab buttons in the desktop ToC are the only draggable elements on the page.
+// Tabs in the desktop tab row are the only draggable elements on the page.
 function tocTabs(page: Page) {
 	return page.locator('[draggable="true"]');
 }
@@ -18,7 +18,14 @@ function tabPanel(page: Page, label: string) {
 
 // Typing a first line and pressing Enter renames an "Untitled" tab to that line.
 async function addTab(page: Page, text: string) {
-	await page.getByRole("button", { name: "Add tab" }).click();
+	// The tab row appears with the second tab, so the first one comes from the Insert menu.
+	const addButton = page.getByRole("button", { name: "Add tab" });
+	if (await addButton.isVisible()) {
+		await addButton.click();
+	} else {
+		await page.getByRole("button", { name: "Insert" }).click();
+		await page.getByRole("menuitem", { name: "Tab", exact: true }).click();
+	}
 	await writerEditor(page).click();
 	await page.keyboard.type(text);
 	await page.keyboard.press("Enter");
@@ -33,7 +40,6 @@ test("a document without tabs lists its headings, not a tab", async ({ owner, ru
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-headings"),
 	);
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 
 	await writerEditor(page).click();
@@ -66,9 +72,6 @@ test("mobile tab bar reflects added tabs and switches the active tab", async ({
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-mobile"),
 	);
-	// Open the Table of Contents expanded so its tab controls are reachable
-	// (the collapsed toggle is an icon-only button with no accessible name).
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 	await writerEditor(page).click();
 	await page.keyboard.type("first");
@@ -107,7 +110,6 @@ test("the tab menu button renames the active tab", async ({ owner, run }) => {
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-menu"),
 	);
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 
 	await addTab(page, "alpha");
@@ -151,7 +153,6 @@ test("reordering tabs preserves every tab's content", async ({ owner, run }) => 
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-reorder"),
 	);
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 
 	await addTab(page, "alpha");

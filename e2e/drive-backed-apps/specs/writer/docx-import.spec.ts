@@ -54,8 +54,6 @@ test("imports a .docx into a new tab, leaving existing content untouched", async
 		owner.page.request,
 		uniqueWriterTitle(run.run_id, "docx-import-tab"),
 	);
-	// The tab switcher lives in the desktop Table of Contents panel.
-	await owner.page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(owner.page, file.name);
 
 	const editor = writerEditor(owner.page);

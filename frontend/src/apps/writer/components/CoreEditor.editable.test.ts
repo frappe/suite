@@ -4,7 +4,8 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 import CoreEditor from './CoreEditor.vue'
 
 vi.mock('./core-editor/WriterToolbar.vue', () => ({ default: { render: () => null } }))
-vi.mock('./ToC.vue', () => ({ default: { render: () => null } }))
+vi.mock('./DocumentTabs.vue', () => ({ default: { render: () => null } }))
+vi.mock('./DocumentOutline.vue', () => ({ default: { render: () => null } }))
 vi.mock('./ToCMobile.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/drive', () => ({
   driveNodeRoute: () => ({}),

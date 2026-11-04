@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
-import { rooms, signedIn, stored } from './writer-surface-fakes'
+import { rooms, signedIn } from './writer-surface-fakes'
 import {
   liveRoom,
   oneVersion,
@@ -107,39 +107,21 @@ describe('what a reader sees of a document', () => {
 describe('the save status', () => {
   afterEach(() => serverMinBuilds({}))
 
-  it('stays quiet about saves that go through, and warns everyone of one that failed', async () => {
+  it('hands the header the state of the save, for editors and readers alike', async () => {
     await serverMinBuilds({ writer: '100' })
     const room = pullingRoom()
     const editorView = await openedSurface()
-    expect(saveStatus(editorView)).toBe('')
+    expect(saveStatus(editorView)).toBe('clean')
     document.body.innerHTML = ''
 
     room.status = { ...room.status, saveState: 'unsaved', unsentCount: 650 }
     const savingView = await openedSurface()
-    expect(saveStatus(savingView)).toBe('')
+    expect(saveStatus(savingView)).toBe('unsaved')
     document.body.innerHTML = ''
 
     pullingRoom().status.saveState = 'failed'
     const readerView = await openedSurface(oneVersion, '/d/node-1', undefined, ref({ role: 10 }))
     expect(saveStatus(readerView)).toBe('failed')
-  })
-
-  it('says when the document was last edited, and that this tab has just edited it', async () => {
-    await serverMinBuilds({ writer: '100' })
-    stored.contentModified = new Date(Date.now() - 3 * 60 * 60_000).toISOString()
-    const listeners: (() => void)[] = []
-    const room = Object.assign(pullingRoom(), {
-      onChange: (listener: () => void) => {
-        listeners.push(listener)
-        return () => {}
-      },
-    })
-    const root = await openedSurface()
-    expect(root.textContent).toContain('Edited 3h ago')
-
-    room.status = { ...room.status, saveState: 'unsaved' }
-    listeners.forEach((listener) => listener())
-    await vi.waitFor(() => expect(root.textContent).toContain('Edited just now'))
   })
 
   it('says that edits will sync while offline', async () => {

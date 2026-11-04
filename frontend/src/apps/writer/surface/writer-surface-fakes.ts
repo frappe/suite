@@ -6,7 +6,6 @@ import type { Doc } from 'yjs'
 export const rooms = { next: null as object | null, held: null as Promise<void> | null }
 // The body the server holds for a document edited without collaboration
 export const stored = {
-  contentModified: null as string | null,
   html: '',
   content: '',
   collab: 0,
@@ -106,6 +105,7 @@ export async function fakeDrive() {
     DriveDocumentHeader: define({
       props: {
         saveState: { type: String, default: null },
+        saveNote: { type: String, default: '' },
         viewOnly: { type: Boolean, default: false },
         panels: { type: Array, default: () => [] },
       },
@@ -124,7 +124,9 @@ export async function fakeDrive() {
           props.panels.includes('comments') && render('button', openComments),
           render('output', { 'data-save-state': '' }, props.saveState ?? ''),
           props.viewOnly && render('output', { 'data-view-only': '' }),
+          render('output', props.saveNote),
           slots.actions?.(),
+          slots.menu?.(),
         ]
       },
     }),
@@ -210,7 +212,7 @@ export async function fakeCollabPlatform() {
 export function fakeWriterDocument(original: typeof import('./writerDocument')) {
   function writerDocument() {
     function read() {
-      const { collab, html, content, conversion, contentModified } = stored
+      const { collab, html, content, conversion } = stored
       return {
         name: 'content-1',
         collab,
@@ -218,7 +220,6 @@ export function fakeWriterDocument(original: typeof import('./writerDocument')) 
         html,
         content,
         conversion,
-        content_modified: contentModified,
       }
     }
 

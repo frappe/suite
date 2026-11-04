@@ -11,13 +11,6 @@ export const PANEL_BUTTONS: Record<DocumentPanel, { label: string; icon: string 
   versions: { label: 'Versions', icon: 'lucide-history' },
 }
 
-export const SAVE_LABELS: Record<DocumentSaveState, string> = {
-  clean: 'Saved',
-  saving: 'Saving…',
-  unsaved: 'Unsaved',
-  failed: 'Not saved',
-}
-
 /**
  * The Drive file-type icon and tint, the same ones the listing shows. A file's
  * title counts, because its extension can say more than its MIME type.

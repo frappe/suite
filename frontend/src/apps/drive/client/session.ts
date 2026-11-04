@@ -20,6 +20,7 @@ import type {
 } from './generated'
 import { driveLinks } from './links'
 import { folderOf } from './nodes'
+import { createStar } from './star'
 import { canManage, type DriveAccess, type DriveBreadcrumb, type DriveNode } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
@@ -84,6 +85,14 @@ export interface DocumentSession {
   readonly canShare: Readonly<Ref<boolean>>
   /** The folder the document was in when it opened; null when the caller cannot read it. */
   readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
+  /** When the content last changed, as of opening. The wire's UTC time. */
+  readonly editedAt: string | null
+  /** The caller's own star. */
+  readonly isStarred: Readonly<Ref<boolean>>
+  /** Starred sends no link codes, so a node reached only through a link takes no star (spec §10.7). */
+  readonly canStar: Readonly<Ref<boolean>>
+  /** Shows the new state at once, and the old one again if the server refuses. */
+  setStarred(starred: boolean): Promise<void>
   rename(title: string): Promise<DriveNode>
   /**
    * Opens the Drive share dialog. Access is read again after each write in
@@ -186,6 +195,13 @@ export async function openDriveDocumentSession(
   const state = ref<SessionState>(toSessionState(node))
   const access = ref<DriveAccess>(node.access ?? {})
   const folder = ref<DriveBreadcrumb | null>(folderOf(node))
+  const star = createStar(
+    requester,
+    nodeId,
+    node.favourite ?? false,
+    () => state.value === 'Active' && !access.value.via_link && !!signedIn(),
+    controller.signal,
+  )
   const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
@@ -207,6 +223,7 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
+      star.isStarred.value = fresh.favourite ?? false
     } catch (error) {
       if (!isRefusal(error)) return
 
@@ -346,6 +363,8 @@ export async function openDriveDocumentSession(
     access: readonly(access),
     canShare: computed(() => canShare(state.value, access.value)),
     folder: readonly(folder),
+    editedAt: node.content_modified ?? node.modified,
+    ...star,
     async rename(nextTitle) {
       const updated = await requester.mutation(
         api.drive.nodes.rename,
