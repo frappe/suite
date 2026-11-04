@@ -18,7 +18,7 @@ from suite.composition.access import (
     require_access,
 )
 from suite.mail.api.account import create_account as accept_invitation
-from suite.mail.api.account import get_account_request
+from suite.mail.api.account import get_account_request, set_reset_password_key
 from suite.mail.api.admin import (
     add_member,
     disable_members,
@@ -501,6 +501,25 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertFalse(read(user)["must_change_password"])
         self.assertEqual(check_password(user, permanent), user)
         self.assertTrue(self.provider.authenticates(self.address, permanent))
+
+    def test_an_expired_reset_link_cannot_replace_a_temporary_password(self):
+        created = self.create()
+        user = created["user"]
+        expiry = frappe.db.get_single_value("System Settings", "reset_password_link_expiry_duration")
+        self.addCleanup(
+            frappe.db.set_single_value, "System Settings", "reset_password_link_expiry_duration", expiry
+        )
+        frappe.db.set_single_value("System Settings", "reset_password_link_expiry_duration", 60)
+        key = set_reset_password_key(user)
+        frappe.db.set_value("User", user, "last_reset_password_key_generated_on", "2000-01-01 00:00:00")
+
+        with self.set_user("Guest"):
+            self.assertEqual(
+                update_password("Unique-permanent-passphrase-43!", key=key),
+                "The reset password link has been expired",
+            )
+        self.assertTrue(read(user)["must_change_password"])
+        self.assertEqual(check_password(user, created["temporary_password"]), user)
 
     def test_an_invitation_gives_the_provider_the_workspace_and_inviter(self):
         frappe.db.set_single_value("Suite Settings", "workspace_name", "Acme")
