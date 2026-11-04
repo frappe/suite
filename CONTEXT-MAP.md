@@ -9,12 +9,14 @@ The repository-wide dependency and interface rules are in
 
 - [Drive](./suite/drive/CONTEXT.md) — stores the site's files as a
   permissioned tree, and lends that tree to the other products
+- [Mail](./suite/mail/CONTEXT.md) — where a person reads, writes and files
+  their email, across one or more accounts
 - [Meet](./suite/meet/CONTEXT.md) — persistent rooms for live audio, video,
   screen sharing, and recording
 - [Suite shell](./frontend/CONTEXT.md) — the frame every product renders
   inside: rail, contextual panel, content pane
 
-Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
+Not charted yet: Writer, Sheets, Slides, Calendar, Suite Core.
 
 ## Relationships
 

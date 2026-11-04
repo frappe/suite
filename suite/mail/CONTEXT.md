@@ -1,0 +1,112 @@
+# Mail
+
+Mail is where a person reads, writes and files their email, across one or more
+accounts. These are the words the product uses with people: code that follows a
+mail protocol keeps that protocol's names, such as thread and mailbox.
+
+## Language
+
+### What people read and write
+
+**Mail**:
+Email in general, as a mass noun: "new mail", "no mail in this folder". It has
+no plural.
+_Avoid_: Mails, Emails
+
+**Message**:
+One sent or received item, with its own sender, date and body.
+_Avoid_: Mail (for a single item), Email
+
+**Conversation**:
+A message and its replies and forwards, shown together. A row in a list is a
+conversation.
+_Avoid_: Thread, Mail
+
+**Draft**:
+A message still being written, not yet sent.
+_Avoid_: Unsent mail
+
+**Stack**:
+A list row folding several conversations in a row from one sender.
+_Avoid_: Group, Bundle
+
+### Where mail lives
+
+**Folder**:
+A place a message is filed. A message can be in more than one.
+_Avoid_: Mailbox, Label
+
+**Inbox**:
+The folder for received mail that hasn't been dealt with.
+
+**Sent**:
+The folder that keeps the messages you sent. Filing never takes one out of it.
+
+**Drafts**:
+The folder that keeps your drafts. Filing never takes one out of it.
+
+**Archive**:
+The folder for mail you have dealt with and want to keep.
+
+**Junk**:
+The folder for unwanted mail.
+_Avoid_: Spam
+
+**Trash**:
+The folder for mail you got rid of, kept for 30 days before it is deleted.
+_Avoid_: Bin, Deleted items
+
+**Starred**:
+The view of conversations you starred. It is not a folder: starring files
+nothing.
+_Avoid_: Favourites, Flagged
+
+**Category**:
+One part of a split Inbox, shown as a tab: Primary, Updates, Forums, Promotions
+or Social. Mail in a category is still in the Inbox.
+_Avoid_: Folder, Label, Tab (for the idea rather than the control)
+
+**Primary**:
+The category for the Inbox's mail that is in none of the person's turned-on
+categories.
+_Avoid_: Main, Important
+
+### Whose mail it is
+
+**Account**:
+One set of folders and addresses a person can read and send from. A person may
+have several. An admin giving someone an account is the one place "mailbox" is
+still said.
+_Avoid_: Mailbox, Profile
+
+**Email address**:
+An address an account sends and receives as. The one place "email" is the right
+word.
+_Avoid_: Email, Email ID, Mail ID
+
+**All accounts**:
+The view that merges every account's folders into one list. Its Inbox is titled
+All Inboxes.
+_Avoid_: Unified inbox, Merged view
+
+### Getting rid of mail
+
+**Move to Trash**:
+Sending mail to Trash, from where it can come back.
+_Avoid_: Delete, Remove
+
+**Delete**:
+Removing mail for good. It says so only where nothing can bring it back.
+_Avoid_: Trash, Remove
+
+**Discard**:
+Getting rid of a draft.
+_Avoid_: Delete, Trash
+
+## Flagged Ambiguities
+
+- **Unknown sender, Screener, accept and block**: the product still uses all of
+  these, and what screening is called waits on its own decision (ticket 013).
+- **Outbox**: what it is for is undecided (ticket 020), so it has no definition
+  here yet.
+- **Reaction**: being built; add it once it ships.
