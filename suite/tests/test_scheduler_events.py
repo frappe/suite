@@ -55,7 +55,8 @@ class TestSchedulerEvents(unittest.TestCase):
             for method in entries
             if method.startswith(jobs.__name__)
         ]
-        self.assertEqual(other_drive_jobs, ["suite.drive.jobs.purge_expired_downloads"])
-        self.assertIn("suite.drive.jobs.purge_expired_downloads", hooks.scheduler_events["hourly"])
+        purge_expired_downloads = f"{jobs.__name__}.purge_expired_downloads"
+        self.assertEqual(other_drive_jobs, [purge_expired_downloads])
+        self.assertIn(purge_expired_downloads, hooks.scheduler_events["hourly"])
         wired = {method.rpartition(".")[2] for method in daily_drive_jobs}
         self.assertEqual(wired | {"purge_expired_downloads"}, expected_targets)
