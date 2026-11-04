@@ -132,6 +132,7 @@
                     @click="sizesOpen = true"
                     @input="typedSize = ($event.target as HTMLInputElement).value"
                     @change="applyTypedSize"
+                    @blur="typedSize = null"
                     @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
                   />
                 </Tooltip>
@@ -409,8 +410,9 @@ const FONT_SIZES = [8, 9, 10, 11, 12, 14, 18, 24, 36]
 const fontSize = computed(() => props.activeFormat.fontSize || 13)
 const sizesOpen = ref(false)
 const hoveredSize = ref<number | null>(null)
-// What the person has typed into the field, until it is applied or dropped.
-// The field shows it, else the selection's size.
+// What the person has typed into the field, until it is applied or dropped
+// (a blur drops it after its change, if any). The field shows it, else the
+// selection's size.
 const typedSize = ref<string | null>(null)
 
 // Applies a size the selection doesn't have yet; dropping the typed text

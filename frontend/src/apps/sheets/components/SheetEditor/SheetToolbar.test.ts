@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, isRef, nextTick, ref } from 'vue'
 
 import SheetToolbar from './SheetToolbar.vue'
 
@@ -72,7 +72,8 @@ function mountRow(props: Record<string, unknown> = {}) {
           borderDropdownOptions: [{ label: 'All borders', onClick: vi.fn() }],
           formatMenuOptions: [{ label: 'Clear formatting', onClick: clearFormatting }],
           ...handlers,
-          ...props,
+          // A ref prop stays live, so a test can change it after mounting.
+          ...Object.fromEntries(Object.entries(props).map(([k, v]) => [k, isRef(v) ? v.value : v])),
         },
         {
           formula: () => [
@@ -233,6 +234,20 @@ describe('SheetToolbar (row 2)', () => {
     size24.click()
     field.dispatchEvent(new Event('change', { bubbles: true }))
     expect(handlers.onSetFontSize.mock.calls).toEqual([[24]])
+  })
+
+  it('shows the size of the next selection after an edit that changed nothing', async () => {
+    const activeFormat = ref({ fontSize: 13 })
+    const { root } = mountRow({ activeFormat })
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    // Typed back to the size it had: the browser sends no change on blur.
+    field.focus()
+    field.value = '13'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    field.dispatchEvent(new Event('blur'))
+    activeFormat.value = { fontSize: 24 }
+    await settle()
+    expect(field.value).toBe('24')
   })
 
   it('opens the Format menu from the Format button', async () => {
