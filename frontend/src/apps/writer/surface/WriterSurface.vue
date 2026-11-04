@@ -30,8 +30,8 @@ import ReadOnlyEditor from '@/apps/writer/components/ReadOnlyEditor.vue'
 import UsersBar from '@/apps/writer/components/UsersBar.vue'
 import { MENTION_NODE } from '@/apps/writer/composables/useUsers'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
-import { isOpening } from '@/apps/writer/opening/openingEditor'
 import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
+import { isOpening } from '@/apps/writer/opening/openingEditor'
 import OpeningEditor from '@/apps/writer/opening/OpeningEditor.vue'
 import {
   downloadCopy,

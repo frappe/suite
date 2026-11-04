@@ -64,7 +64,10 @@ it('fades only the sides that have more to scroll to', () => {
       scrollLeft: { value: scrollLeft, configurable: true },
     })
     view.dom.dispatchEvent(new Event('scroll'))
-    return [view.dom.classList.contains('has-more-before'), view.dom.classList.contains('has-more-after')]
+    return [
+      view.dom.classList.contains('has-more-before'),
+      view.dom.classList.contains('has-more-after'),
+    ]
   }
 
   expect(sizes(0, 300)).toEqual([false, false])

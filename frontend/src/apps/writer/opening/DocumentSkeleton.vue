@@ -5,7 +5,11 @@
         <div v-for="(group, index) in TOOLBAR" :key="index" class="writer-toolbar-group">
           <template v-for="(width, item) in group" :key="item">
             <span v-if="width === DIVIDER" class="writer-divider" />
-            <span v-else class="flex h-7 items-center justify-center" :style="{ width: `${width}px` }">
+            <span
+              v-else
+              class="flex h-7 items-center justify-center"
+              :style="{ width: `${width}px` }"
+            >
               <Skeleton class="h-4 rounded-3" :style="{ width: `${width - 12}px` }" />
             </span>
           </template>

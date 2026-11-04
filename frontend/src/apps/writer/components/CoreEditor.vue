@@ -106,9 +106,9 @@ import LinkPopover from './core-editor/LinkPopover.vue'
 import TableControls from './core-editor/table/TableControls.vue'
 import WriterBubbleMenu from './core-editor/WriterBubbleMenu.vue'
 import WriterToolbar from './core-editor/WriterToolbar.vue'
-import MentionMenu from './MentionMenu.vue'
 import DocumentOutline from './DocumentOutline.vue'
 import DocumentTabs from './DocumentTabs.vue'
+import MentionMenu from './MentionMenu.vue'
 import ToCMobile from './ToCMobile.vue'
 
 const props = withDefaults(

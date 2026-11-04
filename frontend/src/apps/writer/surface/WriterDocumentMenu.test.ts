@@ -120,7 +120,9 @@ describe('Writer document menu', () => {
     for (const isLocked of [false, true]) {
       const onSetLocked = vi.fn()
       const label = isLocked ? 'Unlock document' : 'Lock document'
-      expect(mountMenu(false, false, () => {}, { canLock: true, isLocked, onSetLocked })).toContain(label)
+      expect(mountMenu(false, false, () => {}, { canLock: true, isLocked, onSetLocked })).toContain(
+        label,
+      )
 
       const items = [...host!.querySelectorAll<HTMLElement>('[role="menuitem"]')]
       items.find((item) => item.textContent === label)!.click()

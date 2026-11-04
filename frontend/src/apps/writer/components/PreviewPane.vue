@@ -26,14 +26,8 @@ defineExpose({ scroller })
 </script>
 
 <template>
-  <div
-    ref="scroller"
-    class="min-w-0 flex-1 overflow-y-auto overflow-x-hidden"
-  >
-    <div
-      class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
-      :style="editorColumns()"
-    >
+  <div ref="scroller" class="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+    <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="editorColumns()">
       <div class="hidden md:block" />
       <slot v-if="isLoading" name="loading" />
       <p v-else-if="isFailed" class="px-5 pt-10 text-center text-p-sm text-ink-gray-6">
