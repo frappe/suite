@@ -14,14 +14,10 @@ import { forgetVisitedNode } from '@/apps/slides/stores/visitedCopies'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
+import { fetchPinned } from '@/apps/slides/utils/offlineRequests'
 import { collectMediaSources, entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
-import {
-  isOutOfSpace,
-  PIN_HEADER,
-  PINNED_CACHE_NAME,
-  RECORD_PREFIX,
-} from '@/apps/slides/utils/slidesCaches'
+import { isOutOfSpace, PINNED_CACHE_NAME, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
 import { isMediaContentType } from '@/apps/slides/utils/slidesRequests'
 import {
   cancelBodies,
@@ -132,7 +128,7 @@ const isMediaResponse = (response) => response.status === 200 && isMediaContentT
 const fetchWithRetries = async (url, signal) => {
   for (let attempt = 0; ; attempt++) {
     try {
-      const response = await fetch(url, { headers: { [PIN_HEADER]: '1' }, signal })
+      const response = await fetchPinned(url, signal)
       if (response.status < 500) return response
       await response.body?.cancel()
       throw new Error(`HTTP ${response.status}`)
