@@ -23,7 +23,7 @@ import httpx
 from frappe.utils import get_system_timezone, get_url
 
 from suite import mail as mail_product
-from suite.composition.demo import agenda, inbox
+from suite.composition.demo import agenda, assets, inbox
 from suite.composition.demo.cast import (
     DOMAIN,
     EVERYONE,
@@ -454,7 +454,7 @@ def compose(
     mime.add_alternative(message.body, subtype="html")
     for attachment in message.attachments:
         maintype, subtype = attachment.content_type.split("/")
-        data = pdf(attachment.lines) if subtype == "pdf" else "\n".join(attachment.lines).encode()
+        data = assets.pdf(attachment.lines) if subtype == "pdf" else "\n".join(attachment.lines).encode()
         mime.add_attachment(data, maintype=maintype, subtype=subtype, filename=attachment.name)
     if calendar:
         mime.add_attachment(
@@ -505,26 +505,3 @@ def ics_text(value: str) -> str:
 
 def fold(line: str) -> str:
     return "\r\n ".join(line[start : start + 73] for start in range(0, len(line), 73))
-
-
-def pdf(lines: tuple[str, ...]) -> bytes:
-    """A one-page PDF that shows `lines` in Helvetica."""
-    escaped = (line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") for line in lines)
-    shown = " ".join(f"({line}) Tj T*" for line in escaped)
-    stream = f"BT /F1 12 Tf 72 720 Td 18 TL {shown} ET"
-    objects = (
-        "<< /Type /Catalog /Pages 2 0 R >>",
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
-        "/Resources << /Font << /F1 5 0 R >> >> >>",
-        f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream",
-        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    )
-    document = b"%PDF-1.4\n"
-    offsets = []
-    for number, body in enumerate(objects, 1):
-        offsets.append(len(document))
-        document += f"{number} 0 obj\n{body}\nendobj\n".encode()
-    table = "".join(f"{offset:010d} 00000 n \n" for offset in offsets)
-    trailer = f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{len(document)}\n%%EOF\n"
-    return document + f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n{table}{trailer}".encode()

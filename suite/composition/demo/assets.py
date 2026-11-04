@@ -93,6 +93,22 @@ REVIEW = [
         "Protect focus: no additional product lines",
     ),
 ]
+EQUIPMENT_POLICY = (
+    "Northwind Labs",
+    "Equipment and remote work policy",
+    "Effective: 1 October 2026",
+    "",
+    "Equipment allowance: USD 1,500 on joining.",
+    "Annual home office allowance: USD 400.",
+    "Submit itemized receipts within 30 days.",
+    "Manager approval is required above USD 250.",
+    "",
+    "Security: use device encryption and a screen lock.",
+    "Report a lost device to Arjun immediately.",
+    "",
+    "Questions? Contact Sofia in Finance.",
+    "Fictional company policy for product testing.",
+)
 
 
 def spreadsheet(parent: str, imports: str, title: str, rows: Rows, kind: str) -> str:
@@ -174,34 +190,23 @@ def uploaded_files() -> dict[str, bytes]:
         left = 80 + index * 155
         drawing.rectangle((left, 340 - value * 7, left + 85, 340), fill="#248c73")
         drawing.text((left, 355), f"{label}: {value}", fill="#234d47", font=ImageFont.load_default(size=20))
-    page = Image.new("RGB", (850, 1100), "white")
-    drawing = ImageDraw.Draw(page)
-    lines = [
-        "Northwind Labs",
-        "Equipment and remote work policy",
-        "Effective: 1 October 2026",
-        "",
-        "Equipment allowance: USD 1,500 on joining.",
-        "Annual home office allowance: USD 400.",
-        "Submit itemized receipts within 30 days.",
-        "Manager approval is required above USD 250.",
-        "",
-        "Security: use device encryption and a screen lock.",
-        "Report a lost device to Arjun immediately.",
-        "",
-        "Questions? Contact Sofia in Finance.",
-        "Fictional company policy for product testing.",
-    ]
-    for index, line in enumerate(lines):
-        drawing.text((60, 70 + index * 58), line, fill="#234d47", font=ImageFont.load_default(size=24))
     return {
         "Northwind brand cover.png": cover,
         "Weekly active teams.png": _image_bytes(chart, "PNG"),
-        "Equipment policy.pdf": _image_bytes(page, "PDF"),
+        "Equipment policy.pdf": pdf(EQUIPMENT_POLICY),
         "Beta customer feedback.csv": b"account,theme,priority\nCedar Health,Sharing clarity,High\nAtlas Robotics,CSV dates,High\nHarbor Studio,Keyboard navigation,Medium\n",
         "Launch checklist.md": b"# Beta launch\n\n- [x] Approve copy\n- [ ] Verify imports\n- [ ] Invite twelve customer teams\n\nOwner: Theo. Review on 29 October.\n",
         "Read me.txt": b"Northwind Labs demo workspace\nAll people, customers, and financial figures are fictional.\nStart with Company / Handbook / Welcome to Northwind.\n",
     }
+
+
+def pdf(lines: tuple[str, ...]) -> bytes:
+    """A one-page PDF that shows `lines`."""
+    page = Image.new("RGB", (850, 1100), "white")
+    drawing = ImageDraw.Draw(page)
+    for index, line in enumerate(lines):
+        drawing.text((60, 70 + index * 58), line, fill="#234d47", font=ImageFont.load_default(size=22))
+    return _image_bytes(page, "PDF")
 
 
 def brand_file(source: str, file_name: str, doctype: str, name: str, field: str) -> str:
