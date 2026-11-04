@@ -13,7 +13,7 @@ import { waitForFocusBack } from './focusBack'
 
 /**
  * The Writer document's menu in the Drive header: download as DOCX or
- * Markdown, and, with edit access, import a DOCX into the open document. A
+ * Markdown, and, with edit access, lock the document or import a DOCX into it. A
  * document with tabs asks in a submenu whether to download the open tab or all
  * of them.
  */
@@ -24,9 +24,12 @@ const props = defineProps<{
   /** The person may change the body. Importing needs it. */
   editable: boolean
   canSaveVersion: boolean
+  /** The person could edit the body if it weren't locked. Locking needs it. */
+  canLock: boolean
+  isLocked: boolean
 }>()
 
-const emit = defineEmits<{ saveVersion: [] }>()
+const emit = defineEmits<{ saveVersion: []; setLocked: [lock: boolean] }>()
 
 const DOCX_TYPES = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
@@ -94,9 +97,35 @@ function versionGroups() {
   ]
 }
 
+function lockGroups() {
+  if (!props.canLock) {
+    return []
+  }
+
+  return [
+    {
+      group: __('Lock'),
+      hideLabel: true,
+      options: [
+        props.isLocked
+          ? {
+              label: __('Unlock document'),
+              icon: 'lucide-lock-open',
+              onClick: () => emit('setLocked', false),
+            }
+          : {
+              label: __('Lock document'),
+              icon: 'lucide-lock',
+              onClick: () => emit('setLocked', true),
+            },
+      ],
+    },
+  ]
+}
+
 const options = computed<DropdownOptions>(() => {
   const title = props.session.title.value
-  const versions = versionGroups()
+  const versions = [...versionGroups(), ...lockGroups()]
   const downloads = {
     group: __('Download'),
     hideLabel: true,

@@ -65,7 +65,15 @@ const session = {
 let host: HTMLElement | null = null
 let unmount = () => {}
 
-function mountMenu(isEditable: boolean, canSaveVersion = false, onSaveVersion = () => {}) {
+function mountMenu(
+  isEditable: boolean,
+  canSaveVersion = false,
+  onSaveVersion = () => {},
+  lock: { canLock: boolean; isLocked: boolean; onSetLocked?: (lock: boolean) => void } = {
+    canLock: false,
+    isLocked: false,
+  },
+) {
   host = document.createElement('div')
   document.body.append(host)
   const app = createApp(() =>
@@ -76,6 +84,7 @@ function mountMenu(isEditable: boolean, canSaveVersion = false, onSaveVersion = 
       editable: isEditable,
       canSaveVersion,
       onSaveVersion,
+      ...lock,
     }),
   )
   app.mount(host)
@@ -101,6 +110,27 @@ afterEach(() => {
 })
 
 describe('Writer document menu', () => {
+  it('offers a reader neither Lock nor Unlock', () => {
+    expect(mountMenu(false, false, () => {}, { canLock: false, isLocked: true })).not.toContain(
+      'Unlock document',
+    )
+  })
+
+  it('locks an unlocked document and unlocks a locked one', () => {
+    for (const isLocked of [false, true]) {
+      const onSetLocked = vi.fn()
+      const label = isLocked ? 'Unlock document' : 'Lock document'
+      expect(mountMenu(false, false, () => {}, { canLock: true, isLocked, onSetLocked })).toContain(label)
+
+      const items = [...host!.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      items.find((item) => item.textContent === label)!.click()
+
+      expect(onSetLocked).toHaveBeenCalledExactlyOnceWith(!isLocked)
+      unmount()
+      host?.remove()
+    }
+  })
+
   it('offers a reader the downloads but not Import DOCX', () => {
     expect(mountMenu(false)).toEqual(['Download as DOCX', 'Download as Markdown'])
   })

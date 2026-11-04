@@ -310,15 +310,28 @@ const saveNote = computed(() => {
 
 const settings = computed(() => documentResource.doc?.settings ?? {})
 
-const editable = computed(
+const isDocumentLocked = computed(() => isLocked(settings.value))
+
+// Whether the person could edit if the document weren't locked
+const canEdit = computed(
   () =>
     readable.value &&
     writes.writable.value &&
-    !isLocked(settings.value) &&
     allowsEditing.value &&
     collabLive.value &&
     !belowMinBuild('writer'),
 )
+
+const editable = computed(() => canEdit.value && !isDocumentLocked.value)
+
+async function setDocumentLocked(lock: boolean) {
+  try {
+    await documentResource.setLocked(lock)
+  } catch (error) {
+    console.error(error)
+    toast.error(lock ? __('Could not lock this document.') : __('Could not unlock this document.'))
+  }
+}
 
 // Saving pauses don't hide it, so the person is told why no version was taken
 const canSaveVersion = computed(() => readable.value && writes.writable.value && collabLive.value)
@@ -788,7 +801,10 @@ onBeforeUnmount(() => {
           :settings="settings"
           :editable="editable"
           :can-save-version="canSaveVersion"
+          :can-lock="canEdit"
+          :is-locked="isDocumentLocked"
           @save-version="nameVersion"
+          @set-locked="setDocumentLocked"
         />
       </template>
     </DriveDocumentHeader>
