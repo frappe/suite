@@ -276,7 +276,7 @@ class Letter:
     message_id: str
     raw: bytes
     sent_at: datetime
-    sender: str | None
+    sender: str
     recipients: list[str]
     unread: set[str] = field(default_factory=set)
     flagged: set[str] = field(default_factory=set)
