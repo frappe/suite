@@ -1,5 +1,3 @@
-"""Lives here because it needs both Drive's Build and Slides' `save_slides`, and Drive can't import Slides."""
-
 import frappe
 
 from suite.drive.patches.build.slides import convert_slides_and_templates
@@ -7,7 +5,7 @@ from suite.drive.tests.test_build_content import LATER, BuildContentCase
 from suite.slides.api.slides import save_slides
 
 
-class TestPushAfterBuild(BuildContentCase):
+class TestSlideRewriteAndOpenEditors(BuildContentCase):
     def test_a_push_on_the_old_stamp_is_refused_after_a_rewrite(self):
         deck = self.deck_fixture()
         first = deck["slides"][0]
