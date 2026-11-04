@@ -44,6 +44,8 @@ export const ROLE = {
 export type DriveNode = NodeGetOutput;
 export type DriveGrant = NodePutGrantOutput;
 export type DriveNotification = NotificationsListOutput["rows"][number];
+/** A notification about something done to a node, as opposed to a background download. */
+export type ActivityNotification = Extract<DriveNotification, { activity: unknown }>;
 
 type Method = "get" | "post" | "patch" | "put" | "delete";
 
