@@ -12,6 +12,7 @@ from frappe.utils.password import update_password
 from suite import mail
 from suite.composition import access
 from suite.composition.access import AccountSetupRequired, PasswordChangeRequired, require_access
+from suite.mail import health
 from suite.mail.suite_cloud import SuiteCloudClient, SuiteCloudUnavailableError, get_client
 from suite.mail.tests.test_suite_cloud_client import _frappe_error
 from suite.mail.tests.test_suite_cloud_directory import SuiteCloudTestCase
@@ -185,14 +186,26 @@ class TestUnreadableSecret(IntegrationTestCase):
         ):
             user.save(ignore_permissions=True)
 
-    def test_the_client_logs_and_raises_without_a_message_for_the_user(self):
+    def test_the_client_logs_and_tells_the_user(self):
         self.lose_the_secret()
 
         with self.assertRaises(SuiteCloudUnavailableError):
             get_client()
 
         self.log.assert_called_once()
+        self.assertEqual(
+            [entry["message"] for entry in frappe.get_message_log()],
+            ["This site can't read its Suite Cloud secret."],
+        )
+
+    def test_the_health_ping_leaves_no_message_for_the_user(self):
+        self.lose_the_secret()
+
+        self.assertTrue(health.status(refresh=True)["stale"])
+
+        self.log.assert_called_once()
         self.assertEqual(frappe.get_message_log(), [])
+        self.assertFalse(frappe.flags.mute_messages)
 
     def test_a_bad_encryption_key_does_not_stop_a_login(self):
         for key in (Fernet.generate_key().decode(), "not-a-key"):

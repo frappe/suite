@@ -668,6 +668,7 @@ class TestMembers(SuiteCloudTestCase):
             )
 
     def test_member_lifecycle_through_suite_cloud(self) -> None:
+        invites = admin.get_overview()["invites"]
         admin.add_member(
             "carol",
             DOMAIN,
@@ -780,7 +781,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertEqual(overview["site"]["cluster"], "mail.c1.example.test")
         self.assertEqual((overview["storage"]["used_bytes"], overview["storage"]["max_gb"]), (4096, 100))
         self.assertEqual(overview["domains_needing_attention"], [])
-        self.assertEqual(overview["invites"], {"pending": 0, "expiring_soon": 0, "expired": 0})
+        self.assertEqual(overview["invites"], invites)
         self.assertEqual(overview["recent_accounts"][0]["name"], self.email)
         admin.disable_members([self.email])
         # The dev site may hold disabled accounts of its own; ours must be among them, in address order.
