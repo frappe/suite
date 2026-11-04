@@ -20,6 +20,7 @@ export interface ReadRecord {
   pages: unknown[]
   status: 'pending' | 'success' | 'error'
   error: Error | null
+  nextError: Error | null
   fetching: number
   fetchingNext: boolean
   stale: boolean
@@ -156,6 +157,7 @@ export class Reads {
         pages: [],
         status: 'pending',
         error: null,
+        nextError: null,
         fetching: 0,
         fetchingNext: false,
         stale: true,
@@ -218,7 +220,10 @@ export class Reads {
     flight.consumers.add(token)
     record.fetching += 1
     record.error = null
-    if (next) record.fetchingNext = true
+    if (next) {
+      record.fetchingNext = true
+      record.nextError = null
+    }
     const active = flight
     try {
       const outcome = await canceled(active.work, options.signal)
@@ -251,6 +256,7 @@ export class Reads {
     } catch (cause) {
       if (!isAbort(cause)) {
         record.error = asError(cause)
+        if (next) record.nextError = record.error
         record.status = 'error'
       }
       throw cause

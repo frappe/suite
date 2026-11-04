@@ -202,6 +202,11 @@ class ContentTypeSpec:
     # days.
     remap_media: Callable[[str, dict[str, str]], None] | None = None
 
+    # comments. (node) -> None, after a comment write on the node commits.
+    # Lets the app tell the document's open tabs to read the threads again.
+    # It runs outside the write, so a failure is logged and never undoes it.
+    threads_changed: Callable[[str], None] | None = None
+
 
 REQUIRED_CALLBACKS = ("create_empty", "duplicate", "on_purge")
 OPTIONAL_CALLBACKS = (
@@ -211,6 +216,7 @@ OPTIONAL_CALLBACKS = (
     "restore_version",
     "used_nodes",
     "remap_media",
+    "threads_changed",
 )
 
 
@@ -1161,7 +1167,7 @@ def _sweep_document(spec: ContentTypeSpec, row: frappe._dict) -> int:
     answer = call_app(spec.used_nodes, row.content_docname)
     used = _validated_used_nodes(answer)
     cutoff = now_datetime() - timedelta(days=UNUSED_MEDIA_GRACE_DAYS)
-    system = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    system = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     trashed = 0
     for media in media_rows(row.name):
         if media.name in used or media.creation >= cutoff:

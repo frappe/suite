@@ -41,6 +41,12 @@ const boundaryDebtGroups = [
       'meet/components/UpcomingMeetings.vue|@/apps/calendar/utils/dayjs',
     ],
   },
+  {
+    owner: 'Slides frontend owner',
+    removal:
+      'Remove when @/router installs the slides guard itself, instead of the slides package root installing it as an import side effect.',
+    entries: ['composition/home/HomePage.test.ts|@/apps/slides/router'],
+  },
 ]
 
 // Exact entries only. Each group names its owner and removal condition.
@@ -198,11 +204,7 @@ const moduleGraphDebtGroups = [
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
       'sheets/components/SheetEditor/index.vue|@/boot/session',
-      'sheets/components/SheetEditor/index.vue|@/composables/useSettingsMenuOption',
-      'sheets/components/SheetEditor/index.vue|@/composables/useThemeMenuOption',
-      'sheets/components/SheetEditor/index.vue|@/utils/confirmLeave',
       'sheets/components/SheetEditor/useAiAssist.js|@/stores/root',
-      'sheets/components/SheetEditor/useCollaboration.js|@/boot/session',
     ],
   },
   {
@@ -220,7 +222,6 @@ const moduleGraphDebtGroups = [
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/types',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/composables/useCalendarSearchFilters',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/stores/user',
-      'shell/SuiteCommandPalette.vue|@/apps/calendar/utils/dayjs',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/utils/eventTime',
       'shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailFilterPanel.vue',
       'shell/SuiteCommandPalette.vue|@/apps/mail/components/CommandPalette/MailSearchResult.vue',
@@ -254,11 +255,9 @@ const moduleGraphDebtGroups = [
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
-      'writer/components/CoreEditor.vue|@/boot/session',
+      'writer/components/CoreEditor.test.ts|@/stores/root',
       'writer/components/CoreEditor.vue|@/stores/root',
-      'writer/components/FloatingComments.vue|@/boot/session',
-      'writer/components/TextEditor.vue|@/boot/session',
-      'writer/composables/useYjs.ts|@/boot/session',
+      'writer/components/ReadOnlyEditor.test.ts|@/stores/root',
     ],
   },
 ]
@@ -348,8 +347,6 @@ const unstableFrappeUIDebtGroups = [
       'sheets/components/SheetEditor/FilterPanel.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/PivotDialog.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/PivotFieldPicker.vue|frappe-ui/experimental',
-      'sheets/components/SheetEditor/SheetToolbar.vue|frappe-ui/experimental',
-      'sheets/components/SheetEditor/SheetTopbar.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/ValidationDialog.vue|frappe-ui/experimental',
       'sheets/components/SheetEditor/index.vue|frappe-ui/experimental',
     ],

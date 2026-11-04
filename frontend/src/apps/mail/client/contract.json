@@ -430,6 +430,114 @@
       "bytes": false
     },
     {
+      "id": "regional_preferences",
+      "kind": "query",
+      "publicName": "settings.regional",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "settings/regional",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Option": {
+            "properties": {
+              "value": {
+                "title": "Value",
+                "type": "string"
+              },
+              "label": {
+                "title": "Label",
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "label"
+            ],
+            "title": "Option",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "locales": {
+            "items": {
+              "$ref": "#/$defs/Option"
+            },
+            "title": "Locales",
+            "type": "array"
+          },
+          "time_zones": {
+            "items": {
+              "$ref": "#/$defs/Option"
+            },
+            "title": "Time Zones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "locale",
+          "time_zone",
+          "locales",
+          "time_zones"
+        ],
+        "title": "RegionalPreferences",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "update_regional_preferences",
+      "kind": "mutation",
+      "publicName": "settings.updateRegional",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "settings/regional",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locale",
+          "time_zone"
+        ],
+        "title": "RegionalChanges",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "credentials",
       "kind": "query",
       "publicName": "settings.credentials",
@@ -3878,8 +3986,15 @@
                 "type": "string"
               },
               "user_image": {
-                "title": "User Image",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
               },
               "last_active": {
                 "anyOf": [
@@ -4018,7 +4133,8 @@
               "All",
               "Pending",
               "Accepted",
-              "Expired"
+              "Expired",
+              "Setup failed"
             ],
             "title": "Status",
             "type": "string"
@@ -4074,7 +4190,8 @@
                 "enum": [
                   "Pending",
                   "Accepted",
-                  "Expired"
+                  "Expired",
+                  "Setup failed"
                 ],
                 "title": "Status",
                 "type": "string"
@@ -6158,13 +6275,28 @@
                 ],
                 "title": "Is Expired",
                 "type": "integer"
+              },
+              "workspace_name": {
+                "title": "Workspace Name",
+                "type": "string"
+              },
+              "workspace_logo": {
+                "title": "Workspace Logo",
+                "type": "string"
+              },
+              "invited_by_name": {
+                "title": "Invited By Name",
+                "type": "string"
               }
             },
             "required": [
               "backup_email",
               "account",
               "is_verified",
-              "is_expired"
+              "is_expired",
+              "workspace_name",
+              "workspace_logo",
+              "invited_by_name"
             ],
             "title": "AccountRequest",
             "type": "object"
@@ -8852,6 +8984,132 @@
       "bytes": false
     },
     {
+      "id": "remove_failed_creation",
+      "kind": "mutation",
+      "publicName": "admin.members.removeFailedCreation",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.admin.remove_failed_creation",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AccountCreationInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "retry_account_creation",
+      "kind": "mutation",
+      "publicName": "admin.members.retryCreation",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.admin.retry_account_creation",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AccountCreationInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user": {
+            "title": "User",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "temporary_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporary Password"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "success",
+          "user",
+          "status",
+          "error",
+          "temporary_password",
+          "expires_at"
+        ],
+        "title": "CreationResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "delete_domain",
       "kind": "mutation",
       "publicName": "admin.domains.delete",
@@ -10373,8 +10631,15 @@
             "type": "string"
           },
           "user_image": {
-            "title": "User Image",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Image"
           },
           "description": {
             "title": "Description",
@@ -13545,8 +13810,15 @@
                 "type": "string"
               },
               "user_image": {
-                "title": "User Image",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
               },
               "enabled": {
                 "title": "Enabled",
@@ -18472,16 +18744,16 @@
             "title": "Account",
             "type": "string"
           },
-          "blob_id": {
-            "title": "Blob Id",
+          "id": {
+            "title": "Id",
             "type": "string"
           }
         },
         "required": [
           "account",
-          "blob_id"
+          "id"
         ],
-        "title": "BlobInput",
+        "title": "IdInput",
         "type": "object"
       },
       "output": {
@@ -18504,6 +18776,10 @@
                 "title": "Diagnostic Code",
                 "type": "string"
               },
+              "reason": {
+                "title": "Reason",
+                "type": "string"
+              },
               "remote_mta": {
                 "title": "Remote Mta",
                 "type": "string"
@@ -18518,6 +18794,7 @@
               "action",
               "status",
               "diagnostic_code",
+              "reason",
               "remote_mta",
               "will_retry_until"
             ],
@@ -18534,18 +18811,47 @@
             "title": "Arrival Date",
             "type": "string"
           },
+          "original_envelope_id": {
+            "title": "Original Envelope Id",
+            "type": "string"
+          },
           "recipients": {
             "items": {
               "$ref": "#/$defs/DeliveryRecipient"
             },
             "title": "Recipients",
             "type": "array"
+          },
+          "sent_thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent Thread Id"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
           }
         },
         "required": [
           "reporting_mta",
           "arrival_date",
-          "recipients"
+          "original_envelope_id",
+          "recipients",
+          "sent_thread_id",
+          "submission_id"
         ],
         "title": "DeliveryReport",
         "type": "object"
@@ -18578,8 +18884,15 @@
                 "type": "string"
               },
               "file_url": {
-                "title": "File Url",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "File Url"
               },
               "blob_id": {
                 "title": "Blob Id",
@@ -18897,8 +19210,15 @@
                 "type": "string"
               },
               "file_url": {
-                "title": "File Url",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "File Url"
               },
               "blob_id": {
                 "title": "Blob Id",
@@ -20919,6 +21239,17 @@
             "title": "Dsn Count",
             "type": "integer"
           },
+          "dsn_thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dsn Thread Id"
+          },
           "mdn_count": {
             "title": "Mdn Count",
             "type": "integer"
@@ -20945,6 +21276,7 @@
           "priority",
           "next_retry",
           "dsn_count",
+          "dsn_thread_id",
           "mdn_count"
         ],
         "title": "SubmissionDetail",

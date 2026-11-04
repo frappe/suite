@@ -3,6 +3,8 @@ import { onScopeDispose, ref } from 'vue'
 import { api, client } from '@/api'
 import { useRootStore } from '@/stores/root'
 
+import { cellId } from '../../utils/cells.js'
+
 // AI Assist, extracted from SheetEditor/index.vue: the Ask bar state, asking
 // the backend, applying its plan as one undoable op, Keep / Undo, and the AI
 // settings entry in the command palette.
@@ -18,10 +20,9 @@ export function useAiAssist({
   syncFlags,
   undo,
   refreshActiveFormat,
+  readRect,
   readIds: _readIds,
   writeInputs: _writeInputs,
-  queueOp: _queueOp,
-  popLastOp: _popLastOp,
   cellSilentlyProtected: _cellSilentlyProtected,
   flashProtected: _flashProtected,
   refitRowsFor,
@@ -29,9 +30,8 @@ export function useAiAssist({
   //
   // One primitive: select → ask in plain words → see it applied → Keep or Undo.
   // The backend returns a validated action plan; the model emits formulas, the
-  // engine computes. Applying goes through the same pushOp + _queueOp path that
-  // fill/paste use, so a single Undo reverts the whole batch and the change
-  // joins the existing op-log / autosave / collab pipeline.
+  // engine computes. Applying ends in one pushOp, as fill/paste do, so it is
+  // one commit to the room and a single Undo reverts the whole batch.
 
   const aiEnabled = ref(!!window.frappe?.boot?.ai_assist_enabled)
   const askOpen = ref(false)
@@ -69,6 +69,27 @@ export function useAiAssist({
     askAnswer.value = ''
     aiPending.value = null
   }
+  // The context the server builds for the model is the sheet as this editor
+  // shows it: the live room holds the sheet, and only the browser has formula
+  // results. Its top-left block, one row and column past what the server
+  // samples (25 rows, 40 columns: suite/sheets/ai/context.py), so it can say
+  // the view is partial. Typed values keep the column types readable; a
+  // formula sends its result.
+  const CONTEXT_ROWS = 26
+  const CONTEXT_COLS = 41
+  async function _contextCells(sn) {
+    const rect = { r0: 0, c0: 0, r1: CONTEXT_ROWS - 1, c1: CONTEXT_COLS - 1 }
+    const { inputs, displays } = await readRect(sn, rect)
+    const cells = {}
+    inputs.forEach((row, r) =>
+      row.forEach((input, c) => {
+        const value = String(input ?? '').startsWith('=') ? displays[r]?.[c] : input
+        if (value != null && value !== '') cells[cellId(r, c)] = String(value)
+      }),
+    )
+    return cells
+  }
+
   async function onAskSubmit(promptText) {
     askError.value = ''
     askAnswer.value = ''
@@ -93,6 +114,7 @@ export function useAiAssist({
         name: getDocName(),
         prompt: promptText,
         selection,
+        cells: JSON.stringify(await _contextCells(currentSheet.value)),
       })
       const actions = Array.isArray(res?.actions) ? res.actions : []
       const answers = actions.filter((a) => a.type === 'answer')
@@ -135,7 +157,7 @@ export function useAiAssist({
     // Rows with wrapped text refit to what the AI wrote, like a typed edit.
     const rowH = refitRowsFor?.(sn, after)
 
-    // Undo (op-based, like fill) + server sync (op-log on next save).
+    // One undo step, like fill.
     history.pushOp({
       opType: 'ai_assist',
       subSheet: sn,
@@ -144,14 +166,6 @@ export function useAiAssist({
       after,
       ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
     })
-    _queueOp({
-      opType: 'ai_assist',
-      subSheet: sn,
-      cellRefs: refs,
-      before,
-      after,
-      summary: `AI: ${refs.length} cell${refs.length === 1 ? '' : 's'}`,
-    })
     getGrid()?.render()
     refreshActiveFormat()
     syncFlags()
@@ -159,14 +173,12 @@ export function useAiAssist({
     return refs.length
   }
   function onAskKeep() {
-    // Already applied + queued; just dismiss and close.
+    // Already applied and saved; just dismiss and close.
     closeAskBar()
   }
   function onAskUndo() {
-    // Reverts the whole batch in one step (single op). Drop the still-queued
-    // op so a stale ai_assist entry isn't persisted on the next save.
+    // Reverts the whole batch in one step (single op).
     undo()
-    _popLastOp('ai_assist')
     aiPending.value = null
   }
 

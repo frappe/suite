@@ -32,6 +32,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -191,6 +192,19 @@ describe('sendRequest', () => {
     client.connected = true
     client.signalChannel.emit = vi.fn((_event, _data, cb) => cb({ success: false, error: 'nope' }))
     await expect(client.sendRequest('test', {})).rejects.toThrow('nope')
+  })
+
+  it('leaves rejected subscription reporting to the recovery caller', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const client = createClient()
+    client.connected = true
+    client.signalChannel.emit = vi.fn((_event, _data, cb) =>
+      cb({ success: false, error: 'E2EE join handshake not completed' }),
+    )
+    await expect(client.sendRequest('create_consumer', {})).rejects.toThrow(
+      'E2EE join handshake not completed',
+    )
+    expect(errorLog).not.toHaveBeenCalled()
   })
 
   it('preserves structured response errors', async () => {
@@ -1117,6 +1131,8 @@ describe('setupDefaultHandlers', () => {
       'ice_candidate',
       'chat:message',
       'active_speaker',
+      'shared_stage',
+      'shared_stage_snapshot',
       'hand_raised',
       'existing_raised_hands',
     ]
@@ -1188,5 +1204,56 @@ describe('getConnectionStatus', () => {
     expect(status.meetingId).toBe('meet-1')
     expect(status.userId).toBe('usr-1')
     expect(status.socketId).toBe('socket-id')
+  })
+})
+
+describe('receiver readiness', () => {
+  it.each([false, undefined])(
+    'treats legacy server paused=%s as already running',
+    async (paused) => {
+      const client = createClient()
+      vi.spyOn(client, 'sendRequest').mockResolvedValue({
+        success: true,
+        id: 'legacy',
+        producerId: 'camera',
+        kind: 'video',
+        rtpParameters: {},
+        ...(paused === undefined ? {} : { paused }),
+      })
+      expect((await client.createConsumer('recv', 'camera', {}, true)).paused).toBe(false)
+    },
+  )
+  it('opts into paused startup and preserves the server readiness flag', async () => {
+    const client = createClient()
+    const send = vi.spyOn(client, 'sendRequest').mockResolvedValue({
+      success: true,
+      id: 'fresh',
+      producerId: 'camera',
+      kind: 'video',
+      rtpParameters: {},
+      paused: true,
+    })
+    const result = await client.createConsumer('recv', 'camera', {}, true)
+    expect(send).toHaveBeenCalledWith('create_consumer', {
+      transportId: 'recv',
+      producerId: 'camera',
+      rtpCapabilities: {},
+      startPaused: true,
+    })
+    expect(result.paused).toBe(true)
+  })
+  it.each([false, undefined])(
+    'rejects an unsuccessful resume acknowledgement (%s)',
+    async (resumed) => {
+      const client = createClient()
+      vi.spyOn(client, 'sendRequest').mockResolvedValue({ success: true, resumed })
+      await expect(client.resumeConsumer('fresh')).rejects.toThrow('Failed to resume consumer')
+    },
+  )
+  it('acknowledges the exact consumer', async () => {
+    const client = createClient()
+    const send = vi.spyOn(client, 'sendRequest').mockResolvedValue({ success: true, resumed: true })
+    await client.resumeConsumer('fresh')
+    expect(send).toHaveBeenCalledExactlyOnceWith('resume_consumer', { consumerId: 'fresh' })
   })
 })

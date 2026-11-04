@@ -446,6 +446,33 @@ const operationStorageDefault: MutationRef<
   loadValidators: async () => (await import('./validators')).operationStorageDefault,
 }
 
+export type ErrorsPostInput = {
+  source: 'component' | 'script' | 'promise'
+  title: string
+  stack: string
+  route: string
+}
+
+export type ErrorsPostOutput = null
+
+export type ErrorsPostError = never
+
+const operationErrorsPost: MutationRef<ErrorsPostInput, ErrorsPostOutput, ErrorsPostError> = {
+  id: 'errors_post',
+  owner: 'suite',
+  kind: 'mutation',
+  publicName: 'errors.report',
+  empty: true,
+  method: 'POST',
+  path: 'errors',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationErrorsPost,
+}
+
 export type GetPreferencesInput = Record<string, never>
 
 export type GetPreferencesOutput = {
@@ -548,8 +575,10 @@ export type AccountGetOutputAccount = {
   email: string
   full_name: string
   avatar: string | null
+  time_zone: string | null
   roles: AccountGetOutputAccountRoles
   is_jmap_configured: boolean
+  is_mail_server_configured: boolean
   must_change_password: boolean
   setup_required: boolean
 }
@@ -906,48 +935,54 @@ const operationFrappeTranslateGetBootTranslations: QueryRef<
     (await import('./validators')).operationFrappeTranslateGetBootTranslations,
 }
 
-export type SubscribeInput = { fcm_token: string; project_name: string }
+export type SuitePushSubscribeInput = { fcm_token: string; apps: Array<'mail' | 'calendar'> }
 
-export type SubscribeOutput = { success: boolean; message: string }
+export type SuitePushSubscribeOutput = { success: boolean; message: string }
 
-export type SubscribeError = never
+export type SuitePushSubscribeError = never
 
-const operationSubscribe: MutationRef<SubscribeInput, SubscribeOutput, SubscribeError> = {
-  id: 'subscribe',
+const operationSuitePushSubscribe: MutationRef<
+  SuitePushSubscribeInput,
+  SuitePushSubscribeOutput,
+  SuitePushSubscribeError
+> = {
+  id: 'suite.push.subscribe',
   owner: 'suite',
   kind: 'mutation',
   publicName: 'push.subscribe',
-  envelope: 'message',
-  method: 'GET',
-  path: '/api/method/frappe.push_notification.subscribe',
+  method: 'POST',
+  path: '/api/v2/method/suite.suite_core.push.subscribe',
   prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
   errors: [],
-  loadValidators: async () => (await import('./validators')).operationSubscribe,
+  loadValidators: async () => (await import('./validators')).operationSuitePushSubscribe,
 }
 
-export type UnsubscribeInput = { fcm_token: string; project_name: string }
+export type SuitePushUnsubscribeInput = { fcm_token: string; apps: Array<'mail' | 'calendar'> }
 
-export type UnsubscribeOutput = { success: boolean; message: string }
+export type SuitePushUnsubscribeOutput = { success: boolean; message: string }
 
-export type UnsubscribeError = never
+export type SuitePushUnsubscribeError = never
 
-const operationUnsubscribe: MutationRef<UnsubscribeInput, UnsubscribeOutput, UnsubscribeError> = {
-  id: 'unsubscribe',
+const operationSuitePushUnsubscribe: MutationRef<
+  SuitePushUnsubscribeInput,
+  SuitePushUnsubscribeOutput,
+  SuitePushUnsubscribeError
+> = {
+  id: 'suite.push.unsubscribe',
   owner: 'suite',
   kind: 'mutation',
   publicName: 'push.unsubscribe',
-  envelope: 'message',
-  method: 'GET',
-  path: '/api/method/frappe.push_notification.unsubscribe',
+  method: 'POST',
+  path: '/api/v2/method/suite.suite_core.push.unsubscribe',
   prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
   errors: [],
-  loadValidators: async () => (await import('./validators')).operationUnsubscribe,
+  loadValidators: async () => (await import('./validators')).operationSuitePushUnsubscribe,
 }
 
 export type FrappeUserSwitchThemeInput = { theme: 'Light' | 'Dark' | 'Automatic' }
@@ -1104,6 +1139,9 @@ export const api = {
     setLimits: operationStorageLimits,
     setDefault: operationStorageDefault,
   },
+  errors: {
+    report: operationErrorsPost,
+  },
   preferences: {
     get: operationGetPreferences,
     update: operationUpdatePreferences,
@@ -1134,7 +1172,7 @@ export const api = {
     get: operationFrappeTranslateGetBootTranslations,
   },
   push: {
-    subscribe: operationSubscribe,
-    unsubscribe: operationUnsubscribe,
+    subscribe: operationSuitePushSubscribe,
+    unsubscribe: operationSuitePushUnsubscribe,
   },
 } as const

@@ -171,6 +171,7 @@
             @update:model-value="switchTrashRoot"
           />
 
+          <RecoveryNotice v-if="isMyFiles" class="mt-3" />
           <Alert
             v-if="trashedFolder && !isSearching"
             class="mt-3"
@@ -256,7 +257,7 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { archiveDownloadUrl } from '@/apps/drive/client/archives'
-import { nodeContentUrl } from '@/apps/drive/client/nodes'
+import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
@@ -290,6 +291,7 @@ import {
 } from '../features/presentation'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import { recentFiles } from '../features/recent'
+import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
 import { copyLink } from '../features/share/shareFormat'
@@ -378,6 +380,7 @@ const presentation = computed<PresentationState>(() => {
   }
   return shown
 })
+const isMyFiles = computed(() => props.destination === 'personal')
 /**
  * My files and its folders, where every row names the user as owner, so the
  * Owner column says nothing. A folder whose trail has not loaded counts as the
@@ -1135,6 +1138,19 @@ async function openNode(row: DriveNode, newTab = false) {
   await router.push(target)
 }
 
+/** Importing beside a file takes UPLOAD on its folder. Outside that folder's listing the role is not known here, and Drive refuses when asked. */
+function mayUploadBeside(row: DriveNode) {
+  return row.parent_node !== detail.data?.name || !!uploadTargetOf(detail.data)
+}
+
+/** Imports an uploaded .xlsx or .csv into a new spreadsheet beside it, then opens that. */
+async function openRowAsSpreadsheet(row: DriveNode) {
+  if (!row.parent_node) return
+  // A refusal is reported where the spreadsheet is created.
+  const sheet = await openAsSpreadsheet({ ...row, parent_node: row.parent_node }).catch(() => null)
+  if (sheet) await router.push(driveNodeRoute(sheet))
+}
+
 /**
  * Sets the menu a right-click opens. An item in a selection of several gets the
  * selection's actions. Any other item gets its own menu, and the selection
@@ -1203,6 +1219,15 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
                 label: 'Open in new tab',
                 icon: 'lucide-external-link',
                 onClick: () => openNode(row, true),
+              },
+            ]
+          : []),
+        ...(can.copy && opensAsSpreadsheet(row) && mayUploadBeside(row)
+          ? [
+              {
+                label: 'Open as spreadsheet',
+                icon: 'lucide-sheet',
+                onClick: () => openRowAsSpreadsheet(row),
               },
             ]
           : []),
@@ -1313,9 +1338,7 @@ function trashPath(row: Pick<DriveNode, 'root'>): RouteLocationRaw {
   return trashLocation(row, discovered.data)
 }
 function nodePath(row: Pick<DriveNode, 'name' | 'title' | 'kind'>) {
-  const slug = slugify(row.title)
-  const base = row.kind === 'folder' ? '/drive/f' : '/d'
-  return `${base}/${encodeURIComponent(row.name)}${slug ? `/${slug}` : ''}`
+  return driveNodeRoute(row).path
 }
 function pickUpload(source: 'files' | 'folder') {
   const target = newUploadTarget.value
@@ -1456,7 +1479,8 @@ function create(kind: CreateRequest['kind'], contentDoctype?: string) {
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {
-    await openNode(created)
+    // the document's surface may ask what a new one should start as
+    await router.push({ ...driveNodeRoute(created), query: { new: '1' } })
     return
   }
   // A search hides what was just added, so the folder shows again.

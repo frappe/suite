@@ -410,6 +410,7 @@ The one 512 px WebP beside a node. One row per node [006 §1].
 |---|---|---|---|---|
 | `node` | Link | Drive Node | reqd 1 | The content document node. |
 | `anchor` | Data | | reqd 1, length 255 | Opaque, app-defined. Writer: the comment id in the body. Sheets: sheet plus cell id [011 §11]. Drive stores and returns it; the app resolves it [005 §3]. |
+| `client_id` | Data | | length 64, read_only | The writing client's own id for the thread, if it sent one (§9.3). |
 | `resolved` | Check | | default 0 | |
 | `resolved_by` | Link | User | | |
 | `resolved_at` | Datetime | | | |
@@ -417,6 +418,7 @@ The one 512 px WebP beside a node. One row per node [006 §1].
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `thread_node (node, resolved)` | `add_index` | Open threads of one document: `node = ? AND resolved = 0`. Also the purge cascade's delete by node. |
+| `thread_node_client (node, client_id)` | `add_unique` | A resent create finds the thread its first send made. Rows without a client id don't collide. |
 
 ### 3.7 `Drive Comment`
 
@@ -428,10 +430,12 @@ The one 512 px WebP beside a node. One row per node [006 §1].
 | `author` | Link | User | reqd 1 | The server sets it. `Guest` for a link visitor [008 §6]. |
 | `author_name` | Data | | | The display name a guest typed. The client never sets `author` [008 §6]. |
 | `mentions` | JSON | | | User ids mentioned in `content`. |
+| `client_id` | Data | | length 64, read_only | The writing client's own id for a reply, if it sent one (§9.3). A thread's first comment has none. |
 
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `comment_thread (thread, creation)` | `add_index` | One thread in order. |
+| `comment_node_client (node, client_id)` | `add_unique` | A resent reply finds the comment its first send made. |
 | `node` | `search_index: 1` | Comment count per node, and the purge cascade. |
 
 ### 3.8 `Drive Activity`
@@ -788,14 +792,19 @@ def ticket_ok(token: str, password_hash: str, exp: str, mac: str) -> bool:
 
 ### 4.9 Suite Admin bypass and privacy
 
-A Suite Admin's effective role is MANAGE on every node. It resolves
-before grants, so no deny touches it. `explain()` reports the source as
-`site admin` [002].
+Superseded in part by [Drive ADR 0001](../../suite/drive/docs/adr/0001-suite-admin-administers-but-does-not-edit.md).
+A Suite Admin passes every check that needs MANAGE at every node: sharing,
+restoring what someone else trashed, and deleting for good. It resolves before
+grants, so no deny touches it. Below MANAGE the admin's effective role is the
+one their grants give: reading, commenting, uploading, and editing need a real
+grant. `access.holds_without_grant` is the one place this rule lives. The
+`Administrator` account and Drive's own workflows (`Principals.is_system`) keep
+MANAGE everywhere, and `explain()` reports their source as `system`.
 
 Two guardrails bind the admin as well: no `$PUBLIC` grant and no
 `$LINK` grant on a root node (`kind=root`) [007 §5, 008 §9].
 
-**Privacy statement.** A Suite Admin reads every Personal root on the site, including content its owner never shared, and including Archived roots. This is today's behaviour (`suite/drive/api/permissions.py:31`), kept on purpose. Offboarding relies on it: content a departed user never shared is reachable by Suite Admins only [001]. An admin write records the admin as actor; an admin read records nothing.
+**Privacy statement.** A Suite Admin does not read a Personal root's content, an Archived root's content, or anything else without a grant. To read it, they grant themselves a role, and that grant change is recorded. Offboarding does not need a read: the retained-content transfer moves a disabled user's content with Drive's own authority and records the admin as actor (ADR 0001).
 
 Rejected: `$ROLE:Suite Admin` grant rows. A row per root that must always exist and never be denied rebuilds the bypass out of data, with an outage for every missed row [002].
 
@@ -1913,8 +1922,8 @@ Rules that hold for every row above.
 - The activity row carries `via_link` when the grant that decided the right
   named a link, and `client` (the User-Agent) on WebDAV requests
   [008 §6, 009 §10].
-- A Suite Admin holds MANAGE everywhere and is never refused by a grant
-  [002].
+- A Suite Admin passes every MANAGE check and is never refused one by a
+  grant. Below MANAGE they hold only what their grants give (ADR 0001).
 
 ### 8.3 Create, per kind
 
@@ -2134,8 +2143,21 @@ matching `path LIKE CONCAT(:old_prefix, '%')` in the source root.
 
 Active and Trashed nodes both count. Reservations never move [010 §3, §8].
 Own grants on the moved nodes travel with them, because grants name node
-ids and no id changes [009 §7]. The creator grant fires when the mover
-lands below EDIT at the destination.
+ids and no id changes [009 §7]. A signed-in mover keeps the role they had
+on the moved node: when their role at the destination would be lower, the
+move writes one grant for them on the node at their old role. A mover who
+already holds a grant on the node, or who reached the destination through a
+link, gets no row. This replaced an EDIT-only grant, which cost a
+non-admin mover the right to share their own file [R2-T1-24].
+
+`GET /nodes/<id>/move-preview?parent_node=<dest>` is the dry run that the
+move confirmation reads (unified frontend §5.7). It checks the access that
+the move checks (EDIT on the node, UPLOAD on `dest`), and writes and locks
+nothing. It answers `{gains, role_now, role_after}`. `gains` holds each
+principal whose nearest live grant would give it a higher role under `dest`
+than it has now, as `{principal, role, person?}`. Every link is `$LINK`,
+without its token. `role_now` and `role_after` are the mover's own role on
+the node before and after the move.
 
 Benchmark: the subtree rewrite is 9.1 ms for 1000 nodes and is not affected
 by the frozen `(parent_node, state, title)` index [004].
@@ -2526,12 +2548,13 @@ refusals.
 `Drive Comment`.
 
 ```python
-def create_thread(p: Principals, node: str, anchor: str, text: str, *, author_name: str | None = None) -> str: ...
-def reply(p: Principals, thread: str, text: str, *, author_name: str | None = None) -> str: ...
+def create_thread(p: Principals, node: str, anchor: str, text: str, *, author_name: str | None = None, client_id: str | None = None) -> str: ...
+def reply(p: Principals, thread: str, text: str, *, author_name: str | None = None, client_id: str | None = None) -> str: ...
 def resolve(p: Principals, thread: str, resolved: bool = True) -> None: ...
 def edit_comment(p: Principals, comment: str, text: str) -> None: ...
 def delete_comment(p: Principals, comment: str) -> None: ...
 def threads(p: Principals, node: str, *, resolved: bool | None = None) -> list[dict]: ...
+def reanchor_threads(p: Principals, node: str, anchors: dict[str, str]) -> list[dict]: ...
 ```
 
 - The anchor is opaque. Drive stores it and lists it; the app resolves it on
@@ -2545,6 +2568,24 @@ def threads(p: Principals, node: str, *, resolved: bool | None = None) -> list[d
   [008 §6].
 - Mentions go into the comment's `mentions` field and produce one
   `Drive Notification` each.
+- A create or a reply may carry a `client_id` (1 to 64 letters, digits,
+  `-` or `_`), unique per node. A resend with the same id, after its answer
+  was lost, writes nothing and answers the thread or comment the first send
+  made: no second row, activity or notification. A reply id already used in
+  another thread is refused with a conflict. A write without one is never
+  matched.
+- Each create, reply, resolve, edit or delete that changes a row calls the
+  node's content type `threads_changed(node)` (§10.1) once the request
+  commits, so the app can tell the document's open tabs to read the threads
+  again. A resend or a resolve that changes nothing calls nothing. A failing
+  callback is logged and never undoes the write.
+- `reanchor_threads` gives threads of one document new anchors, as when the
+  app's text came back under new ids after a restore. It needs EDIT and
+  takes the node's lock. It moves at most 200 threads, all or none: a thread
+  of another node refuses the whole call. Only `anchor` changes; resolved
+  state, authors, timestamps and modified-by stay. An empty map writes
+  nothing and calls nothing; otherwise `threads_changed(node)` follows the
+  commit.
 
 ### 9.4 Activity
 
@@ -2691,6 +2732,11 @@ class ContentTypeSpec:
 	# media sweep. (docname) -> the node ids the body still names. Only the
 	# app can read its own body, so only the app can answer [012 §5].
 	used_nodes: Callable[[str], set[str]] | None = None
+
+	# comments. (node) -> None, after a comment write on the node commits
+	# (§9.3). The app tells the document's open tabs to read the threads
+	# again; a failure is logged and never undoes the write.
+	threads_changed: Callable[[str], None] | None = None
 ```
 
 Every callable takes and returns names, never documents. `create_empty`,
@@ -3214,7 +3260,10 @@ and get the same error [012].
   and the row key; `person` is the §11.3 person object, present when the
   principal is a user, so the dialog shows a name and an avatar without a
   second request. `owner` on the list is the person whose Personal root
-  holds the node, `null` in the Shared root. `grants` holds the node's
+  holds the node, `null` in the Shared root. The dialog also shows
+  "Added by <name>" from the node's own `owner` (§11.3) when that is a
+  different person, and always in the Shared root, so the person who added
+  the node stays visible. That line is not the Owner row [R2-T1-24]. `grants` holds the node's
   local rows, expired ones included. `inherited` holds every live grant on
   an ancestor, nearest
   ancestor first, read in one query over the chain (`EXPLAIN_SQL` without
@@ -3319,9 +3368,10 @@ one union for the page. There is no per-row access or breadcrumb query.
 | GET | `/nodes/<id>/versions/<seq>/content` | READ | none | 302 to a signed `/f/` URL |
 | POST | `/nodes/<id>/versions/<seq>/restore` | EDIT | none | the version taken of the head first, so the client can offer the way back; `null` when a zero-byte head left nothing to capture |
 | GET | `/nodes/<id>/threads` | READ | `?resolved=` | `{threads: [...]}` |
-| POST | `/nodes/<id>/threads` | COMMENT | `{anchor, text, author_name?}` | thread row, its first comment inside |
+| POST | `/nodes/<id>/threads` | COMMENT | `{anchor, text, author_name?, client_id?}` | thread row, its first comment inside |
+| PATCH | `/nodes/<id>/threads` | EDIT | `{anchors: {<thread>: <anchor>}}` | `{threads: [...]}`, the moved threads |
 | PATCH | `/threads/<id>` | COMMENT | `{resolved}` | thread row |
-| POST | `/threads/<id>/comments` | COMMENT | `{text, author_name?}` | comment row |
+| POST | `/threads/<id>/comments` | COMMENT | `{text, author_name?, client_id?}` | comment row |
 | PATCH | `/comments/<id>` | EDIT or author | `{text}` | comment row |
 | DELETE | `/comments/<id>` | EDIT or author | none | `{count}` |
 
@@ -3786,9 +3836,9 @@ reachable over DAV. No DAV MOVE crosses roots.
 | UNLOCK | the lock owner, or a Suite Admin | |
 | PROPPATCH | EDIT | node |
 
-Unreadable is always 404, never 403. The Suite Admin bypass applies to what
-an admin reaches by path; there is no admin mount of other users' roots
-[009 §2].
+Unreadable is always 404, never 403. The Suite Admin bypass applies only to
+MANAGE checks on what an admin reaches by path; there is no admin mount of
+other users' roots [009 §2].
 
 ### 12.2 Content documents
 
@@ -4654,6 +4704,7 @@ Printed and saved as JSON under the site's private directory [011].
   "personal_roots_created_for_reservations": 0,
   "media_nodes_created": 0, "media_duplicates_collapsed": 0,
   "slide_elements_rewritten": 0, "deck_previews_created": 0,
+  "deck_previews_skipped": 0,
   "template_nodes_created": 0, "writer_templates_converted": 0,
   "composite_rows_dropped": 0 }
 ```
@@ -4738,8 +4789,8 @@ Then, in order:
   becomes required.
 - Check that no `DocShare` row remains on a governed doctype (Build deleted
   them); drop `Writer Version`, `Writer Doc Version`, `Writer Template`, and
-  `Sheet Snapshot`; clear `ycomments`; strip cell comments from
-  `sheets_data`.
+  `Sheet Snapshot`; keep `ycomments` (Writer's conversion places old comments
+  from it, then clears it); strip cell comments from `sheets_data`.
 - Drop the title and trashed columns on content doctypes; `user_folder` and
   `quota` on `Drive Settings`; `quota`, `root_folder`, `thumbnail_prefix`,
   `flat` and the S3 fields on `Drive Disk Settings`; `storage_owner` on

@@ -7,6 +7,8 @@ import type {
   AccountGetOutput,
   AdminHealthGetInput,
   AdminHealthGetOutput,
+  ErrorsPostInput,
+  ErrorsPostOutput,
   FrappeLoginInput,
   FrappeLoginOutput,
   FrappeLogoutInput,
@@ -51,14 +53,14 @@ import type {
   StorageGetOutput,
   StorageLimitsInput,
   StorageLimitsOutput,
-  SubscribeInput,
-  SubscribeOutput,
   SuiteGenerateUserKeysInput,
   SuiteGenerateUserKeysOutput,
+  SuitePushSubscribeInput,
+  SuitePushSubscribeOutput,
+  SuitePushUnsubscribeInput,
+  SuitePushUnsubscribeOutput,
   TemporaryPasswordPostInput,
   TemporaryPasswordPostOutput,
-  UnsubscribeInput,
-  UnsubscribeOutput,
   UpdatePreferencesInput,
   UpdatePreferencesOutput,
   UsersGetInput,
@@ -778,6 +780,30 @@ export const operationStorageDefault: Validators<StorageDefaultInput, StorageDef
   },
 }
 
+export const operationErrorsPost: Validators<ErrorsPostInput, ErrorsPostOutput> = {
+  validateInput(value: unknown): asserts value is ErrorsPostInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          source: { enum: ['component', 'script', 'promise'], title: 'Source', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          stack: { title: 'Stack', type: 'string' },
+          route: { title: 'Route', type: 'string' },
+        },
+        required: ['source', 'title', 'stack', 'route'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'errors_post input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ErrorsPostOutput {
+    assertSchema(value, { type: 'null' }, 'errors_post output')
+  },
+}
+
 export const operationGetPreferences: Validators<GetPreferencesInput, GetPreferencesOutput> = {
   validateInput(value: unknown): asserts value is GetPreferencesInput {
     assertSchema(
@@ -923,8 +949,10 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               email: { title: 'Email', type: 'string' },
               full_name: { title: 'Full Name', type: 'string' },
               avatar: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Avatar' },
+              time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
               roles: { $ref: '#/$defs/AccountRoles' },
               is_jmap_configured: { title: 'Is Jmap Configured', type: 'boolean' },
+              is_mail_server_configured: { title: 'Is Mail Server Configured', type: 'boolean' },
               must_change_password: { title: 'Must Change Password', type: 'boolean' },
               setup_required: { title: 'Setup Required', type: 'boolean' },
             },
@@ -933,8 +961,10 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               'email',
               'full_name',
               'avatar',
+              'time_zone',
               'roles',
               'is_jmap_configured',
+              'is_mail_server_configured',
               'must_change_password',
               'setup_required',
             ],
@@ -1374,24 +1404,31 @@ export const operationFrappeTranslateGetBootTranslations: Validators<
   },
 }
 
-export const operationSubscribe: Validators<SubscribeInput, SubscribeOutput> = {
-  validateInput(value: unknown): asserts value is SubscribeInput {
+export const operationSuitePushSubscribe: Validators<
+  SuitePushSubscribeInput,
+  SuitePushSubscribeOutput
+> = {
+  validateInput(value: unknown): asserts value is SuitePushSubscribeInput {
     assertSchema(
       value,
       {
         type: 'object',
         properties: {
           fcm_token: { title: 'Fcm Token', type: 'string' },
-          project_name: { title: 'Project Name', type: 'string' },
+          apps: {
+            items: { enum: ['mail', 'calendar'], type: 'string' },
+            title: 'Apps',
+            type: 'array',
+          },
         },
-        required: ['fcm_token', 'project_name'],
+        required: ['fcm_token', 'apps'],
         additionalProperties: false,
         $defs: {},
       },
-      'subscribe input',
+      'suite.push.subscribe input',
     )
   },
-  validateOutput(value: unknown): asserts value is SubscribeOutput {
+  validateOutput(value: unknown): asserts value is SuitePushSubscribeOutput {
     assertSchema(
       value,
       {
@@ -1403,29 +1440,36 @@ export const operationSubscribe: Validators<SubscribeInput, SubscribeOutput> = {
         title: 'PushResult',
         type: 'object',
       },
-      'subscribe output',
+      'suite.push.subscribe output',
     )
   },
 }
 
-export const operationUnsubscribe: Validators<UnsubscribeInput, UnsubscribeOutput> = {
-  validateInput(value: unknown): asserts value is UnsubscribeInput {
+export const operationSuitePushUnsubscribe: Validators<
+  SuitePushUnsubscribeInput,
+  SuitePushUnsubscribeOutput
+> = {
+  validateInput(value: unknown): asserts value is SuitePushUnsubscribeInput {
     assertSchema(
       value,
       {
         type: 'object',
         properties: {
           fcm_token: { title: 'Fcm Token', type: 'string' },
-          project_name: { title: 'Project Name', type: 'string' },
+          apps: {
+            items: { enum: ['mail', 'calendar'], type: 'string' },
+            title: 'Apps',
+            type: 'array',
+          },
         },
-        required: ['fcm_token', 'project_name'],
+        required: ['fcm_token', 'apps'],
         additionalProperties: false,
         $defs: {},
       },
-      'unsubscribe input',
+      'suite.push.unsubscribe input',
     )
   },
-  validateOutput(value: unknown): asserts value is UnsubscribeOutput {
+  validateOutput(value: unknown): asserts value is SuitePushUnsubscribeOutput {
     assertSchema(
       value,
       {
@@ -1437,7 +1481,7 @@ export const operationUnsubscribe: Validators<UnsubscribeInput, UnsubscribeOutpu
         title: 'PushResult',
         type: 'object',
       },
-      'unsubscribe output',
+      'suite.push.unsubscribe output',
     )
   },
 }

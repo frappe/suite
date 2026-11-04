@@ -55,10 +55,8 @@
       v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
       :total="list.total ?? 0"
-      :page-length="pageLength"
       :has-more="list.hasNext"
       :loading="list.isFetching"
-      @update:page-length="(value) => (pageLength = value)"
       @load-more="list.fetchNext().catch(() => {})"
     />
   </DashboardLayout>
@@ -79,7 +77,7 @@ import {
   domainStatusOptions,
   type DomainStatus,
 } from '@/apps/mail/utils/domainStatus'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
@@ -89,7 +87,6 @@ useAddOnArrival(showAddDomain)
 const search = ref('')
 const status = ref<'All' | DomainStatus>('All')
 const debouncedSearch = refDebounced(search, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const list = useInfiniteQuery(api.mail.admin.domains.list, () => ({
   txt: debouncedSearch.value,
   ...(status.value !== 'All'
@@ -98,7 +95,7 @@ const list = useInfiniteQuery(api.mail.admin.domains.list, () => ({
       }
     : {}),
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const LIST_COLUMNS = [
   {

@@ -1,11 +1,16 @@
 import ExcelJS from 'exceljs'
+import { toast } from 'frappe-ui'
 import JSZip from 'jszip'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { createChartEngine } from '../../engine/charts.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
 import { createFormatsEngine } from '../../engine/formats.js'
 import { createMergeEngine } from '../../engine/merge.js'
+import { createValidationEngine } from '../../engine/validation.js'
 import { useExportImport } from './useExportImport.js'
+
+vi.mock('frappe-ui', () => ({ toast: { info: vi.fn() } }))
 
 type Sheet = { inputs: string[][]; displays: string[][]; numFmts: string[][] }
 type XCell = { t: string; v: unknown; z?: string; f?: string }
@@ -347,7 +352,7 @@ describe('xlsx round trip of styling, sizes, freeze, merges and conditional form
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buf as ArrayBuffer)
     const ws = wb.getWorksheet('Sales')!
-    expect(ws.properties.defaultColWidth).toBe(13.57)
+    expect(ws.properties.defaultColWidth).toBe(16.43)
     expect(ws.getColumn(1).width).toBe(27.86)
   })
 
@@ -433,10 +438,231 @@ describe('xlsx round trip of styling, sizes, freeze, merges and conditional form
     await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
     expect(back.state.views.Sales).toMatchObject({
       colW: { 1: 30 },
-      rowH: { 0: 40, 1: 28 },
+      // Row 2's fit (21 pt = 28 px) is the default height, so nothing is stored.
+      rowH: { 0: 40 },
       manualRows: [0],
       hiddenRows: [3],
       hiddenCols: [3],
     })
+  })
+})
+
+// ISSUES #73 / #69. Charts went neither out nor in, and an import into a new
+// file kept its empty Sheet1 in front of the imported tabs.
+describe('xlsx charts, and importing into a new file', () => {
+  const sales: Sheet = {
+    inputs: [
+      ['Region', 'Units'],
+      ['North', '10'],
+      ['South', '20'],
+    ],
+    displays: [
+      ['Region', 'Units'],
+      ['North', '10'],
+      ['South', '20'],
+    ],
+    numFmts: [],
+  }
+
+  function editor(sheets: Record<string, Sheet>, views: Record<string, unknown> = {}) {
+    const writes: Record<string, Record<string, string>> = {}
+    const charts = createChartEngine()
+    const formats = createFormatsEngine()
+    const validation = createValidationEngine()
+    const tabs = Object.keys(sheets)
+    const state = { views }
+    const opts = {
+      cells: {
+        readSheet: async (sn: string) => sheets[sn] ?? { inputs: [], displays: [], numFmts: [] },
+        write: (sn: string, map: Record<string, string>) =>
+          (writes[sn] = { ...writes[sn], ...map }),
+        addSheet: vi.fn((name: string) => tabs.push(name)),
+        extent: async (sn: string) => (sheets[sn]?.inputs.length ? { maxRow: 0, maxCol: 0 } : null),
+        idle: async () => {},
+      },
+      sheetNames: () => tabs,
+      currentSheet: { value: tabs[0] ?? 'Sheet1' },
+      getCurrentTitle: () => 't',
+      getFormats: () => formats,
+      getMerge: () => null,
+      getCharts: () => charts,
+      getSheetStores: () => [validation],
+      getViews: () => state.views,
+      setViews: (v: Record<string, unknown>) => (state.views = v),
+      renameSheet: vi.fn((from: string, to: string) => {
+        tabs[tabs.indexOf(from)] = to
+        return true
+      }),
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      isDirty: { value: false },
+    }
+    return { ...useExportImport(opts), opts, tabs, writes, charts, state }
+  }
+
+  const chart = {
+    sourceSheet: 'Sales',
+    sourceRange: 'A1:B3',
+    chartType: 'line',
+    title: 'Units',
+    hasHeader: true,
+    encoding: { x: 0, y: [1] },
+    options: { stacked: false, smooth: true, showLegend: true, dataLabels: false, gridLines: true },
+    // Overlay px: 50 px of row numbers and 24 of column letters, then 250
+    // and 48 px into the sheet, over a 150 px column A.
+    position: { sheet: 'Sales', x: 300, y: 72, width: 480, height: 320 },
+  }
+
+  it('exports charts and imports them onto the imported sheets', async () => {
+    const out = editor({ Sales: sales }, { Sales: { colW: { 0: 150 } } })
+    out.charts.add(chart)
+    const buf = await out.buildXLSX()
+    const back = editor({ Sales: sales })
+    await back.importXLSX(file(buf))
+    expect(back.tabs).toEqual(['Sales', 'Sales (2)'])
+    expect(back.charts.list()).toEqual([
+      {
+        ...chart,
+        id: expect.any(String),
+        sourceSheet: 'Sales (2)',
+        position: { ...chart.position, sheet: 'Sales (2)' },
+      },
+    ])
+  })
+
+  it('says how many charts it could not bring in', async () => {
+    const out = editor({ Sales: sales })
+    out.charts.add(chart)
+    const zip = await JSZip.loadAsync(await out.buildXLSX())
+    const xml = await zip.file('xl/charts/chart1.xml')!.async('string')
+    zip.file('xl/charts/chart1.xml', xml.replace(/lineChart>/g, 'radarChart>'))
+    const back = editor({ Sales: sales })
+    await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
+    expect(back.charts.list()).toEqual([])
+    expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('1 chart'))
+  })
+
+  it("replaces a new file's empty Sheet1 instead of keeping it first", async () => {
+    const out = editor({ Sales: sales, Rates: sales })
+    const buf = await out.buildXLSX()
+    const back = editor({ Sheet1: { inputs: [], displays: [], numFmts: [] } })
+    await back.importXLSX(file(buf))
+    expect(back.opts.renameSheet).toHaveBeenCalledWith('Sheet1', 'Sales')
+    expect(back.tabs).toEqual(['Sales', 'Rates'])
+    expect(Object.keys(back.writes)).toEqual(['Sales', 'Rates'])
+  })
+
+  it('keeps a Sheet1 that has anything on it', async () => {
+    const buf = await editor({ Sales: sales }).buildXLSX()
+    const typed = editor({ Sheet1: sales })
+    await typed.importXLSX(file(buf))
+    expect(typed.tabs).toEqual(['Sheet1', 'Sales'])
+    const filled = editor({ Sheet1: { inputs: [], displays: [], numFmts: [] } })
+    filled.opts.getFormats().set('B2', { bg: '#ff0000' }, 'Sheet1')
+    await filled.importXLSX(file(buf))
+    expect(filled.tabs).toEqual(['Sheet1', 'Sales'])
+    expect(filled.opts.renameSheet).not.toHaveBeenCalled()
+    // A dropdown on empty cells would move onto the imported sheet.
+    const listed = editor({ Sheet1: { inputs: [], displays: [], numFmts: [] } })
+    listed.opts.getSheetStores()[0]!.set('B2', { type: 'list', values: ['a', 'b'] }, 'Sheet1')
+    await listed.importXLSX(file(buf))
+    expect(listed.tabs).toEqual(['Sheet1', 'Sales'])
+  })
+
+  it('keeps the blank sheet as it is spelled when the file differs only in case', async () => {
+    const buf = await editor({ sheet1: sales }).buildXLSX()
+    const back = editor({ Sheet1: { inputs: [], displays: [], numFmts: [] } })
+    await back.importXLSX(file(buf))
+    expect(back.tabs).toEqual(['Sheet1'])
+    expect(Object.keys(back.writes)).toEqual(['Sheet1'])
+  })
+
+  it('reads a chart whose refs spell the sheet in another case', async () => {
+    const out = editor({ Sales: sales })
+    out.charts.add(chart)
+    const zip = await JSZip.loadAsync(await out.buildXLSX())
+    const xml = await zip.file('xl/charts/chart1.xml')!.async('string')
+    zip.file('xl/charts/chart1.xml', xml.replace(/'Sales'!/g, 'SALES!'))
+    const back = editor({ Rates: sales })
+    await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
+    expect(back.charts.list()[0]).toMatchObject({ sourceSheet: 'Sales' })
+  })
+})
+
+describe('importXLSX of a file with formulas and no cached values', () => {
+  it('keeps the formulas', async () => {
+    const { utils, write } = await import('xlsx')
+    const wb = utils.book_new()
+    // `<f>` with no `<v>`, as openpyxl writes it.
+    utils.book_append_sheet(
+      wb,
+      {
+        '!ref': 'A1:B3',
+        A1: { t: 'n', v: 1 },
+        A2: { t: 'n', v: 2 },
+        A3: { t: 'z', f: 'SUM(A1:A2)' },
+        B3: { t: 'z', f: 'A3/A1' },
+      },
+      'Budget',
+    )
+    const buf = write(wb, { type: 'array', bookType: 'xlsx' })
+    const writes: Record<string, Record<string, string>> = {}
+    const { importXLSX } = useExportImport({
+      cells: {
+        write: (sn: string, map: Record<string, string>) =>
+          (writes[sn] = { ...writes[sn], ...map }),
+        addSheet: vi.fn(),
+        idle: async () => {},
+      },
+      sheetNames: () => ['Sheet1'],
+      currentSheet: { value: 'Sheet1' },
+      getCurrentTitle: () => 't',
+      getFormats: () => null,
+      getMerge: () => null,
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      isDirty: { value: false },
+    })
+    await importXLSX(file(buf))
+    expect(writes.Budget).toEqual({ A1: '1', A2: '2', A3: '=SUM(A1:A2)', B3: '=A3/A1' })
+  })
+})
+
+// An import was not undoable: undo after it skipped back past it. The editor's
+// undo step (`history.push`) commits one step to the room's undo manager.
+describe('Sheets: importing a file', () => {
+  it('records the import as one undo step, once every sheet is added', async () => {
+    const workbook = new Map<string, Record<string, string>>([['Sheet1', {}]])
+    const sheetsAtStep: string[][] = []
+    const io = useExportImport({
+      cells: {
+        write: (sheet: string, map: Record<string, string>) =>
+          Object.assign(workbook.get(sheet)!, map),
+        addSheet: (name: string) => workbook.set(name, {}),
+        idle: async () => {},
+      },
+      sheetNames: () => [...workbook.keys()],
+      currentSheet: { value: 'Sheet1' },
+      getCurrentTitle: () => 'Budget',
+      getFormats: () => null,
+      getMerge: () => null,
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      recordUndoStep: () => sheetsAtStep.push([...workbook.keys()]),
+      isDirty: { value: false },
+    })
+    const { utils, write } = await import('xlsx')
+    const book = utils.book_new()
+    utils.book_append_sheet(book, utils.aoa_to_sheet([['Item', 'Cost']]), 'Q4 Budget')
+    utils.book_append_sheet(book, utils.aoa_to_sheet([['Team']]), 'Headcount')
+    await io.importXLSX(file(write(book, { type: 'array', bookType: 'xlsx' })))
+
+    expect(sheetsAtStep).toEqual([['Sheet1', 'Q4 Budget', 'Headcount']])
   })
 })

@@ -6,6 +6,7 @@ import {
   computePivotModelAsync,
   parseRangeRect,
   pivotDrillDown,
+  pivotExtent,
   rangeReader,
   writePivotToSheet,
 } from '../../engine/pivot.js'
@@ -49,6 +50,7 @@ function _rectIntersects(ext, sel) {
  *   history: { push: () => void },
  *   isDirty: import('vue').Ref<boolean>,
  *   repopulateGrid: () => void,
+ *   localOnly?: <T>(fn: () => T) => T,
  * }} opts
  */
 export function usePivotIntegration({
@@ -66,6 +68,9 @@ export function usePivotIntegration({
   history,
   isDirty,
   repopulateGrid,
+  // Runs the output write so it reaches IronCalc only: with collab on, every
+  // tab rebuilds a pivot's output itself, so it never goes into the doc.
+  localOnly = (fn) => fn(),
 }) {
   const pivotDialogOpen = ref(false)
   const pivotInitialRange = ref('')
@@ -294,19 +299,18 @@ export function usePivotIntegration({
       // Collected and written as one command after the clear, so the output
       // recalculates once.
       const out = {}
-      writePivotToSheet(
-        table,
-        config.outputSheet,
-        (id, val) => (out[id] = String(val)),
-        (sh, ext) => _clearPivotRect(sh, ext),
-        { row: ar, col: ac },
-        prevExtent,
-      )
-      cells.write(config.outputSheet, out)
-      const newExtent = table.length
-        ? { r0: ar, c0: ac, r1: ar + table.length - 1, c1: ac + (table[0]?.length || 1) - 1 }
-        : null
-      pivot.setExtent(config.id, newExtent)
+      localOnly(() => {
+        writePivotToSheet(
+          table,
+          config.outputSheet,
+          (id, val) => (out[id] = String(val)),
+          (sh, ext) => _clearPivotRect(sh, ext),
+          { row: ar, col: ac },
+          prevExtent,
+        )
+        cells.write(config.outputSheet, out)
+      })
+      pivot.setExtent(config.id, pivotExtent(table, ar, ac))
       _styleHeaderAndTotal(table, config.outputSheet, ar, ac)
     } finally {
       if (token === _buildToken) pivotBuilding.value = false

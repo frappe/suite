@@ -40,6 +40,8 @@ const _RESERVED = new Set(['TRUE', 'FALSE', 'NULL'])
 
 const _CELL_RE = /^[A-Z]+\d+$/
 const _NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+// The collab doc keys each name by itself, and the server takes keys of at most 128 characters.
+const _MAX_NAME = 128
 
 // An entry as an IronCalc defined-name formula: absolute, sheet-qualified,
 // no leading '=' ({ sheet: 'My Data', range: 'B2:B9' } → 'My Data'!$B$2:$B$9).
@@ -57,6 +59,39 @@ export function definedNameFormula({ sheet, range }: Pick<NamedRange, 'sheet' | 
     )
     .join(':')
   return `${quoted}!${abs}`
+}
+
+export type DefinedNameChange =
+  | { type: 'setDefinedName'; payload: { name: string; formula: string } }
+  | { type: 'deleteDefinedName'; payload: { name: string } }
+
+/**
+ * The commands that bring IronCalc's defined names from `sent` (name →
+ * formula last sent, '' for a name dropped) to the store's entries, and the
+ * new `sent`. IronCalc only creates a name that is a reference to one of its
+ * `sheets`, so a name whose cells were all deleted (range #REF!) or whose
+ * sheet it lacks is dropped and `=Name` reads #NAME? (Excel: #REF!); sending
+ * it would fail the batch with every other name in it.
+ */
+export function definedNameChanges(
+  sent: ReadonlyMap<string, string>,
+  entries: NamedRange[],
+  sheets: readonly string[],
+) {
+  const have = new Set(sheets.map((s) => s.toLowerCase()))
+  const live = (e: NamedRange) => !e.range.includes('#REF!') && have.has(e.sheet.toLowerCase())
+  const want = new Map(entries.map((e) => [e.name, live(e) ? definedNameFormula(e) : '']))
+  const changes: DefinedNameChange[] = []
+  for (const name of sent.keys())
+    if (!want.has(name)) changes.push({ type: 'deleteDefinedName', payload: { name } })
+  for (const [name, formula] of want) {
+    if (sent.get(name) === formula) continue
+    // A dropped name may not be in IronCalc (never sent, or sent and failed);
+    // deleting one it lacks is a no-op.
+    if (formula) changes.push({ type: 'setDefinedName', payload: { name, formula } })
+    else changes.push({ type: 'deleteDefinedName', payload: { name } })
+  }
+  return { sent: want, changes }
 }
 
 /**
@@ -82,6 +117,7 @@ export function createNamedRanges({
     if (!trimmed) return 'Name is required'
     if (!_NAME_RE.test(trimmed))
       return 'Name must start with a letter or "_" and use only letters, digits and "_"'
+    if (trimmed.length > _MAX_NAME) return `Name must be at most ${_MAX_NAME} characters`
     const up = trimmed.toUpperCase()
     if (_RESERVED.has(up)) return `"${trimmed}" is a reserved word`
     if (_CELL_RE.test(up)) return `"${trimmed}" looks like a cell reference`
@@ -193,6 +229,20 @@ export function createNamedRanges({
     if (changed) _notify()
   }
 
+  // A deleted sheet's names point nowhere: their range becomes #REF!, as in
+  // Excel, and stays so if a sheet of that name is added back.
+  function deleteSheet(name: string) {
+    const lc = String(name || '').toLowerCase()
+    let changed = false
+    for (const k of Object.keys(_store)) {
+      const e = _store[k] as NamedRange
+      if (String(e.sheet || '').toLowerCase() !== lc || e.range === '#REF!') continue
+      _store[k] = { ...e, range: '#REF!' }
+      changed = true
+    }
+    if (changed) _notify()
+  }
+
   // Structural permutation — rewrite the range of every named range that lives
   // on the op sheet so it keeps pointing at the same logical data.
   function _remap(sheet: string, mapCol: IndexMap | null, mapRow: IndexMap | null) {
@@ -238,6 +288,7 @@ export function createNamedRanges({
     remapCols,
     remapRows,
     renameSheet,
+    deleteSheet,
     snapshot,
     restore,
     setOnChange,

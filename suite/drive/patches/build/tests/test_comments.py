@@ -73,7 +73,7 @@ class CommentTest(unittest.TestCase):
             modified=STAMP,
             modified_by=OWNER,
         )
-        source = FakeContent(documents=[document], timezone="UTC")
+        source = FakeContent(documents=[document], users={"a@example.com": True}, timezone="UTC")
         env, target = self.environment(source)
 
         count = convert_document_comments(env, self.record, document, "node-1", batch_size=1)
@@ -419,7 +419,8 @@ class CommentTest(unittest.TestCase):
             modified=STAMP,
             modified_by=OWNER,
         )
-        source = FakeContent(documents=[document], timezone="UTC")
+        users = {"zed@example.com": True, "amy@example.com": True}
+        source = FakeContent(documents=[document], users=users, timezone="UTC")
         env, target = self.environment(source)
 
         convert_document_comments(env, self.record, document, "node-1", batch_size=1000)
@@ -442,7 +443,10 @@ class CommentTest(unittest.TestCase):
     def test_blank_and_oversized_comment_text_refuse_the_thread(self):
         cases = {
             "blank": ("   ", "text is blank"),
-            "oversized": ("x" * 65_536, "exceeds the target Text column"),
+            "empty paragraph": ("<p></p>", "text is blank"),
+            "line break": ("<p><br></p>", "text is blank"),
+            "blank paragraph": ("<p> </p>", "text is blank"),
+            "oversized": ("x" * 65_536, "exceeds the comment limit"),
         }
         for label, (text, message) in cases.items():
             with self.subTest(case=label):
@@ -677,7 +681,7 @@ class LegacyCommentTest(unittest.TestCase):
         self.assertEqual((thread["resolved_by"], thread["owner"]), ("old@example.com", "old@example.com"))
         row = target.comment_rows["orphan-1"]
         self.assertEqual((row["thread"], row["node"]), ("orphan-1", "file-1"))
-        self.assertEqual((row["content"], row["author"]), ("<p>old</p>", "old@example.com"))
+        self.assertEqual((row["content"], row["author"]), ("old", "old@example.com"))
         self.assertEqual(row["creation"], LEGACY_STAMP)
 
     def test_a_row_whose_file_has_no_node_is_counted_and_kept(self):
@@ -715,12 +719,153 @@ class LegacyCommentTest(unittest.TestCase):
         self.assertEqual(self.record.legacy_comments_unported, 1)
 
     def test_a_blank_legacy_row_is_refused(self):
-        env, target = self.environment(FakeContent(timezone="UTC"))
-        target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
-        self.legacy_row(target, "orphan-1", text="   ")
+        for text in ("   ", "<p></p>", "<p><br></p>", "<p> </p>"):
+            env, target = self.environment(FakeContent(timezone="UTC"))
+            target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
+            self.legacy_row(target, "orphan-1", text=text)
 
-        with self.assertRaisesRegex(InvalidLegacyContent, "legacy comment text is blank"):
-            port_legacy_comments(env, self.record, batch_size=10)
+            with (
+                self.subTest(text=text),
+                self.assertRaisesRegex(InvalidLegacyContent, "legacy comment text is blank"),
+            ):
+                port_legacy_comments(env, self.record, batch_size=10)
+
+    def ported(self, text, users=None):
+        env, target = self.environment(FakeContent(users=users, timezone="UTC"))
+        target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
+        self.legacy_row(target, "orphan-1", text=text)
+
+        port_legacy_comments(env, self.record, batch_size=10)
+
+        row = target.comment_rows["orphan-1"]
+        return row["content"], json.loads(row["mentions"])
+
+    def test_a_mention_becomes_a_token_and_a_mention_of_an_existing_user(self):
+        text = (
+            '<p>Ask <span data-type="mention" class="mention" data-id="amy@example.com" data-label="Amy">'
+            '@Amy</span> and <span data-type="mention" class="mention" data-id="gone@example.com" '
+            'data-label="Gone">@Gone</span></p>'
+        )
+
+        ported = self.ported(text, users={"amy@example.com": True})
+
+        self.assertEqual(ported, ("Ask @[amy@example.com] and @[gone@example.com]", ["amy@example.com"]))
+
+    def test_a_link_keeps_its_text_and_its_address(self):
+        text = (
+            '<p>See <a target="_blank" rel="noopener" href="https://x.example/a">the doc</a> and '
+            '<a href="https://x.example/b">https://x.example/b</a></p>'
+        )
+
+        self.assertEqual(self.ported(text), ("See the doc (https://x.example/a) and https://x.example/b", []))
+
+    def test_list_items_become_marked_lines(self):
+        text = (
+            "<ul><li><p>one</p></li><li><p>two</p></li></ul>"
+            "<ol><li><p>first</p></li><li><p>second</p></li></ol>"
+        )
+
+        self.assertEqual(self.ported(text), ("- one\n- two\n1. first\n2. second", []))
+
+    def test_paragraphs_and_breaks_become_newlines_with_only_trailing_ones_trimmed(self):
+        text = "<p>one<br>two</p><p></p><p>three</p><p><br></p>"
+
+        self.assertEqual(self.ported(text), ("one\ntwo\n\nthree", []))
+
+    def test_entities_are_unescaped_and_formatting_keeps_its_text(self):
+        text = "<p><strong>Tom</strong> &amp; <em>Jerry</em> &lt;3 &quot;<code>hi</code>&quot;</p>"
+
+        self.assertEqual(self.ported(text), ('Tom & Jerry <3 "hi"', []))
+
+    def test_an_image_or_an_embed_becomes_its_address_on_its_own_line(self):
+        text = '<p>Look<img src="/files/a.png">here</p><iframe src="https://v.example/e"></iframe>'
+
+        self.assertEqual(self.ported(text), ("Look\n/files/a.png\nhere\nhttps://v.example/e", []))
+
+    def test_text_that_is_not_html_passes_through_unchanged(self):
+        for text in ("a < b &amp; c\n\n", "<3 you &amp; me", "@[amy@example.com] hi"):
+            with self.subTest(text):
+                self.assertEqual(self.ported(text, users={"amy@example.com": True}), (text, []))
+
+    def test_text_that_starts_with_an_angle_bracketed_word_passes_through_unchanged(self):
+        for text in ("<Amy> said hi", "<https://x.com> link"):
+            with self.subTest(text):
+                self.assertEqual(self.ported(text), (text, []))
+
+    def test_a_highlight_keeps_its_text(self):
+        self.assertEqual(self.ported("<mark>hot</mark> take"), ("hot take", []))
+
+    def test_a_writer_comment_mentions_its_source_list_and_its_spans_once_each_if_they_exist(self):
+        span = '<span data-type="mention" data-id="{0}" data-label="x">@x</span>'
+        text = "<p>" + span.format("b@example.com") + " " + span.format("a@example.com") + "</p>"
+        ycomments = writer_update(
+            {
+                "top": {
+                    "id": "top",
+                    "text": text,
+                    "owner": OWNER,
+                    "creation": 1_000,
+                    "mentions": [{"id": "a@example.com"}, "gone@example.com"],
+                }
+            }
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        users = {"a@example.com": True, "b@example.com": False}
+        env, target = self.environment(FakeContent(documents=[document], users=users, timezone="UTC"))
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        row = target.comment_rows["top"]
+        self.assertEqual(row["content"], "@[b@example.com] @[a@example.com]")
+        self.assertEqual(json.loads(row["mentions"]), ["a@example.com", "b@example.com"])
+
+    def test_a_writer_comment_does_not_mention_a_typed_token(self):
+        ycomments = writer_update(
+            {"top": {"id": "top", "text": "Ask @[a@example.com]", "owner": OWNER, "creation": 1_000}}
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        users = {"a@example.com": True}
+        env, target = self.environment(FakeContent(documents=[document], users=users, timezone="UTC"))
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        row = target.comment_rows["top"]
+        self.assertEqual((row["content"], json.loads(row["mentions"])), ("Ask @[a@example.com]", []))
+
+    def test_two_spans_for_one_user_in_different_case_mention_the_user_once_by_its_name(self):
+        span = '<span data-type="mention" data-id="{0}" data-label="Amy">@Amy</span>'
+        text = "<p>" + span.format("AMY@example.com") + " " + span.format("amy@example.com") + "</p>"
+
+        ported = self.ported(text, users={"amy@example.com": True})
+
+        self.assertEqual(ported[1], ["amy@example.com"])
+
+    def test_a_writer_comment_mentioning_one_user_in_two_cases_mentions_the_user_once_by_its_name(self):
+        text = '<p><span data-type="mention" data-id="amy@example.com" data-label="Amy">@Amy</span></p>'
+        ycomments = writer_update(
+            {
+                "top": {
+                    "id": "top",
+                    "text": text,
+                    "owner": OWNER,
+                    "creation": 1_000,
+                    "mentions": [{"id": "AMY@example.com"}],
+                }
+            }
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        users = {"amy@example.com": True}
+        env, target = self.environment(FakeContent(documents=[document], users=users, timezone="UTC"))
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=10)
+
+        self.assertEqual(json.loads(target.comment_rows["top"]["mentions"]), ["amy@example.com"])
 
 
 class CopiedDocumentIdTest(unittest.TestCase):
@@ -860,6 +1005,54 @@ class CopiedDocumentIdTest(unittest.TestCase):
         self.assertEqual(target.commits, writes)
         self.assertEqual(again.comment_threads_renamed, self.record.comment_threads_renamed)
         self.assertEqual(again.comments_renamed, self.record.comments_renamed)
+
+    def test_a_rerun_keeps_the_first_mentions_of_a_user_removed_between_passes(self):
+        values = {
+            "top": {"id": "top", "text": "Ask", "owner": OWNER, "creation": 1_000, "mentions": ["a@x.com"]}
+        }
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=writer_update(values), modified=STAMP, modified_by=OWNER
+        )
+        source = FakeContent(documents=[document], users={"a@x.com": True}, timezone="UTC")
+        env, target = self.environment(source)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
+        writes = target.commits
+        del source.users["a@x.com"]
+
+        convert_document_comments(env, ContentConversion(), document, "node-1", batch_size=100)
+
+        mentions = json.loads(target.comment_rows["top"]["mentions"])
+        self.assertEqual((mentions, target.commits), (["a@x.com"], writes))
+
+    def test_a_rerun_keeps_the_first_mentions_when_a_user_is_created_between_passes(self):
+        values = {
+            "top": {"id": "top", "text": "Ask", "owner": OWNER, "creation": 1_000, "mentions": ["a@x.com"]}
+        }
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=writer_update(values), modified=STAMP, modified_by=OWNER
+        )
+        source = FakeContent(documents=[document], timezone="UTC")
+        env, target = self.environment(source)
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
+        writes = target.commits
+        source.users["a@x.com"] = True
+
+        convert_document_comments(env, ContentConversion(), document, "node-1", batch_size=100)
+
+        mentions = json.loads(target.comment_rows["top"]["mentions"])
+        self.assertEqual((mentions, target.commits), ([], writes))
+
+    def test_a_rerun_still_refuses_a_stored_comment_whose_content_changed(self):
+        values = {"top": {"id": "top", "text": "Ask", "owner": OWNER, "creation": 1_000}}
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=writer_update(values), modified=STAMP, modified_by=OWNER
+        )
+        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
+        target.comment_rows["top"]["content"] = "Changed"
+
+        with self.assertRaisesRegex(InvalidLegacyContent, "field content"):
+            convert_document_comments(env, ContentConversion(), document, "node-1", batch_size=100)
 
     def test_one_document_holding_one_id_twice_is_still_refused(self):
         # The rename answers a second *node*. Inside one document the id is

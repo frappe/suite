@@ -26,13 +26,30 @@ test("a direct /mail URL answers with the unavailable surface and keeps the URL"
 		if (/\/api\/suite\/mail\//.test(request.url())) productRequests.push(request.url());
 	});
 
-	await patchAccount(page, { is_jmap_configured: false, capabilities: { jmap: false } });
+	await patchAccount(page, {
+		is_jmap_configured: false,
+		is_mail_server_configured: false,
+		capabilities: { jmap: false },
+	});
 	await page.goto("/mail");
 	await expect(page.getByRole("heading", { name: /Mail is unavailable/i })).toBeVisible();
 	await expect(page.getByText("This area needs a configured mail account.")).toBeVisible();
 	await expect(page).toHaveURL(/\/mail$/);
 	expect(productRequests).toEqual([]);
 });
+
+for (const area of ["mail", "calendar"]) {
+	test(`/${area} tells a person without a Mail account to ask their admin`, async ({ page }) => {
+		await patchAccount(page, {
+			is_jmap_configured: false,
+			is_mail_server_configured: true,
+			capabilities: { jmap: false },
+		});
+		await page.goto(`/${area}`);
+		await expect(page.getByText("You don't have a Mail account.")).toBeVisible();
+		await expect(page.getByText("Ask your admin to add one.")).toBeVisible();
+	});
+}
 
 test("a direct /calendar URL answers with the unavailable surface", async ({ page }) => {
 	await patchAccount(page, { is_jmap_configured: false, capabilities: { jmap: false } });

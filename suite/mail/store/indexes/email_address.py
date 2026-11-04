@@ -11,72 +11,24 @@ _TOKEN_PATTERN = re.compile(r"[^\W_]+")
 # Quote characters some clients wrap display names in, e.g. "'Jane Doe'".
 _WRAPPING_QUOTES = "'\"`"
 
-# Ranks below every explained match. A hit matched the indexed "<name> <email>" blob, which can span
-# fields — "doe jane" matches "Jane Doe jane@…" — so a candidate need not match any single field.
-_NO_MATCH = (9, 9, 9, 9, 9)
 
-
-def _tokenize(text: str | None) -> list[str]:
+def tokenize(text: str | None) -> list[str]:
     """Split text into lowercased alphanumeric tokens, the way the index tokenized it."""
 
     return _TOKEN_PATTERN.findall((text or "").lower())
 
 
-def _match_field(query: list[str], field: list[str]) -> tuple | None:
-    """Rank how well `query` tokens match one field's tokens; lower is better, None if they don't.
+def matches_email_address(query: str, address: dict) -> bool:
+    """Whether the index would return `address` for `query`: every query token appears in its
+    "<name> <email>" text, the last one as a prefix. Lets addresses from outside the index (the
+    directory, a JMAP lookup) be filtered the way the index filters its own."""
 
-    Returns ``(whole, scattered, position, residual)``: whether the query covers the field whole,
-    whether its terms are scattered instead of forming one in-order run, whether the match starts at
-    the field's first word, and how many characters the trailing term left unmatched. So for
-    "doe", the name "Doe Jansen" scores (1, 0, 0, 0) — a word-exact match on the first word — while
-    "Jane Doeringer" only manages (1, 0, 1, 6).
-    """
+    tokens = tokenize(query)
+    if not tokens:
+        return False
 
-    if not all(term in field for term in query[:-1]):
-        return None
-
-    # Shortest word carrying the trailing prefix: "doe" over "doeringer" when both are present.
-    tails = sorted(len(word) for word in field if word.startswith(query[-1]))
-    if not tails:
-        return None
-
-    residual = tails[0] - len(query[-1])
-    # An in-order, adjacent run beats the same terms scattered across the field.
-    runs = [
-        start
-        for start in range(len(field) - len(query) + 1)
-        if field[start : start + len(query) - 1] == query[:-1]
-        and field[start + len(query) - 1].startswith(query[-1])
-    ]
-    scattered = 0 if runs else 1
-    starts_field = (0 in runs) if runs else field[0].startswith(query[0])
-
-    return (0 if field == query else 1, scattered, 0 if starts_field else 1, residual)
-
-
-def _relevance_key(query: list[str], hit: dict) -> tuple:
-    """Sort key ordering a search hit by how relevant it is to the query; lower comes first."""
-
-    name = hit.get("name") or ""
-    email = hit.get("email") or ""
-    local, _, domain = email.partition("@")
-
-    # A match on who someone is — their name, or the part of the address before the @ — outranks one
-    # on where they are, so a query for "exa" doesn't fill up with everyone at example.com.
-    matches = ((0, name), (0, local), (1, domain))
-    best = min(
-        ((rank, *match) for rank, field in matches if (match := _match_field(query, _tokenize(field)))),
-        default=_NO_MATCH,
-    )
-
-    # Among matches the query can't tell apart, the address corresponded with most wins: typing
-    # "user" leads with whichever of user@example.com / user@example.org has been seen more. It
-    # ranks below the match itself on purpose — a much-mailed "Jane Doeringer" shouldn't displace
-    # "John Doe" for the query "doe".
-    correspondence = -(hit.get("count") or 0)
-
-    # Named, shorter addresses first among equals; the address itself keeps the order deterministic.
-    return (*best, correspondence, 0 if name else 1, len(email), email.lower())
+    words = tokenize(" ".join(filter(None, (address.get("name"), address.get("email")))))
+    return all(token in words for token in tokens[:-1]) and any(word.startswith(tokens[-1]) for word in words)
 
 
 def _sanitize_name(name: str | None) -> str | None:
@@ -92,15 +44,13 @@ def _sanitize_name(name: str | None) -> str | None:
 class EmailAddressIndex(SearchStore):
     """Shared, per-account index of email addresses for recipient suggestions.
 
-    Sources (cached messages, contact cards, ...) feed in plain {name, email} dicts, so the index
-    knows nothing about where an address came from. Each document is keyed by the lowercased
-    address, so re-indexing the same address from any source is an upsert and addresses stay unique
-    by construction. The index is cumulative: entries are only added or updated, never removed when
-    a source is evicted, so it doubles as an address book of everyone the user has corresponded with.
-
-    Each entry also carries how often it has been seen, which orders suggestions the query itself
-    can't tell apart. Only sources that represent correspondence pass `count=True`, so the tally
-    tracks who the user writes to and hears from rather than how often a source happens to re-index.
+    Sources (cached messages, contact cards, JMAP lookups) feed in address dicts —
+    ``{name, email, last_sent_at?, is_contact?}`` — keyed by the lowercased address, so the same
+    address upserts across sources. Every field merges in a way that is safe to repeat: a name is
+    kept unless a newer one arrives, `last_sent_at` only moves forward, and `is_contact` only turns
+    on. Re-indexing what is already indexed therefore changes nothing. The index is cumulative —
+    nothing is removed when a source is evicted — so it doubles as an address book of everyone the
+    account has corresponded with.
     """
 
     ENTITY = "email_address"
@@ -112,12 +62,11 @@ class EmailAddressIndex(SearchStore):
         FieldSpec("name", stored=True, tokenizer="raw"),
         # "name email" blob, tokenized so a query can match either part.
         FieldSpec("text"),
-        # Sightings after the first, so a newly indexed address starts at 0. Ranked in Python, so
-        # it only has to be stored — nothing sorts or filters on it inside the index.
-        FieldSpec("count", kind="integer", stored=True),
+        # When the account last sent mail to the address, as a Unix timestamp; 0 if it never has.
+        FieldSpec("last_sent_at", kind="integer", stored=True),
+        FieldSpec("is_contact", kind="boolean", stored=True),
     )
     DEFAULT_SEARCH_FIELDS = ("text",)
-    # Sightings accumulate, so an upsert has to see the count it is replacing.
     MERGE_ON_UPSERT = True
 
     def to_document(self, address: dict) -> dict:
@@ -129,92 +78,49 @@ class EmailAddressIndex(SearchStore):
             "email": email,
             "name": name,
             "text": " ".join(filter(None, (name, email))),
-            # Sightings in this batch; `merge_document` resolves them against what is indexed.
-            "count": address.get("sightings") or 0,
+            "last_sent_at": int(address.get("last_sent_at") or 0),
+            "is_contact": bool(address.get("is_contact")),
         }
 
     def merge_document(self, document: dict, existing: dict | None) -> dict:
-        """Fold this batch's sightings into the count already indexed for the address.
+        """Fold what is already indexed for the address into `document`.
 
-        The sighting that first indexes an address doesn't count — it establishes the entry — so a
-        new address starts at 0 and every later sighting adds one. An upsert carrying no sightings
-        (`index_addresses(count=False)`) refreshes the entry and leaves its count where it stood.
+        A batch carrying the same address twice merges here too, so the rules hold within a batch:
+        a nameless sighting never erases a name, and dates and the contact flag never go back.
         """
 
         if existing is None:
-            document["count"] = max(document["count"] - 1, 0)
-        else:
-            document["count"] += existing.get("count") or 0
-            # Sources differ in what they know: keep a name learned elsewhere rather than let a
-            # nameless sighting of the same address erase it.
-            document["name"] = document["name"] or existing.get("name")
-            document["text"] = " ".join(filter(None, (document["name"], document["email"])))
+            return document
 
+        document["name"] = document["name"] or existing.get("name")
+        document["text"] = " ".join(filter(None, (document["name"], document["email"])))
+        document["last_sent_at"] = max(document["last_sent_at"], existing.get("last_sent_at") or 0)
+        document["is_contact"] = document["is_contact"] or bool(existing.get("is_contact"))
         return document
 
-    def index_addresses(self, addresses: list[dict], count: bool = True) -> int:
-        """Upsert the given {name, email} dicts; dedupes the batch and silently skips entries whose
-        email is missing or syntactically invalid.
+    def index_addresses(self, addresses: list[dict]) -> int:
+        """Upsert the given address dicts, skipping any whose email is missing or invalid."""
 
-        Every occurrence of an address in `addresses` counts as a sighting, not every call: one
-        batch can carry a whole page of messages, and a rebuild feeds in hundreds at a time, so
-        collapsing them would tally how the caller batched its work instead of how much mail the
-        address is on. Pass `count=False` for a source that says nothing about correspondence — a
-        contact sync re-indexes the whole address book, and counting it would lift contacts the user
-        never writes to above the addresses they do.
-        """
-
-        unique = {}
-        sightings = {}
-        for address in addresses:
-            email = (address.get("email") or "").strip()
-            if not EMAIL_MATCH_PATTERN.fullmatch(email):
-                continue
-
-            key = email.lower()
-            current = unique.get(key)
-            # Last one wins, so the freshest name and casing survive — but not a *nameless* later
-            # sighting: one batch can carry the same address named from one message and bare from
-            # the next, and dropping the name there would index it as an address with no one behind
-            # it. `merge_document` keeps a name across batches; this keeps one within a batch.
-            # Sanitized on both sides, so a name that is only quote characters counts as no name —
-            # which is what it will be by the time `to_document` is through with it.
-            named = _sanitize_name(address.get("name"))
-            if current is None or named or not _sanitize_name(current.get("name")):
-                unique[key] = address
-
-            sightings[key] = sightings.get(key, 0) + 1
-
-        sources = [
-            {**address, "sightings": sightings[key] if count else 0} for key, address in unique.items()
+        valid = [
+            address
+            for address in addresses
+            if EMAIL_MATCH_PATTERN.fullmatch((address.get("email") or "").strip())
         ]
-        return self.index_documents(sources)
+        return self.index_documents(valid)
 
-    def search_email_addresses(self, query: str, limit: int = 10) -> list[dict]:
-        """Return up to `limit` {name, email} addresses matching `query`, most relevant first.
+    def get_email_address_hits(self, query: str) -> list[dict]:
+        """Return every indexed address matching `query`, unranked.
 
-        Every token of the query must appear in the address's name or email, with the last token
-        matched as a prefix — so "jan" matches "jane", and "jane.d" matches "jane.d@…" / "Jane Doe"
-        but not "jane@…" or "jane.r@…". The index scores those matches all alike, so they are ranked
-        here instead: an address wins by matching more of a name or local part, earlier, and in
-        order. Searching "doe" therefore leads with "John Doe <john@example.com>" rather than
-        "Jane Doeringer <jane@example.com>". Matches the query can't separate are ordered by how
-        often the address has been corresponded with, so "user" leads with whichever of
-        user@example.com / user@example.org carries more mail. Documents are unique per address, so
-        the hits need no further deduping.
-
-        Every match is ranked, not a slice of them — hence the unbounded fetch. Unscored hits come
-        back in index order, so the best address can sit anywhere in the match set, and cutting the
-        set before ranking would drop it: whoever was indexed first would win a broad query
-        outright. Cost therefore scales with how many addresses match — a single letter against a
-        20k-address book is the worst case at ~90ms, and anything more selective comes back in a
-        millisecond or so.
+        Every token of the query must appear in the address's name or email, the last one as a
+        prefix — so "jan" matches "jane", and "jane.d" matches "jane.d@…" and "Jane Doe" but not
+        "jane@…". Every match comes back, not a page of them: the index scores them all alike, so a
+        page would be an arbitrary slice and the caller ranks the whole set. A single letter against
+        a 20k-address book is the worst case at ~90ms; anything more selective takes about 1ms.
         """
 
-        tokens = _tokenize(query)
+        tokens = tokenize(query)
         if not tokens:
             return []
 
         hits, _total = self.search_prefix(tokens, limit=None)
-        hits.sort(key=lambda hit: _relevance_key(tokens, hit))
-        return [{"name": hit.get("name"), "email": hit.get("email")} for hit in hits[:limit]]
+        return hits

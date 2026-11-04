@@ -28,7 +28,7 @@
       :scroll="scrollOwner === 'shell'"
       class="h-full suite-area-shell"
     >
-      <template #rail>
+      <template v-if="railShown" #rail>
         <Rail :areas="areas" :badges="badges">
           <template #bell><slot name="bell" /></template>
         </Rail>
@@ -91,23 +91,22 @@
        with the suite's theme shortcut. Signed in only: every search it runs
        needs a session. -->
   <SuiteCommandPalette v-if="session.status.value === 'authenticated'" :areas="areas" />
+  <!-- The shortcuts list for pages whose area draws none of its own. -->
+  <KeyboardShortcutsDialog v-model:open="shellShortcutsOpen" :title="__('Keyboard shortcuts')" />
 </template>
 
 <script setup lang="ts">
 import { useResizeObserver } from '@vueuse/core'
-import { Button, DesktopShell, MobileShell } from 'frappe-ui'
+import { Button, DesktopShell, KeyboardShortcutsDialog, MobileShell } from 'frappe-ui'
 import { computed, defineAsyncComponent, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { AreaSidebarTarget } from '@/platform/area-sidebar'
-import type {
-  AreaDefinition,
-  PlatformCapability,
-  ScrollOwner,
-  ShellFrame,
-} from '@/platform/contracts'
+import type { AreaDefinition, ScrollOwner, ShellFrame } from '@/platform/contracts'
 import { shellPhoneChromeRequested } from '@/platform/phone-chrome'
+import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
+import { shellShortcutsOpen, useShortcutsKey } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 import AccountSheet from '@/shell/AccountSheet.vue'
 import { progressDetail, useAreaProgress } from '@/shell/areaProgress'
@@ -118,6 +117,7 @@ import InstallPrompt from '@/shell/InstallPrompt.vue'
 import MobileNav from '@/shell/MobileNav.vue'
 import Rail from '@/shell/Rail.vue'
 import { settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
+import { describeUnavailable } from '@/shell/unavailable'
 import UnavailableSurface from '@/shell/UnavailableSurface.vue'
 import { isMobile } from '@/shell/useIsMobile'
 
@@ -136,11 +136,15 @@ const SuiteSettingsDialog = defineAsyncComponent(
 const SuiteCommandPalette = defineAsyncComponent(() => import('@/shell/SuiteCommandPalette.vue'))
 const session = useSession()
 const activeArea = computed(() => props.activeArea)
+const railShown = computed(() => !railHidden.value)
+useShortcutsKey()
 const unavailable = computed(() => {
   const area = activeArea.value
   if (!area || session.status.value !== 'authenticated') return null
   const missing = missingCapabilities(area.requires, session)
-  return missing.length ? describeUnavailable(area, missing) : null
+  return missing.length
+    ? describeUnavailable(area.label(), missing, !!session.user.value?.is_mail_server_configured)
+    : null
 })
 const showGuestSurface = computed(
   () =>
@@ -204,21 +208,6 @@ const accountSheetOpen = ref(false)
 watch([() => route.fullPath, isMobile], () => {
   accountSheetOpen.value = false
 })
-
-function describeUnavailable(area: AreaDefinition, missing: readonly PlatformCapability[]) {
-  if (missing.includes('jmap')) {
-    return {
-      title: `${area.label()} ${__('is unavailable')}`,
-      reason: __('This area needs a configured mail account.'),
-      nextStep: __('Ask a site administrator to configure mail, then reload this page.'),
-    }
-  }
-  return {
-    title: `${area.label()} ${__('is unavailable')}`,
-    reason: __('Your account does not have the capability required for this area.'),
-    nextStep: __('Ask a site administrator to review your access.'),
-  }
-}
 </script>
 
 <style scoped>

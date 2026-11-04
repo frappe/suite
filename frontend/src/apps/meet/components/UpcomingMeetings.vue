@@ -5,11 +5,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
-import { UpcomingEventList, type UpcomingEventRow } from '@/apps/calendar'
+import { UpcomingEventList, upcomingEventWindow, type UpcomingEventRow } from '@/apps/calendar'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
 import { useSession } from '@/platform/session'
+import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 
 const accountError = ref(false)
@@ -77,13 +78,12 @@ const router = useRouter()
 const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
 
-const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 const session = useSession()
 // Follow the clock so a tab left open across midnight fetches the new day.
-const today = computed(() => dayjs(now.value).startOf('day'))
-const fromDate = computed(() => today.value.format('YYYY-MM-DD[T]HH:mm:ss'))
-const toDate = computed(() => today.value.endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'))
-const timeZone = timezone()
+const eventWindow = computed(() => upcomingEventWindow(now.value))
+const fromDate = computed(() => eventWindow.value.from.toISOString())
+const toDate = computed(() => eventWindow.value.to.toISOString())
+const timeZone = userTimeZone()
 
 const upcomingEvents = useQuery(api.calendar.events.window, () =>
   calendarStore.accountId
@@ -104,7 +104,12 @@ const meetings = computed(() => {
     .filter((event) => {
       const start = dayjs(event.start)
       const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-      return getMeetingUrl(event) && end.isAfter(currentTime) && start.isSame(currentTime, 'day')
+      return (
+        getMeetingUrl(event) &&
+        end.isAfter(currentTime) &&
+        start.valueOf() >= eventWindow.value.from.getTime() &&
+        start.valueOf() <= eventWindow.value.to.getTime()
+      )
     })
     .sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
     .slice(0, 4)

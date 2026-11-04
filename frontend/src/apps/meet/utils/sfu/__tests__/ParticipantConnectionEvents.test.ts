@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, reactive, watchEffect } from 'vue'
 
 import { E2EEMeeting } from '../../media/E2EEMeeting'
 import { ParticipantManager } from '../../media/ParticipantManager'
@@ -20,6 +21,7 @@ function createManager({ e2eeRequired = false } = {}) {
   }
   const mediaManager = {
     cancelPendingSubscriptions: vi.fn(),
+    unsubscribeFromRemoteProducer: vi.fn().mockResolvedValue(undefined),
     cleanup: vi.fn(),
     rebuildSendSide: vi.fn().mockResolvedValue({}),
     repairLocalPublication: vi.fn().mockResolvedValue(undefined),
@@ -73,6 +75,71 @@ function createManager({ e2eeRequired = false } = {}) {
 describe('ParticipantConnection', () => {
   afterEach(() => {
     E2EEMeeting.instance.wipeMeetingContext()
+    vi.useRealTimers()
+  })
+
+  it('batches reactive health refreshes and keeps the latest observation', async () => {
+    vi.useFakeTimers()
+    const { handlers, manager, participantManager } = createManager()
+    const health = reactive<Record<string, string | undefined>>({ alice: 'good', bob: 'good' })
+    manager.initialize(
+      'room',
+      { user_id: 'me' },
+      {
+        onParticipantUpdated: (id, participant) => {
+          health[id] = participant.networkQuality
+        },
+      },
+    )
+    await manager.connect('token')
+    for (const id of ['alice', 'bob']) participantManager.addParticipant({ participantId: id })
+    const refresh = vi.fn()
+    const stop = watchEffect(() => refresh(Object.values(health).join('/')))
+    try {
+      const receive = handlers.get('network_quality_update')!
+      receive({ participantId: 'alice', quality: 'poor' })
+      await nextTick()
+      vi.advanceTimersByTime(2)
+      const bobAt = Date.now()
+      receive({ participantId: 'bob', quality: 'critical' })
+      await nextTick()
+      vi.advanceTimersByTime(2)
+      const aliceAt = Date.now()
+      receive({ participantId: 'alice', quality: 'good' })
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(20)
+      await nextTick()
+      expect(refresh).toHaveBeenLastCalledWith('good/critical')
+      expect(participantManager.getParticipant('alice')?.networkQualityUpdatedAt).toBe(aliceAt)
+      expect(participantManager.getParticipant('bob')?.networkQualityUpdatedAt).toBe(bobAt)
+      expect(refresh).toHaveBeenCalledTimes(2) // Initial state and one batched refresh.
+    } finally {
+      stop()
+      await manager.disconnect()
+    }
+  })
+
+  it('discards queued health observations when the connection stops', async () => {
+    vi.useFakeTimers()
+    const { handlers, manager, participantManager } = createManager()
+    const updated = vi.fn()
+    manager.initialize(
+      'room',
+      { user_id: 'me' },
+      {
+        onNetworkQualityUpdated: updated,
+      },
+    )
+    await manager.connect('token')
+    participantManager.addParticipant({ participantId: 'alice' })
+    handlers.get('network_quality_update')?.({
+      participantId: 'alice',
+      quality: 'poor',
+    })
+    await manager.disconnect()
+    await vi.advanceTimersByTimeAsync(20)
+    expect(updated).not.toHaveBeenCalled()
+    expect(participantManager.getParticipant('alice')?.networkQuality).toBeUndefined()
   })
 
   it('buffers producers during rejoin until the replacement receive side is synchronized', async () => {
@@ -82,6 +149,7 @@ describe('ParticipantConnection', () => {
       userData: { name: 'Remote', video_enabled: true },
     })
     await manager.connect('token')
+    await manager.setVisibleCameraParticipants(['remote-1'])
     sfuClient.getRoomParticipants.mockResolvedValueOnce([
       { participantId: 'remote-1', userData: { name: 'Remote', video_enabled: true } },
     ] as never)
@@ -152,6 +220,36 @@ describe('ParticipantConnection', () => {
       }
     },
   )
+
+  it('keeps hidden camera discovery, subscribes on demand, and releases it without changing media state', async () => {
+    const { handlers, manager, mediaManager, participantManager } = createManager()
+    participantManager.addParticipant({
+      participantId: 'remote-1',
+      userData: { name: 'Remote' },
+    })
+    await manager.connect('token')
+    await handlers.get('producer_created')?.({
+      participantId: 'remote-1',
+      producerId: 'camera-1',
+      kind: 'video',
+    })
+    expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
+    expect(participantManager.getParticipant('remote-1')?.video_enabled).toBe(true)
+    await manager.setVisibleCameraParticipants(['remote-1'])
+    expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+      participantId: 'remote-1',
+      producerId: 'camera-1',
+      isScreen: false,
+    })
+    await manager.setVisibleCameraParticipants([])
+    expect(mediaManager.unsubscribeFromRemoteProducer).toHaveBeenCalledWith(
+      expect.objectContaining({ producerId: 'camera-1' }),
+    )
+    expect(participantManager.getParticipant('remote-1')?.video_enabled).toBe(true)
+    mediaManager.subscribeToRemoteProducer.mockClear()
+    await manager.reconcileExpectedMedia()
+    expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
+  })
 
   it('subscribes to remote audio producers', async () => {
     const { handlers, manager, mediaManager, participantManager } = createManager()
@@ -466,6 +564,7 @@ describe('ParticipantConnection', () => {
       e2eeRequired: true,
     })
 
+    await manager.setVisibleCameraParticipants(['remote-1'])
     await manager.connect('token')
     const producerPromise = handlers.get('producer_created')?.({
       participantId: 'remote-1',
@@ -856,4 +955,23 @@ describe('ParticipantConnection', () => {
 
     expect(transportManager.createReceiveTransport).not.toHaveBeenCalled()
   })
+})
+
+it('delivers canonical join snapshots and updates through the connection, rejecting malformed state', async () => {
+  const { manager, handlers } = createManager()
+  const onSharedStageChanged = vi.fn()
+  manager.eventHandlers.onSharedStageChanged = onSharedStageChanged
+  await manager.connect('token')
+  const state = {
+    epoch: 'room',
+    protocolVersion: 1,
+    version: 4,
+    participantIds: ['me', 'other'],
+    activeSpeakerIds: ['other'],
+  }
+  handlers.get('shared_stage_snapshot')?.(state)
+  handlers.get('shared_stage')?.({ ...state, version: 5 })
+  handlers.get('shared_stage')?.({ ...state, participantIds: ['me', 'me'] })
+  expect(onSharedStageChanged.mock.calls).toEqual([[state, true], [{ ...state, version: 5 }]])
+  await manager.disconnect()
 })

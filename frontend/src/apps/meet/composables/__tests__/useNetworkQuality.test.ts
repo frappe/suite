@@ -18,6 +18,8 @@ describe('useNetworkQuality', () => {
         networkQuality: 'critical',
         downlinkQuality: 'poor',
         isTransportFailed: true,
+        status: 'reconnecting',
+        issue: 'both',
       })
       return stopMonitoring
     })
@@ -63,14 +65,16 @@ describe('useNetworkQuality', () => {
       networkQuality: 'critical',
       downlinkQuality: 'poor',
       isTransportFailed: true,
+      status: 'reconnecting',
+      issue: 'both',
     })
 
     manager.value = null
     await nextTick()
 
     expect(stopMonitoring).toHaveBeenCalledOnce()
-    expect(quality.networkQuality.value).toBe('good')
-    expect(quality.downlinkQuality.value).toBe('good')
+    expect(quality.networkQuality.value).toBe('unknown')
+    expect(quality.downlinkQuality.value).toBe('unknown')
     expect(quality.isTransportFailed.value).toBe(false)
     app.unmount()
   })
@@ -108,11 +112,15 @@ describe('useNetworkQuality', () => {
       networkQuality: 'critical',
       downlinkQuality: 'critical',
       isTransportFailed: true,
+      status: 'reconnecting',
+      issue: 'both',
     })
     nextListener({
       networkQuality: 'poor',
       downlinkQuality: 'good',
       isTransportFailed: false,
+      status: 'degraded',
+      issue: 'send',
     })
 
     expect(stopOld).toHaveBeenCalledOnce()

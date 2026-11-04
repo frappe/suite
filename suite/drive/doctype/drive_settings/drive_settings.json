@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "field:user",
  "creation": "2025-04-24 17:38:30.853130",
  "doctype": "DocType",

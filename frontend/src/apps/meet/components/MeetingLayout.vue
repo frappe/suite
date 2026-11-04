@@ -46,12 +46,12 @@
         v-if="showLocalTile"
         :key="`local-${localParticipant.user_id}`"
         :participant="localParticipant"
-        :isLocal="true"
-        :isVideoEnabled="isCameraOn"
-        :isAudioEnabled="isMicOn"
-        :isActiveSpeaker="activeSpeakerIds.includes(localParticipant.user_id)"
-        :videoRef="setLocalVideoRef"
-        :showReaction="pinnedTiles.length === 0"
+        :is-local="true"
+        :is-video-enabled="isCameraOn"
+        :is-audio-enabled="isMicOn"
+        :is-active-speaker="activeSpeakerIds.includes(localParticipant.user_id)"
+        :video-ref="setLocalVideoRef"
+        :show-reaction="pinnedTiles.length === 0"
         :style="tileStyle"
       />
 
@@ -59,6 +59,13 @@
         v-for="shareTile in allScreenShareTiles"
         :key="shareTile.pinId"
         v-bind="getScreenShareTileBindings(shareTile)"
+      />
+
+      <div
+        v-for="slot in vacantStripSlots"
+        :key="`vacant-${slot}`"
+        aria-hidden="true"
+        :style="{ ...tileStyle, order: slot + 1 }"
       />
 
       <!-- Remote participants -->
@@ -74,7 +81,7 @@
         :tooltip="hiddenParticipantsTooltip"
         :participants="displayParticipants.hidden"
         :size="mode === 'sidebar' ? 'xl' : '2xl'"
-        :style="tileStyle"
+        :style="{ ...tileStyle, order: overflowSlotIndex + 1 }"
         @click="interactive && emit('open-people-panel')"
       />
     </TransitionGroup>
@@ -89,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, watch, type ComputedRef } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 import { useLayout } from '../composables/useLayout'
 import { useMeetingContext } from '../composables/useMeetingContext'
@@ -98,6 +105,7 @@ import { useResponsiveGrid } from '../composables/useResponsiveGrid'
 import { useScreenShareTiles, type ScreenShareTile } from '../composables/useScreenShareTiles'
 import { useTileAdaptiveStreaming } from '../composables/useTileAdaptiveStreaming'
 import type { Participant } from '../utils/media/ParticipantManager'
+import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
 import { getInitials } from '../utils/text'
 import FloatingReactions from './FloatingReactions.vue'
 import GroupTile from './GroupTile.vue'
@@ -121,6 +129,7 @@ const showLocalTile = computed(() => props.showLocalTile)
 const interactive = computed(() => props.interactive)
 
 const meetingCtx = useMeetingContext()!
+const sfuManager = inject<Ref<SFUMeetingManager | null>>('sfuManager')
 const setLocalVideoRef = inject<(el: unknown) => void>('setLocalVideoRef') || (() => {})
 const setRemoteVideoRef =
   inject<(participantId: string, el: HTMLVideoElement | null) => void>('setRemoteVideoRef') ||
@@ -231,7 +240,9 @@ const getScreenShareTileBindings = (shareTile: ScreenShareTile) => {
   }
 }
 
-const getParticipantTileBindings = (participant: Participant & { isVisible: boolean }) => {
+const getParticipantTileBindings = (
+  participant: Participant & { isVisible: boolean; slotIndex: number },
+) => {
   const isPinned = isPinnedParticipant(participant.user_id)
 
   return {
@@ -250,7 +261,7 @@ const getParticipantTileBindings = (participant: Participant & { isVisible: bool
     style: isPinned
       ? pinnedTileStyles.value[`participant-${participant.user_id}`]
       : participant.isVisible
-        ? tileStyle.value
+        ? { ...tileStyle.value, order: participant.slotIndex + 1 }
         : undefined,
   }
 }
@@ -274,11 +285,9 @@ const localParticipant = computed(() => {
 })
 
 // Number of extra strip tiles (pinned screenshares overlay the main panel instead)
-const extraTileCount = computed(() => {
-  const hasPinnedScreenShare = pinnedTiles.value.some((t) => t.type === 'screenshare')
-  if (!hasPinnedScreenShare) return allScreenShareTiles.value.length
-  return Math.max(0, allScreenShareTiles.value.length - 1)
-})
+const extraTileCount = computed(
+  () => allScreenShareTiles.value.filter((tile) => !isPinnedScreenShare(tile.pinId)).length,
+)
 
 const { isMobile } = useResponsiveGrid()
 
@@ -290,6 +299,8 @@ const {
   displayParticipants,
   allParticipants,
   visibleTileCount,
+  vacantStripSlots,
+  overflowSlotIndex,
   hiddenParticipantsTooltip,
 } = useLayout(
   participants,
@@ -297,11 +308,40 @@ const {
   {
     raisedHands: computed(() => meetingCtx.raiseHandStore.raisedHands),
     activeSpeakerIds: computed(() => meetingCtx.participantStore.activeSpeakerIds),
+    sharedStageParticipantIds: computed(
+      () => meetingCtx.participantStore.sharedStage?.participantIds ?? [],
+    ),
+    sharedStagePresentationOrders: computed(
+      () => meetingCtx.participantStore.sharedStage?.presentationOrders ?? {},
+    ),
     stableSpeakerIds: computed(() => meetingCtx.participantStore.stableSpeakerIds),
   },
   extraTileCount,
   { localTileCount: props.showLocalTile ? 1 : 0 },
 )
+
+watch(
+  [
+    () => sfuManager?.value ?? null,
+    () =>
+      allParticipants.value
+        .filter((participant) => participant.isVisible || isPinnedParticipant(participant.user_id))
+        .map((participant) => participant.user_id),
+  ],
+  ([manager, participantIds]) => {
+    if (!manager) return
+    void manager
+      .setVisibleRemoteVideoParticipants(participantIds)
+      .catch((error) => console.warn('Failed to update visible video subscriptions:', error))
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  void sfuManager?.value
+    ?.setVisibleRemoteVideoParticipants([])
+    .catch((error) => console.warn('Failed to release camera subscriptions:', error))
+})
 
 const tileStyle = computed(() => {
   if (mode.value === 'sidebar') {

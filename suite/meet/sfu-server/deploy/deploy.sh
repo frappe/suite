@@ -318,6 +318,7 @@ cmd_help() {
     echo ""
     echo "Commands:"
     echo "  setup      Validate config, pull image, provision SSL, start everything"
+    echo "  tune-host  Permit larger UDP receive buffers (run as root on the host)"
     echo "  start      Start all services"
     echo "  stop       Stop all services"
     echo "  restart    Restart all services"
@@ -335,6 +336,7 @@ cmd_help() {
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 case "${1:-help}" in
+    tune-host) bash "$SCRIPT_DIR/tune-host.sh" ;;
     setup)     cmd_setup ;;
     start)     cmd_start ;;
     stop)      cmd_stop ;;

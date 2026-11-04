@@ -27,6 +27,7 @@ on:
       - "frontend/package.json"
       - "frontend/vite.recorder.config.ts"
       - "suite/meet/recorder-server/**"
+      - "suite/meet/types/**"
       - "package.json"
       - "yarn.lock"
       - ".github/workflows/meet-recorder-build.yml"

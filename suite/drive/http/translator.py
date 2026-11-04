@@ -128,6 +128,18 @@ _DECLARED = (
             "Stamp": "nodes.stamp",
         },
     ),
+    # A dry run of the move above: who it would give access to (UF §5.7).
+    Route(
+        "GET",
+        "nodes/{node}/move-preview",
+        "node_move_preview",
+        errors=(DriveForbidden,),
+        allow_guest=True,
+        query=shapes.MovePreviewQuery,
+        output=shapes.MovePreviewShape,
+        kind="query",
+        public_name="nodes.previewMove",
+    ),
     Route(
         "DELETE",
         "nodes/{node}",
@@ -501,6 +513,17 @@ _DECLARED = (
         output=shapes.ThreadShape,
         kind="mutation",
         public_name="threads.create",
+    ),
+    Route(
+        "PATCH",
+        "nodes/{node}/threads",
+        "node_threads_reanchor",
+        body=shapes.ThreadReanchor,
+        errors=(DriveNotFound, DriveForbidden, DriveConflict),
+        allow_guest=True,
+        output=shapes.ThreadList,
+        kind="mutation",
+        public_name="threads.reanchor",
     ),
     Route(
         "PATCH",

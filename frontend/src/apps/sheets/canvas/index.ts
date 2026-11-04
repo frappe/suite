@@ -12,7 +12,8 @@
 //   autofit.ts       fit-to-content sizes      overlay.ts    the editor textarea
 //   grid-actions.ts  helpers the input modules share
 //   input/           hit testing, mouse, drags, fill handle, keyboard,
-//                    in-cell editor, formula range picking and autocomplete
+//                    in-cell editor, formula range picking and autocomplete,
+//                    the hidden textarea that holds focus (text-sink.ts)
 
 import { createViewModel, DEFAULT_ROW_H } from '../core/view-model.js'
 import { cellId, colLabel, parseCellId } from '../utils/cells.js'
@@ -26,6 +27,7 @@ import { createHitTester } from './input/hit-test.js'
 import { createKeyboard, type Keyboard } from './input/keyboard.js'
 import { createMouse, type Mouse } from './input/mouse.js'
 import { createRangePicker } from './input/range-picker.js'
+import { createTextSink } from './input/text-sink.js'
 import { createMarchingAnts } from './marching-ants.js'
 import { createOverlay } from './overlay.js'
 import { createRenderLoop } from './render-loop.js'
@@ -33,7 +35,7 @@ import { createRenderer } from './renderer.js'
 import { planRowRefit } from './row-refit.js'
 import { createScrollbars } from './scrollbars.js'
 import { createSelection } from './selection.js'
-import type { CellValue, Grid, GridOptions, RowHeightChange } from './types.js'
+import type { CellBlock, CellValue, Grid, GridOptions, RowHeightChange } from './types.js'
 import { createViewport, watchPixelRatio } from './viewport.js'
 
 export type * from './types.js'
@@ -177,6 +179,19 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     focusGrid: () => canvas.focus(),
     render: () => render(),
   })
+  // Holds the grid's focus so IME / symbol-picker text arrives (text-sink.ts).
+  // After the overlay, so the editor stays the wrapper's first textarea.
+  const sink = createTextSink({
+    parent,
+    canvas,
+    activeRect: () => {
+      const { r, c } = S.anchor
+      const z = vm.zoom
+      return { x: geo.colX(c) * z, y: geo.rowY(r) * z, w: geo.cw(c) * z, h: geo.rh(r) * z }
+    },
+    canEdit,
+    onText: (text) => editor.open(text),
+  })
   const hits = createHitTester({
     geo,
     getZoom: () => vm.zoom,
@@ -195,6 +210,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
   })
 
   // ── Paint ────────────────────────────────────────────────────────────────
+  let filterRect: CellBlock | null = null
   let diffCells: { [sheet: string]: { [id: string]: boolean } } | null = null
   let diffSheet: string | null = null
   const diffFor = (id: string): boolean => !!(diffCells && diffSheet && diffCells[diffSheet]?.[id])
@@ -215,6 +231,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
       marchAnts: ants.rect,
       marchPhase: ants.phase,
       pickerRect: pick.rect,
+      filterRect,
       colDrag: drag && drag.moved ? drag : null,
       zoom: vm.zoom,
     })
@@ -406,7 +423,11 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     isEditingFormula: () => editor.isOpen() && editor.value().startsWith('='),
     isEditing: () => editor.isOpen(),
     getSelection: () => S.range(),
-    setSelection: act.setSelRange,
+    // An open editor follows (another tab's row insert moves the selection).
+    setSelection(range) {
+      act.setSelRange(range)
+      editor.reposition()
+    },
     getPreMousedownSel: () => mouse?.preMousedownSel() ?? null,
     moveTo: act.moveSel,
 
@@ -493,6 +514,14 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     onRender: loop.onRender,
 
     setMarchingAnts: (rect) => ants.set(rect),
+    setFilterRange(rect) {
+      // The editor sets it after every paint; only a change needs another one.
+      const same = (a: CellBlock | null, b: CellBlock | null) =>
+        a === b || (!!a && !!b && a.r0 === b.r0 && a.c0 === b.c0 && a.r1 === b.r1 && a.c1 === b.c1)
+      if (same(filterRect, rect)) return
+      filterRect = rect
+      scheduleRender()
+    },
     setDiffOverlay(bySheet) {
       diffCells = bySheet || null
       scheduleRender()
@@ -552,6 +581,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     isLazyValues: () => lazy,
     destroy() {
       overlay.remove()
+      sink.destroy()
       scrollbars.destroy()
       ac.remove()
       loop.cancel()

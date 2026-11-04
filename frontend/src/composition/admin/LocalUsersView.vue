@@ -455,20 +455,6 @@
                       ])
                 }}
               </p>
-              <p v-if="transferPreview.destination_capacity.buffer_bytes">
-                {{
-                  __('Extra storage: {0}', [
-                    bytes(transferPreview.destination_capacity.buffer_bytes),
-                  ])
-                }}
-              </p>
-              <p v-if="transferPreview.destination_capacity.effective_threshold_bytes != null">
-                {{
-                  __('Destination limit: {0}', [
-                    bytes(transferPreview.destination_capacity.effective_threshold_bytes),
-                  ])
-                }}
-              </p>
               <ErrorMessage
                 v-if="transferPreview.destination_capacity.blocker"
                 :message="

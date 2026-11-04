@@ -33,6 +33,7 @@ export class RoomManager {
 			});
 
 			if (onActiveSpeaker) {
+				audioLevelObserver.on('silence', () => onActiveSpeaker(roomId, []));
 				audioLevelObserver.on('volumes', (volumes) => {
 					const activeSpeakerIds: string[] = [];
 

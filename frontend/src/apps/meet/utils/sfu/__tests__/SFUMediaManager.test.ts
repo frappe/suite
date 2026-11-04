@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ConsumerManager } from '../../media/ConsumerManager'
 import { SFUMediaManager } from '../SFUMediaManager'
 
 type MockTransportManager = {
@@ -138,6 +139,7 @@ describe('SFUMediaManager.subscribeToRemoteProducer', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
@@ -157,10 +159,11 @@ describe('SFUMediaManager.subscribeToRemoteProducer', () => {
     expect(transportManager.createConsumer).toHaveBeenCalledTimes(1)
   })
 
-  it('retries an initial subscription until it succeeds', async () => {
+  it('retries an initial subscription without reporting a terminal error', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { mediaManager, transportManager } = createManager()
     transportManager.createConsumer
-      .mockRejectedValueOnce(new Error('not ready'))
+      .mockRejectedValueOnce(new Error('E2EE join handshake not completed'))
       .mockResolvedValueOnce({
         id: 'new-c1',
         producerId: 'producer-1',
@@ -179,9 +182,11 @@ describe('SFUMediaManager.subscribeToRemoteProducer', () => {
 
     await expect(subscription).resolves.toMatchObject({ id: 'new-c1' })
     expect(transportManager.createConsumer).toHaveBeenCalledTimes(2)
+    expect(errorLog).not.toHaveBeenCalled()
   })
 
   it('exhausts one automatic retry chain', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { mediaManager, transportManager } = createManager()
     const onRecoveryExhausted = vi.fn()
     mediaManager.setEventHandlers({ onRecoveryExhausted })
@@ -198,6 +203,10 @@ describe('SFUMediaManager.subscribeToRemoteProducer', () => {
     await expect(subscription).rejects.toThrow('server down')
     expect(transportManager.createConsumer).toHaveBeenCalledTimes(3)
     expect(onRecoveryExhausted).toHaveBeenCalledOnce()
+    expect(errorLog).toHaveBeenCalledWith(
+      'Giving up on remote consumer subscription',
+      expect.objectContaining({ producerId: 'producer-1', participantId: 'remote-1' }),
+    )
   })
 
   it('discards an in-flight subscription when its producer closes', async () => {
@@ -231,7 +240,7 @@ describe('SFUMediaManager.subscribeToRemoteProducer', () => {
     })
 
     await rejected
-    expect(consumerManager.removeConsumer).toHaveBeenCalledWith('stale-c1')
+    expect(consumerManager.addConsumer).not.toHaveBeenCalled()
   })
 
   it('discards a subscription that finishes after receive teardown', async () => {
@@ -1121,4 +1130,46 @@ describe('SFUMediaManager.handleConsumerLost', () => {
     await vi.advanceTimersByTimeAsync(250)
     expect(transportManager.createConsumer).toHaveBeenCalledTimes(4)
   })
+})
+
+describe('SFUMediaManager.handleScreenShareConsumer', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each([false, true])(
+    'announces only live shares after camera attachment (removed=%s)',
+    async (removed) => {
+      const { mediaManager, videoManager } = createManager()
+      const consumers = new ConsumerManager()
+      mediaManager.consumerManager = consumers
+      vi.stubGlobal('MediaStream', FakeMediaStream)
+      const attachment = deferred<void>()
+      videoManager.attachStream.mockReturnValue(attachment.promise)
+      const started = vi.fn()
+      mediaManager.setEventHandlers({ onScreenShareStarted: started })
+
+      for (const type of ['camera', 'screen']) {
+        consumers.addConsumer(
+          {
+            id: type,
+            producerId: `producer-${type}`,
+            kind: 'video',
+            track: mediaTrack(type, 'video'),
+            appData: { type },
+            once: vi.fn(),
+            close: vi.fn(),
+            pause: vi.fn(),
+            resume: vi.fn(),
+          } as never,
+          'remote-1',
+        )
+      }
+      const pending = mediaManager.handleScreenShareConsumer(consumers.getConsumer('screen')!)
+      await vi.waitFor(() => expect(videoManager.attachStream).toHaveBeenCalledOnce())
+      if (removed) consumers.removeConsumer('screen')
+      attachment.resolve()
+      await pending
+
+      expect(started).toHaveBeenCalledTimes(removed ? 0 : 1)
+    },
+  )
 })

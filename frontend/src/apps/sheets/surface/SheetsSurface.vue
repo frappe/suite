@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
+import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
@@ -22,8 +23,17 @@ interface SheetEditorHandle {
   workbookJson(): Promise<string>
   /** True while the formula bar or the cell editor holds uncommitted text. */
   hasDraft(): boolean
+  /** Live room: this tab holds edits that have not reached the server (other tabs' do not count). */
+  hasUnsentWork(): boolean
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
+  /** True while the sheet is in a live room (collab on). */
+  readonly isCollab: boolean
+  /** Restores a version through the live room; rejects with the message to show. */
+  restoreVersion(seq: string, bytes: Uint8Array): Promise<string>
+  /** Live room: access went or came back. `mayEdit` is read once the room has sent what it could. */
+  loseAccess(lost: 'lost_edit' | 'lost_read'): Promise<void>
+  regainAccess(mayEdit: () => boolean): Promise<void>
 }
 const props = defineProps<{
   session: DocumentSession
@@ -35,26 +45,39 @@ const panel = ref<DocumentPanel | null>(null)
 const bodyRevision = ref(0)
 const restoring = ref(false)
 const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
+// The editor stays mounted while it writes the recovery copy, even once read
+// access is gone: unmounting stops the engine the copy is read from.
+const copying = ref(false)
+// The "Download my changes" toast, closed once the copy it offers is gone.
+let offer: ReturnType<typeof toast.warning> | null = null
 const access = createSheetAccess(props.session, {
   narrowed() {
     const current = editor.value
-    const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
-    if (!unsaved) {
-      toast.warning('Editing access changed. This spreadsheet is now view only.')
+    // Live room: it sends what it can and keeps the rest on this device, and
+    // its strip says the sheet is now view only. Edits that did not reach the
+    // server, and text still being typed in a cell, are offered as a download
+    // too: the room replays its copy only if edit access comes back. The copy
+    // is taken first, while the cell edit is still open.
+    if (current?.isCollab) {
+      if (current.hasUnsentWork() || current.hasDraft()) void keepForDownload()
+      void current.loseAccess(access.readable.value ? 'lost_edit' : 'lost_read')
       return
     }
-    retainRecovery()
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: 'Download my changes',
-        onClick: downloadChanges,
-      },
-    })
+    const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
+    if (!unsaved) {
+      toast.warning(__('Editing access changed. This spreadsheet is now view only.'))
+      return
+    }
+    void keepForDownload()
   },
   widened() {
+    if (editor.value?.isCollab) {
+      void editor.value.regainAccess(() => access.writable.value)
+      toast.info(__('You can edit this spreadsheet again.'))
+      return
+    }
     bodyRevision.value += 1
-    toast.info('You can edit this spreadsheet again.')
+    toast.info(__('You can edit this spreadsheet again.'))
   },
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
@@ -75,6 +98,8 @@ watch(
       return
     clearRecovery(props.session.nodeId)
     hasRecovery.value = false
+    if (offer !== null) toast.dismiss(offer)
+    offer = null
   },
 )
 
@@ -102,20 +127,48 @@ async function restoreVersion(seq: string) {
   await flushEdits()
   restoring.value = true
   try {
+    // Live room: the restore goes in as one edit everyone's editor applies.
+    if (editor.value?.isCollab) {
+      const response = await props.session.credentials.fetch(props.session.versions.contentUrl(seq))
+      if (!response.ok) throw new Error(__('The version could not be read.'))
+      await editor.value.restoreVersion(seq, new Uint8Array(await response.arrayBuffer()))
+      return
+    }
     await props.session.versions.restore(seq)
     bodyRevision.value += 1
   } finally {
     restoring.value = false
   }
 }
-async function retainRecovery() {
-  const workbook = await editor.value?.workbookJson()
-  if (!workbook) return
+// Keeps the editor's workbook in this browser and offers it as a download.
+async function keepForDownload() {
+  if (!(await retainRecovery())) return
+  if (offer !== null) toast.dismiss(offer)
+  offer = toast.warning(
+    __('Editing access changed. Your unsaved changes are kept on this device.'),
+    {
+      duration: Number.POSITIVE_INFINITY,
+      action: {
+        label: __('Download my changes'),
+        onClick: downloadChanges,
+      },
+    },
+  )
+}
+/** True once the copy is kept. The workbook is read before the first await, while a cell edit is still open. */
+async function retainRecovery(): Promise<boolean> {
+  const reading = editor.value?.workbookJson()
+  if (!reading) return false
+  copying.value = true
   try {
-    keepRecovery(props.session.nodeId, workbook)
+    keepRecovery(props.session.nodeId, await reading)
     hasRecovery.value = true
+    return true
   } catch {
     toast.error('Your latest changes could not be kept on this device.')
+    return false
+  } finally {
+    copying.value = false
   }
 }
 async function downloadChanges() {
@@ -132,14 +185,16 @@ useDocumentLeaveGuard({
   flush: async () => {
     await editor.value?.flushSave()
   },
-  retainRecovery,
+  retainRecovery: async () => {
+    await retainRecovery()
+  },
 })
 </script>
 
 <template>
   <div class="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base">
     <div
-      v-if="!access.readable.value"
+      v-if="!access.readable.value && !copying"
       class="flex h-full flex-col items-center justify-center px-6 text-center"
     >
       <span class="lucide-lock-keyhole size-6 text-ink-gray-5" aria-hidden="true" />
@@ -152,15 +207,16 @@ useDocumentLeaveGuard({
       :id="session.contentDocname"
       :key="bodyRevision"
       ref="editor"
-      embedded
       :writable="editorWritable"
       :title="session.title.value"
-      :credential-fetch="session.credentials.fetch"
       :request-context="session.credentials.context"
-      @access-refused="access.refuse()"
+      :collab-session="session"
+      @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
-      <template #header="{ viewOnly, status: EditorStatus, actions: EditorActions }">
+      <template
+        #header="{ viewOnly, status: EditorStatus, menus: EditorMenus, actions: EditorActions }"
+      >
         <DriveDocumentHeader
           class="sheets-header"
           :session="session"
@@ -170,11 +226,15 @@ useDocumentLeaveGuard({
           :recoverable="hasRecovery"
           :panels="['comments', 'versions']"
           :panel="panel"
+          compact
           @update:panel="showPanel"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
+          </template>
+          <template #menus>
+            <component :is="EditorMenus" :open-comments="() => showPanel('comments')" />
           </template>
           <template #actions>
             <component :is="EditorActions" />
@@ -210,11 +270,28 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's top-bar actions answer to the `sn-topbar` container: below
-   640 px they fold into one menu. */
+/* The editor's menu bar answers to the `sn-topbar` container: below 640 px
+   its six menus fold into one. */
 .sheets-header {
   container: sn-topbar / inline-size;
+  /* The bars' colours live on the editor root (SheetEditor.css --sn-bar-*). */
+  background: var(--sn-bar-bg);
+  border-bottom-color: var(--sn-bar-line);
   position: relative;
   z-index: 10;
+}
+/* Hover and "on" fills (Comments and Versions open) follow the bar colours,
+   as in row 2; solid buttons such as Share keep their own. */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-header :deep(button[data-state='open']),
+.sheets-header :deep(button[aria-pressed='true']) {
+  background: var(--sn-bar-hover);
+}
+.sheets-header :deep(button[aria-pressed='true']) {
+  box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
+}
+/* Muted text (Saved, the folder) follows the bar, to stay readable on it. */
+.sheets-header :deep(.text-ink-gray-5) {
+  color: var(--sn-bar-muted);
 }
 </style>

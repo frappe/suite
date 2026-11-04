@@ -1,21 +1,35 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { Button, Skeleton, TextInput, toast } from 'frappe-ui'
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { Avatar, Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { api, client } from '@/api'
 import {
   DriveCommentAuthor,
   DriveDocumentHeader,
   GUEST_NAME_LIMIT,
+  useDriveDocumentActions,
   useDriveGuestName,
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
+import OfflineCopyButton from '@/apps/slides/components/OfflineCopyButton.vue'
+import PresentButton from '@/apps/slides/components/PresentButton.vue'
 import PropertiesPanel from '@/apps/slides/components/PropertiesPanel.vue'
 import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
+import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
@@ -27,35 +41,54 @@ import {
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
 import {
+  pruneOfflineCopy,
+  refreshOfflineStatus,
+  warmOfflineCopyAssets,
+} from '@/apps/slides/stores/offlineCopy'
+import {
+  contextFor,
   initPresentationDoc,
   inReadonlyMode,
   loadTemplates,
   presentationDoc,
+  presentationId,
   resetEditorState,
   setDocumentContext,
+  showsSlides,
   slidesLength,
+  startLoad,
   viewOnly,
 } from '@/apps/slides/stores/presentation'
 import {
   dirty,
   isSaving,
   resumeWrites,
+  retireDraft,
   saveChanges,
-  saveCurrentState,
   saveFailed,
+  saveRefused,
   stopWrites,
 } from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
-  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
   slides,
 } from '@/apps/slides/stores/slide'
-import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
+import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
+import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
+import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
+import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
+import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { useHideRail } from '@/platform/rail'
+import { getCookieSessionUser, useSession } from '@/platform/session'
+import { openAreaShortcuts } from '@/platform/shortcuts'
+import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
+import { useAutosave } from './autosave'
+import { authorLabel, commentTime, type CommentThread } from './comments'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -65,29 +98,39 @@ import {
   type MergedCompositeSlide,
 } from './compositeGroups'
 import ExportView from './ExportView.vue'
-import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
-import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
+import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
+import { useNewPresentationTheme } from './newPresentation'
+import {
+  clearStaleRecovery,
+  downloadRecovery,
+  downloadSlides,
+  forgetRecovery,
+  keepOutlivedRecovery,
+  keepRecovery,
+  readRecovery,
+  removeNewestRecovery,
+} from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 
 type Panel = DocumentPanel
 
-/** `GET nodes/<id>/threads` */
-interface CommentThread {
-  name: string
-  resolved: boolean
-  comments: {
-    name: string
-    content: string
-    author: string | null
-    author_name: string | null
-    creation: string | null
-  }[]
-}
+const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
+
 const props = defineProps<{
   session: DocumentSession
 }>()
 const loading = ref(true)
+// a reload mid-show keeps the show up
+const loaded = ref(false)
 const loadError = ref('')
+const route = useRoute()
+const router = useRouter()
+const userSession = useSession()
+const presenting = computed(
+  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
+)
+// `?slide=N`: the slide the show presents, and the one the editor opens on.
+const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.slide)) || 1))
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
@@ -105,43 +148,68 @@ const {
   take: takeGuestName,
 } = useDriveGuestName()
 const exporting = ref(false)
-const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
+const hasRecovery = ref(readRecovery(props.session.nodeId).length > 0)
+// access narrowed and no copy could be stored: the slides on screen are the only copy
+const isOnlyCopy = ref(false)
+let onlyCopyToast: string | number | undefined
+// in the hold, or as the only copy, the live slides can go out with nothing stored
+const canDownloadChanges = computed(
+  () => hasRecovery.value || saveRefused.value || isOnlyCopy.value,
+)
 const isSlideInteractionActive = ref(false)
-let autosaveTimer: number | undefined
 const access = createSlidesAccess(props.session, {
   narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
-    // also cancels a save under way and retires the draft, so it never replays.
-    const unsaved = dirty.value || isSaving.value || saveFailed.value
+    // also cancels a save under way and retires the draft, so it never replays,
+    // unless no copy of an unread draft fits: that one stays for the next load
+    // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
+    const unsaved =
+      !!slides.value?.length &&
+      (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
     viewOnly.value = true
-    void stopWrites(props.session.contentDocname)
+    void stopWrites(props.session.contentDocname, unsaved ? undefined : keepUnreadDraft)
     if (!unsaved) {
       toast.warning('Editing access changed. This presentation is now view only.')
       return
     }
-    retainRecovery()
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: 'Download my changes',
-        onClick: downloadChanges,
-      },
-    })
+
+    isOnlyCopy.value = !retainRecovery()
+
+    if (isOnlyCopy.value) {
+      cancelRunningLoad()
+      showOnlyCopy(translate('Editing access changed. Download your changes before you reload.'))
+      return
+    }
+
+    showKept('Editing access changed. Your unsaved changes are kept on this device.')
   },
   widened() {
-    // The server copy is the truth now: reload it rather than replay anything.
-    resumeWrites(props.session.contentDocname)
-    toast.info('You can edit this presentation again.')
-    void load()
+    if (isOnlyCopy.value && !retainRecovery()) {
+      showAccessBack()
+      return
+    }
+
+    isOnlyCopy.value = false
+    loadAfterAccessBack()
   },
 })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
-const editable = computed(() => access.writable.value && !composite.value && !restoring.value)
+const editable = computed(
+  () => access.writable.value && !composite.value && !restoring.value && !isOnlyCopy.value,
+)
+const canRestoreVersions = computed(
+  () => access.writable.value && !restoring.value && !isOnlyCopy.value,
+)
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
 const editing = computed(() => editable.value && !phone.value)
+const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
+  props.session.contentDocname,
+  editable,
+)
+useHideRail()
 
 // Body requests go through the session, with this document's link credentials.
 // A refused write is a verdict: access narrows until the presentation opens again.
@@ -149,6 +217,7 @@ const releaseContext = setDocumentContext(
   props.session.contentDocname,
   props.session.credentials.context,
   () => access.refuse(),
+  keepSticky,
 )
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
@@ -176,6 +245,68 @@ function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
 }
 
+/** A theme write rewrites the deck on the server, so it pauses editing like a restore. */
+async function writeTheme(
+  endpoint: typeof api.slides.documents.applyTheme | typeof api.slides.documents.updateTheme,
+  theme: string,
+) {
+  showThemeDialog.value = false
+  showThemeChange.value = false
+  // a dialog stays open through a change of access
+  if (!editable.value) {
+    return
+  }
+
+  try {
+    await flushEdits()
+    restoring.value = true
+    await client.mutation(
+      endpoint,
+      { name: props.session.contentDocname, theme },
+      { context: contextFor(props.session.contentDocname) },
+    )
+    await load()
+  } catch (error) {
+    const message = error instanceof Error && error.message
+    toast.error(message || 'Could not change the theme.')
+  } finally {
+    restoring.value = false
+  }
+}
+
+const showThemeChange = ref(false)
+const driveActions = useDriveDocumentActions(props.session)
+const presentationMenu = computed(() => [
+  { group: '', options: driveActions.value.back },
+  {
+    group: '',
+    options: [
+      {
+        label: 'Change theme',
+        icon: 'lucide-swatch-book',
+        condition: () => editable.value,
+        onClick: () => {
+          showThemeChange.value = true
+        },
+      },
+      { label: 'Shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+      {
+        label: translate('Discard my changes'),
+        icon: 'lucide-trash-2',
+        condition: () => canDownloadChanges.value,
+        onClick: discardChanges,
+      },
+      {
+        label: translate('Reload'),
+        icon: 'lucide-refresh-cw',
+        condition: () => isOnlyCopy.value && access.writable.value,
+        onClick: reloadAfterAccessBack,
+      },
+    ],
+  },
+  { group: '', options: driveActions.value.node },
+])
+
 // The header renames through the session; the deck keeps its own copy of the title.
 watch(
   () => props.session.title.value,
@@ -183,6 +314,12 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
+// an empty presentation has no show, so its /present opens the editor
+watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
+  if (name === 'slides-slideshow' && done && !count) {
+    void router.replace({ name: 'document-host', params: route.params, query: route.query })
+  }
+})
 watch(
   editable,
   (canEdit) => {
@@ -200,11 +337,33 @@ const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
 }
+
+let hasSettledCopies = false
+
 // A save that lands with edit access makes the recovery copy stale.
 watch(isSaving, (now, before) => {
   if (!before || now || saveFailed.value || !editable.value || !hasRecovery.value) return
-  clearRecovery(props.session.nodeId)
-  hasRecovery.value = false
+
+  // the last surface's push can land during this one's first load
+  if (!hasSettledCopies) return
+
+  clearStaleRecovery(props.session.nodeId)
+  syncHasRecovery()
+})
+
+let refusalToast: string | number | undefined
+watch(saveRefused, (isRefused) => {
+  if (isRefused) {
+    showRefusal()
+  } else if (refusalToast !== undefined) {
+    toast.dismiss(refusalToast)
+    refusalToast = undefined
+  }
+})
+watch(isOnlyCopy, (isOnly) => {
+  if (!isOnly) {
+    dismissOnlyCopy()
+  }
 })
 function showPanel(next: Panel | null) {
   panel.value = next
@@ -227,6 +386,10 @@ async function loadComments() {
 /** Save pending edits, or refuse: a version holds only the saved state. */
 async function flushEdits() {
   await saveChanges()
+  if (saveRefused.value) {
+    throw new Error(translate('This presentation changed elsewhere. Reload before you do this.'))
+  }
+
   if (dirty.value || isSaving.value || saveFailed.value) {
     throw new Error(
       'Your latest changes are not saved yet. Try again when the presentation is saved.',
@@ -336,18 +499,43 @@ async function load() {
       !access.writable.value || composite.value,
     )
     if (run !== latestLoad) return
+
+    // the server copy replaced the slides on screen
+    isOnlyCopy.value = false
+    if (doc && !hasSettledCopies) {
+      hasSettledCopies = true
+      keepOutlivedRecovery(props.session.nodeId, showsSlides)
+    }
+
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
-    setSlideIndex(1)
+
+    setSlideIndex(presentedSlide.value)
     loadTemplates()
     composite.value = !!doc?.is_composite
-    if (composite.value) await loadComposite()
+    if (composite.value) {
+      await loadComposite()
+    } else {
+      void offerTheme()
+    }
+
+    pruneOfflineCopy(presentationId.value).catch(() => {})
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
   } finally {
-    if (run === latestLoad) loading.value = false
+    if (run === latestLoad) {
+      loading.value = false
+      loaded.value = true
+    }
   }
 }
+
+function cancelRunningLoad() {
+  latestLoad++
+  startLoad()
+  loading.value = false
+}
+
 function normalizeCompositeSlide(value: unknown) {
   const slide: Record<string, unknown> = {
     ...(value as Record<string, unknown>),
@@ -379,22 +567,208 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
   }
 }
 function retainRecovery() {
-  if (!slides.value?.length) return
+  if (!slides.value?.length) {
+    return true
+  }
+
   try {
-    keepRecovery(props.session.nodeId, JSON.parse(JSON.stringify(slides.value)) as unknown[])
+    // with writes stopped no draft holds these slides, so a landed save can't make them stale
+    keepRecovery(props.session.nodeId, liveSlides(), {
+      sticky: !access.writable.value || isOnlyCopy.value,
+    })
     hasRecovery.value = true
+    return true
   } catch {
-    toast.error('Your latest changes could not be kept on this device.')
+    return false
   }
 }
-function downloadChanges() {
-  const downloaded = downloadRecovery(props.session.nodeId, props.session.title.value)
-  hasRecovery.value = false
-  if (!downloaded) toast.error('No recovery copy is kept for this presentation.')
+
+function keepSticky(content: unknown[]) {
+  keepRecovery(props.session.nodeId, content, { sticky: true })
+  hasRecovery.value = true
 }
-const saveState = computed<DocumentSaveState>(() =>
-  isSaving.value ? 'saving' : saveFailed.value ? 'failed' : dirty.value ? 'unsaved' : 'clean',
-)
+
+// a draft from a killed tab that the first load had not reached when access narrowed
+function keepUnreadDraft(content: unknown[]) {
+  try {
+    keepSticky(content)
+    showKept(
+      translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+function showKept(message: string) {
+  toast.warning(message, {
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: 'Download my changes',
+      onClick: downloadChanges,
+    },
+  })
+}
+
+function retainOrWarn() {
+  const isKept = retainRecovery()
+  if (!isKept) {
+    toast.error('Your latest changes could not be kept on this device.')
+  }
+
+  return isKept
+}
+
+// the server copy is the truth now: reload it rather than replay anything,
+// though a dirty draft left for lack of room loads like any other
+function loadAfterAccessBack() {
+  resumeWrites(props.session.contentDocname)
+  toast.info('You can edit this presentation again.')
+  void load()
+}
+
+function showAccessBack() {
+  showOnlyCopy(translate('Editing access is back. Download your changes before you reload.'), {
+    label: translate('Reload'),
+    onClick: reloadAfterAccessBack,
+  })
+}
+
+function reloadAfterAccessBack() {
+  const isSafe =
+    retainRecovery() ||
+    window.confirm(
+      translate('Your latest changes could not be kept on this device. Reload anyway?'),
+    )
+  if (!isSafe) {
+    // pressing Reload closed the toast, and it is the way back to Reload
+    showAccessBack()
+    return
+  }
+
+  loadAfterAccessBack()
+}
+
+function syncHasRecovery() {
+  hasRecovery.value = readRecovery(props.session.nodeId).length > 0
+}
+
+function liveSlides() {
+  return JSON.parse(JSON.stringify(slides.value)) as unknown[]
+}
+
+function showRefusal() {
+  let message = translate(
+    'This presentation changed elsewhere. Your changes are kept on this device.',
+  )
+  try {
+    keepSticky(liveSlides())
+  } catch {
+    message = translate(
+      'This presentation changed elsewhere. Download your changes before you reload.',
+    )
+  }
+
+  refusalToast = toast.warning(message, {
+    duration: Number.POSITIVE_INFINITY,
+    action: stayingDownload(),
+    cancel: { label: translate('Reload'), onClick: () => void load() },
+  })
+}
+
+function stayingDownload() {
+  return {
+    label: translate('Download'),
+    onClick: (event: Event) => {
+      // the toast stays: a download can't be confirmed, and Reload is still the way on
+      event.preventDefault()
+      downloadChanges()
+    },
+  }
+}
+
+function dismissOnlyCopy() {
+  if (onlyCopyToast !== undefined) {
+    toast.dismiss(onlyCopyToast)
+    onlyCopyToast = undefined
+  }
+}
+
+function showOnlyCopy(message: string, cancel?: { label: string; onClick: () => void }) {
+  dismissOnlyCopy()
+  // its "kept" and its bare Reload no longer hold
+  if (refusalToast !== undefined) {
+    toast.dismiss(refusalToast)
+    refusalToast = undefined
+  }
+
+  onlyCopyToast = toast.warning(message, {
+    duration: Number.POSITIVE_INFINITY,
+    action: stayingDownload(),
+    cancel,
+  })
+}
+
+function downloadChanges() {
+  const title = props.session.title.value
+  if (saveRefused.value || isOnlyCopy.value) {
+    downloadSlides(liveSlides(), title)
+    return
+  }
+
+  if (!downloadRecovery(props.session.nodeId, title)) {
+    syncHasRecovery()
+    toast.error('No recovery copy is kept for this presentation.')
+  }
+}
+
+async function discardChanges() {
+  if (!window.confirm(translate("Discard your kept changes? This can't be undone."))) {
+    return
+  }
+
+  if (saveRefused.value) {
+    forgetRecovery(props.session.nodeId, liveSlides())
+    syncHasRecovery()
+    await retireDraft(props.session.contentDocname)
+    if (access.writable.value) {
+      resumeWrites(props.session.contentDocname)
+    }
+
+    await load()
+    return
+  }
+
+  if (isOnlyCopy.value) {
+    if (access.writable.value) {
+      resumeWrites(props.session.contentDocname)
+    }
+
+    await load()
+    return
+  }
+
+  removeNewestRecovery(props.session.nodeId)
+  syncHasRecovery()
+  // the edits on screen would go into a copy again on leaving
+  if (!access.writable.value) {
+    await load()
+  }
+}
+
+const saveState = computed<DocumentSaveState>(() => {
+  if (isSaving.value) {
+    return 'saving'
+  }
+
+  if (saveFailed.value) {
+    return 'failed'
+  }
+
+  // only the screen holds the slides, whatever the save flags say
+  return dirty.value || isOnlyCopy.value ? 'unsaved' : 'clean'
+})
 async function flush() {
   await saveChanges()
 }
@@ -403,27 +777,93 @@ useDocumentLeaveGuard({
   flush,
   retainRecovery,
 })
+useAutosave({
+  editable,
+  interacting: isSlideInteractionActive,
+})
+// The show takes the keyboard: the editor under it is inert, so no editor menu opens over
+// the audience, and focus goes back where it was, or to Present, once the show ends
+const presentControls = ref<InstanceType<typeof PresentButton> | null>(null)
+let focusedBeforeShow: Element | null = null
+watch(
+  presenting,
+  (isPresenting) => {
+    if (isPresenting) focusedBeforeShow = document.activeElement
+  },
+  { flush: 'sync' },
+)
+// After the render, once the editor is no longer inert
+watch(
+  presenting,
+  (isPresenting) => {
+    if (isPresenting) return
+    const before = focusedBeforeShow?.isConnected ? focusedBeforeShow : null
+    const target = before ?? presentControls.value?.$el.querySelector('button')
+    if (target instanceof HTMLElement) target.focus()
+  },
+  { flush: 'post' },
+)
+function warnBeforeUnload(event: Event) {
+  resolveDocumentUnload({ state: () => saveState.value, retainRecovery: retainOrWarn }, event)
+}
 function setOnline() {
   online.value = true
 }
 function setOffline() {
   online.value = false
 }
+
+const deckUnavailable = computed(
+  () => loading.value || !access.readable.value || !slides.value.length,
+)
+const canPin = computed(
+  () =>
+    'serviceWorker' in navigator &&
+    'caches' in window &&
+    !window.disable_slides_service_worker &&
+    isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
+)
+watch([slides, () => presentationDoc.value?.modified], () => {
+  if (!slides.value.length) {
+    refreshOfflineStatus(null)
+    return
+  }
+
+  refreshOfflineStatus(presentationId.value)
+  if (canPin.value) {
+    warmOfflineCopyAssets(presentationId.value).catch((err) =>
+      console.warn('Slides offline copy refresh failed:', err),
+    )
+  }
+
+  if (access.readable.value && getCookieSessionUser()) {
+    void rememberVisit(presentationId.value)
+    void storeVisitedMedia(presentationId.value)
+  }
+})
 onMounted(() => {
   void load()
-  autosaveTimer = window.setInterval(() => {
-    if (editable.value && !isSlideInteractionActive.value && !focusedSlide.value) void saveChanges()
-  }, 1_000)
+  void registerSlidesWorker()
+  void postToServiceWorker('slides-entered')
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
+  window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
-  if (autosaveTimer) window.clearInterval(autosaveTimer)
+  cancelVisit()
+  stopVisitedMedia()
+  void postToServiceWorker('slides-left')
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
+  window.removeEventListener('beforeunload', warnBeforeUnload)
+  if (refusalToast !== undefined) {
+    toast.dismiss(refusalToast)
+  }
+
+  dismissOnlyCopy()
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
-  void saveCurrentState().finally(() => {
+  void saveChanges().finally(() => {
     releaseContext()
     releaseMedia()
     resumeWrites(props.session.contentDocname)
@@ -433,27 +873,50 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base">
+  <div
+    class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base"
+    :inert="presenting"
+  >
     <DriveDocumentHeader
       :session="session"
       title-label="Presentation title"
       :save-state="saveState"
       :view-only="!editable"
-      :recoverable="hasRecovery"
+      :recoverable="canDownloadChanges"
       :panels="['comments', 'versions']"
+      center-title
       :panel="panel"
       @update:panel="showPanel"
       @download-changes="downloadChanges"
     >
+      <template #icon="{ icon }">
+        <Dropdown :options="presentationMenu">
+          <Button
+            variant="ghost"
+            icon-right="lucide-chevron-down"
+            :aria-label="__('Presentation menu')"
+          >
+            <span class="block size-4.5" :class="icon" aria-hidden="true" />
+          </Button>
+        </Dropdown>
+      </template>
       <template #actions>
+        <OfflineCopyButton v-if="canPin" />
         <Button
           icon="lucide-file-down"
           tooltip="Export"
           aria-label="Export"
           variant="ghost"
           class="max-md:hidden"
-          :disabled="loading || !access.readable.value || !slides.length"
+          :disabled="deckUnavailable"
           @click="exportPdf"
+        />
+      </template>
+      <template #primary>
+        <PresentButton
+          ref="presentControls"
+          :is-disabled="deckUnavailable"
+          @start="startSlideShow"
         />
       </template>
     </DriveDocumentHeader>
@@ -602,11 +1065,19 @@ onBeforeUnmount(() => {
             class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
             :class="thread.resolved && 'opacity-60'"
           >
-            <div v-for="comment in thread.comments" :key="comment.name">
-              <p class="text-sm-medium text-ink-gray-8">
+            <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
+              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
+                <Avatar
+                  v-if="comment.person"
+                  :image="comment.person.user_image ?? undefined"
+                  :label="comment.person.full_name"
+                  size="sm"
+                  shape="circle"
+                />
                 <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                  comment.author_name || 'Someone'
+                  authorLabel(comment)
                 }}</DriveCommentAuthor>
+                <span class="flex-1 text-xs text-ink-gray-5">{{ commentTime(comment) }}</span>
               </p>
               <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
             </div>
@@ -618,16 +1089,26 @@ onBeforeUnmount(() => {
     <SlidesVersionsPanel
       v-else-if="panel === 'versions'"
       :session="session"
-      :writable="access.writable.value && !restoring"
+      :writable="canRestoreVersions"
       :flush="flushEdits"
       :restore="restoreVersion"
       @close="panel = null"
     />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
+    <ThemeDialog
+      v-model:open="showThemeDialog"
+      @create="writeTheme(api.slides.documents.applyTheme, $event)"
+    />
+    <ThemeDialog
+      v-model:open="showThemeChange"
+      update
+      @update="writeTheme(api.slides.documents.updateTheme, $event)"
+    />
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
+      <Slideshow v-if="presenting" :active-slide-id="presentedSlide" />
     </teleport>
   </div>
 </template>

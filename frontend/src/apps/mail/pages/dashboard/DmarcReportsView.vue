@@ -72,10 +72,8 @@
         v-if="list.status === 'success' && list.total"
         :count="list.rows.length"
         :total="list.total ?? 0"
-        :page-length="pageLength"
         :has-more="list.hasNext"
         :loading="list.isFetching"
-        @update:page-length="(value) => (pageLength = value)"
         @load-more="list.fetchNext().catch(() => {})"
       />
     </div>
@@ -93,7 +91,7 @@ import BreakdownRows from '@/apps/mail/components/DmarcBreakdownRows.vue'
 import DmarcStatTiles from '@/apps/mail/components/DmarcStatTiles.vue'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import type { DmarcReportRow } from '@/apps/mail/utils/dmarc'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
 import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
@@ -125,13 +123,12 @@ const summary = useQuery(api.mail.admin.dmarc.summary, () => ({
 // The list and the summary take the same domain and period, so the page never shows a
 // period's totals beside reports from outside it.
 const debouncedSearch = refDebounced(search, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const list = useInfiniteQuery(api.mail.admin.dmarc.list, () => ({
   txt: debouncedSearch.value,
   domain_id: domain.value || undefined,
   days: Number(period.value),
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const LIST_COLUMNS = [
   {

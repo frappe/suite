@@ -317,7 +317,9 @@ it('requires access confirmation and preserves per-item transfer failures for re
   await vi.waitFor(() => expect(document.body.textContent).toContain('maya@example.com'))
   expect(document.body.textContent).toContain('Destination usage: 2 GB')
   expect(document.body.textContent).toContain('Usage after transfer: 4 GB')
-  expect(document.body.textContent).toContain('Destination limit: 11 GB')
+  expect(document.body.textContent).toContain('Destination cap: 10 GB')
+  expect(document.body.textContent).not.toContain('Destination limit: 11 GB')
+  expect(document.body.textContent).not.toContain('Extra storage:')
   expect(document.body.textContent).toContain('In progress: 1 GB')
   expect(document.body.textContent).toContain('maya@example.com · Read')
   const transferButton = Array.from(document.querySelectorAll('button')).find(

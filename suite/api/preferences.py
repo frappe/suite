@@ -1,4 +1,8 @@
-"""Self-service User preferences with normal document validation."""
+"""Self-service User preferences with normal document validation.
+
+Both endpoints touch only the session user's own record, so they skip User doctype permissions:
+Suite users are Website Users, who have no role permission on User.
+"""
 
 from typing import Literal, TypedDict, cast
 
@@ -37,7 +41,6 @@ class Language(TypedDict):
 @frappe.whitelist(methods=["GET"])
 def get_preferences() -> Preferences:
     doc = frappe.get_doc("User", frappe.session.user)
-    doc.check_permission("read")
     return cast(Preferences, {field: doc.get(field) for field in Preferences.__annotations__})
 
 
@@ -50,9 +53,8 @@ def update_preferences(**changes: object) -> Preferences:
     ):
         frappe.throw(_("Invalid preference field"), frappe.ValidationError)
     doc = frappe.get_doc("User", frappe.session.user)
-    doc.check_permission("write")
     doc.update(changes)
-    doc.save()
+    doc.save(ignore_permissions=True)
     return get_preferences()
 
 

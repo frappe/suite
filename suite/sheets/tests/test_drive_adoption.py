@@ -48,6 +48,7 @@ from frappe.tests import IntegrationTestCase
 
 from suite import drive
 from suite import hooks as suite_hooks
+from suite.content import log, tables
 from suite.drive._core.access import grant
 from suite.drive._core.content import clear_registry_cache, governs, spec_for
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
@@ -56,9 +57,10 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
 from suite.drive.framework import satellite_has_permission, satellite_query_conditions
+from suite.sheets import content as sheets_content
 from suite.sheets import drive as sheets
 from suite.sheets.doctype.sheet.storage import decode_sheets_data, encode_sheets_data
-from suite.tests.utils import ensure_user
+from suite.tests.utils import delete_error_logs, ensure_user
 
 USER = "sheets-adoption-user@example.com"
 OTHER = "sheets-adoption-other@example.com"
@@ -642,16 +644,6 @@ class TestSheetsWorkbook(unittest.TestCase):
         self.assertEqual(list(merged), ["Beta"])
         self.assertEqual(merged["Beta"]["slaveMap"]["B1"], "A1")
 
-    def test_a_restore_drops_the_collaborative_document_it_replaces(self):
-        """A live Y.Doc outranks `sheets_data`, so a restore must clear it."""
-        patched = self._frappe(exists=True)
-        version = json.dumps(
-            {"schema": "sheet/1", "sheets_data": json.dumps({"sheet": {"v": 2}}), "head_seq": 3}
-        ).encode()
-        with mock.patch.object(sheets, "_append_op", return_value=9):
-            sheets.restore_version("SH-1", io.BytesIO(version))
-        patched.db.delete.assert_called_once_with("Sheet Collab State", {"sheet": "SH-1"})
-
     def test_a_workbook_that_declares_too_many_merge_ranges_is_refused(self):
         many = "".join(f'<mergeCell ref="A{r}:B{r}"/>' for r in range(1, 12))
         evil = respliced_workbook(
@@ -725,6 +717,12 @@ class TestSheetsAfterActivation(IntegrationTestCase):
             frappe.get_doc({"doctype": DOCTYPE, "sheets_data": "{}"}).insert()
 
 
+def _old_op_row(docname: str) -> str:
+    """An op row as the old save path left one: nothing writes them now."""
+    row = {"doctype": OP_LOG, "sheet": docname, "seq": 1, "op_type": "save", "summary": "Saved"}
+    return frappe.get_doc(row).insert(ignore_permissions=True).name
+
+
 # ── the Drive-native lifecycle ───────────────────────────────────────────────
 
 
@@ -756,7 +754,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Sheets Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Sheets Other", user=OTHER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.person = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
 
     def _remove_fixture_rows(self):
@@ -779,6 +777,22 @@ class TestSheetsInDrive(IntegrationTestCase):
 
     def _write_body(self, node: str, body: dict) -> None:
         frappe.db.set_value(DOCTYPE, self._docname(node), "sheets_data", encode_sheets_data(json.dumps(body)))
+
+    def _old_op(self, node: str) -> str:
+        return _old_op_row(self._docname(node))
+
+    def _unconverted(self, node: str) -> str:
+        """The sheet as one made before collaboration: its old body and no log.
+
+        Drive restores a version only into such a sheet; a converted one is
+        restored through its room.
+        """
+        doc = log.find(sheets_content.APP, node)
+        if doc:
+            for kind in ("update", "session", "stage", "checkpoint", "copy"):
+                frappe.db.sql(f"DELETE FROM `{tables.table('sheets', kind)}` WHERE `doc_id` = %s", doc.id)
+            frappe.db.sql(f"DELETE FROM `{tables.table('sheets', 'doc')}` WHERE `id` = %s", doc.id)
+        return node
 
     def _ops(self, node: str) -> list[dict]:
         return frappe.get_all(
@@ -819,14 +833,11 @@ class TestSheetsInDrive(IntegrationTestCase):
         self.assertEqual(sheet.node_title, "Budget")
         self.assertEqual(decode_sheets_data(sheet.sheets_data), "{}")
 
-    def test_a_new_sheet_opens_its_history_with_a_create_op(self):
+    def test_a_new_sheet_writes_no_op_log_and_takes_no_seq(self):
+        """The content layer keeps a sheet's history now."""
         node = self._sheet()
-        self.assertEqual([op["op_type"] for op in self._ops(node)], ["create"])
-
-    def test_the_head_seq_names_the_op_that_wrote_the_body(self):
-        node = self._sheet()
-        ops = self._ops(node)
-        self.assertEqual(frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"])
+        self.assertEqual(self._ops(node), [])
+        self.assertFalse(frappe.db.exists("Sheet Seq", self._docname(node)))
 
     def test_a_sheet_cannot_be_repointed_at_another_node(self):
         first = self._sheet(title="One")
@@ -844,12 +855,12 @@ class TestSheetsInDrive(IntegrationTestCase):
         copy = drive.copy(node, self.root.node, title="Copy")
         self.assertEqual(json.loads(self._body(copy))["sheet"]["current"], "Data")
 
-    def test_a_copy_gets_no_history_of_its_own_beyond_its_creation(self):
-        """§8.9: a copy starts clean; it does not inherit the source's ops."""
+    def test_a_copy_does_not_inherit_the_source_s_old_ops(self):
+        """§8.9: a copy starts clean."""
         node = self._sheet(title="Source")
-        sheets._append_op(self._docname(node), "save", "Saved")
+        self._old_op(node)
         copy = drive.copy(node, self.root.node, title="Copy")
-        self.assertEqual([op["op_type"] for op in self._ops(copy)], ["create"])
+        self.assertEqual(self._ops(copy), [])
 
     def test_a_copy_gets_its_own_collaborative_document(self):
         """Inheriting the source's Y.Doc would rebase every editor onto the copy."""
@@ -881,10 +892,10 @@ class TestSheetsInDrive(IntegrationTestCase):
         rows = json.loads(self._body(node))["sheet"]["sheets"]["Data"]["rows"]
         self.assertEqual(rows["0"], ["Name", "Amount"])
 
-    def test_an_import_says_so_in_the_history(self):
+    def test_an_import_writes_no_op_log(self):
         source = self._xlsx_node(simple_workbook())
         node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
-        self.assertEqual([op["op_type"] for op in self._ops(node)], ["import"])
+        self.assertEqual(self._ops(node), [])
 
     def test_an_import_leaves_the_source_file_exactly_as_it_was(self):
         """An import is neither a move nor a copy."""
@@ -899,6 +910,70 @@ class TestSheetsInDrive(IntegrationTestCase):
         self._as(OTHER)
         with self.assertRaises((DriveNotFound, DriveForbidden)):
             drive.import_document(self.other_root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
+
+    def test_a_csv_becomes_one_sheet_of_its_values(self):
+        source = self._xlsx_node(b'Item,Cost\r\nRent,900\r\n"Food, drink",120\r\n', title="q4.csv")
+        node = drive.import_document(self.root.node, "Imported", content_doctype=DOCTYPE, from_node=source)
+        body = json.loads(self._body(node))
+        sheet = body["sheet"]
+        # Named so the editor says where it came from and offers no "Before upgrade" version.
+        self.assertEqual(body["imported_from"], "q4.csv")
+        self.assertEqual(sheet["current"], "Sheet1")
+        self.assertEqual(
+            sheet["sheets"]["Sheet1"]["rows"],
+            {"0": ["Item", "Cost"], "1": ["Rent", "900"], "2": ["Food, drink", "120"]},
+        )
+
+    def _csv_rows(self, raw: bytes) -> dict:
+        return json.loads(sheets._workbook_from_csv(raw))["sheet"]["sheets"]["Sheet1"]["rows"]
+
+    def test_a_csv_is_read_with_the_separator_it_uses(self):
+        expected = {"0": ["Item", "Cost"], "1": ["Rent", "1,50"], "2": ["Food", "2,75"]}
+        cases = {
+            "semicolon with decimal commas": b"Item;Cost\nRent;1,50\nFood;2,75\n",
+            "no final line break": b"Item;Cost\nRent;1,50\nFood;2,75",
+            "tab": b"Item\tCost\nRent\t1,50\nFood\t2,75\n",
+            "pipe": b"Item|Cost\nRent|1,50\nFood|2,75\n",
+            "comma with quotes": b'Item,Cost\nRent,"1,50"\nFood,"2,75"\n',
+        }
+        for label, raw in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self._csv_rows(raw), expected)
+
+    def test_a_comma_csv_with_semicolons_in_a_column_stays_split_on_commas(self):
+        self.assertEqual(
+            self._csv_rows(b"Name,Note\nAda,x;y\nGrace,z;w\n"),
+            {"0": ["Name", "Note"], "1": ["Ada", "x;y"], "2": ["Grace", "z;w"]},
+        )
+
+    def test_rows_of_uneven_length_still_find_their_separator(self):
+        self.assertEqual(
+            self._csv_rows(b"a;b;c\n1;2\n3;4;5\n"),
+            {"0": ["a", "b", "c"], "1": ["1", "2"], "2": ["3", "4", "5"]},
+        )
+
+    def test_a_csv_that_is_not_utf8_is_read_as_windows_1252(self):
+        self.assertEqual(
+            self._csv_rows("Café;Prix\nThé;2,50 €\n".encode("cp1252")),
+            {"0": ["Café", "Prix"], "1": ["Thé", "2,50 €"]},
+        )
+
+    def test_utf8_wins_over_windows_1252(self):
+        self.assertEqual(
+            self._csv_rows("\ufeffCafé,Prix\nThé,2\n".encode()),
+            {"0": ["Café", "Prix"], "1": ["Thé", "2"]},
+        )
+
+    def test_a_single_column_or_free_text_is_still_not_a_table(self):
+        cases = {
+            "one column": b"Names\nAda\nGrace\n",
+            "prose": b"Dear reader\nThis is a note\nThe end\n",
+            "a stray semicolon": b"Dear reader; hello\nThis is a note\n",
+            "binary": b"\x81\x8d\x8f\x90\x9d",
+        }
+        for label, raw in cases.items():
+            with self.subTest(label), self.assertRaises(sheets.UnreadableWorkbook):
+                sheets._workbook_from_csv(raw)
 
     def test_a_file_that_is_not_a_workbook_is_refused_and_leaves_no_node(self):
         source = self._xlsx_node(b"not a spreadsheet", title="notes.txt")
@@ -932,7 +1007,7 @@ class TestSheetsInDrive(IntegrationTestCase):
         )
 
     def test_a_restore_puts_the_body_back(self):
-        node = self._sheet()
+        node = self._unconverted(self._sheet())
         self._write_body(node, {"sheet": {"v": 2, "current": "First", "sheets": {}}})
         seq = drive.take_version(node, kind="named", label="First")
         self._write_body(node, {"sheet": {"v": 2, "current": "Second", "sheets": {}}})
@@ -940,21 +1015,15 @@ class TestSheetsInDrive(IntegrationTestCase):
         restore_version(self.admin, node, seq)
         self.assertEqual(json.loads(self._body(node))["sheet"]["current"], "First")
 
-    def test_a_restore_is_one_op_of_its_own_at_a_fresh_seq(self):
-        node = self._sheet()
-        self._write_body(node, {"sheet": {"v": 2, "current": "First", "sheets": {}}})
+    def test_a_restore_writes_no_op_log(self):
+        node = self._unconverted(self._sheet())
         seq = drive.take_version(node, kind="named", label="First")
-        self._write_body(node, {"sheet": {"v": 2, "current": "Second", "sheets": {}}})
-        before = self._ops(node)[-1]["seq"]
 
         restore_version(self.admin, node, seq)
-        ops = self._ops(node)
-        self.assertEqual(ops[-1]["op_type"], "restore")
-        self.assertGreater(ops[-1]["seq"], before, "head_seq never regresses")
-        self.assertEqual(frappe.db.get_value(DOCTYPE, self._docname(node), "head_seq"), ops[-1]["seq"])
+        self.assertEqual(self._ops(node), [])
 
     def test_a_restore_takes_a_version_of_what_it_replaces(self):
-        node = self._sheet()
+        node = self._unconverted(self._sheet())
         self._write_body(node, {"sheet": {"v": 2, "current": "First", "sheets": {}}})
         seq = drive.take_version(node, kind="named", label="First")
         self._write_body(node, {"sheet": {"v": 2, "current": "Second", "sheets": {}}})
@@ -967,6 +1036,7 @@ class TestSheetsInDrive(IntegrationTestCase):
     def test_a_purge_takes_the_sheet_and_every_app_owned_row_with_it(self):
         node = self._sheet()
         docname = self._docname(node)
+        self._old_op(node)
         frappe.get_doc(
             {"doctype": COLLAB_STATE, "sheet": docname, "ydoc_state": "AAA", "byte_size": 3}
         ).insert(ignore_permissions=True)
@@ -1008,14 +1078,14 @@ class TestSheetsInDrive(IntegrationTestCase):
 
     def test_the_op_log_takes_its_rights_from_the_sheet_s_node(self):
         node = self._sheet()
-        op = frappe.get_all(OP_LOG, filters={"sheet": self._docname(node)}, pluck="name")[0]
+        op = self._old_op(node)
 
         self._as(OTHER)
         self.assertFalse(satellite_has_permission(frappe.get_doc(OP_LOG, op), "read", OTHER))
 
     def test_a_reader_of_the_sheet_may_read_its_op_log(self):
         node = self._sheet()
-        op = frappe.get_all(OP_LOG, filters={"sheet": self._docname(node)}, pluck="name")[0]
+        op = self._old_op(node)
         grant(node, OTHER, drive.READ, self.admin)
 
         self._as(OTHER)
@@ -1027,6 +1097,8 @@ class TestSheetsInDrive(IntegrationTestCase):
         # Personal root anchors MANAGE to its user, so OTHER reads all of it.
         mine = self._sheet(title="Mine")
         theirs = self._sheet(title="Theirs")
+        self._old_op(mine)
+        self._old_op(theirs)
         grant(mine, OTHER, drive.READ, self.admin)
 
         self._as(OTHER)
@@ -1055,7 +1127,7 @@ class TestSheetsInDrive(IntegrationTestCase):
 
     def test_edit_is_what_changes_a_satellite_not_read(self):
         node = self._sheet()
-        op = frappe.get_all(OP_LOG, filters={"sheet": self._docname(node)}, pluck="name")[0]
+        op = self._old_op(node)
         grant(node, OTHER, drive.READ, self.admin)
 
         self._as(OTHER)
@@ -1211,6 +1283,11 @@ class TestTheGateProbes(IntegrationTestCase):
             added = tuple(set(frappe.get_all(doctype, pluck="name")) - self.census[doctype])
             if not added:
                 continue
+
+            if doctype == "Error Log":
+                delete_error_logs({"name": ("in", added)})
+                continue
+
             frappe.db.delete(doctype, {"name": ("in", added)})
             if doctype == "Email Queue":
                 frappe.db.delete("Email Queue Recipient", {"parent": ("in", added)})
@@ -1252,6 +1329,7 @@ class TestTheGateProbes(IntegrationTestCase):
         answer is the guard, not an empty table.
         """
         _node, docname = self._linked_sheet()
+        _old_op_row(docname)
         self._share(DOCTYPE, docname, GATE_VICTIM, read=1)
         self.assertTrue(frappe.get_all(OP_LOG, filters={"sheet": docname}, pluck="name"))
 
@@ -1291,7 +1369,7 @@ class TestTheGateProbes(IntegrationTestCase):
         `frappe.desk.desktop` swallow a `PermissionError`.
         """
         _node, docname = self._linked_sheet()
-        op = frappe.get_all(OP_LOG, filters={"sheet": docname}, pluck="name")[0]
+        op = _old_op_row(docname)
         self._share(OP_LOG, op, GATE_VICTIM, read=1)
 
         self._as(GATE_VICTIM)
@@ -1332,7 +1410,7 @@ def _purge_fixture_roots(users: tuple[str, ...] = (USER, OTHER)) -> None:
     reach a live account or another test. A `User` insert provisions a Personal
     root of its own, so this also runs before a fixture creates one.
     """
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", users]}, pluck="name")
     # Purging a document node calls the app's `on_purge`, which Drive reads from
     # the registry, so the purge runs against a cache built for this request.

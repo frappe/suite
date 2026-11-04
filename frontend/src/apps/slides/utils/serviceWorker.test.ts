@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSession } from '@/platform/session'
 import type { Transport } from '@/platform/transport'
 
-import { claimSlidesCachesFor, clearSlidesUserData, postToServiceWorker } from './serviceWorker'
+import {
+  claimSlidesCachesFor,
+  clearSlidesUserData,
+  clearVisitedCopies,
+  postToServiceWorker,
+  registerSlidesWorker,
+} from './serviceWorker'
 
 const deleted: string[] = []
-const deletedDbs: string[] = []
 
 beforeEach(() => {
   deleted.length = 0
-  deletedDbs.length = 0
   localStorage.clear()
   vi.stubGlobal('caches', { delete: async (name: string) => deleted.push(name) })
-  vi.stubGlobal('indexedDB', { deleteDatabase: (name: string) => deletedDbs.push(name) })
 })
 
 afterEach(() => {
@@ -28,7 +31,13 @@ describe('slides caches per user', () => {
 
     await clearSlidesUserData()
 
-    expect(deleted).toEqual(['slides-shell', 'slides-api', 'slides-media', 'slides-pinned'])
+    expect(deleted).toEqual([
+      'slides-shell',
+      'slides-api',
+      'slides-media',
+      'slides-pinned',
+      'slides-visited',
+    ])
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
     expect(localStorage.getItem('unrelated')).toBe('1')
   })
@@ -41,40 +50,52 @@ describe('slides caches per user', () => {
 
     await session.logout()
 
-    expect(deleted).toEqual(['slides-shell', 'slides-api', 'slides-media', 'slides-pinned'])
+    expect(deleted).toEqual([
+      'slides-shell',
+      'slides-api',
+      'slides-media',
+      'slides-pinned',
+      'slides-visited',
+    ])
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
   })
 
   it('clears when another user last owned the caches, then keeps them for the new one', async () => {
     await claimSlidesCachesFor('a@x.com')
-    expect(deleted).toHaveLength(4)
+    expect(deleted).toHaveLength(5)
 
     deleted.length = 0
     await claimSlidesCachesFor('a@x.com')
     expect(deleted).toHaveLength(0)
 
     await claimSlidesCachesFor('b@x.com')
-    expect(deleted).toHaveLength(4)
+    expect(deleted).toHaveLength(5)
+  })
+})
+
+describe('the visited copies', () => {
+  it('clears only them, and no pin record', async () => {
+    localStorage.setItem('slides-offline-copy:p1', '{}')
+
+    await clearVisitedCopies()
+
+    expect(deleted).toEqual(['slides-visited'])
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBe('{}')
   })
 
-  it('drops the unsynced drafts when a different user takes over', async () => {
-    await claimSlidesCachesFor('a@x.com')
-    // drafts already on this browser have no recorded owner, so they are adopted
-    expect(deletedDbs).toEqual([])
-    await clearSlidesUserData()
+  it('go with the kill switch', async () => {
+    vi.stubEnv('VITE_SLIDES_SW', '1')
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      serviceWorker: { getRegistration: async () => null },
+    })
+    window.disable_slides_service_worker = true
 
-    await claimSlidesCachesFor('b@x.com')
+    await registerSlidesWorker()
 
-    expect(deletedDbs).toEqual(['slides-db'])
-  })
-
-  it('keeps the drafts when the same user comes back after a logout', async () => {
-    await claimSlidesCachesFor('a@x.com')
-    await clearSlidesUserData()
-
-    await claimSlidesCachesFor('a@x.com')
-
-    expect(deletedDbs).toEqual([])
+    delete window.disable_slides_service_worker
+    vi.unstubAllEnvs()
+    expect(deleted).toContain('slides-visited')
   })
 })
 

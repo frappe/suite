@@ -28,6 +28,9 @@ import type {
 import { Writes } from './writes'
 
 export { installApiErrorHandler } from './errors'
+
+// How long a page has to be out of sight before coming back to it fetches every read again.
+const REFRESH_AFTER_AWAY_MS = 30_000
 export type {
   QueryState,
   InfiniteQueryState,
@@ -139,16 +142,24 @@ export function createApiClient(
     }) as UploadState<I, O>
   }
   if (typeof window !== 'undefined') {
-    const refresh = () => reads.invalidate(() => true)
-    const visible = () => {
-      if (document.visibilityState === 'visible') refresh()
+    // Back on the page after a while away, every read is fetched again: realtime keeps an open page
+    // current, and this catches what a sleeping laptop or a dropped socket missed. Not on window
+    // focus — clicking back out of a frame (a mail's body) gives the window focus, so every such click
+    // refetched every read on the page — and not after a glance at another tab.
+    // A page opened in a background tab counts as away from the start.
+    let hiddenAt: number | undefined =
+      document.visibilityState === 'hidden' ? Date.now() : undefined
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+        return
+      }
+      const away = hiddenAt === undefined ? 0 : Date.now() - hiddenAt
+      hiddenAt = undefined
+      if (away >= REFRESH_AFTER_AWAY_MS) reads.invalidate(() => true)
     }
-    window.addEventListener('focus', refresh)
-    document.addEventListener('visibilitychange', visible)
-    cleanup.push(() => {
-      window.removeEventListener('focus', refresh)
-      document.removeEventListener('visibilitychange', visible)
-    })
+    document.addEventListener('visibilitychange', visibility)
+    cleanup.push(() => document.removeEventListener('visibilitychange', visibility))
   }
   if (options.realtime) {
     const realtime = options.realtime

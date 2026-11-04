@@ -13,6 +13,7 @@ export { default as calendarDayjs } from './utils/dayjs'
 export { adjustScheduleEndTime, adjustScheduleStartTime } from './utils/scheduleTime'
 
 export type { CalendarEvent } from '@/apps/calendar/client/events'
+export { upcomingEventWindow } from './upcomingWindow'
 export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
 /** Shared upcoming-event presentation; callers supply their own event window and actions. */
 export { default as UpcomingEventList } from '@/apps/calendar/components/UpcomingEventList.vue'

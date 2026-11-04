@@ -478,6 +478,9 @@ class ContentConversion:
     # plain array. Cumulative because a rerun reads a list and counts none.
     slide_elements_repaired: int = 0
     deck_previews_created: int = 0
+    # Decks with a thumbnail Build could not turn into a preview; each one
+    # also has an issue naming why.
+    deck_previews_skipped: int = 0
     template_nodes_created: int = 0
     # Not in §14.9, and owned by the templates phase like the counter above
     # it. §14.7's `template_nodes_created` counts the nodes step 8 mints under

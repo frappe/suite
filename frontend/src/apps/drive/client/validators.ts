@@ -51,6 +51,8 @@ import type {
   NodeGrantsOutput,
   NodeMediaInput,
   NodeMediaOutput,
+  NodeMovePreviewInput,
+  NodeMovePreviewOutput,
   NodePatchMoveInput,
   NodePatchMoveOutput,
   NodePatchRenameInput,
@@ -75,6 +77,8 @@ import type {
   NodeThreadCreateOutput,
   NodeThreadsInput,
   NodeThreadsOutput,
+  NodeThreadsReanchorInput,
+  NodeThreadsReanchorOutput,
   NodeVersionContentInput,
   NodeVersionContentOutput,
   NodeVersionCreateInput,
@@ -170,6 +174,7 @@ export const operationNodeCreateCreateFolder: Validators<
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -307,6 +312,7 @@ export const operationNodeCreateCreateFile: Validators<
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -441,6 +447,7 @@ export const operationNodeCreateCreateLink: Validators<
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -577,6 +584,7 @@ export const operationNodeCreateCreateDocument: Validators<
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -804,6 +812,7 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -930,6 +939,7 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -1060,6 +1070,7 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -1189,6 +1200,7 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -1323,6 +1335,7 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
                   anyOf: [{ type: 'string' }, { type: 'null' }],
                   title: 'Source Principal',
                 },
+                can_manage: { title: 'Can Manage', type: 'boolean' },
               },
               title: 'AccessShape',
               type: 'object',
@@ -1452,6 +1465,7 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -1550,6 +1564,64 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
   },
 }
 
+export const operationNodeMovePreview: Validators<NodeMovePreviewInput, NodeMovePreviewOutput> = {
+  validateInput(value: unknown): asserts value is NodeMovePreviewInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          parent_node: { title: 'Parent Node', type: 'string' },
+          node: { type: 'string' },
+        },
+        required: ['parent_node', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'node_move_preview input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is NodeMovePreviewOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccessGainShape: {
+            properties: {
+              principal: { title: 'Principal', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+              person: { $ref: '#/$defs/Person' },
+            },
+            required: ['principal', 'role'],
+            title: 'AccessGainShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+        },
+        description: '`GET /nodes/<id>/move-preview`: who a move would give access to (UF §5.7).',
+        properties: {
+          gains: { items: { $ref: '#/$defs/AccessGainShape' }, title: 'Gains', type: 'array' },
+          role_now: { title: 'Role Now', type: 'integer' },
+          role_after: { title: 'Role After', type: 'integer' },
+        },
+        required: ['gains', 'role_now', 'role_after'],
+        title: 'MovePreviewShape',
+        type: 'object',
+      },
+      'node_move_preview output',
+    )
+  },
+}
+
 export const operationNodePurge: Validators<NodePurgeInput, NodePurgeOutput> = {
   validateInput(value: unknown): asserts value is NodePurgeInput {
     assertSchema(
@@ -1616,6 +1688,7 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -1755,6 +1828,7 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -1978,6 +2052,7 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -2312,6 +2387,7 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -2437,7 +2513,23 @@ export const operationNodeActivity: Validators<NodeActivityInput, NodeActivityOu
             properties: {
               name: { title: 'Name', type: 'string' },
               node: { title: 'Node', type: 'string' },
-              action: { title: 'Action', type: 'string' },
+              action: {
+                enum: [
+                  'create',
+                  'rename',
+                  'move',
+                  'edit',
+                  'comment',
+                  'trash',
+                  'restore',
+                  'delete',
+                  'share_add',
+                  'share_edit',
+                  'share_remove',
+                ],
+                title: 'Action',
+                type: 'string',
+              },
               actor: { title: 'Actor', type: 'string' },
               at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'At' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
@@ -3026,6 +3118,7 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Source Principal',
               },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
             },
             title: 'AccessShape',
             type: 'object',
@@ -3173,6 +3266,16 @@ export const operationNodeVersions: Validators<NodeVersionsInput, NodeVersionsOu
       value,
       {
         $defs: {
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
           VersionShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -3182,6 +3285,7 @@ export const operationNodeVersions: Validators<NodeVersionsInput, NodeVersionsOu
               label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
               pinned: { title: 'Pinned', type: 'integer' },
               actor: { title: 'Actor', type: 'string' },
+              person: { $ref: '#/$defs/Person' },
               size: { title: 'Size', type: 'integer' },
               creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
             },
@@ -3193,6 +3297,7 @@ export const operationNodeVersions: Validators<NodeVersionsInput, NodeVersionsOu
               'label',
               'pinned',
               'actor',
+              'person',
               'size',
               'creation',
             ],
@@ -3238,6 +3343,18 @@ export const operationNodeVersionCreate: Validators<
     assertSchema(
       value,
       {
+        $defs: {
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+        },
         properties: {
           name: { title: 'Name', type: 'string' },
           node: { title: 'Node', type: 'string' },
@@ -3246,10 +3363,22 @@ export const operationNodeVersionCreate: Validators<
           label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
           pinned: { title: 'Pinned', type: 'integer' },
           actor: { title: 'Actor', type: 'string' },
+          person: { $ref: '#/$defs/Person' },
           size: { title: 'Size', type: 'integer' },
           creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
         },
-        required: ['name', 'node', 'seq', 'kind', 'label', 'pinned', 'actor', 'size', 'creation'],
+        required: [
+          'name',
+          'node',
+          'seq',
+          'kind',
+          'label',
+          'pinned',
+          'actor',
+          'person',
+          'size',
+          'creation',
+        ],
         title: 'VersionShape',
         type: 'object',
       },
@@ -3282,6 +3411,18 @@ export const operationNodeVersionPatch: Validators<NodeVersionPatchInput, NodeVe
       assertSchema(
         value,
         {
+          $defs: {
+            Person: {
+              properties: {
+                id: { title: 'Id', type: 'string' },
+                full_name: { title: 'Full Name', type: 'string' },
+                user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              },
+              required: ['id', 'full_name', 'user_image'],
+              title: 'Person',
+              type: 'object',
+            },
+          },
           properties: {
             name: { title: 'Name', type: 'string' },
             node: { title: 'Node', type: 'string' },
@@ -3290,10 +3431,22 @@ export const operationNodeVersionPatch: Validators<NodeVersionPatchInput, NodeVe
             label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
             pinned: { title: 'Pinned', type: 'integer' },
             actor: { title: 'Actor', type: 'string' },
+            person: { $ref: '#/$defs/Person' },
             size: { title: 'Size', type: 'integer' },
             creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
           },
-          required: ['name', 'node', 'seq', 'kind', 'label', 'pinned', 'actor', 'size', 'creation'],
+          required: [
+            'name',
+            'node',
+            'seq',
+            'kind',
+            'label',
+            'pinned',
+            'actor',
+            'person',
+            'size',
+            'creation',
+          ],
           title: 'VersionShape',
           type: 'object',
         },
@@ -3379,6 +3532,16 @@ export const operationNodeVersionRestore: Validators<
       value,
       {
         $defs: {
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
           VersionShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -3388,6 +3551,7 @@ export const operationNodeVersionRestore: Validators<
               label: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Label' },
               pinned: { title: 'Pinned', type: 'integer' },
               actor: { title: 'Actor', type: 'string' },
+              person: { $ref: '#/$defs/Person' },
               size: { title: 'Size', type: 'integer' },
               creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
             },
@@ -3399,6 +3563,7 @@ export const operationNodeVersionRestore: Validators<
               'label',
               'pinned',
               'actor',
+              'person',
               'size',
               'creation',
             ],
@@ -3521,6 +3686,7 @@ export const operationNodeThreadCreate: Validators<NodeThreadCreateInput, NodeTh
             anchor: { title: 'Anchor', type: 'string' },
             text: { title: 'Text', type: 'string' },
             author_name: { title: 'Author Name', type: 'string' },
+            client_id: { title: 'Client Id', type: 'string' },
             node: { type: 'string' },
           },
           required: ['anchor', 'text', 'node'],
@@ -3603,6 +3769,109 @@ export const operationNodeThreadCreate: Validators<NodeThreadCreateInput, NodeTh
       )
     },
   }
+
+export const operationNodeThreadsReanchor: Validators<
+  NodeThreadsReanchorInput,
+  NodeThreadsReanchorOutput
+> = {
+  validateInput(value: unknown): asserts value is NodeThreadsReanchorInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          anchors: { additionalProperties: { type: 'string' }, title: 'Anchors', type: 'object' },
+          node: { type: 'string' },
+        },
+        required: ['anchors', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'node_threads_reanchor input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is NodeThreadsReanchorOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          CommentShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              thread: { title: 'Thread', type: 'string' },
+              node: { title: 'Node', type: 'string' },
+              content: { title: 'Content', type: 'string' },
+              author: { title: 'Author', type: 'string' },
+              author_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Author Name' },
+              person: { $ref: '#/$defs/Person' },
+              mentions: { items: { type: 'string' }, title: 'Mentions', type: 'array' },
+              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+              modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+            },
+            required: [
+              'name',
+              'thread',
+              'node',
+              'content',
+              'author',
+              'author_name',
+              'mentions',
+              'creation',
+              'modified',
+            ],
+            title: 'CommentShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          ThreadShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              node: { title: 'Node', type: 'string' },
+              anchor: { title: 'Anchor', type: 'string' },
+              resolved: { title: 'Resolved', type: 'boolean' },
+              resolved_by: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Resolved By' },
+              resolved_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Resolved At' },
+              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+              comments: {
+                items: { $ref: '#/$defs/CommentShape' },
+                title: 'Comments',
+                type: 'array',
+              },
+            },
+            required: [
+              'name',
+              'node',
+              'anchor',
+              'resolved',
+              'resolved_by',
+              'resolved_at',
+              'creation',
+              'comments',
+            ],
+            title: 'ThreadShape',
+            type: 'object',
+          },
+        },
+        properties: {
+          threads: { items: { $ref: '#/$defs/ThreadShape' }, title: 'Threads', type: 'array' },
+        },
+        required: ['threads'],
+        title: 'ThreadList',
+        type: 'object',
+      },
+      'node_threads_reanchor output',
+    )
+  },
+}
 
 export const operationThreadPatch: Validators<ThreadPatchInput, ThreadPatchOutput> = {
   validateInput(value: unknown): asserts value is ThreadPatchInput {
@@ -3704,6 +3973,7 @@ export const operationThreadCommentCreate: Validators<
         properties: {
           text: { title: 'Text', type: 'string' },
           author_name: { title: 'Author Name', type: 'string' },
+          client_id: { title: 'Client Id', type: 'string' },
           thread: { type: 'string' },
         },
         required: ['text', 'thread'],
@@ -3881,7 +4151,23 @@ export const operationNotificationsList: Validators<
             properties: {
               name: { title: 'Name', type: 'string' },
               node: { title: 'Node', type: 'string' },
-              action: { title: 'Action', type: 'string' },
+              action: {
+                enum: [
+                  'create',
+                  'rename',
+                  'move',
+                  'edit',
+                  'comment',
+                  'trash',
+                  'restore',
+                  'delete',
+                  'share_add',
+                  'share_edit',
+                  'share_remove',
+                ],
+                title: 'Action',
+                type: 'string',
+              },
               actor: { title: 'Actor', type: 'string' },
               at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'At' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
@@ -3898,9 +4184,22 @@ export const operationNotificationsList: Validators<
               read: { title: 'Read', type: 'integer' },
               creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
               activity: { $ref: '#/$defs/ActivityShape' },
+              node_title: { title: 'Node Title', type: 'string' },
+              node_kind: { title: 'Node Kind', type: 'string' },
+              actor: { $ref: '#/$defs/Person' },
             },
-            required: ['name', 'read', 'creation', 'activity'],
+            required: ['name', 'read', 'creation', 'activity', 'node_title', 'node_kind', 'actor'],
             title: 'NotificationShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
             type: 'object',
           },
         },

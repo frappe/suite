@@ -1,3 +1,4 @@
+import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Event
@@ -439,10 +440,12 @@ class TestGrantWorkflows(_GrantFixture):
         outsider = Principals(UNHELD, (UNHELD,), ("$PUBLIC",))
         with self.assertRaises(DriveForbidden):
             explain(self.folder, outsider)
-        self.assertEqual(
-            explain(self.folder, self.admin),
-            {"role": MANAGE, "source": "site admin", "rows": []},
-        )
+        # ADR 0001: a Suite Admin may ask, and is explained by their own grants
+        # like anyone else. Only Drive's own account is answered without rows.
+        explained_admin = explain(self.folder, self.admin)
+        self.assertEqual((explained_admin["role"], explained_admin["source"]), (NONE, "none"))
+        system = dataclasses.replace(self.admin, is_system=True)
+        self.assertEqual(explain(self.folder, system), {"role": MANAGE, "source": "system", "rows": []})
 
     def test_public_deny_without_expiry_still_blocks_inherited_read_after_the_old_expiry(self):
         child = self._child(self.folder.name, "Published child")
@@ -1153,11 +1156,16 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
         from suite.drive._core import activity
 
         _, jobs = self._committed(lambda: grant(self.folder.name, SHARED_WITH, READ, self.admin, notify=True))
-        with (
-            patch("suite.suite_core.suite_email.is_suite_cloud_configured", return_value=True),
-            patch("frappe.enqueue") as enqueue,
+        with self.change_settings(
+            "Suite Settings",
+            suite_cloud_url="https://cloud.example.test",
+            suite_cloud_tenant="tenant",
+            suite_cloud_secret="secret",
         ):
-            activity.send_share_email(**jobs[0])
+            frappe.local.request_cache.clear()
+            with patch("frappe.enqueue") as enqueue:
+                activity.send_share_email(**jobs[0])
+            frappe.local.request_cache.clear()
 
         kwargs = enqueue.call_args.kwargs
         self.assertEqual(enqueue.call_args.args[0], "suite.suite_core.suite_email.send_in_background")

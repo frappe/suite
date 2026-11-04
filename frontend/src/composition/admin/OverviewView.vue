@@ -81,13 +81,6 @@ const kpis = computed(() => {
     :breadcrumbs="[{ label: __('Overview') }]"
     :loading="storage.status === 'pending'"
   >
-    <template #actions>
-      <Button
-        variant="solid"
-        :label="__('Invite user')"
-        :route="storage.data?.cloud ? '/admin/users?add=1' : '/admin/users'"
-      />
-    </template>
     <template #loading>
       <div class="mx-auto w-full max-w-5xl space-y-6 pb-10" aria-hidden="true">
         <div class="grid overflow-hidden rounded-5 border border-outline-gray-2 sm:grid-cols-3">

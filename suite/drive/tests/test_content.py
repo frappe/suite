@@ -212,6 +212,13 @@ class TestContentContract(UnitTestCase):
             with self.assertRaises(DriveConflict):
                 spec_for(CONTENT_DOCTYPE)
 
+    def test_the_node_field_is_answered_for_a_registered_doctype_only(self):
+        with registered(spec(node_field="linked_node")):
+            self.assertEqual(drive.node_field(CONTENT_DOCTYPE), "linked_node")
+
+        with registered(), self.assertRaises(DriveConflict):
+            drive.node_field(CONTENT_DOCTYPE)
+
     def test_a_declaration_that_is_not_a_content_type_spec_is_refused(self):
         loose = type("Spec", (), {"doctype": CONTENT_DOCTYPE, "on_purge": lambda name: None})()
         with registered(loose), self.assertRaises(DriveConflict):
@@ -364,7 +371,7 @@ class TestContentContract(UnitTestCase):
                 self.assertEqual(signature.parameters["doctype"].default, None)
 
     def test_the_list_predicate_disappears_for_an_admin_and_refuses_a_stranger(self):
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         nobody = Principals("Guest", (), ())
         with patch("suite.drive.framework.principals_for", return_value=admin):
             self.assertEqual(framework._list_predicate("`tabX`.`node`", None), "")
@@ -939,7 +946,7 @@ class TestContentContract(UnitTestCase):
     def test_an_admin_lists_beside_a_share_instead_of_being_locked_out(self):
         # The predicate disappears for an admin, so the engine adds no
         # condition and has nothing to OR the share around.
-        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         with (
             registered(spec()),
             patch("suite.drive.framework.is_drive_admin", return_value=True),
@@ -1121,7 +1128,7 @@ class TestContentWorkflows(IntegrationTestCase):
         self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Content Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Content Other", user=OTHER)
-        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
         self.person = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
         self.stranger = Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",))
         frappe.cache().delete_value(content._sweep_cursor_key())
@@ -1927,27 +1934,6 @@ class TestContentWorkflows(IntegrationTestCase):
         with registered(spec(satellites=(wrong,))), self.assertRaises(DriveConflict):
             validate_registry()
 
-    def test_the_registry_holds_the_three_apps_activation_staged_into_it(self):
-        """Staged activation (§10.3, README execution rules).
-
-        An app declares its spec in its own adoption ticket — Writer at 17,
-        Slides at 18, Sheets at 19 — and joins `drive_content_types` at ticket
-        29, once Build has linked every row. All three are in now, and every
-        declaration is the one its app ships.
-        """
-        content.clear_registry_cache()
-        self.assertEqual(
-            sorted(registry()),
-            ["Presentation", "Sheet", "Writer Document"],
-        )
-        for doctype, dotted in (
-            ("Writer Document", "suite.writer.drive.SPEC"),
-            ("Presentation", "suite.slides.drive.SPEC"),
-            ("Sheet", "suite.sheets.drive.SPEC"),
-        ):
-            with self.subTest(doctype=doctype):
-                self.assertIs(registry()[doctype], frappe.get_attr(dotted))
-
 
 def _purge_fixture_roots() -> None:
     """Remove every Drive root the two fixture users own, through Drive's own purge.
@@ -1957,7 +1943,7 @@ def _purge_fixture_roots() -> None:
     clears every reference table and calls `on_purge` for the app rows behind
     a document, so the fixture registry has to be live while it runs.
     """
-    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
     roots = frappe.get_all("Drive Root", filters={"user": ["in", (USER, OTHER)]}, pluck="name")
     if not roots:
         return

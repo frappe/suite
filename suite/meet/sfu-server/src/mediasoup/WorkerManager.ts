@@ -55,6 +55,8 @@ export class WorkerManager {
 						ip: webRtcServerOptions.listenIp,
 						announcedAddress: webRtcServerOptions.announcedAddress,
 						port: webRtcServerOptions.basePort + i,
+						// Absorb receive bursts; the host must permit this via rmem_max.
+						recvBufferSize: 8 * 1024 * 1024,
 					},
 				],
 			});

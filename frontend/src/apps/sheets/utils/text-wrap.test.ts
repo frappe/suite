@@ -92,4 +92,20 @@ describe('wrapLines', () => {
     // "aa bb" wraps to 2 at maxW=20; plus the "cc" paragraph = 3 visual lines.
     expect(wrapLines('aa bb\ncc', 20, mono)).toEqual(['aa', 'bb', 'cc'])
   })
+
+  it('moves a whole word to the next line instead of splitting it', () => {
+    // 150px fits 15 chars. "Strike me through" is 17, so "through" starts
+    // the next line rather than leaving "throu" behind.
+    expect(wrapLines('Strike me through on every wrapped line please', 150, mono)).toEqual([
+      'Strike me',
+      'through on',
+      'every wrapped',
+      'line please',
+    ])
+  })
+
+  it('splits by letters only a word wider than the cell, starting on its own line', () => {
+    expect(wrapLines('ab abcdefgh', 40, mono)).toEqual(['ab', 'abcd', 'efgh'])
+    expect(wrapLines('abcdefgh ab', 40, mono)).toEqual(['abcd', 'efgh', 'ab'])
+  })
 })

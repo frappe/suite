@@ -204,6 +204,31 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.assertEqual(list(reported), [missing])
         self.assertIn("cannot read", reported[missing])
 
+    def test_the_census_check_agrees_with_what_the_backfill_links(self):
+        missing, _ = self.local_file(b"never written", create_bytes=False)
+        present, _ = self.local_file(b"written")
+        urls = {name: self.row(name).file_url for name in (missing, present)}
+        predicted = {name: SiteStorage().has_local_file(url) for name, url in urls.items()}
+
+        self.prepare_local()
+
+        self.assertEqual(predicted, {missing: False, present: True})
+        self.assertEqual({name: bool(self.row(name).blob) for name in urls}, predicted)
+
+    def test_the_census_check_agrees_with_the_backfill_on_a_file_it_cannot_read(self):
+        unreadable, path = self.local_file(b"locked")
+        os.chmod(path, 0)
+        self.addCleanup(os.chmod, path, 0o644)
+        predicted = SiteStorage().has_local_file(self.row(unreadable).file_url)
+
+        self.prepare_local()
+
+        self.assertFalse(predicted)
+        self.assertIsNone(self.row(unreadable).blob)
+
+    def test_the_census_check_finds_no_file_outside_the_files_folder(self):
+        self.assertFalse(SiteStorage().has_local_file("/private/files/../../site_config.json"))
+
     def test_a_row_that_never_named_bytes_is_not_a_missing_byte(self):
         # A Link node's url is an external address and never named bytes
         # (§14.4); an asset url names a shipped file, not stored bytes.

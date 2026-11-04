@@ -5,6 +5,7 @@ import type { CalendarEvent } from '@/apps/calendar'
 import HomePage from '@/composition/home/HomePage.vue'
 
 const state = vi.hoisted(() => ({
+  window: null as unknown,
   recentFails: true,
   upcomingFails: false,
   upcomingPending: false,
@@ -139,6 +140,8 @@ vi.mock('@/platform/session', async (importOriginal) => {
   }
 })
 
+// the slides package root installs a guard on the app router at import (boundary debt)
+vi.mock('@/apps/slides/router', () => ({ router: { beforeEach: () => {} } }))
 vi.mock('@/apps/drive', async (importOriginal) => ({
   // Drive's own listing date, so the Recent meta is checked against Drive's format.
   formatDriveListingDate: (await importOriginal<typeof import('@/apps/drive')>())
@@ -168,9 +171,11 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
     isPending: false,
     run: state.createDocument,
   }),
-  driveNodeRoute: (node: { name: string }) => `/d/${node.name}/document`,
+  driveNodeRoute: (node: { name: string }) => ({ path: `/d/${node.name}/document` }),
 }))
 vi.mock('@/apps/calendar', async (importOriginal) => ({
+  upcomingEventWindow: (await importOriginal<typeof import('@/apps/calendar')>())
+    .upcomingEventWindow,
   UpcomingEventList: (await importOriginal<typeof import('@/apps/calendar')>()).UpcomingEventList,
   useUpcomingEvents: (await importOriginal<typeof import('@/apps/calendar')>()).useUpcomingEvents,
 }))
@@ -184,7 +189,8 @@ vi.mock('@/apps/meet', () => ({
 }))
 vi.mock('@/api', async () => ({
   api: (await import('@/composition/api')).api,
-  useQuery: (reference: { id: string }) => {
+  useQuery: (reference: { id: string }, params?: () => unknown) => {
+    if (reference.id !== 'view_list') state.window = params?.()
     if (reference.id === 'view_list') {
       return state.recentFails
         ? failedQuery('Recent failed')
@@ -246,6 +252,26 @@ afterEach(() => {
   sessionStorage.clear()
 })
 describe('Home page', () => {
+  it('requests through Monday and renders weekend events without including Tuesday', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 30, 12))
+    state.events = ['2026-11-03', '2026-11-02', '2026-11-01', '2026-10-31'].map((date) => ({
+      id: date,
+      title: date,
+      start: `${date}T12:00:00`,
+      conferencing: null,
+    }))
+    const root = mount()
+    expect(state.window).toMatchObject({
+      from: new Date(2026, 9, 30).toISOString(),
+      to: new Date(2026, 10, 2, 23, 59, 59, 999).toISOString(),
+    })
+    const upcoming = root.querySelector('[data-testid="upcoming-rows"]')
+    for (const date of ['2026-10-31', '2026-11-01', '2026-11-02'])
+      expect(upcoming?.textContent).toContain(date)
+    expect(upcoming?.textContent).not.toContain('2026-11-03')
+  })
+
   it('opens Meet’s shared scheduler from Schedule → Meeting', () => {
     const root = mount()
     const meeting = [...root.querySelectorAll('button')].find(
@@ -403,7 +429,10 @@ describe('Home page', () => {
       expect(state.createDocument).toHaveBeenCalledWith({
         content_doctype: contentDoctype,
       })
-      expect(state.push).toHaveBeenCalledWith('/d/new-node/document')
+      expect(state.push).toHaveBeenCalledWith({
+        path: '/d/new-node/document',
+        query: { new: '1' },
+      })
     },
   )
 })

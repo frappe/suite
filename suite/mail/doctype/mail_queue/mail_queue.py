@@ -710,6 +710,21 @@ class MailQueue(OwnerFromUser, Document):
 
         return fetch_blob(self.account, self.blob_id).decode("utf-8")
 
+    def _destroy_replaced_draft(self, client) -> None:
+        """Destroys the draft this row replaces, once the replacement exists.
+
+        Asked in the same call, the server destroyed it even when it refused the replacement, and
+        the user's draft was gone. A copy a failed destroy leaves behind is only logged.
+        """
+
+        try:
+            with client.batch() as b:
+                destroyed = b.mail.email.set(destroy=[self.id])
+            if self.id in destroyed.result.not_destroyed:
+                raise ValueError(destroyed.result.not_destroyed[self.id])
+        except Exception:
+            log_mail_error(f"Mail Queue: could not destroy replaced draft {self.id}", frappe.get_traceback())
+
     def _process(self) -> None:
         """Create, Update or Submit the Email."""
 
@@ -776,8 +791,6 @@ class MailQueue(OwnerFromUser, Document):
                             }
                         }
                     )
-                    if self.id:
-                        b.mail.email.set(destroy=[self.id])
                 else:
                     draft = build_email_draft(
                         from_email=self.from_email,
@@ -795,10 +808,7 @@ class MailQueue(OwnerFromUser, Document):
                         html_body=self.html_body,
                         attachments=attachments,
                     )
-                    if self.id:
-                        draft_h = b.mail.email.set(create={draft_ref: draft}, destroy=[self.id])
-                    else:
-                        draft_h = b.mail.email.set(create={draft_ref: draft})
+                    draft_h = b.mail.email.set(create={draft_ref: draft})
 
                 submit_h = None
                 if not self.save_as_draft:
@@ -947,6 +957,9 @@ class MailQueue(OwnerFromUser, Document):
                 # an earlier attempt. A submission the server confirms is sent, whatever became
                 # of the draft's answer.
                 kwargs.update({"status": "Failed", "retries": cint(self.retries), "next_retry_after": None})
+
+            if self.id and draft_created:
+                self._destroy_replaced_draft(client)
         except Exception as e:
             kwargs.update({"status": "Failed", "error_log": frappe.get_traceback(with_context=True)})
             if answered:

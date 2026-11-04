@@ -219,7 +219,7 @@ class SearchStore:
         "jane.d@example.com" and "Jane Doe", and also "Jane Ann Doe", since the terms need not be
         adjacent or in order. Tantivy scores term and prefix queries alike as a constant, so these
         hits come back in index order: ranking them is the caller's job (see
-        `EmailAddressIndex.search_email_addresses`). Returns `(hits, count)`.
+        `suite.mail.email_suggestions.ranking`). Returns `(hits, count)`.
 
         A caller that ranks the hits itself has to see all of them — an unscored page is an
         arbitrary slice, not the best matches — so `limit=None` returns every match.

@@ -1,6 +1,5 @@
 import { toast } from 'frappe-ui'
 import tinycolor from 'tinycolor2'
-import { v4 as uuid4 } from 'uuid'
 import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
@@ -8,7 +7,10 @@ import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { getSessionUser } from '@/boot/session'
 import { appDocumentTitle } from '@/platform/page-meta'
+import { randomId } from '@/platform/random-id'
+import { translate } from '@/platform/translation'
 
+import { draftOutcome, needsServerCheck } from './draftOutcome'
 import { recordVisit } from './driveVisit'
 import { lockedElsewhere } from './editLock'
 import { commandHistory } from './historyMeta'
@@ -37,8 +39,8 @@ const applyReverseTransition = ref(false)
 
 // The open surface binds its owner-selected access context to this deck.
 const documentContexts = new Map()
-const setDocumentContext = (id, context, onRefused) => {
-  const binding = { context, onRefused }
+function setDocumentContext(id, context, onRefused, keepDiscarded) {
+  const binding = { context, onRefused, keepDiscarded }
   documentContexts.set(id, binding)
   return () => {
     if (documentContexts.get(id) === binding) documentContexts.delete(id)
@@ -179,7 +181,7 @@ const ensureUniqueClientIds = (slides) => {
   let repaired = false
   for (const slide of slides) {
     if (seen.has(slide.clientId)) {
-      slide.clientId = uuid4()
+      slide.clientId = randomId()
       repaired = true
     }
     seen.add(slide.clientId)
@@ -191,7 +193,7 @@ const normalizeSlideDoc = (doc) => {
   for (const slide of doc.slides || []) {
     slide.background = normalizeColor(slide.background)
     slide.elements = parseElements(slide.elements, slide)
-    slide.clientId = slide.client_id || uuid4()
+    slide.clientId = slide.client_id || randomId()
     slide.transitionDuration = slide.transition_duration
     slide.fadeUnmatchedElements = slide.fade_unmatched_elements
     slide.advanceAfter = slide.advance_after
@@ -219,6 +221,56 @@ const isLatestLoad = (load) => load === latestLoad
 const fetchDoc = (name) =>
   client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
 
+const PROBE_TIMEOUT_MS = 2000
+
+// ping isn't a slides request, so none of the worker's stored answers can stand in for it
+async function serverAnswers() {
+  if (!navigator.onLine) {
+    return false
+  }
+
+  try {
+    const response = await fetch('/api/method/ping', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    })
+    if (!response.ok || response.redirected) {
+      return false
+    }
+
+    const { message } = await response.json()
+    return message === 'pong'
+  } catch {
+    return false
+  }
+}
+
+// false leaves the draft in place: with no copy, it is the only place the edits live
+function copyDiscarded(name, content) {
+  const keepDiscarded = documentContexts.get(name)?.keepDiscarded
+  if (!keepDiscarded) {
+    return false
+  }
+
+  try {
+    keepDiscarded(content)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// local content skips the load pipeline; migrate it here too
+function parsedLocalSlides(content) {
+  const parsed = JSON.parse(JSON.stringify(content))
+  for (const slide of parsed) {
+    slide.background = normalizeColor(slide.background)
+    slide.elements = parseElements(slide.elements, slide)
+  }
+
+  return parsed
+}
+
 // touches no editor state, so a save during the load still targets what is on screen
 const fetchPresentation = async (name, load) => {
   const doc = structuredClone(await fetchDoc(name))
@@ -231,27 +283,38 @@ const fetchPresentation = async (name, load) => {
     slide.elements = await transformElements(slide.elements)
   }
 
-  // the worker may replay a document older than the last save; the copy that
-  // save left behind is then the truth, and unsynced edits ride along in it
-  const servedIsStale = local?.baseModified > doc.modified
-  if (servedIsStale || (local?.dirty && local.baseModified === doc.modified)) {
-    if (servedIsStale) doc.modified = local.baseModified
-    const restored = JSON.parse(JSON.stringify(local.content))
-    // local content skips the load pipeline; migrate + dedup it here too
-    for (const slide of restored) {
-      slide.background = normalizeColor(slide.background)
-      slide.elements = parseElements(slide.elements, slide)
-    }
-    const repaired = ensureUniqueClientIds(restored)
-    // a clean copy is what the last successful save sent, so it is the
-    // server content at baseModified and there is nothing to push
-    return { doc, content: restored, dirty: local.dirty || repaired }
-  }
+  const hasServerAnswered = needsServerCheck(local, doc.modified, landed) && (await serverAnswers())
+  const outcome = draftOutcome(local, doc.modified, landed, hasServerAnswered)
+  const keepBase = outcome === 'keep'
+  const isOnServedBase = outcome === 'restore'
   // the draft belongs to the tab that can write, on the presentation it is still opening;
   // this one neither rewrites nor reports it
-  if (local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value) {
-    if (!landed) toast.warning('Changes that never reached the server were discarded.')
-    // left dirty, the same draft is found and discarded again on every load
+  const isOwnDraft = local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value
+  const isUncopied =
+    outcome === 'discard' && isOwnDraft && !landed && !copyDiscarded(name, local.content)
+
+  if (keepBase || isOnServedBase || isUncopied) {
+    if (keepBase || isUncopied) {
+      // a draft with no base gets the empty one: the server refuses it, so the hold takes over
+      doc.modified = local.baseModified ?? ''
+    }
+
+    const restored = parsedLocalSlides(local.content)
+    const repaired = ensureUniqueClientIds(restored)
+    // a clean row here is what the last successful save sent, since a retired one
+    // is discarded: it is the server content at baseModified, with nothing to push
+    return { doc, content: restored, dirty: local.dirty || repaired }
+  }
+
+  if (isOwnDraft) {
+    if (!landed) {
+      toast.warning(
+        translate('Your changes never reached the server. They are kept on this device.'),
+      )
+    }
+
+    // left dirty, the same draft is found and discarded again on every load; so is an
+    // older tick's retry landing over this write, unless it is built on the served base
     await writeDraft({
       ...local,
       dirty: false,
@@ -356,6 +419,13 @@ const pushSlides = async (id, rows, baseModified, cancel) => {
   return response.modified
 }
 
+// as a load would read `content` and a push send it: a server row has its own name and types
+function showsSlides(content) {
+  return (
+    rowKeys(parsedLocalSlides(content).map(toSlideRow)) === rowKeys(slides.value.map(toSlideRow))
+  )
+}
+
 const savePresentationDoc = async (id, updatedSlides, baseModified, cancel) => {
   const rows = updatedSlides.map(toSlideRow)
   let modified
@@ -405,6 +475,7 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
   return loaded.doc
 }
 
+/** @type {import('vue').Ref<import('@/apps/slides/client/generated').GetTemplatesOutput>} */
 const templateList = ref([])
 
 const loadTemplates = async () => {
@@ -412,12 +483,20 @@ const loadTemplates = async () => {
   try {
     templateList.value = await client.query(api.slides.templates.list, {}, { cache: 'prefer' })
   } catch (error) {
-    toast.error(error.message || 'Could not load templates')
+    if (navigator.onLine) {
+      toast.error(error.message || 'Could not load templates')
+    }
   }
 }
 
+// a presentation with no theme, or one the caller can't read, adds slides from Light
 const presentationTheme = computed(() => {
-  return presentationDoc.value?.theme
+  const theme = presentationDoc.value?.theme
+  if (templateList.value.some((template) => template.name === theme)) {
+    return theme
+  }
+
+  return templateList.value.find((template) => template.title === 'Light')?.name
 })
 
 const pageTitle = () => {
@@ -451,6 +530,7 @@ export {
   inReadonlyMode,
   savePresentationDoc,
   initPresentationDoc,
+  showsSlides,
   startLoad,
   resetEditorState,
   pageTitle,

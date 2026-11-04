@@ -5,10 +5,10 @@ import { createApiClient } from '@/platform/server-state'
 import type { Transport } from '@/platform/transport'
 
 const clients: Array<ReturnType<typeof createApiClient>> = []
-export function testClient(transport: Transport) {
+export function testClient(transport: Transport, feedback: (error: Error) => void = () => {}) {
   const engine = createApiClient(
     { drive: () => import('./policy').then((module) => module.registration) },
-    { transport, persistence: false, feedback: () => {} },
+    { transport, persistence: false, feedback },
   )
   clients.push(engine)
   return engine.client

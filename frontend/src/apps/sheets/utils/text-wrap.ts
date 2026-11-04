@@ -71,6 +71,16 @@ function _wrapParagraph(par: string, maxW: number, measure: (text: string) => nu
       line = ''
       continue
     }
+    // A word that doesn't fit starts the next line whole; only a word wider
+    // than the cell on its own is split by letters.
+    if (line.trim()) {
+      lines.push(line.trimEnd())
+      line = ''
+      if (measure(tok) <= maxW) {
+        line = tok
+        continue
+      }
+    }
     for (const ch of tok) {
       if (line && measure(line + ch) > maxW) {
         lines.push(line.trimEnd())

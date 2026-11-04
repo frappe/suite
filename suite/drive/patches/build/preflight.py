@@ -195,10 +195,11 @@ class AcceptedDefectsError(ValueError):
 class BloblessRows:
     """Every blobless `File` row, sorted the way `legacy_bytes` will sort it.
 
-    `local` rows are linked in place by the framework backfill; `s3` rows
-    are copied by Build; `no_bytes` rows never had bytes of their own
-    (`legacy_bytes.names_no_bytes`); `unreachable` rows name bytes Build
-    cannot follow and become nodes with no blob (§14.1).
+    `local` rows have a file on disk the framework backfill links in place;
+    `s3` rows are copied by Build; `no_bytes` rows never had bytes of their
+    own (`legacy_bytes.names_no_bytes`); `unreachable` rows, a local row
+    whose file is gone included, name bytes Build cannot follow and become
+    nodes with no blob (§14.1).
     """
 
     local: int = 0
@@ -587,7 +588,7 @@ def _classify_blobless_rows(env, root_folder: str, batch_size: int):
                     empty_paths.append((candidate, None))
                     continue
                 by_shape[shape].append(candidate)
-            elif url.startswith(LOCAL_PREFIXES):
+            elif url.startswith(LOCAL_PREFIXES) and env.storage.has_local_file(url):
                 rows.local += 1
             elif names_no_bytes(row):
                 rows.no_bytes += 1

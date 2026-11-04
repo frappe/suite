@@ -18,6 +18,7 @@ import dataclasses
 import frappe
 from frappe import _
 from frappe.core.doctype.permission_type.permission_type import get_doctype_ptype_map
+from frappe.model.document import Document
 from frappe.utils import now, validate_email_address
 
 from suite.composition.http import HttpOwner
@@ -188,6 +189,7 @@ def principals_for(user: str | None = None) -> Principals:
         open=("$PUBLIC", *links),
         is_admin=is_drive_admin(user),
         link_tickets=tickets,
+        is_system=user == "Administrator",
     )
 
 
@@ -385,6 +387,34 @@ def satellite_query_conditions(user: str | None = None, doctype: str | None = No
         f"SELECT `drive_content_owner`.`name` FROM `tab{spec.doctype}` `drive_content_owner` "
         f"WHERE {predicate})"
     )
+
+
+def own_row_has_permission(
+    doc: Document, ptype: str | None = "read", user: str | None = None, debug: bool = False
+) -> bool:
+    """Allow a `Drive Settings`, `Drive Favourite` or `Drive Recent` row to its own user only."""
+    user = user or frappe.session.user
+    if is_drive_admin(user):
+        return True
+
+    if user == "Guest":
+        return False
+
+    # A save is checked on the posted values, so a saved row also answers by its stored user
+    if not doc.is_new() and frappe.db.get_value(doc.doctype, doc.name, "user") != user:
+        return False
+
+    return doc.get("user") == user
+
+
+def own_row_query_conditions(user: str | None = None, doctype: str | None = None) -> str:
+    """Filter a list of one of those doctypes to the caller's own rows."""
+    user = user or frappe.session.user
+    if not doctype or is_drive_admin(user):
+        return ""
+
+    escaped = frappe.db.escape(user)
+    return f"`tab{doctype}`.`user` = {escaped}"
 
 
 def refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | None) -> None:
@@ -620,8 +650,9 @@ def _node_allows(node: str, role: int, user: str | None) -> bool:
 def _list_predicate(node_column: str, user: str | None) -> str:
     """Return the §5 nearest-wins Read predicate for one node column.
 
-    A Suite Admin holds MANAGE everywhere, so the filter disappears. Otherwise
-    the answer repeats `Acc`: the deepest own grant decides, a deny there wins
+    Drive's own account holds every right, so the filter disappears. Anyone
+    else, a Suite Admin included, reads what their grants give. The answer
+    repeats `Acc`: the deepest own grant decides, a deny there wins
     outright, and an open grant can only add. Two simplifications keep it in
     SQL and both refuse more than the engine, never less: grants at the same
     depth are not ordered by own tier, and a password-protected link grant is
@@ -629,7 +660,7 @@ def _list_predicate(node_column: str, user: str | None) -> str:
     `tests/test_predicate_agreement.py` checks both claims against the engine.
     """
     principals = principals_for(user)
-    if principals.is_admin:
+    if principals.is_system:
         return ""
     if not principals.all():
         return "1=0"

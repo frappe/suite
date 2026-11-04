@@ -475,6 +475,16 @@ async function scrollToBottom() {
   el.scrollTop = el.scrollHeight
 }
 
+watch(
+  () => props.open,
+  async (open) => {
+    if (!open) return
+    await nextTick()
+    if (props.open) focusInput()
+  },
+  { immediate: true },
+)
+
 watch([chatItems], scrollToBottom, { deep: true })
 </script>
 

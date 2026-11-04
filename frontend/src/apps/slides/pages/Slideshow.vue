@@ -1,6 +1,8 @@
 <template>
   <div
-    class="absolute left-0 top-0 h-full w-full overflow-clip bg-black"
+    ref="root"
+    tabindex="-1"
+    class="fixed inset-0 z-50 overflow-clip bg-black outline-none"
     :class="{ 'slideshow-hide-cursor': cursorHidden }"
   >
     <div class="flex h-screen w-full items-center justify-center" :style="slideContainerStyles">
@@ -9,7 +11,7 @@
         class="flex h-full w-full items-center justify-center bg-black"
         @click="endSlideShow()"
       >
-        <SlideshowEndScreen @restartSlideShow="changeSlideInSlideshow(0)" />
+        <SlideshowEndScreen @restart-slide-show="changeSlideInSlideshow(0)" />
       </div>
 
       <div
@@ -27,7 +29,7 @@
             mode="slideshow"
             :element="element"
             :data-index="element.id"
-            :transitionStyles="transitionStyles"
+            :transition-styles="transitionStyles"
             :style="getElementTransitionStyles(element)"
             class="forward-transition"
           />
@@ -61,8 +63,8 @@
 </template>
 
 <script setup>
-import { toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
-import { computed, onActivated, onDeactivated, provide, ref, watch } from 'vue'
+import { useKeyboardShortcut, usePageMeta } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 
 import FadeElementTransition from '@/apps/slides/components/FadeElementTransition.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
@@ -71,7 +73,6 @@ import { useBrowserZoomGuard } from '@/apps/slides/composables/useBrowserZoomGua
 import { resetFocus } from '@/apps/slides/stores/element'
 import {
   applyReverseTransition,
-  initPresentationDoc,
   inReadonlyMode,
   pageTitle,
 } from '@/apps/slides/stores/presentation'
@@ -99,16 +100,13 @@ import { getTransitionKey } from '@/apps/slides/stores/transition'
 import { appPageMeta, usePageTitle } from '@/platform/page-meta'
 
 const props = defineProps({
-  presentationId: {
-    type: String,
-    required: true,
-  },
   activeSlideId: {
     type: Number,
     required: true,
   },
 })
 
+const root = ref(null)
 const transition = ref('none')
 const transform = ref('')
 const opacity = ref(1)
@@ -300,18 +298,22 @@ const initFullscreenMode = async () => {
   const inFullscreen = Boolean(document.fullscreenElement) || (await requestFullscreen())
   if (!active) return exitFullscreen()
   if (!inFullscreen) {
-    toast.error('Could not enter fullscreen mode')
-    endSlideShow()
+    // a load or a reload has no click to grant fullscreen, so the show fills the window
+    inSlideShowMode.value = true
+    requestWakeLock()
     return
   }
 
   handleFullScreenChange()
 }
 
-const loadPresentation = async () => {
-  if (slides.value.length) return
-  // the slide asked for was picked before there were any to pick from
-  if (await initPresentationDoc(props.presentationId)) setSlideIndex(props.activeSlideId)
+const takeFocus = () => root.value?.focus({ preventScroll: true })
+
+// a menu that started the show keeps focus until it closes, then hands it to its
+// trigger, which is inert under the show, so focus falls to the page
+const takeFocusBack = (event) => {
+  if (!event.relatedTarget)
+    setTimeout(() => document.activeElement === document.body && takeFocus())
 }
 
 const updateWindowSize = () => {
@@ -319,15 +321,17 @@ const updateWindowSize = () => {
   windowHeight.value = window.innerHeight
 }
 
-// the title goes through the platform's page meta, which also restores it when this page is reactivated
+// the title goes through the platform's page meta
 usePageTitle(pageTitle)
 usePageMeta(() => ({ icon: appPageMeta(pageTitle(), 'Slides').icon }))
 useBrowserZoomGuard()
 
-onActivated(() => {
+onMounted(() => {
   active = true
   resetFocus()
-  loadPresentation()
+  // keys go to the show, not to whatever started it underneath
+  takeFocus()
+  document.addEventListener('focusout', takeFocusBack)
   initFullscreenMode()
   document.addEventListener('fullscreenchange', handleFullScreenChange)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -340,8 +344,9 @@ onActivated(() => {
   }, 500)
 })
 
-onDeactivated(() => {
+onUnmounted(() => {
   active = false
+  document.removeEventListener('focusout', takeFocusBack)
   document.removeEventListener('fullscreenchange', handleFullScreenChange)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.removeEventListener('resize', updateWindowSize)
@@ -399,6 +404,29 @@ useKeyboardShortcut([
     description: 'Previous step',
     group: 'Slideshow',
     handler: performPreviousStep,
+  },
+  {
+    combo: 'Home',
+    description: 'First slide',
+    group: 'Slideshow',
+    handler: () => changeSlideInSlideshow(0),
+  },
+  {
+    combo: 'End',
+    description: 'Last slide',
+    group: 'Slideshow',
+    handler: () => changeSlideInSlideshow(slides.value.length - 1),
+  },
+  {
+    combo: 'Escape',
+    description: 'End slideshow',
+    group: 'Slideshow',
+    // in fullscreen, Esc leaves it and the change ends the show
+    handler: () => {
+      if (!document.fullscreenElement) {
+        endSlideShow()
+      }
+    },
   },
   {
     combo: 'F5',

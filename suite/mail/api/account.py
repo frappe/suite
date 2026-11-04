@@ -109,20 +109,17 @@ def verify_otp(account_request: str, otp: str) -> str:
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
 def get_account_request(request_key: str) -> dict | None:
-    """Return the account request details"""
+    """Return the account request details and who is inviting."""
 
-    if account_request := frappe.db.get_value(
-        "Mail Account Request",
-        {"request_key": request_key},
-        ["backup_email", "is_verified", "expires_at", "account"],
-        as_dict=True,
-    ):
-        is_expired = 0
-        if expires_at := account_request["expires_at"]:
-            is_expired = cint(get_datetime(expires_at) < now_datetime())
-        account_request.pop("expires_at")
-        account_request["is_expired"] = is_expired
-        return account_request
+    if name := frappe.db.get_value("Mail Account Request", {"request_key": request_key}):
+        doc = frappe.get_doc("Mail Account Request", name)
+        return {
+            "backup_email": doc.backup_email,
+            "account": doc.account,
+            "is_verified": doc.is_verified,
+            "is_expired": cint(doc.is_expired),
+            **doc.invitation,
+        }
 
 
 @frappe.whitelist(allow_guest=True)
@@ -182,6 +179,14 @@ def create_account(
         # Account setup (JMAP account sync, archive mailbox, sieve) resolves ownership
         # against the session user, which is Guest on this endpoint — run it elevated,
         # same as signup().
+        from suite.mail.directory import get_account_metadata
+
+        options = get_account_metadata()
+        locales = {option["value"] for option in options["locales"]}
+        zones = {option["value"] for option in options["time_zones"]}
+        locale = locale if locale in locales else "en-US"
+        site_zone = get_system_timezone()
+        time_zone = time_zone if time_zone in zones else site_zone if site_zone in zones else "UTC"
         with user_context("Administrator"):
             account_request.create_account(first_name, last_name, password, locale, time_zone)
 

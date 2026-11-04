@@ -175,7 +175,9 @@ export function observe<I, O>(
       return current.value?.fetchingNext ?? false
     },
     get error() {
-      return query.error
+      // Revalidating loaded pages must not erase a failed continuation.
+      // Only explicitly fetching that window again clears its retry state.
+      return current.value?.nextError ?? query.error
     },
     async fetchNext() {
       if (disposed || stopped || input() === false) return

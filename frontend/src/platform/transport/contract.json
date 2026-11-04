@@ -1579,6 +1579,58 @@
       "bytes": false
     },
     {
+      "id": "errors_post",
+      "kind": "mutation",
+      "publicName": "errors.report",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "errors",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "source": {
+            "enum": [
+              "component",
+              "script",
+              "promise"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "stack": {
+            "title": "Stack",
+            "type": "string"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "title",
+          "stack",
+          "route"
+        ],
+        "title": "BrowserError",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "get_preferences",
       "kind": "query",
       "publicName": "preferences.get",
@@ -1905,11 +1957,26 @@
                 ],
                 "title": "Avatar"
               },
+              "time_zone": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Time Zone"
+              },
               "roles": {
                 "$ref": "#/$defs/AccountRoles"
               },
               "is_jmap_configured": {
                 "title": "Is Jmap Configured",
+                "type": "boolean"
+              },
+              "is_mail_server_configured": {
+                "title": "Is Mail Server Configured",
                 "type": "boolean"
               },
               "must_change_password": {
@@ -1926,8 +1993,10 @@
               "email",
               "full_name",
               "avatar",
+              "time_zone",
               "roles",
               "is_jmap_configured",
+              "is_mail_server_configured",
               "must_change_password",
               "setup_required"
             ],
@@ -2719,33 +2788,40 @@
       "bytes": false
     },
     {
-      "id": "subscribe",
+      "id": "suite.push.subscribe",
       "kind": "mutation",
       "publicName": "push.subscribe",
       "page": null,
-      "envelope": "message",
-      "method": "GET",
-      "path": "/api/method/frappe.push_notification.subscribe",
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.suite_core.push.subscribe",
       "pathParams": [],
-      "query": {
+      "query": null,
+      "body": {
         "properties": {
           "fcm_token": {
             "title": "Fcm Token",
             "type": "string"
           },
-          "project_name": {
-            "title": "Project Name",
-            "type": "string"
+          "apps": {
+            "items": {
+              "enum": [
+                "mail",
+                "calendar"
+              ],
+              "type": "string"
+            },
+            "title": "Apps",
+            "type": "array"
           }
         },
         "required": [
           "fcm_token",
-          "project_name"
+          "apps"
         ],
         "title": "PushToken",
         "type": "object"
       },
-      "body": null,
       "output": {
         "properties": {
           "success": {
@@ -2771,33 +2847,40 @@
       "bytes": false
     },
     {
-      "id": "unsubscribe",
+      "id": "suite.push.unsubscribe",
       "kind": "mutation",
       "publicName": "push.unsubscribe",
       "page": null,
-      "envelope": "message",
-      "method": "GET",
-      "path": "/api/method/frappe.push_notification.unsubscribe",
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.suite_core.push.unsubscribe",
       "pathParams": [],
-      "query": {
+      "query": null,
+      "body": {
         "properties": {
           "fcm_token": {
             "title": "Fcm Token",
             "type": "string"
           },
-          "project_name": {
-            "title": "Project Name",
-            "type": "string"
+          "apps": {
+            "items": {
+              "enum": [
+                "mail",
+                "calendar"
+              ],
+              "type": "string"
+            },
+            "title": "Apps",
+            "type": "array"
           }
         },
         "required": [
           "fcm_token",
-          "project_name"
+          "apps"
         ],
         "title": "PushToken",
         "type": "object"
       },
-      "body": null,
       "output": {
         "properties": {
           "success": {

@@ -5,7 +5,7 @@ report's own fields and one entry per recipient, with the RFC 3464 type prefixes
 
 import unittest
 
-from suite.mail.utils.delivery_status import parse_delivery_status
+from suite.mail.utils.delivery_status import parse_bounce_reasons, parse_delivery_status
 
 STALWART_DSN = (
     b"Reporting-MTA: dns;localhost\r\n"
@@ -27,6 +27,7 @@ class ParseDeliveryStatus(unittest.TestCase):
         report = parse_delivery_status(STALWART_DSN)
         self.assertEqual(report["reporting_mta"], "localhost")
         self.assertEqual(report["arrival_date"], "Fri, 7 Aug 2026 06:40:18 +0000")
+        self.assertEqual(report["original_envelope_id"], "019fdaf3-511f-75c2-b039-dff4061483d6")
 
     def test_recipient_fields_are_parsed_with_type_prefixes_stripped(self):
         report = parse_delivery_status(STALWART_DSN)
@@ -86,3 +87,39 @@ class ParseDeliveryStatus(unittest.TestCase):
         for content in (b"", "not a dsn at all", "just text\nwith lines\n"):
             report = parse_delivery_status(content)
             self.assertEqual(report["recipients"], [])
+
+
+class ParseBounceReasons(unittest.TestCase):
+    def test_stalwart_gives_the_reason_in_parentheses_after_the_address(self):
+        # Stalwart v0.16, when no server answered: the report itself carries only "Status: 5.0.0".
+        text = (
+            "Your message could not be delivered to the following recipients:\n"
+            "\n"
+            "<Dana@Brightwave-Agency.test> (failed to lookup 'brightwave-agency.test': no MX record found.)\n"
+        )
+        self.assertEqual(
+            parse_bounce_reasons(text),
+            {"dana@brightwave-agency.test": "failed to lookup 'brightwave-agency.test': no MX record found."},
+        )
+
+    def test_a_reason_continued_on_indented_lines_is_joined(self):
+        # Postfix: the remote server's reply, wrapped under the address.
+        text = (
+            "<a@example.com>: host mx.example.com[192.0.2.1] said: 550 5.1.1\n"
+            "    <a@example.com>: Recipient address rejected: User unknown (in reply to RCPT\n"
+            "    TO command)\n"
+            "\n"
+            "<b@example.com>: connect to mx.example.com: Connection refused\n"
+        )
+        self.assertEqual(
+            parse_bounce_reasons(text),
+            {
+                "a@example.com": "host mx.example.com[192.0.2.1] said: 550 5.1.1"
+                " <a@example.com>: Recipient address rejected: User unknown (in reply to RCPT"
+                " TO command)",
+                "b@example.com": "connect to mx.example.com: Connection refused",
+            },
+        )
+
+    def test_text_naming_no_recipient_gives_no_reasons(self):
+        self.assertEqual(parse_bounce_reasons("Delivery failed.\nPlease try again later.\n"), {})

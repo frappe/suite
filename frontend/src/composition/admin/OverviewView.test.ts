@@ -323,7 +323,7 @@ describe('Site storage summary', () => {
   })
 
   it.each([
-    { usage: 105e9, title: 'Extra storage is in use' },
+    { usage: 105e9, title: 'Storage limit reached' },
     { usage: 111e9, title: 'Storage is full' },
   ])(
     'explains the site threshold at $usage bytes without claiming Mail stops',

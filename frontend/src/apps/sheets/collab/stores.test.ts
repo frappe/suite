@@ -208,6 +208,40 @@ describe('readEntries + restoreStores', () => {
     expect(readEntries(doc, docSheets(doc))).toEqual([])
   })
 
+  it("keeps a pivot output's banding out of the doc, and in the tab when the doc's formats come back", () => {
+    const { doc } = sheetDoc('Sheet1')
+    const s = makeStores()
+    const id = s.pivot.add({ sourceSheet: 'Sheet1', sourceRange: 'A1:B3', outputSheet: 'Sheet1' })
+    s.pivot.setExtent(id, { r0: 4, c0: 0, r1: 6, c1: 1 })
+    s.formats.applyToRange(['A5', 'B5', 'A7', 'B7'], { bold: true }, 'Sheet1')
+    s.formats.applyToRange(['C1'], { italic: true }, 'Sheet1')
+    writeStores(doc, s, docSheets(doc))
+    expect(roots(doc).formats.size).toBe(1)
+
+    restoreStores(s, readEntries(doc, docSheets(doc)), new Set(['formats']))
+    expect(s.formats.snapshot().Sheet1?.cells).toEqual({
+      A5: { bold: true },
+      B5: { bold: true },
+      A7: { bold: true },
+      B7: { bold: true },
+      C1: { italic: true },
+    })
+  })
+
+  it("leaves the doc's formats inside a pivot output alone: another tab put them there", () => {
+    const { doc } = sheetDoc('Sheet1')
+    const other = makeStores()
+    other.formats.applyToRange(['A6'], { italic: true }, 'Sheet1')
+    writeStores(doc, other, docSheets(doc))
+
+    const s = makeStores()
+    const id = s.pivot.add({ sourceSheet: 'Sheet1', sourceRange: 'A1:B3', outputSheet: 'Sheet1' })
+    s.pivot.setExtent(id, { r0: 4, c0: 0, r1: 6, c1: 1 })
+    s.formats.applyToRange(['C1'], { bold: true }, 'Sheet1')
+    writeStores(doc, s, docSheets(doc))
+    expect(roots(doc).formats.size).toBe(2)
+  })
+
   it('restores only the stores asked for, and keeps a pivot output extent', () => {
     const { doc } = sheetDoc('Sheet1')
     const s = makeStores()

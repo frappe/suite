@@ -136,6 +136,64 @@ const operationExchangeList: PageRef<
   loadValidators: async () => (await import('./validators')).operationExchangeList,
 }
 
+export type RegionalPreferencesOutputOption = { value: string; label: string }
+
+export type RegionalPreferencesInput = Record<string, never>
+
+export type RegionalPreferencesOutput = {
+  locale: string
+  time_zone: string
+  locales: Array<RegionalPreferencesOutputOption>
+  time_zones: Array<RegionalPreferencesOutputOption>
+}
+
+export type RegionalPreferencesError = never
+
+const operationRegionalPreferences: QueryRef<
+  RegionalPreferencesInput,
+  RegionalPreferencesOutput,
+  RegionalPreferencesError
+> = {
+  id: 'regional_preferences',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'settings.regional',
+  method: 'GET',
+  path: 'settings/regional',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationRegionalPreferences,
+}
+
+export type UpdateRegionalPreferencesInput = { locale: string; time_zone: string }
+
+export type UpdateRegionalPreferencesOutput = null
+
+export type UpdateRegionalPreferencesError = never
+
+const operationUpdateRegionalPreferences: MutationRef<
+  UpdateRegionalPreferencesInput,
+  UpdateRegionalPreferencesOutput,
+  UpdateRegionalPreferencesError
+> = {
+  id: 'update_regional_preferences',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'settings.updateRegional',
+  empty: true,
+  method: 'PATCH',
+  path: 'settings/regional',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationUpdateRegionalPreferences,
+}
+
 export type CredentialsInput = Record<string, never>
 
 export type CredentialsOutput = {
@@ -1203,7 +1261,7 @@ const operationGetDomains: PageRef<
 export type GetMembersOutputMemberRow = {
   name: string
   full_name: string
-  user_image: string
+  user_image: string | null
   last_active: string | null
   enabled: boolean
   account: string | null
@@ -1253,14 +1311,14 @@ export type GetAccountRequestsOutputInviteRow = {
   backup_email: string | null
   invited_by: string
   is_verified: 0 | 1
-  status: 'Pending' | 'Accepted' | 'Expired'
+  status: 'Pending' | 'Accepted' | 'Expired' | 'Setup failed'
 }
 
 export type GetAccountRequestsInput = {
   start?: number
   page_length?: number
   search?: string | null
-  status?: 'All' | 'Pending' | 'Accepted' | 'Expired'
+  status?: 'All' | 'Pending' | 'Accepted' | 'Expired' | 'Setup failed'
 }
 
 export type GetAccountRequestsOutput = {
@@ -2067,6 +2125,9 @@ export type GetAccountRequestOutputAccountRequest = {
   account: string | null
   is_verified: 0 | 1
   is_expired: 0 | 1
+  workspace_name: string
+  workspace_logo: string
+  invited_by_name: string
 }
 
 export type GetAccountRequestInput = { request_key: string }
@@ -3275,6 +3336,66 @@ const operationDeleteAccountRequests: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDeleteAccountRequests,
 }
 
+export type RemoveFailedCreationInput = { name: string }
+
+export type RemoveFailedCreationOutput = null
+
+export type RemoveFailedCreationError = 'PermissionError' | 'ValidationError'
+
+const operationRemoveFailedCreation: MutationRef<
+  RemoveFailedCreationInput,
+  RemoveFailedCreationOutput,
+  RemoveFailedCreationError
+> = {
+  id: 'remove_failed_creation',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'admin.members.removeFailedCreation',
+  empty: true,
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.admin.remove_failed_creation',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationRemoveFailedCreation,
+}
+
+export type RetryAccountCreationInput = { name: string }
+
+export type RetryAccountCreationOutput = {
+  success: boolean
+  user: string
+  status: string
+  error: string | null
+  temporary_password: string | null
+  expires_at: string | null
+}
+
+export type RetryAccountCreationError = 'PermissionError' | 'ValidationError'
+
+const operationRetryAccountCreation: MutationRef<
+  RetryAccountCreationInput,
+  RetryAccountCreationOutput,
+  RetryAccountCreationError
+> = {
+  id: 'retry_account_creation',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'admin.members.retryCreation',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.admin.retry_account_creation',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationRetryAccountCreation,
+}
+
 export type DeleteDomainInput = { domain_id: string }
 
 export type DeleteDomainOutput = null
@@ -3826,7 +3947,7 @@ export type GetMemberInput = { member_id: string }
 export type GetMemberOutput = {
   name: string
   full_name: string
-  user_image: string
+  user_image: string | null
   description: string
   last_active: string | null
   joined_on: string | null
@@ -4783,7 +4904,7 @@ export type GetOverviewOutputMemberCount = { total: number; disabled: number }
 export type GetOverviewOutputRecentAccount = {
   name: string
   full_name: string
-  user_image: string
+  user_image: string | null
   enabled: boolean
   joined_on: string | null
 }
@@ -5907,16 +6028,20 @@ export type GetDeliveryStatusOutputDeliveryRecipient = {
   action: string
   status: string
   diagnostic_code: string
+  reason: string
   remote_mta: string
   will_retry_until: string
 }
 
-export type GetDeliveryStatusInput = { account: string; blob_id: string }
+export type GetDeliveryStatusInput = { account: string; id: string }
 
 export type GetDeliveryStatusOutput = {
   reporting_mta: string
   arrival_date: string
+  original_envelope_id: string
   recipients: Array<GetDeliveryStatusOutputDeliveryRecipient>
+  sent_thread_id: string | null
+  submission_id: string | null
 }
 
 export type GetDeliveryStatusError = 'PermissionError' | 'ValidationError'
@@ -5943,7 +6068,7 @@ const operationGetDeliveryStatus: QueryRef<
 
 export type CreateMailInputDraftAttachment = {
   filename?: string
-  file_url?: string
+  file_url?: string | null
   blob_id?: string
   type?: string
   size?: number | string
@@ -6002,7 +6127,7 @@ const operationCreateMail: MutationRef<CreateMailInput, CreateMailOutput, Create
 
 export type UpdateDraftMailInputDraftAttachment = {
   filename?: string
-  file_url?: string
+  file_url?: string | null
   blob_id?: string
   type?: string
   size?: number | string
@@ -6630,6 +6755,7 @@ export type GetScheduledMailOutput = {
   priority: number
   next_retry: string | null
   dsn_count: number
+  dsn_thread_id: string | null
   mdn_count: number
 }
 
@@ -6977,6 +7103,8 @@ export const api = {
     ongoing: operationOngoingExchange,
   },
   settings: {
+    regional: operationRegionalPreferences,
+    updateRegional: operationUpdateRegionalPreferences,
     credentials: operationCredentials,
     updateCredentials: operationUpdateCredentials,
     updatePreferences: operationUpdatePreferences,
@@ -7033,6 +7161,8 @@ export const api = {
       addEmail: operationAddMemberEmail,
       changePassword: operationChangeMemberPassword,
       deleteAccountRequests: operationDeleteAccountRequests,
+      removeFailedCreation: operationRemoveFailedCreation,
+      retryCreation: operationRetryAccountCreation,
       delete: operationDeleteMembers,
       disable: operationDisableMembers,
       enable: operationEnableMembers,

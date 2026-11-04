@@ -66,6 +66,10 @@ website_route_rules = [
     {"from_route": "/meet/<path:app_path>", "to_route": "suite"},
     {"from_route": "/calendar", "to_route": "suite"},
     {"from_route": "/calendar/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/people", "to_route": "suite"},
+    {"from_route": "/people/<path:app_path>", "to_route": "suite"},
+    {"from_route": "/admin", "to_route": "suite"},
+    {"from_route": "/admin/<path:app_path>", "to_route": "suite"},
 ]
 
 home_page = "suite"
@@ -143,12 +147,21 @@ drive_content_types = [
     "suite.writer.drive.SPEC",
     "suite.slides.drive.SPEC",
     "suite.sheets.drive.SPEC",
+    "suite.draw.drive.SPEC",
 ]
+
+# Dotted paths to `suite.content.EditorSpec` objects, one per app whose documents the content layer keeps
+suite_content_editors = ["suite.writer.content.EDITOR", "suite.sheets.content.EDITOR"]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
+    "Drawing": "suite.drive.framework.doc_query_conditions",
+    # drive — one user's own rows
+    "Drive Settings": "suite.drive.framework.own_row_query_conditions",
+    "Drive Favourite": "suite.drive.framework.own_row_query_conditions",
+    "Drive Recent": "suite.drive.framework.own_row_query_conditions",
     # slides — governed by Drive (§10.4). `Slide` is the deck's satellite and
     # takes its rights from the deck's node.
     "Presentation": "suite.drive.framework.doc_query_conditions",
@@ -175,6 +188,11 @@ permission_query_conditions = {
 # Permissions — has_permission (deep-merged union; no key clashes)
 # ============================================================================
 has_permission = {
+    "Drawing": "suite.drive.framework.doc_has_permission",
+    # drive — one user's own rows
+    "Drive Settings": "suite.drive.framework.own_row_has_permission",
+    "Drive Favourite": "suite.drive.framework.own_row_has_permission",
+    "Drive Recent": "suite.drive.framework.own_row_has_permission",
     # slides — governed by Drive (§10.4).
     "Presentation": "suite.drive.framework.doc_has_permission",
     "Slide": "suite.drive.framework.satellite_has_permission",
@@ -224,6 +242,8 @@ override_whitelisted_methods = {
     # SpamD
     "mail.api.spamd.scan": "suite.mail.api.spamd.scan",
     "mail.api.spamd.get_spam_score": "suite.mail.api.spamd.get_spam_score",
+    # writer — embed URLs baked into documents created by the standalone app
+    "writer.api.embed.get": "suite.writer.api.embed.get",
 }
 
 # ============================================================================
@@ -259,10 +279,19 @@ doc_events = {
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",
             "suite.mail.events.remove_disabled_account_role",
+            "suite.mail.email_suggestions.clear_directory_addresses",
+            "suite.mail.events.sync_identity_names",
         ],
         "on_trash": [
             "suite.composition.users.on_trash",
+            "suite.mail.email_suggestions.clear_directory_addresses",
         ],
+        "after_rename": ["suite.mail.email_suggestions.clear_directory_addresses"],
+    },
+    # Recipient suggestions list every account by its address; inserts fire on_update too.
+    "JMAP Account": {
+        "on_update": ["suite.mail.email_suggestions.clear_directory_addresses"],
+        "on_trash": ["suite.mail.email_suggestions.clear_directory_addresses"],
     },
 }
 
@@ -272,6 +301,9 @@ user_invitation = {
         "System Manager": ["Suite User"],
     },
 }
+
+# Suite Core owns notification routing; Mail provides configured Suite Cloud delivery.
+suite_email_provider = "suite.mail"
 
 # Suite's onboarding replaces the built-in desk setup wizard
 setup_wizard_url = "/suite/setup"
@@ -298,8 +330,6 @@ scheduler_events = {
         "suite.drive.jobs.thin_versions",
         "suite.drive.jobs.sweep_missing_previews",
         "suite.drive.jobs.sweep_unused_document_media",
-        # sheets
-        "suite.sheets.versioning.tasks.truncate_op_log",
         # mail
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
@@ -308,6 +338,8 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
     "hourly": [
+        # content
+        "suite.content.jobs.trim_logs",
         "suite.composition.admin_jobs.refresh_storage",
         # drive
         "suite.drive.webdav.locks.purge_expired_locks",
@@ -315,6 +347,10 @@ scheduler_events = {
         "suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
+    ],
+    "all": [
+        "suite.content.jobs.sweep",
+        "suite.content.jobs.queue_conversion",
     ],
     "cron": {
         "* * * * *": [
@@ -334,6 +370,7 @@ scheduler_events = {
 # ============================================================================
 before_install = "suite.composition.lifecycle.before_install"
 after_install = "suite.composition.lifecycle.after_install"
+before_migrate = "suite.composition.lifecycle.before_migrate"
 after_migrate = "suite.composition.lifecycle.after_migrate"
 after_app_install = "suite.composition.lifecycle.after_app_install"
 
@@ -341,6 +378,7 @@ after_app_install = "suite.composition.lifecycle.after_app_install"
 after_request = [
     "suite.mail.framework.close_mail_clients",
     "suite.drive.framework.allow_embedding",
+    "suite.suite_core.build.after_request",
 ]
 after_job = "suite.mail.framework.close_mail_clients"
 
@@ -480,6 +518,7 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/suite/mail/",
     "/api/suite/calendar/",
     "/api/suite/meet/",
+    "/api/suite/writer/",
     "/api/method/suite.writer.api.",
     # writer — backward-compatible prefix for embed URLs stored in old documents
     # (see override_whitelisted_methods).

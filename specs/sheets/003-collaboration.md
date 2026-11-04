@@ -1,6 +1,6 @@
 # Sheets: editing together
 
-Status: superseded. Collaboration moves to Yjs on the Drive content layer (frappe/suite#963), and the Hocuspocus server this spec builds on has been removed. A new spec replaces this one when that work starts.
+Status: superseded. Sheets collaborates through Yjs on the Drive content layer (frappe/suite#963): see `frontend/src/apps/sheets/collab/room.ts` and `SheetEditor/useCollabRoom.ts`. The Hocuspocus server this spec builds on, and the realtime relay files it names (`collab/frappe-provider.js`, `collab/awareness.js`), have been removed.
 
 Scope: what happens when several people edit the same sheet at once: how their changes are ordered, what each person sees, how access is checked, and who saves. It builds on the commands in [001](001-calculation-core.md) and the log in [002](002-saving.md).
 

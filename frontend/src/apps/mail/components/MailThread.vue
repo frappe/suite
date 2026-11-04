@@ -550,11 +550,18 @@
                           :attachment="icsAttachment(mail)"
                           :account="scopeAccountId"
                         />
+                        <UndeliveredBanner
+                          v-if="!readonly && !isCollapsed(mail) && undelivered.get(mail.id)"
+                          :key="`undelivered-${mail.name}`"
+                          :submission="undelivered.get(mail.id)!"
+                          :account="scopeAccountId"
+                        />
                         <DeliveryStatusBanner
                           v-if="showsDsnCard(mail)"
                           :key="`dsn-${mail.name}`"
-                          :blob-id="mail.dsn_blob_id!"
+                          :email-id="mail.id"
                           :account="scopeAccountId"
+                          :sent-mailbox="mailboxIds.sent"
                           @loaded="dsnCardRendered[mail.name] = $event"
                         />
                         <template v-if="!dsnReplacesBody(mail)">
@@ -743,6 +750,7 @@ import SenderCard from '@/apps/mail/components/SenderCard.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
+import UndeliveredBanner from '@/apps/mail/components/UndeliveredBanner.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import {
   closeComposeWindow,
@@ -792,6 +800,7 @@ import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
+import { submissionRow } from '@/apps/mail/utils/submission'
 import {
   foldedNames,
   holdNewestOpen,
@@ -801,6 +810,7 @@ import {
 } from '@/apps/mail/utils/threadFolding'
 import { mailRow } from '@/apps/mail/utils/threadRows'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
+import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 
 const {
   mailbox,
@@ -1008,6 +1018,12 @@ const goToMailbox = () =>
 // thread isn't in that list (e.g. a search result, or one on another page), fall back to fetching it
 // directly via `get_thread`.
 const thread = ref<Mail[]>([])
+// Use the same messages as the heading: a directly opened thread may never occur in the list.
+usePageTitle(() =>
+  threadID && thread.value.length
+    ? appDocumentTitle(thread.value[0].subject || __('[No subject]'), 'Mail')
+    : '',
+)
 const threadFallback = useQuery(api.mail.threads.get, () =>
   !messages?.length && threadID
     ? {
@@ -1551,6 +1567,28 @@ const filteredAttachments = (mail: Mail) =>
 // A bounce (DSN) message renders as a friendly card built from its message/delivery-status
 // part instead of the raw MAILER-DAEMON text. The body only comes back as fallback if the
 // banner reports there was nothing to render (part unreadable or without recipients).
+// The thread's sends that failed, by email id. A bounce never joins the thread it is about, so
+// the Outbox, which matches bounces to submissions, is asked about this thread's sends. Drafts
+// are skipped: one opened in the thread is local and has no mailboxes yet.
+const sentSubmissions = useQuery(api.mail.scheduled.list, () =>
+  !readonly &&
+  threadID &&
+  thread.value.some(
+    (m) => !m.draft && m.mailboxes.some((b) => b.mailbox_id === mailboxIds.value.sent),
+  )
+    ? { account: scopeAccountId.value, thread_id: threadID, undo_status: 'final' }
+    : false,
+)
+const undelivered = computed(
+  () =>
+    new Map(
+      (sentSubmissions.data?.rows || [])
+        .map(submissionRow)
+        .filter((row) => row.status === 'failed' && row.email_id)
+        .map((row) => [row.email_id!, row]),
+    ),
+)
+
 const dsnCardRendered = ref<Record<string, boolean>>({})
 const showsDsnCard = (mail: Mail) => !readonly && !isCollapsed(mail) && !!mail.dsn_blob_id
 const dsnReplacesBody = (mail: Mail) =>

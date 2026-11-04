@@ -1,9 +1,10 @@
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import { initSync } from '@ironcalc/wasm'
-import { describe, expect, it } from 'vitest'
+import { initSync, Model } from '@ironcalc/wasm'
+import { describe, expect, it, vi } from 'vitest'
 
 import { CommandTypes } from './commands.js'
+import { MAX_ROWS } from './limits.js'
 import { createWorkbook, WorkbookError } from './workbook.js'
 
 // Node has no fetch-based wasm loading for the web-target package; feed the
@@ -549,6 +550,181 @@ describe('workbook — versioning and errors', () => {
     expect(wb.getDisplayValue('Sheet1', 1, 1)).toBe('hello')
     // No-op when there is nothing left to redo.
     expect(wb.redo()).toEqual({ version: 3 })
+  })
+})
+
+// usedCells and findInputs stop at the lowest row an input can be on (a bound
+// the workbook keeps, ISSUES #81), plus where a spill or array reaches below
+// it; each way a cell gets below the bound must still be listed.
+describe('workbook — the cell scans stop at the last used row', () => {
+  const rowsOf = (cells) => cells.filter((_, i) => i % 2 === 0)
+  const used = (wb, sheet = 'Sheet1') => rowsOf(wb.usedCells(sheet))
+  const rowReads = (fn) => {
+    const spy = vi.spyOn(Model.prototype, 'getColumnsWithData')
+    try {
+      fn()
+      return spy.mock.calls.length
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  it('reads the used rows, not all 1,048,576', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 3; r++) setInput(wb, 'Sheet1', r, 1, String(r))
+    expect(rowReads(() => expect(used(wb)).toEqual([1, 2, 3]))).toBeLessThanOrEqual(3)
+  })
+
+  it('reads the used rows of a loaded workbook', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 40, 1, '1')
+    const loaded = createWorkbook({ loadBytes: wb.toBytes() })
+    expect(rowReads(() => expect(used(loaded)).toEqual([40]))).toBeLessThanOrEqual(40)
+  })
+
+  it('far down, and on another sheet', () => {
+    const wb = createWorkbook()
+    wb.apply(cmd(CommandTypes.addSheet, { name: 'Data' }))
+    setInput(wb, 'Data', 500000, 2, 'far')
+    expect(used(wb, 'Data')).toEqual([500000])
+    expect(used(wb)).toEqual([])
+    expect(wb.findInputs('Data', 'far', 10)).toEqual([{ row: 500000, col: 2, input: 'far' }])
+  })
+
+  it('pushed down by inserted rows, or moved down', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 5, 1, 'a')
+    wb.apply(cmd(CommandTypes.insertRows, { sheet: 'Sheet1', row: 1, count: 1000 }))
+    expect(used(wb)).toEqual([1005])
+    wb.apply(cmd(CommandTypes.moveRows, { sheet: 'Sheet1', row: 1005, count: 1, delta: 100 }))
+    expect(used(wb)).toEqual([1105])
+  })
+
+  // Moving rows 11–20 up by 10 pushes rows 1–10 down by 10.
+  it('pushed down by rows moved up past it', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 10, 1, 'a')
+    wb.apply(cmd(CommandTypes.moveRows, { sheet: 'Sheet1', row: 11, count: 10, delta: -10 }))
+    expect(used(wb)).toEqual([20])
+  })
+
+  it('brought back down by undo, in a loaded workbook', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 900, 1, 'a')
+    const loaded = createWorkbook({ loadBytes: wb.toBytes() })
+    loaded.apply(cmd(CommandTypes.deleteRows, { sheet: 'Sheet1', row: 1, count: 100 }))
+    expect(used(loaded)).toEqual([800])
+    loaded.undo()
+    expect(used(loaded)).toEqual([900])
+  })
+
+  it('inside a batch (a paste)', () => {
+    const wb = createWorkbook()
+    wb.apply(
+      cmd(CommandTypes.batch, {
+        commands: [
+          cmd(CommandTypes.setInput, { sheet: 'Sheet1', row: 1, col: 1, input: '1' }),
+          cmd(CommandTypes.setInput, { sheet: 'Sheet1', row: 300, col: 1, input: '2' }),
+        ],
+      }),
+    )
+    expect(used(wb)).toEqual([1, 300])
+  })
+
+  it('an array formula’s cells', () => {
+    const wb = createWorkbook()
+    wb.apply(
+      cmd(CommandTypes.setArrayFormula, {
+        sheet: 'Sheet1',
+        row: 1,
+        col: 1,
+        width: 1,
+        height: 3,
+        input: '=ROW(A1:A3)',
+      }),
+    )
+    expect(used(wb)).toEqual([1, 2, 3])
+  })
+
+  // The spill grows when E1 changes, though nothing is typed below row 1.
+  it('a spill, as it grows', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 5, '3')
+    setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(E1)')
+    expect(used(wb)).toEqual([1, 1, 2, 3])
+    setInput(wb, 'Sheet1', 1, 5, '5000')
+    expect(used(wb).at(-1)).toBe(5000)
+    expect(wb.findInputs('Sheet1', '4999', 10)).toEqual([{ row: 4999, col: 3, input: '4999' }])
+  })
+
+  // The status bar's sum over a whole column (ISSUES #89).
+  it('the range stats of a whole column', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 3; r++) setInput(wb, 'Sheet1', r, 1, String(r))
+    const stats = () => wb.rangeStats('Sheet1', 1, 1, MAX_ROWS, 1)
+    // 3 rows to find where the cells end, then the 3 rows themselves.
+    expect(rowReads(() => expect(stats()).toEqual({ count: 3, numCount: 3, sum: 6 }))).toBe(6)
+  })
+
+  // C1 spills 1 … 5000; the range starts below C1, inside the spill.
+  it('the range stats of a spill whose formula is above the range', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 5, '5000')
+    setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(E1)')
+    const stats = () => wb.rangeStats('Sheet1', 4000, 3, MAX_ROWS, 3)
+    // 4000 + 4001 + … + 5000: 1001 numbers averaging 4500.
+    // Row 1 says where the spill ends, then rows 4000 … 5000 are read.
+    const sum = 1001 * 4500
+    expect(rowReads(() => expect(stats()).toEqual({ count: 1001, numCount: 1001, sum }))).toBe(1002)
+  })
+
+  // A1:A3 is an array formula reaching below the bound (row 1); B1 is a date,
+  // counted but not added up (ISSUES #67).
+  it('the range stats of whole columns with an array formula and a date', () => {
+    const wb = createWorkbook()
+    wb.apply(
+      cmd(CommandTypes.setArrayFormula, {
+        sheet: 'Sheet1',
+        row: 1,
+        col: 1,
+        width: 1,
+        height: 3,
+        input: '=ROW(A1:A3)',
+      }),
+    )
+    setInput(wb, 'Sheet1', 1, 2, '2026-01-15')
+    expect(wb.rangeStats('Sheet1', 1, 1, MAX_ROWS, 2)).toEqual({ count: 4, numCount: 3, sum: 6 })
+  })
+
+  // A1 spills 1 … 100000, though only row 1 holds an input.
+  it('the range stats of a few rows deep inside a long spill', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '=SEQUENCE(100000)')
+    const stats = () => wb.rangeStats('Sheet1', 90000, 1, 90010, 1)
+    // 90000 … 90010: 11 numbers averaging 90005.
+    const sum = 11 * 90005
+    expect(rowReads(() => expect(stats()).toEqual({ count: 11, numCount: 11, sum }))).toBe(12)
+  })
+
+  it('the range stats of a few rows read only those rows', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 50; r++) setInput(wb, 'Sheet1', r, 1, '1')
+    expect(rowReads(() => expect(wb.rangeStats('Sheet1', 40, 1, 42, 1).sum).toBe(3))).toBe(3)
+  })
+
+  // C1 spills 1 … 10; A100 keeps the range C5:C8 on its own rows.
+  it('the range stats of a few rows inside a spill from above', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 100, 1, 'x')
+    setInput(wb, 'Sheet1', 1, 3, '=SEQUENCE(10)')
+    const stats = () => wb.rangeStats('Sheet1', 5, 3, 8, 3)
+    expect(rowReads(() => expect(stats()).toEqual({ count: 4, numCount: 4, sum: 26 }))).toBe(4)
+  })
+
+  it('the range stats of a few rows running past the data read only those rows', () => {
+    const wb = createWorkbook()
+    for (let r = 1; r <= 50; r++) setInput(wb, 'Sheet1', r, 1, '1')
+    expect(rowReads(() => expect(wb.rangeStats('Sheet1', 48, 1, 60, 1).sum).toBe(3))).toBe(13)
   })
 })
 

@@ -130,6 +130,45 @@ async function mount() {
 }
 
 describe('Meet upcoming list', () => {
+  it.each([
+    ['2026-10-29', '2026-10-30'],
+    ['2026-10-30', '2026-11-02'],
+    ['2026-10-31', '2026-11-02'],
+    ['2026-11-01', '2026-11-02'],
+    ['2027-12-31', '2028-01-03'],
+  ])('includes the next weekday from %s through %s', async (today, lastDay) => {
+    vi.setSystemTime(new Date(`${today}T08:00:00`))
+    state.events = [today, lastDay].map((date) => ({
+      id: date,
+      title: date,
+      start: `${date}T23:59:59.999`,
+      duration: 'PT1H',
+      links: [{ href: '/meet/abcd-efgh-ijkl' }],
+    }))
+    const root = await mount()
+    expect(requested()).toMatchObject({
+      from_date: new Date(`${today}T00:00:00`).toISOString(),
+      to_date: new Date(`${lastDay}T23:59:59.999`).toISOString(),
+    })
+    expect(root.textContent).toContain(lastDay)
+    expect(root.textContent).toContain(today)
+  })
+
+  it('keeps Saturday and Sunday meetings between Friday and Monday', async () => {
+    vi.setSystemTime(new Date(2026, 9, 30, 8))
+    state.events = ['2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03'].map((date) => ({
+      id: date,
+      title: date,
+      start: `${date}T12:00:00`,
+      duration: 'PT1H',
+      links: [{ href: '/meet/abcd-efgh-ijkl' }],
+    }))
+    const root = await mount()
+    for (const date of ['2026-10-31', '2026-11-01', '2026-11-02'])
+      expect(root.textContent).toContain(date)
+    expect(root.textContent).not.toContain('2026-11-03')
+  })
+
   it('shows a failed request and lets the user retry', async () => {
     state.request.mockRejectedValueOnce(new Error('Calendar unavailable'))
     const root = await mount()
@@ -197,7 +236,7 @@ describe('Meet upcoming list', () => {
     const root = await mount()
     expect(root.textContent).toContain('Design review')
     expect(root.textContent).toContain('10:00 am – 11:00 am')
-    expect(root.textContent).not.toContain('Team planning')
+    expect(root.textContent).toContain('Team planning')
     expect(root.textContent).toContain('Sep')
     expect(root.textContent).toContain('30')
     expect(root.querySelectorAll('[title="Faris"]')).toHaveLength(1)
@@ -211,14 +250,14 @@ describe('Meet upcoming list', () => {
     })
   })
 
-  it('requests only today’s meetings', async () => {
+  it('requests today through the next weekday', async () => {
     const root = await mount()
     expect(root.textContent).toContain('Design review')
-    expect(root.textContent).not.toContain('Team planning')
+    expect(root.textContent).toContain('Team planning')
     expect(requested()).toMatchObject({
       account: 'personal',
-      from_date: '2026-09-30T00:00:00',
-      to_date: '2026-09-30T23:59:59',
+      from_date: new Date('2026-09-30T00:00:00').toISOString(),
+      to_date: new Date('2026-10-01T23:59:59.999').toISOString(),
     })
   })
 
@@ -233,8 +272,8 @@ describe('Meet upcoming list', () => {
     // The date badges and request window follow the same clock.
     await vi.waitFor(() =>
       expect(requested()).toMatchObject({
-        from_date: '2026-10-01T00:00:00',
-        to_date: '2026-10-01T23:59:59',
+        from_date: new Date('2026-10-01T00:00:00').toISOString(),
+        to_date: new Date('2026-10-02T23:59:59.999').toISOString(),
       }),
     )
     await vi.waitFor(() => expect(root.textContent).toContain('Team planning'))

@@ -8,6 +8,7 @@ from pathlib import Path
 from suite.drive.patches.build.dry_run import (
     BYTES_LOCAL,
     BYTES_S3,
+    BYTES_UNREACHABLE,
     CONTENT_ADOPTED_TEMPLATE,
     CONTENT_CREATED_TEMPLATE,
     CONTENT_LINKED,
@@ -41,6 +42,7 @@ from suite.drive.patches.build.tests.fakes import (
     FakeBucket,
     FakeContent,
     FakeDrive,
+    FakeStorage,
     FakeTree,
     build_environment,
 )
@@ -174,6 +176,23 @@ class Counts(DryRunCase):
         self.assertEqual(self.report["title_renames"], 1)
         self.assertEqual(
             self.report["file_rows_by_status"], {ACTIVE: 21 + DEPTH_CAP + 1, TRASHED: 1, REMOVED: 1}
+        )
+
+    def test_a_local_file_missing_from_disk_is_counted_as_unreachable(self):
+        tree, content, bucket = legacy_site()
+        env = build_environment(
+            self.path,
+            tree=tree,
+            drive=FakeDrive(),
+            content=content,
+            bucket=bucket,
+            storage=FakeStorage(missing_local={"/private/files/local.pdf"}),
+        )
+
+        report = dry_run(env, directory=self.out, disk=DiskSettings(root_folder=ROOT_FOLDER_NAME)).report
+
+        self.assertEqual(
+            report["file_nodes_by_byte_source"], {BYTES_S3: 4, BYTES_LOCAL: 3, BYTES_UNREACHABLE: 1}
         )
 
     def test_every_skip_build_would_make_is_counted_with_its_reason(self):

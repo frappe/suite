@@ -18,7 +18,10 @@ management queue API, correlated through the ENVID this app writes into every en
 queue side contributes what JMAP cannot: retry counts, the next retry time, the last error of
 a temporarily failing delivery, and whether "queued" means a first attempt or a retry wait. It is read
 best-effort with the admin connection, exposing only messages matching the account's own
-submissions; without it rows just lack the retry detail.
+submissions; without it rows just lack the retry detail. A delivery report mailed back to the
+account settles a recipient the server still calls undecided: Stalwart v0.16 never updates
+deliveryStatus after a delivery fails, so the bounce, matched by the same ENVID, is the only
+record of it (see suite.mail.bounces).
 
 The referenced Email may have been deleted after scheduling (EmailSubmission/get then returns a
 dangling emailId): such a delivery can still be cancelled — there is just no message to move
@@ -51,6 +54,7 @@ from jmap.models.responses import SetResponse
 from pydantic import BaseModel, model_validator
 from redis.exceptions import LockError
 
+from suite.mail.bounces import get_reports
 from suite.mail.jmap import (
     SuiteJMAPClient,
     build_submission_envelope,
@@ -164,11 +168,17 @@ def get_submissions(
 
     fetched = _get_submissions(client, ids, [*SUBMISSION_PROPERTIES, "deliveryStatus"], refused="empty")
     queue_by_envid = _queue_messages_by_envid(fetched)
+    reports_by_envid = _reports_by_envid(account, fetched)
 
     # The query's order (sentAt desc) is the listing's order; get() does not guarantee it.
     submissions_by_id = {s["id"]: s for s in fetched}
     rows = [
-        _serialize_submission(submission, None, queue_by_envid.get(_envid(submission)))
+        _serialize_submission(
+            submission,
+            None,
+            queue_by_envid.get(_envid(submission)),
+            reports_by_envid.get(_envid(submission)) or [],
+        )
         for id in ids
         if (submission := submissions_by_id.get(id))
     ]
@@ -196,8 +206,9 @@ def get_scheduled_mail(account: str, id: str) -> dict:
 
     submission = submissions[0]
     queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
+    reports = _reports_by_envid(account, [submission]).get(_envid(submission)) or []
 
-    row = _serialize_submission(submission, None, queue_message)
+    row = _serialize_submission(submission, None, queue_message, reports)
     emails = _get_emails(client, [submission.get("emailId")], EMAIL_SUMMARY_PROPERTIES)
     _add_email_fields(row, emails[0] if emails else None)
 
@@ -210,7 +221,9 @@ def get_scheduled_mail(account: str, id: str) -> dict:
             "envelope_recipients": [r.get("email") for r in envelope.get("rcptTo") or []],
             "priority": cint((mail_from.get("parameters") or {}).get("MT-PRIORITY")),
             "next_retry": normalize_utc_z((queue_message or {}).get("nextRetry")),
-            "dsn_count": len(submission.get("dsnBlobIds") or []),
+            # The server's own count, or the bounces it never counted.
+            "dsn_count": max(len(submission.get("dsnBlobIds") or []), len(reports)),
+            "dsn_thread_id": reports[0]["thread_id"] if reports else None,
             "mdn_count": len(submission.get("mdnBlobIds") or []),
         }
     )
@@ -314,11 +327,18 @@ def dismiss_failed_mail(account: str, id: str) -> None:
 STATUS_SEVERITY = ("failed", "retrying", "queued", "scheduled", "cancelled", "sent", "delivered", "displayed")
 PROBLEM_STATUSES = ("failed", "retrying", "queued")
 
+# The outcomes a delivery report settles, in DeliveryStatus' terms. A "delayed" report settles
+# nothing: the envelope asks for no report on success (NOTIFY=DELAY,FAILURE), so a delivery that
+# went through after a delay would never replace it.
+REPORTED_DELIVERY = {"failed": "no", "delivered": "yes"}
 
-def _serialize_submission(submission: dict, email: dict | None, queue_message: dict | None) -> dict:
+
+def _serialize_submission(
+    submission: dict, email: dict | None, queue_message: dict | None, reports: list[dict]
+) -> dict:
     """One Outbox row: the submission itself plus its merged delivery state."""
 
-    recipients_status = _recipient_states(submission, queue_message)
+    recipients_status = _recipient_states(submission, queue_message, reports)
     retries = [r["retries"] for r in recipients_status if r["retries"] is not None]
 
     row = {
@@ -370,11 +390,18 @@ def _add_email_fields(row: dict, email: dict | None) -> None:
     )
 
 
-def _recipient_states(submission: dict, queue_message: dict | None) -> list[dict]:
-    """Merges deliveryStatus and MTA-queue state into one row per recipient."""
+def _recipient_states(submission: dict, queue_message: dict | None, reports: list[dict]) -> list[dict]:
+    """Merges deliveryStatus, MTA-queue state and the delivery reports mailed back (newest
+    first) into one row per recipient."""
 
     delivery = submission.get("deliveryStatus") or {}
     queue_recipients = (queue_message or {}).get("recipients") or {}
+    reported = {
+        recipient["email"].lower(): recipient
+        for report in reversed(reports)
+        for recipient in report["recipients"]
+        if recipient["action"] in REPORTED_DELIVERY
+    }
     envelope_emails = [r.get("email") for r in (submission.get("envelope") or {}).get("rcptTo") or []]
 
     emails = list(dict.fromkeys([*envelope_emails, *delivery, *queue_recipients]))
@@ -385,15 +412,21 @@ def _recipient_states(submission: dict, queue_message: dict | None) -> list[dict
         status = delivery.get(email) or {}
         queued = queue_recipients.get(email) or {}
         queue_status = queued.get("status") or {}
+        report = reported.get((email or "").lower()) or {}
+        settled = status
+        if report and status.get("delivered") not in ("yes", "no"):
+            settled = {**status, "delivered": REPORTED_DELIVERY[report["action"]]}
 
         states.append(
             {
                 "email": email,
                 "status": _recipient_status(
-                    held, status, queue_status.get("@type"), queued.get("retryCount")
+                    held, settled, queue_status.get("@type"), queued.get("retryCount")
                 ),
                 "reason": queue_status.get("errorMessage")
                 or queue_status.get("responseMessage")
+                or report.get("reason")
+                or report.get("status")
                 or status.get("smtpReply"),
                 # The raw DeliveryStatus, so the details page can show the exact server state.
                 "smtp_reply": status.get("smtpReply"),
@@ -476,6 +509,30 @@ def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
     """
 
     return {}
+
+
+def _reports_by_envid(account: str, submissions: list[dict]) -> dict[str, list[dict]]:
+    """The delivery reports mailed back on the given submissions, keyed by ENVID, newest first.
+
+    Only released deliveries can have one, so held and cancelled submissions are skipped. Read
+    best-effort, like the queue: without it rows keep the server's state.
+    """
+
+    released = [
+        s
+        for s in submissions
+        if _envid(s) and s.get("sendAt") and s.get("undoStatus") != "canceled" and not _hold_active(s)
+    ]
+    if not released:
+        return {}
+
+    try:
+        return get_reports(
+            account, [_envid(s) for s in released], min(normalize_utc_z(s["sendAt"]) for s in released)
+        )
+    except Exception:
+        log_mail_error(_("Failed to read delivery reports"), frappe.get_traceback(with_context=True))
+        return {}
 
 
 def _identity_email(account: str, identity_id: str | None) -> str | None:

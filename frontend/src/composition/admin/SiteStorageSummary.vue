@@ -69,21 +69,16 @@ const alerts = computed(() => {
   ) {
     const overThreshold =
       report.combined_bytes > (report.effective_allowance_bytes ?? report.allowance_bytes)
-    const usingHeadroom = report.combined_bytes > report.allowance_bytes
+    const overQuota = report.combined_bytes > report.allowance_bytes
     rows.push({
       title: overThreshold
         ? __('Storage is full')
-        : usingHeadroom
-          ? __('Extra storage is in use')
+        : overQuota
+          ? __('Storage limit reached')
           : __('Storage is almost full'),
       description: overThreshold
         ? __('Free up space to upload more files. Mail will keep working.')
-        : usingHeadroom
-          ? __(
-              'You can use up to {0}. Free up space before uploading more files. Mail will keep working.',
-              [bytes(report.effective_allowance_bytes ?? report.allowance_bytes)],
-            )
-          : __('Free up space to keep uploading files. Mail will keep working.'),
+        : __('Free up space to keep uploading files. Mail will keep working.'),
       theme: overThreshold ? 'red' : 'amber',
     })
   }

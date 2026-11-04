@@ -257,6 +257,21 @@ export class VideoElementManager implements MediaAttachmentFacade {
     this.deferredAttachments.clear()
   }
 
+  detachVideoStream(participantId: string): void {
+    const attachment = this.getAttachment('remote-video', participantId)
+    if (attachment) {
+      attachment.revision++
+      attachment.stream = null
+      attachment.attachedStreamId = undefined
+      attachment.attachedTrackIds = ''
+      if (attachment.element) {
+        this.clearPlaybackHandler(attachment.element)
+        attachment.element.srcObject = null
+      }
+    }
+    this.cancelDeferredAttachment(participantId)
+  }
+
   cleanup(): void {
     for (const attachment of [...this.attachments.values()]) {
       this.removeAttachment(attachment.role, attachment.id)

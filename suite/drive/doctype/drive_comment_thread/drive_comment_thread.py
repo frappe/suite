@@ -15,3 +15,4 @@ class DriveCommentThread(Document):
 
 def on_doctype_update() -> None:
     frappe.db.add_index("Drive Comment Thread", ["node", "resolved"], "thread_node")
+    frappe.db.add_unique("Drive Comment Thread", ["node", "client_id"], constraint_name="thread_node_client")

@@ -20,6 +20,9 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
 
 - **Writer → Drive**: a Writer document has a Drive Node standing for it, and
   its embedded images are Drive Nodes beneath that node.
+- **Writer → content layer**: Writer keeps its update log, checkpoints and
+  live state through `suite/content`, which reaches the node through
+  `suite.drive`.
 - **Slides → Drive**: a deck has a Drive Node standing for it. Its media are
   framework attachments today, authorized by their own endpoint. Moving them
   under the deck node is decided but not built.
@@ -33,6 +36,8 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
   users may add to, and stay there.
 - **Calendar → Meet**: a scheduled event's remaining time sets the Recording
   Estimate shown before a Recording Session starts.
+- **Suite Core → Mail**: Core routes first-party notifications through Mail's Suite Cloud provider
+  when configured, and otherwise sends them through the site's Email Account.
 
 Every product above uses Drive for storage and sharing through the public
 `suite.drive` interface. Drive imports none of their implementations. The

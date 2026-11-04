@@ -33,10 +33,8 @@
       v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
       :total="list.total ?? 0"
-      :page-length="pageLength"
       :has-more="list.hasNext"
       :loading="list.isFetching"
-      @update:page-length="(value) => (pageLength = value)"
       @load-more="list.fetchNext().catch(() => {})"
     />
   </DashboardLayout>
@@ -51,7 +49,7 @@ import { api, useInfiniteQuery } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddMailingListModal from '@/apps/mail/components/Modals/AddMailingListModal.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
@@ -60,11 +58,10 @@ const showAdd = ref(false)
 useAddOnArrival(showAdd)
 const search = ref('')
 const debouncedSearch = refDebounced(search, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const list = useInfiniteQuery(api.mail.admin.mailingLists.list, () => ({
   search: debouncedSearch.value,
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const LIST_COLUMNS = [
   {

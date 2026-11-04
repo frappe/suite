@@ -62,6 +62,12 @@ describe('fitRowHeight', () => {
     expect(fit.fitRowHeight(0)).toBe(3 * 16 + 6)
   })
 
+  it('grows for a word moved whole to the next line', () => {
+    // 42px holds 4 chars: "ab" / "cd" / "ef", not "ab c" / "d ef".
+    const fit = setup({ A1: 'ab cd ef' }, { A1: { textWrap: 'wrap' } }, 50)
+    expect(fit.fitRowHeight(0)).toBe(3 * 16 + 6)
+  })
+
   it('keeps at least the default height', () => {
     expect(setup({}).fitRowHeight(0)).toBe(24)
   })

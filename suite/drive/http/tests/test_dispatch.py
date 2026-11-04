@@ -35,7 +35,7 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.tests.fixtures import drop_personal_root
-from suite.tests.utils import ensure_user
+from suite.tests.utils import ensure_user, session_for
 
 OWNER = "drive-http-owner@example.com"
 STRANGER = "drive-http-stranger@example.com"
@@ -110,6 +110,7 @@ VERSION_SHAPE_FIELDS = {
     "actor",
     "size",
     "creation",
+    "person",
 }
 
 ACTIVITY_SHAPE_FIELDS = {
@@ -139,6 +140,9 @@ NOTIFICATION_SHAPE_FIELDS = {
     "read",
     "creation",
     "activity",
+    "node_title",
+    "node_kind",
+    "actor",
 }
 
 # The seven names 11.2 freezes, in table order. A view outside this tuple is a
@@ -214,7 +218,9 @@ class DriveHTTPCase(IntegrationTestCase):
         ensure_user(OWNER)
         ensure_user(STRANGER)
         drop_personal_root(OWNER)
-        cls.admin = Principals("Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True)
+        cls.admin = Principals(
+            "Administrator", ("Administrator",), ("$PUBLIC",), is_admin=True, is_system=True
+        )
         cls.owner = Principals(OWNER, (OWNER, "$GENERAL"), ("$PUBLIC",))
         cls.stranger = Principals(STRANGER, (STRANGER, "$GENERAL"), ("$PUBLIC",))
 
@@ -275,35 +281,7 @@ class DriveHTTPCase(IntegrationTestCase):
 
     # -- sending -----------------------------------------------------------
 
-    @classmethod
-    def session_for(cls, user: str) -> str:
-        """Mint a real session, the way an interactive client gets one."""
-        from frappe.auth import CookieManager, LoginManager
-        from frappe.utils import set_request
-
-        kept = {
-            name: getattr(frappe.local, name, None)
-            for name in ("request", "session", "login_manager", "cookie_manager")
-        }
-        set_request(path="/")
-        try:
-            frappe.local.cookie_manager = CookieManager()
-            frappe.local.login_manager = LoginManager()
-            frappe.local.login_manager.login_as(user)
-            sid = frappe.session.sid
-        finally:
-            for name, value in kept.items():
-                if value is None:
-                    # `frappe.local` is a contextvar store, not an object with
-                    # a `__dict__`. Deleting a name it never held raises.
-                    try:
-                        delattr(frappe.local, name)
-                    except AttributeError:
-                        pass
-                else:
-                    setattr(frappe.local, name, value)
-        frappe.db.commit()
-        return sid
+    session_for = staticmethod(session_for)
 
     @classmethod
     def api_key_for(cls, user: str) -> str:
@@ -525,7 +503,9 @@ class TestNodeShape(DriveHTTPCase):
 
     def test_the_access_expansion_reports_the_role_and_its_source(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.file}", query={"expand": "access"}))
-        self.assertEqual(set(answer["access"]), {"role", "via_link", "source_node", "source_principal"})
+        self.assertEqual(
+            set(answer["access"]), {"role", "via_link", "source_node", "source_principal", "can_manage"}
+        )
         self.assertGreaterEqual(answer["access"]["role"], READ)
 
     def test_the_breadcrumb_expansion_runs_root_first_and_stops_at_the_parent(self):

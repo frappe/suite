@@ -7,9 +7,7 @@ import { api, useMutation, useQuery, type InputOf, type OutputOf } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
 const open = defineModel<boolean>('open', { default: false })
-const props = withDefaults(defineProps<{ users: string[]; closeOnSuccess?: boolean }>(), {
-  closeOnSuccess: true,
-})
+const props = defineProps<{ users: string[] }>()
 const emit = defineEmits<{ saved: [] }>()
 const storage = useQuery(api.suite.storage.get, () => (open.value ? {} : false))
 const save = useMutation(api.suite.storage.setLimits)
@@ -61,14 +59,8 @@ watch(
   { immediate: true },
 )
 
-function bytes(value: number | null) {
-  return value === null
-    ? __('Unavailable')
-    : __('{0} GB', [
-        (value / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-      ])
-}
 async function submit(retry = false) {
+  if (save.isPending) return
   validationError.value = ''
   if (!retry) {
     if (validCap.value === undefined) {
@@ -78,22 +70,22 @@ async function submit(retry = false) {
     request.value = { users: [...props.users], cap_bytes: validCap.value }
   }
   if (!request.value) return
-  const next = await save.run({
-    ...request.value,
-    users: retry ? failed.value : request.value.users,
-  })
+  let next
+  try {
+    next = await save.run({
+      ...request.value,
+      users: retry ? failed.value : request.value.users,
+    })
+  } catch {
+    return
+  }
   results.value = retry
     ? results.value.map((result) => next.find((item) => item.user === result.user) ?? result)
     : next
   if (results.value.length && results.value.every((result) => result.success)) {
     emit('saved')
-    if (props.closeOnSuccess) open.value = false
+    open.value = false
   }
-}
-function edit() {
-  results.value = []
-  request.value = undefined
-  save.reset()
 }
 </script>
 
@@ -104,21 +96,13 @@ function edit() {
         <FormControl
           v-model="limitGB"
           type="number"
+          min="0"
           :label="__('Storage limit (GB)')"
           :description="__('Leave blank to remove the limit.')"
           :disabled="!initialized || save.isPending || !!results.length"
         />
         <ul class="space-y-2">
           <li v-for="preview in previews" :key="preview.user.name" class="space-y-1">
-            <p class="text-p-sm text-ink-gray-7">
-              {{
-                __('{0}: {1} used · limit {2}', [
-                  preview.user.full_name,
-                  bytes(preview.user.combined_bytes),
-                  preview.threshold == null ? __('No limit') : bytes(preview.threshold),
-                ])
-              }}
-            </p>
             <Alert
               v-if="preview.blocked"
               theme="amber"
@@ -131,14 +115,6 @@ function edit() {
             />
           </li>
         </ul>
-        <p v-if="storage.data?.allowance_bytes" class="text-p-sm text-ink-gray-5">
-          {{
-            __('Workspace storage: {0} used · limit {1}', [
-              bytes(storage.data.combined_bytes),
-              bytes(storage.data.effective_allowance_bytes),
-            ])
-          }}
-        </p>
         <ErrorMessage :message="validationError || save.error?.message || storage.error?.message" />
         <ul class="space-y-1" aria-live="polite">
           <li
@@ -154,17 +130,7 @@ function edit() {
     </template>
     <template #actions>
       <div class="flex justify-end gap-2">
-        <Button
-          :label="results.length ? __('Done') : __('Cancel')"
-          :disabled="save.isPending"
-          @click="open = false"
-        />
-        <Button
-          v-if="results.length"
-          :label="__('Edit limits')"
-          :disabled="save.isPending"
-          @click="edit"
-        />
+        <Button :label="__('Cancel')" :disabled="save.isPending" @click="open = false" />
         <Button
           v-if="failed.length"
           variant="solid"

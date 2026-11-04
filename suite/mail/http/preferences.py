@@ -4,10 +4,12 @@ import json
 from typing import Literal, NotRequired, TypedDict, cast
 
 import frappe
+from frappe import _
 
 from suite.composition.http import Route
 from suite.mail.classification import normalize_tabs
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
+from suite.mail.http.auth import AccountOptions
 from suite.mail.http.shapes import AccountInput, Flag
 
 
@@ -59,6 +61,51 @@ class AccountChanges(TypedDict, total=False):
 
 class UpdateAccount(AccountInput):
     changes: AccountChanges
+
+
+class RegionalChanges(TypedDict):
+    locale: str
+    time_zone: str
+
+
+class RegionalPreferences(RegionalChanges, AccountOptions):
+    pass
+
+
+@frappe.whitelist(methods=["GET"])
+def regional_preferences() -> RegionalPreferences:
+    from suite.mail.directory import get_account_metadata
+    from suite.mail.suite_cloud import get_client
+    from suite.mail.utils.user import get_account_email
+
+    email = get_account_email(frappe.session.user)
+    if not email:
+        frappe.throw(_("No personal Mail account"))
+    account = get_client().call("mail.accounts.get_account", email=email)
+    options = get_account_metadata()
+    return {
+        "locale": account.get("locale") or "en-US",
+        "time_zone": account.get("time_zone") or "UTC",
+        "locales": options["locales"],
+        "time_zones": options["time_zones"],
+    }
+
+
+@frappe.whitelist(methods=["PATCH"])
+def update_regional_preferences(locale: str, time_zone: str) -> None:
+    from suite.mail.directory import get_account_metadata
+    from suite.mail.suite_cloud import get_client
+    from suite.mail.utils.user import get_account_email
+
+    email = get_account_email(frappe.session.user)
+    if not email:
+        frappe.throw(_("No personal Mail account"))
+    options = get_account_metadata()
+    if locale not in {option["value"] for option in options["locales"]} or time_zone not in {
+        option["value"] for option in options["time_zones"]
+    }:
+        frappe.throw(_("Invalid regional preference"))
+    get_client().call("mail.accounts.update_account", email=email, locale=locale, time_zone=time_zone)
 
 
 class Subscription(TypedDict):
@@ -154,6 +201,23 @@ def subscribe_mailbox(name: str, subscribed: Flag) -> None:
 
 
 ROUTES = (
+    Route(
+        "GET",
+        "settings/regional",
+        "regional_preferences",
+        kind="query",
+        public_name="settings.regional",
+        output=RegionalPreferences,
+    ),
+    Route(
+        "PATCH",
+        "settings/regional",
+        "update_regional_preferences",
+        kind="mutation",
+        public_name="settings.updateRegional",
+        body=RegionalChanges,
+        output=type(None),
+    ),
     Route(
         "GET",
         "settings/credentials",

@@ -12,7 +12,6 @@ from suite.mail.api.mail import (
     get_threads,
     move_mails,
     remove_mails_from_mailbox,
-    search_email_addresses,
     search_mails,
     set_flagged,
     set_mails_mailboxes,
@@ -228,8 +227,6 @@ class TestMailFlagsAndSearch(StalwartIntegrationTestCase):
                 message="Sender did not show up in email suggestions.",
             )
             self.assertTrue(suggestions)
-            addresses = search_email_addresses(self.account, self.sender.username)
-            self.assertIn(self.sender.email, [a.get("email") for a in addresses])
 
             # Gravatar stays disabled, so the identicon branch renders a PNG.
             get_avatar(f"{unique_name('ghost')}@nowhere.example.test")

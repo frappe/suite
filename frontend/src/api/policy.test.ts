@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { api } from '@/api'
 import { registration as calendar } from '@/apps/calendar/client/policy'
+import { registration as draw } from '@/apps/draw/client/policy'
 import { registration as drive } from '@/apps/drive/client/policy'
 import { registration as mail } from '@/apps/mail/client/policy'
 import { registration as meet } from '@/apps/meet/client/policy'
@@ -16,6 +17,7 @@ import { registration as suite } from '@/platform/transport/policy'
 const owners: Record<string, OwnerRegistration> = {
   suite,
   drive,
+  draw,
   mail,
   meet,
   calendar,

@@ -3,6 +3,7 @@ import type {
   RecorderStageProducer,
   RecorderStageProjectionEvent,
   RecorderStageSnapshot,
+  SharedStageState,
 } from '../../suite/meet/types'
 
 export class RecorderStageProjection {
@@ -10,6 +11,7 @@ export class RecorderStageProjection {
   readonly producers = new Map<string, RecorderStageProducer>()
   readonly raisedHands = new Map<string, string>()
   activeSpeakerIds: string[] = []
+  sharedStage?: SharedStageState
   roomId?: string
   cursor?: number
   private observedAt?: string
@@ -69,6 +71,7 @@ export class RecorderStageProjection {
     for (const [participantId, timestamp] of Object.entries(snapshot.raised_hands))
       this.raisedHands.set(participantId, timestamp)
     this.activeSpeakerIds = [...snapshot.active_speaker_ids]
+    this.sharedStage = snapshot.shared_stage
 
     const buffered = this.bufferedEvents.splice(0).sort((a, b) => a.cursor - b.cursor)
     for (const event of buffered) this.assertRoom(event.room_id)
@@ -166,6 +169,18 @@ export class RecorderStageProjection {
         })
         break
       }
+      case 'shared_stage':
+        if (
+          this.sharedStage &&
+          (payload.state.epoch !== this.sharedStage.epoch ||
+            payload.state.version <= this.sharedStage.version)
+        )
+          throw new Error('Shared Stage version regressed')
+        for (const id of payload.state.participantIds) this.requireParticipant(id)
+        if (payload.state.participantIds.length !== this.participants.size)
+          throw new Error('Shared Stage inventory mismatch')
+        this.sharedStage = payload.state
+        break
       case 'active_speaker':
         if (new Set(payload.participant_ids).size !== payload.participant_ids.length)
           throw new Error('Duplicate active speaker relationship')
@@ -186,6 +201,12 @@ export class RecorderStageProjection {
   private validateSnapshot(snapshot: RecorderStageSnapshot): void {
     const participantIds = new Set(snapshot.participants.map((p) => p.participant_id))
     const producerIds = new Set(snapshot.producers.map((p) => p.producer_id))
+    if (
+      snapshot.shared_stage &&
+      (snapshot.shared_stage.participantIds.length !== participantIds.size ||
+        snapshot.shared_stage.participantIds.some((id) => !participantIds.has(id)))
+    )
+      throw new Error('Shared Stage snapshot inventory mismatch')
     if (participantIds.size !== snapshot.participants.length)
       throw new Error('Duplicate snapshot participant')
     if (producerIds.size !== snapshot.producers.length)

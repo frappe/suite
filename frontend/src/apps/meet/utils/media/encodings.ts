@@ -1,8 +1,9 @@
 import type { ProducerCodecOptions } from 'mediasoup-client/types'
 
-// layers for simulcast video streaming (adaptive streaming)
-// layer 0: low quality (300 kbps)
-// layer 1: medium quality (700 kbps)
+// Keep the base camera layer inexpensive so several moving faces fit alongside
+// audio on a constrained receiver. The SFU selects layers per receiver.
+// layer 0: low quality (120 kbps)
+// layer 1: medium quality (500 kbps)
 // layer 2: high quality (1800 kbps)
 
 interface VideoEncodingLayer {
@@ -16,8 +17,8 @@ interface SVCEncodingLayer {
 }
 
 export const videoEncodings: VideoEncodingLayer[] = [
-  { maxBitrate: 300000, scaleResolutionDownBy: 4 },
-  { maxBitrate: 700000, scaleResolutionDownBy: 2 },
+  { maxBitrate: 120000, scaleResolutionDownBy: 4 },
+  { maxBitrate: 500000, scaleResolutionDownBy: 2 },
   { maxBitrate: 1800000 },
 ]
 

@@ -5,73 +5,69 @@ import {
   presentationDoc,
   presentationId,
   savePresentationDoc,
+  viewOnly,
 } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
+import { openDraftsDb, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { cloneObj } from '@/apps/slides/utils/helpers'
-import { DRAFTS_DB_NAME } from '@/apps/slides/utils/slidesCaches'
+import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
+import { draftsDbName, isOutOfSpace } from '@/apps/slides/utils/slidesCaches'
 import { getSessionUser } from '@/boot/session'
 
-const DB_VERSION = 1
 const STORE = 'presentations'
 
 let db = null
+let dbOwner = null
 
-const openDB = () => {
-  if (db) {
-    return Promise.resolve(db)
+function draftsOwner() {
+  return getSessionUser() || 'Guest'
+}
+
+async function openDB() {
+  const user = draftsOwner()
+  if (db && dbOwner === user) {
+    return db
   }
 
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DRAFTS_DB_NAME, DB_VERSION)
+  db?.close()
+  db = await openDraftsDb(draftsDbName(user))
+  dbOwner = user
+  // a database being deleted or upgraded waits on this connection
+  db.onversionchange = () => {
+    db.close()
+    db = null
+  }
 
-    req.onupgradeneeded = () => {
-      const db = req.result
-
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'id' })
-      }
-    }
-
-    req.onsuccess = () => {
-      db = req.result
-      // another user taking over deletes the database, which waits on this connection
-      db.onversionchange = () => {
-        db.close()
-        db = null
-      }
-      resolve(db)
-    }
-
-    req.onerror = () => {
-      reject(req.error)
-    }
-  })
+  return db
 }
 
 // `allowed` is asked right before the transaction opens: IndexedDB runs
 // read-write transactions on one store in the order they open, so a write that
 // is refused here can never land after one that `stopWrites` made
-const savePresentationToLocalDB = async (data, allowed = () => true) => {
+async function changeDraftStore(change, allowed) {
   const db = await openDB()
   if (!allowed()) return false
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
-    const store = tx.objectStore(STORE)
-
-    const req = store.put(data)
-    req.onerror = () => {
-      reject(req.error)
-    }
+    change(tx.objectStore(STORE))
 
     tx.oncomplete = () => {
       resolve(true)
     }
 
-    tx.onerror = () => {
+    tx.onabort = () => {
       reject(tx.error)
     }
   })
+}
+
+function savePresentationToLocalDB(data, allowed = () => true) {
+  return changeDraftStore((store) => store.put(data), allowed)
+}
+
+function deletePresentationFromLocalDB(id, allowed = () => true) {
+  return changeDraftStore((store) => store.delete(id), allowed)
 }
 
 let persistRequested = false
@@ -93,16 +89,39 @@ const abortFor = (id) => {
   return saveAborts.get(id).signal
 }
 
+// the newest dirty draft write per presentation; any write waiting on the clear gives
+// way to it. A clean one never makes a dirty one give way, as that may hold newer edits
+const draftWrites = new Map()
+
 // a store that refuses the draft must not stop the push; answers whether it wrote
 const writeDraft = (record, epoch) => {
   if (!persistRequested) {
     persistRequested = true
     navigator.storage?.persist?.().catch(() => {})
   }
-  return savePresentationToLocalDB(record, () => mayWrite(record.id, epoch)).then(
-    (wrote) => wrote,
-    () => false,
-  )
+
+  const turn = (draftWrites.get(record.id) ?? 0) + (record.dirty ? 1 : 0)
+  draftWrites.set(record.id, turn)
+
+  function write() {
+    return savePresentationToLocalDB(record, () => mayWrite(record.id, epoch))
+  }
+
+  return write()
+    .catch(async (err) => {
+      if (!isOutOfSpace(err)) {
+        throw err
+      }
+
+      // a draft comes before any visited copy
+      await clearVisitedCopies().catch(() => {})
+      if (draftWrites.get(record.id) !== turn) {
+        return false
+      }
+
+      return write()
+    })
+    .catch(() => false)
 }
 
 const getPresentationFromLocalDB = async (id) => {
@@ -112,7 +131,7 @@ const getPresentationFromLocalDB = async (id) => {
 
   const db = await openDB()
 
-  return new Promise((resolve, reject) => {
+  const record = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
     const store = tx.objectStore(STORE)
 
@@ -129,6 +148,11 @@ const getPresentationFromLocalDB = async (id) => {
       reject(req.error)
     }
   })
+  if (record || viewOnly.value) {
+    return record ?? null
+  }
+
+  return takeUnownedDraft(id, draftsOwner()).catch(() => null)
 }
 
 // explicit dirty flag set by every mutation path
@@ -154,6 +178,14 @@ const markDirty = () => {
 const markClean = () => {
   dirty.value = false
 }
+
+// counts the ticks per presentation
+const latestTicks = new Map()
+
+// the newest tick past its draft write; a snapshot holds every slide, so an older tick
+// has nothing that one lacks. Giving way to any newer tick would stall the push when
+// every draft write outlasts the autosave interval
+const ticksAtGate = new Map()
 
 // the generation each draft holds, so a blocked push does not rewrite it every tick
 const draftGenerations = new Map()
@@ -186,6 +218,20 @@ const saveRefused = computed(
   () => refusedBase.value != null && refusedBase.value === presentationDoc.value?.modified,
 )
 
+// the server holds this record, so if it can't be written an older dirty draft must
+// not outlive it; an edit made during the save keeps the draft
+async function writeLanded(record, generation, epoch) {
+  if (await writeDraft(record, epoch)) {
+    return
+  }
+
+  const { id } = record
+  await deletePresentationFromLocalDB(
+    id,
+    () => mayWrite(id, epoch) && generationFor(id) === generation,
+  ).catch(() => {})
+}
+
 // answers false when the writes stopped before the save finished
 const syncSnapshotToServer = async (snapshot, id, generation, epoch) => {
   if (!mayWrite(id, epoch)) return false
@@ -208,15 +254,17 @@ const syncSnapshotToServer = async (snapshot, id, generation, epoch) => {
       await writeDraft(next, epoch)
       return syncSnapshotToServer(next, id, generationFor(id), epoch)
     }
+
     // slides.value belongs to another presentation now and can't be read back;
     // the server has this snapshot
-    await writeDraft(
+    await writeLanded(
       {
         ...snapshot,
         dirty: false,
         updatedAt: Date.now(),
         baseModified: savedModified,
       },
+      generation,
       epoch,
     )
     return true
@@ -226,7 +274,7 @@ const syncSnapshotToServer = async (snapshot, id, generation, epoch) => {
   // local copy has to keep it and stay dirty; baseModified tracks the server version
   const editedDuringSave = generationFor(id) !== generation
 
-  await writeDraft(
+  await writeLanded(
     {
       ...snapshot,
       content: editedDuringSave ? getLatestSlideContent() : snapshot.content,
@@ -234,6 +282,7 @@ const syncSnapshotToServer = async (snapshot, id, generation, epoch) => {
       updatedAt: Date.now(),
       baseModified: savedModified,
     },
+    generation,
     epoch,
   )
   return true
@@ -265,6 +314,18 @@ const saveDraft = async () => {
   if (snapshot) await writeSnapshot(snapshot)
 }
 
+async function holdRefused(snapshot, epoch) {
+  // the hold turns the editor read-only, so the edits made during the push go in first
+  const latest = takeSnapshot()
+  refusedBase.value = snapshot.baseModified
+  if (latest) {
+    await writeSnapshot(latest, epoch)
+  }
+
+  // a tick during that write queued an edit the hold has already kept
+  queuedSnapshots.delete(snapshot.id)
+}
+
 const saveCurrentState = async () => {
   const snapshot = takeSnapshot()
   if (!snapshot || stopped.has(snapshot.id)) return
@@ -272,10 +333,16 @@ const saveCurrentState = async () => {
   const idAtSnapshot = snapshot.id
   const generationAtSnapshot = generationFor(idAtSnapshot)
   const epoch = epochFor(idAtSnapshot)
+  const tick = (latestTicks.get(idAtSnapshot) ?? 0) + 1
+  latestTicks.set(idAtSnapshot, tick)
 
   // written before the gate, so the draft follows the edits while a push is stuck
   await writeSnapshot(snapshot, epoch)
-  if (!mayWrite(idAtSnapshot, epoch)) return
+  if (!mayWrite(idAtSnapshot, epoch) || (ticksAtGate.get(idAtSnapshot) ?? 0) > tick) {
+    return
+  }
+
+  ticksAtGate.set(idAtSnapshot, tick)
 
   if (isSaving.value) {
     queuedSnapshots.set(idAtSnapshot, snapshot)
@@ -305,12 +372,10 @@ const saveCurrentState = async () => {
     // keep dirty so autosave retries; log once per outage
     if (!saveFailed.value) console.error('Save failed: ', err)
     saveFailed.value = true
-    if (err?.exc_type === 'TimestampMismatchError') {
+    if (err?.type === 'TimestampMismatchError') {
       if (presentationId.value !== idAtSnapshot) return
-      // the hold turns the editor read-only, so the edits made during the push go in first
-      const latest = takeSnapshot()
-      if (latest) await writeSnapshot(latest, epoch)
-      refusedBase.value = snapshot.baseModified
+
+      await holdRefused(snapshot, epoch)
     } else {
       retryDelay = Math.min(retryDelay * 2 || 500, MAX_RETRY_MS)
       retryAt = Date.now() + retryDelay
@@ -320,10 +385,24 @@ const saveCurrentState = async () => {
   }
 }
 
+// `keepContent` answers false to leave the draft in place, as the only place its edits live
+async function retireDraft(id, keepContent) {
+  const local = await getPresentationFromLocalDB(id).catch(() => null)
+  if (!local?.dirty || (keepContent && !keepContent(local.content))) {
+    return
+  }
+
+  // if that write fails the record goes, so it can't replay either way
+  await savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
+    .catch(() => deletePresentationFromLocalDB(id))
+    .catch(() => {})
+}
+
 // Edit access is gone. No save starts, the one under way is aborted and lands
 // nothing, and the draft is retired so it never replays: the edits live on only
-// in the explicit recovery copy the surface keeps.
-const stopWrites = async (id) => {
+// in the explicit recovery copy the surface keeps. The exception is a draft
+// `keepContent` found no room for: it stays, and a later load treats it as any other
+async function stopWrites(id, keepContent) {
   if (!id) return
   stopped.add(id)
   epochs.set(id, epochFor(id) + 1)
@@ -331,12 +410,7 @@ const stopWrites = async (id) => {
   draftGenerations.delete(id)
   saveAborts.get(id)?.abort()
   saveAborts.delete(id)
-  const local = await getPresentationFromLocalDB(id).catch(() => null)
-  if (local?.dirty) {
-    await savePresentationToLocalDB({ ...local, dirty: false, updatedAt: Date.now() }).catch(
-      () => {},
-    )
-  }
+  await retireDraft(id, keepContent)
 }
 
 // Edit access is back. The caller reloads from the server; the old epoch stays
@@ -362,6 +436,7 @@ export {
   saveWithoutDelay,
   saveDraft,
   stopWrites,
+  retireDraft,
   resumeWrites,
   isSaving,
   dirty,

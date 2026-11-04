@@ -444,6 +444,9 @@ export function createMouse(o: MouseOptions): Mouse {
   }
 
   function onWheel(e: WheelEvent): void {
+    // Ctrl+wheel, and a trackpad pinch (sent as one), zooms the page: leave
+    // it to the browser, as Ctrl/Cmd + = - 0 are.
+    if (e.ctrlKey) return
     e.preventDefault()
     // Wheel deltas are screen pixels; scroll is logical.
     const z = o.getZoom()

@@ -1,8 +1,9 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
-"""``_cache_messages``'s contract with the address index: a message is indexed the once, when the
-cache first takes it, and only stays cached if that indexing got through — so a failure costs a
-re-fetch rather than leaving the people on that message out of suggestions for good."""
+"""``_cache_messages``'s contract with the address index: a message is indexed when the cache first
+takes it, and only stays cached if that indexing got through — so a failure costs a re-fetch rather
+than leaving the people on that message out of suggestions for good. Recipients of mail the account
+sent are dated, so suggestions can lead with the people it writes to."""
 
 import shutil
 import tempfile
@@ -31,6 +32,7 @@ class CacheMessages(unittest.TestCase):
         with (
             mock.patch.object(mail_message, "get_data_store", return_value=store),
             mock.patch.object(mail_message, "get_email_address_index", return_value=index),
+            mock.patch.object(mail_message, "get_account_emails", return_value=["me@example.com"]),
             mock.patch.object(mail_message, "log_mail_error") as log_error,
             mock.patch.object(mail_message, "rebuild_email_address_index") as rebuild,
         ):
@@ -49,7 +51,7 @@ class CacheMessages(unittest.TestCase):
         self.assertEqual(addresses, [{"name": "Jane Doe", "email": "jane@example.com"}])
 
     def test_a_message_the_cache_already_held_is_not_indexed_again(self):
-        # The re-cache a flag change causes: counting it would score sync churn as correspondence.
+        # The re-cache a flag change causes: harmless to index again, but a needless index write.
         _store, index, _log, _rebuild = self.cache(
             {"m1": self.message("m1", "jane@example.com")}, new_ids=set()
         )
@@ -141,6 +143,7 @@ class CacheMessages(unittest.TestCase):
         with (
             mock.patch.object(mail_message, "get_data_store", return_value=store),
             mock.patch.object(mail_message, "get_email_address_index", return_value=index),
+            mock.patch.object(mail_message, "get_account_emails", return_value=["me@example.com"]),
             mock.patch.object(mail_message, "log_mail_error") as log_error,
             mock.patch.object(mail_message, "rebuild_email_address_index") as rebuild,
         ):
@@ -148,6 +151,50 @@ class CacheMessages(unittest.TestCase):
             mail_message._cache_messages("account", {"m1": self.message("m1", "jane@example.com")})
 
         self.assertEqual(log_error.call_count, 2)
+
+
+class MessageAddresses(unittest.TestCase):
+    """``_message_addresses`` — sender and recipients, with recipients dated on mail the account sent."""
+
+    def message(self, sender, draft=0):
+        return {
+            "from_name": "Sender",
+            "from_email": sender,
+            "sent_at": "2026-10-20T10:00:00Z",
+            "draft": draft,
+            "recipients": [
+                {"type": "To", "display_name": "Jane Doe", "email": "jane@example.com"},
+                {"type": "Cc", "display_name": None, "email": "john@example.com"},
+            ],
+        }
+
+    def addresses(self, message):
+        return mail_message._message_addresses([message], {"me@example.com"})
+
+    def test_recipients_of_sent_mail_carry_when_it_was_sent(self):
+        sent_at = 1792490400  # 2026-10-20T10:00:00Z
+        self.assertEqual(
+            self.addresses(self.message("Me@Example.com")),
+            [
+                {"name": "Sender", "email": "Me@Example.com"},
+                {"name": "Jane Doe", "email": "jane@example.com", "last_sent_at": sent_at},
+                {"name": None, "email": "john@example.com", "last_sent_at": sent_at},
+            ],
+        )
+
+    def test_received_mail_is_undated(self):
+        self.assertEqual(
+            self.addresses(self.message("someone@example.com")),
+            [
+                {"name": "Sender", "email": "someone@example.com"},
+                {"name": "Jane Doe", "email": "jane@example.com"},
+                {"name": None, "email": "john@example.com"},
+            ],
+        )
+
+    def test_a_draft_was_never_sent(self):
+        addresses = self.addresses(self.message("me@example.com", draft=1))
+        self.assertFalse(any("last_sent_at" in address for address in addresses))
 
 
 class RollbackAgainstAConcurrentUpdate(unittest.TestCase):
@@ -175,6 +222,7 @@ class RollbackAgainstAConcurrentUpdate(unittest.TestCase):
         with (
             mock.patch.object(mail_message, "get_data_store", return_value=self.store),
             mock.patch.object(mail_message, "get_email_address_index", return_value=index),
+            mock.patch.object(mail_message, "get_account_emails", return_value=["me@example.com"]),
             mock.patch.object(mail_message, "log_mail_error"),
         ):
             mail_message._cache_messages("account", {"m1": message})

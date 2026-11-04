@@ -176,6 +176,8 @@ function createMockMediasoupManager(): MediasoupManager {
 		| Parameters<MediasoupManager['onProducerClosed']>[0]
 		| undefined;
 	return {
+		onCameraLayerDemand: vi.fn(),
+		getCameraLayerDemand: vi.fn().mockReturnValue(null),
 		onNetworkQualityUpdate: vi.fn().mockReturnValue(() => {}),
 		onProducerClosed: vi.fn((listener) => {
 			producerClosedListener = listener;
@@ -213,6 +215,7 @@ function createMockMediasoupManager(): MediasoupManager {
 			return result;
 		}),
 		closeConsumer: vi.fn().mockResolvedValue(undefined),
+		resumeConsumer: vi.fn().mockResolvedValue(true),
 		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),
 		updateConsumerPreferences: vi.fn().mockResolvedValue({ paused: false }),
 		createProducer: vi.fn().mockResolvedValue({

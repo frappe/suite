@@ -157,6 +157,8 @@ export const registration: OwnerRegistration = {
           ],
         },
       }
+    if (reference.id === 'update_regional_preferences')
+      return { effects: { invalidates: ['mail.regional_preferences'] } }
     if (reference.id === 'update_account_preferences')
       return {
         effects: {

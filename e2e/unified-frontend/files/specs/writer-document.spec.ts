@@ -96,9 +96,15 @@ test("losing edit access freezes the editor and cancels the pending save", async
 	const seen = watchPage(page);
 	const editor = await openDocument(page);
 
+	await page.route(/\/content\/[^/]+\/updates/, (route) => {
+		if (route.request().method() === "POST") {
+			return route.abort("failed");
+		}
+
+		return route.continue();
+	});
 	await editor.click();
 	await page.keyboard.type("Typed before the document was trashed");
-	// The autosave waits five seconds. Trash the document before it fires.
 	await patchNode(api, doc.name, { state: "Trashed" });
 	const trashedAt = seen.requests.length;
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -107,15 +113,12 @@ test("losing edit access freezes the editor and cancels the pending save", async
 	await expect(editor).toHaveAttribute("contenteditable", "false");
 	await page.waitForTimeout(6_500);
 
+	// The room still sends its unsent work once, within a short bound; this test's route aborts it
+	// Drive's refusal on a trashed node is covered by test_content.py (test_a_trashed_node_refuses_a_write)
 	const writes = seen.requests
 		.slice(trashedAt)
 		.filter((line) => /\/method\/(save_doc|save_html|new_version|update_settings)/.test(line));
 	expect(writes).toEqual([]);
-	const recovery = await page.evaluate(
-		(node) => localStorage.getItem(`suite:writer-recovery:${node}`),
-		doc.name,
-	);
-	expect(recovery).toContain("Typed before the document was trashed");
 
 	// The recovery copy has a way out: an HTML file of the unsaved work.
 	const download = page.waitForEvent("download");
@@ -128,11 +131,11 @@ test("losing edit access freezes the editor and cancels the pending save", async
 	// A trashed document takes no new comments.
 	await page.getByRole("button", { name: "Comments" }).click();
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
-	await expect(page.getByRole("textbox", { name: "New comment" })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Add a comment" })).toHaveCount(0);
 	expect(seen.errors).toEqual([]);
 });
 
-test("a toolbar-only change asks before leaving the document", async ({ page }) => {
+test("a toolbar-only change is saved before leaving the document", async ({ page }) => {
 	const editor = await openDocument(page);
 	await editor.click();
 	await page.getByRole("button", { name: /bullet list/i }).click();
@@ -144,15 +147,18 @@ test("a toolbar-only change asks before leaving the document", async ({ page }) 
 	});
 	await page.getByRole("navigation", { name: "Areas" }).getByRole("link", { name: "Drive" }).click();
 
-	await expect.poll(() => asked).toContain("recovery copy");
-	await expect(page).toHaveURL(new RegExp(`/d/${doc.name}`));
+	// The room saves the change on the way out, so there's nothing to recover and no reason to ask
+	await expect(page).not.toHaveURL(new RegExp(`/d/${doc.name}`));
+	expect(asked).toBe("");
+	await expect.poll(storedHtml).toContain("<ul");
 });
 
 test("adding a comment keeps the panel open and shows the comment", async ({ page }) => {
 	await openDocument(page);
 	await page.getByRole("button", { name: "Comments" }).click();
-	await page.getByRole("textbox", { name: "New comment" }).fill("Looks good to me");
-	await page.getByRole("button", { name: "Add", exact: true }).click();
+	await page.getByRole("button", { name: "Add a comment" }).click();
+	await page.getByLabel("Add a comment", { exact: true }).fill("Looks good to me");
+	await page.getByRole("button", { name: "Comment", exact: true }).click();
 
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
 	await expect(page.getByText("Looks good to me")).toBeVisible();

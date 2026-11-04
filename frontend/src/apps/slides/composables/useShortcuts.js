@@ -6,7 +6,6 @@ import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 import {
   activeElementIds,
   activeElements,
-  addTextElement,
   deleteElements,
   duplicateElements,
   exitTextEditing,
@@ -35,7 +34,6 @@ import {
   updateSelectionBounds,
 } from '@/apps/slides/stores/slide'
 import {
-  changeSlideInSlideshow,
   performNextStep,
   performPreviousStep,
   startSlideShow,
@@ -147,9 +145,28 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
     else deleteSlide()
   }
 
-  const addShape = (shapeType) => {
+  // A tool letter arms a placement tool; nothing is drawn until the next click.
+  // A key pressed within TYPING_GAP_MS of the one before is typing, not a command:
+  // it arms nothing, and it disarms a tool the previous key armed.
+  const TYPING_GAP_MS = 1000
+  let lastKeyAt = Number.NEGATIVE_INFINITY
+  let typing = false
+  let armedByLastKey = false
+
+  const trackTyping = (e) => {
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+    if (isPlainInput(e) || e.target?.isContentEditable) return
+    typing = e.timeStamp - lastKeyAt < TYPING_GAP_MS
+    lastKeyAt = e.timeStamp
+    if (typing && armedByLastKey) pendingShapeType.value = null
+    armedByLastKey = false
+  }
+
+  const armTool = (tool) => {
+    if (typing) return
     pendingShapePreset.value = {}
-    pendingShapeType.value = shapeType
+    pendingShapeType.value = tool
+    armedByLastKey = true
   }
 
   // overlays dismiss on Escape only if the event wasn't defaultPrevented,
@@ -191,8 +208,14 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
     startTextEditing(e.key)
   }
 
-  onMounted(() => window.addEventListener('keydown', handleTypeToEdit, true))
-  onUnmounted(() => window.removeEventListener('keydown', handleTypeToEdit, true))
+  onMounted(() => {
+    window.addEventListener('keydown', trackTyping, true)
+    window.addEventListener('keydown', handleTypeToEdit, true)
+  })
+  onUnmounted(() => {
+    window.removeEventListener('keydown', trackTyping, true)
+    window.removeEventListener('keydown', handleTypeToEdit, true)
+  })
 
   const handleEscape = (e) => {
     if (isPlainInput(e)) return e.target.blur()
@@ -260,35 +283,35 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Add text box',
       group: 'Insert',
       enabled: inEditMode,
-      handler: skipInOverlay(() => addTextElement()),
+      handler: skipInOverlay(() => armTool('text')),
     },
     {
       combo: 'R',
       description: 'Add rectangle',
       group: 'Insert',
       enabled: inEditMode,
-      handler: skipInOverlay(() => addShape('rectangle')),
+      handler: skipInOverlay(() => armTool('rectangle')),
     },
     {
       combo: 'O',
       description: 'Add oval',
       group: 'Insert',
       enabled: inEditMode,
-      handler: skipInOverlay(() => addShape('oval')),
+      handler: skipInOverlay(() => armTool('oval')),
     },
     {
       combo: 'L',
       description: 'Add line',
       group: 'Insert',
       enabled: inEditMode,
-      handler: skipInOverlay(() => addShape('line')),
+      handler: skipInOverlay(() => armTool('line')),
     },
     {
       combo: 'C',
       description: 'Add connector',
       group: 'Insert',
       enabled: inEditMode,
-      handler: skipInOverlay(() => addShape('connector')),
+      handler: skipInOverlay(() => armTool('connector')),
     },
     {
       combo: 'Mod+A',
@@ -359,56 +382,56 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
     {
       combo: 'ArrowUp',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowUp,
     },
     {
       combo: 'ArrowDown',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowDown,
     },
     {
       combo: 'ArrowLeft',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowLeft,
     },
     {
       combo: 'ArrowRight',
       description: 'Move element',
-      group: 'Edit',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowRight,
     },
     {
       combo: 'Shift+ArrowUp',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px up or down',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowUp,
     },
     {
       combo: 'Shift+ArrowDown',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px up or down',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowDown,
     },
     {
       combo: 'Shift+ArrowLeft',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px left or right',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowLeft,
     },
     {
       combo: 'Shift+ArrowRight',
-      description: 'Move element by 10px',
-      group: 'Edit',
+      description: 'Move element 10px left or right',
+      group: 'Move',
       enabled: inEditMode,
       handler: handleArrowRight,
     },
@@ -457,48 +480,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       group: 'Slideshow',
       handler: () => {
         if (inEditMode() || inReadonly()) startSlideShow()
-      },
-    },
-    {
-      combo: 'F5',
-      description: 'Restart',
-      group: 'Slideshow',
-      enabled: inSlideShow,
-      handler: () => changeSlideInSlideshow(0),
-    },
-    {
-      combo: 'ArrowLeft',
-      description: 'Previous step',
-      group: 'Slideshow',
-      handler: handleArrowLeft,
-    },
-    {
-      combo: 'PageUp',
-      description: 'Previous step',
-      group: 'Slideshow',
-      handler: () => {
-        if (inSlideShow()) performPreviousStep()
-      },
-    },
-    {
-      combo: 'Space',
-      description: 'Next step',
-      group: 'Slideshow',
-      enabled: inSlideShow,
-      handler: () => performNextStep(),
-    },
-    {
-      combo: 'ArrowRight',
-      description: 'Next step',
-      group: 'Slideshow',
-      handler: handleArrowRight,
-    },
-    {
-      combo: 'PageDown',
-      description: 'Next step',
-      group: 'Slideshow',
-      handler: () => {
-        if (inSlideShow()) performNextStep()
       },
     },
   ]

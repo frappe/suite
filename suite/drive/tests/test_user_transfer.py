@@ -136,6 +136,22 @@ class TestUserTransfer(IntegrationTestCase):
                     self.source_user, self.destination, preview["fingerprint"], confirm_access=True
                 )
 
+    def test_a_mailbox_not_measured_since_it_changed_blocks_a_transfer_that_adds_bytes(self):
+        drive.store_file(self.source, "retained.txt", BytesIO(b"hello"))
+        update_user(self.source_user, enabled=False)
+        doc, _policy, _measurements = state(lock=True)
+        doc.measurements = json.dumps(
+            {"personal": {self.target_user: None}, "site_mail": 0, "allowance": 10_000_000}
+        )
+        doc.save(ignore_permissions=True)
+        with patch("suite.drive._core.offboarding.is_suite_cloud_configured", return_value=True):
+            preview = drive.preview_user_transfer(self.source_user, self.destination)
+            self.assertEqual(preview["destination_capacity"]["blocker"], "unknown_usage")
+            with self.assertRaises(drive.DriveOverQuota):
+                drive.transfer_user_drive(
+                    self.source_user, self.destination, preview["fingerprint"], confirm_access=True
+                )
+
     def test_execution_rechecks_a_lowered_cap_and_requires_access_confirmation(self):
         drive.store_file(self.source, "retained.txt", BytesIO(b"hello"))
         update_user(self.source_user, enabled=False)

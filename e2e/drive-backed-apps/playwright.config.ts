@@ -33,6 +33,18 @@ const testApiServer =
 			}
 		: undefined;
 
+const launchOptions = { args: ["--unsafely-treat-insecure-origin-as-secure=" + baseURL] };
+
+function chromeChoice() {
+	if (chromeExecutable) {
+		return { launchOptions: { ...launchOptions, executablePath: chromeExecutable } };
+	}
+
+	return { channel: "chrome", launchOptions };
+}
+
+const browser = { ...devices["Desktop Chrome"], ...chromeChoice() };
+
 export default defineConfig({
 	testDir: "./specs",
 	fullyParallel: true,
@@ -65,12 +77,7 @@ export default defineConfig({
 	projects: [
 		{
 			name: "chromium",
-			use: {
-				...devices["Desktop Chrome"],
-				...(chromeExecutable
-					? { launchOptions: { executablePath: chromeExecutable } }
-					: { channel: "chrome" }),
-			},
+			use: browser,
 		},
 	],
 	...(testApiServer ? { webServer: testApiServer } : {}),

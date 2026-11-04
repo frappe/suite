@@ -4,15 +4,16 @@
       <div class="flex">
         <slot name="logo">
           <div class="mx-auto flex items-center space-x-2">
-            <MailLogo class="inline-block h-7 w-7" />
-            <span class="select-none text-2xl-semibold tracking-tight"> Frappe Mail </span>
+            <img :src="suiteLogo" alt="" class="inline-block h-7 w-7" />
+            <span class="select-none text-2xl-semibold tracking-tight">Suite</span>
           </div>
         </slot>
       </div>
       <div
         class="bg-surface-base mx-auto w-full px-4 py-8 sm:mt-6 sm:w-[26rem] sm:rounded-6 sm:px-8 sm:shadow-xl"
       >
-        <div class="mb-6 text-center">
+        <!-- An invitation names its organisation and inviter itself (InviteSetupView). -->
+        <div v-if="title" class="mb-6 text-center">
           <span class="text-center text-lg-medium leading-5 tracking-tight">
             {{ title }}
           </span>
@@ -33,8 +34,8 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import FrappeLogo from '@/apps/mail/components/Icons/FrappeLogo.vue'
-import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
 
+const suiteLogo = '/assets/suite/frontend/logo.svg'
 const route = useRoute()
 
 const title = computed(() => {
@@ -44,6 +45,8 @@ const title = computed(() => {
     case 'mail-forgot-password':
     case 'mail-reset-password':
       return __('Reset Password')
+    case 'mail-invite-setup':
+      return ''
     default:
       return __('Create a new account')
   }

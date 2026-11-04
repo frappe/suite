@@ -137,11 +137,9 @@
               v-if="recipients.status === 'success' && recipients.total"
               :count="recipients.rows.length"
               :total="recipients.total ?? 0"
-              :page-length="pageLength"
               :has-more="recipients.hasNext"
               :loading="recipients.isFetching"
               :flush="false"
-              @update:page-length="(value) => (pageLength = value)"
               @load-more="recipients.fetchNext().catch(() => {})"
             />
           </div>
@@ -188,7 +186,7 @@ import AddMailingListEmailModal from '@/apps/mail/components/Modals/AddMailingLi
 import AddMailingListRecipientsModal from '@/apps/mail/components/Modals/AddMailingListRecipientsModal.vue'
 import EditMailingListModal from '@/apps/mail/components/Modals/EditMailingListModal.vue'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardCard, DashboardLayout, DashboardRowsSkeleton } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
@@ -233,12 +231,11 @@ const data = computed(() => list.data as ListData | undefined)
 // Recipients are searched and paged on Suite Cloud: a list can hold thousands, and the detail
 // call only carries the total, which the header shows.
 const debouncedSearch = refDebounced(recipientSearch, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const recipients = useInfiniteQuery(api.mail.admin.recipients.list, () => ({
   list_id: listId,
   search: debouncedSearch.value,
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const reloadAll = () => {
   list.refetch().catch(() => {})

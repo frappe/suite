@@ -265,6 +265,23 @@ def node_patch(
     )
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@_route
+def node_move_preview(node: Given = None, parent_node: Given = None) -> shapes.MovePreviewShape:
+    """Answer who moving one node into `parent_node` would give access to (UF §5.7).
+
+    A guest may ask, as a guest may move: the workflow checks the access the
+    move checks, so the answer reaches no one the move would not.
+    """
+    return shapes.move_preview_shape(
+        node_core.preview_move(
+            _principals(),
+            shapes.required_text(node, "node"),
+            shapes.required_text(parent_node, "parent_node"),
+        )
+    )
+
+
 @frappe.whitelist(methods=["DELETE"])
 @_route
 def node_purge(node: Given = None) -> shapes.Count:
@@ -1028,7 +1045,7 @@ def node_versions(node: Given = None, limit: Given = None, cursor: Given = None)
         cursor=shapes.text(cursor, "cursor") or None,
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
     )
-    return shapes.page(result, [shapes.version_shape(row) for row in result["rows"]])
+    return shapes.page(result, shapes.version_shapes(result["rows"]))
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
@@ -1158,6 +1175,7 @@ def node_thread_create(
     anchor: Given = None,
     text: Given = None,
     author_name: Given = None,
+    client_id: Given = None,
 ) -> shapes.ThreadShape:
     """Open one thread and its first comment in one write (§9.3).
 
@@ -1173,8 +1191,25 @@ def node_thread_create(
             shapes.required_text(anchor, "anchor"),
             shapes.required_text(text, "text"),
             author_name=shapes.text(author_name, "author_name"),
+            client_id=shapes.text(client_id, "client_id"),
         )
     )
+
+
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["PATCH"])
+@_route
+def node_threads_reanchor(node: Given = None, anchors: Given = None) -> dict:
+    """Move threads of one document to new anchors. EDIT, all or none (§9.3).
+
+    The content app sends it when its text came back under new ids, as after a
+    restore; only the anchors change. The answer lists the moved threads.
+    """
+    moved = comments.reanchor_threads(
+        _principals(),
+        shapes.required_text(node, "node"),
+        shapes.text_map(anchors, "anchors"),
+    )
+    return {"threads": shapes.thread_shapes(moved)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["PATCH"])
@@ -1195,6 +1230,7 @@ def thread_comment_create(
     thread: Given = None,
     text: Given = None,
     author_name: Given = None,
+    client_id: Given = None,
 ) -> shapes.CommentShape:
     """Append one comment to an existing thread. COMMENT on its node."""
     return shapes.comment_shape(
@@ -1203,6 +1239,7 @@ def thread_comment_create(
             shapes.required_text(thread, "thread"),
             shapes.required_text(text, "text"),
             author_name=shapes.text(author_name, "author_name"),
+            client_id=shapes.text(client_id, "client_id"),
         )
     )
 
@@ -1293,7 +1330,7 @@ def notifications_list(
         cursor=shapes.text(cursor, "cursor") or None,
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
     )
-    return shapes.page(result, [shapes.notification_shape(row) for row in result["rows"]])
+    return shapes.page(result, shapes.notification_shapes(result["rows"]))
 
 
 @frappe.whitelist(methods=["GET"])

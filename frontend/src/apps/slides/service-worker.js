@@ -9,8 +9,12 @@ import {
   // outside CACHE_MAX_AGE: a pinned copy must survive the sweep
   PINNED_CACHE_NAME,
   SHELL_CACHE_NAME,
+  VISITED_CACHE_NAME,
+  VISITED_NODE_HEADER,
+  VISITED_SHELL_KEY,
+  withCachedTime,
 } from './utils/slidesCaches'
-import { getRequestType, isBundleAsset, isCacheable } from './utils/slidesRequests'
+import { getRequestType, isBundleAsset, isCacheable, shellKey } from './utils/slidesRequests'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -73,18 +77,6 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(handleSWActivate())
 })
 
-const getModifiedResponse = (response) => {
-  const responseToCache = response.clone()
-  const headers = new Headers(responseToCache.headers)
-  headers.set('x-cached-time', Date.now().toString())
-
-  return new Response(responseToCache.body, {
-    status: responseToCache.status,
-    statusText: responseToCache.statusText,
-    headers: headers,
-  })
-}
-
 // what each open page last said it is, see getRequestType
 const slidesClientState = new Map()
 
@@ -110,7 +102,7 @@ const addCacheEntry = async (type, cache, request, response) => {
   if (!isCacheable(type, response)) return
 
   // clone response and add cache timestamp header
-  const modifiedResponse = getModifiedResponse(response)
+  const modifiedResponse = withCachedTime(response.clone())
   await cache.put(request, modifiedResponse)
 }
 
@@ -183,9 +175,6 @@ const getPinnedResponse = async (event) => {
 // a pin is a request to present without the network, so it wins even online;
 // the user-switch clear and unpinning are what bound it
 const getMediaResponse = async (event) => {
-  // the pin action stores the body itself
-  if (event.request.headers.has(PIN_HEADER)) return fetch(event.request)
-
   const pinned = await getPinnedResponse(event)
   if (pinned) return pinned
 
@@ -211,6 +200,75 @@ const getResponseForRequest = async (event, type, url) => {
   return networkFirst(event, 'api', cache)
 }
 
+// the store keys a pin by these, see stores/offlineCopy.js
+function pinnedKey(request, url) {
+  if (request.mode === 'navigate') {
+    return shellKey(url.pathname)
+  }
+
+  return canonicalMediaKey(url.href) ?? `${url.pathname}${url.search}`
+}
+
+function matchVisited(key) {
+  return caches.match(key, { cacheName: VISITED_CACHE_NAME }).catch(() => null)
+}
+
+// a marker's empty body answers nothing; it only lets a navigation have the shared shell
+async function getVisitedResponse(request, url) {
+  const marker = shellKey(url.pathname)
+  if (request.mode !== 'navigate') {
+    if (marker) {
+      return null
+    }
+
+    const entry = await matchVisited(`${url.pathname}${url.search}`)
+    const node = entry?.headers.get(VISITED_NODE_HEADER)
+    // data with no marker is what a stopped capture left, maybe half of it
+    if (node && !(await matchVisited(`/d/${node}`))) {
+      return null
+    }
+
+    return entry
+  }
+
+  if (marker && (await matchVisited(marker))) {
+    return matchVisited(VISITED_SHELL_KEY)
+  }
+
+  return null
+}
+
+// both caches only ever hold this user's own copies, so offline they may answer any tab
+async function getOfflineResponse(event, type, url) {
+  const key = pinnedKey(event.request, url)
+  const pinned =
+    key && (await caches.match(key, { cacheName: PINNED_CACHE_NAME }).catch(() => null))
+
+  if (pinned) {
+    return respondFromCache(event, pinned)
+  }
+
+  const visited = await getVisitedResponse(event.request, url)
+  if (visited) {
+    return respondFromCache(event, visited)
+  }
+
+  // a signed picture's signature changes, so the page stored it under its file path
+  const stored =
+    type === 'other' &&
+    key &&
+    (await caches.match(key, { cacheName: MEDIA_CACHE_NAME }).catch(() => null))
+  if (stored) {
+    return respondFromCache(event, stored)
+  }
+
+  if (type === 'other' || type === 'shell') {
+    return fetch(event.request)
+  }
+
+  return getResponseForRequest(event, type, url)
+}
+
 // respondWith must be called synchronously, so nothing here may await
 self.addEventListener('fetch', (event) => {
   const request = event.request
@@ -218,10 +276,17 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
 
+  // a capture or pin stores the body itself
+  if (request.headers.has(PIN_HEADER)) return
+
   const requestType = getRequestType(request, slidesClientState.get(event.clientId))
+  if (!self.navigator.onLine) {
+    event.respondWith(getOfflineResponse(event, requestType, url))
+    return
+  }
   // the shell document is the whole suite's, not slides': a stored copy would
-  // keep serving old code after a flip or a deploy, so it always comes from
-  // the network (unified frontend spec §14.9)
+  // keep serving old code after a flip or a deploy, so online it always comes
+  // from the network (unified frontend spec §14.9)
   if (requestType === 'other' || requestType === 'shell') return
 
   event.respondWith(getResponseForRequest(event, requestType, url))

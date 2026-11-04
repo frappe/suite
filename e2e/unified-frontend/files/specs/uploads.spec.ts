@@ -226,7 +226,8 @@ test("a folder upload from New creates the tree", async ({ page }) => {
 	await openFolder(page, home);
 
 	const chooser = page.waitForEvent("filechooser");
-	await useNewMenu(page, "Upload folder");
+	await page.getByRole("button", { name: "New", exact: true }).click();
+	await page.locator('[data-slot="group"]', { hasText: "Upload" }).getByRole("menuitem", { name: "Folder", exact: true }).click();
 	await (await chooser).setFiles(resolve(__dirname, "fixtures/upload-folder"));
 
 	await expect(doneEntries(page)).toHaveCount(2);

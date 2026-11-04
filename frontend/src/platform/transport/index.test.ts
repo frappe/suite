@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createTransport, TransportError, type Operation } from './index'
+import { assertSchema } from './schema'
 
 const getNode: Operation<{ node: string; expand?: string[] }, { name: string }> = {
   id: 'node_get',
@@ -67,6 +68,52 @@ describe('transport', () => {
     expect(new Headers(init?.headers).has('X-Drive-Links')).toBe(false)
   })
 
+  it('sends and returns binary bodies byte for byte, with the same headers, whatever the status', async () => {
+    window.csrf_token = 'csrf'
+    const sentBytes = new Uint8Array([0, 255, 128, 10, 13, 0])
+    const fetcher = vi.fn<typeof fetch>(
+      async () => new Response(new Uint8Array([255, 0, 1]), { status: 409 }),
+    )
+    const client = createTransport({ fetch: fetcher })
+    const pushOperation: Operation = {
+      ...getNode,
+      method: 'POST',
+      path: 'nodes/{node}/bytes',
+    }
+
+    const bytesOptions = {
+      body: sentBytes,
+      keepalive: true,
+      headers: { 'X-Drive-Links': 'c1' },
+    }
+    const bytesResponse = await client.requestBytes(pushOperation, { node: 'n1' }, bytesOptions)
+
+    expect([bytesResponse.status, [...bytesResponse.bytes]]).toEqual([409, [255, 0, 1]])
+    const [url, init] = fetcher.mock.calls[0]!
+    expect(url).toBe('/api/suite/drive/nodes/n1/bytes')
+    const sentBody = await new Response(init?.body).arrayBuffer()
+    expect([...new Uint8Array(sentBody)]).toEqual([...sentBytes])
+    expect(init?.keepalive).toBe(true)
+    const headers = new Headers(init?.headers)
+    expect([
+      headers.get('Content-Type'),
+      headers.get('X-Frappe-CSRF-Token'),
+      headers.get('X-Drive-Links'),
+    ]).toEqual(['application/octet-stream', 'csrf', 'c1'])
+  })
+
+  it('gives a framework error its exc_type as the type', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      response({ exc_type: 'TimestampMismatchError' }, 417),
+    )
+    const client = createTransport({ fetch: fetcher })
+
+    await expect(client.request(getNode, { node: 'n1' })).rejects.toMatchObject({
+      type: 'TimestampMismatchError',
+      status: 417,
+    })
+  })
+
   it('classifies errors by errors[0].type instead of status', async () => {
     const client = createTransport({
       fetch: async () => response({ errors: [{ type: 'DriveConflict', message: 'Changed' }] }, 417),
@@ -107,6 +154,13 @@ describe('transport', () => {
       createTransport({ fetch: writeFetch }).request(write, { title: 'Next' }),
     ).rejects.toBeInstanceOf(TransportError)
     expect(writeFetch).toHaveBeenCalledOnce()
+  })
+
+  it('stops retrying a GET whose fetcher resolves nothing', async () => {
+    const fetcher = vi.fn(async () => undefined as unknown as Response)
+    const client = createTransport({ fetch: fetcher, maxRetries: 3, retryBaseMs: 0 })
+    await expect(client.request(getNode, { node: 'n1' })).rejects.toBeInstanceOf(TypeError)
+    expect(fetcher).toHaveBeenCalledOnce()
   })
 
   it('waits for Retry-After before retrying a rate-limited GET', async () => {
@@ -244,6 +298,40 @@ describe('transport', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it('sends nothing and logs the operation when its input breaks the contract', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => response({ data: { name: 'n1' } }))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const strict: Operation<{ node: string }, { name: string }> = {
+      ...getNode,
+      publicName: 'nodes.get',
+      loadValidators: async () => ({
+        validateInput: (input) =>
+          assertSchema(
+            input,
+            {
+              type: 'object',
+              properties: { node: { type: 'string' } },
+              additionalProperties: false,
+            },
+            'node_get input',
+          ),
+        validateOutput: () => {},
+      }),
+    }
+    const request = createTransport({ fetch: fetcher }).request(strict, {
+      node: 'n1',
+      role: 'user',
+    } as { node: string })
+
+    await expect(request).rejects.toThrow('node_get input.role is not allowed')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('drive.nodes.get was not sent'),
+      expect.any(TypeError),
+    )
+    log.mockRestore()
+  })
+
   it('passes AbortSignal through without converting AbortError', async () => {
     const client = createTransport({
       fetch: (_url, init) =>
@@ -280,6 +368,28 @@ describe('declared framework response behavior', () => {
     const client = createTransport({ fetch: network })
     await expect(client.request(save, {})).resolves.toBeNull()
     await expect(client.request(save, {})).rejects.toThrow('Expected a void method')
+  })
+  it('treats a v2 answer that only carries messages as a void result', async () => {
+    const send: Operation<{ name: string }, null> = {
+      id: 'send_invite',
+      owner: 'mail',
+      kind: 'mutation',
+      method: 'POST',
+      path: '/api/suite/mail/admin/invites/{name}/send',
+      pathParams: ['name'],
+      empty: true,
+      validateOutput(output): asserts output is null {
+        if (output !== null) throw new TypeError('send_invite output has the wrong type')
+      },
+    }
+    const network = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        messages: [{ message: 'Verification email sent successfully.', indicator: 'green' }],
+      }),
+    )
+    await expect(
+      createTransport({ fetch: network }).request(send, { name: 'invite-1' }),
+    ).resolves.toBeNull()
   })
   it('does not retry a mutation implemented by a legacy GET endpoint', async () => {
     const write: Operation<{ token: string }, unknown> = {

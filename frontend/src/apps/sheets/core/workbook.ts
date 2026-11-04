@@ -156,6 +156,78 @@ export function createWorkbook({
     if (formulaRowBound !== null) formulaRowBound = Math.max(formulaRowBound, row)
   }
 
+  // No input sits below this row on any sheet (null: a loaded workbook not
+  // counted yet). It bounds the cell scans (scanCells), which would otherwise
+  // ask all 1,048,576 rows (about 100 ms a sheet) after every edit (ISSUES
+  // #81). It only goes up, so undo and redo can't beat it: they bring back a
+  // state this workbook was in since the count, and every input was above
+  // the bound then. Spill and array cells hold values below their formula;
+  // scanCells follows those itself.
+  let inputRowBound: number | null = loadBytes ? null : 0
+  const raiseInputRowBound = (row: number) => {
+    inputRowBound = Math.max(inputRows(), row)
+  }
+
+  // Counted before the first command runs, so the history holds nothing
+  // older than the count.
+  function inputRows(): number {
+    if (inputRowBound === null) {
+      inputRowBound = 0
+      model.getWorksheetsProperties().forEach((_, sheet) => {
+        for (let row = MAX_ROWS; row > inputRowBound!; row--) {
+          if (model.getFirstNonEmptyInRowAfterColumn(sheet, row, 0) === undefined) continue
+          inputRowBound = row
+          break
+        }
+      })
+    }
+    return inputRowBound
+  }
+
+  // Each non-empty cell on a sheet, row by row, until visit returns true.
+  // Spill and array cells below the bound are reached from their formula,
+  // which is always above them.
+  function scanCells(idx: number, visit: (row: number, col: number, input: string) => unknown) {
+    let last = inputRows()
+    for (let row = 1; row <= last; row++) {
+      for (const col of model.getColumnsWithData(idx, row)) {
+        const input = model.getCellContent(idx, row, col)
+        // A styled but empty cell is listed too.
+        if (input === '') continue
+        if (input.startsWith('=')) last = Math.max(last, anchoredEnd(idx, row, col))
+        if (visit(row, col, input)) return
+      }
+    }
+  }
+
+  // The last row of the spill or array a formula cell anchors (0 if none).
+  function anchoredEnd(idx: number, row: number, col: number): number {
+    const shape = model.getCellArrayStructure(idx, row, col)
+    const size =
+      typeof shape === 'object' &&
+      ('ArrayAnchor' in shape
+        ? shape.ArrayAnchor
+        : 'DynamicAnchor' in shape
+          ? shape.DynamicAnchor
+          : null)
+    return size ? Math.min(MAX_ROWS, row + size[1] - 1) : 0
+  }
+
+  // The last row any cell of a sheet can be on: the input bound, or further
+  // down where a spill or array ends. Every formula sits on or above the
+  // bound, so only the rows up to it are read.
+  function lastCellRow(idx: number): number {
+    const bound = inputRows()
+    let last = bound
+    for (let row = 1; row <= bound; row++) {
+      for (const col of model.getColumnsWithData(idx, row)) {
+        if (model.getCellContent(idx, row, col).startsWith('='))
+          last = Math.max(last, anchoredEnd(idx, row, col))
+      }
+    }
+    return last
+  }
+
   function sheetIndex(sheetName: string): number {
     const i = model.getWorksheetsProperties().findIndex((p) => p.name === sheetName)
     if (i === -1) throw new WorkbookError(`unknown sheet "${sheetName}"`)
@@ -196,6 +268,7 @@ export function createWorkbook({
     }
     const snapshot = MULTI_CALL.has(cmd.type) ? model.toBytes() : null
     try {
+      inputRows()
       applyOne(cmd)
     } catch (e) {
       if (snapshot) restore(snapshot)
@@ -279,7 +352,7 @@ export function createWorkbook({
     const fixes: RangeFix[] = []
     const target = sheetIndex(span.sheet)
     const last = span.at + span.count - 1
-    const lastRow = formulaRowBound ?? MAX_ROWS
+    const lastRow = formulaRowBound ?? inputRows()
     let lastFormulaRow = 0
     model.getWorksheetsProperties().forEach(({ name }, sheet) => {
       for (let row = 1; row <= lastRow; row++) {
@@ -321,6 +394,7 @@ export function createWorkbook({
       case CommandTypes.setInput: {
         const p = cmd.payload
         raiseFormulaRowBound(p.row)
+        raiseInputRowBound(p.row)
         setInput(sheetIndex(p.sheet), p.row, p.col, p.input)
         return
       }
@@ -329,6 +403,7 @@ export function createWorkbook({
       case CommandTypes.setArrayFormula: {
         const p = cmd.payload
         raiseFormulaRowBound(p.row)
+        raiseInputRowBound(p.row)
         model.setUserArrayFormula(
           sheetIndex(p.sheet),
           p.row,
@@ -380,6 +455,7 @@ export function createWorkbook({
       case CommandTypes.insertRows: {
         const p = cmd.payload
         if (formulaRowBound !== null) formulaRowBound += p.count
+        inputRowBound = Math.min(MAX_ROWS, inputRows() + p.count)
         model.insertRows(sheetIndex(p.sheet), p.row, p.count)
         return
       }
@@ -401,7 +477,9 @@ export function createWorkbook({
       case CommandTypes.moveRows: {
         const p = cmd.payload
         // Moving up pushes the rows passed over down, to at most the block's old end.
-        raiseFormulaRowBound(p.row + p.count - 1 + Math.max(0, p.delta))
+        const lowest = p.row + p.count - 1 + Math.max(0, p.delta)
+        raiseFormulaRowBound(lowest)
+        raiseInputRowBound(lowest)
         model.moveRows(sheetIndex(p.sheet), p.row, p.count, p.delta)
         return
       }
@@ -456,9 +534,17 @@ export function createWorkbook({
         else model.newDefinedName(p.name, scope, p.formula)
         return
       }
-      case CommandTypes.deleteDefinedName:
-        model.deleteDefinedName(cmd.payload.name, scopeIndex(cmd.payload.scope))
+      // A name IronCalc doesn't hold is already deleted: the editor drops a
+      // name whose cells are gone without knowing whether it was sent.
+      case CommandTypes.deleteDefinedName: {
+        const p = cmd.payload
+        const scope = scopeIndex(p.scope)
+        const held = model
+          .getDefinedNameList()
+          .some((d) => d.name === p.name && (d.scope ?? null) === scope)
+        if (held) model.deleteDefinedName(p.name, scope)
         return
+      }
       case CommandTypes.batch: {
         model.pauseEvaluation()
         inBatch = true
@@ -519,42 +605,40 @@ export function createWorkbook({
       }),
     getColumnWidth: (sheet, col) => read(() => model.getColumnWidth(sheetIndex(sheet), col)),
     getRowHeight: (sheet, row) => read(() => model.getRowHeight(sheetIndex(sheet), row)),
-    // IronCalc has no "all cells" call; asking each row for its used
-    // columns is cheap (about 130 ms for every row of a sheet).
+    // IronCalc has no "all cells" call; scanCells asks each used row for its
+    // columns.
     findInputs: (sheet, query, limit) =>
       read(() => {
-        const idx = sheetIndex(sheet)
-        const q = query.toLowerCase()
         const found: FoundCell[] = []
+        const q = query.toLowerCase()
         if (!q) return found
-        for (let row = 1; row <= MAX_ROWS && found.length < limit; row++) {
-          for (const col of model.getColumnsWithData(idx, row)) {
-            const input = model.getCellContent(idx, row, col)
-            if (input.toLowerCase().includes(q)) found.push({ row, col, input })
-            if (found.length >= limit) break
-          }
-        }
+        scanCells(sheetIndex(sheet), (row, col, input) => {
+          if (input.toLowerCase().includes(q)) found.push({ row, col, input })
+          return found.length >= limit
+        })
         return found
       }),
     usedCells: (sheet) =>
       read(() => {
-        const idx = sheetIndex(sheet)
         const out: number[] = []
-        for (let row = 1; row <= MAX_ROWS; row++) {
-          for (const col of model.getColumnsWithData(idx, row)) {
-            // A styled but empty cell is listed too.
-            if (model.getCellContent(idx, row, col) !== '') out.push(row, col)
-          }
-        }
+        scanCells(sheetIndex(sheet), (row, col) => {
+          out.push(row, col)
+        })
         return out
       }),
-    // The status bar's Count / Sum / Avg. Same row scan as findInputs, so a
-    // whole-column selection costs the used rows, not a million reads.
+    // The status bar's Count / Sum / Avg, reading the range's rows. A range
+    // taller than the used rows (a whole column) first finds the sheet's last
+    // cell row and stops there, so it costs the used rows, not a million
+    // reads (ISSUES #89). A shorter one reads just its own rows, so a few
+    // cells far down, even past the data, stay cheap.
     rangeStats: (sheet, r1, c1, r2, c2) =>
       read(() => {
         const idx = sheetIndex(sheet)
         const stats: RangeStats = { count: 0, numCount: 0, sum: 0 }
-        for (let row = Math.max(1, r1); row <= Math.min(r2, MAX_ROWS); row++) {
+        const top = Math.max(1, r1)
+        let bottom = Math.min(r2, MAX_ROWS)
+        if (bottom - top + 1 > inputRows()) bottom = Math.min(bottom, lastCellRow(idx))
+        for (let row = top; row <= bottom; row++) {
           for (const col of model.getColumnsWithData(idx, row)) {
             // A styled but empty cell is listed too.
             if (col < c1 || col > c2 || model.getCellContent(idx, row, col) === '') continue

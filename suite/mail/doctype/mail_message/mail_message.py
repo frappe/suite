@@ -4,6 +4,7 @@
 import json
 import re
 from contextlib import suppress
+from datetime import datetime
 from email.utils import formataddr
 from functools import cached_property
 from typing import Literal
@@ -1556,55 +1557,34 @@ def _get_cached_messages(account: str, ids: list[str]) -> dict[str, dict | None]
 def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     """Store messages in cache with the message ID as the key, and index their addresses for search.
 
-    Only messages the cache hasn't held before are indexed. Caching runs again whenever a message is
-    re-fetched — a flag changed, a mailbox was re-synced — and the index counts every sighting of an
-    address to rank suggestions, so re-indexing the same message would score sync churn as
-    correspondence. The addresses on a message already cached were indexed when it first arrived.
-
-    Being cached is therefore what marks a message indexed, and a message whose addresses did not
-    reach the index does not stay cached. Otherwise the failure would be permanent: the message
-    would never be offered as new again, and the people on it could be missing from suggestions
-    until someone rebuilt the index by hand. If the store will not give the message up either, that
-    rebuild is queued rather than waited for.
+    Only messages the cache hasn't held before are indexed: caching runs again on every flag change,
+    and indexing is safe to repeat but not free. A message is cached only once it is indexed, so a
+    failed index write uncaches it and the next fetch tries again. If the store will not give it up
+    either, an index rebuild is queued.
     """
 
     store = get_data_store(account)
-    # Which of these the cache had never held, answered by the write itself: two fetches racing to
-    # cache the same new message would otherwise both be told it was new and count its addresses
-    # twice. Only one of them gets the message back from here.
+    # Asked of the write itself, so two fetches racing to cache a message can't both skip indexing.
     new_ids = store.set_many(Entity.EMAIL, items=messages)
 
     new_messages = [message for message_id, message in messages.items() if message_id in new_ids]
     if not new_messages:
         return
 
-    # Feed sender/recipient addresses into the shared address index; never let indexing break caching.
+    # Never let indexing break caching.
     try:
-        get_email_address_index(account).index_addresses(_message_addresses(new_messages))
+        own_addresses = set(get_account_emails(account))
+        get_email_address_index(account).index_addresses(_message_addresses(new_messages, own_addresses))
     except Exception:
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
         )
 
-        # Uncache what was not indexed, so the next fetch of it is new again and tries once more.
-        # The message is still on the server; the cost of dropping it is one re-fetch, against
-        # addresses that would otherwise never be indexed at all.
-        #
-        # Unconditional on purpose, even though another request may have re-cached one of these in
-        # the meantime: that request found the id already there, so it skipped indexing too, and
-        # sparing its copy would leave the message cached with nobody left to index it — permanently,
-        # since only a cache miss brings it back through here. Its copy is a mirror of the server
-        # (flag changes write there first), so dropping it costs that request a re-fetch, not data.
+        # Unconditional, even over a copy another request re-cached meanwhile: that request found the
+        # id cached and skipped indexing too. Dropping a copy costs a re-fetch; keeping it, the index.
         try:
             store.delete_many(Entity.EMAIL, keys=list(new_ids))
         except Exception:
-            # The store just took these messages and now will not give them up, so nothing here can
-            # put it right: they stay cached, and being cached is what stops them being offered as
-            # new again. Hand it to a rebuild instead, which reconciles the whole index against the
-            # cache. It is deduplicated per account and runs on the long queue, so a spell of
-            # failures queues one repair rather than one apiece, and it is suppressed in turn
-            # because indexing must not break caching — a repair that cannot even be queued is
-            # still on the record above.
             log_mail_error(
                 _("Failed to uncache messages that could not be indexed"),
                 frappe.get_traceback(with_context=True),
@@ -1644,10 +1624,7 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
     """Remove messages from cache for the provided IDs.
 
     Addresses are left in the search index on purpose: it is cumulative, and an address seen in an
-    evicted message is almost always still valid elsewhere. Their correspondence counts are left
-    standing too, and a message re-fetched after this counts again — the cache is what remembers
-    which messages have been seen. Counts rank addresses against each other, so that drift costs
-    an ordering nothing; `rebuild_email_address_index` recomputes them from the cache as it stands.
+    evicted message is almost always still valid elsewhere.
     """
 
     store = get_data_store(account)
@@ -1661,14 +1638,25 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
         pipe.execute()
 
 
-def _message_addresses(messages: list[dict]) -> list[dict]:
-    """Flatten cached messages into {name, email} address dicts (sender + recipients)."""
+def _message_addresses(messages: list[dict], own_addresses: set[str]) -> list[dict]:
+    """Flatten cached messages into address dicts (sender + recipients) for the address index.
+
+    Recipients of mail sent from one of `own_addresses` carry `last_sent_at`, the Unix time it was
+    sent. Drafts don't count: nothing was sent.
+    """
 
     addresses = []
     for message in messages:
         addresses.append({"name": message.get("from_name"), "email": message.get("from_email")})
+
+        is_sent = not message.get("draft") and (message.get("from_email") or "").lower() in own_addresses
+        sent_at = (
+            {"last_sent_at": int(datetime.fromisoformat(message["sent_at"]).timestamp())} if is_sent else {}
+        )
         for recipient in message.get("recipients") or []:
-            addresses.append({"name": recipient.get("display_name"), "email": recipient.get("email")})
+            addresses.append(
+                {"name": recipient.get("display_name"), "email": recipient.get("email"), **sent_at}
+            )
 
     return addresses
 

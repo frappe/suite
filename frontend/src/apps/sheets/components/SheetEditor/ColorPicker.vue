@@ -15,8 +15,18 @@
   <Popover bare side="bottom" align="start">
     <template #trigger="{ setOpen, open }">
       <slot name="trigger" :toggle="() => setOpen(!open)" :open :color="modelValue">
+        <!-- The Tooltip sits between reka's trigger and the button, so the
+             button opens the picker itself, as the custom triggers do. -->
         <Tooltip :text="title">
-          <button type="button" class="sn-cp-trigger" :class="{ open }" :aria-label="title">
+          <button
+            type="button"
+            class="sn-cp-trigger"
+            :class="{ open }"
+            :aria-label="title"
+            aria-haspopup="dialog"
+            :aria-expanded="open"
+            @click="setOpen(!open)"
+          >
             <span
               class="sn-cp-trigger-sw"
               :style="{ background: isHex(modelValue) ? modelValue : 'transparent' }"
@@ -27,25 +37,28 @@
     </template>
     <template #default="{ close }">
       <div class="sn-cp-pop">
+        <!-- A native title, not a Tooltip: opening focuses the first chip,
+             and a focus tooltip there took the first Escape. -->
         <div class="sn-cp-grid">
-          <Tooltip v-for="c in COLORS" :key="c" :text="c">
-            <button
-              type="button"
-              class="sn-cp-sw"
-              :class="{ sel: eqHex(c, modelValue) }"
-              :aria-label="c"
-              :aria-pressed="eqHex(c, modelValue)"
-              :style="{ background: c }"
-              @click="choose(c, close)"
-            >
-              <FeatherIcon
-                v-if="eqHex(c, modelValue)"
-                name="check"
-                class="sn-cp-check"
-                :style="{ color: contrast(c) }"
-              />
-            </button>
-          </Tooltip>
+          <button
+            v-for="c in COLORS"
+            :key="c"
+            type="button"
+            class="sn-cp-sw"
+            :class="{ sel: eqHex(c, modelValue) }"
+            :title="c"
+            :aria-label="c"
+            :aria-pressed="eqHex(c, modelValue)"
+            :style="{ background: c }"
+            @click="choose(c, close)"
+          >
+            <FeatherIcon
+              v-if="eqHex(c, modelValue)"
+              name="check"
+              class="sn-cp-check"
+              :style="{ color: contrast(c) }"
+            />
+          </button>
         </div>
         <div class="sn-cp-foot">
           <Tooltip v-if="allowDefault" :text="defaultLabel">

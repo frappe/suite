@@ -26,6 +26,8 @@ class FrappePushNotification {
   // client info
   projectName: string
   relayURL: string
+  // The apps this device is notified for (see suite.suite_core.push).
+  apps: string[]
   webConfig: WebConfigType | null
   vapidPublicKey: string
   token: string | null
@@ -39,10 +41,11 @@ class FrappePushNotification {
   onMessageHandler: OnMessageCallback | null
 
   // `relayURL` is the notification relay's base URL. The caller checks that the site has one.
-  constructor(projectName: string, relayURL: string) {
+  constructor(projectName: string, relayURL: string, apps: string[] = ['mail']) {
     // client info
     this.projectName = projectName
     this.relayURL = relayURL
+    this.apps = apps
     this.webConfig = null
     this.vapidPublicKey = ''
     this.token = null
@@ -131,17 +134,19 @@ class FrappePushNotification {
     // register new token if token is changed
     if (oldToken !== newToken) {
       // unsubscribe old token
-      if (oldToken) await this.unregisterTokenHandler(oldToken)
+      if (oldToken) await this.unregisterTokenHandler(oldToken, this.registeredApps())
 
       // subscribe push notification and register token
-      const isSubscriptionSuccessful = await this.registerTokenHandler(newToken)
+      const isSubscriptionSuccessful = await this.registerTokenHandler(newToken, this.apps)
       if (isSubscriptionSuccessful === false)
         throw new Error('Failed to subscribe to push notification')
 
       // save token to local storage
       localStorage.setItem(`firebase_token_${this.projectName}`, newToken)
+      this.saveRegisteredApps(this.apps)
     }
     this.token = newToken
+    await this.syncApps()
     return { permission_granted: true, token: newToken }
   }
 
@@ -160,13 +165,14 @@ class FrappePushNotification {
       console.error(e)
     }
     try {
-      await this.unregisterTokenHandler(this.token)
+      await this.unregisterTokenHandler(this.token, this.registeredApps())
     } catch (e) {
       console.error('Failed to unsubscribe from push notification')
       console.error(e)
     }
     // remove token
     localStorage.removeItem(`firebase_token_${this.projectName}`)
+    localStorage.removeItem(this.appsKey)
     this.token = null
   }
 
@@ -180,15 +186,57 @@ class FrappePushNotification {
       console.error(e)
     }
     localStorage.removeItem(`firebase_token_${this.projectName}`)
+    localStorage.removeItem(this.appsKey)
     this.token = null
   }
 
+  /**
+   * Subscribes this device's token for any of `apps` it is not subscribed for yet: an app
+   * installed after notifications were turned on, or a token from before subscriptions were per
+   * app, which the relay knew as Mail's. That older token, found inside another app installed on
+   * its own, lets Mail go: there it would bring Mail's notifications into Calendar.
+   */
+  async syncApps(): Promise<void> {
+    const token = this.token ?? localStorage.getItem(`firebase_token_${this.projectName}`)
+    if (!token) return
+    let registered = this.registeredApps()
+    const stray =
+      localStorage.getItem(this.appsKey) === null
+        ? registered.filter((app) => !this.apps.includes(app))
+        : []
+    if (stray.length && (await this.unregisterTokenHandler(token, stray))) {
+      registered = registered.filter((app) => !stray.includes(app))
+      this.saveRegisteredApps(registered)
+    }
+    const missing = this.apps.filter((app) => !registered.includes(app))
+    if (!missing.length) return
+    if (await this.registerTokenHandler(token, missing))
+      this.saveRegisteredApps([...registered, ...missing])
+  }
+
+  // The apps this browser's token is subscribed for. A token from before subscriptions were per
+  // app was Mail's.
+  get appsKey(): string {
+    return `firebase_token_apps_${this.projectName}`
+  }
+  registeredApps(): string[] {
+    try {
+      const apps = JSON.parse(localStorage.getItem(this.appsKey) ?? '["mail"]') as unknown
+      return Array.isArray(apps) ? apps.filter((app) => typeof app === 'string') : ['mail']
+    } catch {
+      return ['mail']
+    }
+  }
+  saveRegisteredApps(apps: string[]): void {
+    localStorage.setItem(this.appsKey, JSON.stringify([...new Set(apps)]))
+  }
+
   // Register Token Handler
-  async registerTokenHandler(token: string): Promise<boolean> {
+  async registerTokenHandler(token: string, apps: string[] = this.apps): Promise<boolean> {
     try {
       const result = await client.mutation(
         api.suite.push.subscribe,
-        { fcm_token: token, project_name: this.projectName },
+        { fcm_token: token, apps: apps as ('mail' | 'calendar')[] },
         { silent: true },
       )
       return result.success
@@ -199,11 +247,11 @@ class FrappePushNotification {
   }
 
   // Unregister Token Handler
-  async unregisterTokenHandler(token: string): Promise<boolean> {
+  async unregisterTokenHandler(token: string, apps: string[] = this.apps): Promise<boolean> {
     try {
       const result = await client.mutation(
         api.suite.push.unsubscribe,
-        { fcm_token: token, project_name: this.projectName },
+        { fcm_token: token, apps: apps as ('mail' | 'calendar')[] },
         { silent: true },
       )
       return result.success

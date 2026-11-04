@@ -13,6 +13,7 @@ import type {
 } from '../types.js'
 import { createCellDecorations, ICON_INSET } from './cell-decorations.js'
 import { inkFor, setCellFont } from './cell-text-style.js'
+import { cellMidY, centredBaseline, createCapHeight } from './text-anchor.js'
 
 export interface CellPainter {
   drawRegionCells(
@@ -46,6 +47,7 @@ export function createCellPainter(
   { cw, rh, colX, rowY, totalCols }: PaintGeometry,
 ): CellPainter {
   const deco = createCellDecorations(ctx)
+  const capHeight = createCapHeight(ctx)
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -183,16 +185,22 @@ export function createCellPainter(
     // pass — don't paint the raw text a second time on top.
     const vtype = cells.getValidation?.(id)?.type
     if (vtype === 'list' || vtype === 'checkbox') return
-    const s = String(val)
+    let s = String(val)
     const baseFmt: CellFormat = condFmt ? { ...fmt, ...condFmt } : fmt
+    const isNumber = cells.isNumber?.(id)
     const efmt: CellFormat = {
       ...baseFmt,
-      align: baseFmt.align || _autoAlign(s, cells.isNumber?.(id)),
+      align: baseFmt.align || _autoAlign(s, isNumber),
     }
     const rightInset = cells.getRightInset?.(id) || 0
     const iconInset = condFmt?.icon ? ICON_INSET : 0
     setCellFont(ctx, efmt)
     const mode = getTextWrap(efmt)
+    // A number never spills into its neighbours or loses digits off an edge:
+    // it is rounded to fit, or shown as ### (as Excel does).
+    if (isNumber && mode !== 'wrap') {
+      s = _fitNumber(s, w - iconInset - rightInset - 8)
+    }
     // A value with hard newlines (Cmd+Enter) always renders multi-line, even
     // in clip/overflow mode — matching Sheets, where only wrap mode also
     // soft-wraps long lines.
@@ -330,6 +338,24 @@ export function createCellPainter(
     }
   }
 
+  // `s` when it fits in `room`; a plain decimal rounded to fewer places when
+  // that fits; otherwise a row of #.
+  function _fitNumber(s: string, room: number): string {
+    if (ctx.measureText(s).width <= room) return s
+    // Past the safe integers, rounding through Number would show other digits.
+    const decimals = Number.isSafeInteger(Math.trunc(Number(s)))
+      ? (/^-?\d+\.(\d+)$/.exec(s)?.[1]?.length ?? 0)
+      : 0
+    for (let places = decimals - 1; places >= 0; places--) {
+      const rounded = Number(s)
+        .toFixed(places)
+        .replace(/\.(\d*?)0+$/, (_, kept) => (kept ? `.${kept}` : ''))
+      if (ctx.measureText(rounded).width <= room) return rounded
+    }
+    const hash = ctx.measureText('#').width || 1
+    return '#'.repeat(Math.max(1, Math.floor(room / hash)))
+  }
+
   // Numbers right, text left, as in Google Sheets. The cell's type decides
   // (`1,000` and `50%` are numbers); until it is known, guess from the text.
   function _autoAlign(s: string, isNumber: boolean | undefined): string {
@@ -359,14 +385,17 @@ export function createCellPainter(
       ctx.rect(span[0], y, span[1] - span[0], h)
       ctx.clip()
     }
-    const { textX, textY, baseline } = _computeTextAnchor(x, y, w, h, fmt, rightInset)
+    const { textX, textY, baseline, midY } = _computeTextAnchor(x, y, w, h, fmt, rightInset)
     ctx.textBaseline = baseline
     ctx.fillText(val, textX, textY)
     if (fmt.underline || fmt.strikethrough || fmt.hyperlink)
-      _drawTextDecorations(fmt, val, textX, _midY(baseline, textY))
+      _drawTextDecorations(fmt, val, textX, midY)
     ctx.restore()
   }
 
+  // Top and bottom keep their 4px inset from the cell edge; middle centres
+  // the capitals on the cell's white area (see text-anchor.ts). `midY` is the
+  // line the underline / strike offsets are measured from.
   function _computeTextAnchor(
     x: number,
     y: number,
@@ -374,19 +403,15 @@ export function createCellPainter(
     h: number,
     fmt: CellFormat,
     rightInset = 0,
-  ): { textX: number; textY: number; baseline: CanvasTextBaseline } {
+  ): { textX: number; textY: number; baseline: CanvasTextBaseline; midY: number } {
     const innerW = w - rightInset
     const textX =
       fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4
-    const textY = fmt.valign === 'top' ? y + 4 : fmt.valign === 'bottom' ? y + h - 4 : y + h / 2
-    const baseline = fmt.valign === 'top' ? 'top' : fmt.valign === 'bottom' ? 'bottom' : 'middle'
-    return { textX, textY, baseline }
-  }
-
-  function _midY(baseline: CanvasTextBaseline, textY: number): number {
-    if (baseline === 'top') return textY + 7
-    if (baseline === 'bottom') return textY - 7
-    return textY
+    if (fmt.valign === 'top') return { textX, textY: y + 4, baseline: 'top', midY: y + 11 }
+    if (fmt.valign === 'bottom')
+      return { textX, textY: y + h - 4, baseline: 'bottom', midY: y + h - 11 }
+    const midY = cellMidY(y, h)
+    return { textX, textY: centredBaseline(midY, capHeight()), baseline: 'alphabetic', midY }
   }
 
   function _drawTextDecorations(fmt: CellFormat, val: string, textX: number, midY: number): void {
@@ -394,16 +419,18 @@ export function createCellPainter(
     const lx0 = fmt.align === 'center' ? textX - tw / 2 : fmt.align === 'right' ? textX - tw : textX
     ctx.strokeStyle = inkFor(fmt)
     ctx.lineWidth = 1
+    // A 1px line is crisp only centred on a pixel row (n + 0.5).
+    const crisp = (v: number) => Math.floor(v) + 0.5
     if (fmt.underline || fmt.hyperlink) {
       ctx.beginPath()
-      ctx.moveTo(lx0, midY + 8)
-      ctx.lineTo(lx0 + tw, midY + 8)
+      ctx.moveTo(lx0, crisp(midY + 8))
+      ctx.lineTo(lx0 + tw, crisp(midY + 8))
       ctx.stroke()
     }
     if (fmt.strikethrough) {
       ctx.beginPath()
-      ctx.moveTo(lx0, midY + 1)
-      ctx.lineTo(lx0 + tw, midY + 1)
+      ctx.moveTo(lx0, crisp(midY + 1))
+      ctx.lineTo(lx0 + tw, crisp(midY + 1))
       ctx.stroke()
     }
   }
@@ -427,20 +454,29 @@ export function createCellPainter(
     if (!lines.length) return
     const lineH = lineHeightFor(fmt)
     const totalH = lines.length * lineH
+    // Centre of the first line; a middle-aligned block centres on the white
+    // area below the gridline, like single-line text.
     const startY =
       fmt.valign === 'top'
         ? y + lineH / 2 + 2
         : fmt.valign === 'bottom'
           ? y + h - totalH + lineH / 2 - 2
-          : y + Math.max(lineH / 2, (h - totalH) / 2 + lineH / 2)
+          : y + 1 + Math.max(lineH / 2, (h - 1 - totalH) / 2 + lineH / 2)
     const textX =
       fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4
+    const capH = capHeight()
     ctx.save()
-    ctx.textBaseline = 'middle'
+    ctx.textBaseline = 'alphabetic'
     ctx.beginPath()
     ctx.rect(x + 1, y + 1, Math.max(0, w - 2 - rightInset), h - 2)
     ctx.clip()
-    lines.forEach((line, i) => ctx.fillText(line, textX, startY + i * lineH))
+    // Each line gets its own underline / strike, as wide as that line.
+    const decorate = fmt.underline || fmt.strikethrough || fmt.hyperlink
+    lines.forEach((line, i) => {
+      const lineY = startY + i * lineH
+      ctx.fillText(line, textX, centredBaseline(lineY, capH))
+      if (decorate) _drawTextDecorations(fmt, line, textX, lineY)
+    })
     ctx.restore()
   }
 

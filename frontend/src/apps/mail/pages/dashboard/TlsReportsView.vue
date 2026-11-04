@@ -92,10 +92,8 @@
         v-if="list.status === 'success' && list.total"
         :count="list.rows.length"
         :total="list.total ?? 0"
-        :page-length="pageLength"
         :has-more="list.hasNext"
         :loading="list.isFetching"
-        @update:page-length="(value) => (pageLength = value)"
         @load-more="list.fetchNext().catch(() => {})"
       />
     </div>
@@ -112,7 +110,7 @@ import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import TlsBreakdownRows from '@/apps/mail/components/TlsBreakdownRows.vue'
 import TlsStatTiles from '@/apps/mail/components/TlsStatTiles.vue'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
-import { DEFAULT_PAGE_LENGTH, type PageLength } from '@/apps/mail/utils/paging'
+import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
 import { resultTypeLabel, type TlsFailureType, type TlsReportRow } from '@/apps/mail/utils/tls'
 import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashboard'
@@ -146,13 +144,12 @@ const failures = computed<TlsFailureType[]>(() => summary.data?.failures || [])
 // The list and the summary take the same domain and period, so the page never shows a
 // period's totals beside reports from outside it.
 const debouncedSearch = refDebounced(search, 300)
-const pageLength = ref<PageLength>(DEFAULT_PAGE_LENGTH)
 const list = useInfiniteQuery(api.mail.admin.tls.list, () => ({
   txt: debouncedSearch.value,
   domain_id: domain.value || undefined,
   days: Number(period.value),
   start: 0,
-  page_length: pageLength.value,
+  page_length: DEFAULT_PAGE_LENGTH,
 }))
 const LIST_COLUMNS = [
   {

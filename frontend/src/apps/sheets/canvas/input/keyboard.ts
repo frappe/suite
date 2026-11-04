@@ -1,5 +1,5 @@
 // Keyboard input on the grid (no editor open): moving and extending the
-// selection, starting an edit, clearing cells. Also arrow-key reference
+// selection, starting an edit, clearing cells. Also F2 / arrow-key reference
 // picking for the formula bar.
 //
 // Keys, matching Google Sheets:
@@ -17,7 +17,7 @@
 import { cellId, colLabel } from '../../utils/cells.js'
 import type { Cell, Selection, SelRange } from '../selection.js'
 import type { Editor, LeaveMove } from './editor.js'
-import type { RangePicker } from './range-picker.js'
+import { isPickToggle, type RangePicker } from './range-picker.js'
 
 export interface KeyboardHost {
   onSelect?(label: string): void
@@ -80,6 +80,9 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
   const { canvas, picker, sel: S, host } = o
   // Column where the current run of Tabs started; Enter returns to it.
   let tabAnchorCol: number | null = null
+  // The formula bar input whose arrows pick references (after F2), or null:
+  // arrows move the caret by default, as in Sheets.
+  let barPicking: EventTarget | null = null
 
   function afterEdit(move: LeaveMove): void {
     const { r, c } = S.anchor
@@ -273,11 +276,25 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
     }
   }
 
-  // Arrow-key picking for the formula bar. The in-cell editor does its own
-  // (editor.ts), so its keys are skipped. Runs in the capture phase, ahead of
-  // the input's own handlers.
+  // Arrow-key picking for the formula bar, switched on and off with F2. The
+  // in-cell editor does its own (editor.ts), so its keys are skipped. Runs in
+  // the capture phase, ahead of the input's own handlers.
   function onFormulaBarKey(e: KeyboardEvent): void {
     if (e.target === o.editorElement) return
+    const t = e.target
+    // Not in a read-only bar (viewers), which must never be written to.
+    if (
+      isPickToggle(e) &&
+      t instanceof HTMLInputElement &&
+      !t.readOnly &&
+      t.value.startsWith('=')
+    ) {
+      e.preventDefault()
+      // Back to the caret keeps a picked reference and ends the pick.
+      if (barPicking === t && picker.isKeyPicking(t)) picker.keyCommit()
+      barPicking = barPicking === t ? null : t
+      return
+    }
     const target = picker.target()
     if (!target) return
     // Home/End always move the text caret.
@@ -304,22 +321,37 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
       return
     }
 
-    // In a `=…` input every arrow picks; keyStart decides replace vs insert.
-    if (arrow) {
+    // In pick mode every arrow picks; keyStart decides replace vs insert.
+    if (arrow && barPicking === target) {
       e.preventDefault()
       e.stopPropagation()
       picker.keyStart(target, arrow[0], arrow[1], e.shiftKey)
     }
   }
 
+  // A click in the bar's text, or leaving the bar, goes back to the caret,
+  // keeping a reference being picked (as the in-cell editor does).
+  function endBarPicking(e: Event): void {
+    if (e.target !== barPicking) return
+    if (picker.isKeyPicking(barPicking as HTMLInputElement)) picker.keyCommit()
+    barPicking = null
+  }
+
   canvas.addEventListener('keydown', onGridKey)
   document.addEventListener('keydown', onFormulaBarKey, true)
+  document.addEventListener('mousedown', endBarPicking, true)
+  document.addEventListener('focusout', endBarPicking, true)
 
   return {
     afterEdit,
     resetTabAnchor: () => {
       tabAnchorCol = null
     },
-    destroy: () => document.removeEventListener('keydown', onFormulaBarKey, true),
+    destroy: () => {
+      barPicking = null
+      document.removeEventListener('keydown', onFormulaBarKey, true)
+      document.removeEventListener('mousedown', endBarPicking, true)
+      document.removeEventListener('focusout', endBarPicking, true)
+    },
   }
 }

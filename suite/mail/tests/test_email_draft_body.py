@@ -3,6 +3,9 @@
 
 import unittest
 
+import frappe
+
+from suite.mail.api.mail import attachment_rows
 from suite.mail.jmap import TEXT_PLAIN_FLOWED, build_email_draft
 
 
@@ -24,6 +27,23 @@ def attachment(disposition: str) -> dict:
         "blob_id": "blob-1",
         "disposition": disposition,
     }
+
+
+class HeldAttachments(unittest.TestCase):
+    """What a draft update keeps of the attachments the draft already holds."""
+
+    def setUp(self):
+        held = frappe._dict(blob_id="held-blob", file_url="", filename="old.png", type="image/png", size=1)
+        held.as_dict = lambda: dict(held)
+        self.held = {"cid-1": held}
+
+    def test_a_row_the_composer_read_earlier_keeps_the_drafts_bytes(self):
+        [row] = attachment_rows([{"cid": "cid-1", "blob_id": "stale-blob"}], self.held)
+        self.assertEqual(row["blob_id"], "held-blob")
+
+    def test_a_new_upload_under_a_held_cid_replaces_the_bytes(self):
+        [row] = attachment_rows([{"cid": "cid-1", "file_url": "/files/new.png"}], self.held)
+        self.assertEqual((row["file_url"], row["blob_id"]), ("/files/new.png", ""))
 
 
 class TextPart(unittest.TestCase):

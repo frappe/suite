@@ -67,6 +67,28 @@
       <Button
         variant="ghost"
         size="sm"
+        icon-left="lucide-arrow-down-a-z"
+        :label="__('Sort A → Z')"
+        @click="emit('sort', 'asc')"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-z-a"
+        :label="__('Sort Z → A')"
+        @click="emit('sort', 'desc')"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-wide-narrow"
+        :label="__('Sort range…')"
+        @click="emit('sort-range')"
+      />
+      <hr class="sn-ctx-sep" />
+      <Button
+        variant="ghost"
+        size="sm"
         icon-left="lucide-maximize-2"
         label="Auto-fit width"
         @click="emit('auto-fit-col')"
@@ -90,7 +112,7 @@
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze up to this column"
         @click="emit('freeze-col')"
       />
@@ -98,7 +120,7 @@
         v-if="freezeCols > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze columns"
         @click="emit('unfreeze-cols')"
       />
@@ -161,7 +183,7 @@
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze up to this row"
         @click="emit('freeze-row')"
       />
@@ -169,7 +191,7 @@
         v-if="freezeRows > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze rows"
         @click="emit('unfreeze-rows')"
       />
@@ -249,7 +271,7 @@
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze rows to here"
         @click="emit('freeze-row')"
       />
@@ -257,14 +279,14 @@
         v-if="freezeRows > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze rows"
         @click="emit('unfreeze-rows')"
       />
       <Button
         variant="ghost"
         size="sm"
-        icon-left="lucide-lock"
+        icon-left="lucide-snowflake"
         label="Freeze cols to here"
         @click="emit('freeze-col')"
       />
@@ -272,9 +294,31 @@
         v-if="freezeCols > 0"
         variant="ghost"
         size="sm"
-        icon-left="lucide-unlock"
+        icon-left="lucide-x"
         label="Unfreeze cols"
         @click="emit('unfreeze-cols')"
+      />
+      <hr class="sn-ctx-sep" />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-a-z"
+        :label="__('Sort A → Z')"
+        @click="emit('sort', 'asc')"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-z-a"
+        :label="__('Sort Z → A')"
+        @click="emit('sort', 'desc')"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon-left="lucide-arrow-down-wide-narrow"
+        :label="__('Sort range…')"
+        @click="emit('sort-range')"
       />
       <hr class="sn-ctx-sep" />
       <Button
@@ -337,15 +381,6 @@
         label="Insert slicer"
         @click="emit('slicer')"
       />
-      <hr v-if="showCellHistory" class="sn-ctx-sep" />
-      <Button
-        v-if="showCellHistory"
-        variant="ghost"
-        size="sm"
-        icon-left="lucide-history"
-        :label="`Cell history for ${activeCell}`"
-        @click="emit('cell-history')"
-      />
     </template>
   </div>
 </template>
@@ -355,6 +390,8 @@
 // renders: useContextMenu.js positions it and picks the mode, and every item
 // reports back to the editor, whose handlers close the menu and do the work.
 import { Button } from 'frappe-ui'
+
+import { translate as __ } from '@/platform/translation'
 
 type ContextMenu = {
   x: number
@@ -374,8 +411,6 @@ defineProps<{
   hasHiddenCols: boolean
   canPaste: boolean
   rangeProtected: boolean
-  showCellHistory: boolean
-  activeCell: string
 }>()
 const emit = defineEmits<{
   'insert-row': [below: boolean]
@@ -396,6 +431,8 @@ const emit = defineEmits<{
   'unfreeze-rows': []
   'unfreeze-cols': []
   'paste-special': [kind: 'values' | 'formats' | 'formulas']
+  sort: [dir: 'asc' | 'desc']
+  'sort-range': []
   validation: []
   'cond-format': []
   protect: []
@@ -404,7 +441,6 @@ const emit = defineEmits<{
   pivot: []
   chart: []
   slicer: []
-  'cell-history': []
 }>()
 </script>
 

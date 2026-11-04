@@ -47,8 +47,9 @@ const app = createApp({
       participantAdded: (participant) => participantStore.addParticipant(participant),
       participantRemoved: (id) => participantStore.removeParticipant(id),
       participantUpdated: (id, updates) => participantStore.updateParticipant(id, { ...updates }),
+      sharedStageChanged: (state, snapshot) => participantStore.applySharedStage(state, snapshot),
       activeSpeakersChanged: (ids) => {
-        participantStore.activeSpeakerIds = ids
+        if (!participantStore.sharedStage) participantStore.activeSpeakerIds = ids
         participantStore.stableSpeakerIds = ids
       },
       screenStarted: ({ participantId, consumerId, producerId, stream, startedAt }) => {

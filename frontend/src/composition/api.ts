@@ -2,6 +2,7 @@
 import { watch } from 'vue'
 
 import { api as calendar } from '@/apps/calendar/client/api'
+import { api as draw } from '@/apps/draw/client/api'
 import { api as drive } from '@/apps/drive/client/api'
 import { api as mail } from '@/apps/mail/client/api'
 import { api as meet } from '@/apps/meet/client/api'
@@ -14,9 +15,10 @@ import { registerAccountReader, useSession } from '@/platform/session'
 import { registerThemePreferences } from '@/platform/theme'
 import { api as suite } from '@/platform/transport/api'
 
-export const api = { suite, drive, mail, meet, calendar, writer, sheets, slides } as const
+export const api = { suite, drive, draw, mail, meet, calendar, writer, sheets, slides } as const
 export const engine = createApiClient(
   {
+    draw: () => import('@/apps/draw/client/policy').then((module) => module.registration),
     writer: () => import('@/apps/writer/client/policy').then((module) => module.registration),
     sheets: () => import('@/apps/sheets/client/policy').then((module) => module.registration),
     slides: () => import('@/apps/slides/client/policy').then((module) => module.registration),

@@ -6,6 +6,7 @@ from suite.composition.http import Route
 from suite.slides.api.composite import composite_group, composite_manifest
 from suite.slides.api.slides import save_slides
 from suite.slides.doctype.presentation.presentation import (
+    apply_theme,
     get_composite_presentation,
     get_editor_access,
     get_public_presentation,
@@ -13,6 +14,7 @@ from suite.slides.doctype.presentation.presentation import (
     get_updated_json,
     is_composite_presentation,
     update_slide_attachments,
+    update_theme,
 )
 
 
@@ -75,6 +77,15 @@ class SaveDeck(DeckInput):
 
 class SavedDeck(TypedDict):
     modified: str
+
+
+class DeckTheme(DeckInput):
+    theme: str
+
+
+class ThemedDeck(TypedDict):
+    modified: str
+    base_modified: str
 
 
 class Template(TypedDict):
@@ -162,6 +173,26 @@ CONTRACT_ROUTES = (
         kind="mutation",
         public_name="documents.save",
         allow_guest=True,
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.doctype.presentation.presentation.apply_theme",
+        "apply_theme",
+        body=DeckTheme,
+        output=SavedDeck,
+        kind="mutation",
+        public_name="documents.applyTheme",
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.doctype.presentation.presentation.update_theme",
+        "update_theme",
+        body=DeckTheme,
+        output=ThemedDeck,
+        kind="mutation",
+        public_name="documents.updateTheme",
         envelope="message",
     ),
     Route(

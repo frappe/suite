@@ -2,9 +2,11 @@
 
 import base64
 import json
+from collections.abc import Callable
 
 import pycrdt
 
+from suite.drive._core.comments import MAX_COMMENT_BYTES, html_comment_text, mentioned_users
 from suite.drive.patches.build.content_mapping import (
     InvalidLegacyContent,
     decode_sheets_data,
@@ -15,7 +17,7 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.state import LegacyComment
 
-MAX_COMMENT_BYTES = 65_535
+MAX_LINK_CHARS = 140
 
 # Every column `_bulk` writes, so a rerun validates the whole row rather than
 # blessing one whose primary key happens to exist (plan §13).
@@ -49,6 +51,8 @@ COMMENT_FIELDS = (
     "docstatus",
     "idx",
 )
+# Mentions follow the User table, which can change between a killed pass and its rerun
+RERUN_COMMENT_FIELDS = tuple(field for field in COMMENT_FIELDS if field != "mentions")
 
 
 def convert_document_comments(env, content, document, node: str, *, batch_size: int) -> int:
@@ -108,22 +112,28 @@ def _port_legacy(env, content, row: dict, batch_size: int) -> None:
     if not node or node.get("kind") != "document":
         content.record_legacy_comment(LegacyComment(row["name"], file))
         return
-    thread, comments = _legacy_plan(node["name"], row)
+
+    thread, comments = _legacy_plan(node["name"], row, env.content.user_name)
     _write_thread(env, thread, comments, batch_size)
     content.legacy_comments_ported += 1
 
 
-def _legacy_plan(node: str, row: dict) -> tuple[dict, list[dict]]:
+def _legacy_plan(node: str, row: dict, user_name: Callable[[str], str | None]) -> tuple[dict, list[dict]]:
     """One thread of one comment, from one `Drive File.comments` child row.
 
     The old row carried `content` and `resolved` and nothing else of its
     own, so its `owner` is the author and its `creation` is the stamp.
     """
     text = row.get("content")
-    if not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str):
         raise InvalidLegacyContent("legacy comment text is blank")
     if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
-        raise InvalidLegacyContent("legacy comment text exceeds the target Text column")
+        raise InvalidLegacyContent("legacy comment text exceeds the comment limit")
+
+    text, span_ids = html_comment_text(text)
+    if not text.strip():
+        raise InvalidLegacyContent("legacy comment text is blank")
+
     author = row.get("owner") or "Guest"
     if len(author) > 140:
         raise InvalidLegacyContent("legacy comment author exceeds the target Link column")
@@ -136,7 +146,7 @@ def _legacy_plan(node: str, row: dict) -> tuple[dict, list[dict]]:
         "author": author,
         "author_name": None,
         "stamp": stamp,
-        "mentions": [],
+        "mentions": mentioned_users(span_ids, user_name),
         "source_complete": True,
     }
     return _thread_plan(node, row["name"], bool(row.get("resolved")), [entry], _lazy(lambda: (author, stamp)))
@@ -177,13 +187,13 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
             raise InvalidLegacyContent("Writer comment replies are not a list")
         entries = [value, *replies]
         # `identity` is read off the entry below, so the shape check cannot wait
-        # for `_entry`: a string reply would raise `AttributeError`, which
+        # for `comment_entry`: a string reply would raise `AttributeError`, which
         # `history.py` does not catch, and one malformed reply would end the run
         # with a traceback instead of a recorded refusal.
         if any(not isinstance(entry, dict) for entry in entries):
             raise InvalidLegacyContent("Writer comment or reply is not an object")
         normalized = [
-            _entry(
+            comment_entry(
                 entry,
                 identity=entry.get("id"),
                 owner_key="owner",
@@ -191,6 +201,7 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
                 time_key="creation",
                 fallback=fallback,
                 timezone=timezone,
+                user_name=env.content.user_name,
             )
             for entry in entries
         ]
@@ -251,7 +262,8 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
                 for index, value in enumerate(raw_thread["thread"]):
                     if not isinstance(value, dict):
                         raise InvalidLegacyContent("Sheet comment thread contains a non-object entry")
-                    entry = _entry(
+
+                    entry = comment_entry(
                         value,
                         identity=derived_name("drive-sheet-comment/1", thread_id, index),
                         owner_key="author",
@@ -259,6 +271,7 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
                         time_key="ts",
                         fallback=fallback,
                         timezone=timezone,
+                        user_name=env.content.user_name,
                     )
                     entries.append(entry)
                 resolved = bool(raw_thread.get("resolved"))
@@ -268,39 +281,86 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
     return plans
 
 
-def _entry(value, *, identity, owner_key, name_key, time_key, fallback, timezone) -> dict:
-    if not isinstance(value, dict):
-        raise InvalidLegacyContent("comment entry is not an object")
+def entry_text(value: dict) -> str:
+    """Answer a comment entry's text, refusing one that is not text or is over the comment limit."""
     text = value.get("text")
-    if not isinstance(text, str) or not text.strip():
+    if not isinstance(text, str):
         raise InvalidLegacyContent("comment text is blank")
+
     if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
-        raise InvalidLegacyContent("comment text exceeds the target Text column")
-    source_author = value.get(owner_key)
+        raise InvalidLegacyContent("comment text exceeds the comment limit")
+
+    return text
+
+
+def entry_author(value: dict, source_author: object, name_key: str | None) -> tuple[str, str | None]:
+    """Answer a comment entry's author, Guest when it names none, and its author name."""
     author = source_author if isinstance(source_author, str) and source_author else "Guest"
-    if len(author) > 140:
+    if len(author) > MAX_LINK_CHARS:
         # `Drive Comment.author` is `varchar(140)`. Over it, MariaDB raises
         # error 1406, which is neither `InvalidLegacyContent` nor
-        # `ValueError`, so it would escape and repeat on every rerun.
+        # `ValueError`, so it would escape and repeat on every rerun
         raise InvalidLegacyContent("comment author exceeds the target Link column")
-    author_name = value.get(name_key) if name_key else None
-    if author_name is not None and (not isinstance(author_name, str) or len(author_name) > 140):
+
+    author_name = None
+    if name_key:
+        author_name = value.get(name_key)
+
+    if author_name is not None and (not isinstance(author_name, str) or len(author_name) > MAX_LINK_CHARS):
         raise InvalidLegacyContent("comment author_name exceeds the target field")
+
+    return author, author_name
+
+
+def entry_mentions(value: dict) -> list[str]:
+    """Answer the ids a comment entry mentions, each a mention's `id` or a bare string."""
+    mentions = value.get("mentions") or []
+    if not isinstance(mentions, list):
+        raise InvalidLegacyContent("comment mentions are not a list")
+
+    mention_ids: list[str] = []
+    for mention in mentions:
+        candidate = mention
+        if isinstance(mention, dict):
+            candidate = mention.get("id")
+
+        if not isinstance(candidate, str):
+            raise InvalidLegacyContent("comment mention has no text id")
+
+        mention_ids.append(candidate)
+
+    return mention_ids
+
+
+def comment_entry(
+    value: object,
+    *,
+    identity: object,
+    owner_key: str,
+    name_key: str | None,
+    time_key: str,
+    fallback: Callable[[], tuple[str, str]],
+    timezone: str,
+    user_name: Callable[[str], str | None],
+) -> dict:
+    """Normalize one legacy comment or reply into the entry a Drive thread row holds."""
+    if not isinstance(value, dict):
+        raise InvalidLegacyContent("comment entry is not an object")
+
+    text, span_ids = html_comment_text(entry_text(value))
+    if not text.strip():
+        raise InvalidLegacyContent("comment text is blank")
+
+    source_author = value.get(owner_key)
+    author, author_name = entry_author(value, source_author, name_key)
     source_complete = isinstance(source_author, str) and bool(source_author)
     try:
         stamp = epoch_millis(value.get(time_key), timezone)
     except InvalidLegacyContent:
-        stamp = fallback()[1]
+        _author, stamp = fallback()
         source_complete = False
-    mentions = value.get("mentions") or []
-    if not isinstance(mentions, list):
-        raise InvalidLegacyContent("comment mentions are not a list")
-    mention_ids = []
-    for mention in mentions:
-        candidate = mention.get("id") if isinstance(mention, dict) else mention
-        if not isinstance(candidate, str):
-            raise InvalidLegacyContent("comment mention has no text id")
-        mention_ids.append(candidate)
+
+    mention_ids = mentioned_users(entry_mentions(value) + span_ids, user_name)
     return {
         "id": identity,
         "text": text,
@@ -385,7 +445,8 @@ def _write_thread(env, planned, comments, batch_size) -> int:
     for row in comments:
         stored = stored_comments.get(row["name"])
         if stored and row["name"] not in superseded:
-            exact_fields(stored, row, COMMENT_FIELDS, f"comment {row['name']}")
+            exact_fields(stored, row, RERUN_COMMENT_FIELDS, f"comment {row['name']}")
+
     fresh = [row for row in comments if row["name"] not in stored_comments]
     if not stored_thread:
         first = fresh[: max(1, batch_size - 1)]

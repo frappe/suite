@@ -37,11 +37,13 @@ export interface WriteGate {
  * refresh, and a write the server refuses. A refusal is not lifted by a later
  * refresh; it holds until the document is opened again.
  *
- * `onClose` runs once each time the gate shuts, before any write it refuses.
+ * `onClose` runs once each time the gate shuts; its synchronous part runs before any write the gate refuses.
+ * `onOpen` runs each time it opens again.
  */
 export function createWriteGate(
   session: Pick<DocumentSession, 'state' | 'access' | 'refreshAccess'>,
-  onClose: () => void,
+  onClose: () => Promise<void> | void,
+  onOpen: () => void,
 ): WriteGate {
   const verdict = ref<number | null>(null)
   const role = computed(() => {
@@ -53,7 +55,13 @@ export function createWriteGate(
   watch(
     writable,
     (open, wasOpen) => {
-      if (wasOpen && !open) onClose()
+      if (wasOpen && !open) {
+        void Promise.resolve(onClose()).catch((error) => console.error(error))
+      }
+
+      if (!wasOpen && open) {
+        onOpen()
+      }
     },
     { flush: 'sync' },
   )
@@ -73,6 +81,7 @@ export function createWriteGate(
       },
       async run(params) {
         if (!writable.value) throw new DOMException('Editing access changed', 'AbortError')
+
         try {
           return await write.run(params)
         } catch (error) {

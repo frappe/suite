@@ -14,6 +14,7 @@ export type FileType =
   | 'doc'
   | 'sheet'
   | 'slides'
+  | 'draw'
   | 'pdf'
   | 'image'
   | 'video'
@@ -43,6 +44,7 @@ const CONTENT_TYPES: Record<string, FileType> = {
   Sheet: 'sheet',
   Spreadsheet: 'sheet',
   Presentation: 'slides',
+  Drawing: 'draw',
 }
 
 /** Drive's own documents, PDFs and media each have a colour; everything else is gray. */
@@ -51,6 +53,7 @@ const TINTS: Record<FileType, string> = {
   doc: 'text-ink-blue-6',
   sheet: 'text-ink-green-6',
   slides: 'text-ink-orange-6',
+  draw: 'text-ink-pink-6',
   pdf: 'text-ink-red-6',
   image: 'text-ink-violet-6',
   video: 'text-ink-pink-6',
@@ -130,6 +133,12 @@ export function nodeIcon(node: TypedNode): string {
 
 export function nodeIconTint(node: TypedNode): string {
   return fileTypeTint(fileType(node))
+}
+
+/** A document type's icon and ink, as Drive draws its documents. */
+export function documentIcon(contentDoctype: string) {
+  const type = CONTENT_TYPES[contentDoctype] ?? 'file'
+  return [fileTypeIcon(type), fileTypeTint(type)]
 }
 
 export function nodeTypeLabel(node: TypedNode): string {

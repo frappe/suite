@@ -77,6 +77,8 @@ const FOLDER: Row[] = [
 ]
 /** The state of the folder's rows. A trashed folder lists what was trashed with it. */
 let folderState = 'Active'
+/** The caller's role on the folder a file sits in. */
+let folderRole = 30
 function typeOf(row: Row): string {
   if (row.kind === 'folder') return 'folder'
   if (row.mime === 'application/pdf') return 'pdf'
@@ -86,7 +88,16 @@ function typeOf(row: Row): string {
 vi.mock('@/platform/transport', async (original) => ({
   ...(await original<typeof import('@/platform/transport')>()),
   transport: {
-    request: async (operation: Operation, input: { type?: string }) => {
+    request: async (operation: Operation, input: { type?: string; node?: string }) => {
+      if (operation.id === 'node_get') {
+        return {
+          name: input.node,
+          kind: 'folder',
+          state: 'Active',
+          root: 'root',
+          access: { role: folderRole },
+        }
+      }
       if (operation.id !== 'node_children') throw new Error(`Unexpected request ${operation.id}`)
       const types = input.type?.split(',')
       const rows = FOLDER.filter((row) => !types || types.includes(typeOf(row)))
@@ -134,6 +145,7 @@ afterEach(() => {
   unmount?.()
   unmount = null
   folderState = 'Active'
+  folderRole = 30
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
@@ -166,6 +178,31 @@ const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown',
 const counter = (root: HTMLElement) => root.querySelector('header span.tabular-nums')?.textContent
 
 describe('file preview', () => {
+  describe('a CSV, which has a text preview', () => {
+    const openAsSheetButton = (root: HTMLElement) =>
+      [...root.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('Open as spreadsheet'),
+      )
+
+    it('offers to open as a spreadsheet when the folder takes uploads', async () => {
+      vi.stubGlobal('fetch', async () => new Response('a,b\n1,2\n'))
+      const { root } = await mount(session('g', 'data.csv', 'text/csv'), '/d/g/data-csv')
+
+      await vi.waitFor(() => expect(openAsSheetButton(root)).toBeDefined())
+    })
+
+    it('does not offer it to someone who can only read the folder', async () => {
+      folderRole = 10
+      vi.stubGlobal('fetch', async () => new Response('a,b\n1,2\n'))
+      // Its own folder, so the answer is not the one another test cached.
+      const opened = { ...session('g', 'data.csv', 'text/csv'), parent: ref('folder-3') }
+      const { root } = await mount(opened as FilePreviewSession, '/d/g/data-csv')
+
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(openAsSheetButton(root)).toBeUndefined()
+    })
+  })
+
   it('steps through only the files the filtered listing showed', async () => {
     const { root, router } = await mount(
       session('c', 'c.png', 'image/png'),

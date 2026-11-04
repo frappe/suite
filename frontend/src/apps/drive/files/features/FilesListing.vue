@@ -15,7 +15,7 @@
     <!-- The root holds the gap above every state, so the listing does not move
          when the skeleton gives way to rows, an empty state or an error. -->
     <!-- A fast load shows nothing rather than a skeleton that flashes. -->
-    <div v-if="loading && !showSkeleton" aria-busy="true" />
+    <div v-if="isBlank" aria-busy="true" />
     <div
       v-else-if="!loading && query.error && !query.rows.length"
       class="flex flex-col items-center gap-3 py-16"
@@ -98,25 +98,7 @@
           >
           <ListHeaderCell><span class="sr-only">Actions</span></ListHeaderCell>
         </ListHeader>
-        <!-- Placeholder rows share the real rows' tracks, so nothing moves when data arrives. -->
-        <template v-if="loading">
-          <ListRow v-for="(width, index) in SKELETON_NAMES" :key="index" aria-hidden="true">
-            <ListCell>
-              <Skeleton class="mr-2 size-4 shrink-0 rounded-1" :class="SKELETON_BAR" />
-              <Skeleton class="h-2 max-w-full rounded-full" :class="[SKELETON_BAR, width]" />
-            </ListCell>
-            <ListCell v-if="shows('kind')" :class="wideOnly('kind')" />
-            <ListCell v-if="shows('owner')" :class="wideOnly('owner')" />
-            <ListCell v-if="shows('size')" :class="wideOnly('size')" />
-            <ListCell v-if="shows('modified')" class="justify-end" :class="wideOnly('modified')">
-              <Skeleton
-                class="h-2 rounded-full"
-                :class="[SKELETON_BAR, index % 3 ? 'w-14' : 'w-10']"
-              />
-            </ListCell>
-            <ListCell />
-          </ListRow>
-        </template>
+        <ListSkeletonRows v-if="loading" :cells="skeletonCells()" />
         <template v-else>
           <ListRow
             v-for="(row, index) in rows"
@@ -344,6 +326,8 @@ import { useSession } from '@/platform/session'
 
 import FileCard from './FileCard.vue'
 import { loadUntilVisible } from './listingWindows'
+import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
+import ListSkeletonRows from './ListSkeletonRows.vue'
 import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
@@ -401,21 +385,6 @@ const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
   },
 })
 
-/** Faint enough to read as structure, not content. */
-const SKELETON_BAR = '!bg-surface-gray-2 motion-reduce:animate-none'
-/** Name bar widths, varied so the placeholder reads as a list of names. */
-const SKELETON_NAMES = [
-  'w-40',
-  'w-28',
-  'w-52',
-  'w-36',
-  'w-24',
-  'w-44',
-  'w-32',
-  'w-48',
-  'w-28',
-  'w-36',
-]
 /** Cards are narrow on a phone, so their bars are a share of the card. */
 const SKELETON_CARD_NAMES = [
   'w-3/4',
@@ -429,23 +398,9 @@ const SKELETON_CARD_NAMES = [
   'w-3/4',
   'w-2/5',
 ]
-const SKELETON_DELAY = 180
 
 const loading = computed(() => props.query.status === 'pending' && !props.query.rows.length)
-const showSkeleton = ref(false)
-let skeletonTimer: ReturnType<typeof setTimeout> | undefined
-watch(
-  loading,
-  (isLoading) => {
-    clearTimeout(skeletonTimer)
-    showSkeleton.value = false
-    if (isLoading)
-      skeletonTimer = setTimeout(() => {
-        showSkeleton.value = true
-      }, SKELETON_DELAY)
-  },
-  { immediate: true },
-)
+const isBlank = useSkeletonDelay(loading)
 const rows = computed(() => props.query.rows)
 const COLUMN_TRACKS: Record<string, string> = {
   owner: '12rem',
@@ -455,6 +410,8 @@ const COLUMN_TRACKS: Record<string, string> = {
 }
 /** Columns a phone has no room for. Name takes their width. */
 const WIDE_ONLY = new Set(['owner', 'modified', 'kind'])
+// The columns before the date, in the rows' order
+const SIDE_COLUMNS = ['kind', 'owner', 'size']
 const columns = computed(() => props.presentation.columns)
 const columnTracks = computed(() => {
   const tracks = (list: string[]) => [
@@ -493,7 +450,6 @@ watch(
 onBeforeUnmount(() => {
   observer?.disconnect()
   cancelLongPress()
-  clearTimeout(skeletonTimer)
 })
 
 function shows(column: string) {
@@ -501,6 +457,17 @@ function shows(column: string) {
 }
 function wideOnly(column: string) {
   return WIDE_ONLY.has(column) ? 'hidden md:flex' : undefined
+}
+
+function skeletonCells() {
+  const cells: SkeletonCell[] = SIDE_COLUMNS.filter(shows).map((column) => ({
+    class: wideOnly(column),
+  }))
+  if (shows('modified')) {
+    cells.push({ class: ['justify-end', wideOnly('modified')], hasDate: true })
+  }
+
+  return cells
 }
 function isSelected(row: DriveNode) {
   return props.selection.includes(row.name)

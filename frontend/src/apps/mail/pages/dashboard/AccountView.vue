@@ -119,10 +119,10 @@
                   : __('Personal cap: {0} GB', [storageUser.cap_bytes / 1_000_000_000])
               }}
             </p>
-            <p v-if="storage.data?.effective_allowance_bytes != null">
+            <p v-if="storage.data?.allowance_bytes">
               {{
                 __('Workspace limit: {0} GB', [
-                  (storage.data.effective_allowance_bytes / 1_000_000_000).toLocaleString(),
+                  (storage.data.allowance_bytes / 1_000_000_000).toLocaleString(),
                 ])
               }}
             </p>

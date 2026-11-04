@@ -1,4 +1,31 @@
-import { DRAFTS_DB_NAME, RECORD_PREFIX, USER_CACHE_NAMES } from '@/apps/slides/utils/slidesCaches'
+import { adoptLegacyDrafts } from '@/apps/slides/utils/drafts'
+import {
+  RECORD_PREFIX,
+  USER_CACHE_NAMES,
+  VISITED_CACHE_NAME,
+} from '@/apps/slides/utils/slidesCaches'
+
+export function slidesWorkerEnabled() {
+  return import.meta.env.PROD || import.meta.env.VITE_SLIDES_SW === '1'
+}
+
+// only for someone who opened a presentation; the kill switch takes the worker out
+export async function registerSlidesWorker() {
+  if (!('serviceWorker' in navigator) || !slidesWorkerEnabled()) return
+
+  if (window.disable_slides_service_worker) {
+    const registration = await navigator.serviceWorker.getRegistration('/').catch(() => null)
+    await registration?.unregister().catch(() => {})
+    await clearSlidesUserData().catch(() => {})
+    return
+  }
+
+  try {
+    await navigator.serviceWorker.register('/service-worker.js')
+  } catch (err) {
+    console.warn('Slides Service Worker registration failed:', err)
+  }
+}
 
 // a broken worker must not hold up navigation
 const ACK_TIMEOUT = 500
@@ -31,12 +58,24 @@ export const clearSlidesUserData = async () => {
   await Promise.all(USER_CACHE_NAMES.map((name) => caches.delete(name)))
 }
 
-// the caches are per origin, the data in them is per user
+export async function clearVisitedCopies() {
+  if ('caches' in window) {
+    await caches.delete(VISITED_CACHE_NAME)
+  }
+}
+
+let hasAdoptedDrafts = false
+
+// the caches are per origin, the data in them is per user; drafts are kept per
+// user, so another user arriving never touches them
 export const claimSlidesCachesFor = async (user: string) => {
   const previous = localStorage.getItem(CACHES_USER_KEY)
+  if (!hasAdoptedDrafts) {
+    hasAdoptedDrafts = true
+    await adoptLegacyDrafts(previous).catch(() => {})
+  }
   if (previous === user) return
-  // the drafts survive a logout, so only another user arriving may drop them
-  if (previous) indexedDB.deleteDatabase(DRAFTS_DB_NAME)
+
   await clearSlidesUserData()
   localStorage.setItem(CACHES_USER_KEY, user)
 }

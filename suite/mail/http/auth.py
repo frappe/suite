@@ -57,6 +57,9 @@ class AccountRequest(TypedDict):
     account: str | None
     is_verified: Flag
     is_expired: Flag
+    workspace_name: str
+    workspace_logo: str
+    invited_by_name: str
 
 
 class Option(TypedDict):

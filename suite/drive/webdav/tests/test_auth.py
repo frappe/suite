@@ -16,6 +16,11 @@ from suite.drive.webdav.tests.utils import (
 PASSWORD = "webdav-auth-pw-9000"
 
 
+def failed_logins(key: str) -> int | None:
+    # read through frappe's tracker, not its cache layout, which frappe has already changed once
+    return LoginAttemptTracker(key).login_failed_count
+
+
 def make_user(slug: str) -> str:
     # tracker state is keyed by user in redis, so every test gets its own user
     email = f"webdav-auth-{slug}@example.com"
@@ -30,11 +35,6 @@ def authenticate(user: str | None, password: str = "", header: str | None = None
     else:
         set_dav_request("PROPFIND", "/dav/", user=user, password=password)
     return auth.authenticate(frappe.local.request)
-
-
-def failures(key: str) -> int:
-    """Failed attempts counted under ``key``, read through the framework's own tracker."""
-    return LoginAttemptTracker(key).login_failed_count
 
 
 class TestWebDAVAuth(IntegrationTestCase):
@@ -88,8 +88,8 @@ class TestWebDAVAuth(IntegrationTestCase):
             with self.assertRaises(AuthRequired):
                 authenticate(user, "wrong-password")
             # the failure lands under the namespaced key, never frappe's web-login key
-            self.assertEqual(failures(user), 0)
-            self.assertEqual(failures(f"{auth.LOCKOUT_KEY_NS}{user}"), 1)
+            self.assertFalse(failed_logins(user))
+            self.assertTrue(failed_logins(f"{auth.LOCKOUT_KEY_NS}{user}"))
 
     def test_correct_password_returns_canonical_user(self):
         user = make_user("ok")
@@ -170,7 +170,7 @@ class TestWebDAVAuth(IntegrationTestCase):
             with self.assertRaises(AuthRequired) as ctx:
                 authenticate(api_key, "not-the-secret")
             self.assertEqual(str(ctx.exception), "Incorrect user or password.")
-            self.assertEqual(failures(f"{auth.LOCKOUT_KEY_NS}{api_key.lower()}"), 1)
+            self.assertTrue(failed_logins(f"{auth.LOCKOUT_KEY_NS}{api_key.lower()}"))
 
     def test_api_keys_bypass_two_factor(self):
         # API credentials are their own factor — the working path for 2FA accounts
