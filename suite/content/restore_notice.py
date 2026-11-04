@@ -55,7 +55,7 @@ def for_reader(notice: dict | None, node: str) -> dict:
 
     try:
         drive.check_history_reader(node)
-    except drive.DriveForbidden:
+    except drive.DriveError:
         return {}
 
     return {"restored": notice}

@@ -21,11 +21,13 @@ from suite.drive._core.access import (
     effective_role,
     grant,
     is_blocked,
+    mentionable_on,
     require,
 )
 from suite.drive._core.activity import notify_users, record
 from suite.drive._core.errors import (
     DriveConflict,
+    DriveError,
     DriveForbidden,
     DriveNotFound,
     rollback_savepoint,
@@ -463,10 +465,11 @@ def write_comment_edit(
     text: str,
     via_link: str | None,
 ) -> None:
-    """Rewrite a comment's text and record it, telling only the people it newly mentions."""
+    """Rewrite a comment's text and record it, telling only the people it never named before."""
     before = _json_value(comment_row.mentions, [])
-    mentions = _mentions(text)
-    added = reach_mentioned(principals, node, [user for user in mentions if user not in before], via_link)
+    mentions, picked = _mentions_by(principals, node, text, via_link)
+    added = reach_mentioned(principals, node, [user for user in mentions if user not in before], picked)
+    named_earlier = _named_earlier(comment_row) if added else set()
     frappe.db.set_value(
         "Drive Comment",
         comment_row.name,
@@ -486,7 +489,7 @@ def write_comment_edit(
         },
         via_link=via_link,
     )
-    notify_users(activity, added)
+    notify_users(activity, [user for user in added if user not in named_earlier])
 
 
 def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dict:
@@ -717,36 +720,43 @@ def _locked_comment(comment: str) -> tuple[frappe._dict, frappe._dict]:
 
 
 def lock_tree_to_share(principals: Principals, node: str, text: str) -> None:
-    """A manager's mention may grant, and a grant takes the tree lock before any row of the tree."""
+    """A manager's `@[…]` may grant, and a grant takes the tree lock before any row of the tree."""
     row = _comment_node(node)
-    if _mentions(text) and check(row, MANAGE, principals):
+    if _BRACKET_MENTION.search(text) and check(row, MANAGE, principals):
         lock_trees(_tree(row))
 
 
 def reach_mentioned(
-    principals: Principals, node: frappe._dict, users: list[str], via_link: str | None
+    principals: Principals, node: frappe._dict, users: list[str], picked: set[str]
 ) -> list[str]:
     """The people among `users` a comment notifies, shared with at Comment if the author manages the node.
 
-    Someone with access always is. Someone without is only when a signed-in person
-    wrote it on their own access, not a Guest or a share link, and never when blocked.
-    The comment stores every name either way, so what it shows can't give a block away.
+    Someone with access always is. Someone without is only when the author can comment on
+    their own access, not a Guest or a share link, named them with `@[…]`, and no block stands.
     Only MANAGE hands out access, and nobody's role is lowered.
     """
     from suite.drive.framework import principals_for
 
-    may_reach_outsiders = via_link is None and principals.user != "Guest"
+    may_reach_outsiders = bool(users) and has_own_comment_access(node, principals)
     manages = may_reach_outsiders and check(node, MANAGE, principals)
     reached = []
     for user in users:
         person = principals_for(user)
         if not check(node, READ, person):
-            if not may_reach_outsiders or is_blocked(node, person):
+            if not may_reach_outsiders or user not in picked or is_blocked(node, person):
                 continue
             if manages and _principal_kind(user) == "user":
                 grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
         reached.append(user)
     return reached
+
+
+def has_own_comment_access(node: frappe._dict, principals: Principals) -> bool:
+    """Whether the caller's own grants, not a share link, let them comment on the node."""
+    try:
+        return require(node, COMMENT, principals) is None
+    except DriveError:
+        return False
 
 
 def _insert_comment(
@@ -761,8 +771,8 @@ def _insert_comment(
 ) -> tuple[str, list[str], list[str]]:
     """Insert a comment; answer it, the people it names and the ones to notify."""
     guest_name = _guest_name(principals, author_name)
-    mentions = _mentions(text)
-    reached = reach_mentioned(principals, node, mentions, via_link)
+    mentions, picked = _mentions_by(principals, node, text, via_link)
+    reached = reach_mentioned(principals, node, mentions, picked)
     # Frappe counts words made only of tags as missing; _validate_text already refuses blank words
     row = frappe.get_doc(
         {
@@ -944,14 +954,49 @@ def excerpt(text: str) -> str:
     return words[: EXCERPT_LENGTH - 1].rstrip() + "…"
 
 
-def _mentions(text: str) -> list[str]:
-    candidates = []
-    for pattern in (_BRACKET_MENTION, _EMAIL_MENTION, _DATA_MENTION):
-        candidates.extend(pattern.findall(text))
+def _mentions(node: frappe._dict, text: str) -> tuple[list[str], set[str]]:
+    """Who a comment names, each once in written order, and which of them by an `@[…]` token.
 
-    return list(
-        dict.fromkeys(filter(None, (frappe.db.get_value("User", user, "name") for user in candidates)))
+    Only the people a picker on this node offers count; any other id names no one, so a
+    disabled account reads the same as an account that doesn't exist. The comment's text stays.
+    """
+    picked = _BRACKET_MENTION.findall(text)
+    written = [*picked, *_EMAIL_MENTION.findall(text), *_DATA_MENTION.findall(text)]
+    known = {user.casefold(): user for user in mentionable_on(node, written)}
+    named = (known.get(user.casefold()) for user in written)
+    return list(dict.fromkeys(filter(None, named))), {
+        known[user.casefold()] for user in picked if user.casefold() in known
+    }
+
+
+def _mentions_by(
+    principals: Principals, node: frappe._dict, text: str, via_link: str | None
+) -> tuple[list[str], set[str]]:
+    """`_mentions` as this author's comment stores them: from a Guest or a link, only people who can read.
+
+    A name kept for anyone else would tell an outsider that the account exists. A signed-in
+    author keeps every name, so a block looks like any other lack of access.
+    """
+    from suite.drive.framework import principals_for
+
+    named, picked = _mentions(node, text)
+    if via_link is None and principals.user != "Guest":
+        return named, picked
+    return [user for user in named if check(node, READ, principals_for(user))], picked
+
+
+def _named_earlier(comment: frappe._dict) -> set[str]:
+    """Everyone this comment's records have named; a name removed and put back is no news to them."""
+    rows = frappe.get_all(
+        "Drive Activity", filters={"node": comment.node, "action": "comment"}, fields=["detail"]
     )
+    details = [_json_value(row.detail, {}) for row in rows]
+    return {
+        user
+        for detail in details
+        if detail.get("comment") == comment.name
+        for user in detail.get("mentions") or ()
+    }
 
 
 def _validate_anchor(anchor: str) -> None:

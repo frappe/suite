@@ -26,9 +26,9 @@ from suite.writer.content.tests.support import (
 )
 
 
-def share_as_writer(node: str, principal: str, role: int) -> None:
+def share_as_writer(node: str, principal: str, role: int, **options) -> dict:
     owner = drive_core.principals.Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
-    drive_core.access.grant(node, principal, role, owner)
+    return drive_core.access.grant(node, principal, role, owner, **options)
 
 
 def move_as_writer(node: str, folder: str) -> None:

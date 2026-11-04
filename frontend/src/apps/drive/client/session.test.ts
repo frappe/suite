@@ -340,6 +340,25 @@ describe('document session access', () => {
     await Promise.resolve()
     expect(reads).toBe(2)
   })
+
+  it('a Suite Admin with a Comment grant can share, as the server allows', async () => {
+    const requester = transport((id, input) =>
+      id === 'node_get'
+        ? {
+            ...documentNode(input.node),
+            access: { role: 20, via_link: null, can_manage: true },
+          }
+        : {},
+    )
+    const session = await openDriveDocumentSession('deck', {
+      client: testClient(requester),
+      window: new EventTarget() as Window,
+    })
+
+    expect(session.access.value.role).toBe(20)
+    expect(session.canShare.value).toBe(true)
+    session.dispose()
+  })
 })
 
 describe('document session rename', () => {

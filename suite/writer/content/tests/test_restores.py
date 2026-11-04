@@ -12,6 +12,7 @@ import pycrdt
 from frappe.utils import get_system_timezone, now_datetime
 
 from suite import drive
+from suite.content import restore_notice
 from suite.content.http import routes
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
@@ -247,6 +248,28 @@ class TestRestoreFence(CheckpointCase):
             taken_at.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None),
             taken.replace(microsecond=0),
         )
+
+    def test_a_public_reader_holding_a_locked_edit_link_still_pulls_after_a_restore(self):
+        share_as_writer(self.node, "$PUBLIC", drive.READ)
+        link = share_as_writer(self.node, "$LINK", drive.EDIT, password="a-long-enough-password")
+        frappe.db.commit()
+        restoring = self.open_tab()
+        _status, fence = self.begin()
+        self.push_word(restoring, "old ", restore=fence["token"])
+
+        frappe.set_user("Guest")
+        token = link["principal"].removeprefix("$LINK:")
+        pulled = read_frame(call_route(routes.updates_get, self.node, links=token).get_data())[0]
+        frappe.set_user(WRITER)
+
+        self.assertNotIn("restored", pulled)
+
+    def test_a_refused_history_reader_of_any_kind_gets_no_restore_notice(self):
+        notice = {"by": WRITER, "version": {"seq": 1}}
+        for refusal in (drive.DriveForbidden, drive.DriveNotFound, drive.DriveLocked, drive.DriveLinkExpired):
+            with self.subTest(refusal=refusal.__name__):
+                with patch.object(drive, "check_history_reader", side_effect=refusal("No")):
+                    self.assertEqual(restore_notice.for_reader(notice, self.node), {})
 
     def test_the_version_kept_first_is_named_after_the_version_restored_and_credits_the_restorer(self):
         named = drive.take_version(self.node, kind="named", label="Draft for review")

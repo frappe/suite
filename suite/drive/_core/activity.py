@@ -33,6 +33,7 @@ ActivityAction = Literal[
     "share_remove",
 ]
 ACTIVITY_ACTIONS: tuple[ActivityAction, ...] = get_args(ActivityAction)
+SHARE_ACTIONS: tuple[ActivityAction, ...] = ("share_add", "share_edit", "share_remove")
 # §11.4 fixes one page size for the whole HTTP surface. A record listing is
 # paged by the same helper as a folder page, so it keeps the same default and
 # the same cap rather than a second pair that could drift.
@@ -107,27 +108,32 @@ def history(
 
     §11.4's page, the one every Drive listing answers with. Nothing is dropped
     after the SQL window here - the READ check is on the node, once - so the
-    window size and the row count always agree.
+    window size and the row count always agree. Sharing rows name who holds what,
+    blocks included, so like the share dialog they are for MANAGE.
     """
+    from suite.drive._core.access import check
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
 
     # It quotes comments and names people and whom a node is shared with; a signed-out caller gets none of it
     if principals.user == "Guest":
         raise DriveForbidden(_("Sign in to see this item's history"))
 
-    _authorized_node(principals, node)
+    row = _authorized_node(principals, node)
+    filters: dict[str, str | list] = {"node": node}
+    if not check(row, MANAGE, principals):
+        filters["action"] = ["not in", SHARE_ACTIONS]
     window = page_limit(limit)
     offset = decode_cursor(cursor)
     rows = frappe.get_all(
         "Drive Activity",
-        filters={"node": node},
+        filters=filters,
         fields=["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
         order_by="at desc, creation desc",
         limit=window,
         start=offset,
     )
-    for row in rows:
-        row.detail = _json_value(row.detail, {})
+    for activity in rows:
+        activity.detail = _json_value(activity.detail, {})
     _quote_comments_as_they_are(rows)
     return page_of(rows, offset, len(rows), window)
 

@@ -40,5 +40,29 @@ def people(ids: Iterable[str | None]) -> dict[str, Person]:
     return {user: found.get(user) or person(user, None, None) for user in wanted}
 
 
+def enabled_people(ids: Iterable[str]) -> dict[str, bool]:
+    """Answer each enabled user among `ids` by stored name, and whether people search lists them.
+
+    The test is the one `suite.api.people` uses for its directory: the Suite User role. Administrator
+    is a system identity, not listed. Guest is no one. One query answers any number of ids.
+    """
+    wanted = list({user for user in ids if user})
+    if not wanted:
+        return {}
+    rows = frappe.db.sql(
+        """
+        SELECT name, name != 'Administrator' AND EXISTS (
+            SELECT 1 FROM `tabHas Role`
+            WHERE parenttype = 'User' AND parent = `tabUser`.name AND role = 'Suite User'
+        ) AS in_directory
+        FROM `tabUser`
+        WHERE name IN %(ids)s AND enabled = 1 AND name != 'Guest'
+        """,
+        {"ids": wanted},
+        as_dict=True,
+    )
+    return {row.name: bool(row.in_directory) for row in rows}
+
+
 def person(user: str, full_name: str | None, user_image: str | None) -> Person:
     return {"id": user, "full_name": full_name or user, "user_image": user_image or None}

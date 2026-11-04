@@ -1,7 +1,7 @@
 import { fakeSocket } from '@suite/collab-client/test-support'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { expect, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { Doc } from 'yjs'
 
@@ -35,6 +35,7 @@ export async function openedSurface(
     title: ref('Quarterly plan'),
     state,
     access,
+    canShare: computed(() => state.value === 'Active' && access.value.role >= 50),
     refreshAccess: async () => {},
     versions,
     credentials: {

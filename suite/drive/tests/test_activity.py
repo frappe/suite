@@ -144,6 +144,32 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual(notifications(self.outsider)["rows"], [])
         self.assertEqual(unread_count(self.outsider), 0)
 
+    def test_only_a_manager_sees_sharing_rows_in_history(self):
+        grant(self.node, OUTSIDER, NONE, self.owner)
+        record(self.owner, self.node, "edit", detail={"blob": "sha"})
+
+        def actions(principals: Principals) -> set[str]:
+            return {row.action for row in history(principals, self.node)["rows"]}
+
+        self.assertIn("share_add", actions(self.owner))
+        self.assertIn("edit", actions(self.other))
+        self.assertFalse({action for action in actions(self.other) if action.startswith("share_")})
+        self.assertNotIn(OUTSIDER, frappe.as_json(history(self.other, self.node)))
+
+    def test_history_pages_stay_full_when_sharing_rows_are_left_out(self):
+        grant(self.node, OUTSIDER, READ, self.admin)
+        record(self.owner, self.node, "edit", detail={"blob": "1"})
+        grant(self.node, OUTSIDER, EDIT, self.admin)
+        record(self.owner, self.node, "edit", detail={"blob": "2"})
+        revoke(self.node, OUTSIDER, self.admin)
+        record(self.owner, self.node, "edit", detail={"blob": "3"})
+
+        first = history(self.other, self.node, limit=2)
+        second = history(self.other, self.node, limit=2, cursor=first["next_cursor"])
+
+        self.assertEqual([row.detail["blob"] for row in first["rows"]], ["3", "2"])
+        self.assertEqual(second["rows"][0].detail["blob"], "1")
+
     def test_a_guest_gets_no_history_of_a_public_node(self):
         from suite.drive.http import routes
 

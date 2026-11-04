@@ -87,7 +87,6 @@ import { createWriteGate } from './writes'
 const READ = 10
 const COMMENT = 20
 const EDIT = 40
-const MANAGE = 50
 // How often an old document's page asks whether its conversion has finished
 const CONVERSION_POLL_MS = 15_000
 
@@ -291,8 +290,6 @@ const readable = computed(
 const canComment = computed(
   () => props.session.state.value === 'Active' && writes.role.value >= COMMENT,
 )
-
-const canShare = computed(() => writes.role.value >= MANAGE)
 
 const saveState = computed<DocumentSaveState>(() => roomSaveState.value ?? 'clean')
 // "busy" is another tab's save holding the document; this one goes again within a second
@@ -923,7 +920,7 @@ onBeforeUnmount(() => {
                 :session="session"
                 :can-comment="canComment"
                 :can-edit-document="canEditDocument"
-                :can-share="canShare"
+                :can-share="session.canShare.value"
                 :can-restore-version="canRestoreVersion"
                 :can-save-version="canSaveVersion"
                 :is-restoring-version="isRestoringVersion"

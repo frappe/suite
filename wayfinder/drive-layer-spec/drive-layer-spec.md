@@ -2580,8 +2580,15 @@ def reanchor_threads(p: Principals, node: str, anchors: dict[str, str]) -> list[
 - A guest's comment carries `owner = "Guest"` plus the `author_name` the
   visitor typed. The server sets the author; the client never does
   [008 §6].
-- Mentions go into the comment's `mentions` field and produce one
-  `Drive Notification` each.
+- Mentions go into the comment's `mentions` field, each person once. Only
+  people a picker on that node offers count: enabled users with the Suite User
+  role, and those the node names who can read it. A Guest's or a share link
+  author's comment stores only people who can read. A mention produces one
+  `Drive Notification` for someone with access. Someone without one only gets
+  it from a signed-in author who holds COMMENT on their own access and wrote
+  `@[user]`, and never if a **Deny** naming them or their group keeps them out;
+  an author who holds MANAGE also gives them COMMENT. An edit tells only people
+  the comment's records never named.
 - A create or a reply may carry a `client_id` (1 to 64 letters, digits,
   `-` or `_`), unique per node. A resend with the same id, after its answer
   was lost, writes nothing and answers the thread or comment the first send
@@ -3179,7 +3186,7 @@ page (§11.4).
 | GET | `/nodes/<id>/content` | READ on node | `?format=` for documents; `?download=1` saves a file instead of showing it | 302 to a signed `/f/` URL, or the streamed export | 403 |
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
 | POST | `/nodes/<id>/preview` | EDIT on node | `{image: <base64>, mime}` | `{preview: {...}}` | 403 |
-| GET | `/nodes/<id>/activity` | READ on node | `?limit=&cursor=` | cursor page of activity rows | none |
+| GET | `/nodes/<id>/activity` | READ on node; `share_*` rows need MANAGE | `?limit=&cursor=` | cursor page of activity rows | none |
 | POST | `/nodes/<id>/visit` | READ on node | none | `{count}` | none |
 | PUT | `/nodes/<id>/favourite` | READ on node | none | `{count}` | 403 on a trashed node |
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{count}` | none |

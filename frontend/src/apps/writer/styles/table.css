@@ -167,7 +167,6 @@
   color: var(--ink-gray-7);
 }
 
-/* The edge a dragged row or column lands on */
 /* No fill: a slash, so it does not read as gray */
 .writer-swatch.is-none {
   background-image: linear-gradient(

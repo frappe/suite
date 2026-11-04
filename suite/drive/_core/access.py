@@ -23,6 +23,7 @@ from suite.drive._core.errors import (
     DriveNotFound,
     rollback_savepoint,
 )
+from suite.drive._core.people import enabled_people
 from suite.drive._core.principals import TICKET_TTL, Principals, make_ticket, ticket_ok
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, ROLES
 from suite.drive._core.roots import lock_trees
@@ -110,13 +111,16 @@ def chain_ids(node: Mapping) -> list[str]:
     return ids
 
 
+SITE_TIER = 2
+
+
 def own_tier(principal: str, user: str) -> int:
     """Order own principals: the user, then groups, then the site principal."""
     if principal == user:
         return 0
     if principal.startswith("$GROUP:"):
         return 1
-    return 2
+    return SITE_TIER
 
 
 @dataclasses.dataclass
@@ -617,8 +621,7 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
 def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dict[str, bool]:
     """Answer who can read a node, for a picker there: the users it names, and `users`.
 
-    The named users are the node's creator and the users its live grants and
-    its ancestors' name. Each of `users` maps to whether they can read the
+    Each of `users` maps to whether they can read the
     node now, and so does each named user who can: a named user who can't is
     left out, so a deny or an expiry looks like never having been named. A
     mention picker ranks people by this, so it needs COMMENT, the right to
@@ -629,22 +632,45 @@ def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dic
 
     node = _node_or_not_found(node_id)
     require(node, COMMENT, principals)
-    rows = frappe.db.sql(EXPLAIN_SQL, {"chain": chain_ids(node), "now": now()}, as_dict=True)
-    named = [row.principal for row in rows if row.role >= READ and not row.principal.startswith("$")]
     access = {user: check(node, READ, principals_for(user)) for user in dict.fromkeys(users)}
-    for user in dict.fromkeys([node.owner, *named]):
+    for user in named_on(node):
         if user not in access and check(node, READ, principals_for(user)):
             access[user] = True
     return access
 
 
+def named_on(node: Mapping) -> list[str]:
+    """The users a node names: its creator and those its live grants and its ancestors' give Read or more."""
+    rows = frappe.db.sql(EXPLAIN_SQL, {"chain": chain_ids(node), "now": now()}, as_dict=True)
+    named = [row.principal for row in rows if row.role >= READ and not row.principal.startswith("$")]
+    return list(dict.fromkeys([node.owner, *named]))
+
+
+def mentionable_on(node: Mapping, ids: Iterable[str]) -> list[str]:
+    """The people among `ids` a picker on this node offers: the directory, and the named who can read it."""
+    from suite.drive.framework import principals_for
+
+    found = enabled_people(ids)
+    named = () if all(found.values()) else named_on(node)
+    return [
+        user
+        for user, in_directory in found.items()
+        if in_directory or (user in named and check(node, READ, principals_for(user)))
+    ]
+
+
 def is_blocked(node: Mapping, principals: Principals) -> bool:
-    """Whether the grant deciding this person's access is a deny, on the node or inherited."""
-    _role, rows, depth, _tickets = _point_state(node, principals)
+    """Whether a deny naming this person or one of their groups keeps them out.
+
+    A deny on `$GENERAL` only restricts the node, so it is ordinary lack of access. Leaving it
+    out also finds a person's own deny on a folder above a node that `$GENERAL` denies nearer.
+    """
+    role, rows, depth, _tickets = _point_state(node, principals)
     acc = Acc()
     for row in rows:
-        acc.offer(row.principal, row.role, depth[row.node], principals)
-    return acc.own == NONE
+        if own_tier(row.principal, principals.user) < SITE_TIER:
+            acc.offer(row.principal, row.role, depth[row.node], principals)
+    return role == NONE and acc.own == NONE
 
 
 def blocked_on(node_id: str, principals: Principals, users: Iterable[str]) -> list[str] | None:

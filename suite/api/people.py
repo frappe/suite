@@ -70,7 +70,7 @@ class PersonUser(TypedDict):
     user_image: str | None
     # Only with `node`: whether they can open it.
     has_access: NotRequired[bool]
-    # Only with `node`: whether a deny keeps them out, so no mention reaches them.
+    # Only with `node`, for a manager: whether a deny naming them or their group keeps them out.
     is_blocked: NotRequired[bool]
 
 
