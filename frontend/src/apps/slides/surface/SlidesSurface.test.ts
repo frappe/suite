@@ -39,7 +39,7 @@ const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
   await import('@/apps/slides/stores/presentation')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
-const { keepRecovery, readRecovery } = await import('./recovery')
+const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
@@ -1050,11 +1050,13 @@ describe('Slides push refused by the server', () => {
 
       it('keeps no copy of this clean presentation when the tab closes', async () => {
         await openedDuringItsPush()
-        const copies = readRecovery('node-1').length
+        while (readRecovery('node-1').length) {
+          removeNewestRecovery('node-1')
+        }
 
         window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
 
-        expect(readRecovery('node-1')).toHaveLength(copies)
+        expect(readRecovery('node-1')).toEqual([])
       })
     })
 
