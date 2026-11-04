@@ -1048,10 +1048,15 @@ class TestCommentWorkflows(IntegrationTestCase):
         create_thread(guest, self.document.name, "anchor", f"Hi @[{MENTIONED}]", author_name="Sam")
 
         self.assertEqual(self.role_of(), READ)
-        self.assertEqual(len(self.bell()), 1)
+        self.assertEqual(sorted(row.activity.action for row in self.bell()), ["comment", "share_add"])
 
     def test_a_commenter_cannot_tell_a_block_from_any_other_lack_of_access(self):
         grant(self.document.name, MENTIONED, NONE, self.admin)
+
+        def outsider_grants() -> list:
+            return frappe.get_all("Drive Grant", {"principal": OUTSIDER}, ["node", "role"], order_by="node")
+
+        grants_before = outsider_grants()
 
         def posted(person: str) -> dict:
             thread = create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{person}]")
@@ -1067,7 +1072,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(posted(MENTIONED), posted(OUTSIDER))
         self.assertEqual(self.bell(), [])
         self.assertEqual(len(self.bell(OUTSIDER)), 1)
-        self.assertIsNone(frappe.db.get_value("Drive Grant", {"principal": OUTSIDER}, "role"))
+        self.assertEqual(outsider_grants(), grants_before)
 
     def test_people_on_leaves_out_a_named_person_a_deny_keeps_out(self):
         grant(self.root.name, MENTIONED, READ, self.admin)
