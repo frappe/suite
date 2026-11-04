@@ -22,6 +22,7 @@ import frappe
 import httpx
 from frappe.utils import get_system_timezone, get_url
 
+from suite import mail as mail_product
 from suite.composition.demo import agenda, inbox
 from suite.composition.demo.cast import (
     DOMAIN,
@@ -42,16 +43,6 @@ CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
 CALENDARS = "urn:ietf:params:jmap:calendars"
 MANAGEMENT = "urn:stalwart:jmap"
-ACCOUNT_DOCTYPES = (
-    "Screened Email Address",
-    "Mail Queue",
-    "Mailbox Settings",
-    "Mail Sync History",
-    "Mail Exchange",
-    "Contacts Exchange",
-    "Calendar Exchange",
-    "User Account",
-)
 
 
 def seed(fresh: bool = False) -> None:
@@ -69,7 +60,7 @@ def reset() -> None:
         stalwart = Stalwart()
         try:
             for person in PEOPLE:
-                unlink(person.email)
+                mail_product.forget_local_account(person.email)
             frappe.db.commit()
             stalwart.remove()
             print("Removed the Northwind mail accounts, lists and domain.")
@@ -256,29 +247,6 @@ def link(stalwart: Stalwart, email: str) -> None:
     settings.username = email
     settings.app_password = stalwart.create_app_password(email)
     settings.save(ignore_permissions=True)
-
-
-def unlink(email: str) -> None:
-    from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-    from suite.mail.jmap import clear_jmap_session
-    from suite.mail.store import get_account_namespace
-    from suite.store import destroy_namespace, get_blob_base_path, get_data_base_path, get_search_base_path
-
-    accounts = [
-        account
-        for account in get_user_jmap_accounts(email)
-        if frappe.db.get_value("JMAP Account", account, "_name") == email
-    ]
-    for doctype in ACCOUNT_DOCTYPES:
-        frappe.db.delete(doctype, {"account": ["in", accounts or [""]]})
-    frappe.db.delete("JMAP Account", {"name": ["in", accounts or [""]]})
-    for account in accounts:
-        for base_path in (get_data_base_path(), get_blob_base_path(), get_search_base_path()):
-            destroy_namespace(base_path, get_account_namespace(account))
-    if name := frappe.db.get_value("User Settings", {"user": email}):
-        frappe.db.set_value("User Settings", name, "username", None)
-        frappe.db.delete("__Auth", {"doctype": "User Settings", "name": name, "fieldname": "app_password"})
-    clear_jmap_session(email)
 
 
 def personal_account(email: str) -> str:

@@ -95,6 +95,13 @@ def administer_account(action: str, **arguments) -> dict:
     return result
 
 
+def forget_local_account(user: str) -> None:
+    """Drop this site's copy of the user's own account once the mail server no longer has it."""
+    from suite.mail import account_lifecycle
+
+    account_lifecycle.forget_local_account(user)
+
+
 def provider_health(*, refresh: bool = False, domains: bool = False) -> dict:
     """Report provider connectivity/suspension without treating outages as suspension."""
     from suite.mail.health import status

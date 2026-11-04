@@ -16,6 +16,17 @@ from suite.suite_core.account_state import read, write
 from suite.suite_core.administration import require_admin
 from suite.suite_core.storage import state
 
+LOCAL_ACCOUNT_DOCTYPES = (
+    "Screened Email Address",
+    "Mail Queue",
+    "Mailbox Settings",
+    "Mail Sync History",
+    "Mail Exchange",
+    "Contacts Exchange",
+    "Calendar Exchange",
+    "User Account",
+)
+
 
 def provision(user: str, address: str, *, password: str, operation: str, **options) -> None:
     """Provision/restore one identity and keep it locked until explicit activation.
@@ -233,6 +244,31 @@ def delete(user: str, confirmation: str) -> dict:
         "temporary_password": None,
         "expires_at": None,
     }
+
+
+def forget_local_account(user: str) -> None:
+    """Drop what this site holds for the user's own account once the mail server no longer has it.
+
+    Accounts of other people that the user can reach stay. The caller removes the server's account.
+    """
+    from frappe.utils.password import remove_encrypted_password
+
+    from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
+    from suite.mail.store import get_account_namespace
+    from suite.store import destroy_namespace, get_blob_base_path, get_data_base_path, get_search_base_path
+
+    for account in get_user_jmap_accounts(user):
+        if frappe.db.get_value("JMAP Account", account, "_name") != user:
+            continue
+        for doctype in LOCAL_ACCOUNT_DOCTYPES:
+            frappe.db.delete(doctype, {"account": account})
+        frappe.delete_doc("JMAP Account", account, ignore_permissions=True, delete_permanently=True)
+        for base_path in (get_data_base_path(), get_blob_base_path(), get_search_base_path()):
+            destroy_namespace(base_path, get_account_namespace(account))
+    if name := frappe.db.get_value("User Settings", {"user": user}):
+        frappe.db.set_value("User Settings", name, {"username": None, "app_password": None})
+        remove_encrypted_password("User Settings", name, "app_password")
+    clear_jmap_session(user)
 
 
 def onboarding_options() -> dict:
