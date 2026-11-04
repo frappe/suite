@@ -18,11 +18,8 @@ const protocols = new Set([
   'apps/writer/surface/exports.ts',
   'apps/writer/utils/docxexporter.js',
   'apps/slides/service-worker.js',
-  'apps/slides/stores/offlineCopy.js',
   'apps/slides/stores/element.js',
-  'apps/slides/stores/presentation.js',
-  'apps/slides/stores/visitedMedia.js',
-  'apps/slides/utils/startupRequests.js',
+  'apps/slides/utils/offlineRequests.js',
 ])
 const resources = new Set([
   'createResource',
