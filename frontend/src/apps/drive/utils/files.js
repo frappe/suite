@@ -87,6 +87,20 @@ function isSheet(entity) {
   return entity?.content_doctype === SHEET_CONTENT_DOCTYPE
 }
 
+// Uploaded Word, ODT and Pages files also have file_type 'Document', so the type
+// cannot identify a Writer document. Only the Writer Document link can.
+export function isUploadedDocument(entity) {
+  return entity?.file_type === 'Document' && !isWriterDocument(entity)
+}
+
+export function opensInWriter(entity) {
+  return isWriterDocument(entity) || entity?.file_type === 'Markdown'
+}
+
+export function isDownloadable(entity) {
+  return !['Link', 'Presentation'].includes(entity?.file_type) && !isWriterDocument(entity)
+}
+
 export function hasHostedContent(entity) {
   return isWriterDocument(entity) || isPresentation(entity) || isSheet(entity)
 }
@@ -157,10 +171,7 @@ export const openEntity = (entity, new_tab = false) => {
       name: 'slides-editor',
       params: { presentationId: entity.content_docname },
     })
-  } else if (
-    entity.file_type === 'Document' ||
-    entity.file_type === 'Markdown'
-  ) {
+  } else if (opensInWriter(entity)) {
     router.push({ name: 'writer-document', params: { id: entity.name } })
   } else if (isSheet(entity)) {
     router.push({

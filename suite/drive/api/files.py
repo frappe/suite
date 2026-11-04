@@ -22,6 +22,7 @@ from suite.drive.utils import (
     ATTACHMENT_CONTENT_DOCTYPE,
     STATUS_ACTIVE,
     STATUS_TRASHED,
+    WRITER_CONTENT_DOCTYPE,
     apply_file_size_delta,
     create_drive_file,
     get_file_type,
@@ -44,7 +45,19 @@ from suite.drive.utils.users import mark_as_viewed
 
 from .permissions import user_has_permission
 
-FORBIDDEN_DOWNLOAD_TYPES = ["Folder", "Link", "Document", "Presentation"]
+FORBIDDEN_DOWNLOAD_TYPES = ["Folder", "Link", "Presentation"]
+
+
+def _is_downloadable(file):
+    """Whether `file` is stored as bytes that can be served.
+
+    A Writer document's content is in the database, and its `file_url` points at a
+    folder. An uploaded Word file also has file_type "Document", so the type cannot
+    tell them apart. The mime check keeps refusing an old Writer document whose
+    Writer Document link is missing.
+    """
+    is_writer_document = file.content_doctype == WRITER_CONTENT_DOCTYPE or file.mime_type == "frappe_doc"
+    return file.file_type not in FORBIDDEN_DOWNLOAD_TYPES and not is_writer_document
 
 
 @frappe.whitelist(allow_guest=True)
@@ -300,17 +313,14 @@ def get_file_content(entity_name: str, trigger_download: bool = False, token: st
             "file_url",
             "is_private",
             "mime_type",
+            "content_doctype",
         ],
         as_dict=1,
     )
 
-    if not file or file.file_type in FORBIDDEN_DOWNLOAD_TYPES or file.status != STATUS_ACTIVE:
+    if not file or not _is_downloadable(file) or file.status != STATUS_ACTIVE:
         frappe.throw("Not found", frappe.DoesNotExistError)
 
-    if file.file_type == "Document":
-        frappe.local.response["type"] = "redirect"
-        frappe.local.response["location"] = "/drive/w/" + file.name
-        return
     if not file.is_private:
         # Public files (adopted framework uploads) are served straight off /files.
         frappe.local.response["type"] = "redirect"
@@ -438,7 +448,7 @@ def _iter_folder_files(entity_name, prefix=""):
     children = frappe.get_all(
         "File",
         filters={"folder": entity_name, "status": STATUS_ACTIVE},
-        fields=["name", "file_name", "is_folder", "file_type", "file_url"],
+        fields=["name", "file_name", "is_folder", "file_type", "file_url", "mime_type", "content_doctype"],
     )
     for child in children:
         if not user_has_permission(child.name, "read"):
@@ -446,7 +456,7 @@ def _iter_folder_files(entity_name, prefix=""):
         arcname = f"{prefix}{child.file_name}"
         if child.is_folder:
             yield from _iter_folder_files(child.name, prefix=f"{arcname}/")
-        elif child.file_type not in FORBIDDEN_DOWNLOAD_TYPES and child.file_url:
+        elif _is_downloadable(child) and child.file_url:
             yield arcname, child
 
 
@@ -462,14 +472,23 @@ def _collect_download_files(entity_names):
         entity = frappe.get_value(
             "File",
             name,
-            ["name", "file_name", "is_folder", "file_type", "file_url", "status"],
+            [
+                "name",
+                "file_name",
+                "is_folder",
+                "file_type",
+                "file_url",
+                "status",
+                "mime_type",
+                "content_doctype",
+            ],
             as_dict=True,
         )
         if not entity or entity.status != STATUS_ACTIVE:
             continue
         if entity.is_folder:
             yield from _iter_folder_files(entity.name, prefix=f"{entity.file_name}/")
-        elif entity.file_type not in FORBIDDEN_DOWNLOAD_TYPES and entity.file_url:
+        elif _is_downloadable(entity) and entity.file_url:
             yield entity.file_name, entity
 
 

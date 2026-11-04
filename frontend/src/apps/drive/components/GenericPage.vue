@@ -50,6 +50,7 @@ import {
   isVirtual,
   isManaged,
   isAttachmentRef,
+  isDownloadable,
 } from '@/apps/drive/utils/files'
 import {
   toggleFav,
@@ -569,9 +570,7 @@ const actionItems = computed(() => {
         // Downloading is read-only, so it is safe for every real file regardless
         // of kind (parity with the file-preview navbar). Only virtual grouping
         // nodes and non-downloadable types are excluded.
-        isEnabled: (e) =>
-          !isVirtual(e) &&
-          !['Link', 'Presentation', 'Document'].includes(e.file_type),
+        isEnabled: (e) => !isVirtual(e) && isDownloadable(e),
         action: (entities) => entitiesDownload(entities),
         multi: true,
         important: true,

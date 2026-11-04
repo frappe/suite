@@ -23,7 +23,7 @@ vi.mock('@/apps/drive/utils/toasts.js', () => ({ toast: vi.fn() }))
 vi.mock('idb-keyval', () => ({ set: vi.fn() }))
 vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: vi.fn() }))
 
-import { openEntity, folderRoute } from './files'
+import { isDownloadable, openEntity, folderRoute } from './files'
 
 const location = { origin: 'http://localhost' }
 
@@ -39,6 +39,21 @@ const entity = (overrides: Record<string, unknown>) => ({
   file_name: 'Thing',
   file_url: '/private/files/thing',
   ...overrides,
+})
+
+const uploadedWordFile = {
+  file_type: 'Document',
+  mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  content_doctype: null,
+}
+
+describe('isDownloadable', () => {
+  it('allows an uploaded Word file but not a Writer document', () => {
+    expect(isDownloadable(entity(uploadedWordFile))).toBe(true)
+    expect(
+      isDownloadable(entity({ file_type: 'Document', content_doctype: 'Writer Document' }))
+    ).toBe(false)
+  })
 })
 
 describe('openEntity', () => {
@@ -109,6 +124,22 @@ describe('openEntity', () => {
         content_docname: 'doc-2',
       })
     )
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'writer-document',
+      params: { id: 'file-1' },
+    })
+  })
+
+  it('previews an uploaded Word file instead of opening Writer', () => {
+    openEntity(entity(uploadedWordFile))
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'drive-File',
+      params: { entityName: 'file-1' },
+    })
+  })
+
+  it('opens a markdown file in Writer', () => {
+    openEntity(entity({ file_type: 'Markdown', mime_type: 'text/markdown' }))
     expect(mocks.routerPush).toHaveBeenCalledWith({
       name: 'writer-document',
       params: { id: 'file-1' },

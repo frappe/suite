@@ -1,3 +1,4 @@
+import zipfile
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +12,8 @@ from werkzeug.wrappers import Request
 
 from suite.drive.api.files import (
     SEARCH_PAGE_LENGTH,
+    _build_zip,
+    _collect_download_files,
     create_auth_token,
     does_entity_exist,
     get_file_content,
@@ -40,6 +43,7 @@ from suite.drive.utils import (
     GENERAL_USER,
     STATUS_ACTIVE,
     STATUS_TRASHED,
+    WRITER_CONTENT_DOCTYPE,
     create_drive_file,
     get_user_folder,
 )
@@ -685,6 +689,79 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertFalse(frappe.db.exists("Drive Token", token))
             with self.assertRaises(frappe.PermissionError):
                 get_file_content(self.file.name, token=token)
+
+    def _stored_file(self, file_name, file_type, mime_type, contents=b"", **fields):
+        """A File in the test folder whose bytes are on this site's disk."""
+        url = f"{self.folder.file_url}{frappe.generate_hash(8)}"
+        path = FileManager().get_local_path(url)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(contents)
+        self.addCleanup(path.unlink, missing_ok=True)
+        return create_drive_file(
+            file_name, self.folder.name, file_type, url, mime_type, len(contents), **fields
+        )
+
+    def _zip_of(self, entity_name):
+        archive = BytesIO()
+        _build_zip(FileManager(), _collect_download_files([entity_name]), archive)
+        with zipfile.ZipFile(archive) as opened:
+            return {name.rsplit("/", 1)[-1]: opened.read(name) for name in opened.namelist()}
+
+    def test_uploaded_word_file_downloads_and_writer_document_does_not(self):
+        word_bytes = b"PK fixture word file"
+        with self.set_user(OWNER):
+            word = self._stored_file(
+                "contract.docx",
+                "Document",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                word_bytes,
+            )
+            writer_doc = frappe.new_doc("Writer Document").insert(ignore_permissions=True)
+            writer = self._stored_file(
+                "notes",
+                "Document",
+                "frappe_doc",
+                content_doctype=WRITER_CONTENT_DOCTYPE,
+                content_docname=writer_doc.name,
+            )
+            legacy_writer = self._stored_file("old notes", "Document", "frappe_doc")
+
+        other_file_path = FileManager().get_local_path(self.file.file_url)
+        other_file_path.parent.mkdir(parents=True, exist_ok=True)
+        other_file_path.write_bytes(b"other file")
+        self.addCleanup(other_file_path.unlink, missing_ok=True)
+        frappe.local.request = Request(EnvironBuilder().get_environ())
+        self.addCleanup(lambda: delattr(frappe.local, "request"))
+
+        with self.set_user(OWNER):
+            for trigger_download in (False, True):
+                response = get_file_content(word.name, trigger_download=trigger_download)
+                response.direct_passthrough = False
+                self.assertEqual(response.get_data(), word_bytes)
+
+            archived = self._zip_of(self.folder.name)
+            self.assertEqual(archived[word.file_name], word_bytes)
+            self.assertNotIn(writer.file_name, archived)
+            self.assertNotIn(legacy_writer.file_name, archived)
+            self.assertEqual(self._zip_of(word.name), {word.file_name: word_bytes})
+            self.assertEqual(list(_collect_download_files([writer.name])), [])
+
+            for not_stored in (writer, legacy_writer):
+                with self.assertRaises(frappe.DoesNotExistError):
+                    get_file_content(not_stored.name)
+
+            # The Office preview fetches the file without cookies, using a one-time token.
+            token = create_auth_token(word.name)
+        with self.set_user("Guest"):
+            response = get_file_content(word.name, trigger_download=True, token=token)
+            response.direct_passthrough = False
+            self.assertEqual(response.get_data(), word_bytes)
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                get_file_content(word.name)
+            with self.assertRaises(frappe.PermissionError):
+                self._zip_of(word.name)
 
     def test_trash_and_restore_preserve_status(self):
         with (
