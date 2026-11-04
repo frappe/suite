@@ -178,7 +178,6 @@
   "src/apps/slides/stores/historySelection.test.ts|@typescript-eslint/no-explicit-any": 1,
   "src/apps/slides/stores/lock.test.ts|@typescript-eslint/no-explicit-any": 3,
   "src/apps/slides/stores/loopSlideshow.test.ts|@typescript-eslint/no-explicit-any": 2,
-  "src/apps/slides/stores/offlineCopy.test.ts|@typescript-eslint/no-explicit-any": 2,
   "src/apps/slides/stores/plainTextPaste.test.ts|@typescript-eslint/no-explicit-any": 2,
   "src/apps/slides/stores/presentationRestore.test.ts|@typescript-eslint/no-explicit-any": 6,
   "src/apps/slides/stores/removeSlideJump.test.ts|@typescript-eslint/no-explicit-any": 3,
