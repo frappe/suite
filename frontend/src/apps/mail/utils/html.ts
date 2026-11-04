@@ -2,20 +2,20 @@
 // tested) without pulling in its Vue-component and frappe-ui imports.
 
 export const escapeHtml = (s: string) =>
-	s.replace(
-		/[&<>"']/g,
-		(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
-	)
+  s.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+  )
 
 // Only the entities a server escapes a body with. Anything else is left as written,
 // so `AT&T;` and a stray `&#5;` in real prose survive the round trip untouched.
 const NAMED_ENTITIES: Record<string, string> = {
-	amp: '&',
-	lt: '<',
-	gt: '>',
-	quot: '"',
-	apos: "'",
-	nbsp: '\u00a0',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
 }
 
 const ENTITY = /&(?:#(\d+)|#[xX]([\da-fA-F]+)|([a-zA-Z]+));/g
@@ -29,11 +29,11 @@ const ENTITY = /&(?:#(\d+)|#[xX]([\da-fA-F]+)|([a-zA-Z]+));/g
 // stops there. A second pass would decode that into a real `<` — turning text the sender
 // wrote about markup back into markup, which is the bug in the other direction.
 export const decodeHtmlEntities = (s: string) =>
-	s.replace(ENTITY, (entity, decimal, hex, name) => {
-		if (name) return NAMED_ENTITIES[name.toLowerCase()] ?? entity
-		const code = Number.parseInt(decimal ?? hex, decimal ? 10 : 16)
-		return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
-	})
+  s.replace(ENTITY, (entity, decimal, hex, name) => {
+    if (name) return NAMED_ENTITIES[name.toLowerCase()] ?? entity
+    const code = Number.parseInt(decimal ?? hex, decimal ? 10 : 16)
+    return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
+  })
 
 // `<user@host>` in a body is an address, not markup — but the HTML parser reads it as
 // an unknown tag and the sanitizer drops it, silently deleting the addresses a bounce
@@ -49,7 +49,7 @@ export const decodeHtmlEntities = (s: string) =>
 const BRACKETED_ADDRESS = /<([^<>\s]+@[^<>\s]+)>/g
 
 export const escapeBracketedAddresses = (html: string) =>
-	html.replace(BRACKETED_ADDRESS, '<b>&lt;$1&gt;</b>')
+  html.replace(BRACKETED_ADDRESS, '<b>&lt;$1&gt;</b>')
 
 // Plain text as HTML that keeps its shape.
 //
@@ -59,14 +59,14 @@ export const escapeBracketedAddresses = (html: string) =>
 // the same reason. A wrapper still carries pre-wrap, which is what preserves the runs of
 // spaces inside a line for everyone who reads the message rather than edits it.
 export const plainTextToHtml = (text: string) =>
-	escapeHtml(text.replace(/\r\n?/g, '\n'))
-		.split('\n')
-		.map((line) => line.replace(/^ +/, (run) => '&nbsp;'.repeat(run.length)))
-		.join('<br>')
+  escapeHtml(text.replace(/\r\n?/g, '\n'))
+    .split('\n')
+    .map((line) => line.replace(/^ +/, (run) => '&nbsp;'.repeat(run.length)))
+    .join('<br>')
 
 export const hasHtmlContent = (content: string | null | undefined): boolean => {
-	if (!content) return false
-	return /<(html|head|body|div|p|span|table|td|tr|a|img|br|hr|h[1-6]|ul|ol|li|strong|em|b|i|font|style)[^>]*>/i.test(
-		content,
-	)
+  if (!content) return false
+  return /<(html|head|body|div|p|span|table|td|tr|a|img|br|hr|h[1-6]|ul|ol|li|strong|em|b|i|font|style)[^>]*>/i.test(
+    content,
+  )
 }

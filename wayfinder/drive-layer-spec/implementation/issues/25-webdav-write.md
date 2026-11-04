@@ -1,0 +1,2125 @@
+# 25 — Write and lock files over the same Drive workflows
+
+**What to build:** Keep DAV PUT, MOVE, COPY, DELETE, and LOCK consistent with the web API.
+
+**Blocked by:** [24 — Browse and download ordinary files over WebDAV](24-webdav-read.md)
+
+**Status:** done
+
+**Owner:** Suite Drive WebDAV
+
+**Execution gate:** None beyond completed blockers.
+
+**Source:** [Drive spec](../../drive-layer-spec.md), §12.1, §12.3–12.5.
+Read [execution rules and source precedence](../README.md#execution-rules) before claiming this ticket.
+
+## Acceptance criteria
+
+- [x] PUT spools once into private blob storage. Preflight Content-Length or bound the spool by remaining quota.
+- [x] Replace keeps one nonempty previous version. Remove duplicate staging, compensation, generation, and owner-lock mechanisms.
+- [x] MOVE/COPY/MKCOL/DELETE call shared workflows with the method-role table. Reject cross-root DAV moves.
+- [x] LOCK on an unmapped path creates an empty node under UPLOAD. Expired unused locks leave that node intact.
+- [x] Preserve lock ownership, overwrite checks, dead-property cloning, conditional headers, and client content times.
+- [x] Record the authenticated actor and User-Agent once. Hidden content documents remain inaccessible to write methods.
+
+Every box is built, runs on `slides.localhost`, and is audited against the code
+at HEAD. The module gate and litmus both ran. The audit of each box, and the
+evidence behind it, is in
+[Site gate: final run and closeout](#site-gate-final-run-and-closeout) at the
+end of this ticket. That section supersedes every earlier status claim here.
+
+## Verification
+
+Run existing DAV protocol tests plus litmus against /dav/ on the authorized bench. Include quota races, zero-byte LOCK replacement, and conditional writes.
+
+## Completion evidence
+
+Agents migrated the four parked suites and audited every assertion against
+production; a separate agent reviewed the whole diff adversarially. The
+orchestrator wrote the production change, fixed the defects both found, and
+made the commits.
+
+### Revisions
+
+Base Suite `bc461122af2ec9cb9a7161ec1549a88b2da239c6` on
+`implement/drive-25-webdav-write`, the commit that closed ticket 24. Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd` on `forge/storage-v2`, read only and
+unchanged.
+
+| Commit | Subject |
+|---|---|
+| `29b7a2f19` | write and lock over the Drive Node workflows |
+| `1122f3aea` | only claim an mtime the PUT actually stored |
+| `0715e840f` | put the write verbs back on the wire |
+| `ff375deb0` | name what a refused URL does take on a 405 |
+| `136c0aa9a` | unpark the DAV lock suite on node fixtures |
+| `d63fc9f7b` | unpark the DAV move and copy suite on node fixtures |
+| `900849fba` | delete the legacy File fixture the parked suites needed |
+| `5cc2d3bf0` | close two refusal defects the migrated suites found |
+| `a06a925ed` | retire the litmus notes the write gate wrote |
+| `2769899a3` | honour the site's absolute PUT ceiling again |
+| `584261842` | stop the WebDAV README naming a module that is gone |
+| `72d1717de` | close the refusals a URL could be read through |
+
+31 files changed, 3325 insertions, 4198 deletions.
+
+### Changed behaviour
+
+- **PUT** spools the body once into `frappe.storage.blob.put_blob`, which
+  dedupes on the content checksum and arms its own rollback. The staging file,
+  the generation key, the owner lock, the compensation queue, and the drift
+  repair are gone: the node write and the blob reference commit or roll back
+  together. `put.py` fell from 975 lines to 266.
+- Quota is preflighted from `Content-Length` and the same figure bounds the
+  spool when no length is declared (§7.3). The site's
+  `drive_webdav_max_upload_size` is a second, separate ceiling and answers 413
+  rather than 507.
+- A replace writes at the same node, so the URL, the id, and the grants
+  survive. `_core.nodes` keeps one nonempty previous version (§8.5); an empty
+  head is never versioned.
+- The PUT response ETag is the blob's full checksum, quoted, the same value
+  `getetag` and GET publish. The legacy `sha256-`-prefixed 32-character form
+  could never match an `If-Match` built from it.
+- `X-OC-Mtime: accepted` is echoed only when a time was really stamped. An
+  out-of-range epoch is dropped and not claimed.
+- **MKCOL, DELETE, MOVE, COPY** are one call each into a §8 workflow with
+  §12.1's role in front. Collision, depth, cycle, and quota belong to the
+  workflow and are enforced under its row lock. DELETE trashes; the bytes stay
+  charged until a purge.
+- MOVE overwrites by trashing the destination first, so the workflow's
+  collision refusal never fires on a title the client is entitled to take. A
+  move that changes both parent and title is two writes inside one savepoint,
+  and a collision retries in the other order or leaves nothing behind.
+- No DAV move or copy crosses roots. One mount makes it unreachable from a URL,
+  and `resolve_destination` checks it rather than assuming it.
+- COPY clones dead properties across the whole subtree the workflow walks
+  (RFC 4918 §9.8.2), in one query for the tree.
+- **LOCK** on an unmapped URL creates an empty file node under UPLOAD (RFC 4918
+  §7.3's replacement for lock-null resources). No blob is stored, so nothing is
+  charged, and an expired unused lock leaves the node intact.
+- Lock ownership, the `If` header, the RFC 7232 conditionals, and the
+  non-owner redaction of `lockdiscovery` are unchanged in behaviour and now key
+  on node identity.
+- **Every write verb is on the wire again.** `RELINKED_METHODS` is deleted, so
+  `ALLOWED_METHODS` is the whole surface, OPTIONS advertises `DAV: 1, 2, 3`,
+  and the admin allow-list narrows that surface without being able to widen it.
+- A resource-level 405 carries `Allow` (RFC 7231 §6.5.5). Without it Windows
+  retries the same verb.
+- Every DAV write records the authenticated actor and the User-Agent once.
+  `dispatch` binds the client before any handler runs; `_core.nodes` stamps it
+  into `Drive Activity.client`.
+- `perms.py` is deleted, `webdav/__init__.py:RELINKED_METHODS` is deleted, and
+  `pathmap.ResolvedPath.entity` is deleted. Nothing in the adapter carries a
+  pre-relink name any more.
+- Auth, the per-user opt-in, the Personal Root namespace, the hiding of content
+  documents, and the log settings are unchanged.
+
+### Commands and real results
+
+All site-free, in the worktree. No `bench`, `migrate`, `install`, `restart`, or
+`push` was run, and `slides.localhost` was not touched.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+
+$ uvx ruff@0.12.3 check suite/drive/webdav/
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/
+40 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+Ran 99 tests in 1.542s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+test_auth 17   test_conditional 7    test_dispatch 13   test_ifheader 11
+test_locks 32  test_log 7            test_mkcol_delete 19  test_movecopy 37
+test_pathmap 20  test_properties 16  test_propfind 22   test_proppatch 15
+test_put_get 47  test_settings 9     test_xmlutil 9
+TOTAL 281, ERRORS []
+
+$ grep -rn 'unittest.skip' suite/drive/webdav/tests suite/drive/tests/test_webdav.py
+(no matches)
+```
+
+Lint over `suite/drive` leaves 2 errors and 4 unformatted files: `http/shims.py`,
+`patches/team_restructure.py`, `doctype/drive_grant/drive_grant.py`,
+`http/tests/test_shims.py`, `tests/benchmark_views.py`. All predate this ticket
+and none is touched by it.
+
+### Defects found by the audits and fixed
+
+1. **`X-OC-Mtime: accepted` was claimed for a value that was dropped.** An
+   out-of-range epoch is discarded, and the header still told rclone the time
+   had been stored, so the client never re-synced a time it can never read
+   back. Fixed in `1122f3aea`.
+2. **Resource-level 405s carried no `Allow`.** RFC 7231 §6.5.5 makes it
+   mandatory. PUT at a collection and MKCOL on an existing resource both
+   omitted it, and Windows retries the same verb. Fixed in `ff375deb0`.
+3. **`_relocate`'s fallback was not covered by its own savepoint.** A move and
+   rename refused in both orders left the source renamed where it stood: half
+   of a request the client was told had failed. Fixed in `5cc2d3bf0`.
+4. **`Overwrite: F` answered 412 ahead of the read gate,** in MOVE and in COPY.
+   A destination the caller cannot see was confirmed by the 412 instead of
+   answering 404 (§12.1). Fixed in `5cc2d3bf0`.
+5. **`drive_webdav_max_upload_size` silently stopped working.** The pre-relink
+   `put.py` took the lower of the quota bound and this documented site cap; the
+   relinked one read only the quota. A chunked PUT into a root with no quota
+   therefore had no bound at all and spooled until the client stopped sending.
+   Fixed in `2769899a3`.
+6. **PUT at an unreadable collection answered 405, before the read gate.**
+   `pathmap` resolves without asking permission, so a folder the caller had
+   been shut out of answered "cannot PUT to a collection" while a free name
+   answered 201. The pair names every node taken away from a caller inside
+   their own root. MKCOL's "already exists" 405 had the same shape. Both fixed
+   in `72d1717de`.
+7. **The site upload cap answered 507.** That status means an exhausted quota,
+   and rclone abandons a whole sync on it; a server body limit is 413 (RFC 7231
+   §6.5.11) and it skips one file. The two ceilings are now separate values
+   with separate statuses. Fixed in `72d1717de`.
+8. **A non-numeric `drive_webdav_max_upload_size` made every PUT a 500.**
+   `int("5GB")` raised `ValueError` out of the ceiling read on every upload the
+   site took. `cint` makes an unparsable cap no cap. Fixed in `72d1717de`.
+9. **MOVE read no `Depth` header.** RFC 4918 §9.9.3 admits infinity only, so
+   `Depth: 0` on a collection silently moved the whole subtree. DELETE had the
+   same gap for collections (§9.6.1). COPY already checked. Fixed in
+   `72d1717de`.
+10. **`_dispatch` committed from the `else:` clause.** A commit that failed
+    escaped both exception handlers and reached the client as framework HTML
+    instead of a DAV response. Fixed in `72d1717de`.
+11. **`_copy_dav_properties` ran per copied node,** costing a readiness check
+    (two `exists` calls and a `get_meta`) plus a query for every node, on a
+    table almost every site leaves empty. It now takes the whole source-to-copy
+    map and reads once. Fixed in `72d1717de`.
+
+Fixture defects fixed in the same commit: `drop_personal_root` left versions,
+previews, locks, and dead properties dangling on the site, and ticket 25's
+suites are the first to write them; `frappe.local.request` and
+`frappe.local.drive_activity_client` outlived the case that set them, so one
+dispatched test stamped its User-Agent on every activity row the rest of the
+process wrote; three test classes read the admin method list without
+establishing it; one left a user opted in; `test_dispatch` committed two users
+and two roots it never dropped.
+
+### Tests
+
+The four parked suites are unparked and rebuilt on `Drive Node` fixtures. The
+invalid Personal Root owner-deny fixtures ticket 24 called out are gone: §11.2
+refuses a deny naming a Personal Root's own owner, so every refusal case now
+grants `$GENERAL` on a folder below the mount, where §5.1's nearest-wins makes
+the deeper row the answer while the mount itself is unchanged.
+
+| Module | Cases | Was |
+|---|---|---|
+| `test_put_get` | 47 | 15 read-only, PUT parked |
+| `test_movecopy` | 37 | parked |
+| `test_locks` | 32 | parked |
+| `test_mkcol_delete` | 19 | parked |
+| `test_proppatch` | 15 | parked |
+| `test_dispatch` | 13 | 11 |
+| `test_settings` | 9 | 9 |
+
+No `unittest.skip` remains anywhere in the DAV suites. `legacy_file_fixture` is
+deleted.
+
+### Decisions and deviations
+
+- **The site upload cap is 413, the quota is 507.** The pre-relink code
+  collapsed both into 507. Restoring that exactly would have kept a status that
+  makes rclone abandon a whole sync because one file was oversized.
+- **`deadprops.copy_props` keeps no `_dav_property_table_ready()` guard,**
+  while `_core.nodes._copy_dav_properties` has one. `_core` runs on sites with
+  no DAV at all: its purge cascade and its copy primitive are reached from the
+  web UI. The adapter only ever runs under `/dav`. Guarding one adapter
+  function would suggest the rest of the module is guarded, and it is not.
+- **A DAV MOVE and rename is two writes, not one.** `_core.nodes.update`
+  refuses a combined move and rename. Adding a combined form for one caller
+  would put a second move rule beside the one every other caller uses.
+- **COPY Depth 0 on a collection is a create.** §8.9's primitive has no
+  members-excluded form. The handler creates an empty folder and clones the
+  source's dead properties onto it, which is what RFC 4918 §9.8.3 describes.
+- **The cross-root refusal is unreachable from a URL.** There is one mount. It
+  is checked rather than assumed, and the test provokes it by stamping a second
+  `root` column directly.
+
+### Findings recorded, not fixed
+
+- **404-vs-409 tells an unreadable intermediate from an absent one.**
+  `PUT /dav/<denied folder>/x.txt` is 404 through the parent's read gate;
+  `PUT /dav/<absent>/x.txt` is 409 per RFC 4918 §9.7.1. Each answer is right
+  under its own rule and the pair is distinguishable. Making them agree would
+  break one normative requirement to satisfy the other, inside the caller's own
+  Personal Root.
+- **`proppatch._validate` counts a `set` as an addition.** A client at the
+  200-property cap gets a spurious 507 when overwriting a property it already
+  owns. Pre-existing and unchanged by this ticket.
+- ~~**LOCK Depth infinity locks a whole subtree on EDIT of its root alone,**
+  with no RFC 4918 §9.10.4 207 for members that could not be locked.~~ Fixed by
+  the independent review in `107ef15ee`, and the citation is §9.10.3. See
+  [finding 3](#the-four-findings-the-implementation-left-open). `lock.py:158`
+  answers the 207 through `_unlockable_member` and `_hierarchy_refusal`.
+- **`propname` does not list the quota property names.** Carried from ticket
+  24, unchanged.
+- **`Drive Legacy Route.entity` is still declared `Link → File`.** Ticket 23's
+  surface, carried from ticket 24.
+- **`test_movecopy`'s `test_copy_refuses_a_title_the_workflow_would_deduplicate`
+  leaves a node behind.** `node_core.copy` releases its savepoint before the
+  handler refuses, and the case bypasses the dispatcher, which is what rolls
+  the request back on the wire. The assertion is still correct; only the
+  fixture is untidy, and the class rollback reaps it.
+
+### Ticket 29 stays dormant
+
+`git log bc461122a..HEAD --name-only -- suite/patches.txt suite/hooks.py
+'suite/**/*.json' suite/drive/patches` returns nothing. No DocType JSON, patch,
+hook, or migration file changed. The `require_options="Drive Node"` gate that
+ticket 24 installed is untouched.
+
+### Residual risks
+
+- **276 of the 302 DAV cases have never been executed.** They import, collect,
+  and lint clean. That is all that is proved. The four migrated suites were
+  read assertion by assertion against production source by separate agents and
+  no assertion was found that must fail, but reading is not running.
+- **litmus has never been run on this branch.** Every method it needs is now on
+  the wire and the ledger says so, but no entry was added on expectation. The
+  ledger may only grow from a real run.
+- ~~`_core.nodes.create_file` enqueues a preview render. This bench has no RQ
+  worker and its short queue saturates, so the write suites may raise
+  `QueueOverloaded` in `setUp` rather than fail on a DAV assertion.~~ Happened
+  on gate run 3. It was a production defect, and it is fixed. See
+  [Gate run 3](#gate-run-3-a-full-job-queue-discarded-the-upload).
+- Real title collation in `pathmap._child` needs MariaDB and is untested.
+- The 413-vs-507 split is new behaviour for any site that had
+  `drive_webdav_max_upload_size` set. A client that had learned to treat the
+  refusal as quota exhaustion will now see 413.
+- `test_dispatch` and `test_locks` commit their fixtures and drop them
+  explicitly. A run killed part way leaves users and roots on the site.
+
+### Site gate that must run
+
+No DocType JSON changed, so the migrate is a no-op for this ticket. It runs
+anyway, because the gate must start from a migrated site.
+
+```
+bench --site slides.localhost migrate
+
+script -qec "bench --site slides.localhost run-tests --module <module>" /dev/null
+```
+
+One module per invocation, serialized, never in parallel, in this order:
+
+1. `suite.drive.tests.test_webdav`
+2. `suite.drive.webdav.tests.test_pathmap`
+3. `suite.drive.webdav.tests.test_propfind`
+4. `suite.drive.webdav.tests.test_properties`
+5. `suite.drive.webdav.tests.test_put_get`
+6. `suite.drive.webdav.tests.test_mkcol_delete`
+7. `suite.drive.webdav.tests.test_movecopy`
+8. `suite.drive.webdav.tests.test_locks`
+9. `suite.drive.webdav.tests.test_proppatch`
+10. `suite.drive.webdav.tests.test_dispatch`
+11. `suite.drive.webdav.tests.test_settings`
+12. `suite.drive.webdav.tests.test_auth`
+13. `suite.drive.webdav.tests.test_log`
+14. `suite.drive.webdav.tests.test_conditional`
+15. `suite.drive.webdav.tests.test_ifheader`
+16. `suite.drive.webdav.tests.test_xmlutil`
+17. `suite.drive.tests.test_nodes`
+18. `suite.drive.tests.test_access`
+19. `suite.drive.tests.test_quota`
+20. `suite.drive.tests.test_roots`
+21. `suite.drive.tests.test_versions`
+22. `suite.drive.http.tests.test_shims`
+23. `suite.tests.test_architecture`
+
+Modules 5 to 11 are this ticket's own verification and have never been
+executed. Modules 17 to 23 are the regression check: the workflows the relink
+calls, the quota and version engines PUT leans on, and ticket 23's
+compatibility surface.
+
+Then litmus, once the site is served:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+All five groups (http, basic, copymove, props, locks) must be attempted.
+Ledger what really fails; add nothing on expectation.
+
+This ticket stays open until that gate runs.
+
+### Gate run 1: the site quota defaults were text
+
+`bench --site slides.localhost migrate` succeeded. Module 1
+(`suite.drive.tests.test_webdav`) passed 92. Module 2
+(`suite.drive.webdav.tests.test_pathmap`) errored in `setUpClass`, creating a
+six-byte file: `Drive site quota must be a nonnegative integer`.
+
+**Cause.** `Drive Disk Settings` is a Single, so every field lives in
+`tabSingles.value`, a longtext column. Frappe casts a Single's `Int` and
+`Check` fields back to numbers on load, but not its `Long Int` fields:
+`cast_fieldtype` has no `Long Int` branch and neither does
+`BaseDocument._fix_numeric_types`. `default_personal_quota` and `shared_quota`
+are `Long Int`, so `effective_quota` read the installed default `0` as the
+string `"0"` and `_nonnegative_bytes` refused it. The root's own
+`quota_bytes` is `Long Int` on an ordinary table, where SQL returns an int, so
+the override path was never affected.
+
+The schema is right — `Int` is 32-bit and caps a quota at 2.1 GB — and the
+fixtures are innocent: no suite writes these fields, so the value refused was
+the one the install wrote. The fault was in production normalization, which
+assumed a representation the framework does not deliver.
+
+**Fix.** `_core.quota.site_quota_bytes` reads a byte quota that a Single stores
+as text. A plain integer string is accepted; `"5GB"`, `"1.5"`, `"0x10"`,
+`"1_000"`, a float, a bool and a negative are all still refused, so a malformed
+site setting never reads as unlimited. An unset field is still 0, and 0 still
+means unlimited. `_nonnegative_bytes` is unchanged: a string reaching `admit`,
+`preflight` or a reservation is a caller bug and stays refused.
+
+**Audit.** `Drive Disk Settings` is the only Single in the app with a `Long Int`
+field. `preview_size` and `quota` are `Int`, which Frappe does cast.
+`drive_webdav_max_upload_size` is site config read through `cint`. The doctype's
+own `_validate_drive_quotas` had the same assumption, so
+`frappe.get_doc("Drive Disk Settings").save()` threw on a reloaded doc; it now
+normalizes through the same helper and stores the integer. The auto-generated
+type block claimed `DF.Int` for both quotas and now says `DF.LongInt`.
+
+| Commit | Change |
+|---|---|
+| `f94ce652b` | read the site quota defaults a Single stores as text |
+
+**Rerun.** `suite.drive.webdav.tests.test_pathmap`, then modules 3 to 23 in
+order. No migrate: no DocType JSON, patch, hook, or fixture changed.
+
+**Coverage.** `suite.drive.tests.test_quota` gains 4 unit cases and a
+`TestSiteDefaultQuota` integration class of 4. Module 19 of the gate now proves
+the stored form end to end: a zero default admits bytes, a real default still
+bounds a root with no override, a malformed default refuses the write, and
+saving the settings normalizes both quotas.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, `push`, or PR.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED OK
+
+$ uvx ruff@0.12.3 check --select=I <the three changed files>   -> All checks passed!
+$ uvx ruff@0.12.3 check <the three changed files>              -> All checks passed!
+$ uvx ruff@0.12.3 format --check <the three changed files>     -> 3 files already formatted
+
+$ site-free: test_webdav, test_architecture, test_conditional, test_ifheader,
+  test_xmlutil, test_quota.TestQuotaContract
+Ran 142 tests -- OK
+
+$ the two new unit cases against the pre-fix quota.py -> 2 errors (red)
+$ collection across every module in suite/drive/webdav/tests -> TOTAL 302, ERRORS []
+```
+
+Ticket 29 stays dormant: `git log bc461122a..HEAD --name-only -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` still returns nothing.
+
+## Independent review
+
+An independent reviewer read the ticket, §12, RFC 4918, and the whole diff
+`bc461122a..7a47ff7d5`, then fixed what it found. Three agents audited the
+production code, the migrated suites, and the dispatch wiring in parallel; the
+reviewer decided every verdict against the specs, wrote the fixes and the
+tests, and made the commits. The implementation's own notes were not taken on
+trust. This section is the reviewer's record and does not replace the sections
+above.
+
+### The four findings the implementation left open
+
+**1. The 404-vs-409 split on an unreadable intermediate — fixed.** The ticket
+called the pair irreconcilable: §12.1 says unreadable is 404, RFC 4918 §9.7.1
+says an absent parent is 409. It is reconcilable. §12.1's rule is about the
+*target* a verb names. The parent of a create is not the target; it is state
+the client asked about indirectly. RFC 4918 fixes that answer at 409 for PUT
+(§9.7.1), MKCOL (§9.3.1), MOVE and COPY (§9.9.4), and LOCK (§9.10.6). Answering
+409 for an unreadable parent is therefore a reading of §12.1, not a departure
+from it, and it is the reading §12.1 exists to enforce: while the two answers
+differed, the pair named every folder inside a caller's own root that had been
+taken away from them. The message is identical too, or the body restores the
+oracle the status code closed. A parent the caller can read but may not write
+is unchanged at 403.
+
+**2. PROPPATCH property-cap arithmetic — fixed.** The cap counted every
+`DAV:set` in the request, not the ones that would really be stored. Windows
+Explorer writes `Win32LastModifiedTime` on every save, so a client at the cap
+was refused 507 for overwriting its own property while the stored count never
+moved. `deadprops.existing_tags` now removes the tags already held.
+
+**3. LOCK Depth infinity with no multistatus — fixed.** The citation in the
+notes is wrong: the requirement is RFC 4918 §9.10.3, not §9.10.4. §9.10.3 says
+"Either the entire hierarchy is locked or no resources are locked". §5.1's
+nearest-wins lets a deeper grant lower the caller inside their own root, so
+EDIT on the collection alone handed out a lock the next PUT would answer 403.
+`_unlockable_member` now answers §9.10.3's 207: 403 on the member that refused,
+424 on the Request-URI, and no lock row. Only a member holding a `Drive Grant`
+of its own can differ from the collection, so an ordinary subtree costs one
+indexed query.
+
+**4. Unguarded `deadprops.copy_props` — no change needed.** `Drive DAV
+Property.entity` and `Drive DAV Lock.entity` are already declared
+`Link → Drive Node` in the committed JSON. `_dav_property_table_ready()` is
+therefore always true on a migrated site, and the guard the note asked for
+would never fire. Verified by reading the DocType JSON at HEAD, not by
+inference.
+
+### Defects the review found on its own
+
+- **A caller with no Active Personal Root got a 500.** `/dav` resolves to no
+  node and no parent for `Administrator`, whom `provision_personal_root` skips,
+  and for anyone whose root was archived. `require(None)` raised AttributeError
+  out of PUT and `segments[-1]` raised IndexError out of MKCOL. Reproduced at
+  `7a47ff7d5` from a clean `git archive` extract. Both now answer 409 through
+  the same guard as finding 1.
+- **MOVE refused a `Depth` header on an ordinary file.** RFC 4918 §9.9.3 is
+  written for collections. The check ran before the source was resolved, so
+  `Depth: 0` on a file was 400 — a move the client is entitled to make. DELETE
+  already scopes the same rule correctly (§9.6.1).
+- **A second lock could be minted over a resource the caller already held.**
+  The conflict list dropped any lock whose token the caller had submitted.
+  §9.10.5: "It is illegal for a principal to request the same lock twice."
+  `enforce` then demanded a token from every covering lock, so the holder could
+  write with neither until one expired, and UNLOCK of either left the file
+  locked.
+- **A LOCK refresh ran on READ.** §12.1 gives LOCK on an existing node EDIT,
+  and a refresh is that same LOCK. A holder whose grant had been lowered kept
+  the write lock alive for as long as it kept asking, and `enforce` refuses
+  every non-owner, so the node's own owner stayed locked out by a principal
+  that could not write it.
+- **A LOCK refresh honoured `Depth`.** RFC 4918 §9.10.2: "A server MUST ignore
+  the Depth header on a LOCK refresh." The check ran before the body was read,
+  so a client that stamps `Depth: 1` on everything lost the lock it was asking
+  to keep.
+- **LOCK skipped the If header's conditions.** RFC 4918 §10.4.1: the If header
+  is not method-specific. LOCK cannot call `locks.enforce` — its own rule is
+  §9.10.5's table, under which a second shared lock is legal where a write is
+  423 — and it dropped the conditions along with it.
+- **A stale `If-Unmodified-Since` overrode a matched `If-Match`.** RFC 7232 §6
+  step 2 evaluates the date only "when If-Match is not present".
+- **The test suites turned the site's WebDAV switch off for good.** Four suites
+  set `Drive Disk Settings.webdav_enabled` to 1, then committed a hard-coded 0.
+  On a site where an admin had WebDAV on, one gate run disabled the feature for
+  every real client. `test_log` also leaked the Personal Root it committed and
+  never called `super().setUp()`.
+- **The README described content documents as read-only exports.** §12.2 hides
+  them outright. The line stated the old server's behaviour.
+
+### Coverage the review added
+
+- a lock strictly below the collection a DELETE or MOVE names — the descendant
+  direction of the subtree walk (`check_descendants`), which no case reached
+  and which RFC 4918 §9.6.1 requires;
+- `locks.parse_timeout_header` and `lock._parse_lockinfo`, both read straight
+  off the wire, with every refusal branch. Site-free;
+- the `Allow` header on MKCOL's 405, which RFC 7231 §6.5.5 makes mandatory and
+  which `ff375deb0` added with nothing holding it.
+
+The DAV suites went from 281 collected cases to 302.
+
+### Recorded, not fixed
+
+- **Chunked PUT never drives `StreamingBody`.** The cases substitute
+  `context.BufferedBody`, so `_BoundedBody` is exercised but the streaming
+  reader that production uses is not. It needs a live server, so litmus and the
+  manual client checklist are the only real coverage for it.
+- **Most refusals assert an exception class, not a mapped status.** The cases
+  call handlers directly, so `errors.map_exception` is bypassed. `test_dispatch`
+  covers the mapper itself, and `test_movecopy.assert_refused` maps explicitly,
+  but the rest state the exception the handler raised.
+- **`test_put_conditionals`' `If-Match` case is a tautology.** It builds the
+  header from the ETag it just read.
+- **UNLOCK does not evaluate the If header.** Its token comes from
+  `Lock-Token`. §10.4 is general, but no client sends it and the litmus locks
+  group does not test it. Left alone rather than risk the unlock path.
+- **COPY and MOVE disagree on a case-only rename.** A COPY to a case variant of
+  a live sibling cannot succeed anyway; the two answer with different statuses.
+- **`drop_locks_under` leaves expired descendant rows.** `_locks_over_subtree`
+  filters on `expires_at`, and `purge_expired_locks` reaps them lazily on every
+  read, so they are never observable.
+- **`File Blob` rows written by fixtures are never dropped.** Pre-existing, and
+  the blobs dedupe on checksum.
+
+### Review checks that were run
+
+```
+$ uvx ruff@0.12.3 check suite/drive/webdav/          -> All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/ -> 40 files already formatted
+$ python -m compileall -q suite/drive/webdav          -> clean
+
+$ per-commit: git archive <commit> suite/drive/webdav | compileall + ruff F821,F811,F401
+  12 of 12 commits compile; no new undefined or duplicate name in any of them
+
+$ site-free unit tests, whole app (PYTHONPATH=<worktree>, frappe.init, no connect)
+  Ran 776 tests -- 0 failures, 5 errors
+  The 5 errors are `RuntimeError: object is not bound` in
+  suite.drive.tests.test_access and suite.drive.tests.test_content. They need a
+  db handle. Reproduced identically from a `git archive 7a47ff7d5` extract, so
+  they predate this review.
+
+$ site-free WebDAV unit tests
+  Ran 124 tests -- OK
+  (8 test_conditional, 11 test_ifheader, 4 test_locks, 9 test_xmlutil,
+   92 suite.drive.tests.test_webdav)
+
+$ collection across every module in suite/drive/webdav/tests
+test_auth 17   test_conditional 8    test_dispatch 13   test_ifheader 11
+test_locks 43  test_log 7            test_mkcol_delete 20  test_movecopy 39
+test_pathmap 20  test_properties 16  test_propfind 22   test_proppatch 19
+test_put_get 49  test_settings 9     test_xmlutil 9
+TOTAL 302, ERRORS []
+
+$ uvx ruff@0.12.3 check suite/            -> Found 25 errors
+$ uvx ruff@0.12.3 format --check suite/   -> 6 files would be reformatted
+  None is in suite/drive/webdav and none is in a file this review touched.
+  They are in mail, sheets, writer, and drive/http, and all predate the ticket.
+```
+
+Not run: bench, migrate, install, restart, litmus, push, PR. The site gate
+below is unchanged and still has to run.
+
+### Review commits
+
+| Commit | Change |
+|---|---|
+| `e4dc29020` | stop the create verbs naming folders taken from the caller |
+| `2385edca2` | stop MOVE refusing a Depth header on an ordinary file |
+| `a9d8683de` | count only the properties a PROPPATCH would really add |
+| `42da275e1` | refuse a second lock over a resource the caller already holds |
+| `107ef15ee` | refuse a depth-infinity LOCK it cannot grant on every member |
+| `37965a926` | make a LOCK refresh take the EDIT the lock itself took |
+| `7e88dc45b` | ignore the Depth header on a LOCK refresh |
+| `3f71f9c0a` | evaluate the If header's conditions on LOCK |
+| `5c70a1b69` | stop a stale If-Unmodified-Since overriding a matched If-Match |
+| `3e0ab785f` | put the site's WebDAV switch back instead of turning it off |
+| `373f86756` | cover the lock paths and the 405 header nothing reached |
+| `66ffb1e6d` | state that content documents are hidden, not read-only |
+
+19 files changed, 648 insertions, 85 deletions.
+
+Ticket 29 stays dormant after the review: `git log bc461122a..HEAD --name-only
+-- suite/patches.txt suite/hooks.py 'suite/**/*.json' suite/drive/patches`
+still returns nothing.
+
+The acceptance boxes stay unticked. The site gate has not run.
+
+### Gate run 2: a test quoted an already-quoted ETag
+
+Modules 2 to 7 passed. Module 8
+(`suite.drive.webdav.tests.test_locks`) ran 4 unit and 39 integration cases,
+and exactly one errored:
+`test_a_lock_request_evaluates_the_if_header_conditions`.
+
+**Cause.** The test, not production. `properties.compute_etag` returns the
+entity-tag already quoted — `"<checksum>"` — because that is the form
+`getetag` publishes and the form a client writes back. The case read that
+value and then quoted it a second time, building
+`If: (["" <checksum> ""])`. The parser keeps a `[...]` token verbatim, so
+`locks._conditional_gate` compared a doubled token to the single-quoted tag
+`get_etag` returns, found no match, and answered 412. The gate was right; the
+assertion was wrong.
+
+**Fix.** The case interpolates the published tag between the brackets
+unchanged. The negative half is untouched: `(["not-the-etag"])` is still a
+well-formed tag the server cannot match, so the 412 that proves the gate runs
+is unchanged. The positive half now also asserts the lock row exists, which is
+what the docstring already claimed and nothing checked.
+
+Neither `ifheader.parse_if_header` nor `IfHeader.evaluate` changed. Nothing in
+the conditional gate changed.
+
+**Audit.** An agent read every site in the repo that builds or compares an
+`If` entity-tag, `If-Match`, `If-None-Match`, `ETag`, or `getetag`, and
+classified each by whether the interpolated value is a raw checksum or an
+already-quoted tag. One defect, the one above. Every other site is correct:
+raw checksums are quoted once (`f'"{checksum}"'`), and `compute_etag` output
+is used bare. No frontend code builds any of these headers.
+
+| Commit | Change |
+|---|---|
+| `e17c24090` | quote the published ETag once in the LOCK If condition |
+
+**Coverage.** `test_properties` gains one case,
+`test_the_published_etag_is_an_if_header_entity_tag_verbatim`: the tag
+`compute_etag` publishes parses back out of `([...])` equal to itself, and the
+doubled form does not. It pins the contract the failing case broke, beside
+`compute_etag` rather than beside one caller. DAV collection is now 303 cases
+across 15 modules, no collection errors.
+
+**Rerun.** `suite.drive.webdav.tests.test_locks`, then modules 9 to 23 in
+order. Module 4 (`test_properties`) carries the new case and can be rerun with
+it or left to the next full pass. No migrate: no DocType JSON, patch, hook, or
+fixture changed.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, `push`, or PR.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/webdav/
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/
+40 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_ifheader
+Ran 110 tests in 1.575s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 303, ERRORS []
+```
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 3: a full job queue discarded the upload
+
+Module 8 (`suite.drive.webdav.tests.test_locks`) passed its 4 unit cases and
+errored all 39 integration cases in `setUp`. The trace named `PermissionError`
+raised while Frappe built the `QueueOverloaded` message, so it read as an
+access fault rather than a queue depth.
+
+**Cause.** Production, not the test. `previews.enqueue_render` is the last
+statement inside the savepoint in `_core.nodes.create_file` (`:1126`) and
+`_core.nodes.update` (`:1271`), and both savepoints re-raise. `frappe.enqueue`
+measures the queue depth inline in `_check_queue_size` and raises
+`QueueOverloaded` there, before it registers the post-commit callback. A site
+whose short queue is at its cap therefore refused every Drive upload and every
+replace, and rolled back bytes the caller had already stored and already paid
+quota for, to save a thumbnail. `_core.versions.restore_version` (`:307`) and
+`previews.sweep_missing`'s own loop (`:233`) had the same exposure through the
+same entry point.
+
+The bench queue is at its 550 cap because it runs no RQ worker and every test
+run leaves its jobs behind. That is the environment. The refusal reaching the
+caller is the defect.
+
+**Fix.** Queuing is best-effort. §9.2 already names the daily gap sweep as the
+repair for a failed render, so a node that misses its render gets a preview
+within a day; an upload that is refused is gone. `enqueue_render` now logs the
+miss to the Error Log and returns, and the byte write stands. The guard sits in
+`enqueue_render` alone, which §9.2 names as the one render entry point, so it
+covers all four writers. The idiom is the one
+`suite/sheets/versioning/save.py:74` and `suite/drive/jobs.py:20` already use.
+
+Nothing else changed. `render`, `push_preview`, `sweep_missing`, the enqueue
+arguments, and the `Drive Node Preview` schema are untouched, so ticket 13's
+contract still holds and its `test_enqueue_uses_the_post_commit_short_queue`
+still passes unchanged.
+
+**Fixtures.** `webdav/tests/utils.file_node` builds every fixture file through
+`create_file`. The DAV suites arrange about 140 files in `setUp` alone and
+commit, so each run left that many `previews.render` jobs on the site's short
+queue: a suite changing the site it measures, and the reason the cap was
+reached. The fixture now suppresses the enqueue, the same way
+`test_previews._file` and the three `test_drive_adoption` suites already do. It
+still writes through `create_file`, so no row and no node field changes and no
+DAV assertion reads a different shape. A verb handler under test still enqueues
+for real.
+
+**Audit.** An agent inventoried every shared Drive test helper that creates a
+file node and every `frappe.enqueue` site under `suite/`.
+
+| Creator | Reaches `create_file` | Suppressed before |
+|---|---|---|
+| `webdav/tests/utils.py:file_node` | yes | no, now yes |
+| `webdav/tests/utils.py:raw_child_node` | no, raw insert | n/a |
+| `drive/tests/fixtures.py` | no creators, drops only | n/a |
+| `suite/tests/utils.py:ensure_user` | root only | n/a |
+| `slides/tests/utils.py:make_private_image` | no Drive Node | n/a |
+
+Per-suite creators with the same shape, all now covered by the production fix
+and left as they are: `drive/tests/test_nodes.py:_file`,
+`test_versions.py:_file`, 21 `create_file` sites in `test_upload.py`,
+`api/tests/test_files.py:make_file`, `api/tests/test_list.py:make_file`,
+`http/tests/test_dispatch.py:make_file`. Already suppressed:
+`test_previews.py:_file`, `test_content.py:_media`, and the Writer, Slides, and
+Sheets adoption suites. No test module anywhere deletes a queued job; cleanup
+is DB rows only.
+
+Of the ~30 `frappe.enqueue` sites under `suite/`, none was guarded and no
+`QueueOverloaded` reference existed. Only Drive's render entry point is guarded
+here; the rest are outside this ticket.
+
+| Commit | Change |
+|---|---|
+| `d2e0cab50` | let a full job queue cost the preview, not the upload |
+| `8f4639861` | stop the DAV file fixture queuing a render per case |
+
+**Coverage.** Three cases, each failing under a mutation of the line it covers.
+
+- `test_previews.TestPreviewContract.test_a_refused_queue_is_logged_and_not_raised`
+  — a `QueueOverloaded` from `frappe.enqueue` is logged, not raised.
+- `test_previews.TestPreviews.test_a_refused_queue_still_stores_the_file_and_its_bytes`
+  — `create_file` still writes the node and its head blob when the queue
+  refuses.
+- `test_webdav.TestDavFixtureQueueHygiene.test_the_file_fixture_builds_its_node_without_queuing_a_render`
+  — the DAV fixture reaches no queue, and the suppression does not outlive it.
+
+**Rerun.** `suite.drive.webdav.tests.test_locks`, then modules 9 to 23 in
+order. Modules 17 to 23 now also carry the preview guard, so the regression
+half of the gate covers it. Module 4 (`test_properties`) still carries gate run
+2's new case. Add `suite.drive.tests.test_previews` after module 23: it owns
+the changed function and its 27 cases are the ticket 13 contract. No migrate:
+no DocType JSON, patch, hook, or fixture changed.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, queue deletion, `push`, or PR. No external Redis state was touched.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check <the four changed files>
+All checks passed!
+$ uvx ruff@0.12.3 format --check <the four changed files>
+4 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+Ran 100 tests in 1.356s
+OK
+
+$ ... TestPreviewContract, the two enqueue cases
+Ran 2 tests in 0.004s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 303, ERRORS []
+```
+
+The 39 `test_locks` integration cases are still unrun. Site-free checks cannot
+run them.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 4: a full job queue discarded the user
+
+Module 9 (`suite.drive.webdav.tests.test_proppatch`) errored in `setUpClass`,
+before any DAV case ran. `ensure_user` could not insert
+`webdav-proppatch-owner`.
+
+**Cause.** Production, not the test. The `User` `after_insert` hook reaches
+`install.after_user_insert` (`:33`), which calls the legacy
+`utils.get_user_folder` (`:301`). That grants the new user their own home
+folder through `utils.grant_owner_access` (`:371`), which inserts a `Drive
+Permission`. `DrivePermission.after_insert` (`:12`) then calls
+`frappe.enqueue(notify_share)`.
+
+`frappe.enqueue` measures the queue depth in `_check_queue_size`
+(`background_jobs.py:175`) and raises `QueueOverloaded` there, at
+`background_jobs.py:751`. That is before the `enqueue_after_commit` callback is
+registered (`:216`), so the flag holds nothing back. The hook runs inside the
+insert of the grant row, so the refusal rolled the grant back — and with it the
+whole user. On a site whose short queue is at its cap, no user could be created
+at all. Same shape as gate run 3's upload defect, one blast radius up.
+
+The queue is at 550 because the bench runs no RQ worker. That is the
+environment. The refusal reaching the caller is the defect.
+
+**Fix.** Queuing is best-effort. The miss goes to the Error Log and the grant
+stands. Nothing requires it to be strict:
+
+- §9.5 is the whole notification contract and states no delivery guarantee.
+- Ticket 23 (`:486`) already records "a new share sends no email" as an
+  accepted regression, and §14 (`drive-layer-spec.md:3762`) drops the legacy
+  inbox at Build.
+- `notify_share` is already best-effort inside its own body: a failed
+  notification row is logged and swallowed (`notifications.py:107`) and a
+  failed email is swallowed outright (`:136`). Only the enqueue that scheduled
+  it was strict.
+
+The asymmetry, stated plainly: unlike a preview, a dropped share notice is
+never repaired. There is no §9.2 counterpart for §9.5. The compensation is that
+the grant is durable and the recipient has the access either way; only the
+announcement is lost.
+
+The enqueue arguments, the queue, the `fdocperm_` dedup job id, the
+install/migrate/patch skip and the `$GENERAL`/`$GROUP:` principal filter are
+unchanged, so the one existing test on the call shape still passes unchanged.
+
+**The test helper stays as it is.** `suite/tests/utils.ensure_user` was the
+caller, not the fault. It reaches the enqueue through production hooks that
+33 test modules depend on for personal-root and home-folder provisioning
+(`drive/tests/fixtures.py:11`, `webdav/tests/utils.py:199`). Suppressing the
+enqueue inside it would hide the production path from every one of them and
+would not have made the refusal correct anywhere else. Gate run 3's fixture
+change had a different reason: `file_node` queued about 140 render jobs per
+run and so filled the cap it then measured. `ensure_user` queues one job per
+test user, and once the guard is in the jobs are refused and logged rather than
+queued at all.
+
+**Audit.** An agent inventoried every `frappe.enqueue` reachable from the shared
+setup of the 23 gate modules.
+
+| Site | Reached from shared setup | State |
+|---|---|---|
+| `drive_permission.py:20` (`notify_share`) | yes, every `ensure_user` | unguarded, now guarded |
+| `_core/previews.py:105` (`render`) | yes, via `file_node` | guarded in gate run 3, and suppressed in the fixture |
+| `frappe` `user.py:332` (`create_contact`) | yes, `User.on_update` | safe: `now=frappe.in_test` short-circuits before the depth check |
+| `utils/files.py:80,88` (`upload_thumbnail`) | no, legacy `upload_file` only | safe: passes `now=True` |
+| `api/files.py:380` (`build_download_archive`) | no, API only | out of scope |
+| `patches/remove_teams.py:42` | no, patch only | out of scope |
+| `suite/utils/__init__.py:139` (`enqueue_job`) | no, mail only | out of scope |
+
+`provision_personal_root` inserts a `Drive Grant`, not a `Drive Permission`, and
+that controller has no `after_insert`. `create_user_settings`, `put_blob`,
+`enable_user_webdav`, `set_global_webdav` and all of `drive/tests/fixtures.py`
+reach no queue.
+
+So `drive_permission.py:20` was the only unguarded enqueue any gate module's
+setup could reach. The remaining ~30 `frappe.enqueue` sites under `suite/` stay
+outside this ticket, as gate run 3 recorded.
+
+| Commit | Change |
+|---|---|
+| `855de7eb4` | let a full job queue cost the share notice, not the grant |
+
+**Coverage.** Three cases in
+`suite.drive.doctype.drive_permission.test_drive_permission`.
+
+- `UnitTestDrivePermission.test_a_refused_queue_is_logged_and_not_raised` — a
+  `QueueOverloaded` from `frappe.enqueue` is logged, not raised.
+- `IntegrationTestDrivePermission.test_a_refused_queue_still_writes_an_ordinary_share`
+  — the grant row survives a refused queue.
+- `IntegrationTestDrivePermission.test_a_refused_queue_still_creates_the_user_and_their_home_folder`
+  — the case that pins this gate stop: `ensure_user` still creates the user,
+  their `Drive Settings.user_folder` and its owner grant.
+
+Both integration cases inject the refusal at
+`frappe.utils.background_jobs._check_queue_size`, where production raises it,
+rather than at `frappe.enqueue`. That keeps `create_contact`'s `now=True`
+short-circuit intact, so the harness refuses exactly what a full queue refuses.
+
+**Rerun.** `suite.drive.webdav.tests.test_proppatch`, then modules 10 to 23 in
+order. Then `suite.drive.tests.test_previews` (gate run 3) and
+`suite.drive.doctype.drive_permission.test_drive_permission`, which is not in
+the numbered list and carries this run's three cases. Module 4
+(`test_properties`) still carries gate run 2's case. No migrate: no DocType
+JSON, patch, hook, or fixture changed.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `install`,
+`restart`, queue deletion, `push`, or PR. No external Redis state was touched.
+The 550 queued jobs were left alone.
+
+```
+$ python3 -m compileall -q suite/drive/doctype/drive_permission/
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/doctype/drive_permission/
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/doctype/drive_permission/
+3 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.tests.test_architecture
+Ran 7 tests in 1.218s
+OK
+
+$ ... frappe.init, no connect: DrivePermission.after_insert on a stub
+refused queue: swallowed and logged -> Drive: could not queue a share notification
+healthy queue: unchanged call shape
+
+$ ... the same stub against `git show HEAD:...drive_permission.py`
+pre-fix source raised: QueueOverloaded
+```
+
+The three new cases and the 39 `test_locks` integration cases are still unrun:
+`DrivePermission(...)` loads its meta from the database, so this module needs a
+site. Site-free checks cannot run it.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 5: a full job queue discarded the litmus user
+
+All 23 modules passed, and so did the two regression suites the earlier gate
+stops added: `suite.drive.tests.test_previews` and
+`suite.drive.doctype.drive_permission.test_drive_permission`. The module gate is
+green.
+
+litmus is not. `run_litmus.sh` exits inside `prepare`, before it prints the URL
+it points litmus at. `bench --site slides.localhost execute
+suite.drive.webdav.tests.litmus_setup.prepare` cannot insert
+`litmus@example.com`.
+
+**Cause.** The harness, not production. `User.on_update`
+(`frappe/core/doctype/user/user.py:330`) computes
+`now = frappe.in_test or frappe.flags.in_install` and enqueues `create_contact`
+with it (`:332`). `frappe.enqueue` short-circuits on `now` at
+`background_jobs.py:162` and calls the method inline, so under the test runner
+the contact is written without a queue ever being measured. That is why every
+one of the 23 gate modules provisions users on a site at its cap.
+
+`bench execute` sets neither flag. It calls `frappe.init` and `frappe.connect`
+and nothing else (`frappe/commands/execute.py:12`), so `frappe.in_test` keeps
+its module default of `False` (`frappe/__init__.py:223`). `frappe.enqueue`
+therefore reaches `_check_queue_size` (`background_jobs.py:175`) and raises
+`QueueOverloaded` at `:748`, before it registers the `enqueue_after_commit`
+callback at `:216`. Same shape as gate runs 3 and 4: the flag holds the refusal
+back from nothing. The refusal escaped the `User` insert, the user rolled back,
+and prepare died.
+
+Gate run 4's audit recorded this enqueue as "safe: `now=frappe.in_test`
+short-circuits before the depth check". That reading was correct for the setup
+of the 23 modules, which is all it looked at. It is wrong for the one entry
+point that runs outside the test runner.
+
+**Fix.** `litmus_setup.inline_user_jobs` sets `frappe.flags.in_install` for the
+`User` insert statement alone and puts back what the flag held, in a `finally`,
+so a raising insert restores it too. Inside the block the controller takes the
+branch the test runner takes: `create_contact` runs inline and no queue is
+measured.
+
+No Frappe file is touched and no enqueue failure is swallowed. The rest of
+`prepare` runs on the site's own flags, so the Personal Root, the node tree, the
+grants, the password and the per-user opt-in are written the way production
+writes them, and the compliance run measures the real DAV surface.
+
+**Why a flag here and a `try`/`except` in gate runs 3 and 4.** Those two were
+production paths, where the caller's write had to survive a refused queue and
+the queued work is a courtesy: §9.2 repairs a missed preview, and §9.5 promises
+no delivery for a share notice. This one is a test harness, and the fix must not
+change what production does. A harness may take the branch the test runner
+already takes. It may not teach production to ignore a refusal. Setting
+`frappe.in_test` instead would reach far past this one insert, and swallowing
+the enqueue would leave the user with no `Contact` and no sweep to repair it.
+
+**The flag's one effect on the rows prepare writes** is
+`DrivePermission.after_insert` (`drive_permission.py:15`), which skips the share
+notice for the home folder `get_user_folder` grants. The grantee is the
+throwaway CI user itself. It is the only `in_install` branch anywhere under
+`suite/`.
+
+**The flag's one effect outside this process, found by the audit and fixed.**
+`frappe.get_meta` caches every `Meta` it builds into `frappe.client_cache`
+(`frappe/model/meta.py:84-91`), which is redis-backed and shared with the web
+workers, and `Meta.set_custom_permissions` returns early under `in_install`
+(`meta.py:650`). A doctype first met inside the block would have been published
+to the served site with its `Custom DocPerm` rows missing, and litmus would have
+run against it. The block therefore drops the cached metas in the same `finally`
+that restores the flag. They rebuild on first use with the site's own
+permissions.
+
+`slides.localhost` holds no `Custom DocPerm` row, so on this site the eviction
+changes nothing. It is a property of the flag, not of one site, and the harness
+is checked in for every site that runs the gate.
+
+**Audit of prepare and teardown.** An agent traced every call that can produce a
+background job or measure the queue, on both call graphs, under `bench execute`.
+
+| Site | Reached | State |
+|---|---|---|
+| `frappe` `user.py:332` (`create_contact`) | yes, the `User` insert | unguarded, now inline under the flag |
+| `drive_permission.py:31` (`notify_share`) | yes, via `get_user_folder` | guarded in gate run 4, and skipped under the flag |
+| `frappe` `webhook/__init__.py:113` (`enqueue_webhook`) | only if a `Webhook` doc matches; the site has 0 rows | `now=frappe.in_test`, fires from `db.after_commit`, unguarded |
+| `frappe` `share.py:289` (`make_notification_logs`) | no, `notify_assignment` returns at `share.py:267` | n/a |
+| `utils/files.py:80,92` (`upload_thumbnail`) | no, `upload_file` only, and `get_user_folder` calls `create_folder` | safe anyway: passes `now=True` |
+| `_core/previews.py:105` (`render`) | no, the file paths only | guarded in gate run 3 |
+| `api/files.py:380` (`build_download_archive`) | no, API only | out of scope |
+| `api/notifications.py:125` (`sendmail`) | no, inside the `notify_share` job | out of scope |
+| `frappe` `user.py:591` (`send_login_mail`) | no, `send_welcome_email: 0` skips it | n/a |
+
+`update_password`, `provision_personal_root`, `enable_user_webdav`,
+`frappe.db.set_single_value` and `clear_document_cache` reach no queue.
+`suite/hooks.py:326` registers one `before_insert`, one `after_insert` and four
+`on_update` handlers for `User`; none enqueues, and the four mail handlers all
+return at their first `doc.flags.in_insert` check. `Contact` and
+`frappe/utils/password.py` contain no `frappe.enqueue` and no `frappe.sendmail`.
+
+Ordering note: the guarded `Drive Permission` enqueue runs in `after_insert`
+(`document.py:756`), before `on_update` (`:764`). On a full queue it is logged
+and swallowed first, and `create_contact` is what actually aborted the insert.
+
+The webhook row is the one conditional site left. It fires from
+`frappe.db.after_commit`, so `prepare`'s own commit would carry it, and
+`enable_user_webdav` writes outside the flag block. `frappe.db.count("Webhook")`
+on `slides.localhost` is 0, so nothing registers a callback and nothing is
+queued. It is recorded, not guarded: guarding a framework hook the site does not
+use would be production surface this ticket has no reason to add.
+
+`teardown` needs no flag and got none. `drop_personal_root` is `db.delete` only
+(`tests/fixtures.py:11`), and `provision_personal_root` writes a `Drive Root`
+and one folder node, whose controllers have `validate` and `before_insert` only.
+Only the file paths call `previews.enqueue_render`. Teardown therefore behaves
+the same on a full queue as on an empty one, which is what the `EXIT` trap in
+`run_litmus.sh` depends on.
+
+**Coverage.** Seven site-free cases in
+`suite.drive.tests.test_webdav.TestLitmusHarness`, each red under a mutation of
+the line it covers.
+
+- `test_the_block_makes_the_user_controller_run_its_job_inline` — with
+  `frappe.in_test` patched false, the expression `user.py:330` computes is false
+  outside the block and true inside it.
+- `test_the_flag_is_put_back_to_what_it_held` — unset, false and true are each
+  restored, not overwritten with a hard-coded false.
+- `test_the_flag_is_put_back_when_the_block_raises` — a `QueueOverloaded` out of
+  the block propagates and the flag is restored.
+- `test_prepare_inserts_the_user_inside_the_isolation` — the insert sees the
+  flag set, `provision_personal_root` does not, and `prepare` returns the DAV
+  URL.
+- `test_prepare_puts_the_flag_back_when_the_insert_raises` — a refused insert
+  propagates out of `prepare` and leaves the flag as it found it.
+- `test_the_block_drops_the_metas_it_may_have_poisoned` — nothing is evicted
+  inside the block and the metas are dropped once on the way out.
+- `test_the_metas_are_dropped_when_the_block_raises` — the eviction is in the
+  same `finally` as the restore.
+
+The class patches the real `clear_meta_cache` out, so no unit case writes the
+shared redis cache.
+
+**Rerun.** No module needs rerunning. The 23-module gate and the two regression
+suites are green, and these two commits change no production file. Serve the
+site and run litmus:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+`prepare` returns `http://slides.localhost:8010/dav/`: both
+`sites/common_site_config.json` and the site config carry `webserver_port` 8010.
+All five groups (http, basic, copymove, props, locks) must be attempted. Ledger
+what really fails; add nothing on expectation.
+
+No migrate: no DocType JSON, patch, hook, or fixture changed.
+
+**Config restoration.** None is owed. `site_config.json` and
+`common_site_config.json` were read and not written. `Drive Disk Settings`, the
+`Custom DocPerm` table and the job queue were read and not written. The 550
+queued jobs were left where they were, and `litmus@example.com` still does not
+exist on the site.
+
+**Recorded, not fixed.** `run_litmus.sh`'s `EXIT` trap runs `bench ... teardown`
+and `rm -f "$OUTPUT"` as one `;`-joined command under `set -e`, so a teardown
+that fails skips the temp-file removal. Teardown cannot fail on queue depth any
+more, and the file is one `mktemp` in `/tmp`.
+
+**Checks run.** Site-free, in the worktree, plus three read-only `SELECT`s
+against the site. No `bench`, `migrate`, `install`, `restart`, `serve`, litmus,
+queue deletion, `push`, or PR. No external Redis state was touched and nothing
+was written to the database.
+
+```
+$ python3 -m compileall -q <the two changed files>
+COMPILED
+$ uvx ruff@0.12.3 check <the two changed files>
+All checks passed!
+$ uvx ruff@0.12.3 format --check <the two changed files>
+2 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_conditional \
+    suite.drive.webdav.tests.test_ifheader suite.drive.webdav.tests.test_xmlutil
+Ran 135 tests in 1.226s
+OK
+
+$ ... TestLitmusHarness against `git show fc7cde2b7~1:...litmus_setup.py`
+Ran 5 tests -- FAILED (failures=1, errors=5)
+$ ... with the `finally` mutated away
+Ran 5 tests -- FAILED (failures=2)
+$ ... with `previous` mutated to a hard-coded false
+Ran 5 tests -- FAILED (failures=2)
+$ ... with `clear_meta_cache()` mutated away
+Ran 7 tests -- FAILED (failures=2)
+$ ... at HEAD
+Ran 7 tests -- OK
+
+$ ... frappe.init, no connect: frappe.enqueue with user.py:332's own arguments,
+  _check_queue_size patched to raise as a full queue does
+bench execute, flag unset : now = None -> QueueOverloaded
+bench execute, inside block: now = True -> no raise, frappe.call ran inline
+flag after block: None
+
+$ ... read-only against slides.localhost
+Webhook rows: 0
+Custom DocPerm rows: 0
+litmus user exists: False
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 303, ERRORS []
+```
+
+litmus itself is still unrun. It needs the served site.
+
+| Commit | Change |
+|---|---|
+| `fc7cde2b7` | let the litmus harness provision its user on a full queue |
+| `58bc9e7f0` | stop the litmus flag publishing a meta with no custom permissions |
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 6: an orphan root row, and a runner that could not tell
+
+The 23 modules and the two regression suites are green. litmus reached the
+endpoint for the first time. All five groups then stopped in `begin`:
+
+```
+Could not create new collection `/dav/litmus/' for tests: 409 CONFLICT
+```
+
+`sites/slides.localhost/logs/suite.drive.webdav.log:186-200` holds the same
+triple five times, between 07:19:54,082 and 07:19:54,375:
+
+```
+DELETE /dav/litmus/ -> 401  client="litmus/0.13 neon/0.33.0"  note="Authentication required."
+DELETE /dav/litmus/ -> 404  user=litmus@example.com           note="Resource not found."
+MKCOL  /dav/litmus/ -> 409  user=litmus@example.com           note="Intermediate collections do not exist."
+```
+
+litmus creates that one collection below the URL it is given, in every group's
+`begin`, before a single case. A 409 there stops the group.
+
+The runner's only complaint was:
+
+```
+STALE LEDGER LINE (now passes): basic:delete_fragment:WARNING
+```
+
+That report is false. `delete_fragment` never ran.
+
+**Two defects, both in the harness. Production is correct.**
+
+#### 1. `prepare` handed litmus a namespace with no usable mount
+
+The 409 note is `pathmap.MISSING_PARENT`. `structure.handle_mkcol` answers it
+when the caller's Personal Root does not resolve, or when §12.1's UPLOAD does
+not hold on it.
+
+`provision_personal_root` (`_core/roots.py:65-72`) returns as soon as
+`personal_root_for` finds a row. That lookup is a `db.get_value` on
+kind/state/user (`:53-57`). It never calls `validate_root_pair` and never reads
+`tabDrive Grant`. A `Drive Root` row whose `Drive Node` is gone therefore
+survives every provision call untouched, and `prepare` printed the DAV URL
+anyway. It proved nothing before it printed.
+
+Reproduced on the live site, in a transaction that was rolled back. The node
+half of `litmus@example.com`'s pair was deleted and the root row left:
+
+```
+personal_root_for            : skt9hfsrv5
+missing_intermediate         : True   parent: None
+require_create_parent        : Conflict -> Intermediate collections do not exist.
+provision_personal_root      : skt9hfsrv5   (returns the same broken row)
+mount_refusal                : the Personal Root pair skt9hfsrv5 is not valid:
+                               Drive root node skt9hfsrv5 was not found
+mount_refusal after ensure_mount : None
+```
+
+The refusal text is the gate's own, word for word.
+
+**What the artifacts prove, and what they do not.** They prove `prepare`
+reached its commit: the served worker authenticated `litmus@example.com`, read
+`Drive Settings.webdav_enabled` and the `Drive Disk Settings` toggle, and
+refused only on the root. All three were written by the same `prepare`
+transaction, so the worker was not reading a stale snapshot. They prove both
+provision calls returned early, because a `create_root` that ran would have
+written a node, a root and an anchor grant, and `create_root` re-raises rather
+than swallowing (`roots.py:45-47`).
+
+They do not prove where the orphan row came from. `bench.log:1226-1227` shows
+`prepare` at 07:19:52,983 and `teardown` at 07:19:54,489, and `teardown` drops
+the whole pair, so the pre-teardown row was deleted before it could be read.
+The binlog and the general log are off, and no traceback was written. The three
+`prepare` attempts at 07:04:40, 07:05:08 and 07:05:26 rolled back whole. Their
+only surviving trace is three `Error Log` rows, which are MyISAM and outlive a
+rollback. **The provenance of the row is unverified.** The mechanism from the
+row to the 409 is verified, above.
+
+**Fix.** `litmus_setup.mount_refusal` reads the mount back the way the served
+site reads it: the root row, `validate_root_pair`, what `/dav/` resolves to,
+and UPLOAD on it. It asks with the litmus user's own principals, because `bench
+execute` runs as Administrator and `require` answers MANAGE to an admin on any
+node, so the caller's identity would pass on a mount litmus cannot use.
+
+`ensure_mount` replaces a root that will not serve. The litmus user is a
+throwaway and the root is the mount, so rebuilding it is the whole repair, the
+same replacement `teardown` already performs.
+
+`prepare` proves the mount after the commit, because the committed rows are
+what the served site reads, and raises `LitmusFixtureError` instead of printing
+a URL. Its own class, so a reader of the traceback can tell a harness refusal
+from one the product made.
+
+No production file changed. The gate that `handle_mkcol` applies is unchanged
+and correct: replayed against the live site, a full dispatched
+`MKCOL /dav/litmus/` on a sound mount answers 201.
+
+#### 2. The runner could not tell a dead group from a clean one
+
+`run_litmus.sh`'s stale-ledger loop split each ledger line on `:` into three
+fields and read the third whole. The third field is
+`WARNING werkzeug strips URI fragments ...`, reason prose included. It then
+searched the transcript for that whole sentence, which no litmus line can hold.
+**The one ledger entry was reported stale on every run**, including a run where
+`delete_fragment` really warns.
+
+The check also ruled on the absence of a non-pass line. "Ran and passed",
+"never ran", "group aborted" and "litmus crashed" were one state. It ignored
+the group name, so a tolerance ledgered for `http:init:FAIL` excused
+`locks:init:FAIL`. Nothing read litmus's own abort message, which carries no
+verdict token and matched neither `case` arm, so five dead groups added nothing
+to the exit status.
+
+**Fix.** The comparison moved to `litmus_verdict.sh`, because a recorded
+transcript is all it needs: no served site and no litmus binary. It records
+every verdict, `pass` included, keyed by group, with an anchored match on the
+verdict field rather than any word on the line. A ledger line is stale only
+when the named test ran and passed. A ledgered test with no verdict gets its
+own message. The abort line, a group that never ran, and a group whose `begin`
+did not pass each fail the run.
+
+Also in the runner: the `EXIT` trap moved above `prepare`, so a `prepare` that
+raises part-way no longer leaves the user, the password, the root and the
+opt-in on the site with no teardown. It is a function body, because `set -e`
+skips the rest of `;`-joined trap commands, which gate run 5 recorded and did
+not fix. litmus's exit status is captured instead of discarded by `|| true`,
+and a `prepare` that prints something other than a URL stops the run.
+
+#### The ledger line stays
+
+`basic:delete_fragment:WARNING` is not stale. The `basic` group stopped in
+`begin`, so `delete_fragment` never ran and the run says nothing about it. The
+runner now says so in those words. Removing it on the strength of an aborted
+group would drop a real tolerance.
+
+**Coverage.** 30 site-free cases in `suite.drive.tests.test_webdav`: 18 in
+`TestLitmusHarness` and 12 in `TestLitmusVerdict`.
+
+`TestLitmusHarness` adds 11 to gate run 5's seven.
+
+- `test_a_sound_mount_is_not_refused` and the four refusal cases: no root, a
+  pair that does not validate, a namespace that resolves to no parent, and a
+  root the user cannot write into. Each names its own half.
+- `test_the_mount_is_read_as_the_litmus_user_not_as_the_caller` pins the
+  principals, the path and the role the check asks with.
+- Three `ensure_mount` cases: a root that will not serve is replaced, a sound
+  one is left alone, and a user with no root is provisioned without a drop.
+- `test_prepare_refuses_to_print_a_url_for_a_mount_that_is_not_there` and
+  `test_prepare_proves_the_mount_after_the_commit`.
+
+`TestLitmusVerdict` drives `litmus_verdict.sh` with recorded transcripts,
+including gate run 6's own, and asserts the exit status and the message. It
+covers the abort report, a ledger that is not called stale by an abort, a group
+that never started, an empty transcript, a ledgered WARNING that still warns, a
+ledgered test that now passes, one that became a failure, an unledgered
+failure, an unledgered WARNING alone, a tolerance that must not cross groups,
+and two lines that look like verdicts and are not.
+
+**Rerun.** No production file changed, so no module needs rerunning. Rerun the
+site-free suite, then serve and run litmus:
+
+```
+cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+All five groups must be attempted, and `begin` must pass in each. Ledger what
+really fails; add nothing on expectation.
+
+No migrate: no DocType JSON, patch, hook, or fixture changed.
+
+**Config restoration.** None is owed. No site config, `Drive Disk Settings`
+value, or queued job was written. Every live probe ran inside a transaction
+that was rolled back, and each one checked afterwards that nothing persisted:
+`litmus@example.com` still holds root `skt9hfsrv5`, its node row is present and
+its anchor grant count is 1.
+
+**Checks run.** Site-free in the worktree, plus read-only reads and rolled-back
+probes against the site. No `bench`, `migrate`, `serve`, litmus, queue change,
+`push`, or PR.
+
+```
+$ uvx ruff@0.12.3 check <the changed python files>
+All checks passed!
+$ uvx ruff@0.12.3 format --check <the changed python files>
+2 files already formatted
+$ bash -n && shellcheck run_litmus.sh litmus_verdict.sh
+(no output)
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture
+Ran 130 tests in 1.311s
+OK
+
+$ ... TestLitmusHarness against `git show 3a685474b:...litmus_setup.py`
+Ran 18 tests -- FAILED (errors=13)
+$ ... with `mount_refusal` mutated to return None always
+Ran 18 tests -- FAILED (failures=1, errors=4)
+
+$ ... rolled back against slides.localhost: a fresh User inserted inside
+  `inline_user_jobs()`
+root after insert under in_install : mfrkbe6p3l
+mount_refusal                     : None
+PERSISTED USER AFTER ROLLBACK     : None
+
+$ ... rolled back against slides.localhost: the orphan-row shape
+(the block quoted above)
+node row still there : True
+anchor grants        : 1
+```
+
+litmus itself is still unrun on this fix. It needs the served site.
+
+| Commit | Change |
+|---|---|
+| `7ac0f987e` | prove the litmus DAV mount before prepare prints its URL |
+| `dcc91d422` | make the litmus runner rule on what actually ran |
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Gate run 7: a header the wire could not carry, and a client that truncates
+
+All five groups ran, for the first time, and every group's `begin` passed:
+`http` 4/4, `basic` 15/16, `copymove` 13/13, `props` 30/30, `locks` 39/41. Three
+failures were unledgered.
+
+**The run needed a fresh server.** Port 8014 was serving a process started
+before ticket 25's code existed, so it answered `MKCOL /dav/litmus/` 409 and
+every group stopped in `begin` — gate run 6's symptom, from a different cause.
+A disposable server on port 8015 from current `main` answered that MKCOL 201
+and ran all five groups. A litmus run proves nothing about a branch unless the
+process serving it was started from that branch.
+
+#### 1. `basic:put_get_utf8_segment` — ours, fixed
+
+`GET /dav/litmus/res-%e2%82%ac` timed out. The DAV log records
+`GET /dav/litmus/res-€ -> 200`, and the client got nothing: the crash is
+downstream of the log line. The traceback is werkzeug's `serving.py`
+`send_header` into `http.server`'s, raising `UnicodeEncodeError` because a
+response header held a raw `U+20AC`. The status line was already written, so
+the connection carried half a response and litmus waited out its timeout.
+
+**Cause.** `get.py:_neutralize_active_content` called
+`headers.set("Content-Disposition", "attachment", filename=<title>)`.
+`Headers.set` quotes a filename but does not encode one, so the header value
+was `attachment; filename="res-€"`. An HTTP header value is latin-1 on the wire
+(RFC 9110 §5.5), and `€` is not in it.
+
+**Fix.** Non-ASCII travels in `filename*` (RFC 6266, RFC 8187), with an
+NFKD-folded ASCII `filename` beside it for clients that read only that one.
+Control characters are dropped, so a title holding a newline cannot split the
+response either. `http/routes.py:_disposition_names` is the same function for
+the same reason and is repeated rather than imported: HTTP and WebDAV are
+sibling adapters and neither may depend on the other. Both mirror what
+`werkzeug.send_file` does, so a DAV byte path and a document export name a file
+identically.
+
+**Audit.** An agent read every response header in `suite/` that can be built
+from request path text, a node title, an href, a `Destination`, or a lock root.
+
+| Site | Header | Verdict |
+|---|---|---|
+| `webdav/get.py:75` | `Content-Disposition` | the defect, fixed |
+| `frappe/storage/serve.py:247` | `Content-Disposition` | same shape, frappe core. Reached from a DAV GET on any non-local storage driver; `get.py` overwrites it on the 200 and the 206, which is every status that branch returns |
+| `webdav/get.py:64` | `Location` | `/drive/d/<node id>`. `Drive Node` is `"autoname": "hash"`, so it is hex and never the title |
+| `webdav/lock.py:305` | `Lock-Token` | `urn:uuid:<uuid4>` |
+| `webdav/put.py:263,265` | `ETag`, `X-OC-Mtime` | sha256 hex, and the literal `accepted` |
+| `webdav/put.py`, `structure.py`, `dispatch.py`, `options.py` | `Allow`, `DAV`, `MS-Author-Via` | joined from the `ALLOWED_METHODS` constant |
+| `webdav/auth.py:132`, `errors.py:49` | `WWW-Authenticate` | module constants |
+| `webdav/errors.py:120` | any | `error.headers`; no producer passes a title or a path |
+| `http/routes.py:364,854`, `http/shims.py` | `Location` | signed `/f/` URLs, percent-encoded where they are minted |
+
+No `Content-Location`, `Link` or `Destination` response header exists anywhere
+in `suite/`; `Destination` is only ever read. `pathmap.href_for` quotes every
+segment with `safe=""`, and every href built from path segments goes through
+it, so no DAV URI reaches a header or a body unencoded. A `DAVError` message
+can quote a title, and it goes in the body as UTF-8; no message reaches a
+header.
+
+**The net.** `dispatch._raise` is the one point every DAV response leaves
+through, and it now percent-encodes any header value outside latin-1 and logs
+that it did. The byte path is not all ours: the frappe-core row above sets the
+same broken header from the same title, and `get.py` only replaces it on a 200
+or a 206. Percent-encoding rather than dropping, because it is the correct
+encoding for a URI-valued header and a legal, lossy one for the rest, and a
+dropped `Content-Disposition` would serve user bytes with no attachment
+disposition. `log.note` appends rather than replaces, so the net cannot erase
+the refusal a handler already named.
+
+**Canonical path semantics are unchanged.** Nothing about how a URL is decoded,
+resolved, compared or stored was touched. Only what a response header may carry.
+
+#### 2 and 3. `locks:complex_cond_put` and `locks:fail_complex_cond_put` — litmus, ledgered
+
+Both answered 400. The DAV log gives the reason, identically for both:
+
+```
+PUT /dav/litmus/lockme -> 400 note="Unparsable If header at:
+  ' [\"a6fe3464be12cf20ce87aaff2f71211c37171ecc319929e935ce7c5a117'"
+```
+
+**The grammar, from the binary rather than from memory.** The shipped
+`litmus/0.13` `locks` program holds one format string for both tests, at
+`.rodata` `0x89e8`:
+
+```
+(<%s> [%s]) (Not <DAV:no-lock> [%s])
+```
+
+The disassembly of the two callers shows the arguments. `complex_cond_put`
+formats `(token, etag, etag)` with the resource's real ETag and expects the
+write. `fail_complex_cond_put` increments the third byte from the end of the
+same ETag in place and formats `(token, corrupted, corrupted)`, expecting 412.
+Both call `ne_snprintf(buf, 0xc8, ...)` — a 200-byte stack buffer, so 199
+characters are kept.
+
+**The arithmetic.** The format string is 30 literal characters. A lock token is
+`urn:uuid:` plus a UUID, 45. §12.4's entity-tag is the blob's SHA-256, quoted:
+66. `30 + 45 + 66 + 66 = 207`. litmus keeps 199 and drops the last 8: the
+closing `"])` and five hex digits of the second tag. What arrives ends
+`... (Not <DAV:no-lock> ["a6fe…c5a117` with no closing bracket, which is not
+RFC 4918 §10.4 grammar, and `parse_if_header` refuses it. Reproduced exactly,
+message and all, from a 45-character token and a 66-character tag.
+
+The two log lines are identical because the byte litmus corrupts sits at index
+63 of the tag, inside the eight characters truncation removes. The headers
+themselves differ: the *first* tag is complete in both and carries the
+difference.
+
+**Nothing on this side is wrong, and nothing on this side can make it right.**
+`ifheader` and `locks` are unchanged. The well-formed header evaluates exactly
+as litmus expects in both shapes, and there is now a test for each: the real
+tag lets the PUT through, and the corrupted tag is 412 on both alternatives,
+because `Not <DAV:no-lock>` is ANDed with the entity-tag rather than standing in
+for the whole list. The only server-side value that could make the header fit is
+the entity-tag, and it is the one the byte path publishes — shortening it
+re-opens the defect ticket 25 fixed, where an `If-Match` built from a PUT
+response could never match `getetag`. litmus passes these two tests against
+servers whose ETags are short enough; ours cannot be.
+
+**Rejected: recovering from the truncation.** Discarding a trailing incomplete
+production and evaluating the complete lists would turn both red cases green,
+and it is provably never more permissive, because the surviving lists are a
+prefix of an OR. It was not done. RFC 4918 §10.4 defines a grammar and gives no
+recovery rule; inventing one inside the lock and conditional gate is new,
+unspecified behaviour in the path that decides whether a write happens, and its
+safety rests on an invariant of the current tokenizer rather than on anything
+the spec says. A 400 tells the client the truth about what it sent.
+
+**Ledgered, with the reason.** `litmus_expected.txt` gains
+`locks:complex_cond_put:FAIL` and `locks:fail_complex_cond_put:FAIL`. Both
+report themselves stale the moment litmus stops truncating, and
+`TestLitmusVerdict` now drives the shipped ledger against a gate-run-7
+transcript, so a typo in a test name is a failing test rather than a silent
+tolerance for a test that never runs.
+
+**Coverage.** 14 cases. DAV collection is 315 across 15 modules, no collection
+errors.
+
+- `test_put_get`: a node titled `res-€` answers a `Content-Disposition` that
+  encodes as latin-1 and names the title in `filename*`; and the helper's
+  four title shapes — ASCII, all-non-ASCII, accented, and one holding a
+  newline.
+- `test_dispatch`: a handler returning a header outside latin-1 leaves the
+  dispatcher sendable and percent-encoded; and an ordinary response keeps every
+  header it had, repeats included.
+- `test_ifheader.TestLitmusComplexConditional`: six cases on the grammar above
+  — its parse, both litmus evaluations, the token submission both shapes make,
+  the 207-vs-200 arithmetic, and that the same header parses whole.
+- `test_locks`: the two litmus conditionals end to end through PUT, and a
+  truncated one refused 400 with the node's bytes unchanged.
+- `test_webdav.TestLitmusVerdict`: the shipped ledger against a gate-run-7
+  transcript, clean; and both lines reported stale when the tests pass.
+
+Mutations run, site-free: `all` to `any` inside a condition list makes
+`fail_complex_cond_put` hold, and the case fails; deleting the two ledger lines
+fails both `TestLitmusVerdict` cases; the pre-fix `headers.set(...,
+filename=...)` call raises `UnicodeEncodeError` on the title the case uses. The
+`test_put_get`, `test_dispatch` and `test_locks` cases need the site and are
+unrun.
+
+| Commit | Change |
+|---|---|
+| `3bff5a0b2` | name a DAV download the way a header can carry it |
+| `bab0cc0a4` | percent-encode a DAV header the wire cannot carry |
+| `a5adef5af` | pin the complex If conditional litmus 0.13 sends |
+| `2a76d9c4f` | ledger the two conditionals litmus truncates itself |
+
+**Rerun.** Three production files changed: `webdav/get.py`, `webdav/dispatch.py`
+and `webdav/log.py`. `dispatch._raise` and `log.note` are on every dispatched
+response, and the four suites that drive the dispatcher are modules 1, 5, 10 and
+13. Serialized, one module per invocation:
+
+```
+script -qec "bench --site slides.localhost run-tests --module <module>" /dev/null
+```
+
+1. `suite.drive.tests.test_webdav`
+2. `suite.drive.webdav.tests.test_put_get`
+3. `suite.drive.webdav.tests.test_locks`
+4. `suite.drive.webdav.tests.test_dispatch`
+5. `suite.drive.webdav.tests.test_log`
+6. `suite.drive.webdav.tests.test_ifheader`
+
+Then serve and run litmus, from a server started on this branch:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+`basic` must be 16/16 this time. `locks` stays 39/41 and the runner must print
+`litmus: all groups clean`, because the two conditionals are now ledgered. No
+other module needs rerunning: nothing else changed. No migrate: no DocType JSON,
+patch, hook, or fixture changed.
+
+**Config restoration.** None is owed. Nothing was written to the site, the queue
+or any config file. The site's logs were read.
+
+**Checks run.** Site-free, in the worktree. No `bench`, `migrate`, `serve`,
+litmus, queue change, `push`, or PR.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+41 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_conditional \
+    suite.drive.webdav.tests.test_ifheader suite.drive.webdav.tests.test_xmlutil
+Ran 166 tests in 1.414s
+OK
+
+$ ... the pre-fix header, and the fix, side by side
+PRE-FIX  attachment; filename="res-€"   -> UnicodeEncodeError on latin-1
+POST-FIX attachment; filename=res-; filename*=UTF-8''res-%E2%82%AC -> sendable
+
+$ ... the net on a response carrying the pre-fix header
+Content-Disposition: attachment; filename="res-%E2%82%AC"
+repeated headers kept: ['one', 'two']
+note: earlier refusal; percent-encoded unsendable header: Content-Disposition
+
+$ ... litmus's own header, rebuilt from the format string in its binary
+token 45  etag 66  header 207  buffer 200  sent 199
+BadIfHeader: Unparsable If header at: ' ["a6fe…c5a117'   (the log's text)
+
+$ ... collection across every module in suite/drive/webdav/tests
+test_auth 17   test_conditional 8    test_dispatch 15   test_ifheader 17
+test_locks 45  test_log 7            test_mkcol_delete 20  test_movecopy 39
+test_pathmap 20  test_properties 17  test_propfind 22   test_proppatch 19
+test_put_get 51  test_settings 9     test_xmlutil 9
+TOTAL 315, ERRORS []
+```
+
+The `test_locks`, `test_put_get`, `test_dispatch` and `test_log` integration
+cases are still unrun: they need the site.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+### Independent review of gate run 7
+
+A separate reviewer read the whole of `21f78d952..244689311` against the
+standards it cites, the litmus binary it quotes, and the code around it.
+Subagents did the litmus disassembly, the response-header sweep and the If
+header audit; the reviewer verified every claim before acting on it, and wrote
+the corrections and their tests.
+
+#### The four contested points
+
+**1. `Content-Disposition` encoding.** Correct, and ASCII behaviour is
+unchanged. `_disposition_names` is `werkzeug.send_file`'s own logic plus an
+`isprintable` filter and two `"download"` fallbacks. Checked against werkzeug
+3.1.6 on 19 title shapes: every one encodes latin-1, the `filename*` value is
+`attr-char` only so werkzeug leaves it unquoted (a quoted `ext-value` is not
+RFC 8187 grammar), an ASCII title still emits bare `filename=data.bin`, and a
+`"` in an ASCII title is quoted and backslash-escaped. Two claims around it
+were wrong and are corrected: dropping control characters does not prevent a
+response split, because werkzeug refuses CR and LF where a header is set; and
+the two adapters do *not* name a file identically, because this side is handed
+`download_filename(title)` and the export side the title as stored.
+
+**2. The dispatch-level net.** Repeated headers, ordering and non-URI
+semantics all hold: `Headers.items()` yields every duplicate, `Headers(pairs)`
+rebuilds them in order, `Response.headers` is a plain attribute with no
+subclass anywhere in werkzeug, frappe or suite, and the rebuild only happens
+when something changed. `%` is never doubled. But the rule was wrong at both
+ends of the range, and the reason given for the net was not true of the code:
+
+- `isascii()` passed NUL, DEL and the rest of C0. RFC 9110 §5.5 forbids them in
+  a field value, werkzeug accepts them, and gunicorn 23.0.0 rejects them at
+  `HEADER_VALUE_RE`, so the response dies in production where the dev server
+  would have sent it. Now `_SENDABLE`: `field-vchar` plus SP and HTAB.
+- `quote()` raises `UnicodeEncodeError` on a lone surrogate, out of the
+  function whose purpose is to prevent that exception, in a place no handler
+  can answer from. Now `errors="replace"`.
+- The docstring said the net covers `frappe.storage.serve._stream_driver_response`
+  on a status `get.py` does not overwrite. It does not: `serve.py` sets
+  `Content-Disposition` only on the 200 and the 206, and its 304 and 416 set
+  none. The net is defence in depth, and now says so.
+
+It cannot hide a defect: the rewrite is logged, and `log.note` appends.
+
+**3. The litmus truncation.** Confirmed from the shipped binary, not from the
+report. `.rodata 0x89e8` holds `(<%s> [%s]) (Not <DAV:no-lock> [%s])`, and both
+callers load `mov $0xc8,%esi` into `ne_snprintf` against a stack buffer at
+`-0xe0(%rbp)`: 200 bytes, 199 characters kept. `ne_print_request_header` has an
+8192-byte buffer, so that is the only truncation. 30 literal + 45 + 66 + 66 =
+207, checked against `compute_etag` rather than a literal. No other litmus
+conditional exceeds 199; the pair would fit at a 62-character tag. Retaining
+the 400 is right: §10.4 defines a grammar and no recovery rule.
+
+One correction. "Refused, not guessed" was pinned at litmus's cut only. A cut
+that lands on a list boundary cannot be refused, because it is
+indistinguishable from a client that sent fewer lists. That is safe for a
+reason worth pinning rather than assuming: the lists are ORed, so a prefix
+offers the gate fewer ways to hold. Every prefix of the litmus header is now
+driven through the parser and the evaluator, and none opens a write the whole
+header refuses.
+
+**4. The ledger.** Both added lines are litmus-side and neither is reachable
+from here. `basic:delete_fragment` stands: werkzeug's `make_environ` builds
+`PATH_INFO` from `urlsplit(...).path`, so the fragment is gone before the app
+runs. The stale-entry test does what it claims. Two overstatements are fixed:
+the ledger said "no server-side change can reach", where the truth is that the
+only reachable value is the entity-tag and shortening it gives up §12.4; and
+`test_the_shipped_ledger_covers_gate_run_7` claimed to catch a test-name typo,
+which it cannot, because its transcript is written in the test rather than
+recorded. No litmus transcript is in the repository. The gate catches a typo
+instead, as `LEDGERED TEST DID NOT RUN`.
+
+#### Defects the review found and fixed
+
+| # | Where | Defect | Severity |
+|---|---|---|---|
+| 1 | `ifheader.py` `flush_group` | A Resource-Tag with no state list was dropped in silence. `(<token> [etag]) </dav/other>` read as the first list alone, and the write it guards happened on the half that arrived. `Tagged-list = Resource-Tag 1*List` (§10.4.2). Now 400 | high |
+| 2 | `lock.py` `_refresh` | A LOCK refresh never evaluated the If conditions it carries. `_create` does, citing §10.4.1; the refresh half was left out, so a lock stayed alive on an ETag that had stopped holding | medium |
+| 3 | `dispatch.py` `_make_headers_sendable` | NUL, DEL and C0 passed the net as "ascii". gunicorn refuses them and the response dies | medium |
+| 4 | `ifheader.py` `Not` | `Not Not <t>` parsed as `Not <t>`, the opposite of what it says, in the gate that admits a write. Now 400 | medium |
+| 5 | `log.py` `note` | The line writes the note inside `note="..."` and the writers hand it exception text. A database error quoting a multi-line statement forged whole records in the DAV log, and the `DAVError` writer was unbounded. Cleaned and bounded once, in `note` | low |
+| 6 | `dispatch.py` | `quote()` raises on a lone surrogate, from the one place that cannot answer | low |
+| 7 | `get.py`, `dispatch.py`, `litmus_expected.txt`, `test_webdav.py` | Four claims that are not true of the code or of what a test proves, listed above | low |
+
+Nothing in Frappe core was changed.
+
+#### Coverage the review found missing
+
+`log.note`'s change shipped with no test at all: reverting it to the replacing
+form left all 166 site-free cases green. `_make_headers_sendable` and
+`_disposition_names` are pure functions whose only cases needed the site, so
+neither could be checked in a worktree, which is where the gate-run-7 work was
+done. 27 cases added, 21 of them site-free.
+
+- `test_dispatch.TestSendableHeaders` (9, site-free): a value above US-ASCII,
+  latin-1, a control character, a lone surrogate, SP and HTAB kept, an
+  untouched response keeping its `Headers` object by identity, repeats kept in
+  order through a rewrite, the header names reported once, the handler's own
+  reason not erased, and every shape `_disposition_names` can emit passing
+  through untouched.
+- `test_put_get.TestDispositionNames` (6, site-free): ASCII unchanged, the
+  `filename*` pair, a title with no ASCII skeleton, a control character, the
+  `ext-value` needing no quoting, and every shape encoding latin-1. Moved out
+  of the integration class, which did not need a site for them.
+- `test_log.TestNoteAppends` (6, site-free): the first reason, the join, an
+  empty reason, logging off, a forged record, and the bound.
+- `test_ifheader` (4 site-free, plus the litmus class hardened): the
+  Resource-Tag rule, the repeated `Not`, a dangling `Not`, lowercase `not`, and
+  no prefix of the litmus header permitting what the whole one refuses.
+- `test_locks` (1, needs the site): a refresh carrying a stale ETag is 412 and
+  the lock survives. The 412 half of the litmus pair now also asserts the
+  node's bytes are unchanged.
+
+Test fidelity, corrected: `STALE` is derived by the increment litmus performs
+(`etag + strlen - 3`, index 63) rather than written out one byte off; the
+`test_locks` corruption is that same single byte rather than an all-zero tag;
+and the 66 in the arithmetic comes from `compute_etag`, so shortening the
+published tag fails the test rather than leaving a ledger line that no longer
+holds.
+
+#### Findings recorded, not fixed
+
+- **If is ignored on GET, HEAD, PROPFIND and UNLOCK.** §10.4 is
+  method-agnostic, so `If: (<DAV:no-lock>)` on a GET should be 412 and a
+  malformed one 400. Honouring it on four more verbs is a behaviour change
+  beyond this ticket and needs the site to prove.
+- **MKCOL skips `evaluate_preconditions`.** `If-Match` on an unmapped target
+  should fail (RFC 9110 §13.1.1). `conditional.py`'s docstring says it guards
+  every mutating verb; MKCOL, LOCK and UNLOCK are not guarded.
+- **No bound on the If header's state lists.** Each tagged group costs a path
+  resolution, a lock read and an ETag. An 8 KB header of false groups is
+  thousands of statements, and MOVE calls `enforce` three times. Not fixed for
+  the reason recovery was not: §10.4 gives no limit, and inventing one inside
+  the gate that admits a write is unspecified behaviour.
+- **`<>` and `[]` parse as empty conditions**, and a mixed no-tag and tagged
+  header parses. Both are leniency with no consequence: they evaluate false and
+  `all_tokens()` drops the empty string.
+- **A legal entity-tag holding `]` is a 400.** `etagc` allows it. No tag this
+  server publishes can hit it.
+- **A tagged href on a foreign host binds to our path.** `resolve_href` reads
+  only the path; `pathmap.parse_destination` compares the host. Lenient, not a
+  bypass.
+- **The If gate confirms another user's lock token**: 423 for a right guess,
+  412 for a wrong one, where `lockdiscovery` redacts. uuid4 makes it
+  unguessable.
+- **`conditional.is_not_modified` has no caller.** `get.py` delegates to
+  `frappe.storage.serve`, which does its own `If-None-Match`.
+- **`_validate_title` accepts control characters and `/`.** Every header path
+  cleans the title; the export `Content-Disposition` keeps a `/`.
+- **`suite/drive/utils/files.py:content_disposition`** is a third disposition
+  builder on the legacy stack with no `isprintable` filter and no fallback.
+
+#### Checks run
+
+Site-free, in the review worktree. No `bench`, `migrate`, `serve`, litmus,
+queue change, site write, `push` or PR. The litmus binaries were disassembled,
+never executed.
+
+```
+$ python3 -m compileall -q suite/drive
+COMPILED
+$ uvx ruff@0.12.3 check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+All checks passed!
+$ uvx ruff@0.12.3 format --check suite/drive/webdav/ suite/drive/tests/test_webdav.py
+41 files already formatted
+
+$ cd sites && PYTHONPATH=<worktree> ../env/bin/python -m unittest \
+    suite.drive.tests.test_webdav suite.tests.test_architecture \
+    suite.drive.webdav.tests.test_conditional suite.drive.webdav.tests.test_ifheader \
+    suite.drive.webdav.tests.test_xmlutil \
+    suite.drive.webdav.tests.test_dispatch.TestSendableHeaders \
+    suite.drive.webdav.tests.test_log.TestNoteAppends \
+    suite.drive.webdav.tests.test_put_get.TestDispositionNames
+Ran 193 tests in 1.469s
+OK
+
+$ ... collection across every module in suite/drive/webdav/tests
+TOTAL 342, ERRORS []   (315 before the review)
+```
+
+Mutations, each run against the 193 site-free cases and then reverted. Every
+one is caught unless marked:
+
+| Mutation | Result |
+|---|---|
+| `note` replaces instead of appending | 2 failures |
+| `note` neither cleaned nor bounded | 4 failures |
+| net back to `isascii()` | 1 failure |
+| net rebuilds an untouched response | 3 failures |
+| `quote` without `errors="replace"` | 1 error |
+| `_disposition_names` drops `filename*` | 2 failures, 1 error |
+| `_disposition_names` drops the `isprintable` filter | 1 failure, 2 errors |
+| `_disposition_names` widens the `ext-value` safe set | 1 failure |
+| `_disposition_names` drops the `"download"` fallback | 1 failure |
+| `flush_group` lenient again | 1 failure |
+| repeated `Not` allowed again | 1 failure |
+| dangling `Not` allowed | 1 failure |
+| `Not` matched case-sensitively | 1 error |
+| `any` for `all` inside a condition list | 2 failures |
+| `_refresh` skips `check_conditions` | **not caught: needs the site** |
+
+| Commit | Change |
+|---|---|
+| `889553f51` | bound and clean a DAV log note before the line quotes it |
+| `f6cba5f01` | percent-encode every response header byte RFC 9110 forbids |
+| `f500fed76` | refuse the two If header shapes the parser was rewriting |
+| `0ff2f4aea` | gate a LOCK refresh on the If conditions it carries |
+| `d0ae83ff9` | pin the disposition helper without a site |
+| `e3b7d9863` | say what the ledger and its test can prove |
+
+#### Rerun
+
+Five production files changed: `webdav/dispatch.py`, `webdav/get.py`,
+`webdav/log.py`, `webdav/ifheader.py` and `webdav/lock.py`. `ifheader` is on
+every conditional write and `dispatch` and `log` are on every response, so the
+same four dispatcher suites run, plus the two the If change reaches.
+Serialized, one module per invocation:
+
+```
+script -qec "bench --site slides.localhost run-tests --module <module>" /dev/null
+```
+
+1. `suite.drive.tests.test_webdav`
+2. `suite.drive.webdav.tests.test_put_get`
+3. `suite.drive.webdav.tests.test_locks`
+4. `suite.drive.webdav.tests.test_dispatch`
+5. `suite.drive.webdav.tests.test_log`
+6. `suite.drive.webdav.tests.test_ifheader`
+7. `suite.drive.webdav.tests.test_mkcol_delete`
+8. `suite.drive.webdav.tests.test_movecopy`
+9. `suite.drive.webdav.tests.test_proppatch`
+
+Then serve and run litmus, from a server started on this branch:
+
+```
+bench --site slides.localhost serve --port 8010     # in another shell
+suite/drive/webdav/tests/run_litmus.sh slides.localhost
+```
+
+`basic` must be 16/16 and `locks` 39/41, and the runner must print
+`litmus: all groups clean`. The two ledgered conditionals must still fail: the
+parser is stricter than it was, and nothing in these changes shortens the
+entity-tag. No migrate: no DocType JSON, patch, hook or fixture changed.
+
+**Config restoration.** None is owed. Nothing was written to the site, the
+queue or any config file.
+
+Ticket 29 stays dormant: `git diff --name-only bc461122a..HEAD -- suite/patches.txt
+suite/hooks.py 'suite/**/*.json' suite/drive/patches` is still empty.
+
+## Site gate: final run and closeout
+
+Supersedes every earlier rerun note. Agents audited the six acceptance
+criteria against the code at HEAD, the git range, the test sources, and the
+litmus harness; the orchestrator decided the verdicts and made this commit.
+The module rerun and the litmus run were executed on the site and are recorded
+here as their results. This closeout ran no `bench`, no server, and no litmus.
+
+### Migration
+
+`bench --site slides.localhost migrate` succeeded at
+[gate run 1](#gate-run-1-the-site-quota-defaults-were-text). It stays valid.
+`git diff --name-only bc461122a..HEAD -- suite/patches.txt suite/hooks.py
+'suite/**/*.json' suite/drive/patches` is empty at HEAD, so no DocType JSON,
+patch, hook, or migration file changed in the whole ticket. The migrate is a
+no-op for this work and no later run was owed.
+
+### The final rerun
+
+The independent review of gate run 7 changed five production files:
+`webdav/dispatch.py`, `webdav/get.py`, `webdav/ifheader.py`, `webdav/lock.py`
+and `webdav/log.py`. The nine modules the review named ran on the site, one
+`script -qec "bench --site slides.localhost run-tests --module <module>"`
+invocation each, serialized. All nine are OK.
+
+| # | Module | Unit | Integration |
+|---|---|---|---|
+| 1 | `suite.drive.tests.test_webdav` | 125 | 0 |
+| 2 | `suite.drive.webdav.tests.test_put_get` | 6 | 50 |
+| 3 | `suite.drive.webdav.tests.test_locks` | 4 | 42 |
+| 4 | `suite.drive.webdav.tests.test_dispatch` | 10 | 15 |
+| 5 | `suite.drive.webdav.tests.test_log` | 6 | 7 |
+| 6 | `suite.drive.webdav.tests.test_ifheader` | 22 | 0 |
+| 7 | `suite.drive.webdav.tests.test_mkcol_delete` | 0 | 20 |
+| 8 | `suite.drive.webdav.tests.test_movecopy` | 0 | 39 |
+| 9 | `suite.drive.webdav.tests.test_proppatch` | 0 | 19 |
+
+365 cases: 173 unit and 192 integration. Every count matches a static count of
+`def test_` at HEAD, class by class. There is no `unittest.skip` and no
+`expectedFailure` anywhere in the DAV suites, so the collected count is the
+run count.
+
+`suite.drive.tests.test_webdav` held 100 cases at gate run 5. 25 of its cases
+therefore ran on the site for the first time in this rerun.
+
+### What was not rerun, and why
+
+The full gate is 23 modules. Fourteen were not rerun: `test_pathmap`,
+`test_propfind`, `test_properties`, `test_settings`, `test_auth`,
+`test_conditional`, `test_xmlutil`, `test_nodes`, `test_access`, `test_quota`,
+`test_roots`, `test_versions`, `http.tests.test_shims`, and
+`tests.test_architecture`. They passed at
+[gate run 5](#gate-run-5-a-full-job-queue-discarded-the-litmus-user), which is
+the last green 23-module gate, together with `test_previews` and
+`test_drive_permission`.
+
+`git diff --name-only 3a685474b..HEAD -- suite/` lists 15 files. Five are the
+production files above. Six are the test modules that were rerun. Four are the
+litmus harness. No other production file changed, so nothing the fourteen cover
+has moved.
+
+An agent traced the changed lines to their callers. Two un-rerun modules do
+reach changed code: `test_propfind` runs `get._disposition_names` through
+`get.handle`, and `test_properties` calls `ifheader.parse_if_header`. Neither
+is the only cover for its file, and both changed functions are pinned by cases
+that did run (`test_put_get.TestDispositionNames`, `test_ifheader`). No
+un-rerun module is the sole cover for any changed line. `test_auth` calls
+`auth.authenticate` directly and never reaches the changed `dispatch._raise`.
+
+This is a scoped rerun, not a full gate. It is stated as one.
+
+### litmus
+
+litmus 0.13, against a server started fresh from current `main` with this
+branch's Suite code, on a disposable port. All five groups ran and every
+group's `begin` passed.
+
+| Group | Result | Product verdict |
+|---|---|---|
+| `http` | 4 of 4 | clean |
+| `basic` | 16 of 16 | clean, with the ledgered Werkzeug fragment warning |
+| `copymove` | 13 of 13 | clean |
+| `props` | 30 of 30 | clean |
+| `locks` | 39 of 41 | clean; the 2 non-passes are litmus defects |
+
+The corrected runner exited 0 and printed `litmus: all groups clean`.
+
+**Tolerated external-tool limitations, not product failures.** Three, all
+ledgered in `litmus_expected.txt` from real runs, none of them a refusal this
+server got wrong:
+
+- `basic:delete_fragment` WARNING. Werkzeug builds `PATH_INFO` from
+  `urlsplit(...).path`, so a URI fragment is gone before the app runs and a
+  fragment-bearing DELETE cannot be told from a normal one. Nothing in Drive
+  sees it. litmus counts a warning as a passed test, which is why `basic` reads
+  16 of 16.
+- `locks:complex_cond_put` and `locks:fail_complex_cond_put` FAIL. litmus
+  formats `(<%s> [%s]) (Not <DAV:no-lock> [%s])` into a 200-byte buffer and
+  keeps 199 characters. A 45-character `urn:uuid` token and §12.4's 66-character
+  quoted SHA-256 entity-tag make the header 207, so it arrives cut mid-tag and
+  is not RFC 4918 §10.4 grammar. The 400 is correct. Both are verified from the
+  shipped binary's `.rodata` and both callers' `ne_snprintf` bound, by the
+  implementation and again by the independent review. See
+  [gate run 7](#2-and-3-lockscomplex_cond_put-and-locksfail_complex_cond_put--litmus-ledgered).
+
+**Everything else litmus reported is a product pass.** litmus ran 104 cases.
+101 passed outright: 4 `http`, 15 `basic`, 13 `copymove`, 30 `props`, 39
+`locks`. The other 3 are the ledgered lines above.
+
+**Why the ledger cannot hide a failure.** `litmus_verdict.sh` exits 0 only when
+all five groups ran, each `begin` passed, no `Could not create new collection`
+line appears, every non-pass carries a ledger line of the same kind, and every
+ledger line was seen with exactly that kind. A ledgered test that now passes is
+`STALE LEDGER LINE`; one that did not run is `LEDGERED TEST DID NOT RUN`. Both
+exit 1. The reported exit 0 therefore also proves that `delete_fragment` really
+warned and that both conditionals really failed in that run.
+
+### Acceptance criteria
+
+Agents audited each box against the code at HEAD, not against this ticket's
+prose, and named the cases that ran.
+
+| # | Criterion | Verdict |
+|---|---|---|
+| 1 | PUT spools once; preflight or bound by quota | Passes. `put.py:111` is the only body read and `put.py:230` the only `put_blob` call in the adapter. `_Ceilings` (`put.py:169-186`) feeds the `Content-Length` preflight and the spool stop from one value. 413 is the site cap, 507 the quota (`put.py:157-161`). `cint` makes an unparsable cap no cap. Live in `test_put_get` :539, :550, :559, :565, :580, :599, :617, :631. |
+| 2 | Replace keeps one nonempty previous version; the duplicate machinery is gone | Passes. `_replace_file` writes at the same node id (`_core/nodes.py:1254-1263`), so URL, id and grants survive; `nodes.py:1246-1248` keeps one version and never versions an empty head. `perms.py`, `RELINKED_METHODS` and `pathmap.ResolvedPath.entity` are absent at HEAD; no staging file, generation key, owner lock or compensation queue remains in the DAV write path. The PUT ETag is the full quoted checksum `getetag` and GET publish. Live in `test_put_get` :474, :490, :502, :645, :876. |
+| 3 | MOVE/COPY/MKCOL/DELETE on the shared workflows and the method-role table; no cross-root move | Passes. Every role matches §12.1: MKCOL `structure.py:68`, DELETE `:86`, MOVE `:115`/`:127`/`:202`, COPY `copy.py:40`/`:48`/`nodes.py:1719`. Collision, depth, cycle and quota stay inside `_core` under its row lock (`nodes.py:2219`, `:1824`, `:1736`, `:1334`). `resolve_destination` (`structure.py:239`) refuses a cross-root move for both verbs. Depth is scoped to collections on MOVE and DELETE. Live in `test_movecopy` (39) and `test_mkcol_delete` (20). |
+| 4 | LOCK on an unmapped path; expiry leaves the node | Passes. `lock.py:286-293` answers 409 for a missing intermediate, takes UPLOAD on the parent, and calls `create_empty_file`, which writes no blob and calls no `admit`. `purge_expired_locks` deletes lock rows only, and no job reaps an Active zero-byte node. The §9.10.3 207 is `lock.py:158-159`. Live in `test_locks` :346, :366, :387, :416. |
+| 5 | Lock ownership, overwrite checks, dead-property cloning, conditionals, client times | Passes. Ownership needs the token and `lock.owner_user == ctx.user` (`locks.py:75-76`); non-owner redaction is `locks.py:358-370`, reached only from `propfind.py:212`. `Overwrite: F` runs after the read gate in both verbs (`structure.py:198-199`, `copy.py:82-83`), so an unreadable destination is 404. COPY clones the subtree's dead properties in one read (`nodes.py:1634`, `:2051`). `conditional.py:40` evaluates the date only when `If-Match` is absent. `X-OC-Mtime: accepted` is set only when a time was stamped (`put.py:265`). Live in `test_locks` :454, :804, :856; `test_movecopy` :320, :478, :497; `test_conditional` :109; `test_put_get` :812, :826. |
+| 6 | Actor and User-Agent once; content documents closed to writes | Passes. `dispatch.py:74` binds the client before the handler is resolved at `:94`; `nodes.py:2323` is the one `Drive Activity` writer in the node engine, so a write stamps once, and `frappe.init(force=True)` clears the binding between requests. `pathmap._VISIBLE` (`pathmap.py:44`) and the folder check at `pathmap.py:105` hide a document and its media from every verb. Live in `test_put_get` :778, `test_mkcol_delete` :379, `test_movecopy` :355, `test_proppatch` :229, `test_locks` :326, and `test_webdav.TestHiddenContent`. |
+
+### Ticket 24's carried risks are discharged
+
+- A live case now writes a `Drive DAV Lock` and a `Drive DAV Property` row
+  keyed on a node id and reads it back. `test_locks` and `test_proppatch` ran
+  whole, and the four parked suites are unparked.
+- The `require_options="Drive Node"` purge cascade is covered live:
+  `test_locks.py:675` and `test_proppatch.py:429` both purge a node and assert
+  its DAV rows go with it.
+- Still open, carried forward: ticket 24 asked for the `pathmap` `EXPLAIN` to be
+  re-run against a folder holding persisted child rows. It was not re-run. It
+  is not one of this ticket's acceptance criteria or its verification line, so
+  it does not hold the ticket. `key`, `key_len` and `ref` were already proved;
+  only the `rows` estimate stays unmeasured.
+
+### Corrections to this ticket's own text
+
+Found while auditing the prose against the code. No production file changed.
+
+- "`put.py` fell from 1200 lines to 230" was wrong in both numbers. The base
+  file is 975 lines and HEAD is 266. Corrected above.
+- "Findings recorded, not fixed" still listed the depth-infinity LOCK with no
+  207 as unfixed. The independent review fixed it in `107ef15ee` and corrected
+  the citation to §9.10.3. The entry is struck above rather than deleted, so
+  the finding and its fix stay readable together.
+
+### Findings recorded, not fixed
+
+New at closeout. None blocks the ticket. Each is named where the code sits.
+
+- **A negative `drive_webdav_max_upload_size` refuses every PUT.** `cint("-1")`
+  is `-1`, which survives `hard or None` (`put.py:185-186`), so `check(0)`
+  raises 413 for a zero-byte body. An unparsable cap is no cap; a negative one
+  is a cap nothing can satisfy. Site misconfiguration only, and untested.
+- **The quota arithmetic is written twice.** `put.py:183` recomputes
+  `max(limit - used, 0)`, which `_core.quota.preflight` (`quota.py:74-81`)
+  already does. The two can drift.
+- **COPY takes EDIT on an overwritten destination** (`copy.py:87`). §12.1's
+  table gives COPY no destination role beyond UPLOAD on the parent. This is
+  stricter than the spec, deliberately: an overwrite destroys, and DELETE
+  prices that at EDIT. Recorded as a deviation, not a defect.
+- **A malformed `Depth` value 400s a LOCK refresh.** `context.py:133-138`
+  parses `Depth` for every request before any handler runs. RFC 4918 §9.10.2's
+  "MUST ignore" holds for every legal value; only a syntactically invalid one
+  differs.
+- **`run_litmus.sh` has no repository-local test.** `litmus_verdict.sh` was
+  split out precisely so the comparison could be tested from a recorded
+  transcript. The wrapper around it is proved only by a real litmus run.
+- **No `_core`-level case calls `nodes.update(blob=...)` directly** to assert
+  the one-version and empty-head rules. They are proved through the DAV suite
+  and through `http.tests.test_dispatch`.
+
+The earlier "recorded, not fixed" lists stand as written, less the struck
+entry.
+
+### Residual risks that stand
+
+- The 413-vs-507 split is new behaviour for any site that had
+  `drive_webdav_max_upload_size` set.
+- Chunked PUT still never drives `StreamingBody` in a test. litmus and a manual
+  client are its only real coverage, and litmus ran clean.
+- `test_dispatch` and `test_locks` commit their fixtures and drop them
+  explicitly. A run killed part way leaves users and roots on the site.
+- Real title collation in `pathmap._child` is exercised by the gate but not
+  asserted against MariaDB collation rules directly.
+
+### Site state after the run
+
+`webserver_port` is 8010 in both `sites/common_site_config.json` and
+`sites/slides.localhost/site_config.json`. The disposable port 8015 the
+litmus server used is stopped: nothing listens on it.
+
+`litmus_setup.teardown` drops the litmus user's Personal Root and provisions a
+fresh one. By design it leaves `litmus@example.com` and the site-wide
+`Drive Disk Settings.webdav_enabled` toggle as it found them set: CI sites are
+disposable, and a dev site keeps whatever an admin wanted. That is the run's
+one intended residue. The suites themselves restore the switch to its previous
+value rather than a hard-coded 0 (`webdav/tests/utils.py:96-109`).
+
+### Checks run at closeout
+
+Read-only, in this worktree, at `cfa1bcfca`. No `bench`, `migrate`, `serve`,
+litmus, queue change, site write, `push` or PR. Nothing was executed against
+the database.
+
+```
+$ git log --oneline bc461122a..HEAD | wc -l
+53
+$ git diff --shortstat bc461122a..HEAD -- suite/
+48 files changed, 5480 insertions(+), 4311 deletions(-)
+
+$ git diff --name-only bc461122a..HEAD -- suite/patches.txt suite/hooks.py \
+    'suite/**/*.json' suite/drive/patches
+(empty)
+
+$ git diff --name-only 3a685474b..HEAD -- suite/
+15 files: 5 production, 6 test modules, 4 litmus harness
+
+$ static count of `def test_` at HEAD, the nine reran modules
+365, matching the reported run exactly, class by class
+
+$ static collection across every module in suite/drive/webdav/tests
+TOTAL 342, matching the last recorded figure
+
+$ grep -rn 'unittest.skip' suite/drive/webdav/tests suite/drive/tests/test_webdav.py
+(no matches)
+
+$ grep -n webserver_port sites/common_site_config.json sites/slides.localhost/site_config.json
+8010, 8010
+```
+
+Ticket 29 stays dormant at closeout: the dormancy diff above is empty.
+
+**Status: in-review to done.** The next unblocked ticket is
+[26 — Prepare legacy bytes for an additive Build](26-build-storage-preparation.md).

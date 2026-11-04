@@ -1,0 +1,458 @@
+// Main-thread proxy for the sheets core worker, and the CommandDispatcher.
+//
+// Owns the only connection to the worker. Everything on the main thread
+// (canvas, editor, feature layers) talks to the engine through this file.
+//
+// - request(): posts { reqId, type, payload } and resolves when the
+//   response with the same reqId comes back.
+// - dispatch(): validates a command, echoes setInput into the display
+//   cache, and queues it. One `apply` is in flight at a time; commands
+//   dispatched meanwhile go out together in the next one.
+// - onVersion(): fires when the engine version changes. Every cached
+//   value may be stale at that point.
+//
+// Imports from worker.ts are type-only, so the main-thread bundle never
+// pulls in @ironcalc/wasm.
+//
+// Protocol: docs/sheets-rewrite-spec.md, section 1.
+
+import type { ExtendedCellStyle } from '@ironcalc/wasm'
+
+import { CommandTypes, validateCommand, type Command } from './commands.js'
+import type { FoundCell, RangeStats } from './workbook.js'
+import type { ApplyResult, CellRead, ReadWhat, WorkerResponse } from './worker.js'
+
+/** The part of a Worker the client uses. Tests pass a fake. */
+export interface WorkerPort {
+  postMessage(message: unknown): void
+  onmessage: ((event: MessageEvent) => void) | null
+  /** An uncaught error in the worker, or the worker failing to start. */
+  onerror?: ((event: ErrorEvent) => void) | null
+  onmessageerror?: ((event: MessageEvent) => void) | null
+  terminate?(): void
+}
+
+/**
+ * Where optimistic echoes go. DisplayCache implements this. Every
+ * setProvisional is matched by exactly one settleProvisional, sent when
+ * the command's apply returns, saying whether it applied.
+ */
+export interface EchoTarget {
+  setProvisional(sheet: string, row: number, col: number, display: string): void
+  settleProvisional(sheet: string, row: number, col: number, applied: boolean): void
+}
+
+export interface ClientOptions {
+  snapshotBytes?: Uint8Array | null
+  name?: string
+  locale?: string
+  timezone?: string
+  /** Defaults to a new module Worker running worker.ts. */
+  port?: WorkerPort
+  echo?: EchoTarget
+}
+
+interface InitPayload {
+  snapshotBytes: Uint8Array | null
+  name?: string
+  locale?: string
+  timezone?: string
+}
+
+export interface ViewportArgs {
+  sheet: string
+  r1: number
+  c1: number
+  r2: number
+  c2: number
+  includeStyles?: boolean
+  /** Also return each cell's input (the formula, not its result). */
+  includeInputs?: boolean
+  /** Also return which cells hold a number (see ViewportResult.numbers). */
+  includeNumbers?: boolean
+}
+
+export interface ViewportResult {
+  values: string[][]
+  styles?: ExtendedCellStyle[][]
+  inputs?: string[][]
+  /**
+   * The cells holding a number (a formula result included), as flat
+   * [rowOffset, colOffset, …] from the top-left cell: the grid right-aligns
+   * them whatever they show (`1,000`, `$5`, `50%`).
+   */
+  numbers?: number[]
+}
+
+export interface ReadCellsArgs {
+  sheet: string
+  cells: { row: number; col: number }[]
+  what: ReadWhat[]
+}
+
+export interface CommandFailure {
+  command: Command
+  error: string
+}
+
+export class WorkerRequestError extends Error {
+  command: unknown
+
+  constructor(message: string, command?: unknown) {
+    super(message)
+    this.name = 'WorkerRequestError'
+    this.command = command ?? null
+  }
+}
+
+export interface WorkbookClient {
+  /** Sheet names in tab order, as of the last apply. */
+  readonly sheets: string[]
+  /** Called when an apply changes the sheet list. Returns an unsubscribe. */
+  onSheets(cb: (sheets: string[]) => void): () => void
+  /** Throws on an invalid command; it never reaches the worker. */
+  dispatch(cmd: unknown): void
+  onVersion(cb: (version: number) => void): () => void
+  onCommandError(cb: (failure: CommandFailure) => void): () => void
+  getVersion(): number
+  readViewport(args: ViewportArgs): Promise<ViewportResult>
+  readCells(args: ReadCellsArgs): Promise<{ cells: CellRead[] }>
+  /** Cells whose input contains `query`, row by row (1-based). */
+  findCells(args: { sheet: string; query: string }): Promise<{ cells: FoundCell[] }>
+  /** Every non-empty cell as flat [row, col, …] (1-based), row by row. */
+  usedCells(args: { sheet: string }): Promise<{ cells: number[] }>
+  /** Count / numeric count / sum over a range (1-based, inclusive). */
+  rangeStats(args: {
+    sheet: string
+    r1: number
+    c1: number
+    r2: number
+    c2: number
+  }): Promise<RangeStats>
+  /** Sends queued commands first, so the bytes include them. */
+  toBytes(): Promise<Uint8Array>
+  /**
+   * The workbook's bytes at this point of the dispatch order: commands
+   * dispatched before it are in them, ones dispatched after are not. With
+   * nothing dispatched or restored since the last call, returns that same
+   * promise, so taking one per undo step costs nothing when only side
+   * state changed.
+   */
+  snapshot(): Promise<Uint8Array>
+  /**
+   * Replaces the workbook with `bytes`, in order with dispatch: commands
+   * dispatched before it apply first, ones dispatched after wait for it.
+   * Takes a snapshot() promise as it is; it is settled by the time the
+   * restore reaches the worker.
+   */
+  restore(bytes: Uint8Array | Promise<Uint8Array>): Promise<void>
+  /** Resolves once no command is queued or in flight. */
+  idle(): Promise<void>
+  /**
+   * Called once if the worker dies or IronCalc traps. The workbook is gone
+   * by then: every pending and later request fails. Returns an unsubscribe.
+   */
+  onCrash(cb: (reason: string) => void): () => void
+  terminate(): void
+}
+
+function spawnWorker(): WorkerPort {
+  return new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+}
+
+export async function createWorkbookClient(options: ClientOptions = {}): Promise<WorkbookClient> {
+  const port = options.port ?? spawnWorker()
+  const echo = options.echo ?? null
+
+  // --- request / response correlation -----------------------------------
+
+  let nextReqId = 1
+  let terminated = false
+  // Why the worker stopped, when it crashed rather than being terminated.
+  let crashReason: string | null = null
+  const crashListeners = new Set<(reason: string) => void>()
+  const waiting = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>()
+
+  // The worker is gone (or its engine is): fail everything waiting on it,
+  // so callers see an error instead of hanging, and tell the listeners.
+  function crash(reason: string): void {
+    if (terminated) return
+    terminated = true
+    crashReason = reason
+    port.terminate?.()
+    for (const entry of waiting.values()) entry.reject(new WorkerRequestError(reason))
+    waiting.clear()
+    for (const cb of crashListeners) cb(reason)
+  }
+
+  port.onmessage = (event: MessageEvent) => {
+    const res = event.data as WorkerResponse
+    const entry = waiting.get(res.reqId)
+    // reqId -1 (malformed request) or a stale id: nobody is waiting.
+    if (entry) {
+      waiting.delete(res.reqId)
+      if ('error' in res) entry.reject(new WorkerRequestError(res.error.message, res.error.command))
+      else entry.resolve(res.result)
+    }
+    if ('error' in res && res.error.fatal) crash(res.error.message)
+  }
+  port.onerror = (event: ErrorEvent) => crash(`worker error: ${event.message || 'unknown'}`)
+  port.onmessageerror = () => crash('worker sent a message that could not be read')
+
+  function request<T>(type: string, payload: unknown = {}): Promise<T> {
+    // A read that waited for pending edits can reach here after terminate().
+    if (terminated)
+      return Promise.reject(new WorkerRequestError(crashReason ?? 'worker terminated'))
+    const reqId = nextReqId++
+    return new Promise<T>((resolve, reject) => {
+      waiting.set(reqId, { resolve: resolve as (v: unknown) => void, reject })
+      port.postMessage({ reqId, type, payload })
+    })
+  }
+
+  // --- init --------------------------------------------------------------
+
+  const initPayload: InitPayload = { snapshotBytes: options.snapshotBytes ?? null }
+  if (options.name !== undefined) initPayload.name = options.name
+  if (options.locale !== undefined) initPayload.locale = options.locale
+  if (options.timezone !== undefined) initPayload.timezone = options.timezone
+  const init = await request<{ version: number; sheets: string[] }>('init', initPayload)
+
+  let version = init.version
+  const versionListeners = new Set<(version: number) => void>()
+  const errorListeners = new Set<(failure: CommandFailure) => void>()
+  let sheets = init.sheets
+  const sheetListeners = new Set<(sheets: string[]) => void>()
+
+  function setSheets(next: string[] | undefined): void {
+    if (!next || next.join('\u0000') === sheets.join('\u0000')) return
+    sheets = next
+    for (const cb of sheetListeners) cb(next)
+  }
+
+  function setVersion(v: number): void {
+    if (v === version) return
+    version = v
+    for (const cb of versionListeners) cb(v)
+  }
+
+  // `results` are the apply's per-command results; none when the whole
+  // request failed.
+  function settle(batch: Command[], results: ApplyResult[] | null): void {
+    if (!echo) return
+    batch.forEach((command, i) => {
+      if (command.type !== CommandTypes.setInput) return
+      const p = command.payload
+      echo.settleProvisional(p.sheet, p.row, p.col, !!results?.[i]?.ok)
+    })
+  }
+
+  function reportFailure(command: Command, error: string): void {
+    for (const cb of errorListeners) cb({ command, error })
+  }
+
+  // --- dispatch queue ----------------------------------------------------
+
+  // A restore or a snapshot waits in the queue like a command, so it keeps
+  // its place.
+  interface RestoreJob {
+    restore: Uint8Array | Promise<Uint8Array>
+    done(error?: Error): void
+  }
+  interface SnapshotJob {
+    snapshot: true
+    resolve(bytes: Uint8Array): void
+    reject(error: Error): void
+  }
+  type Job = Command | RestoreJob | SnapshotJob
+  const isRestore = (job: Job): job is RestoreJob => 'restore' in job
+  const isSnapshot = (job: Job): job is SnapshotJob => 'snapshot' in job
+  const isControl = (job: Job) => isRestore(job) || isSnapshot(job)
+
+  const queue: Job[] = []
+  // Dispatches and restores so far: a snapshot taken at the same count is
+  // still the workbook's state.
+  let mutations = 0
+  let lastSnapshot: { at: number; bytes: Promise<Uint8Array> } | null = null
+  let inFlight = false
+  let flushScheduled = false
+  let idleWaiters: (() => void)[] = []
+
+  function dispatch(input: unknown): void {
+    const cmd = validateCommand(input)
+    if (echo && cmd.type === CommandTypes.setInput) {
+      const p = cmd.payload
+      echo.setProvisional(p.sheet, p.row, p.col, p.input)
+    }
+    queue.push(cmd)
+    mutations++
+    scheduleFlush()
+  }
+
+  // Waiting one microtask lets a synchronous burst of dispatches (a paste,
+  // a fill) leave as one apply instead of one message each.
+  function scheduleFlush(): void {
+    if (flushScheduled) return
+    flushScheduled = true
+    queueMicrotask(() => {
+      flushScheduled = false
+      void flush()
+    })
+  }
+
+  async function flush(): Promise<void> {
+    if (inFlight) return
+    if (queue.length === 0) {
+      const waiters = idleWaiters
+      idleWaiters = []
+      for (const resolve of waiters) resolve()
+      return
+    }
+    inFlight = true
+    const head = queue[0]
+    if (head && isSnapshot(head)) {
+      queue.shift()
+      try {
+        head.resolve((await request<{ bytes: Uint8Array }>('toBytes')).bytes)
+      } catch (e) {
+        head.reject(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        inFlight = false
+      }
+      await flush()
+      return
+    }
+    if (head && isRestore(head)) {
+      queue.shift()
+      try {
+        const res = await request<{ version: number; sheets: string[] }>('restore', {
+          bytes: await head.restore,
+        })
+        setSheets(res.sheets)
+        setVersion(res.version)
+        head.done()
+      } catch (e) {
+        head.done(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        inFlight = false
+      }
+      await flush()
+      return
+    }
+    // Commands up to the next restore or snapshot go out together.
+    const stop = queue.findIndex(isControl)
+    const batch = queue.splice(0, stop === -1 ? queue.length : stop) as Command[]
+    try {
+      const res = await request<{
+        version: number
+        results: ApplyResult[]
+        sheets?: string[]
+      }>('apply', {
+        commands: batch,
+      })
+      // Settle before the version listeners run, so their clear()
+      // treats these echoes like any other cell and the refill shows
+      // evaluated values.
+      settle(batch, res.results)
+      res.results.forEach((r, i) => {
+        const command = batch[i]
+        if (!r.ok && command) reportFailure(command, r.error ?? 'unknown error')
+      })
+      setSheets(res.sheets)
+      setVersion(res.version)
+    } catch (e) {
+      // The whole request failed, so none of the batch applied.
+      settle(batch, null)
+      const message = e instanceof Error ? e.message : String(e)
+      for (const command of batch) reportFailure(command, message)
+    } finally {
+      inFlight = false
+    }
+    await flush()
+  }
+
+  function idle(): Promise<void> {
+    if (!inFlight && queue.length === 0 && !flushScheduled) return Promise.resolve()
+    return new Promise((resolve) => idleWaiters.push(resolve))
+  }
+
+  // --- public API --------------------------------------------------------
+
+  return {
+    get sheets() {
+      return sheets
+    },
+    onSheets(cb) {
+      sheetListeners.add(cb)
+      return () => sheetListeners.delete(cb)
+    },
+    dispatch,
+    onVersion(cb) {
+      versionListeners.add(cb)
+      return () => versionListeners.delete(cb)
+    },
+    onCommandError(cb) {
+      errorListeners.add(cb)
+      return () => errorListeners.delete(cb)
+    },
+    getVersion: () => version,
+    // Reads wait for the edits already dispatched, so they see them: a sheet
+    // just added exists, a cell just typed holds its new input.
+    async readViewport(args) {
+      await idle()
+      return request<ViewportResult>('readViewport', args)
+    },
+    async readCells(args) {
+      await idle()
+      return request<{ cells: CellRead[] }>('readCells', args)
+    },
+    async usedCells(args) {
+      await idle()
+      return request<{ cells: number[] }>('usedCells', args)
+    },
+    async rangeStats(args) {
+      await idle()
+      return request<RangeStats>('rangeStats', args)
+    },
+    async findCells(args) {
+      await idle()
+      return request<{ cells: FoundCell[] }>('findCells', args)
+    },
+    snapshot() {
+      if (lastSnapshot?.at === mutations) return lastSnapshot.bytes
+      const bytes = new Promise<Uint8Array>((resolve, reject) => {
+        queue.push({ snapshot: true, resolve, reject })
+        scheduleFlush()
+      })
+      const taken = { at: mutations, bytes }
+      lastSnapshot = taken
+      bytes.catch(() => {
+        if (lastSnapshot === taken) lastSnapshot = null // the next call tries again
+      })
+      return bytes
+    },
+    restore(bytes) {
+      mutations++
+      return new Promise<void>((resolve, reject) => {
+        queue.push({ restore: bytes, done: (e) => (e ? reject(e) : resolve()) })
+        scheduleFlush()
+      })
+    },
+    async toBytes() {
+      await idle()
+      return (await request<{ bytes: Uint8Array }>('toBytes')).bytes
+    },
+    idle,
+    onCrash(cb) {
+      crashListeners.add(cb)
+      return () => crashListeners.delete(cb)
+    },
+    terminate() {
+      terminated = true
+      port.terminate?.()
+      for (const entry of waiting.values())
+        entry.reject(new WorkerRequestError('worker terminated'))
+      waiting.clear()
+    },
+  }
+}

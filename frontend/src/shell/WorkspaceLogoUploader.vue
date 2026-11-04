@@ -13,8 +13,7 @@
         cascade-layered and loses here, painting the wrong color. Keep as-is. -->
         <button
           type="button"
-          class="relative block size-[52px] overflow-hidden rounded-[10px] border border-[color:var(--outline-gray-2)] bg-surface-base
-            focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3 focus-visible:border-none"
+          class="relative block size-[52px] overflow-hidden rounded-[10px] border border-[color:var(--outline-gray-2)] bg-surface-base focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3 focus-visible:border-none"
           :class="!logo && 'border-dashed'"
           :aria-label="logo ? __('Replace logo') : __('Upload logo')"
           @click="openFileSelector"
@@ -39,9 +38,7 @@
     <button
       v-if="logo"
       type="button"
-      class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-surface-gray-7 text-white
-        opacity-0 group-hover:opacity-100 focus:opacity-100
-        focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+      class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-surface-gray-7 text-white opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
       :aria-label="__('Remove logo')"
       @click="logo = ''"
     >
@@ -54,5 +51,4 @@
 import { FileUploader } from 'frappe-ui'
 
 const logo = defineModel<string>({ required: true })
-
 </script>

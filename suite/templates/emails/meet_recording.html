@@ -27,7 +27,7 @@
 						<td align="center" style="background-color: #ffffff; border: 1px solid #ededed; border-radius: 16px; padding: 36px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
 							<p style="font-size: 15px; line-height: 1.5; color: #171717; max-width: 400px; margin: 0 auto {{ '24px' if link else '0' }};">{{ description }}</p>
 							{% if link %}
-							<a class="btn" href="{{ link }}" style="display: inline-block; padding: 12px 24px; font-size: 14px; color: #ffffff; background-color: #171717; text-decoration: none; border-radius: 8px; border: 0; margin: 0;">{{ _("Open recording in Drive") }}</a>
+							<a class="btn" href="{{ link }}" style="display: inline-block; padding: 12px 24px; font-size: 14px; color: #ffffff; background-color: #171717; text-decoration: none; border-radius: 8px; border: 0; margin: 0;">{{ link_label or _("Open recording in Drive") }}</a>
 							{% endif %}
 						</td>
 					</tr>

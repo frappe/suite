@@ -58,17 +58,17 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
         from suite.mail.doctype.screened_email_address import screened_email_address as module
 
         self._insert_global_rule("@trusted.com", "Accepted")
-        self._insert_global_rule("spammer@junk.com", "Reject")
+        self._insert_global_rule("spammer@junk.com", "Spam")
 
         # The account screens one of the globally screened values itself — its action must win.
-        account_rows = [frappe._dict(email="@Trusted.com", action="Reject", creation=None, modified=None)]
+        account_rows = [frappe._dict(email="@Trusted.com", action="Spam", creation=None, modified=None)]
         with patch.object(module, "get_screened_email_addresses", return_value=account_rows):
             effective = module.get_effective_screened_email_addresses("dummy-account")
 
         actions = {row.email.lower(): row.action for row in effective}
         self.assertEqual(len(effective), 2)
-        self.assertEqual(actions["@trusted.com"], "Reject")
-        self.assertEqual(actions["spammer@junk.com"], "Reject")
+        self.assertEqual(actions["@trusted.com"], "Spam")
+        self.assertEqual(actions["spammer@junk.com"], "Spam")
 
     def test_is_globally_accepted(self):
         from suite.mail.doctype.screened_email_address.screened_email_address import (
@@ -77,10 +77,10 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
         )
 
         self._insert_global_rule("@Trusted.com", "Accepted")
-        self._insert_global_rule("@blocked.com", "Reject")
+        self._insert_global_rule("@blocked.com", "Spam")
         self._insert_global_rule("someone@accepted.com", "Accepted")
 
-        # Only Accepted rules count (Reject domains don't), lowercased with the '@' prefix kept.
+        # Only Accepted rules count (Spam domains don't), lowercased with the '@' prefix kept.
         self.assertEqual(get_global_accepted_values(), {"@trusted.com", "someone@accepted.com"})
 
         # Covered: by domain rule (case-insensitively) or by exact address.
@@ -89,12 +89,12 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
         self.assertTrue(is_globally_accepted("Someone@accepted.com"))
 
         # Not covered: other senders from a domain with only an exact-address rule, or from a
-        # domain screened with Reject.
+        # domain screened with Spam.
         self.assertFalse(is_globally_accepted("other@accepted.com"))
         self.assertFalse(is_globally_accepted("anyone@blocked.com"))
 
     def test_duplicate_global_screened_email(self):
-        self._insert_global_rule("dup@example.com", "Reject")
+        self._insert_global_rule("dup@example.com", "Spam")
 
         with self.assertRaises(frappe.ValidationError):
             self._insert_global_rule("dup@example.com", "Spam")
@@ -103,7 +103,7 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
         frappe.set_user("Guest")
 
         doc = frappe.get_doc(
-            {"doctype": "Screened Email Address", "email": "global@example.com", "action": "Reject"}
+            {"doctype": "Screened Email Address", "email": "global@example.com", "action": "Spam"}
         )
         # ignore_permissions bypasses the doctype-level create check, so this exercises the
         # global-rule guard in validate() specifically.

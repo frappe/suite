@@ -6,6 +6,11 @@
 !frontend/
 frontend/*
 !frontend/package.json
+!frontend/packages/
+frontend/packages/*
+!frontend/packages/collab-client/
+frontend/packages/collab-client/*
+!frontend/packages/collab-client/package.json
 
 !e2e/
 e2e/*

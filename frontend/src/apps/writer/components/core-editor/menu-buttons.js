@@ -1,41 +1,48 @@
-import { h, defineAsyncComponent } from 'vue'
-import ManageFont from '@/apps/writer/components/ManageFont.vue'
-import DropdownMenuGroup from '@/apps/writer/components/core-editor/DropdownMenuGroup.vue'
+import LucideAlignLeft from '~icons/lucide/align-left'
+import LucideAlignVerticalSpacingAround from '~icons/lucide/align-vertical-space-around'
+import LucideBrushCleaning from '~icons/lucide/brush-cleaning'
+import LucideHeading from '~icons/lucide/heading'
+import LucidePaintRoller from '~icons/lucide/paint-roller'
+import LucideSeparatorHorizontal from '~icons/lucide/separator-horizontal'
+import LucideSettings from '~icons/lucide/settings'
 import {
-  Bold,
-  Italic,
-  Strike,
-  InsertLink,
-  FontColor,
-  AlignLeft,
   AlignCenter,
+  AlignLeft,
   AlignRight,
-  BulletList,
-  OrderedList,
   Blockquote,
-  InlineCode,
-  InsertImage,
-  InsertVideo,
-  InsertIframe,
-  InsertTable,
-  Paragraph,
+  Bold,
+  BulletList,
+  FontColor,
   H1,
   H2,
   H3,
   H4,
+  InlineCode,
+  InsertIframe,
+  InsertImage,
+  InsertLink,
+  InsertTable,
+  InsertVideo,
+  Italic,
+  OrderedList,
+  Paragraph,
   Separator,
+  Strike,
 } from 'frappe-ui/editor'
+import { defineAsyncComponent, h } from 'vue'
 
-import LucidePaintRoller from '~icons/lucide/paint-roller'
-import LucideBrushCleaning from '~icons/lucide/brush-cleaning'
-import LucideSettings from '~icons/lucide/settings'
-import LucideForm from '~icons/lucide/sticky-note'
-import LucideAlignVerticalSpacingAround from '~icons/lucide/align-vertical-space-around'
-import LucideHeading from '~icons/lucide/heading'
-import LucideAlignLeft from '~icons/lucide/align-left'
+import DropdownMenuGroup from '@/apps/writer/components/core-editor/DropdownMenuGroup.vue'
+import ManageFont from '@/apps/writer/components/ManageFont.vue'
 
-const SpacingDialogAsync = defineAsyncComponent(() =>
-  import('@/apps/writer/components/SpacingDialog.vue'),
+// frappe-ui's editor commands carry Title Case labels; Writer uses sentence case.
+const relabel = (item, label) => ({ ...item, label })
+const FontColorItem = relabel(FontColor, 'Font color')
+export const BulletListItem = relabel(BulletList, 'Bullet list')
+export const OrderedListItem = relabel(OrderedList, 'Numbered list')
+const InsertImageItem = relabel(InsertImage, 'Image')
+
+const SpacingDialogAsync = defineAsyncComponent(
+  () => import('@/apps/writer/components/SpacingDialog.vue'),
 )
 
 const Underline = {
@@ -47,16 +54,19 @@ const Underline = {
 }
 
 const TaskListItem = {
-  label: 'Task List',
+  label: 'Task list',
   icon: 'lucide-list-checks',
   action: (e) => e.chain().focus().toggleTaskList().run(),
   isActive: (e) => e.isActive('taskList'),
 }
 
 const TableOfContentsItem = {
-  label: 'Table of Contents',
+  label: 'Table of contents',
   icon: 'lucide-table-of-contents',
-  action: (e) => { e.commands.insertTableOfContentsNode(); return true },
+  action: (e) => {
+    e.commands.insertTableOfContentsNode()
+    return true
+  },
   isAvailable: (e) => typeof e.commands.insertTableOfContentsNode === 'function',
 }
 
@@ -76,7 +86,11 @@ const IndentList = {
 
 // Dropdown group items
 const headingItems = [Paragraph, H1, H2, H3, H4]
-const alignItems = [AlignLeft, AlignCenter, AlignRight]
+const alignItems = [
+  relabel(AlignLeft, 'Align left'),
+  relabel(AlignCenter, 'Align center'),
+  relabel(AlignRight, 'Align right'),
+]
 
 export function buildMenuButtons({ editor, settings, isPainting, openSettings }) {
   return [
@@ -97,7 +111,7 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
     Underline,
     Strike,
     InsertLink,
-    FontColor,
+    FontColorItem,
     // Alignment — dropdown group
     {
       label: 'Align',
@@ -110,13 +124,11 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
       action: () => {},
     },
     {
-      label: 'Paint Styles',
+      label: 'Paint styles',
       icon: LucidePaintRoller,
       isActive: () => isPainting.value,
-      action: (e) => {
-        e.commands.focus()
-        e.commands.storeStyles()
-      },
+      // One chain, so the transaction it ends with shows the armed painter.
+      action: (e) => e.chain().focus().storeStyles().run(),
     },
     {
       label: 'Clear formatting',
@@ -130,7 +142,7 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
     },
     Separator,
     {
-      label: 'FontOptions',
+      label: 'Font options',
       component: h(ManageFont, {
         editor,
         font_size: +settings.font_size || 15,
@@ -139,13 +151,13 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
       action: () => {},
     },
     Separator,
-    BulletList,
-    OrderedList,
+    BulletListItem,
+    OrderedListItem,
     TaskListItem,
     Blockquote,
     InlineCode,
     Separator,
-    InsertImage,
+    InsertImageItem,
     InsertVideo,
     InsertIframe,
     Separator,
@@ -153,12 +165,12 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
     TableOfContentsItem,
     Separator,
     {
-      label: 'Page Break',
-      icon: LucideForm,
+      label: 'Page break',
+      icon: LucideSeparatorHorizontal,
       action: (e) => e.commands.setPageBreak(),
     },
     {
-      label: 'Custom Spacing',
+      label: 'Custom spacing',
       icon: LucideAlignVerticalSpacingAround,
       component: h(SpacingDialogAsync, {
         settings,

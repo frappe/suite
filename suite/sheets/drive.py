@@ -1,0 +1,880 @@
+"""Sheets' one declaration to Drive (§10.7).
+
+Drive owns a sheet's title, place, grants, lifecycle, versions, comments, and
+byte charge. Sheets owns the body. A sheet's live body is its collaborative
+document on the content layer (`suite.sheets.content`, wrapped round `SPEC` by
+`with_content`); `sheets_data` is the old body, which the content layer converts
+and these callbacks still write for a sheet it hasn't converted. Everything Drive
+needs is the `SPEC` below, registered through the `drive_content_types` hook.
+
+Every callable here takes and returns names, never documents, and reaches Drive
+only through `from suite import drive` (ARCHITECTURE.md, rule 2.2).
+
+## What a sheet costs
+
+The body is free. `Sheet.sheets_data` is a column, not a blob, so a sheet's own
+bytes are never admitted against a root (§7.1). A version is not free:
+`version_bytes` hands Drive one JSON envelope, Drive stores it with `put_blob`
+and admits its size, and `delete_version` releases it again.
+
+## The two satellites
+
+`Sheet Op Log` and `Sheet Collab State` take their rights from the sheet's node:
+Read to see, Edit to change. A sheet's versions are not a satellite: they are
+`Drive Node Version` rows, written through `version_bytes` and put back through
+`restore_version`.
+
+## The old tables
+
+`Sheet Op Log`, `Sheet Seq`, `Sheet Collab State` and `Sheet Cell` are no longer
+written: the content layer keeps a sheet's history now. Their rows stay, since
+Drive's develop migration (`suite.drive.patches.build`) still reads them, and a
+purge still deletes a sheet's rows from all four.
+
+## Media
+
+A sheet body names no media node today: there is no image cell, no chart image,
+and no attachment. `used_nodes` still answers, and it answers wide. It walks
+every string in the decoded workbook at every depth and reports every whole
+token that could be a node id, because §10.6 trashes what the app does not
+report. Over-reporting only keeps media alive; under-reporting loses a picture.
+
+`remap_media` is deliberately **not** declared. `nodes._copy_document_media`
+copies a document's media only for an app that can rewrite its own references,
+and a Sheets body has no reference to rewrite. Declaring a no-op would let a
+copy carry media nodes that nothing names, charge the destination root for them,
+and have §10.6 trash them seven days later. When Sheets grows an image cell,
+that ticket declares `remap_media` and narrows `used_nodes` with it.
+
+## Transactions
+
+Drive runs every callback inside the savepoint of the workflow that calls it, so
+any refusal rolls the node and the sheet back together. A
+callback that cannot honour its contract raises rather than half-writing, and
+none of them commits. `content.call_app` and `content.call_app_stream` enforce
+that last part.
+"""
+
+import csv
+import dataclasses
+import datetime
+import io
+import itertools
+import json
+import re
+import zipfile
+
+import frappe
+from frappe import _
+
+from suite import drive
+from suite.content import with_content
+from suite.sheets.doctype.sheet.storage import (
+    MAX_SHEETS_DATA_BYTES,
+    decode_sheets_data,
+    encode_sheets_data,
+)
+
+DOCTYPE = "Sheet"
+MIME = "frappe/sheet"
+NODE_FIELD = "node"
+
+OP_LOG_DOCTYPE = "Sheet Op Log"
+COLLAB_STATE_DOCTYPE = "Sheet Collab State"
+SEQ_DOCTYPE = "Sheet Seq"
+CELL_DOCTYPE = "Sheet Cell"
+
+# `Sheet.sheets_data`'s own empty value. The editor's loader falls back to a
+# fresh `Sheet1` when the packed payload is absent, so `{}` is a valid workbook.
+EMPTY_WORKBOOK = "{}"
+
+VERSION_SCHEMA = "sheet/1"
+VERSION_MIME = "application/json"
+
+# The compact row-major wire shape the client reads and writes
+# (`frontend/src/apps/sheets/utils/sheet-codec.js`). An importer that wrote any
+# other shape would load as an empty workbook.
+PACK_VERSION = 2
+DEFAULT_SUB_SHEET = "Sheet1"
+
+# A media reference, if a body ever holds one, is a whole node id. The pattern
+# matches a token no colour, formula, or URL can be: each of those carries a
+# character an id cannot.
+MEDIA_ID = re.compile(r"[A-Za-z0-9_-]{1,140}")
+
+# Import bounds. The output is capped by `MAX_SHEETS_DATA_BYTES` anyway, but a
+# workbook that would exceed it must be refused before it is materialised, not
+# after. `MAX_IMPORT_BYTES` bounds the compressed source, and the cell and sheet
+# counts bound the parse itself.
+MAX_IMPORT_BYTES = 40 * 1024 * 1024
+MAX_IMPORT_CELLS = 2_000_000
+CSV_SAMPLE_ROWS = 20
+CSV_SEPARATORS = (";", "\t", "|", ",")
+MAX_IMPORT_SHEETS = 200
+
+# The xlsx package is a zip of XML, and every one of those three layers expands.
+# `MAX_IMPORT_BYTES` bounds the compressed source and nothing else, so each
+# layer states its own bound:
+#
+#   MAX_IMPORT_UNZIPPED   the sum of the members' uncompressed sizes, refused
+#                         before a single byte is inflated. A zip bomb is a
+#                         small file that claims a large one.
+#   MAX_IMPORT_SLOTS      the cells this actually materialises. A row is a
+#                         dense list, so one cell at column XFD costs 16384
+#                         slots, and `MAX_IMPORT_CELLS` counts none of them.
+#   MAX_IMPORT_MERGED     the cells every merge range covers. One
+#                         `<mergeCell ref="A1:XFD1048576"/>` is 17 billion of
+#                         them in a 4 KB file.
+MAX_IMPORT_UNZIPPED = 400 * 1024 * 1024
+MAX_IMPORT_SLOTS = 4_000_000
+MAX_IMPORT_MERGED = 500_000
+MAX_IMPORT_MERGE_RANGES = 50_000
+
+# One version envelope is one workbook plus its JSON framing, so the body cap
+# plus a margin is the whole bound. Drive wrote every blob this reads, but a
+# version Build migrated from a legacy snapshot did not go through
+# `Sheet.validate`.
+MAX_VERSION_BYTES = MAX_SHEETS_DATA_BYTES + 1024 * 1024
+
+
+class UnreadableWorkbook(frappe.ValidationError):
+    """One xlsx openpyxl refused to read."""
+
+
+def _read_bounded(stream, limit: int, what: str) -> bytes:
+    """Read one stream, refusing at `limit` rather than after it.
+
+    One byte past the bound is enough to know, so nothing larger is ever held.
+    """
+    raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        frappe.throw(
+            _("That {0} is larger than {1} MB and cannot be read").format(what, limit // (1024 * 1024)),
+            frappe.ValidationError,
+        )
+    return raw
+
+
+# ── The ContentTypeSpec callbacks ────────────────────────────────────────────
+
+
+def create_empty(node: str) -> str:
+    """Insert one empty sheet bound to `node`."""
+    return _insert_sheet(node, EMPTY_WORKBOOK)
+
+
+def duplicate(source_docname: str, node: str) -> str:
+    """Copy one workbook under a new node, for copy and new-from-template.
+
+    The old body is carried and none of its old tables' rows: §8.9 gives a copy
+    no history. A converted sheet's collaborative document is copied by the
+    content layer (`with_content`), not here.
+    """
+    stored = frappe.db.get_value(DOCTYPE, source_docname, "sheets_data")
+    if stored is None and not frappe.db.exists(DOCTYPE, source_docname):
+        frappe.throw(_("The sheet to copy was not found"), frappe.DoesNotExistError)
+    return _insert_sheet(node, decode_sheets_data(stored))
+
+
+def import_from_file(file_node: str, node: str) -> str:
+    """Turn one xlsx or CSV file node into a sheet bound to `node` (§10.1).
+
+    Drive has already checked READ on the file and UPLOAD on the destination.
+    The bytes come back through `drive.read_file`, because only Sheets can parse
+    a workbook and no app reads a `Drive Node` blob itself.
+
+    The import mirrors the browser importer
+    (`frontend/src/apps/sheets/components/SheetEditor/useExportImport.js`): every
+    worksheet becomes a sub-sheet, each cell carries its value or formula and its
+    number format, and the worksheet's merges come across. What the browser gets
+    from SheetJS and this does not is a workbook-level style sheet, so borders,
+    fills, and fonts are dropped. Losing decoration is recoverable; losing a
+    formula or a merge is not, and neither is dropped here. A CSV becomes one
+    sub-sheet of its values, as the browser's CSV import types them in. The body
+    names the file it came from, for the editor's notice after the first open.
+    """
+    stream, _mime = drive.read_file(file_node)
+    try:
+        raw = _read_bounded(stream, MAX_IMPORT_BYTES, _("spreadsheet"))
+    finally:
+        stream.close()
+    # An xlsx is a zip. The stored mime cannot tell a CSV apart: the upload
+    # sniffs the bytes, and a CSV has no signature to sniff.
+    is_xlsx = zipfile.is_zipfile(io.BytesIO(raw))
+    source_title = drive.node_title(file_node)
+    workbook = _workbook_from_xlsx(raw, source_title) if is_xlsx else _workbook_from_csv(raw, source_title)
+    return _insert_sheet(node, workbook)
+
+
+def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
+    """Return the bytes Drive stores as one immutable version.
+
+    The envelope carries the head seq beside the workbook so a restore can say
+    which point in the op log it is putting back.
+    """
+    row = frappe.db.get_value(DOCTYPE, docname, ("sheets_data", "head_seq"), as_dict=True)
+    if not row:
+        frappe.throw(_("That sheet was not found"), frappe.DoesNotExistError)
+    payload = {
+        "schema": VERSION_SCHEMA,
+        "sheets_data": decode_sheets_data(row.sheets_data),
+        "head_seq": int(row.head_seq or 0),
+    }
+    return io.BytesIO(json.dumps(payload).encode("utf-8")), VERSION_MIME
+
+
+def restore_version(docname: str, stream) -> None:
+    """Put one stored version back into the body.
+
+    Drive has already taken a version of the current state, so this is not
+    destructive. A payload that is not a `sheet/1` envelope is refused rather
+    than half-applied: a truncated workbook would read as an empty one. The
+    content layer refuses a restore into a converted sheet, so this only ever
+    writes the old body of one it hasn't converted.
+    """
+    payload = _version_payload(_read_bounded(stream, MAX_VERSION_BYTES, _("sheet version")))
+    if not frappe.db.exists(DOCTYPE, docname):
+        frappe.throw(_("That sheet was not found"), frappe.DoesNotExistError)
+    frappe.db.set_value(DOCTYPE, docname, "sheets_data", encode_sheets_data(payload["sheets_data"]))
+
+
+def on_purge(docname: str) -> None:
+    """Delete the sheet and every app-owned row behind it.
+
+    §8.8 sends a purged node's app data with it, so the cascade covers all four
+    side tables, including the dead `Sheet Cell`. The versions are Drive's and
+    go with the node.
+
+    `delete_permanently` is what makes a purge a purge. Without it Frappe keeps
+    the whole row as JSON in `Deleted Document`
+    (`frappe/model/delete_doc.py:add_to_deleted_document`), so the workbook would
+    outlive the §8.8 purge that was meant to remove it.
+    """
+    frappe.db.delete(OP_LOG_DOCTYPE, {"sheet": docname})
+    frappe.db.delete(SEQ_DOCTYPE, {"sheet": docname})
+    frappe.db.delete(COLLAB_STATE_DOCTYPE, {"sheet": docname})
+    frappe.db.delete(CELL_DOCTYPE, {"parent_sheet": docname})
+    frappe.delete_doc(
+        DOCTYPE,
+        docname,
+        force=1,
+        ignore_permissions=True,
+        ignore_missing=True,
+        delete_permanently=True,
+    )
+
+
+def used_nodes(docname: str) -> set[str]:
+    """Answer the media node ids this workbook could still name (§10.6).
+
+    Wide on purpose. Every string in the decoded body is read at every depth and
+    every whole id-shaped token is reported, so no body shape Sheets has not
+    anticipated can make this answer "names nothing" and let the daily sweep
+    trash a live picture. A cell holding the word `total` is reported too, which
+    costs the sweep nothing.
+
+    A body that will not decode reports nothing it can read rather than raising:
+    the sweep must not stop for one bad row, and `_workbook_strings` already
+    falls back to the stored text.
+    """
+    stored = frappe.db.get_value(DOCTYPE, docname, "sheets_data")
+    if stored is None and not frappe.db.exists(DOCTYPE, docname):
+        return set()
+    found: set[str] = set()
+    for text in _workbook_strings(stored):
+        if MEDIA_ID.fullmatch(text):
+            found.add(text)
+    return found
+
+
+def _never_called(*_args) -> None:
+    """Stand in for a callback `with_content` requires and Sheets doesn't have; SPEC drops it again."""
+    raise NotImplementedError("Sheets has no export and moves no pictures")
+
+
+_ROW_SPEC = drive.ContentTypeSpec(
+    doctype=DOCTYPE,
+    mime=MIME,
+    node_field=NODE_FIELD,
+    listing_type="spreadsheet",
+    # §10.7, accepted 2026-09-05: Sheets stays hidden over WebDAV for this
+    # release, so there is no default export and no export at all. Enabling one
+    # is later work, not a requirement of the rewrite.
+    default_export=None,
+    export_formats=(),
+    create_empty=create_empty,
+    duplicate=duplicate,
+    import_from_file=import_from_file,
+    # Never called: `export_formats` is empty, and SPEC sets it back to None
+    export=_never_called,
+    version_bytes=version_bytes,
+    restore_version=restore_version,
+    pushes_preview=False,
+    on_purge=on_purge,
+    satellites=(
+        drive.Satellite(doctype=OP_LOG_DOCTYPE, link_field="sheet"),
+        drive.Satellite(doctype=COLLAB_STATE_DOCTYPE, link_field="sheet"),
+    ),
+    used_nodes=used_nodes,
+    # Never called: SPEC sets it back to None, so Drive copies no pictures with a sheet
+    remap_media=_never_called,
+    legacy_fields=(),
+)
+
+# The content layer's branch for a sheet in a log (suite.content.with_content) around the row-only
+# callbacks above. Sheets has no export and its collab docs name no pictures (its editor's `media` is
+# None), so Drive keeps offering no export and copying no pictures, as before collab
+SPEC = dataclasses.replace(with_content(_ROW_SPEC), export=None, remap_media=None)
+
+
+# ── The Drive calls Sheets makes ─────────────────────────────────────────────
+
+
+def node_of(docname: str) -> str | None:
+    """Return the Drive node one sheet carries, or None when no such sheet exists."""
+    return frappe.db.get_value(DOCTYPE, docname, NODE_FIELD) or None
+
+
+def require_sheet(docname: str, *, write: bool = False) -> None:
+    """Raise unless the caller may read, or write, one sheet's body.
+
+    The answer is Drive's, with this request's link credentials, so a Guest
+    who holds a link reaches it the way Drive does. Drive opens a trashed node
+    read-only and refuses a write to it. A name no sheet carries is refused
+    the way Drive refuses a node the caller may not see (§5.4): the reply
+    never says whether the sheet exists.
+    """
+    node = node_of(docname)
+    if not node:
+        raise drive.DriveNotFound(_("That sheet was not found"))
+    drive.check(node, drive.EDIT if write else drive.READ)
+
+
+def may_write_sheet(docname: str) -> bool:
+    """True when `require_sheet(docname, write=True)` would pass."""
+    try:
+        require_sheet(docname, write=True)
+    except drive.DriveError:
+        return False
+    return True
+
+
+def docname_for_node(node: str) -> str | None:
+    """Return the sheet bound to this Drive node, or None.
+
+    The reverse of `node_of`. `drive.create_document` hands back the node id,
+    never the document name, so an app-facing create endpoint that must answer
+    with a sheet id reads it back through the reciprocal link `_link_document`
+    guarantees.
+    """
+    return frappe.db.get_value(DOCTYPE, {NODE_FIELD: node}, "name") or None
+
+
+# ── Sheet rows ───────────────────────────────────────────────────────────────
+
+
+def _insert_sheet(node: str, plain: str) -> str:
+    """Insert one sheet bound to `node`."""
+    document = frappe.new_doc(DOCTYPE)
+    document.set(NODE_FIELD, node)
+    document.sheets_data = encode_sheets_data(plain)
+    document.head_seq = 0
+    document.insert(ignore_permissions=True)
+    return document.name
+
+
+def _version_payload(raw: bytes) -> dict:
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        payload = None
+    if not isinstance(payload, dict) or payload.get("schema") != VERSION_SCHEMA:
+        frappe.throw(
+            _("This sheet version predates Drive history and cannot be restored"),
+            frappe.ValidationError,
+        )
+    workbook = payload.get("sheets_data")
+    if not isinstance(workbook, str) or not workbook:
+        frappe.throw(_("This sheet version cannot be read"), frappe.ValidationError)
+    try:
+        json.loads(workbook)
+    except ValueError:
+        frappe.throw(_("This sheet version cannot be read"), frappe.ValidationError)
+    head_seq = payload.get("head_seq")
+    return {"sheets_data": workbook, "head_seq": int(head_seq) if isinstance(head_seq, int) else 0}
+
+
+def _workbook_strings(stored: str | None):
+    """Yield every string in one stored workbook, at every depth.
+
+    A body that will not decode or will not parse yields the stored text itself,
+    so an unreadable row still reports whatever it names rather than reporting
+    nothing at all.
+    """
+    if not stored:
+        return
+    plain = stored
+    try:
+        plain = decode_sheets_data(stored)
+        parsed = json.loads(plain)
+    except Exception:
+        # `plain` is the decoded workbook whenever the envelope opened, and the
+        # stored text only when it did not. Scanning the base64 envelope instead
+        # would report nothing but base64, which is the under-reporting §10.6
+        # trashes live media for.
+        yield from MEDIA_ID.findall(plain)
+        return
+    stack = [parsed]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            stack.extend(value.keys())
+            stack.extend(value.values())
+        elif isinstance(value, list | tuple):
+            stack.extend(value)
+
+
+# ── xlsx import ──────────────────────────────────────────────────────────────
+
+
+def _validate_package(raw: bytes) -> None:
+    """Refuse an xlsx package before anything inflates it.
+
+    Two things `MAX_IMPORT_BYTES` cannot see, because it measures the file on
+    the wire:
+
+    Zip expansion. The members' declared uncompressed sizes are read from the
+    central directory, which costs nothing, and a package that claims more than
+    `MAX_IMPORT_UNZIPPED` is refused without inflating a byte.
+
+    Entity expansion. `xml.etree.ElementTree` expands internal entities, so a
+    worksheet part carrying a nested `<!ENTITY>` chain is a billion-laughs bomb
+    against both openpyxl's parser and `_merge_ranges`. A spreadsheet has no
+    document type declaration, so the presence of one is the refusal.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as package:
+            declared = sum(max(0, item.file_size) for item in package.infolist())
+            if declared > MAX_IMPORT_UNZIPPED:
+                frappe.throw(
+                    _("That spreadsheet expands to more than {0} MB and cannot be imported").format(
+                        MAX_IMPORT_UNZIPPED // (1024 * 1024)
+                    ),
+                    frappe.ValidationError,
+                )
+            for item in package.infolist():
+                if not item.filename.endswith(".xml") and not item.filename.endswith(".rels"):
+                    continue
+                # The prologue is all a DTD can live in, so this reads the head
+                # of each part rather than the part.
+                with package.open(item) as handle:
+                    if b"<!DOCTYPE" in handle.read(_DTD_PROBE_BYTES):
+                        raise UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read"))
+    except (zipfile.BadZipFile, KeyError, RuntimeError, EOFError) as unreadable:
+        raise UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read")) from unreadable
+
+
+# A document type declaration must precede the root element, so the first few
+# kilobytes of a part are the whole search space.
+_DTD_PROBE_BYTES = 8192
+
+
+def _workbook_from_xlsx(raw: bytes, source_title: str = "") -> str:
+    """Parse one xlsx into the workbook JSON the client reads.
+
+    openpyxl is loaded read-only, so the whole workbook is never materialised in
+    memory. Read-only worksheets carry no merge ranges, so those are read from
+    the package XML directly — the same place openpyxl reads them from.
+    """
+    from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
+
+    _validate_package(raw)
+    source = io.BytesIO(raw)
+    try:
+        book = load_workbook(source, read_only=True, data_only=False)
+    except (InvalidFileException, zipfile.BadZipFile, KeyError, ValueError) as unreadable:
+        raise UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read")) from unreadable
+
+    try:
+        names = list(book.sheetnames)[:MAX_IMPORT_SHEETS]
+        merges = _merge_ranges(raw, _worksheet_parts(book, names))
+        packed: dict[str, dict] = {}
+        formats: dict[str, dict] = {}
+        merged: dict[str, dict] = {}
+        seen = 0
+        slots = 0
+        for name in names:
+            rows, cell_formats, seen, slots = _read_worksheet(book[name], seen, slots)
+            packed[name] = {"rows": rows}
+            if cell_formats:
+                formats[name] = {"cells": cell_formats, "cols": {}, "rows": {}}
+            slice_ = _merge_slice(merges.get(name) or ())
+            if slice_:
+                merged[name] = slice_
+    finally:
+        book.close()
+
+    return _workbook_json(packed, formats, merged, source_title)
+
+
+def _workbook_from_csv(raw: bytes, source_title: str = "") -> str:
+    """Parse one CSV into the workbook JSON the client reads: one sub-sheet, every value as typed.
+
+    Text with no row of two or more values is not a table, and binary is not
+    text: both are refused.
+    """
+    unreadable = UnreadableWorkbook(_("That file is not a spreadsheet Sheets can read"))
+    if b"\0" in raw:
+        raise unreadable
+    try:
+        text = _decode_csv(raw)
+        records = csv.reader(io.StringIO(text, newline=""), delimiter=_csv_separator(text))
+        rows: dict[str, list] = {}
+        seen = 0
+        is_table = False
+        for index, record in enumerate(records):
+            is_table = is_table or len(record) > 1
+            seen += len(record)
+            if seen > MAX_IMPORT_CELLS:
+                frappe.throw(
+                    _("That spreadsheet has more than {0} cells and cannot be imported").format(
+                        MAX_IMPORT_CELLS
+                    ),
+                    frappe.ValidationError,
+                )
+            if any(record):
+                rows[str(index)] = [value if value != "" else None for value in record]
+    except (UnicodeDecodeError, csv.Error) as error:
+        raise unreadable from error
+    if not is_table:
+        raise unreadable
+    return _workbook_json({DEFAULT_SUB_SHEET: {"rows": rows}}, {}, {}, source_title)
+
+
+def _decode_csv(raw: bytes) -> str:
+    """UTF-8 if it is valid, else Windows-1252, which is what Excel saves. Strict, so binary still fails."""
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("cp1252")
+
+
+def _csv_separator(text: str) -> str:
+    """The separator that gives the first rows the most columns in every row; a comma if none splits them all.
+
+    Every row must split, so one column or free text stays with the comma. A
+    semicolon file often has decimal commas, so on a tie the comma comes last.
+    """
+    sample = list(itertools.islice(io.StringIO(text, newline=""), CSV_SAMPLE_ROWS))
+    best, most = ",", 1
+    for separator in CSV_SEPARATORS:
+        rows = [row for row in csv.reader(sample, delimiter=separator) if any(row)]
+        columns = min((len(row) for row in rows), default=0)
+        if columns > most:
+            best, most = separator, columns
+    return best
+
+
+def _workbook_json(
+    packed: dict[str, dict], formats: dict[str, dict], merged: dict[str, dict], source_title: str = ""
+) -> str:
+    """The `sheets_data` JSON for imported sub-sheets, refused over the workbook limit."""
+    workbook = {
+        "sheet": {
+            "v": PACK_VERSION,
+            "current": next(iter(packed), DEFAULT_SUB_SHEET),
+            "sheets": packed,
+        },
+        "formats": formats,
+        "merge": merged or None,
+        # The file this body was made from. The content layer converts it
+        # like a develop sheet's body.
+        "imported_from": source_title,
+    }
+    plain = json.dumps(workbook)
+    if len(plain.encode("utf-8")) > MAX_SHEETS_DATA_BYTES:
+        frappe.throw(
+            _("That spreadsheet is over the {0} MB workbook limit").format(
+                MAX_SHEETS_DATA_BYTES // (1024 * 1024)
+            ),
+            frappe.ValidationError,
+        )
+    return plain
+
+
+def _read_worksheet(worksheet, seen: int, slots: int) -> tuple[dict, dict, int, int]:
+    """Pack one worksheet into row arrays plus its per-cell number formats.
+
+    `seen` counts cells that carry a value; `slots` counts what the packing
+    actually allocates. They are not the same number, and only the second one
+    bounds memory: a row is stored as a dense list, so a single cell at column
+    XFD costs 16384 slots. 20000 such cells is 327 million of them, which is a
+    100 KB file that exhausts a worker.
+    """
+    rows: dict[str, list] = {}
+    formats: dict[str, str] = {}
+    for row in worksheet.iter_rows():
+        for cell in row:
+            if cell.value is None:
+                continue
+            seen += 1
+            if seen > MAX_IMPORT_CELLS:
+                frappe.throw(
+                    _("That spreadsheet has more than {0} cells and cannot be imported").format(
+                        MAX_IMPORT_CELLS
+                    ),
+                    frappe.ValidationError,
+                )
+            value = _cell_value(cell.value)
+            if value == "":
+                continue
+            row_index = int(cell.row) - 1
+            column_index = int(cell.column) - 1
+            packed = rows.setdefault(str(row_index), [])
+            slots += max(0, column_index + 1 - len(packed))
+            if slots > MAX_IMPORT_SLOTS:
+                frappe.throw(
+                    _("That spreadsheet is too sparse to import: it spans more than {0} cells").format(
+                        MAX_IMPORT_SLOTS
+                    ),
+                    frappe.ValidationError,
+                )
+            while len(packed) <= column_index:
+                packed.append(None)
+            packed[column_index] = value
+            number_format = _number_format(getattr(cell, "number_format", None))
+            if number_format:
+                formats[f"{_column_label(column_index)}{row_index + 1}"] = {"numberFormat": number_format}
+    return rows, formats, seen, slots
+
+
+def _cell_value(value) -> str:
+    """Render one openpyxl value the way the engine stores it.
+
+    Mirrors `fromXlsxCell` (`frontend/src/apps/sheets/engine/xlsx-io.js`): a
+    formula keeps its leading `=`, a date becomes the ISO text `_toDate` reads
+    back, a boolean becomes `TRUE`/`FALSE`, and everything else is text.
+    """
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, datetime.datetime):
+        if value.hour or value.minute or value.second:
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, datetime.date):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, datetime.time):
+        return value.strftime("%H:%M:%S")
+    if isinstance(value, float):
+        # `String(42.0)` is "42" in the browser, so a whole float must not
+        # arrive as "42.0" and read as text under a numeric format.
+        return str(int(value)) if value.is_integer() else repr(value)
+    return str(value)
+
+
+# `zToNumFmt`'s tables (`frontend/src/apps/sheets/engine/xlsx-io.js`), in the
+# direction this module needs. A code that is not here is preserved verbatim as
+# `custom:<code>`, which is the client's own escape hatch and round-trips
+# through an export untouched.
+_DATE_FORMATS = {
+    "dd/mm/yyyy": "dmy",
+    "mm/dd/yyyy": "mdy",
+    "yyyy-mm-dd": "ymd",
+    "d mmm yyyy": "long",
+    "ddd, d mmm yyyy": "full",
+}
+_TIME_FORMATS = {
+    "hh:mm": "hm",
+    "hh:mm:ss": "hms",
+    "h:mm AM/PM": "hm12",
+    "h:mm:ss AM/PM": "hms12",
+}
+_PLAIN_NUMBER = re.compile(r"^#,##0(\.0+)?$")
+_DECIMALS = re.compile(r"\.(0+)")
+
+
+def _number_format(code: str | None) -> str:
+    """Map one Excel number-format code onto the engine's format string."""
+    if not code:
+        return ""
+    trimmed = code.strip()
+    if not trimmed or trimmed == "General":
+        return ""
+    if trimmed == "@":
+        return "text"
+    if trimmed in _DATE_FORMATS:
+        return f"date:{_DATE_FORMATS[trimmed]}"
+    if trimmed in _TIME_FORMATS:
+        return f"time:{_TIME_FORMATS[trimmed]}"
+    space = trimmed.find(" ")
+    if space > 0 and trimmed[:space] in _DATE_FORMATS and trimmed[space + 1 :] in _TIME_FORMATS:
+        return f"datetime:{_DATE_FORMATS[trimmed[:space]]}_{_TIME_FORMATS[trimmed[space + 1 :]]}"
+    if _has_active_percent(trimmed):
+        decimals = _decimal_count(trimmed)
+        return "percentage" if decimals == 2 else f"percentage:{decimals}"
+    if _PLAIN_NUMBER.fullmatch(trimmed):
+        decimals = _decimal_count(trimmed)
+        return "number" if decimals == 0 else f"number:{decimals}"
+    return f"custom:{code}"
+
+
+def _has_active_percent(code: str) -> bool:
+    """True only for a `%` that scales: not quoted and not backslash-escaped."""
+    in_quote = False
+    index = 0
+    while index < len(code):
+        character = code[index]
+        if character == "\\":
+            index += 2
+            continue
+        if character == '"':
+            in_quote = not in_quote
+        elif character == "%" and not in_quote:
+            return True
+        index += 1
+    return False
+
+
+def _decimal_count(code: str) -> int:
+    found = _DECIMALS.search(code)
+    return len(found.group(1)) if found else 0
+
+
+def _merge_slice(ranges) -> dict:
+    """Build one sheet's merge slice, the shape the merge engine restores.
+
+    Every range is expanded cell by cell into `slave_map`, so the expansion is
+    what has to be bounded rather than the number of ranges. `A1:XFD1048576` is
+    one legal range covering 17 billion cells, and the file that declares it is
+    4 KB. A workbook whose merges exceed `MAX_IMPORT_MERGED` is refused whole,
+    not truncated: a half-applied merge map draws the wrong grid.
+    """
+    master_map: dict[str, dict] = {}
+    slave_map: dict[str, str] = {}
+    covered = 0
+    for row_start, column_start, row_end, column_end in ranges:
+        covered += (row_end - row_start + 1) * (column_end - column_start + 1)
+        if covered > MAX_IMPORT_MERGED:
+            frappe.throw(
+                _("That spreadsheet merges more than {0} cells and cannot be imported").format(
+                    MAX_IMPORT_MERGED
+                ),
+                frappe.ValidationError,
+            )
+        if row_start == row_end and column_start == column_end:
+            continue
+        master = f"{_column_label(column_start)}{row_start + 1}"
+        master_map[master] = {
+            "rowSpan": row_end - row_start + 1,
+            "colSpan": column_end - column_start + 1,
+            "r": row_start,
+            "c": column_start,
+        }
+        for row in range(row_start, row_end + 1):
+            for column in range(column_start, column_end + 1):
+                if row == row_start and column == column_start:
+                    continue
+                slave_map[f"{_column_label(column)}{row + 1}"] = master
+    if not master_map:
+        return {}
+    return {"masterMap": master_map, "slaveMap": slave_map}
+
+
+_MERGE_REF = re.compile(r"^([A-Z]{1,3})([0-9]{1,7}):([A-Z]{1,3})([0-9]{1,7})$")
+
+
+def _worksheet_parts(book, names: list[str]) -> dict[str, str]:
+    """Map each worksheet name onto the package part that holds it.
+
+    Part numbering does not track tab order. Excel leaves `sheet1.xml` where it
+    is when a tab is moved or deleted, so pairing `book.sheetnames` with the
+    parts sorted by their numeric suffix attributes a merge to the wrong
+    worksheet. The authority is `xl/workbook.xml` through
+    `xl/_rels/workbook.xml.rels`, which openpyxl has already resolved:
+    `ReadOnlyWorksheet._worksheet_path` is the part it read the sheet from
+    (openpyxl 3.1.5). A worksheet that does not expose it contributes no
+    mapping, so its merges are dropped rather than given to a neighbour.
+    """
+    parts: dict[str, str] = {}
+    for name in names:
+        path = getattr(book[name], "_worksheet_path", None)
+        if isinstance(path, str) and path:
+            parts[name] = path.lstrip("/")
+    return parts
+
+
+def _merge_ranges(raw: bytes, parts: dict[str, str]) -> dict[str, tuple]:
+    """Read every worksheet's merge ranges out of the xlsx package.
+
+    openpyxl's read-only worksheet carries none, and loading the workbook in
+    write mode to get them would materialise the whole thing. The package stores
+    them as `<mergeCell ref="A1:B2"/>` inside each worksheet part, so they are
+    read from there — from the part `_worksheet_parts` named, never from a
+    guess at the order.
+    """
+    from xml.etree import ElementTree
+
+    found: dict[str, tuple] = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as package:
+            members = set(package.namelist())
+            for name, part in parts.items():
+                if part not in members:
+                    continue
+                ranges = []
+                with package.open(part) as handle:
+                    for _event, element in ElementTree.iterparse(handle, ("end",)):
+                        if not element.tag.endswith("}mergeCell") and element.tag != "mergeCell":
+                            element.clear()
+                            continue
+                        parsed = _parse_merge_ref(element.get("ref"))
+                        if parsed:
+                            ranges.append(parsed)
+                        element.clear()
+                        if len(ranges) > MAX_IMPORT_MERGE_RANGES:
+                            frappe.throw(
+                                _(
+                                    "That spreadsheet declares more than {0} merged ranges "
+                                    "and cannot be imported"
+                                ).format(MAX_IMPORT_MERGE_RANGES),
+                                frappe.ValidationError,
+                            )
+                if ranges:
+                    found[name] = tuple(ranges)
+    except (zipfile.BadZipFile, KeyError, ElementTree.ParseError):
+        # A package this cannot walk still imports; it imports without merges.
+        return {}
+    return found
+
+
+def _parse_merge_ref(ref: str | None) -> tuple | None:
+    found = _MERGE_REF.fullmatch((ref or "").strip().upper())
+    if not found:
+        return None
+    column_start = _column_index(found.group(1))
+    row_start = int(found.group(2)) - 1
+    column_end = _column_index(found.group(3))
+    row_end = int(found.group(4)) - 1
+    if row_start > row_end or column_start > column_end:
+        return None
+    return (row_start, column_start, row_end, column_end)
+
+
+def _column_label(index: int) -> str:
+    """0 -> A, 25 -> Z, 26 -> AA. Mirrors `colLabel` and `cell_codec._col_label`."""
+    label = ""
+    index += 1
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        label = chr(65 + remainder) + label
+    return label
+
+
+def _column_index(label: str) -> int:
+    index = 0
+    for character in label:
+        index = index * 26 + (ord(character) - 64)
+    return index - 1

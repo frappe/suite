@@ -60,7 +60,7 @@ def check_admin_permission(action: str, target: Any = None) -> str:
     """
 
     user = frappe.session.user
-    if (not is_suite_admin(user) and not is_system_manager(user)) or not is_user_enabled(user):
+    if (user != "Administrator" and not is_suite_admin(user)) or not is_user_enabled(user):
         frappe.throw(
             _("User {0} does not have permission to {1}.").format(frappe.bold(user), action),
             frappe.PermissionError,
@@ -590,7 +590,7 @@ def add_member(
     locale: str | None = None,
     time_zone: str | None = None,
     disable_receiving: bool = False,
-) -> None:
+) -> dict:
     """Creates a member, right away or by invitation.
 
     ``username``/``domain`` are the primary address (becomes the User); ``aliases`` are additional
@@ -604,7 +604,63 @@ def add_member(
     """
 
     check_admin_permission("add members", f"{username}@{domain}")
-    account_request = frappe.new_doc("Mail Account Request")
+    from suite.suite_core.account_state import write
+    from suite.suite_core.storage import state
+
+    if not send_invite and not (first_name or "").strip():
+        frappe.throw(_("First name is required to create an account right away"))
+    state(lock=True)
+    address = f"{username}@{domain}".strip().lower()
+    holder = frappe.db.get_value("User Settings", {"username": address}, "user")
+    completed = (
+        frappe.db.get_value(
+            "Mail Account Request",
+            {"account": address, "is_verified": 1, "suite_user": holder},
+            ["invited_by", "is_admin", "send_invite"],
+            as_dict=True,
+        )
+        if holder
+        else None
+    )
+    if completed:
+        if (
+            completed.invited_by != frappe.session.user
+            or bool(completed.is_admin) != bool(is_admin)
+            or bool(completed.send_invite) != bool(send_invite)
+        ):
+            frappe.throw(_("This business address is already claimed"))
+        from suite.suite_core.account_state import read
+
+        return {
+            "success": True,
+            "user": holder,
+            "status": read(holder).get("status", "Active"),
+            "error": None,
+            "temporary_password": None,
+            "expires_at": None,
+        }
+    pending = frappe.db.get_value("Mail Account Request", {"account": address, "is_verified": 0}, "name")
+    if pending:
+        account_request = frappe.get_doc("Mail Account Request", pending)
+        if bool(account_request.is_admin) != bool(is_admin) or bool(account_request.send_invite) != bool(
+            send_invite
+        ):
+            frappe.throw(
+                _(
+                    "This address has an existing creation request. Revoke it before changing its role or creation path."
+                )
+            )
+        if send_invite:
+            return {
+                "success": True,
+                "user": address,
+                "status": "Pending",
+                "error": None,
+                "temporary_password": None,
+                "expires_at": None,
+            }
+    else:
+        account_request = frappe.new_doc("Mail Account Request")
     account_request.account = f"{username}@{domain}"
     account_request.aliases = "\n".join(_listify(aliases))
     account_request.groups = "\n".join(str(g) for g in _listify(groups))
@@ -616,12 +672,136 @@ def add_member(
     account_request.invited_by = frappe.session.user
     account_request.backup_email = backup_email
     account_request.send_invite = cint(send_invite)
+    # A retry must make the same account, including after a failure before any User existed.
+    account_request.first_name = first_name
+    account_request.last_name = last_name
+    account_request.locale = locale
+    account_request.time_zone = time_zone
     # Arrives as UTC like every other timestamp; the doctype field holds system time.
     account_request.expires_at = from_utc_z(expires_at)
-    account_request.insert()
+    if account_request.is_new():
+        account_request.insert(ignore_permissions=True)
 
     if not send_invite:
-        account_request.force_verify_and_create_account(first_name, last_name, password, locale, time_zone)
+        return create_account_now(account_request, first_name, last_name, locale, time_zone)
+    return {
+        "success": True,
+        "user": address,
+        "status": "Pending",
+        "error": None,
+        "temporary_password": None,
+        "expires_at": None,
+    }
+
+
+def create_account_now(
+    account_request, first_name: str, last_name: str | None, locale: str | None, time_zone: str | None
+) -> dict:
+    """Creates the requested account right away and answers the one-time temporary password.
+
+    A failure is an outcome, not an error: the request and its partial Suite user stay behind as
+    "Setup failed" so the admin can retry it (same operation, no duplicate account) or remove it.
+    The failure is logged with its traceback, and its reason is what the admin reads.
+    """
+
+    from suite.suite_core.account_state import write
+
+    printed = len(frappe.local.message_log)
+    try:
+        credential = account_request.force_verify_and_create_account(
+            first_name, last_name, None, locale, time_zone
+        )
+    except frappe.QueryDeadlockError:
+        # The database rolled the request back with everything else; there is nothing to mark.
+        raise
+    except Exception as e:
+        log_mail_error(f"Account setup failed for {account_request.account}", frappe.get_traceback())
+        # The failed attempt's messages, a stale lookup among them, must not reach the admin.
+        del frappe.local.message_log[printed:]
+        account_request.is_verified = 0
+        account_request.save(ignore_permissions=True)
+        if account_request.suite_user:
+            write(
+                account_request.suite_user,
+                account=account_request.account,
+                operation=account_request.name,
+                status="Setup failed",
+            )
+        reason = frappe.utils.strip_html(str(e)).strip()
+        return {
+            "success": False,
+            "user": account_request.account,
+            "status": "Setup failed",
+            "error": _("Account setup failed: {0}").format(reason)
+            if reason
+            else _("Account setup failed. Retry this creation; normal access remains blocked."),
+            "temporary_password": None,
+            "expires_at": None,
+        }
+    return {**credential, "success": True, "status": "Password change required", "error": None}
+
+
+def _failed_creation(name: str):
+    """The locked request of a direct creation that did not finish; anything else is refused."""
+
+    frappe.db.get_value("Mail Account Request", name, "name", for_update=True)
+    request = frappe.get_doc("Mail Account Request", name)
+    if request.is_verified or request.send_invite or not request.invited_by:
+        frappe.throw(_("Only an account creation that failed can be retried or removed"))
+    return request
+
+
+@frappe.whitelist(methods=["POST"])
+@dynamic_rate_limit()
+def retry_account_creation(name: str) -> dict:
+    """Retries a failed direct creation under the same operation, so no second account is made."""
+
+    check_admin_permission("retry account creation", name)
+    from suite.suite_core.storage import state
+
+    state(lock=True)
+    request = _failed_creation(name)
+    names = (
+        frappe.db.get_value("User", request.suite_user, ["first_name", "last_name"])
+        if request.suite_user
+        else None
+    )
+    first_name, last_name = names or (
+        request.first_name or request.account.split("@", 1)[0],
+        request.last_name,
+    )
+    return create_account_now(request, first_name, last_name, request.locale, request.time_zone)
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_failed_creation(name: str) -> None:
+    """Removes a failed direct creation: the request, its never-used Suite user and its Mail account.
+
+    Only a Mail account this creation made (its setup description names the request) is deleted;
+    one at the same address with any other owner is left alone. A user who has signed in, or whose
+    setup is not in the failed state, is refused rather than deleted.
+    """
+
+    check_admin_permission("remove failed account creation", name)
+    from suite.mail.directory import delete_account_by_email, find_account
+    from suite.suite_core.account_state import read
+    from suite.suite_core.storage import state
+
+    state(lock=True)
+    request = _failed_creation(name)
+    user = request.suite_user
+    if user and (
+        read(user).get("status") != "Setup failed" or frappe.db.get_value("User", user, "last_login")
+    ):
+        frappe.throw(_("This user is in use; disable and delete them from their account page instead"))
+    account = find_account(request.account)
+    if account and account.get("description") == f"Suite setup {request.name}":
+        delete_account_by_email(request.account)
+    frappe.delete_doc("Mail Account Request", request.name, ignore_permissions=True)
+    if user:
+        frappe.delete_doc("Suite Account State", user, ignore_permissions=True, ignore_missing=True)
+        frappe.delete_doc("User", user, ignore_permissions=True)
+    log_admin_action("remove failed account creation", request.account)
 
 
 @frappe.whitelist()
@@ -677,6 +857,7 @@ def get_members(
         .run(as_dict=True)
     )
     for user in users:
+        user["full_name"] = user.get("full_name") or user["name"]
         if not user.get("user_image"):
             user["user_image"] = get_avatar_url(user["name"])
         user["is_admin"] = bool(user.get("is_admin"))
@@ -789,11 +970,12 @@ def get_member(member_id: str) -> dict:
         frappe.throw(_("Account not found"), frappe.DoesNotExistError)
 
     is_admin = bool(frappe.db.exists("Has Role", {"parent": member_id, "role": "Suite Admin"}))
+    full_name = user.full_name or user.name
     result = {
         "name": user.name,
-        "full_name": user.full_name,
+        "full_name": full_name,
         "user_image": user.user_image or get_avatar_url(user.name),
-        "description": user.full_name,
+        "description": full_name,
         # Both are stored in system time; the API speaks UTC.
         "last_active": to_utc_z(user.last_active),
         "joined_on": to_utc_z(user.creation),
@@ -831,7 +1013,7 @@ def get_member(member_id: str) -> dict:
 @frappe.whitelist()
 def get_account_requests(
     search: str | None = None,
-    status: Literal["All", "Pending", "Accepted", "Expired"] = "All",
+    status: Literal["All", "Pending", "Accepted", "Expired", "Setup failed"] = "All",
     start: int = 0,
     page_length: int = DEFAULT_PAGE_LENGTH,
 ) -> dict:
@@ -839,6 +1021,8 @@ def get_account_requests(
     start, page_length = _paging(start, page_length)
 
     ACC_REQ = frappe.qb.DocType("Mail Account Request")
+    # An admin's direct creation that never finished; a self-signup has no inviter.
+    failed = (ACC_REQ.is_verified == 0) & (ACC_REQ.send_invite == 0) & (IfNull(ACC_REQ.invited_by, "") != "")
     query = (
         frappe.qb.from_(ACC_REQ)
         .select(
@@ -850,6 +1034,7 @@ def get_account_requests(
             ACC_REQ.is_verified,
             Case()
             .when(ACC_REQ.is_verified == 1, "Accepted")
+            .when(failed, "Setup failed")
             .when(ACC_REQ.expires_at <= frappe.utils.now(), "Expired")
             .else_("Pending")
             .as_("status"),
@@ -858,12 +1043,14 @@ def get_account_requests(
     )
     if search:
         query = query.where(ACC_REQ.account.like(f"%{search}%"))
-    if status == "Pending":
-        query = query.where((ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at > frappe.utils.now()))
+    if status == "Setup failed":
+        query = query.where(failed)
     elif status == "Accepted":
         query = query.where(ACC_REQ.is_verified == 1)
+    elif status == "Pending":
+        query = query.where(~failed & (ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at > frappe.utils.now()))
     elif status == "Expired":
-        query = query.where((ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at <= frappe.utils.now()))
+        query = query.where(~failed & (ACC_REQ.is_verified == 0) & (ACC_REQ.expires_at <= frappe.utils.now()))
     total = frappe.qb.from_(query.as_("requests")).select(Count("*")).run()[0][0]
     return {"items": query.limit(page_length).offset(start).run(as_dict=True), "total": total}
 
@@ -872,43 +1059,70 @@ def get_account_requests(
 def delete_account_requests(names: list) -> None:
     check_admin_permission("delete account requests", names)
     for name in names:
+        if frappe.db.get_value("Mail Account Request", name, "suite_user"):
+            frappe.throw(
+                _(
+                    "Keep the creation request until the partially created Mail account has been recovered or deleted"
+                )
+            )
         frappe.delete_doc("Mail Account Request", name)
 
 
 @frappe.whitelist(methods=["POST"])
-def delete_members(names: list) -> None:
-    user = check_admin_permission("delete members", names)
-    if user in names:
-        frappe.throw(_("You cannot delete your own account."))
-    for name in names:
-        check_member_target(name)
-        frappe.delete_doc("User", name)
+def delete_members(names: list, confirmation: str = "") -> dict:
+    """Delete one disabled member's mailbox, never its Suite User (§4.3)."""
+    check_admin_permission("delete Mail account", names)
+    if not isinstance(names, list) or len(names) != 1:
+        frappe.throw(_("Delete one Mail account at a time with its address confirmation"))
+    from suite.mail import administer_account
+
+    return administer_account("delete", user=names[0], confirmation=confirmation)
 
 
 @frappe.whitelist(methods=["POST"])
-def disable_members(names: list) -> None:
-    user = check_admin_permission("disable members", names)
-    if user in names:
-        frappe.throw(_("You cannot disable your own account."))
-    for name in names:
-        check_member_target(name)
-        member = frappe.get_doc("User", name)
-        if not member.enabled:
-            continue
-        member.enabled = 0
-        member.save(ignore_permissions=True)
+def disable_members(names: list[str]) -> list[dict]:
+    check_admin_permission("disable members", names)
+    return _set_members_enabled(names, enabled=False)
 
 
 @frappe.whitelist(methods=["POST"])
-def enable_members(names: list) -> None:
+def enable_members(names: list[str]) -> list[dict]:
     check_admin_permission("enable members", names)
-    for name in names:
-        check_member_target(name)
-        member = frappe.get_doc("User", name)
-        if member.enabled:
-            continue
-        member.enabled = 1
-        member.save(ignore_permissions=True)
+    return _set_members_enabled(names, enabled=True)
+
+
+def _set_members_enabled(names: list[str], *, enabled: bool) -> list[dict]:
+    """Keep successful lifecycle changes when another target fails (§6.2)."""
+    from uuid import uuid4
+
+    from suite.suite_core.administration import update_user
+    from suite.suite_core.audit import record
+
+    results = []
+    for name in dict.fromkeys(names):
+        savepoint = f"member_status_{uuid4().hex}"
+        frappe.db.savepoint(savepoint)
+        messages = len(frappe.local.message_log or [])
+        try:
+            check_member_target(name)
+            update_user(name, enabled=enabled)
+        except frappe.QueryDeadlockError:
+            # InnoDB has rolled back the entire request, including preceding
+            # successes. Never return per-target success for discarded changes.
+            raise
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            del frappe.local.message_log[messages:]
+            error = (
+                _("User could not be reactivated. Check Mail setup and provider access, then retry.")
+                if enabled
+                else _("User could not be disabled. Check Admin safeguards and provider access, then retry.")
+            )
+            record("users.update", name, "failed")
+            results.append({"user": name, "success": False, "error": error})
+        else:
+            results.append({"user": name, "success": True, "error": None})
+    return results
 
 
 @frappe.whitelist(methods=["POST"])
@@ -922,11 +1136,7 @@ def change_member_password(member_id: str, new_password: str) -> None:
         # One's own password changes through the flow that asks for the current one.
         frappe.throw(_("Change your own password from your account settings."), frappe.PermissionError)
     check_member_target(member_id)
-    if not new_password:
-        frappe.throw(_("New password is required."))
-    member = frappe.get_doc("User", member_id)
-    member.new_password = new_password
-    member.save(ignore_permissions=True)
+    frappe.throw(_("Use Replace temporary password to issue a generated one-time credential"))
 
 
 def _require_member_account(member_id: str) -> str:
@@ -958,9 +1168,16 @@ def update_member(
 
     check_admin_permission("update members", member_id)
     check_member_target(member_id)
+    if quota_gb not in (None, 0):
+        frappe.throw(_("Mail has no storage quota. Set a combined personal cap in Storage instead."))
 
     member = frappe.get_doc("User", member_id)
     if role is not None:
+        from suite.suite_core.administration import guard_user_change
+
+        if role not in ("admin", "user"):
+            frappe.throw(_("Choose Admin or Member"))
+        guard_user_change(member_id, is_admin=role == "admin")
         if role == "admin":
             member.append_roles("Suite Admin")
         else:
@@ -972,6 +1189,10 @@ def update_member(
         member.last_name = last or None
     member.save(ignore_permissions=True)
 
+    from suite.api.account import forget_logged_in_users
+
+    forget_logged_in_users()
+
     email = get_account_email(member_id)
     if not email:
         return
@@ -979,7 +1200,7 @@ def update_member(
     if description:
         changes["display_name"] = description
     if quota_gb is not None:
-        changes["disk_quota_gb"] = flt(quota_gb)
+        changes["disk_quota_gb"] = 0
     if locale is not None:
         changes["locale"] = locale or ""
     if time_zone is not None:
@@ -1198,12 +1419,14 @@ def add_group(
 
     email = f"{name}@{domain}"
     check_admin_permission("add groups", email)
+    if quota_gb not in (None, 0):
+        frappe.throw(_("Group Mail storage is unlimited"))
     group = get_client().call(
         "mail.groups.create_group",
         email=email,
         description=description,
         members=_listify(members) or None,
-        disk_quota_gb=flt(quota_gb) or None,  # unset or 0: no disk limit
+        disk_quota_gb=0,
         disable_receiving=bool(disable_receiving) or None,
     )
     if disable_receiving and not group.get("disable_receiving"):
@@ -1217,11 +1440,13 @@ def add_group(
 @frappe.whitelist(methods=["POST"])
 def update_group(group_id: str, description: str | None = None, quota_gb: float | None = None) -> None:
     check_admin_permission("update groups", group_id)
+    if quota_gb not in (None, 0):
+        frappe.throw(_("Group Mail storage is unlimited"))
     changes = {}
     if description is not None:
         changes["description"] = description
     if quota_gb is not None:
-        changes["disk_quota_gb"] = flt(quota_gb)
+        changes["disk_quota_gb"] = 0
     if changes:
         get_client().call("mail.groups.update_group", email=group_id, **changes)
 
@@ -1515,7 +1740,7 @@ def _disabled_accounts() -> list[dict]:
 
     USER = frappe.qb.DocType("User")
     USER_SETTINGS = frappe.qb.DocType("User Settings")
-    return (
+    rows = (
         frappe.qb.from_(USER)
         .join(USER_SETTINGS)
         .on(USER.name == USER_SETTINGS.user)
@@ -1523,6 +1748,9 @@ def _disabled_accounts() -> list[dict]:
         .where((IfNull(USER_SETTINGS.username, "") != "") & (USER.enabled == 0))
         .orderby(USER.name, order=Order.asc)
     ).run(as_dict=True)
+    for row in rows:
+        row["full_name"] = row["full_name"] or row["name"]
+    return rows
 
 
 def _recent_accounts(limit: int) -> list[dict]:
@@ -1540,6 +1768,7 @@ def _recent_accounts(limit: int) -> list[dict]:
         .limit(limit)
     ).run(as_dict=True)
     for row in rows:
+        row["full_name"] = row.get("full_name") or row["name"]
         row["user_image"] = row.get("user_image") or get_avatar_url(row["name"])
         row["enabled"] = bool(row["enabled"])
         row["joined_on"] = to_utc_z(row.pop("creation"))

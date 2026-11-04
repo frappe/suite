@@ -5,8 +5,15 @@
          our own — same as DropdownMenuGroup.vue. It has to stay the direct child
          of #trigger: PopoverTrigger wires the click onto it via as-child. -->
     <template #trigger="{ open }">
-      <Button size="xs" variant="ghost" :icon="icon" label="Custom Spacing" tooltip="Custom Spacing"
-        class="aria-pressed:bg-surface-gray-3" :aria-pressed="open" />
+      <Button
+        size="xs"
+        variant="ghost"
+        :icon="icon"
+        label="Custom spacing"
+        tooltip="Custom spacing"
+        class="aria-pressed:bg-surface-gray-3"
+        :aria-pressed="open"
+      />
     </template>
     <template #default>
       <div class="p-4 flex flex-col gap-4 w-64">
@@ -22,7 +29,7 @@
           label="Line spacing"
         />
         <div class="space-y-1">
-          <FormLabel label="Paragraph Spacing" />
+          <FormLabel label="Paragraph spacing" />
           <div class="grid grid-cols-2 gap-2">
             <FormControl
               type="number"
@@ -48,14 +55,10 @@
 </template>
 
 <script setup>
-import { reactive, computed, watch } from 'vue'
-import { Popover, Button } from 'frappe-ui'
-import { FormControl, FormLabel } from 'frappe-ui'
-import {
-  DEFAULT_LINE_HEIGHT,
-  toCssLineHeight,
-  toLineSpacing,
-} from '@/apps/writer/utils/typography'
+import { Button, FormControl, FormLabel, Popover } from 'frappe-ui'
+import { computed, reactive, watch } from 'vue'
+
+import { DEFAULT_LINE_HEIGHT, toCssLineHeight, toLineSpacing } from '@/apps/writer/utils/typography'
 
 const props = defineProps({
   editor: Object,
@@ -94,9 +97,7 @@ const defaults = computed(() => ({
 
 function fromAttrs(attrs) {
   return {
-    lineSpacing: toLineSpacing(
-      parseNumber(attrs.lineHeight, defaults.value.lineHeight),
-    ),
+    lineSpacing: toLineSpacing(parseNumber(attrs.lineHeight, defaults.value.lineHeight)),
     spacingBefore: parseNumber(attrs.spacingBefore, defaults.value.spacingBefore),
     spacingAfter: parseNumber(attrs.spacingAfter, defaults.value.spacingAfter),
   }
@@ -118,8 +119,7 @@ function applySpacing() {
   const attrs = {}
   for (const key of ['spacingBefore', 'spacingAfter']) {
     if (!Number.isFinite(local[key])) continue
-    attrs[key] =
-      local[key] === defaults.value[key] ? null : `${local[key]}px`
+    attrs[key] = local[key] === defaults.value[key] ? null : `${local[key]}px`
   }
   props.editor.commands.updateAttributes('paragraph', attrs)
 }

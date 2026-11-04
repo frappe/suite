@@ -1,28 +1,35 @@
 <template>
-	<Combobox
-		v-model="model"
-		v-model:open="showSuggestions"
-		:label="label"
-		:options="options"
-		placeholder=""
-		:open-on-click="false"
-		@update:query="search"
-	>
-		<template #item-prefix="{ item, query }">
-			<Avatar :image="item.image" :label="item.label || query" size="sm" />
-		</template>
-		<template #item-label="{ item }">
-			<ContactOption :contact="item" />
-		</template>
-		<template #item-create="{ query }"> {{ query }} </template>
-	</Combobox>
+  <Combobox
+    v-model="model"
+    v-model:open="showSuggestions"
+    :label="label"
+    :options="options"
+    placeholder=""
+    :open-on-click="false"
+    @update:query="search"
+  >
+    <template #item-prefix="{ item, query }">
+      <Avatar :image="item.image" :label="item.label || query" size="sm" />
+    </template>
+    <template #item-label="{ item }">
+      <ContactOption
+        :contact="{
+          email: typeof item.value === 'string' ? item.value : '',
+          display_name: item.display_name,
+        }"
+        :query="searchText"
+      />
+    </template>
+    <template #item-create="{ query }"> {{ query }} </template>
+  </Combobox>
 </template>
 
 <script setup lang="ts">
+import { refDebounced } from '@vueuse/core'
+import { Avatar, Combobox } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
-import { Avatar, Combobox, createResource } from 'frappe-ui'
 
+import { api, useQuery } from '@/api'
 import ContactOption from '@/apps/mail/components/Controls/ContactOption.vue'
 import { userStore } from '@/apps/mail/stores/user'
 
@@ -39,59 +46,47 @@ const model = defineModel<string>()
 let mailUser: ReturnType<typeof userStore> | undefined
 const searchAccount = () => props.account ?? (mailUser ??= userStore()).accountId
 
-const contactSearch = createResource({
-	url: 'suite.mail.api.mail.get_email_suggestions',
-	auto: false,
-	makeParams: (text: string) => ({
-		account: searchAccount(),
-		text,
-	}),
-	transform: (data: { email: string; name?: string; user_image?: string }[]) =>
-		data.map((o) => {
-			const name = o.name || ''
-			return {
-				value: o.email,
-				label: name || o.email,
-				email: o.email,
-				display_name: name,
-				image: o.user_image,
-			}
-		}),
-})
 const searchText = ref('')
+const debouncedSearch = refDebounced(searchText, 300)
 const showSuggestions = ref(false)
-
-const fetchSuggestions = useDebounceFn((text: string) => {
-	if (text) contactSearch.fetch(text)
-}, 300)
-
-const search = (text: string) => {
-	searchText.value = text
-	if (!text) showSuggestions.value = false
-	fetchSuggestions(text)
+const contactSearch = useQuery(api.mail.contacts.suggest, () =>
+  debouncedSearch.value ? { account: searchAccount(), text: debouncedSearch.value } : false,
+)
+const contacts = computed(() =>
+  (contactSearch.data ?? []).map((contact) => ({
+    value: contact.email,
+    label: contact.name || contact.email,
+    email: contact.email,
+    display_name: contact.name || '',
+    image: contact.user_image ?? undefined,
+  })),
+)
+function search(text: string) {
+  searchText.value = text
+  if (!text) showSuggestions.value = false
 }
 
 // Suggestions only exist for a typed query — with an empty input the popover
 // would show stale results from the previous query (or a bare "No results"
 // panel), so block reka's focus/arrow-key opens too, not just hide options.
 watch(showSuggestions, (open) => {
-	if (open && !searchText.value) showSuggestions.value = false
+  if (open && !searchText.value) showSuggestions.value = false
 })
 
 // Contact matches plus a "create" entry (like compose's RecipientInput) so a typed value that isn't a
 // contact can still be applied.
 const options = computed(() => {
-	if (!searchText.value) return []
-	return [
-		...(contactSearch.data ?? []),
-		{
-			type: 'custom',
-			slot: 'create',
-			condition: () => !contactSearch.data?.length,
-			onClick: ({ query }: { query: string }) => {
-				model.value = query
-			},
-		},
-	]
+  if (!searchText.value) return []
+  return [
+    ...contacts.value,
+    {
+      type: 'custom' as const,
+      slot: 'create',
+      condition: () => !contacts.value.length,
+      onClick: ({ query }: { query: string }) => {
+        model.value = query
+      },
+    },
+  ]
 })
 </script>

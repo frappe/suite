@@ -1,11 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+
 import { createCommentsEngine } from './comments.js'
 
 const reply = (text, extra = {}) => ({ author: 'a@x.com', name: 'Ann', text, ts: 1000, ...extra })
 
 describe('CommentsEngine — threads', () => {
   let c
-  beforeEach(() => { c = createCommentsEngine() })
+  beforeEach(() => {
+    c = createCommentsEngine()
+  })
 
   it('addReply creates a thread', () => {
     c.addReply('A1', reply('hello'), 'Sheet1')
@@ -19,7 +22,7 @@ describe('CommentsEngine — threads', () => {
     c.addReply('A1', reply('one'), 'Sheet1')
     c.addReply('A1', reply('two', { author: 'b@x.com', name: 'Bob' }), 'Sheet1')
     const t = c.getThread('A1', 'Sheet1')
-    expect(t.thread.map(r => r.text)).toEqual(['one', 'two'])
+    expect(t.thread.map((r) => r.text)).toEqual(['one', 'two'])
   })
 
   it('blank reply is ignored', () => {
@@ -44,7 +47,7 @@ describe('CommentsEngine — threads', () => {
     expect(c.getThread('A1', 'Sheet1').resolved).toBe(true)
     expect(c.hasOpenComment('A1', 'Sheet1')).toBe(false)
     c.addReply('A1', reply('answer'), 'Sheet1')
-    expect(c.getThread('A1', 'Sheet1').resolved).toBe(false)   // reopened
+    expect(c.getThread('A1', 'Sheet1').resolved).toBe(false) // reopened
     expect(c.hasOpenComment('A1', 'Sheet1')).toBe(true)
   })
 
@@ -52,25 +55,25 @@ describe('CommentsEngine — threads', () => {
     c.addReply('A1', reply('x'), 'Sheet1')
     c.resolve('A1', true, 'Sheet1')
     expect(c.hasOpenComment('A1', 'Sheet1')).toBe(false)
-    expect(c.getThread('A1', 'Sheet1')).not.toBeNull()   // still exists, just resolved
+    expect(c.getThread('A1', 'Sheet1')).not.toBeNull() // still exists, just resolved
   })
 
   it('removeReply drops one; removing the last drops the thread', () => {
     c.addReply('A1', reply('one'), 'Sheet1')
     c.addReply('A1', reply('two'), 'Sheet1')
     c.removeReply('A1', 0, 'Sheet1')
-    expect(c.getThread('A1', 'Sheet1').thread.map(r => r.text)).toEqual(['two'])
+    expect(c.getThread('A1', 'Sheet1').thread.map((r) => r.text)).toEqual(['two'])
     c.removeReply('A1', 0, 'Sheet1')
     expect(c.getThread('A1', 'Sheet1')).toBeNull()
   })
 
   it('mutations replace the object — a captured reference stays frozen', () => {
     c.addReply('A1', reply('one'), 'Sheet1')
-    const before = c.getThread('A1', 'Sheet1')      // capture the current state
+    const before = c.getThread('A1', 'Sheet1') // capture the current state
     c.addReply('A1', reply('two'), 'Sheet1')
     c.resolve('A1', true, 'Sheet1')
-    expect(before.thread).toHaveLength(1)            // frozen: not appended to
-    expect(before.resolved).toBe(false)             // frozen: not flipped
+    expect(before.thread).toHaveLength(1) // frozen: not appended to
+    expect(before.resolved).toBe(false) // frozen: not flipped
     expect(c.getThread('A1', 'Sheet1').thread).toHaveLength(2)
     expect(c.getThread('A1', 'Sheet1').resolved).toBe(true)
   })
@@ -90,7 +93,7 @@ describe('CommentsEngine — threads', () => {
   it('setThread stores an isolated copy — no aliasing with the caller', () => {
     const src = { resolved: false, thread: [{ text: 'x' }] }
     c.setThread('A1', src, 'Sheet1')
-    src.thread.push({ text: 'leak' })   // mutate the caller's object afterwards
+    src.thread.push({ text: 'leak' }) // mutate the caller's object afterwards
     src.resolved = true
     expect(c.getThread('A1', 'Sheet1').thread).toHaveLength(1)
     expect(c.getThread('A1', 'Sheet1').resolved).toBe(false)
@@ -99,7 +102,9 @@ describe('CommentsEngine — threads', () => {
 
 describe('CommentsEngine — legacy migration', () => {
   let c
-  beforeEach(() => { c = createCommentsEngine() })
+  beforeEach(() => {
+    c = createCommentsEngine()
+  })
 
   it('restore upgrades a flat-string note to a one-entry thread', () => {
     c.restore({ Sheet1: { A1: 'old note', B2: '  ' } })
@@ -107,7 +112,7 @@ describe('CommentsEngine — legacy migration', () => {
       resolved: false,
       thread: [{ author: '', name: '', text: 'old note', ts: null }],
     })
-    expect(c.getThread('B2', 'Sheet1')).toBeNull()   // blank legacy note dropped
+    expect(c.getThread('B2', 'Sheet1')).toBeNull() // blank legacy note dropped
   })
 
   it('a string that slips into the store is migrated in place on read', () => {
@@ -117,18 +122,27 @@ describe('CommentsEngine — legacy migration', () => {
   })
 
   it('drops corrupt non-string, non-thread values instead of crashing', () => {
-    c.restore({ Sheet1: { A1: 5, B2: [1, 2], C3: { nope: true }, D4: { resolved: false, thread: [{ text: 'ok' }] } } })
+    c.restore({
+      Sheet1: {
+        A1: 5,
+        B2: [1, 2],
+        C3: { nope: true },
+        D4: { resolved: false, thread: [{ text: 'ok' }] },
+      },
+    })
     expect(c.getThread('A1', 'Sheet1')).toBeNull()
     expect(c.getThread('B2', 'Sheet1')).toBeNull()
     expect(c.getThread('C3', 'Sheet1')).toBeNull()
-    expect(c.preview('D4', 'Sheet1')).toBe('ok')        // valid thread survives
+    expect(c.preview('D4', 'Sheet1')).toBe('ok') // valid thread survives
     expect(c.hasOpenComment('A1', 'Sheet1')).toBe(false) // no crash on the dropped ones
   })
 })
 
 describe('CommentsEngine — shifts, lifecycle, snapshot', () => {
   let c
-  beforeEach(() => { c = createCommentsEngine() })
+  beforeEach(() => {
+    c = createCommentsEngine()
+  })
 
   it('insertRow shifts threads down', () => {
     c.addReply('A2', reply('note'), 'Sheet1')
@@ -157,10 +171,10 @@ describe('CommentsEngine — shifts, lifecycle, snapshot', () => {
 
   it('restore isolates the live store from the snapshot (in-place edits keep history intact)', () => {
     c.addReply('A1', reply('one'), 'Sheet1')
-    const snap = c.snapshot()           // deep copy of the store
-    c.restore(snap)                     // navigate back to it
-    c.addReply('A1', reply('two'), 'Sheet1')   // then edit the live thread in place
-    expect(snap.Sheet1.A1.thread).toHaveLength(1)   // the history entry must be untouched
+    const snap = c.snapshot() // deep copy of the store
+    c.restore(snap) // navigate back to it
+    c.addReply('A1', reply('two'), 'Sheet1') // then edit the live thread in place
+    expect(snap.Sheet1.A1.thread).toHaveLength(1) // the history entry must be untouched
     expect(c.getThread('A1', 'Sheet1').thread).toHaveLength(2)
   })
 

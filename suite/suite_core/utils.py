@@ -38,6 +38,9 @@ def get_suite_cloud_config(key: str | tuple[str, ...] | None = None) -> dict[str
 def is_suite_cloud_configured(raise_exception: bool = False) -> bool:
     """Whether the site knows where its Suite Cloud is and how to authenticate to it."""
 
+    # A developer-mode site can stand in a local fake for Suite Cloud (suite.mail.dev_suite_cloud).
+    if frappe.conf.get("suite_cloud_fake") and frappe.conf.get("developer_mode"):
+        return True
     if all(get_suite_cloud_config().values()):
         return True
     if raise_exception:

@@ -26,6 +26,7 @@ from suite.meet.api.meeting import (
 )
 from suite.meet.api.schedule import create_meet_link, create_scheduled_meeting
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
+from suite.meet.utils.sfu_config import get_sfu_config
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -96,6 +97,15 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertTrue(decoded["is_host"])
         self.assertFalse(decoded["is_cohost"])
         self.assertFalse(decoded["is_guest"])
+
+    def test_presence_preview_returns_numeric_port_from_string_site_config(self):
+        frappe.set_user(self.host_email)
+        get_sfu_config.clear_cache()
+        self.addCleanup(get_sfu_config.clear_cache)
+        with patch.dict(frappe.conf, {"sfu_server_port": "3000"}):
+            result = get_sfu_presence_preview_token(self.meeting.name)
+        self.assertEqual(result["sfu_port"], 3000)
+        self.assertIsInstance(result["sfu_port"], int)
 
     def test_unapproved_user_gets_restricted_preview_without_sfu_token(self):
         frappe.set_user(self.outsider_email)
@@ -488,18 +498,12 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
     def test_guest_proof_is_redacted_before_downstream_endpoint_errors(self):
         original_request = getattr(frappe.local, "request", None)
         original_form_dict = frappe.local.form_dict
+        # `frappe.init` binds `request_ip` to None, and every later test reads it,
+        # so restore the value rather than deleting the attribute.
         original_request_ip = getattr(frappe.local, "request_ip", None)
         self.addCleanup(setattr, frappe.local, "request", original_request)
         self.addCleanup(setattr, frappe.local, "form_dict", original_form_dict)
-        if original_request_ip is not None:
-            self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
-        else:
-
-            def delete_request_ip():
-                if hasattr(frappe.local, "request_ip"):
-                    delattr(frappe.local, "request_ip")
-
-            self.addCleanup(delete_request_ip)
+        self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
 
         frappe.local.request_ip = "127.0.0.1"
         proof = "private-proof-that-must-not-reach-telemetry"

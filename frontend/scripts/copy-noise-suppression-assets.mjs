@@ -22,10 +22,7 @@ const source = path.join(
   'node_modules/@workadventure/noise-suppression/dist/assets/audio-worklet-processor.js',
 )
 
-const dest = path.join(
-  appRoot,
-  'suite/public/noise-suppression/audio-worklet-processor.js',
-)
+const dest = path.join(appRoot, 'suite/public/noise-suppression/audio-worklet-processor.js')
 
 if (!fs.existsSync(source)) {
   console.error(

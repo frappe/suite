@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+
 import '@tiptap/extension-text-style'
 
 type FontSizeOptions = {

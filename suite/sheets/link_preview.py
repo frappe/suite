@@ -2,33 +2,23 @@
 # description / favicon (Google Sheets' link chip UX).
 #
 # The browser can't fetch a foreign page's HTML (CORS), so the server does it.
-# That makes this endpoint an SSRF vector by construction, so every fetch:
-#   * allows only http/https on default ports,
-#   * resolves the hostname, refuses private / loopback / link-local / reserved
-#     address space, and then CONNECTS TO THAT EXACT IP — the Host header, TLS
-#     SNI, and cert hostname stay the original name, so the address we validated
-#     is the address we talk to. A rebinding nameserver can't hand a public IP
-#     to the check and a private one to the connection (re-done per redirect).
-#   * follows at most MAX_REDIRECTS redirects, manually,
-#   * reads at most MAX_BYTES with a short timeout, HTML content types only.
+# That makes this endpoint an SSRF vector by construction, so every fetch goes
+# through suite_core.public_http (public addresses only, pinned to the IP it
+# checked), follows at most MAX_REDIRECTS redirects, and reads at most MAX_BYTES,
+# HTML content types only.
 # Results (including failures) are cached in Redis so hover traffic doesn't
 # hammer external sites.
 
-import ipaddress
-import socket
 from urllib.parse import urljoin, urlparse
 
-import certifi
 import frappe
-import urllib3
 from bs4 import BeautifulSoup
 from frappe.rate_limiter import rate_limit
 
+from suite.suite_core.public_http import REDIRECT_STATUSES, request_public
+
 MAX_REDIRECTS = 3
 MAX_BYTES = 100 * 1024
-CONNECT_TIMEOUT = 3
-READ_TIMEOUT = 4
-REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 CACHE_OK_SEC = 24 * 60 * 60
 CACHE_ERR_SEC = 5 * 60
 USER_AGENT = "Mozilla/5.0 (compatible; FrappeSheets-LinkPreview/1.0)"
@@ -86,90 +76,20 @@ def _fetch_preview(url: str) -> dict:
 
 def _fetch_html(url: str) -> tuple[str, bytes]:
     """GET `url` with SSRF guards; returns (final_url, first MAX_BYTES of body)."""
-    current = url
-    for _ in range(MAX_REDIRECTS + 1):
-        ip, host, port, scheme, path = _validate_and_resolve(current)
-        pool = _pinned_pool(ip, host, port, scheme)
-        try:
-            resp = pool.urlopen(
-                "GET",
-                path,
-                headers={"Host": host, "User-Agent": USER_AGENT, "Accept": "text/html"},
-                redirect=False,
-                preload_content=False,
-                decode_content=True,
-            )
-            if resp.status in REDIRECT_STATUSES:
-                location = resp.headers.get("location")
-                if not location:
-                    raise frappe.ValidationError("Redirect without location")
-                current = urljoin(current, location)
-                continue
-            if resp.status >= 400:
-                raise frappe.ValidationError(f"HTTP {resp.status}")
-            if "html" not in resp.headers.get("content-type", ""):
-                raise frappe.ValidationError("Not an HTML page")
-            return current, resp.read(MAX_BYTES)
-        finally:
-            pool.close()
-    raise frappe.ValidationError("Too many redirects")
-
-
-def _pinned_pool(ip: str, host: str, port: int, scheme: str):
-    """Connection pool bound to the pre-validated IP, but presenting the original
-    hostname for Host header, TLS SNI, and cert verification."""
-    timeout = urllib3.Timeout(connect=CONNECT_TIMEOUT, read=READ_TIMEOUT)
-    if scheme == "https":
-        return urllib3.HTTPSConnectionPool(
-            ip,
-            port=port,
-            maxsize=1,
-            retries=False,
-            timeout=timeout,
-            cert_reqs="CERT_REQUIRED",
-            ca_certs=certifi.where(),
-            server_hostname=host,
-            assert_hostname=host,
-        )
-    return urllib3.HTTPConnectionPool(ip, port=port, maxsize=1, retries=False, timeout=timeout)
-
-
-def _validate_and_resolve(url: str) -> tuple[str, str, int, str, str]:
-    """Resolve `url`'s host, reject non-public targets, and return the exact IP to
-    connect to plus (host, port, scheme, path+query)."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise frappe.ValidationError("Only http/https URLs allowed")
-    if parsed.port not in (None, 80, 443):
-        raise frappe.ValidationError("Non-standard port not allowed")
-    host = parsed.hostname
-    if not host:
-        raise frappe.ValidationError("Invalid URL")
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    # Resolve every A/AAAA record and reject if ANY is non-public — a rebinding
-    # nameserver can rotate which record it hands out, so one bad answer taints
-    # the name. We then connect to the first (validated) IP directly.
-    try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror:
-        raise frappe.ValidationError("Host not resolvable")
-    pinned_ip = None
-    for info in infos:
-        ip = info[4][0]
-        addr = ipaddress.ip_address(ip)
-        if (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_link_local
-            or addr.is_multicast
-            or addr.is_reserved
-            or addr.is_unspecified
-        ):
-            raise frappe.ValidationError("Address not allowed")
-        if pinned_ip is None:
-            pinned_ip = ip
-    path = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
-    return pinned_ip, host, port, parsed.scheme, path
+    resp = request_public(
+        "GET",
+        url,
+        headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+        follow_redirects=MAX_REDIRECTS,
+        max_bytes=MAX_BYTES,
+    )
+    if resp.status in REDIRECT_STATUSES:
+        raise frappe.ValidationError("Too many redirects")
+    if resp.status >= 400:
+        raise frappe.ValidationError(f"HTTP {resp.status}")
+    if "html" not in resp.headers.get("content-type", ""):
+        raise frappe.ValidationError("Not an HTML page")
+    return resp.url, resp.body
 
 
 def _meta(soup, **attrs):

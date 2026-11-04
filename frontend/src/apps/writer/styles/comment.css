@@ -27,6 +27,22 @@ span[data-comment-name] {
   background: rgba(250, 204, 21, 0.25);
 }
 
+span[data-thread] {
+  background: var(--surface-amber-2);
+}
+
+span[data-thread].is-lit {
+  background: var(--surface-amber-3);
+}
+
+span[data-thread].is-open {
+  background: var(--surface-amber-5);
+}
+
+[data-theme='dark'] span[data-thread].is-open {
+  background: var(--surface-amber-4);
+}
+
 span[data-comment-name]:hover,
 span[data-comment-name].active {
   background: rgba(250, 204, 21, 0.5);

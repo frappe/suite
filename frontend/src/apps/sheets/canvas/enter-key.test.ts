@@ -4,29 +4,51 @@
 // text; a second Enter commits and moves down. The grid used to skip the edit
 // step and move down straight away, so the value was unreachable from the
 // keyboard without F2.
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createMockCtx } from './painters/test-utils.js'
-import { createGrid } from './index.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-function mount(opts = {}) {
+import { createGrid } from './index.js'
+import { createMockCtx } from './painters/test-utils.js'
+
+function mount(host = {}) {
   const parent = document.createElement('div')
   const canvas = document.createElement('canvas')
   vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
   parent.appendChild(canvas)
   document.body.appendChild(parent)
-  const grid = createGrid(canvas, { getFormat: () => ({}), canEdit: () => true, ...opts })
+  const grid = createGrid(canvas, {
+    cells: { getStyle: () => ({}) },
+    host: { canEdit: () => true, ...host },
+  })
   grid.resize(800, 600)
   const editor = () => parent.querySelector('textarea') as HTMLTextAreaElement | null
   const press = (key: string, init: KeyboardEventInit = {}) => {
     const target = grid.isEditing() ? editor()! : canvas
     target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))
   }
-  return { grid, editor, press }
+  return { grid, editor, press, canvas }
 }
+
+// The tests below dispatch keys straight at the canvas, which works even when
+// a real browser could never focus it. Regression: the split dropped the
+// tabindex, so clicks didn't focus the grid and typing/Delete did nothing.
+// Focusing the canvas now lands on its hidden textarea (input/text-sink.ts).
+describe('grid focus', () => {
+  it('lets the canvas take keyboard focus', () => {
+    document.body.innerHTML = ''
+    const { canvas } = mount()
+    canvas.focus()
+    expect(canvas.tabIndex).toBe(0)
+    expect(document.activeElement?.tagName).toBe('TEXTAREA')
+    expect(canvas.parentElement!.contains(document.activeElement)).toBe(true)
+  })
+})
 
 describe('Enter on the selected cell', () => {
   let h: ReturnType<typeof mount>
-  beforeEach(() => { document.body.innerHTML = ''; h = mount() })
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    h = mount()
+  })
 
   it('opens the in-cell editor on the cell, seeded with its value', () => {
     h.grid.setCell('A1', 'hello')

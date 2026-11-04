@@ -10,8 +10,8 @@ from frappe.model.document import Document
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
 from suite.utils.user import is_suite_admin, is_system_manager
 
-# Screening actions: what happens to future mail from a screened sender.
-REJECT = "Reject"  # discard the incoming mail silently
+# Screening actions: what happens to future mail from a screened sender. Blocking a sender is the
+# Spam action — their mail goes to Junk, never discarded unseen.
 SPAM = "Spam"  # file the incoming mail into the Spam (Junk) folder
 
 
@@ -25,7 +25,7 @@ class ScreenedEmailAddress(Document):
         from frappe.types import DF
 
         account: DF.Link | None
-        action: DF.Literal["Spam", "Reject", "Accepted"]
+        action: DF.Literal["Spam", "Accepted"]
         email: DF.Data
     # end: auto-generated types
 
@@ -71,7 +71,7 @@ class ScreenedEmailAddress(Document):
 
         # Runs on both insert and save. `email` is set_only_once, so on an edit only the action can
         # change; regenerate on insert (no prior doc) and whenever the action is changed (e.g. switching
-        # Spam <-> Reject in Desk), since that moves the sender between sieve blocks. Skipped when a
+        # Spam <-> Accepted in Desk), since that moves the sender between sieve blocks. Skipped when a
         # caller paused builds for a bulk write (it rebuilds once at the end instead).
         if self.has_value_changed("action"):
             # Activate the automation script so the screening rule takes effect (unless vacation is active).
@@ -111,7 +111,7 @@ def get_screened_email_addresses(account: str, action: str | None = None) -> lis
     """Returns the screened email addresses (with their action) for the given account.
 
     Keyed on `account` so every user with access to a shared account sees the same list. Pass
-    `action` to restrict to a single action (e.g. only the Reject rules). `creation` and `modified`
+    `action` to restrict to a single action (e.g. only the Spam rules). `creation` and `modified`
     are included so the settings UI can sort by when a rule was added or last changed (default order).
     """
 

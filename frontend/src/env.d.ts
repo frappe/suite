@@ -22,10 +22,21 @@ declare global {
     suite_workspace_logo?: string
     /** Kill switch for the slides service worker (site config, served by www/suite.py). */
     disable_slides_service_worker?: boolean
+    /** The largest file the site accepts, in bytes (served by www/suite.py). Read through `@/platform/boot`. */
+    max_file_size?: number
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */
     __?: (message: string, replace?: Array<string | number>) => string
+  }
+
+  /** Chromium's install prompt event. It is not in the DOM typings yet. */
+  interface BeforeInstallPromptEvent extends Event {
+    prompt(): Promise<void>
+  }
+
+  interface WindowEventMap {
+    beforeinstallprompt: BeforeInstallPromptEvent
   }
 
   /** Bare `__('text')` available in templates via globalProperties. */
@@ -36,6 +47,15 @@ declare global {
 
   /** Injected by Vite from sites/common_site_config.json. */
   const __SOCKETIO_PORT__: string | number
+
+  /** Build time stamped by Vite; the server sends its own as `X-Suite-Build`. */
+  const __SUITE_BUILD__: string
+
+  /** The Yjs version the checker build bundles, injected by vite.checker.config.ts. */
+  const __CHECKER_YJS__: string
+
+  /** The converter version the converter build holds, injected by vite.checker.config.ts. */
+  const __CONVERTER_VERSION__: string
 }
 
 export {}

@@ -1,6 +1,5 @@
-import dayjs from '@/apps/mail/utils/dayjs'
-
 import type { Thread } from '@/apps/mail/types'
+import dayjs from '@/apps/mail/utils/dayjs'
 
 // Chatty automated senders (uptime alerts, CI, ticket systems) post runs of threads that bury
 // everything around them. A run of this many adjacent threads from one lone sender collapses into a
@@ -22,19 +21,23 @@ const MIN_STACK_SIZE = 3
 // A blank name is not a name: bots that fill it on some messages and not others would otherwise
 // look like two writers.
 const loneSenderOf = (thread: Thread): string | null => {
-	const messages = thread.messages ?? []
+  const messages = thread.messages ?? []
 
-	const emails = new Set(messages.map((m) => (m.from_email ?? '').trim().toLowerCase()).filter(Boolean))
-	if (emails.size > 1) return null
+  const emails = new Set(
+    messages.map((m) => (m.from_email ?? '').trim().toLowerCase()).filter(Boolean),
+  )
+  if (emails.size > 1) return null
 
-	const names = new Set(messages.map((m) => (m.from_name ?? '').trim().toLowerCase()).filter(Boolean))
-	if (names.size > 1) return null
+  const names = new Set(
+    messages.map((m) => (m.from_name ?? '').trim().toLowerCase()).filter(Boolean),
+  )
+  if (names.size > 1) return null
 
-	const email = [...emails][0] || (thread.from_email ?? '').trim().toLowerCase()
-	if (!email) return null
+  const email = [...emails][0] || (thread.from_email ?? '').trim().toLowerCase()
+  if (!email) return null
 
-	const name = [...names][0] ?? (thread.from_name ?? '').trim().toLowerCase()
-	return `${name}|${email}`
+  const name = [...names][0] ?? (thread.from_name ?? '').trim().toLowerCase()
+  return `${name}|${email}`
 }
 
 /**
@@ -63,28 +66,28 @@ const loneSenderOf = (thread: Thread): string | null => {
  * adjacent threads from different days simply get different keys and the run flushes at midnight.
  */
 export const stackKeyOf = (thread: Thread): string | null => {
-	const sender = loneSenderOf(thread)
-	if (!sender) return null
+  const sender = loneSenderOf(thread)
+  if (!sender) return null
 
-	const day = dayjs(thread.received_at).format('YYYY-MM-DD')
-	return `${thread.account ?? ''}|${day}|${sender}`
+  const day = dayjs(thread.received_at).format('YYYY-MM-DD')
+  return `${thread.account ?? ''}|${day}|${sender}`
 }
 
 interface ThreadRow {
-	type: 'thread'
-	key: string
-	thread: Thread
-	// Set on the members of an expanded stack, which the list indents so the run still reads as one
-	// unit. They are emitted as siblings of their stack row rather than nested inside it, so the list
-	// template keeps a single MailListItem branch for every thread row, stacked or not.
-	inStack?: boolean
+  type: 'thread'
+  key: string
+  thread: Thread
+  // Set on the members of an expanded stack, which the list indents so the run still reads as one
+  // unit. They are emitted as siblings of their stack row rather than nested inside it, so the list
+  // template keeps a single MailListItem branch for every thread row, stacked or not.
+  inStack?: boolean
 }
 
 export interface StackRow {
-	type: 'stack'
-	key: string
-	threads: Thread[]
-	expanded: boolean
+  type: 'stack'
+  key: string
+  threads: Thread[]
+  expanded: boolean
 }
 
 // One rendered row. An expanded stack contributes its stack row followed by a ThreadRow per member.
@@ -98,50 +101,50 @@ export type ListRow = ThreadRow | StackRow
  * of the stack key caps it at a calendar day besides).
  */
 export const buildListRows = (
-	threads: Thread[],
-	options: {
-		rowKey: (thread: Thread) => string
-		isExpanded: (run: Thread[]) => boolean
-		enabled?: boolean
-	},
+  threads: Thread[],
+  options: {
+    rowKey: (thread: Thread) => string
+    isExpanded: (run: Thread[]) => boolean
+    enabled?: boolean
+  },
 ): ListRow[] => {
-	const { rowKey, isExpanded, enabled = true } = options
-	const rows: ListRow[] = []
+  const { rowKey, isExpanded, enabled = true } = options
+  const rows: ListRow[] = []
 
-	const pushThreads = (run: Thread[], inStack = false) => {
-		for (const thread of run) rows.push({ type: 'thread', key: rowKey(thread), thread, inStack })
-	}
+  const pushThreads = (run: Thread[], inStack = false) => {
+    for (const thread of run) rows.push({ type: 'thread', key: rowKey(thread), thread, inStack })
+  }
 
-	const flush = (run: Thread[]) => {
-		if (!run.length) return
+  const flush = (run: Thread[]) => {
+    if (!run.length) return
 
-		if (!enabled || run.length < MIN_STACK_SIZE) return pushThreads(run)
+    if (!enabled || run.length < MIN_STACK_SIZE) return pushThreads(run)
 
-		// Keyed by the run's first row, which is stable while the run grows downwards (the common case:
-		// infinite scroll appending older mail). Expansion state is tracked separately, by member id, so
-		// a key change on a refresh-prepend costs nothing.
-		const expanded = isExpanded(run)
-		rows.push({ type: 'stack', key: `stack:${rowKey(run[0])}`, threads: run, expanded })
-		if (expanded) pushThreads(run, true)
-	}
+    // Keyed by the run's first row, which is stable while the run grows downwards (the common case:
+    // infinite scroll appending older mail). Expansion state is tracked separately, by member id, so
+    // a key change on a refresh-prepend costs nothing.
+    const expanded = isExpanded(run)
+    rows.push({ type: 'stack', key: `stack:${rowKey(run[0])}`, threads: run, expanded })
+    if (expanded) pushThreads(run, true)
+  }
 
-	let run: Thread[] = []
-	let runKey: string | null = null
+  let run: Thread[] = []
+  let runKey: string | null = null
 
-	for (const thread of threads) {
-		const key = stackKeyOf(thread)
-		// A null key never matches, so senderless threads always flush on their own and never merge
-		// with each other.
-		if (key && key === runKey) {
-			run.push(thread)
-			continue
-		}
+  for (const thread of threads) {
+    const key = stackKeyOf(thread)
+    // A null key never matches, so senderless threads always flush on their own and never merge
+    // with each other.
+    if (key && key === runKey) {
+      run.push(thread)
+      continue
+    }
 
-		flush(run)
-		run = [thread]
-		runKey = key
-	}
-	flush(run)
+    flush(run)
+    run = [thread]
+    runKey = key
+  }
+  flush(run)
 
-	return rows
+  return rows
 }

@@ -1,209 +1,227 @@
-import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { createResource } from 'frappe-ui'
+import { computed, reactive, ref, watch } from 'vue'
 
+import { api, useQuery } from '@/api'
 import router from '@/apps/mail/router'
-import { SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
-
-import type { UserAccount, UserResource } from '@/apps/mail/types'
+import type { UserAccount } from '@/apps/mail/types'
+import { useSession } from '@/platform/session'
 
 export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
 
 /** Destinations rather than places mail is read — the folder lists (desktop sidebar,
- * mobile folder sheet) render these in their own "More" section below the custom folders,
- * in this order. Typed wide (string) because mailbox data carries role as a string. */
+ * mobile folder sheet) keep these behind their More row, in this order: the mail kept first,
+ * the mail thrown out last, Trash at the very end. Typed wide (string) because mailbox data
+ * carries role as a string. */
 export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
-	'junk',
-	'archive',
-	'trash',
+  'archive',
+  'junk',
+  'trash',
 ] satisfies readonly MailboxRole[]
 
-/** Role → mailbox id map for a mailbox list (plus the named Screener). Shared with
- * utils/accountScope, which derives the same map for a non-active account's list. */
+/** The system folders the folder lists lead with, in this order; a role not named here follows
+ * them. Starred, which is no mailbox, goes in after the Inbox (see withStarred). */
+export const PRIMARY_MAILBOX_ROLES: readonly string[] = [
+  'inbox',
+  'drafts',
+  'sent',
+] satisfies readonly MailboxRole[]
+
+const primaryRank = (role?: string | null) => {
+  const rank = PRIMARY_MAILBOX_ROLES.indexOf(role ?? '')
+  return rank === -1 ? PRIMARY_MAILBOX_ROLES.length : rank
+}
+
+/** The lead folders in reading order — Inbox, Starred, Drafts, Sent, then the rest. */
+export const withStarred = <T, S>(
+  folders: T[],
+  roleOf: (folder: T) => string | null | undefined,
+  starred: S,
+): (T | S)[] => {
+  const sorted: (T | S)[] = [...folders].sort(
+    (a, b) => primaryRank(roleOf(a)) - primaryRank(roleOf(b)),
+  )
+  const afterInbox = folders.length ? sorted.findIndex((f) => roleOf(f as T) === 'inbox') + 1 : 0
+  sorted.splice(afterInbox, 0, starred)
+  return sorted
+}
+
+/** Role → mailbox id map for a mailbox list. Shared with utils/accountScope, which derives the
+ * same map for a non-active account's list. */
 export const deriveMailboxIds = (
-	mailboxes?: { role?: MailboxRole; _name?: string; id: string }[],
-): Record<MailboxRole | 'screener', string> => {
-	const ids: Record<MailboxRole | 'screener', string> = {
-		inbox: '',
-		sent: '',
-		drafts: '',
-		trash: '',
-		junk: '',
-		archive: '',
-		important: '',
-		screener: '',
-	}
-	mailboxes?.forEach((m) => {
-		if (m.role) ids[m.role] = m.id
-		else if (m._name === SCREENER_MAILBOX_NAME) ids.screener = m.id
-	})
-	return ids
+  mailboxes?: { role?: MailboxRole | null; _name?: string; id: string }[],
+): Record<MailboxRole, string> => {
+  const ids: Record<MailboxRole, string> = {
+    inbox: '',
+    sent: '',
+    drafts: '',
+    trash: '',
+    junk: '',
+    archive: '',
+    important: '',
+  }
+  mailboxes?.forEach((m) => {
+    if (m.role) ids[m.role] = m.id
+  })
+  return ids
 }
 
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 
 export const userStore = defineStore('mail-user', () => {
-	const accountId = ref('')
+  const accountId = ref('')
 
-	const resolveAccount = (accounts?: UserAccount[], routeAccountId?: string) => {
-		if (!accounts?.length) return
+  const resolveAccount = (accounts?: readonly UserAccount[], routeAccountId?: string) => {
+    if (!accounts?.length) return
 
-		// 1. Route param
-		if (routeAccountId && accounts.some((a) => a.id === routeAccountId)) {
-			if (routeAccountId !== accountId.value) setAccount(routeAccountId)
-			return
-		}
+    // 1. Route param
+    if (routeAccountId && accounts.some((a) => a.id === routeAccountId)) {
+      if (routeAccountId !== accountId.value) setAccount(routeAccountId)
+      return
+    }
 
-		// 2. localStorage
-		const localId = localStorage.getItem(ACCOUNT_STORAGE_KEY)
-		if (localId && accounts.some((a) => a.id === localId)) {
-			if (localId !== accountId.value) setAccount(localId)
-			return
-		}
+    // 2. localStorage
+    const localId = localStorage.getItem(ACCOUNT_STORAGE_KEY)
+    if (localId && accounts.some((a) => a.id === localId)) {
+      if (localId !== accountId.value) setAccount(localId)
+      return
+    }
 
-		// 3. Personal account fallback
-		if (accountId.value) return
-		const personalId = accounts.find((a) => a.is_personal)?.id
-		if (personalId) setAccount(personalId)
-	}
+    // 3. Personal account fallback
+    if (accountId.value) return
+    const personalId = accounts.find((a) => a.is_personal)?.id
+    if (personalId) setAccount(personalId)
+  }
 
-	const setAccount = (id: string) => {
-		accountId.value = id
-		localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
-		mailboxes.fetch()
-		addressBooks.fetch()
-		identities.fetch()
-		screenedAddresses.fetch()
-		globalScreenedAddresses.fetch()
-		sieveScripts.fetch()
-	}
+  const setAccount = (id: string) => {
+    accountId.value = id
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
+  }
 
-	const userResource: UserResource = createResource({
-		url: 'suite.mail.api.account.get_user_info',
-		// Only the accounts with mail for the user: one that shares a calendar and nothing else
-		// is among their accounts, and has no inbox to show. In place, so onSuccess — which is
-		// handed the response rather than this — reads the same list.
-		transform: (data) => {
-			if (data?.accounts) data.accounts = data.accounts.filter((account) => account.in_mail)
-			return data
-		},
-		onSuccess: (data) => {
-			// The unified All Inboxes badge only applies when there's more than one account to merge.
-			if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
-			resolveAccount(data?.accounts)
-		},
-		onError: (error) => {
-			if (error && error.exc_type === 'AuthenticationError')
-				router.push({ name: 'mail-login' })
-		},
-		auto: true,
-	})
+  const account = () => (accountId.value ? { account: accountId.value } : false)
+  const userQuery = useQuery(api.mail.account.get, () => (useSession().user.value ? {} : false))
+  const userResource = reactive({
+    get status() {
+      return userQuery.status
+    },
+    get isFetching() {
+      return userQuery.isFetching
+    },
+    get error() {
+      return userQuery.error
+    },
+    refetch: userQuery.refetch,
+    cancel: userQuery.cancel,
+    get data() {
+      const data = userQuery.data
+      return data ? { ...data, accounts: data.accounts.filter((account) => account.in_mail) } : data
+    },
+  })
+  const loadUser = () => userQuery.refetch()
+  watch(
+    () => userResource.data?.accounts,
+    (accounts) => resolveAccount(accounts),
+    { flush: 'sync' },
+  )
+  watch(
+    () => userQuery.error,
+    (error) => {
+      if (error && 'type' in error && error.type === 'AuthenticationError')
+        void router.push({ name: 'mail-login' })
+    },
+  )
 
-	// Total unread across every account's Inbox — drives the "All Inboxes" sidebar badge. Not scoped to
-	// the active account, so (unlike the per-account resources) it isn't re-fetched in setAccount().
-	const allInboxesUnread = createResource({ url: 'suite.mail.api.mail.get_all_inbox_unread_count' })
+  // Every account's folders merged by slug, with their unread counts summed — the folder list of the
+  // "All accounts" view. Only fetched when there's more than one account to merge, and not scoped to
+  // the active account.
+  const unifiedFolders = useQuery(api.mail.unified.folders, () =>
+    (userResource.data?.accounts.length ?? 0) > 1 ? {} : false,
+  )
+  const mailboxes = useQuery(api.mail.mailboxes.list, account)
+  const addressBooks = useQuery(api.mail.addressBooks.list, account)
+  const identities = useQuery(api.mail.identities.list, account)
+  const screenedAddresses = useQuery(api.mail.screening.list, account)
+  const globalScreenedAddresses = useQuery(api.mail.screening.global, () =>
+    useSession().user.value ? {} : false,
+  )
+  const sieveScripts = useQuery(api.mail.sieve.list, account)
+  const mailboxIds = computed(() => deriveMailboxIds(mailboxes.data))
 
-	// Keep the unified badge in step with the per-account mailbox counts: refresh it whenever the active
-	// account's mailboxes reload — i.e. after any thread action (read, move, archive, trash, …) and on
-	// the periodic poll, since every one of those calls mailboxes.reload(). Only relevant with >1 account.
-	const reloadAllInboxesUnread = () => {
-		if ((userResource.data?.accounts?.length ?? 0) > 1) allInboxesUnread.reload()
-	}
+  // The categories the Inbox is split into, in the order of their tabs (none, no tabs), and each tab's
+  // unread count: in the active account's Inbox, and across every account's.
+  const inboxTabs = computed(() => {
+    const data = userResource.data
+    return data?.email_classification && data.split_inbox ? data.inbox_tabs : []
+  })
+  const tabCounts = useQuery(api.mail.tabs.counts, () =>
+    accountId.value && mailboxIds.value.inbox && inboxTabs.value.length
+      ? { account: accountId.value, mailbox: mailboxIds.value.inbox }
+      : false,
+  )
+  const unifiedTabCounts = useQuery(api.mail.unified.tabCounts, () =>
+    (userResource.data?.accounts.length ?? 0) > 1 && inboxTabs.value.length
+      ? // A system folder's slug is its role.
+        { folder: 'inbox' }
+      : false,
+  )
+  // Every count the sidebar and the tabs show, read again: the active account's folders, the Inbox's
+  // tabs, and the merged ones across accounts — which mail arriving in another account, or moving
+  // between tabs, changes without touching the active account's folders. For the polls and the mail
+  // sockets; a write reads again what it changes itself (see the client policy). These followed the
+  // mailbox list once, by a watcher, but the list is a new object on every read and every optimistic
+  // change, so each click asked for all of them again.
+  // Settles with the active account's folders, which the polls read next.
+  const refreshCounts = (): Promise<unknown> => {
+    if ((userResource.data?.accounts.length ?? 0) > 1) void unifiedFolders.refetch().catch(() => {})
+    if (tabCounts.data) void tabCounts.refetch().catch(() => {})
+    if (unifiedTabCounts.data) void unifiedTabCounts.refetch().catch(() => {})
+    return mailboxes.refetch().catch(() => {})
+  }
 
-	const mailboxes = createResource({
-		url: 'suite.mail.api.mail.get_mailboxes',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['mailboxes', accountId.value],
-		onSuccess: reloadAllInboxesUnread,
-	})
+  // Short display labels for the merged views (All Inboxes, all-accounts search), keyed by the
+  // account's full name. Only the odd ones out get labelled: the currently open account is
+  // where the reader already is, so its rows stay bare ('' here — the row hides an empty
+  // label) and ink scales with how much the reader actually needs it. The rest show the
+  // address's local part — enough to tell the accounts apart in a fraction of the width —
+  // falling back to the full address only when two accounts share a local part.
+  const accountShortNames = computed<Record<string, string>>(() => {
+    const accounts = userResource.data?.accounts ?? []
+    const shortOf = (name: string) => name.split('@')[0] || name
+    const counts: Record<string, number> = {}
+    for (const account of accounts) {
+      const short = shortOf(account._name ?? '')
+      counts[short] = (counts[short] ?? 0) + 1
+    }
+    return Object.fromEntries(
+      accounts.map((account) => {
+        const name = account._name ?? ''
+        if (account.id === accountId.value) return [name, '']
+        return [name, counts[shortOf(name)] > 1 ? name : shortOf(name)]
+      }),
+    )
+  })
 
-	const mailboxIds = computed(() => deriveMailboxIds(mailboxes.data))
+  const reset = () => {
+    accountId.value = ''
+  }
 
-	// Short display labels for the merged views (All Inboxes, all-accounts search), keyed by the
-	// account's full name. Only the odd ones out get labelled: the currently open account is
-	// where the reader already is, so its rows stay bare ('' here — the row hides an empty
-	// label) and ink scales with how much the reader actually needs it. The rest show the
-	// address's local part — enough to tell the accounts apart in a fraction of the width —
-	// falling back to the full address only when two accounts share a local part.
-	const accountShortNames = computed<Record<string, string>>(() => {
-		const accounts = userResource.data?.accounts ?? []
-		const shortOf = (name: string) => name.split('@')[0] || name
-		const counts: Record<string, number> = {}
-		for (const account of accounts) {
-			const short = shortOf(account._name ?? '')
-			counts[short] = (counts[short] ?? 0) + 1
-		}
-		return Object.fromEntries(
-			accounts.map((account) => {
-				const name = account._name ?? ''
-				if (account.id === accountId.value) return [name, '']
-				return [name, counts[shortOf(name)] > 1 ? name : shortOf(name)]
-			}),
-		)
-	})
-
-	const addressBooks = createResource({
-		url: 'suite.mail.api.contacts.get_address_books',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['addressBooks', accountId.value],
-	})
-
-	const identities = createResource({
-		url: 'suite.mail.api.account.get_identities',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['identities', accountId.value],
-	})
-
-	// Screened senders for the account: each is `{ email, action }` where action is 'Reject'
-	// (discard incoming mail) or 'Spam' (file it into the Spam folder).
-	const screenedAddresses = createResource({
-		url: 'suite.mail.api.mail.get_screened_addresses',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['screenedAddresses', accountId.value],
-	})
-
-	// Global screened senders (admin-managed, no account) — overlaid under the account's own rules
-	// when deciding whether a sender is trusted for remote images. Not shown in the settings UI.
-	const globalScreenedAddresses = createResource({
-		url: 'suite.mail.api.mail.get_global_screened_addresses',
-		cache: 'globalScreenedAddresses',
-	})
-
-	const sieveScripts = createResource({
-		url: 'suite.mail.api.sieve.get_sieve_scripts',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['sieveScripts', accountId.value],
-	})
-
-	// Clear all user/account state so the next sign-in starts from a clean slate. Without
-	// resetting accountId, resolveAccount() would see the resolved account as unchanged and skip
-	// setAccount(), so the per-account resources (mailboxes, etc.) would never re-fetch until a
-	// full page reload.
-	const reset = () => {
-		accountId.value = ''
-		userResource.reset()
-		mailboxes.reset()
-		addressBooks.reset()
-		identities.reset()
-		screenedAddresses.reset()
-		globalScreenedAddresses.reset()
-		sieveScripts.reset()
-		allInboxesUnread.reset()
-	}
-
-	return {
-		accountId,
-		resolveAccount,
-		userResource,
-		mailboxes,
-		mailboxIds,
-		accountShortNames,
-		addressBooks,
-		identities,
-		sieveScripts,
-		screenedAddresses,
-		globalScreenedAddresses,
-		allInboxesUnread,
-		reset,
-	}
+  return {
+    refreshCounts,
+    accountId,
+    resolveAccount,
+    userResource,
+    loadUser,
+    mailboxes,
+    mailboxIds,
+    accountShortNames,
+    addressBooks,
+    identities,
+    sieveScripts,
+    screenedAddresses,
+    globalScreenedAddresses,
+    unifiedFolders,
+    inboxTabs,
+    tabCounts,
+    unifiedTabCounts,
+    reset,
+  }
 })

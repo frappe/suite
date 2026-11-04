@@ -1,202 +1,198 @@
 import { ref } from 'vue'
-import { frappeRequest } from 'frappe-ui'
-import { call }                  from '../../utils/api.js'
-import { encodeForUpload, isDecompressionSupported, decodeFromDownload } from '../../utils/compress.js'
-import { packSheet, packSheetChunked, unpackSheet, boundsOf } from '../../utils/sheet-codec.js'
 
+import { api, client } from '@/api'
+
+import { base64ToBytes, bytesToBase64, ENGINE_VERSION } from '../../core/snapshot-codec'
+import { decodeFromDownload, isDecompressionSupported } from '../../utils/compress.js'
+import { applyLegacyPlan, planLegacySheet } from '../../utils/legacy-sheet'
+import { isRefusal } from '../../utils/relay.js'
+
+// The sheet's old body (`sheets_data`), read-only. The live room saves every
+// edit (useCollabRoom.ts); this only shows a sheet the room can't open — a
+// guest's, or one still waiting for its conversion — and builds the whole
+// workbook as JSON for the surface's recovery copy.
+//
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /
-// freeze panes / hidden cols/rows to silently disappear after every save.
-export function usePersistence({ sheet, formats, merge, comments, validation, protection, condFormat, sortFilter, slicers, pivot, charts, namedRanges, getViewState, applyViewState, currentTitle, emit }) {
-  const isSaving  = ref(false)
-  const saveError = ref('')
-  // Write permission for the currently-loaded sheet, from get_sheet's `can_write`.
-  // Defaults to true so a brand-new (autoCreate) doc — which the creator always
-  // owns — never flashes read-only before the first load resolves.
-  const canWrite  = ref(true)
-  // The sheet's true owner (creator's user id), surfaced by get_sheet so the
-  // Share dialog can name the real owner rather than the current viewer. Empty
-  // until the first load resolves; for a brand-new sheet the editor falls back
-  // to the session user (who is the creator).
-  const sheetOwner = ref('')
+// freeze panes / hidden cols/rows to silently disappear on load.
+//
+// Options, all optional:
+//   - `requestContext` — use the open document's Drive access scope. The `/d/`
+//     surface passes the Drive session's, which adds its link credentials.
+export function usePersistence({
+  // IronCalc: start(bytes | null) builds the workbook, toBytes() reads it back,
+  // client() is the running workbook client, syncDefinedNames() sends it the
+  // named ranges.
+  engine,
+  formats,
+  merge,
+  comments,
+  validation,
+  protection,
+  condFormat,
+  sortFilter,
+  slicers,
+  pivot,
+  charts,
+  namedRanges,
+  getViewState,
+  applyViewState,
+  currentTitle,
+  requestContext,
+}) {
   // Surfaces "couldn't open this sheet" cases (404 / 403 / network) to the
   // editor so it can render a proper error screen instead of mounting a
   // blank canvas. Shape: { kind: 'denied' | 'missing' | 'other', message }.
   const loadError = ref(null)
-
+  // The tab a body last saved by the develop editor had open; null for any
+  // other sheet.
+  const legacyCurrent = ref(null)
+  const sideStores = [
+    merge,
+    comments,
+    validation,
+    protection,
+    condFormat,
+    sortFilter,
+    slicers,
+    pivot,
+    charts,
+    namedRanges,
+  ]
   async function loadSheet(name) {
     loadError.value = null
     try {
-      const canGz  = isDecompressionSupported()
-      const doc    = await call('suite.sheets.api.get_sheet', { name, compressed: canGz ? 1 : 0 })
-      frappeRequest({
-        url: 'suite.drive.api.files.track_visit',
-        params: { doctype: 'Sheet', docname: name },
-      }).catch(() => {})
-      const plain  = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
-      const saved  = JSON.parse(plain || '{}')
-      if (saved.formats)    formats.restore(saved.formats)
-      sheet.restore(
-        unpackSheet(saved.sheet) ?? { sheets: { Sheet1: {} }, current: 'Sheet1' },
-        boundsOf(saved.sheet),
+      const canGz = isDecompressionSupported()
+      const doc = await client.query(
+        api.sheets.documents.get,
+        {
+          name,
+          compressed: canGz ? 1 : 0,
+        },
+        {
+          context: requestContext,
+        },
       )
-      if (saved.merge      && merge?.restore)      merge.restore(saved.merge)
-      if (saved.comments   && comments?.restore)   comments.restore(saved.comments)
+      const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
+      const saved = JSON.parse(plain || '{}')
+      if (saved.formats) formats.restore(saved.formats)
+      await _startEngine(saved)
+      // A sheet last saved by the develop editor: its cells are typed into
+      // IronCalc here (utils/legacy-sheet.ts); the side stores below restore
+      // from its old shapes as they are.
+      const plan = saved.engine ? null : planLegacySheet(saved.sheet)
+      const converted = plan ? await applyLegacyPlan(engine.client(), plan) : null
+      if (converted && !converted.ok)
+        console.error('[sheets] could not convert a develop sheet:', converted.error)
+      const renamed = converted?.ok ? Object.entries(plan.renamed) : []
+      if (renamed.length && saved.view) saved.view = _renameKeys(saved.view, plan.renamed)
+      if (saved.merge && merge?.restore) merge.restore(saved.merge)
+      // Drive owns a develop sheet's comments: the migration made them Drive
+      // threads and stripped them from the body. A develop body that still has
+      // them is an old version restored; restoring them would show each twice.
+      const commentsInDrive = plan && doc.node
+      if (saved.comments && comments?.restore && !commentsInDrive) comments.restore(saved.comments)
       if (saved.validation && validation?.restore) validation.restore(saved.validation)
       if (saved.protection && protection?.restore) protection.restore(saved.protection)
       if (saved.condFormat && condFormat?.restore) condFormat.restore(saved.condFormat)
       if (saved.sortFilter && sortFilter?.restore) sortFilter.restore(saved.sortFilter)
-      if (saved.slicers    && slicers?.restore)    slicers.restore(saved.slicers)
-      if (saved.view       && applyViewState)      applyViewState(saved.view)
-      if (saved.pivot      && pivot?.restore)      pivot.restore(saved.pivot)
-      if (saved.charts     && charts?.restore)     charts.restore(saved.charts)
+      if (saved.slicers && slicers?.restore) slicers.restore(saved.slicers)
+      if (saved.view && applyViewState) applyViewState(saved.view)
+      if (saved.pivot && pivot?.restore) pivot.restore(saved.pivot)
+      if (saved.charts && charts?.restore) charts.restore(saved.charts)
       if (saved.namedRanges && namedRanges?.restore) namedRanges.restore(saved.namedRanges)
+      for (const [from, to] of renamed) {
+        for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
+      }
+      if (saved.namedRanges && namedRanges?.restore) {
+        // A name on a sheet the file no longer has (saved before ISSUES #77)
+        // is #REF!, as if that sheet were deleted now: a sheet added later
+        // under its name doesn't bring it back. Checked after a develop
+        // sheet's renames; skipped when its conversion failed (IronCalc then
+        // holds none of its sheets).
+        const sheets = engine.client?.()?.sheets
+        if (sheets && namedRanges.deleteSheet && converted?.ok !== false) {
+          const have = new Set(sheets.map((s) => s.toLowerCase()))
+          for (const e of namedRanges.list())
+            if (e.sheet && !have.has(e.sheet.toLowerCase())) namedRanges.deleteSheet(e.sheet)
+        }
+        // IronCalc started before the names were back, and its saved names
+        // can be out of date (one whose cells were deleted: ISSUES #74).
+        engine.syncDefinedNames?.()
+      } else if (converted?.ok) {
+        // A formula naming a defined name shows #NAME? until IronCalc has the names.
+        engine.syncDefinedNames?.()
+      }
+      legacyCurrent.value = plan?.current ?? null
       currentTitle.value = doc.title
-      // Older backends predate `can_write`; treat its absence as writable so we
-      // never lock out an editor on a stale server.
-      canWrite.value = doc.can_write !== false
-      sheetOwner.value = doc.owner || ''
     } catch (err) {
       console.error('Load failed:', err)
-      const t = err?.excType || ''
+      const t = err?.type || ''
       const kind =
-        t === 'PermissionError'    ? 'denied'  :
-        t === 'DoesNotExistError'  ? 'missing' :
-                                     'other'
-      loadError.value = { kind, message: err?.message || 'Could not open this sheet' }
+        t === 'DoesNotExistError' || t === 'DriveNotFound'
+          ? 'missing'
+          : isRefusal(err)
+            ? 'denied'
+            : 'other'
+      loadError.value = {
+        kind,
+        message: err?.message || 'Could not open this sheet',
+      }
     }
   }
 
-  // Creates a brand-new doc on the backend with the given title and returns the
-  // doc name.  Called immediately on mount so every doc has a real ID from the
-  // start — no manual-save step, matching Google Sheets' always-saved model.
-  async function autoCreate(title, { ops } = {}) {
-    return _persist(null, title || 'Untitled Sheet', { ops })
-  }
-
-  async function saveExisting(name, title, { keepalive = false, ops } = {}) {
-    return _persist(name, title, { keepalive, ops })
-  }
-
-  // Transient → retry with backoff. Permanent → fail fast so the user
-  // gets an honest error instead of waiting ~7 s for three retries that
-  // were never going to succeed.
-  //
-  // The Frappe api helper attaches `excType` + `status` to thrown errors
-  // (see utils/api.js), so we don't have to regex the message.
-  function _isTransientSaveError(err) {
-    // No status → fetch itself threw (offline, DNS failure, server killed
-    // mid-flight before the response existed). Always retry these.
-    if (err?.status == null) return true
-    // Server-side hiccups (502 Bad Gateway during deploy, 503 overloaded,
-    // 504 timeout) — usually clear on the next attempt.
-    if (err.status >= 500 && err.status <= 599) return true
-    // 408 Request Timeout, 429 rate-limited — explicit "try again" codes.
-    if (err.status === 408 || err.status === 429) return true
-    // 4xx (permission, validation, CSRF, not-found, …) won't change by
-    // re-sending the same payload. Surface immediately.
-    return false
-  }
-
-  // Lets the user (and a watchdog inside the editor) explicitly re-run
-  // the most recent failed save without having to make another edit to
-  // re-trigger the auto-save timer. Populated by _persist at the start
-  // of every attempt; cleared on success.
-  let _lastSaveArgs = null
-  async function retrySave() {
-    if (!_lastSaveArgs) return null
-    const { args, keepalive } = _lastSaveArgs
-    return _send(args, keepalive)
-  }
-
-  async function _persist(name, title, { keepalive = false, ops } = {}) {
-    isSaving.value = true
-    // Build the payload ONCE up-front. If we rebuilt on each retry the
-    // snapshots could pick up mid-edit state that arrived between
-    // attempts, racing with the user's keystrokes.
-    let args
+  // IronCalc's bytes carry no version of their own, and one IronCalc may not
+  // read another's (0.9.0 cannot read 0.8.4's). When a body saved by another
+  // version fails to open, say so instead of IronCalc's "bitcode error".
+  async function _startEngine(saved) {
     try {
-      // Pack straight from live cell data — the packer builds a fresh compact
-      // structure, so it's an independent payload without snapshot()'s
-      // deepClone. The chunked packer yields to the event loop so a 2M-cell
-      // pack doesn't block input for seconds; the keepalive/unmount save can't
-      // afford to yield (the page may die first), so it packs synchronously.
-      const live   = { sheets: sheet.getAllRaw(), current: sheet.getCurrentSheet() }
-      const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
-      const sheetsData = JSON.stringify({
-        sheet:      packed,
-        formats:    formats.snapshot(),
-        merge:      merge?.snapshot?.()      ?? null,
-        comments:   comments?.snapshot?.()   ?? null,
-        validation: validation?.snapshot?.() ?? null,
-        protection: protection?.snapshot?.() ?? null,
-        condFormat: condFormat?.snapshot?.() ?? null,
-        sortFilter: sortFilter?.snapshot?.() ?? null,
-        slicers:    slicers?.snapshot?.()    ?? null,
-        pivot:      pivot?.snapshot?.()      ?? null,
-        charts:     charts?.snapshot?.()     ?? null,
-        namedRanges: namedRanges?.snapshot?.() ?? null,
-        view:       getViewState?.()         ?? null,
-      })
-      const payload = await encodeForUpload(sheetsData)
-      args = {
-        title,
-        sheets_data: payload,
-        request_id: crypto.randomUUID(),
-        ...(name ? { name } : {}),
-        ...(ops && ops.length ? { ops: JSON.stringify(ops) } : {}),
-      }
+      await engine.start(saved.engine ? base64ToBytes(saved.engine) : null)
     } catch (err) {
-      isSaving.value = false
-      saveError.value = err.message || "Couldn't prepare save payload."
-      return null
-    }
-
-    _lastSaveArgs = { args, keepalive }
-    return _send(args, keepalive)
-  }
-
-  async function _send(args, keepalive) {
-    isSaving.value = true
-    // keepalive saves fire from onBeforeUnmount — the browser may kill
-    // the page before any backoff finishes, so don't retry them.
-    const backoffMs = keepalive ? [0] : [0, 1000, 2500]
-    let lastErr = null
-    try {
-      for (let attempt = 0; attempt < backoffMs.length; attempt++) {
-        if (backoffMs[attempt] > 0) {
-          await new Promise(r => setTimeout(r, backoffMs[attempt]))
-        }
-        try {
-          const result = await call('suite.sheets.api.save_sheet', args, { keepalive })
-          // Deliberately DON'T write `title` back into currentTitle here.
-          // `title` is a snapshot captured when this save was queued (up to
-          // the 2s debounce + network round-trip ago), and the server echoes
-          // nothing new — so assigning it back can only clobber keystrokes the
-          // user typed while the save was in flight and reset their caret to
-          // the end (the "jittery title" bug). currentTitle is already the
-          // local source of truth; leave it alone.
-          // First success clears any sticky error from a previous failure.
-          saveError.value = ''
-          _lastSaveArgs   = null
-          return typeof result === 'string' ? result : result?.name
-        } catch (err) {
-          lastErr = err
-          if (!_isTransientSaveError(err)) break
-        }
-      }
-      // All attempts exhausted (or hit a permanent error). The chip
-      // stays visible until the next successful save — no auto-clear,
-      // because silently hiding "your work isn't saved" is the worst
-      // possible UX for an editor.
-      saveError.value = lastErr?.message
-        ? `Couldn't save: ${lastErr.message}`
-        : "Couldn't save — check your connection, then click retry."
-      return null
-    } finally {
-      isSaving.value = false
+      const version = saved.engine_version
+      if (!saved.engine || !version || version === ENGINE_VERSION) throw err
+      throw new Error(
+        `This sheet was saved by IronCalc ${version}, which this Sheets (IronCalc ${ENGINE_VERSION}) cannot read. Reload the page; if it still does not open, report it.`,
+        { cause: err },
+      )
     }
   }
 
-  return { isSaving, saveError, canWrite, sheetOwner, loadError, loadSheet, autoCreate, saveExisting, retrySave }
+  // The saved per-sheet view under the converted sheet names. A legacy flat
+  // view (one sheet's, no names) stays as it is.
+  function _renameKeys(view, renamed) {
+    if (typeof view !== 'object' || 'colW' in view || 'rowH' in view || 'freezeRows' in view)
+      return view
+    return Object.fromEntries(Object.entries(view).map(([k, v]) => [renamed[k] ?? k, v]))
+  }
+
+  // The whole workbook as the JSON `sheets_data` held. The surface keeps it
+  // as the local recovery copy when access narrows. `draft` is a cell edit
+  // still in progress ({ sheet, cell, value }); it is kept next to the
+  // workbook, which is not changed.
+  async function workbookJson(draft = null) {
+    const bytes = await engine.toBytes()
+    return JSON.stringify({
+      engine: bytesToBase64(bytes),
+      engine_version: ENGINE_VERSION,
+      ...(draft ? { draft } : {}),
+      formats: formats.snapshot(),
+      merge: merge?.snapshot?.() ?? null,
+      comments: comments?.snapshot?.() ?? null,
+      validation: validation?.snapshot?.() ?? null,
+      protection: protection?.snapshot?.() ?? null,
+      condFormat: condFormat?.snapshot?.() ?? null,
+      sortFilter: sortFilter?.snapshot?.() ?? null,
+      slicers: slicers?.snapshot?.() ?? null,
+      pivot: pivot?.snapshot?.() ?? null,
+      charts: charts?.snapshot?.() ?? null,
+      namedRanges: namedRanges?.snapshot?.() ?? null,
+      view: getViewState?.() ?? null,
+    })
+  }
+  return {
+    loadError,
+    legacyCurrent,
+    loadSheet,
+    workbookJson,
+  }
 }

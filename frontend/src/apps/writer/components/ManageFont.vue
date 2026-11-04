@@ -5,8 +5,12 @@
       variant="outline"
       type="number"
       v-model="size"
+      aria-label="Font size"
+      :min="FONT_SIZE_MIN"
+      :max="FONT_SIZE_MAX"
       @focus="$event.target.select()"
-      @update:modelValue="(val) => val && props.editor.commands.setFontSize(val + 'px')"
+      @update:modelValue="applySize"
+      @blur="sync"
     />
     <FontSelect v-model="selected" :font_family :editor />
   </div>
@@ -14,7 +18,10 @@
 <script setup>
 import { FormControl } from 'frappe-ui'
 import { ref, watch } from 'vue'
+
 import { FONT_FAMILIES } from '@/apps/writer/utils'
+import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/apps/writer/utils/typography'
+
 import FontSelect from './FontSelect.vue'
 
 const props = defineProps({
@@ -29,11 +36,16 @@ const size = ref(props.font_size)
 // The editor is plain @tiptap/core (not reactive), so state reads don't
 // trigger re-runs — sync on transactions instead.
 const sync = () => {
-  selected.value =
-    FONT_FAMILIES.find((opt) => opt.isActive(props.editor))?.key || props.font_family
+  selected.value = FONT_FAMILIES.find((opt) => opt.isActive(props.editor))?.key || props.font_family
   let fontSize = props.editor.getAttributes('textStyle')?.fontSize || props.font_size
   if (typeof fontSize !== 'number') fontSize = parseFloat(fontSize)
   if (!Number.isNaN(fontSize)) size.value = fontSize
+}
+
+// Sizes outside the range are ignored while typing; blur shows the real size again.
+const applySize = (value) => {
+  const px = Number(value)
+  if (px >= FONT_SIZE_MIN && px <= FONT_SIZE_MAX) props.editor.commands.setFontSize(px + 'px')
 }
 
 watch(

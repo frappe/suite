@@ -1,6 +1,6 @@
 /* frappe-ui/style.css already provides @tailwind base/components/utilities + Inter.
    Suite design tokens (bg-surface-*, text-ink-*, border-outline-*) are frappe-ui
-   CSS-layer classes in the beta line — use them in markup (see SuiteLayout.vue),
+   CSS-layer classes — use them in markup,
    NOT via @apply (they are not registered Tailwind color utilities). */
 @import 'frappe-ui/style.css';
 
@@ -29,6 +29,38 @@ html.theme-switching * {
   scrollbar-width: thin;
 }
 
+/* The page behind every area follows the theme. It shows in the phone's safe-area
+   strips, in iOS rubber-band overscroll, and through translucent bars. */
 body {
   margin: 0;
+  background-color: var(--surface-base);
+}
+
+/* The Cursor preference (platform/cursor). Normal, the default, shows the
+   arrow on controls and in-app links, and the hand only on external links.
+   Pointer (`data-cursor='pointer'`) keeps each component's own cursor.
+
+   These two rules undo the hand that the browser gives links and that
+   Tailwind's preflight gives buttons. They sit in the base layer, so a cursor
+   utility on the element, such as `cursor-not-allowed`, still wins. */
+@layer base {
+  :where(:root:not([data-cursor='pointer'])) :where(a[href]),
+  :where(:root:not([data-cursor='pointer'])) button,
+  :where(:root:not([data-cursor='pointer'])) [role='button'] {
+    cursor: default;
+  }
+}
+
+/* After the utilities, so it overrides `cursor-pointer` but not a variant
+   such as `disabled:cursor-not-allowed`. */
+:where(:root:not([data-cursor='pointer'])) .cursor-pointer {
+  cursor: default;
+}
+
+/* A link is external when its href is an absolute URL: it names a scheme
+   (http, https, mailto, tel) or starts with `//`. In-app links are paths, so
+   they keep the arrow, even with `target="_blank"`. */
+:where(:root:not([data-cursor='pointer']))
+  :is(a[href^='http:'], a[href^='https:'], a[href^='//'], a[href^='mailto:'], a[href^='tel:']) {
+  cursor: pointer;
 }

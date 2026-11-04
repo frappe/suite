@@ -1,19 +1,13 @@
 import { expect, test } from "../../fixtures/test";
-import { createWriterDocument, shareWriterDocument, uniqueWriterTitle } from "../../helpers/writer";
-import { frappeData } from "../../../shared/frappe";
+import { discardNode, notifications, ROLE } from "../../helpers/drive";
+import {
+	createWriterDocument,
+	openWriterDocument,
+	shareWriterDocument,
+	uniqueWriterTitle,
+} from "../../helpers/writer";
 
-interface DriveNotification {
-	notif_doctype_name: string;
-	type: string;
-	message: string;
-	read: number;
-}
-
-test("sharing a document notifies the recipient", async ({
-	owner,
-	collaborator,
-	run,
-}) => {
+test("sharing a document notifies the recipient", async ({ owner, collaborator, run }) => {
 	const title = uniqueWriterTitle(run.run_id, "notify");
 	const file = await createWriterDocument(owner.page.request, title);
 
@@ -22,33 +16,21 @@ test("sharing a document notifies the recipient", async ({
 		read: true,
 	});
 
-	// The recipient gets a "Share" notification pointing at the shared file.
-	await expect
-		.poll(async () => {
-			const response = await collaborator.page.request.get(
-				"/api/method/suite.drive.api.notifications.get_notifications",
-			);
-			if (!response.ok()) return [];
-			const rows = await frappeData<DriveNotification[]>(response).catch(() => []);
-			return rows
-				.filter((row) => row.notif_doctype_name === file.name && row.type === "Share")
-				.map((row) => row.message);
-		})
-		.toEqual([expect.stringContaining(title)]);
+	// The recipient gets an unread pointer at the share, naming the role it gave.
+	const shareNotifications = async () =>
+		(await notifications(collaborator.page.request).catch(() => [])).filter(
+			(row) => row.activity.node === file.name && row.activity.action === "share_add",
+		);
+	await expect.poll(shareNotifications).toHaveLength(1);
+	const [notification] = await shareNotifications();
+	expect(notification.read).toBe(0);
+	expect(notification.activity.actor).toBe(owner.user.user);
+	expect((notification.activity.detail as { new_role?: number }).new_role).toBe(ROLE.READ);
+	// Timestamps are RFC 3339 UTC.
+	expect(notification.creation).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
 
-	await collaborator.page.goto(`/writer/w/${file.name}`);
+	// The pointer leads somewhere the recipient can open.
+	await openWriterDocument(collaborator.page, file.name);
 
-	// Opening the shared document directly also consumes its notification.
-	await expect
-		.poll(async () => {
-			const response = await collaborator.page.request.get(
-				"/api/method/suite.drive.api.notifications.get_notifications",
-			);
-			if (!response.ok()) return undefined;
-			const rows = await frappeData<DriveNotification[]>(response).catch(() => []);
-			return rows.find(
-				(row) => row.notif_doctype_name === file.name && row.type === "Share",
-			)?.read;
-		})
-		.toBe(1);
+	await discardNode(owner.page.request, file.name);
 });

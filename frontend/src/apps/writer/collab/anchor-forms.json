@@ -1,0 +1,9 @@
+[
+  { "anchor": "{\"v\":1,\"s\":\"AAEFAA==\",\"e\":\"AAEGQQ==\",\"q\":\"bb\"}", "kind": "text" },
+  { "anchor": "{\"v\":1,\"q\":\"\"}", "kind": "deleted" },
+  { "anchor": "{\"v\":1,\"q\":\"gone words\"}", "kind": "deleted" },
+  { "anchor": "{\"v\":1,\"q\":5}", "kind": "unplaced" },
+  { "anchor": "{\"v\":1}", "kind": "unplaced" },
+  { "anchor": "{\"v\":1,\"q\":\"\",\"s\":5}", "kind": "unplaced" },
+  { "anchor": "document", "kind": "document" }
+]

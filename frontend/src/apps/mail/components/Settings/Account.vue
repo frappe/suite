@@ -1,238 +1,227 @@
 <template>
-	<AppSettingsHeader :title="__('Account')">
-		<template v-if="jmapAccount.doc" #actions>
-			<Button
-				:label="__('Save')"
-				variant="solid"
-				:size="isMobile ? 'md' : 'sm'"
-				:disabled="loading || !isDirty"
-				:loading="saving"
-				@click="save"
-			/>
-		</template>
-	</AppSettingsHeader>
-	<AppSettingsBody>
-	<template v-if="jmapAccount.doc">
-		<div class="flex flex-col gap-5">
-		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Default Outgoing Email')"
-			:description="__('The address selected automatically when composing a message.')"
-		>
-			<Combobox
-				v-model="jmapAccount.doc.default_outgoing_email"
-				trigger="button"
-				align="end"
-				:options="identities.data.map((i: Identity) => i.email)"
-			/>
-		</SettingsRow>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Create Contacts After Sending Email')"
-			:description="
-				__('Automatically creates contacts for new recipients after an email is sent.')
-			"
-		>
-			<Switch v-model="createContactsAfterEmailSubmit" />
-		</SettingsRow>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Delete Email After Sending')"
-			:description="
-				__('Automatically deletes the email from your mailbox after it is sent.')
-			"
-		>
-			<Switch v-model="destroyEmailAfterSubmit" />
-		</SettingsRow>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Delete Newsletter After Sending')"
-			:description="__('Automatically deletes the newsletter after it is sent.')"
-		>
-			<Switch v-model="destroyNewsletterAfterSubmit" />
-		</SettingsRow>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Keep Forwarded Email In Thread')"
-			:description="__('Keep forwarded emails in the original thread.')"
-		>
-			<Switch v-model="keepForwardedEmailInThread" />
-		</SettingsRow>
+  <AppSettingsHeader :title="__('Account')">
+    <template v-if="draft" #actions>
+      <Button
+        :label="__('Save')"
+        variant="solid"
+        :size="isMobile ? 'md' : 'sm'"
+        :disabled="loading || !isDirty"
+        :loading="saving"
+        @click="save"
+      />
+    </template>
+  </AppSettingsHeader>
+  <AppSettingsBody>
+    <template v-if="draft">
+      <div class="flex flex-col gap-5">
+        <template v-if="hasProvider && regionalDraft">
+          <SettingsRow :title="__('Locale')">
+            <Combobox
+              v-model="regionalDraft.locale"
+              trigger="button"
+              align="end"
+              :options="regional.data?.locales ?? []"
+            />
+          </SettingsRow>
+          <SettingsRow :title="__('Time zone')">
+            <Combobox
+              v-model="regionalDraft.time_zone"
+              trigger="button"
+              align="end"
+              :options="regional.data?.time_zones ?? []"
+            />
+          </SettingsRow>
+        </template>
+        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Default Outgoing Email')"
+          :description="__('The address selected automatically when composing a message.')"
+        >
+          <Combobox
+            v-model="draft.default_outgoing_email"
+            trigger="button"
+            align="end"
+            :options="(identities.data ?? []).map((i: Identity) => i.email)"
+          />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Create Contacts After Sending Email')"
+          :description="
+            __('Automatically creates contacts for new recipients after an email is sent.')
+          "
+        >
+          <Switch v-model="createContactsAfterEmailSubmit" />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Delete Email After Sending')"
+          :description="__('Automatically deletes the email from your mailbox after it is sent.')"
+        >
+          <Switch v-model="destroyEmailAfterSubmit" />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Delete Newsletter After Sending')"
+          :description="__('Automatically deletes the newsletter after it is sent.')"
+        >
+          <Switch v-model="destroyNewsletterAfterSubmit" />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Keep Forwarded Email In Thread')"
+          :description="__('Keep forwarded emails in the original thread.')"
+        >
+          <Switch v-model="keepForwardedEmailInThread" />
+        </SettingsRow>
 
-		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Incoming') }}</h2>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Screen New Senders')"
-			:description="__('Send emails from new senders to the Screener until accepted.')"
-		>
-			<Switch v-model="enableScreening" />
-		</SettingsRow>
-		<SettingsRow
-			class="!py-0"
-			:title="__('Block Remote Images')"
-			:description="__(`Don't load remote images from untrusted sources by default.`)"
-		>
-			<Switch v-model="blockRemoteImages" />
-		</SettingsRow>
-		<SettingsRow
-			class="!py-0"
-			:title="__('When Marking as Junk')"
-			:description="__('Choose how to handle future messages from this sender.')"
-		>
-			<Select v-model="jmapAccount.doc.on_mark_as_junk" :options="ON_MARK_AS_JUNK_OPTIONS" />
-		</SettingsRow>
+        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Incoming') }}</h2>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Screen New Senders')"
+          :description="__('Send emails from new senders to the Screener until accepted.')"
+        >
+          <Switch v-model="enableScreening" />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Block Remote Images')"
+          :description="__(`Don't load remote images from untrusted sources by default.`)"
+        >
+          <Switch v-model="blockRemoteImages" />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('When Blocking a Sender')"
+          :description="__('What to do with their mail already in your Inbox.')"
+        >
+          <Select v-model="draft.on_block_old_mail" :options="ON_BLOCK_OLD_MAIL_OPTIONS" />
+        </SettingsRow>
 
-		<!-- Read-only, so it sits after the settings rather than ahead of them; the
+        <!-- Read-only, so it sits after the settings rather than ahead of them; the
 		     sidebar shows this meter only once the account is nearly full. -->
-		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Storage') }}</h2>
-		<StorageMeter :used-percentage :label :limited="isLimited" />
+        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Storage') }}</h2>
+        <StorageMeter :used-percentage :label :limited="isLimited" />
 
-		<ErrorMessage :message="jmapAccount.save.error" />
-
-		<Dialog v-model:open="showMoveToInbox" v-bind="moveToInboxOptions" />
-		</div>
-	</template>
-	</AppSettingsBody>
+        <ErrorMessage
+          :message="
+            saveRegional.error?.message || regional.error?.message || savePreferences.error?.message
+          "
+        />
+      </div>
+    </template>
+  </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
-import {
-	Button,
-	Combobox,
-	Dialog,
-	ErrorMessage,
-	Select,
-	SettingsRow,
-	Switch,
-	createDocumentResource,
-	createResource,
-} from 'frappe-ui'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import StorageMeter from '@/components/StorageMeter.vue'
-import { useQuota } from '@/apps/mail/composables/useQuota'
+import { Button, Combobox, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
+import { api, useMutation, useQuery, type OutputOf } from '@/api'
+import { useQuota } from '@/apps/mail/composables/useQuota'
+import { userStore } from '@/apps/mail/stores/user'
+import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { userStore } from '@/apps/mail/stores/user'
-
-import type { Identity, MailboxData } from '@/apps/mail/types'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import StorageMeter from '@/components/StorageMeter.vue'
 
 const { isMobile } = useScreenSize()
 const { isLimited, usedPercentage, label } = useQuota()
-const user = inject('$user')
 // Read store.accountId live in makeParams; destructuring would snapshot the
 // unwrapped value and miss account switches while this component stays mounted.
 const store = userStore()
-const { identities, mailboxes, mailboxIds } = store
+const { identities } = store
 
 // Outgoing settings live on the active account's JMAP Account. Recovery (backup_email) and the
 // JMAP connection credentials moved to the dedicated Credentials tab (CredentialsSettings.vue).
-const activeAccount = user.data?.accounts?.find((a) => a.id === store.accountId)
-
-const jmapAccount = createDocumentResource({
-	doctype: 'JMAP Account',
-	name: activeAccount?.jmap_account,
-})
-
-const createContactsAfterEmailSubmit = computed({
-	get: () => !!jmapAccount.doc.create_contacts_after_email_submit,
-	set: (val: boolean) => (jmapAccount.doc.create_contacts_after_email_submit = val ? 1 : 0),
-})
-
-const destroyEmailAfterSubmit = computed({
-	get: () => !!jmapAccount.doc.destroy_email_after_submit,
-	set: (val: boolean) => (jmapAccount.doc.destroy_email_after_submit = val ? 1 : 0),
-})
-
-const destroyNewsletterAfterSubmit = computed({
-	get: () => !!jmapAccount.doc.destroy_newsletter_after_submit,
-	set: (val: boolean) => (jmapAccount.doc.destroy_newsletter_after_submit = val ? 1 : 0),
-})
-
-const keepForwardedEmailInThread = computed({
-	get: () => !!jmapAccount.doc.keep_forwarded_email_in_thread,
-	set: (val: boolean) => (jmapAccount.doc.keep_forwarded_email_in_thread = val ? 1 : 0),
-})
-
-const enableScreening = computed({
-	get: () => !!jmapAccount.doc.enable_screening,
-	set: (val: boolean) => (jmapAccount.doc.enable_screening = val ? 1 : 0),
-})
-
-const blockRemoteImages = computed({
-	get: () => !!jmapAccount.doc.block_remote_images,
-	set: (val: boolean) => (jmapAccount.doc.block_remote_images = val ? 1 : 0),
-})
-
-const ON_MARK_AS_JUNK_OPTIONS = [
-	{
-		label: __('Move future emails to Junk'),
-		value: "Junk Sender's Mail",
-	},
-	{ label: __('Ask whether to block the sender'), value: 'Ask to Block Sender' },
-]
-
-const accountDirty = computed(
-	() => JSON.stringify(jmapAccount.doc) !== JSON.stringify(jmapAccount.originalDoc),
+const preferences = useQuery(api.mail.settings.account, () =>
+  store.accountId
+    ? {
+        account: store.accountId,
+      }
+    : false,
 )
-const isDirty = computed(() => accountDirty.value)
-const loading = computed(() => jmapAccount.get.loading)
-const saving = computed(() => jmapAccount.save.loading)
-
-const showMoveToInbox = ref(false)
-
-const moveScreeningToInbox = createResource({
-	url: 'suite.mail.api.mail.move_screening_mails_to_inbox',
-	makeParams: () => ({ account: store.accountId }),
-	onSuccess: () => {
-		raiseToast(__('Unscreened messages moved to Inbox.'))
-		showMoveToInbox.value = false
-		mailboxes.reload()
-	},
+const hasProvider = computed(() => !!store.userResource.data?.is_suite_cloud_configured)
+const regional = useQuery(api.mail.settings.regional, () => (hasProvider.value ? {} : false))
+const regionalDraft = ref<{ locale: string; time_zone: string }>()
+watch(
+  () => regional.data,
+  (data) => {
+    regionalDraft.value = data ? { locale: data.locale, time_zone: data.time_zone } : undefined
+  },
+  { immediate: true },
+)
+const saveRegional = useMutation(api.mail.settings.updateRegional)
+const regionalDirty = computed(
+  () =>
+    !!regionalDraft.value &&
+    (regionalDraft.value.locale !== regional.data?.locale ||
+      regionalDraft.value.time_zone !== regional.data?.time_zone),
+)
+const draft = ref<OutputOf<typeof api.mail.settings.account>>()
+watch(
+  () => preferences.data,
+  (data) => {
+    draft.value = data
+      ? {
+          ...data,
+        }
+      : undefined
+  },
+  {
+    immediate: true,
+  },
+)
+const savePreferences = useMutation(api.mail.settings.updateAccount)
+const createContactsAfterEmailSubmit = computed({
+  get: () => !!draft.value?.create_contacts_after_email_submit,
+  set: (val: boolean) => (draft.value!.create_contacts_after_email_submit = val ? 1 : 0),
 })
-
-const moveToInboxOptions = computed(() => ({
-	title: __('Move unscreened messages?'),
-	message: __('Screening is off. Move the messages currently in the Screener to your Inbox?'),
-	actions: [
-		{
-			label: __('Move to Inbox'),
-			variant: 'solid',
-			onClick: () => moveScreeningToInbox.submit(),
-			loading: moveScreeningToInbox.loading,
-		},
-	],
-}))
-
+const destroyEmailAfterSubmit = computed({
+  get: () => !!draft.value?.destroy_email_after_submit,
+  set: (val: boolean) => (draft.value!.destroy_email_after_submit = val ? 1 : 0),
+})
+const destroyNewsletterAfterSubmit = computed({
+  get: () => !!draft.value?.destroy_newsletter_after_submit,
+  set: (val: boolean) => (draft.value!.destroy_newsletter_after_submit = val ? 1 : 0),
+})
+const keepForwardedEmailInThread = computed({
+  get: () => !!draft.value?.keep_forwarded_email_in_thread,
+  set: (val: boolean) => (draft.value!.keep_forwarded_email_in_thread = val ? 1 : 0),
+})
+const enableScreening = computed({
+  get: () => !!draft.value?.enable_screening,
+  set: (val: boolean) => (draft.value!.enable_screening = val ? 1 : 0),
+})
+const blockRemoteImages = computed({
+  get: () => !!draft.value?.block_remote_images,
+  set: (val: boolean) => (draft.value!.block_remote_images = val ? 1 : 0),
+})
+// Future mail from a blocked sender always goes to Junk; this is only about what is already there.
+const ON_BLOCK_OLD_MAIL_OPTIONS = [
+  { label: __('Ask each time'), value: 'Ask' },
+  { label: __('Move old mail to Junk'), value: 'Move to Junk' },
+  { label: __('Keep old mail'), value: 'Keep' },
+]
+const accountDirty = computed(
+  () => JSON.stringify(draft.value) !== JSON.stringify(preferences.data),
+)
+const isDirty = computed(() => accountDirty.value || regionalDirty.value)
+const loading = computed(() => preferences.isFetching)
+const saving = computed(() => savePreferences.isPending || saveRegional.isPending)
 const save = async () => {
-	let askMoveToInbox = false
-	if (accountDirty.value) {
-		const screeningChanged =
-			!!jmapAccount.doc.enable_screening !==
-			!!jmapAccount.originalDoc?.enable_screening
-		// Turning screening off leaves the already-screened mail in the Screening folder — offer to move
-		// it to the inbox (only worth asking when there's something there).
-		askMoveToInbox =
-			screeningChanged &&
-			!jmapAccount.doc.enable_screening &&
-			(mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)
-				?.total_threads ?? 0) > 0
-		await jmapAccount.save.submit()
-		// Sync the shared user data so compose picks up the new default and the junk flow picks up
-		// the "on mark as junk" choice without a page reload (both read from user.data.accounts).
-		if (activeAccount) {
-			activeAccount.default_outgoing_email = jmapAccount.doc.default_outgoing_email
-			activeAccount.on_mark_as_junk = jmapAccount.doc.on_mark_as_junk
-			activeAccount.enable_screening = !!jmapAccount.doc.enable_screening
-			activeAccount.block_remote_images = !!jmapAccount.doc.block_remote_images
-		}
-		// Enabling screening creates the Screening folder server-side; reload so it shows up.
-		if (screeningChanged) mailboxes.reload()
-	}
-	raiseToast(__('Account updated.'))
-	if (askMoveToInbox) showMoveToInbox.value = true
+  if (!draft.value) return
+  if (hasProvider.value && regionalDirty.value && regionalDraft.value)
+    await saveRegional.run({ ...regionalDraft.value })
+  await savePreferences.run({
+    account: store.accountId,
+    changes: {
+      ...draft.value,
+    },
+  })
+  raiseToast(__('Account updated.'))
 }
 </script>

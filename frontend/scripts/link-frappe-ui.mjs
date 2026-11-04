@@ -6,8 +6,8 @@
 //
 // Run via `yarn dev:frappe-ui`. Idempotent. `yarn dev` (or `yarn install`)
 // restores the published package, so switching back is automatic.
-import { lstatSync, readlinkSync, rmSync, symlinkSync, unlinkSync, existsSync } from 'node:fs'
-import { dirname, resolve, relative } from 'node:path'
+import { existsSync, lstatSync, readlinkSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
