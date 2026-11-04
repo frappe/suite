@@ -1275,6 +1275,9 @@ class FakeSlideJournal:
             self.records.append(record)
         return record
 
+    def transitions(self, presentation):
+        return tuple(row for row in self.records if row[0] == presentation)
+
     def recover_changed_elements(self, presentation, current_bodies):
         total = 0
         slides = {row[1] for row in self.records if row[0] == presentation}

@@ -13,6 +13,7 @@ from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.mapping import GENERAL, merged_role
 from suite.drive.patches.build.ports import ACTIVE, PERSONAL, REMOVED, TRASHED
 from suite.drive.patches.build.root_pairs import ARCHIVED
+from suite.drive.patches.build.slide_journal import SlideJournalError
 from suite.drive.patches.build.state import RemovedFileDocument
 from suite.drive.patches.build.titles import SiblingTitles
 
@@ -118,7 +119,7 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
                     )
                     _purge_removed(env, result, skipped, reserve)
                     continue
-                except InvalidLegacyContent as error:
+                except (InvalidLegacyContent, SlideJournalError) as error:
                     # `_fail` raises today. The `continue` keeps the three
                     # names below from depending on that for their binding.
                     _fail(env, result, f"{doctype}:{row.name}", str(error))
@@ -228,7 +229,8 @@ def _link_one(env, row, reserve) -> tuple[bool, bool, bool]:
     root = _ensure_personal_root(env, row.owner, reserve)
     node, renamed = _orphan_node(env, row, root)
     if stored:
-        exact_fields(stored, node, rerun_node_fields(row.doctype, ORPHAN_FIELDS), f"orphan node {row.name}")
+        fields = rerun_node_fields(row, ORPHAN_FIELDS, env.slide_journal)
+        exact_fields(stored, node, fields, f"orphan node {row.name}")
         if not row.node:
             reserve(1)
             target.write_content_link(row.doctype, row.name, stored["name"])

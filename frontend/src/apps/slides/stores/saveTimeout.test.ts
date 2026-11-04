@@ -170,6 +170,45 @@ describe('savePresentationDoc', () => {
     expect(presentationDoc.value.modified).toBe('M1')
   })
 
+  it('stays refused on a presentation rewritten under the same last editor', async () => {
+    presentationDoc.value = { name: 'p1', modified: 'M1' }
+    server.answer = (options) => {
+      if (
+        options.url === 'suite.slides.doctype.presentation.presentation.get_public_presentation'
+      ) {
+        return {
+          modified: 'M2',
+          modified_by: 'me@example.com',
+          slides: [
+            {
+              ...row,
+              background: 'node-1',
+              elements: JSON.stringify([{ type: 'image', src: 'node-1' }]),
+            },
+          ],
+        }
+      }
+
+      throw stale()
+    }
+
+    const draft = {
+      ...slide,
+      background: '/files/a.png',
+      elements: [{ type: 'image', src: '/files/a.png', attachmentName: 'a.png' }],
+    }
+
+    try {
+      await expect(savePresentationDoc('p1', [draft], 'M1')).rejects.toMatchObject({
+        type: 'TimestampMismatchError',
+      })
+    } finally {
+      server.answer = null
+    }
+
+    expect(presentationDoc.value.modified).toBe('M1')
+  })
+
   it('moves to the version a push it gave up on made', async () => {
     presentationDoc.value = { name: 'p1', modified: 'M1' }
     server.answer = () => {

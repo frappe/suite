@@ -9,13 +9,14 @@ import unittest
 import zlib
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import Mock
 
 from PIL import Image
 
-from suite.drive.patches.build.content import link_content_documents
+from suite.drive.patches.build.content import BuildContentError, link_content_documents
 from suite.drive.patches.build.ports import REMOVED, ContentRow, MediaFileRow, SlideRow, TreeRow
 from suite.drive.patches.build.report import build_report
-from suite.drive.patches.build.slide_journal import SlideBody, SlidePreimageJournal
+from suite.drive.patches.build.slide_journal import JournalConflictError, SlideBody, SlidePreimageJournal
 from suite.drive.patches.build.slides import SLIDE_FIELDS, BuildSlidesError, convert_slides_and_templates
 from suite.drive.patches.build.state import ContentConversion
 from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
@@ -28,6 +29,9 @@ OWNER = "owner@example.com"
 
 class SimulatedCrash(Exception):
     """The process died, so nothing since the last commit reached the disk."""
+
+
+OLDER_THAN_THE_STAMP = "2000-01-01 00:00:00.000000"
 
 
 def crash_on_commit(target, source, number):
@@ -2218,6 +2222,47 @@ class SlidesTest(unittest.TestCase):
         self.assertGreater(moved, STAMP)
         self.assertEqual(result.issues_total, 0)
         self.assertEqual(target.node_rows["orphan"]["modified"], STAMP)
+
+    def test_a_wrong_node_stamp_on_an_unrewritten_template_stops_its_rerun(self):
+        source = FakeContent(
+            documents=[deck("template", node=None, title="Template", is_template=1)],
+            slides=[SlideRow("slide-1", "template", 1, '[{"type":"text"}]')],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source, ticking_clock())
+        convert_slides_and_templates(env)
+        target.node_rows["template"]["modified"] = OLDER_THAN_THE_STAMP
+
+        with self.assertRaises(BuildSlidesError):
+            convert_slides_and_templates(env)
+
+    def test_a_wrong_node_stamp_on_an_unrewritten_orphan_stops_its_rerun(self):
+        source = FakeContent(
+            documents=[deck("orphan", node=None, title="Orphan")],
+            slides=[SlideRow("slide-1", "orphan", 1, '[{"type":"text"}]')],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source, ticking_clock())
+        link_content_documents(env)
+        target.node_rows["orphan"]["modified"] = OLDER_THAN_THE_STAMP
+
+        with self.assertRaises(BuildContentError):
+            link_content_documents(env)
+
+    def test_a_journal_fault_on_a_rerun_reaches_the_state(self):
+        source = FakeContent(
+            documents=[deck("orphan", node=None, title="Orphan")],
+            slides=[SlideRow("slide-1", "orphan", 1, '[{"type":"text"}]')],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, _ = self.environment(source, ticking_clock())
+        link_content_documents(env)
+        env.slide_journal.transitions = Mock(side_effect=JournalConflictError("broken chain"))
+
+        with self.assertRaisesRegex(BuildContentError, "broken chain"):
+            link_content_documents(env)
+
+        self.assertEqual(env.state.content().issues_total, 1)
 
 
 if __name__ == "__main__":

@@ -290,7 +290,7 @@ def _presentation_template(env, place, row, title) -> int:
     )
     found = target.nodes((row.name,)).get(row.name)
     if found:
-        fields = rerun_node_fields(row.doctype, NODE_FIELDS)
+        fields = rerun_node_fields(row, NODE_FIELDS, env.slide_journal)
         exact_fields(found, node, fields, f"Presentation template node {row.name}")
 
     if row.node and row.node != row.name:

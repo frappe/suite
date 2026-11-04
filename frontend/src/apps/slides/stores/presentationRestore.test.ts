@@ -252,6 +252,59 @@ describe('loading a presentation', () => {
     })
   })
 
+  describe('a draft on the old stamp of a presentation the migration rewrote', () => {
+    const oldLink = '/files/a.png'
+
+    beforeEach(() => {
+      local = {
+        dirty: true,
+        baseModified: 'M1',
+        content: [
+          {
+            clientId: 'c1',
+            background: oldLink,
+            elements: [{ type: 'image', src: oldLink, attachmentName: 'a.png' }],
+          },
+        ],
+      }
+      served = {
+        modified: 'M2',
+        modified_by: 'me@example.com',
+        slides: [
+          {
+            client_id: 'c1',
+            background: 'node-1',
+            elements: JSON.stringify([{ type: 'image', src: 'node-1' }]),
+          },
+        ],
+      }
+    })
+
+    it('online, shows the server rows and keeps the edits as a copy on the device', async () => {
+      await initPresentationDoc('p1')
+
+      expect(keepDiscarded).toHaveBeenCalledWith(local.content)
+      expect(warning).toHaveBeenCalled()
+      expect(writeDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ dirty: false, baseModified: 'M1', content: local.content }),
+      )
+      expect(JSON.stringify(slides.value)).not.toContain(oldLink)
+      expect(JSON.stringify(requests)).not.toContain(oldLink)
+    })
+
+    it('offline, stays dirty on the old stamp, which the server refuses', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+
+      const doc = await initPresentationDoc('p1')
+
+      expect(doc.modified).toBe('M1')
+      expect(markDirty).toHaveBeenCalled()
+      expect(slides.value[0].background).toBe(oldLink)
+      expect(writeDraft).not.toHaveBeenCalled()
+      expect(JSON.stringify(requests)).not.toContain(oldLink)
+    })
+  })
+
   describe('a dirty draft on an older base than the served document', () => {
     function expectDraftKept(doc: { modified: string }) {
       expect(slides.value[0].background).toBe('#00ff00ff')
