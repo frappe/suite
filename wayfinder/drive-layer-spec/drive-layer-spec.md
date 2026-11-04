@@ -3193,34 +3193,57 @@ TTL. The page calls it again at 10 minutes [012 §2, §3, 014].
 
 | Method | Path | R | Body | `data` | Errors |
 |---|---|---|---|---|---|
-| POST | `/downloads` | signed-in caller; READ on every selected node | `{nodes: [...]}` | download shape | 403 for a Guest, 404, 409 |
-| GET | `/downloads/<id>/content` | the requester; READ on every member | none | streamed ZIP | 404 |
+| POST | `/downloads` | READ on every selected node | `{nodes: [...]}` | download shape | 404, 409 |
+| GET | `/downloads/<id>` | the requester | none | download shape | 404 |
+| GET | `/downloads/<id>/content` | the requester; READ on every member | none | streamed ZIP | 404, as an HTML page |
 
-A download is one person's zip of one or more nodes. `POST /downloads`
-records a `Drive Download` row in `Preparing` and queues a job on the long
-queue after commit. The download shape is `{name, title, status, size,
-expires_at, error, url}`; `url` is set only when the zip is `Ready`. One
-node names the zip after itself. Several nodes under one readable folder
-name it after that folder. Anything else is "Suite download.zip".
+A download is one person's zip of one or more nodes. Its name is 128 random
+bits. `POST /downloads` records a `Drive Download` row in `Preparing` and
+queues a job on the long queue after commit. The download shape is `{name,
+title, status, delivery, size, expires_at, error, url}`. `status` is
+`Preparing`, `Ready`, `Failed`, or `Expired` once a ready zip's day is over;
+`url` is set only while it is `Ready`. One node names the zip after itself.
+Several nodes under one readable folder name it after that folder. Anything
+else is "Suite download.zip".
 
-The job checks READ on every selected node and every active descendant
-before it writes bytes. One unreadable member fails the whole zip. It caps
-uncompressed bytes at 4 GiB, writes `ZIP_STORED` entries into a spooled
-file, and stores the result with `put_blob` as a private `File Blob`. It
-then marks the row `Ready` or `Failed`, adds a `Drive Notification` that
-points at the download instead of an activity row, and emits
-`drive:changed` to the requester. The bell links a ready zip and shows the
-reason for a failed one.
+Asking again for the same nodes with the same links answers the caller's
+`Preparing` or `Ready` row instead of building a second zip; a ready zip whose
+member the caller can no longer read is not reused. A caller may have three
+downloads `Preparing` at once, and a fourth is refused with `DriveConflict`.
+Every Guest is one requester, so Guests are counted per set of links.
+
+`delivery` says how the zip reaches the caller. A signed-in caller who reads
+every selected node through their own principals gets an `Inbox` download:
+the job is built with those principals alone, and a `Drive Notification` that
+points at the download, not at an activity row, links the zip. A Guest, or a
+caller who reads a selected node only through a share link, gets a `Page`
+download: the row keeps the request's link credentials, there is no
+notification, and the page that asked polls `GET /downloads/<id>` and opens
+`url` itself. A browser navigation carries no `X-Drive-Links` header, so the
+content route adds the recorded links to the caller's own principals.
+
+The job checks READ on every selected node and every active descendant before
+it writes bytes. One unreadable member fails the whole zip. It caps
+uncompressed bytes at 4 GiB and writes `ZIP_STORED` entries, as Zip64 so a
+file over 2 GiB fits, into a spooled file. `put_blob` then copies that file
+into the active storage driver as a private `File Blob`, so the worker needs
+free temporary disk of about twice the zip's size, up to 8 GiB. The job then
+marks the row `Ready` or `Failed`, and an `Inbox` download notifies its
+requester and emits `drive:changed`.
 
 The content route rechecks READ on every recorded member, even one that has
 moved out of the folder, before it streams the blob through the active
-storage driver. A missing, trashed or unreadable member refuses it. A
-download is visible only to its requester. Guests cannot ask for one: they
-have no inbox, and a browser navigation does not carry link tickets.
+storage driver. A missing, trashed or unreadable member, a revoked or expired
+link, or an expired zip refuses it. A browser opens this route itself, so a
+refusal answers 404 as an HTML page that says why, not as a JSON envelope. A
+download is visible only to its requester.
 
-A zip expires 24 hours after it is ready. An hourly job deletes expired
-downloads and their notifications. The storage collector then frees the
-blob, because `Drive Download.blob` is its only reference.
+A zip expires 24 hours after it is ready. An hourly job fails a download still
+`Preparing` an hour and a quarter after it was asked for, which is the job
+timeout and a margin, and notifies an `Inbox` requester. A download whose job
+cannot be queued fails at once. The same job deletes expired downloads and
+their notifications. The storage collector then frees the blob, because
+`Drive Download.blob` is its only reference.
 
 **Uploads**
 

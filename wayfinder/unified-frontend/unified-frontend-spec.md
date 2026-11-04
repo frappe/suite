@@ -855,9 +855,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - Root nodes never appear as ordinary rows [T006].
 - Row menu: Open, Open in new tab, Download, Rename, Move, Make a copy,
   Star/Unstar, Share, Move to trash [T006].
-- Download is unavailable for links. Folder Download shows only to a
-  signed-in person. It builds a zip in the background, and a notification
-  links the zip when it is ready (section 5.8) [T006, Drive §11.2].
+- Download shows to anyone who can read the row. A file or a document
+  downloads at once. A folder or a link downloads in a zip that Drive builds
+  in the background; a link becomes a `.url` shortcut (section 5.8) [T006,
+  Drive §11.2].
 - The `access` expansion hides every action the row's role does not allow
   [T006, Drive §4.2].
 - Share shows only to users with MANAGE (section 7.2) [T006, T008].
@@ -911,9 +912,13 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - **Download** sends one `POST /downloads` for the whole selection. A
   single file downloads at once. Anything else becomes one zip, named after
   the selection's folder or "Suite download". A toast says the zip is being
-  prepared; a notification links it when ready [Drive §11.2].
+  prepared. When the caller reads every item through their own access, a
+  notification links the zip. When their access comes through a share link,
+  or they are a Guest, the page polls `GET /downloads/<id>` and starts the
+  download itself. A zip that is already ready downloads at once [Drive
+  §11.2].
 - **Star** and **Unstar** send one favourite request per row that needs to
-  change. Download and Star show only to a signed-in person.
+  change. Star shows only to a signed-in person.
 - An action is enabled only when every selected row's access permits it.
   The server rechecks every node [T006].
 - Rename, copy, share and open stay single-row actions [T006].
