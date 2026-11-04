@@ -1,7 +1,11 @@
 <template>
   <Tooltip :text="label" :hover-delay="300">
-    <div class="flex h-6 w-20 items-center">
-      <div class="bg-surface-gray-3 h-1.5 w-full overflow-hidden rounded-full">
+    <div class="flex min-w-0 flex-1 flex-col items-start gap-1">
+      <span class="text-p-sm text-ink-gray-6">{{ label }}</span>
+      <div
+        v-if="percent !== null"
+        class="bg-surface-gray-3 h-1.5 w-full overflow-hidden rounded-full"
+      >
         <div
           class="bg-surface-gray-10 h-full rounded-full"
           :style="{ width: `${percent ?? 0}%` }"
@@ -19,8 +23,7 @@ import { formatBytes, formatGb } from '@/apps/mail/utils'
 
 const GB = 1024 ** 3
 
-// A list-row storage cell: only the bar shows; the figures ("1.2 GB of 5 GB") sit in the tooltip.
-// The bar stays empty when usage is unknown or the allotment is unlimited (0).
+// Keep usage readable for unlimited accounts; a percentage bar requires a known limit.
 const { usedBytes, quotaGb } = defineProps<{ usedBytes?: number | null; quotaGb?: number | null }>()
 
 const percent = computed(() => {

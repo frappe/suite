@@ -2,7 +2,22 @@
 <template>
   <Dialog v-model:open="open" :title="__('Schedule meet')" dismissible>
     <template #default>
-      <div class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
+      <div v-if="readiness !== 'ready'" class="space-y-3">
+        <Alert :title="accountMessage" />
+        <Button v-if="readiness !== 'loading'" @click="loadAccount">{{ __('Retry') }}</Button>
+        <Button
+          v-if="
+            readiness === 'missing' &&
+            canManageAccounts &&
+            session.user.value?.is_mail_server_configured
+          "
+          :to="{ name: 'mail-accounts' }"
+        >
+          {{ __('Open Admin users') }}
+        </Button>
+      </div>
+      <div v-else class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
+        <Alert v-if="submitError" theme="red" :title="submitError" />
         <FormControl v-model="title" :label="__('Title')" :placeholder="__('Team meeting')" />
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
           <FormControl
@@ -42,7 +57,7 @@
         <Button
           variant="solid"
           :loading="scheduleMeeting.isPending"
-          :disabled="!isTimeValid"
+          :disabled="readiness !== 'ready' || !isTimeValid"
           @click="submit"
           >{{ __('Schedule') }}</Button
         >
@@ -52,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl, toast } from 'frappe-ui'
+import { Alert, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
@@ -63,8 +78,11 @@ import {
   ParticipantSelector,
   useCalendarUserStore,
 } from '@/apps/calendar'
+import { toast } from '@/platform/feedback'
+import { useSession } from '@/platform/session'
 import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 interface CalendarParticipant {
   email: string
@@ -78,6 +96,28 @@ interface CalendarParticipant {
 const emit = defineEmits<{ scheduled: [] }>()
 const open = ref(false)
 const calendarStore = useCalendarUserStore()
+const session = useSession()
+const readiness = ref<'loading' | 'ready' | 'missing' | 'denied' | 'failed'>('loading')
+const submitError = ref('')
+const canManageAccounts = computed(() => !!session.capabilities.value.suiteAdmin)
+const accountMessage = computed(() => {
+  if (readiness.value === 'loading') return __('Loading Calendar account...')
+  if (readiness.value === 'failed')
+    return __('Could not load Calendar account. Retry to check availability.')
+  if (readiness.value === 'denied')
+    return __(
+      'Your account cannot access Calendar. Ask a site administrator to review your access.',
+    )
+  if (!session.user.value?.is_mail_server_configured)
+    return __(
+      'Scheduling needs a configured mail account. Ask a site administrator to configure mail, then retry.',
+    )
+  return canManageAccounts.value
+    ? __(
+        'You do not have a Calendar account. Open Admin users to review your Mail account setup, then retry.',
+      )
+    : __("You don't have a Mail account. Ask your admin to add one, then retry.")
+})
 const title = ref('')
 const date = ref(dayjs().format('YYYY-MM-DD'))
 const startTime = ref(dayjs().add(1, 'hour').startOf('hour').format('HH:mm'))
@@ -128,29 +168,37 @@ const scheduledParticipants = computed(() => {
 const scheduleMeeting = useMutation(api.meet.meetings.createCalendar, { silent: true })
 
 async function show() {
+  open.value = true
+  submitError.value = ''
+  await loadAccount()
+}
+
+async function loadAccount() {
+  readiness.value = 'loading'
   try {
     await calendarStore.loadUser()
-    if (!calendarStore.accountId) {
-      toast.error(__('Set up Calendar before scheduling a Meet.'))
-      return
-    }
-    open.value = true
+    readiness.value = calendarStore.accountId ? 'ready' : 'missing'
   } catch (error) {
-    console.error('Failed to load calendar account:', error)
-    toast.error(__('Could not load Calendar account.'))
+    readiness.value =
+      error instanceof TransportError && error.type === 'AccountSetupRequired'
+        ? 'missing'
+        : error instanceof TransportError && error.type === 'PermissionError'
+          ? 'denied'
+          : 'failed'
   }
 }
 
 function submit() {
-  if (scheduleMeeting.isPending) return
+  if (scheduleMeeting.isPending || readiness.value !== 'ready') return
   if (!calendarStore.accountId) {
-    toast.error(__('Set up Calendar before scheduling a Meet.'))
+    readiness.value = 'missing'
     return
   }
   if (!isTimeValid.value) {
     toast.error(__('Enter a valid date and an end time after the start time.'))
     return
   }
+  submitError.value = ''
   toast.promise(
     scheduleMeeting
       .run({
@@ -169,7 +217,17 @@ function submit() {
       }),
     {
       loading: __('Scheduling meeting...'),
-      error: __('Failed to schedule meeting. Please try again.'),
+      error: (error: unknown) => {
+        submitError.value =
+          error instanceof TransportError &&
+          ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.message
+            ? error.message
+            : __('Could not schedule the meeting. Your details are kept. Please try again.')
+        return __('Meeting was not scheduled. Review the message and try again.')
+      },
     },
   )
 }

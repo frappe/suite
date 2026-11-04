@@ -262,7 +262,6 @@ const { groupId } = defineProps<{
   groupId: string
 }>()
 const router = useRouter()
-usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || groupId, 'Mail'))
 const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddMembers = ref(false)
@@ -274,6 +273,7 @@ const memberSearch = ref('')
 const member = useQuery(api.mail.admin.groups.get, () => ({
   group_id: groupId,
 }))
+usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || groupId, 'Mail'))
 watch(
   () => member.error,
   (error) => {

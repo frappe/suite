@@ -849,7 +849,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             retried = recorder_replacement_ready(*arguments)
 
         recording.reload()
-        self.assertEqual(first, {"protocol_version": 1, "status": "Interrupted", "grant_delivered": True})
+        self.assertEqual(first, {"protocol_version": 1, "status": "Interrupted"})
         self.assertEqual(retried, first)
         self.assertEqual(recording.endpoint_generation, 1)
         self.assertEqual(recording.replacement_event_sequence, 7)
@@ -893,7 +893,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             after_recovery = recorder_replacement_ready(*arguments)
         self.assertEqual(
             after_recovery,
-            {"protocol_version": 1, "status": "Recording", "grant_delivered": True},
+            {"protocol_version": 1, "status": "Recording"},
         )
         client.deliver_grant.assert_called_once()
 

@@ -146,7 +146,7 @@ const handleKickConfirm = (ban: boolean) => {
 const hostOptions = computed(() => {
   return [
     {
-      icon: 'lucide-mic-off',
+      icon: 'lucide-mic-off -scale-x-100',
       label: 'Mute',
       condition: () => !!props.participant.audio_enabled,
       onClick: () => emit('muteParticipant', props.participant.user_id),

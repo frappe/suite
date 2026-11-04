@@ -93,9 +93,8 @@ export function getBackgroundImageData(
   tempCanvas.width = width
   tempCanvas.height = height
 
-  // Flip the background image horizontally to compensate for flipped video frames
-  tempCtx.scale(-1, 1)
-  tempCtx.drawImage(backgroundImg, -width, 0, width, height)
+  // Outgoing frames retain the image orientation; only the local preview is mirrored.
+  tempCtx.drawImage(backgroundImg, 0, 0, width, height)
 
   return tempCtx.getImageData(0, 0, width, height)
 }

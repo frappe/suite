@@ -501,7 +501,7 @@ export function useSFUConnection(deps: {
         const MicOffIcon = defineAsyncComponent(() => import('~icons/lucide/mic-off'))
         toast('Mic muted automatically in large meetings.', {
           duration: 5000,
-          icon: h(MicOffIcon),
+          icon: h(MicOffIcon, { class: '-scale-x-100' }),
         })
       }
 

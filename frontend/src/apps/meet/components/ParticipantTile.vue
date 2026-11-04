@@ -59,7 +59,10 @@
           :sensitivity="3.0"
           active-color-class="bg-white"
         />
-        <lucide-mic-off v-else-if="!isAudioEnabled" class="w-3 h-3 shrink-0 text-white" />
+        <lucide-mic-off
+          v-else-if="!isAudioEnabled"
+          class="w-3 h-3 shrink-0 -scale-x-100 text-white"
+        />
       </template>
     </NamePill>
 
@@ -122,7 +125,7 @@
         @click="handleMute"
       >
         <template #icon>
-          <lucide-mic-off class="w-3.5 h-3.5" />
+          <lucide-mic-off class="w-3.5 h-3.5 -scale-x-100" />
         </template>
       </Button>
       <Button

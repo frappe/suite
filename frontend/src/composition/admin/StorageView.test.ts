@@ -165,18 +165,29 @@ describe('Storage actions', () => {
   it('edits an individual combined quota and sends decimal GB without headroom', async () => {
     await render()
     document
-      .querySelector<HTMLButtonElement>('button[aria-label="Edit storage limit for Maya"]')!
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Edit storage limit for maya@example.com"]',
+      )!
       .click()
     await vi.waitFor(() => expect(document.querySelector('input[type="number"]')).not.toBeNull())
     button('Cancel').click()
     await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
     document
-      .querySelector<HTMLButtonElement>('button[aria-label="Edit storage limit for Maya"]')!
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Edit storage limit for maya@example.com"]',
+      )!
       .click()
     await vi.waitFor(() => expect(document.querySelector('input[type="number"]')).not.toBeNull())
     const input = document.querySelector<HTMLInputElement>('input[type="number"]')!
     await vi.waitFor(() => expect(input.disabled).toBe(false))
     expect(input.value).toBe('10')
+    const descriptionId = document
+      .querySelector('[role="dialog"]')
+      ?.getAttribute('aria-describedby')
+    expect(descriptionId).toBeTruthy()
+    expect(document.getElementById(descriptionId ?? '')?.textContent).toContain(
+      'For maya@example.com',
+    )
     for (const value of ['-1', '0']) {
       input.value = value
       input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -208,7 +219,9 @@ describe('Storage actions', () => {
   it('removes an individual cap with blank input', async () => {
     await render()
     document
-      .querySelector<HTMLButtonElement>('button[aria-label="Edit storage limit for Maya"]')!
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Edit storage limit for maya@example.com"]',
+      )!
       .click()
     await vi.waitFor(() => expect(document.querySelector('input[type="number"]')).not.toBeNull())
     const input = document.querySelector<HTMLInputElement>('input[type="number"]')!
@@ -228,7 +241,7 @@ describe('Storage actions', () => {
     expect(document.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext')).toContain(
       'of 10 GB',
     )
-    expect(document.querySelector('[role=table]')?.textContent).not.toContain('of 10 GB')
+    expect(document.querySelector('[role=table]')?.textContent).toContain('11 GB of 10 GB used')
     expect(
       [...document.querySelectorAll('[role=columnheader]')].map((item) => item.textContent?.trim()),
     ).not.toContain('Limit')
@@ -261,7 +274,9 @@ describe('Storage actions', () => {
   it('keeps failed saves open for retry', async () => {
     await render()
     document
-      .querySelector<HTMLButtonElement>('button[aria-label="Edit storage limit for Maya"]')!
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Edit storage limit for maya@example.com"]',
+      )!
       .click()
     await vi.waitFor(() => expect(document.querySelector('input[type="number"]')).not.toBeNull())
     await vi.waitFor(() => expect(button('Save').disabled).toBe(false))

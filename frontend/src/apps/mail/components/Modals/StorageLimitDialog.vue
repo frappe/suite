@@ -93,6 +93,13 @@ async function submit(retry = false) {
   <Dialog v-model:open="open" :title="__('Set storage limits')" :dismissible="!save.isPending">
     <template #default>
       <div class="space-y-4">
+        <Dialog.Description as="p" class="break-words text-p-base text-ink-gray-7">
+          {{
+            users.length === 1
+              ? __('For {0}', [users[0]])
+              : __('{0} users selected', [users.length])
+          }}
+        </Dialog.Description>
         <FormControl
           v-model="limitGB"
           type="number"

@@ -4,16 +4,18 @@
     <div
       v-for="row in rows"
       :key="row[labelKey]"
-      class="flex h-12 shrink-0 items-center gap-3 border-b px-5 text-sm last:border-b-0"
+      class="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b px-5 py-3 text-sm last:border-b-0"
     >
-      <span class="min-w-0 flex-1 truncate font-medium">{{ row[labelKey] }}</span>
+      <span class="w-full break-all font-medium sm:w-auto sm:min-w-0 sm:flex-1">{{
+        row[labelKey]
+      }}</span>
       <span class="text-ink-gray-5 w-28 shrink-0 text-right tabular-nums">
         {{ __('{0} sessions', [row.sessions.toLocaleString()]) }}
       </span>
       <span v-if="row.failed" class="text-ink-gray-5 w-20 shrink-0 text-right tabular-nums">
         {{ __('{0} failed', [row.failed.toLocaleString()]) }}
       </span>
-      <span v-else class="w-20 shrink-0" />
+      <span v-else class="hidden w-20 shrink-0 sm:block" />
       <Badge
         class="w-14 shrink-0 justify-center"
         :theme="rateTheme(row.success_rate)"

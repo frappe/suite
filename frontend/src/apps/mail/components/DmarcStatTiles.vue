@@ -47,7 +47,7 @@ const tiles = computed(() => {
     {
       label: __('Messages'),
       value: messages.toLocaleString(),
-      sub: __('{0} reports', [reports.toLocaleString()]),
+      sub: reports ? __('{0} reports', [reports.toLocaleString()]) : '',
     },
     {
       label: __('Passed DMARC'),

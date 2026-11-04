@@ -82,7 +82,7 @@
         :user-initials="currentUser.userInitials.value"
         :user-avatar="currentUser.userAvatar.value"
         :current-user-name="
-          currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name || 'You'
+          currentUser.currentUser.value?.full_name || currentUser.currentUser.value?.name
         "
         :guest-auth-token="connectionState.guestAuthToken"
         :is-waiting-for-approval="lobbyStore.isWaitingForApproval"

@@ -120,19 +120,9 @@ const alerts = computed(() => {
     <Alert
       v-for="alert in alerts"
       :key="alert.title"
-      class="storage-alert"
       :title="alert.title"
       :description="alert.description"
       :theme="alert.theme"
     />
   </section>
 </template>
-
-<style scoped>
-.storage-alert[data-color='amber'] {
-  background-color: var(--surface-amber-2);
-}
-.storage-alert[data-color='red'] {
-  background-color: var(--surface-red-2);
-}
-</style>

@@ -5,30 +5,31 @@
     :button-label="__('Add Domain')"
     :button-action="() => (showAddDomain = true)"
   >
-    <div class="flex items-center justify-between gap-3">
-      <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <FormControl v-model="search" :placeholder="__('Search')" class="w-full sm:w-80">
         <template #prefix>
           <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
-      <div class="flex items-center gap-3">
+      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
         <FormControl
           v-model="status"
           :placeholder="__('Status')"
-          class="w-40"
+          class="min-w-0 flex-1 sm:w-40 sm:flex-none"
           type="select"
           :options="STATUS_OPTIONS"
         />
       </div>
     </div>
+    <ErrorMessage :message="list.error?.message" />
     <DashboardList
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
-      :loading="list.status !== 'success'"
+      :loading="list.status === 'pending'"
       :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
-      :empty-state="listOptions.emptyState"
+      :empty-state="list.error ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, item }">
         <Badge
@@ -64,7 +65,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Badge, FormControl, usePageMeta } from 'frappe-ui'
+import { Badge, ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'

@@ -1,20 +1,18 @@
 import { expect, test } from "@playwright/test";
 
-import { DRIVE, adminApi, createFolder, patchNode, roots, runTag, uploadFile } from "../../helpers/drive";
+import { DRIVE, adminApi, createFolder, listView, patchNode, roots, runTag, uploadFile } from "../../helpers/drive";
 
-/**
- * Stage 10: Empty trash (spec §6.10).
- *
- * It deletes everything in the admin's personal Trash, which many journeys
- * write to and read. The `empty-trash` project runs this file as the teardown
- * of the `chromium` project, after every other journey has finished, so no
- * journey can lose its trashed node to it (`playwright.config.ts`).
- */
+/** Empty Trash is global: never run against a shared site. */
+
+test.skip(process.env.E2E_DISPOSABLE_SITE !== "1", "Requires an explicitly disposable test site");
 
 test("Empty trash deletes everything in the root's Trash", async ({ page, baseURL }) => {
 	const api = await adminApi(baseURL!);
 	try {
 		const personal = (await roots(api)).personal.node;
+		const trash = await listView(api, "trash");
+		expect(trash.rows, "Refuse to empty Trash containing pre-existing records").toEqual([]);
+		expect(trash.next_cursor).toBeNull();
 		const folder = await createFolder(api, personal, runTag("uf10-empty"));
 		const file = await uploadFile(api, personal, runTag("uf10-empty-file"), Buffer.from("x"));
 		await patchNode(api, folder.name, { state: "Trashed" });

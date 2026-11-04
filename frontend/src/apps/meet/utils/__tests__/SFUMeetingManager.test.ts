@@ -693,6 +693,136 @@ describe('SFUMeetingManager facade operations', () => {
     expect(sample).not.toHaveProperty('consumers')
   })
 
+  it('captures microphone packet progress without device identifiers', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createManager({
+        getConnectionStatus: () => ({ connected: true, socketId: 'socket' }),
+      } as never)
+      vi.spyOn(manager.transportManager, 'getNetworkStats').mockResolvedValue(null as never)
+      const getStats = vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Map([
+            [
+              'audio',
+              {
+                type: 'outbound-rtp',
+                packetsSent: 10,
+                audioLevel: 0.4,
+                totalAudioEnergy: 2,
+                address: 'private-address',
+              },
+            ],
+          ]),
+        )
+        .mockResolvedValueOnce(
+          new Map([['audio', { type: 'outbound-rtp', packetsSent: 20, totalAudioEnergy: 3 }]]),
+        )
+      manager.mediaHandler.setProducers({
+        audioProducer: {
+          id: 'mic',
+          kind: 'audio',
+          closed: false,
+          paused: false,
+          appData: {},
+          getStats,
+          track: {
+            ...mediaTrack('mic', 'audio'),
+            enabled: true,
+            muted: false,
+            getSettings: () => ({ deviceId: 'private-device' }),
+          },
+        } as never,
+      })
+      manager.consumerManager.consumers.set('remote-audio', {
+        id: 'remote-audio',
+        participantId: 'speaker',
+        producerId: 'remote-producer',
+        kind: 'audio',
+        isScreen: false,
+        adaptivelyPaused: false,
+        createdAt: 0,
+        track: { ...mediaTrack('remote', 'audio'), enabled: true, muted: false },
+        consumer: {
+          paused: false,
+          getStats: vi.fn().mockResolvedValue(
+            new Map([
+              [
+                'inbound',
+                {
+                  type: 'inbound-rtp',
+                  packetsReceived: 40,
+                  bytesReceived: 400,
+                  totalSamplesReceived: 48000,
+                  concealedSamples: 200,
+                  silentConcealedSamples: 100,
+                  jitterBufferDelay: 0.2,
+                  jitterBufferEmittedCount: 100,
+                },
+              ],
+            ]),
+          ),
+        } as never,
+      })
+      const element = document.createElement('audio')
+      element.muted = true
+      manager.videoManager.audioElements.set('listener', element)
+      const collection = manager.getConnectionDiagnostics()
+      await vi.runAllTimersAsync()
+      const result = await collection
+      expect(result.audioSamples).toHaveLength(2)
+      expect(result.audioSamples?.[0].streams[0]).toMatchObject({
+        trackEnabled: true,
+        trackState: 'live',
+        reports: [{ packetsSent: 10, audioLevel: 0.4, totalAudioEnergy: 2 }],
+      })
+      expect(result.audioSamples?.[1].streams[0].reports[0]).toMatchObject({ packetsSent: 20 })
+      expect(result.audioSamples?.[0].streams[1]).toMatchObject({
+        direction: 'receive',
+        participantId: 'speaker',
+        producerId: 'remote-producer',
+        reports: [
+          {
+            packetsReceived: 40,
+            bytesReceived: 400,
+            totalSamplesReceived: 48000,
+            concealedSamples: 200,
+            silentConcealedSamples: 100,
+          },
+        ],
+      })
+      expect(result.audioSamples?.[0].playback).toContainEqual(
+        expect.objectContaining({ participantId: 'listener', paused: true, muted: true }),
+      )
+      expect(JSON.stringify(result)).not.toContain('private-device')
+      expect(JSON.stringify(result)).not.toContain('private-address')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still reports connection state when audio statistics never resolve', async () => {
+    vi.useFakeTimers()
+    try {
+      const manager = createManager({
+        getConnectionStatus: () => ({ connected: false, socketId: null }),
+      } as never)
+      vi.spyOn(manager.transportManager, 'getNetworkStats').mockRejectedValue(new Error('closed'))
+      vi.spyOn(manager, 'sampleRTCStats').mockImplementation(() => new Promise(() => {}))
+      const collection = manager.getConnectionDiagnostics()
+      await vi.runAllTimersAsync()
+      const result = await collection
+      expect(result.connectionStatus.connected).toBe(false)
+      expect(result.audioSamples).toHaveLength(2)
+      expect(
+        result.audioSamples?.every((sample) => sample.error && sample.streams.length === 0),
+      ).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('routes host control through an acknowledged client request', async () => {
     const sendRequest = vi.fn().mockResolvedValue({ success: true })
     const manager = createManager({ sendRequest } as never)
