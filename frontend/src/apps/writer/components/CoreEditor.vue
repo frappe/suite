@@ -144,7 +144,8 @@ const emit = defineEmits<{
   cleanup: []
 }>()
 
-const showSettings = defineModel<boolean>('showSettings')
+// Still bound by CollabTextEditor; nothing opens the settings until the dialog returns.
+defineModel<boolean>('showSettings')
 const edited = defineModel<boolean>('edited')
 const slots = useSlots()
 
@@ -226,7 +227,6 @@ const menuButtons = computed(() =>
     editor,
     settings: props.settings,
     isPainting,
-    openSettings: () => (showSettings.value = true),
   }),
 )
 
