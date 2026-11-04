@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import type { Peer } from '@/platform/collab'
 import { roomColours } from '@/platform/collab/colours'
 
-import { cursorLabels, readPresence, sendSelection, type RemoteCursor } from './presence'
+import { readPresence, sendSelection } from './presence'
 import { addSheet, axis, initDoc } from './schema'
 import { readSavedSelection, selectionToIds } from './selection'
 
@@ -52,9 +52,7 @@ describe('presence', () => {
       col: 1,
       range: { r0: 2, c0: 1, r1: 4, c1: 2 },
       subSheet: 'Sheet1',
-      fullName: 'Ann Lee',
-      firstName: 'Ann',
-      initials: 'AL',
+      label: 'Ann',
     })
     expect(users).toEqual([
       expect.objectContaining({ user: 'ann@x', full_name: 'Ann Lee', sub_sheet: 'Sheet1' }),
@@ -147,7 +145,7 @@ describe('presence', () => {
       )
       const full = (u: string) => ({ fullName: u, image: '' })
       const { cursors } = readPresence(presenceOf(doc, peers, states), doc, 'me@x', full)
-      return cursorLabels(cursors)
+      return new Map([...cursors].map(([pid, cursor]) => [pid, cursor.label]))
     }
 
     it('shows both names, comma-separated, when two people are on the same cell', () => {
@@ -155,7 +153,7 @@ describe('presence', () => {
         { pid: 7, user: 'Asha Rao', r0: 2, c0: 1 },
         { pid: 8, user: 'Ravi Kumar', r0: 2, c0: 1 },
       ])
-      expect(labels.get('7')).toEqual({ text: 'Asha, Ravi', title: 'Asha Rao, Ravi Kumar' })
+      expect(labels.get('7')).toBe('Asha, Ravi')
       expect(labels.get('8')).toBeNull()
     })
 
@@ -165,9 +163,7 @@ describe('presence', () => {
         { pid: 8, user: 'Ravi Kumar', r0: 3, c0: 1 },
         { pid: 9, user: 'Sam Lee', r0: 2, c0: 1, sheet: 'Sheet2' },
       ])
-      expect(labels.get('7')?.text).toBe('Asha')
-      expect(labels.get('8')?.text).toBe('Ravi')
-      expect(labels.get('9')?.text).toBe('Sam')
+      expect([...labels.values()]).toEqual(['Asha', 'Ravi', 'Sam'])
     })
 
     it('ends a long list of names with +N', () => {
@@ -177,10 +173,7 @@ describe('presence', () => {
         { pid: 9, user: 'Samantha Lee', r0: 0, c0: 0 },
         { pid: 10, user: 'Bo Chen', r0: 0, c0: 0 },
       ])
-      expect(labels.get('7')).toEqual({
-        text: 'Asha, Ravindranath +2',
-        title: 'Asha Rao, Ravindranath K, Samantha Lee, Bo Chen',
-      })
+      expect(labels.get('7')).toBe('Asha, Ravindranath +2')
     })
 
     it('names a person once when two of their tabs are on the cell', () => {
@@ -189,16 +182,23 @@ describe('presence', () => {
         { pid: 8, user: 'Asha Rao', r0: 0, c0: 0 },
         { pid: 9, user: 'Ravi Kumar', r0: 0, c0: 0 },
       ])
-      expect(labels.get('7')?.text).toBe('Asha, Ravi')
+      expect(labels.get('7')).toBe('Asha, Ravi')
+    })
+
+    it('tells two guests on one cell apart', () => {
+      const labels = labelsOf([
+        { pid: 36, user: 'Guest', r0: 0, c0: 0 },
+        { pid: 37, user: 'Guest', r0: 0, c0: 0 },
+      ])
+      expect(labels.get('36')).toMatch(/^Guest \w+, Guest \w+$/)
     })
 
     it('drops a name at once when its person moves away', () => {
       const ravi = { pid: 8, user: 'Ravi Kumar', r0: 2, c0: 1 }
       const together = labelsOf([{ pid: 7, user: 'Asha Rao', r0: 2, c0: 1 }, ravi])
       const apart = labelsOf([{ pid: 7, user: 'Asha Rao', r0: 4, c0: 0 }, ravi])
-      expect(together.get('7')?.text).toBe('Asha, Ravi')
-      expect(apart.get('7')?.text).toBe('Asha')
-      expect(apart.get('8')).toEqual({ text: 'Ravi', title: 'Ravi Kumar' })
+      expect(together.get('7')).toBe('Asha, Ravi')
+      expect([apart.get('7'), apart.get('8')]).toEqual(['Asha', 'Ravi'])
     })
 
     it('counts a range as on the cell where its label sits, its top-left', () => {
@@ -206,8 +206,7 @@ describe('presence', () => {
         { pid: 7, user: 'Asha Rao', r0: 2, c0: 1, r1: 6 },
         { pid: 8, user: 'Ravi Kumar', r0: 2, c0: 1 },
       ])
-      expect(labels.get('7')?.text).toBe('Asha, Ravi')
-      expect(cursorLabels(new Map<string, RemoteCursor>()).size).toBe(0)
+      expect(labels.get('7')).toBe('Asha, Ravi')
     })
   })
 })

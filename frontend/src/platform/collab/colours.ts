@@ -137,7 +137,8 @@ export function roomColours(peers: Peer[], own: Peer) {
   return tabColours
 }
 
-// The colour as CSS custom properties; the `peer-colour` class picks the light or dark shades
+// The colour as CSS custom properties; Writer's `peer-colour` class and Sheets' `.sn-peer` pick the light or
+// dark shades
 export function colourStyle({ light, dark }: PeerColour) {
   return {
     '--peer-light': light.solid,

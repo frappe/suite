@@ -311,9 +311,8 @@
             'sn-remote-cursor--named': cur.label,
           }"
           :style="cur.style"
-          :title="cur.label?.title ?? cur.fullName"
         >
-          <span v-if="cur.label" class="sn-remote-cursor-label">{{ cur.label.text }}</span>
+          <span v-if="cur.label" class="sn-remote-cursor-label">{{ cur.label }}</span>
         </div>
 
         <!-- Pivot highlight overlay — thin coloured border drawn over the
@@ -795,7 +794,6 @@ import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
 import { createGrid } from '../../canvas/index'
-import { cursorLabels } from '../../collab/presence'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
@@ -2475,8 +2473,6 @@ const visibleRemoteCursors = computed(() => {
   for (const user of _lastRemoteRC.keys()) {
     if (!remoteCursors.value.has(user)) _lastRemoteRC.delete(user)
   }
-  // People on the same cell share one label (collab/presence.ts).
-  const labels = cursorLabels(remoteCursors.value)
   return [...remoteCursors.value.entries()]
     .filter(([, cursor]) => cursor.subSheet === currentSheet.value)
     .map(([user, cursor]) => {
@@ -2506,8 +2502,7 @@ const visibleRemoteCursors = computed(() => {
       _lastRemoteRC.set(user, stamp)
       return {
         user,
-        label: labels.get(user) ?? null,
-        fullName: cursor.fullName,
+        label: cursor.label,
         justMoved,
         style: {
           left: tl.x + 'px',
