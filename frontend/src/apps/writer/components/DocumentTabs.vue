@@ -122,7 +122,10 @@ function finishRenaming(refocus = true) {
   stopRenaming(refocus)
 }
 
-watch(activeTabId, () => finishRenaming(false))
+// Moving to another tab keeps a rename; the first click of a double-click selects the tab being renamed.
+watch(activeTabId, (id) => {
+  if (renamingId.value && renamingId.value !== id) finishRenaming(false)
+})
 
 const draggedId = ref<string | null>(null)
 const draggedIndex = ref(-1)
