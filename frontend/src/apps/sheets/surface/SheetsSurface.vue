@@ -84,7 +84,7 @@ const access = createSheetAccess(props.session, {
   },
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
-useHideRail(() => (access.readable.value || copying.value) && !editor.value?.hasLoadError)
+useHideRail(() => access.readable.value && !editor.value?.hasLoadError)
 const cursor = computed<CellAnchor | null>(() =>
   editor.value
     ? {
