@@ -374,6 +374,7 @@ const saveOfflineCopy = async (id) => {
     for (const source of unsigned) {
       recordFailure(progress, source, TIMEOUT)
     }
+
     for (const source of refused) {
       recordFailure(progress, source, REFUSED)
     }
