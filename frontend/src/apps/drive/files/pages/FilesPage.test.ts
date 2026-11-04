@@ -82,7 +82,7 @@ vi.mock('@/platform/session', async (original) => {
 interface ShownToast {
   kind: string
   message: string
-  options?: { id?: unknown; description?: string }
+  options?: { id?: unknown; description?: string; duration?: number }
 }
 const feedback = vi.hoisted(() => ({ toasts: [] as ShownToast[] }))
 vi.mock('@/platform/feedback', async () => {
@@ -424,10 +424,18 @@ describe('Downloading a folder', () => {
     return assign
   }
 
-  it('asks for the zip and says a notification will bring it', async () => {
+  it('keeps a toast on the page until the zip is ready, then downloads it', async () => {
+    const url = '/api/suite/drive/downloads/download-1/content'
     server.download = () => preparing
+    server.polls = [preparing, { ...preparing, status: 'Ready', size: 2048, url }]
+    const assign = vi.fn()
+    await mount('/drive/f/folder-5/drafts')
+    await vi.waitFor(() => expect(titles()).toEqual(['Photos']))
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
 
-    const assign = await download()
+    const downloading = menuItem('photos', 'Download')?.onClick()
+    await vi.advanceTimersByTimeAsync(2000)
 
     expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([
       { id: 'download_start', input: { nodes: ['photos'] } },
@@ -435,11 +443,26 @@ describe('Downloading a folder', () => {
     expect(assign).not.toHaveBeenCalled()
     expect(feedback.toasts).toEqual([
       {
-        kind: 'info',
+        kind: 'loading',
         message: 'Preparing “Photos” for download',
-        options: { description: 'You will get a notification when the zip is ready.' },
+        options: {
+          id: 'download-1',
+          description:
+            'The download starts here when the zip is ready. A notification will bring it too.',
+          duration: Infinity,
+        },
       },
     ])
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await downloading
+
+    expect(assign).toHaveBeenCalledWith(url)
+    expect(feedback.toasts[1]).toEqual({
+      kind: 'success',
+      message: 'Downloading “Photos”',
+      options: { id: 'download-1', description: undefined, duration: 5000 },
+    })
   })
 
   it('waits on the page for a zip asked for through a share link, then downloads it', async () => {
@@ -461,13 +484,10 @@ describe('Downloading a folder', () => {
 
     expect(server.calls.filter((call) => call.id === 'download_get')).toHaveLength(2)
     expect(assign).toHaveBeenCalledWith(url)
-    expect(feedback.toasts).toEqual([
-      {
-        kind: 'info',
-        message: 'Preparing “Photos” for download',
-        options: { description: 'The download starts here when the zip is ready.' },
-      },
-    ])
+    expect(feedback.toasts.map((shown) => shown.kind)).toEqual(['loading', 'success'])
+    expect(feedback.toasts[0]?.options?.description).toBe(
+      'The download starts here when the zip is ready.',
+    )
   })
 
   it('downloads a zip that is already ready at once', async () => {
@@ -519,7 +539,7 @@ describe('A selection', () => {
       { id: 'download_start', input: { nodes: ['a', 'c'] } },
     ])
     expect(feedback.toasts[0]).toMatchObject({
-      kind: 'info',
+      kind: 'loading',
       message: 'Preparing 2 items for download',
     })
   })

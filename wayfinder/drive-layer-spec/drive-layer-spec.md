@@ -3215,9 +3215,10 @@ Every Guest is one requester, so Guests are counted per set of links.
 `delivery` says how the zip reaches the caller. A signed-in caller who reads
 every selected node through their own principals gets an `Inbox` download:
 the job is built with those principals alone, and a `Drive Notification` that
-points at the download, not at an activity row, links the zip. A Guest, or a
-caller who reads a selected node only through a share link, gets a `Page`
-download: the row keeps the request's link credentials, there is no
+points at the download, not at an activity row, links the zip; the page that
+asked polls as well, so the download also starts there while it stays open. A
+Guest, or a caller who reads a selected node only through a share link, gets
+a `Page` download: the row keeps the request's link credentials, there is no
 notification, and the page that asked polls `GET /downloads/<id>` and opens
 `url` itself. A browser navigation carries no `X-Drive-Links` header, so the
 content route adds the recorded links to the caller's own principals.

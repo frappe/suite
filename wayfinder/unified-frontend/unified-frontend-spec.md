@@ -911,12 +911,11 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   Drive §11.5].
 - **Download** sends one `POST /downloads` for the whole selection. A
   single file downloads at once. Anything else becomes one zip, named after
-  the selection's folder or "Suite download". A toast says the zip is being
-  prepared. When the caller reads every item through their own access, a
-  notification links the zip. When their access comes through a share link,
-  or they are a Guest, the page polls `GET /downloads/<id>` and starts the
-  download itself. A zip that is already ready downloads at once [Drive
-  §11.2].
+  the selection's folder or "Suite download". A toast stays on the page
+  until the zip is ready: the page polls `GET /downloads/<id>` and starts the
+  download itself. When the caller reads every item through their own access,
+  a notification also links the zip, for whoever left the page meanwhile. A
+  zip that is already ready downloads at once [Drive §11.2].
 - **Star** and **Unstar** send one favourite request per row that needs to
   change. Star shows only to a signed-in person.
 - An action is enabled only when every selected row's access permits it.

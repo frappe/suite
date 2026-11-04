@@ -261,7 +261,7 @@ import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
-import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
+import { confirm, ContextMenu, Dropdown, toast, type ToastId } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
@@ -1574,37 +1574,57 @@ async function shareRow(row: DriveNode) {
 }
 /** A folder or a link downloads in a zip; anything else downloads its own bytes. */
 const ZIPPED_KINDS = new Set(['folder', 'link'])
+/** How long a settled download's toast stays, once it stops waiting. */
+const SETTLED_DOWNLOAD_TOAST_MS = 5000
 async function download(row: DriveNode): Promise<void> {
   if (ZIPPED_KINDS.has(row.kind)) return downloadRows([row])
   window.location.assign(nodeContentUrl(row.name, { download: true }))
 }
 /**
  * One file downloads at once. Anything else becomes one zip that Drive builds
- * in the background (Drive spec §11.2). A notification links an Inbox zip;
- * for a Page zip, asked for through a share link, this page waits for it.
+ * in the background (Drive spec §11.2). A toast stays on the page until the
+ * zip is ready, then the download starts here. An Inbox zip is also linked
+ * from a notification, for whoever left the page meanwhile.
  */
 async function downloadRows(rows: readonly DriveNode[]): Promise<void> {
   const [only] = rows
   if (rows.length === 1 && only && !ZIPPED_KINDS.has(only.kind)) return download(only)
   const name = subject(rows.map(itemOf))
+  let waiting: ToastId | undefined
+  // Settles the waiting toast in place, or shows a fresh one when none was waiting.
+  const settle = (kind: 'success' | 'error', message: string, description?: string) =>
+    toast[kind](
+      message,
+      waiting === undefined
+        ? { description }
+        : { id: waiting, description, duration: SETTLED_DOWNLOAD_TOAST_MS },
+    )
   try {
     const asked = await downloadMutation.run({ nodes: rows.map((row) => row.name) })
     if (asked.status === 'Preparing') {
-      toast.info(__('Preparing {0} for download', [name]), {
+      // Keyed by the download, so asking again for the same selection updates
+      // this toast instead of adding one. The settled states set their own
+      // duration, because an update keeps the one it had.
+      waiting = asked.name
+      toast.loading(__('Preparing {0} for download', [name]), {
+        id: waiting,
         description:
           asked.delivery === 'Inbox'
-            ? __('You will get a notification when the zip is ready.')
+            ? __(
+                'The download starts here when the zip is ready. A notification will bring it too.',
+              )
             : __('The download starts here when the zip is ready.'),
+        duration: Infinity,
       })
-      if (asked.delivery === 'Inbox') return
     }
     const settled = await settledDownload(asked)
-    if (settled.url) window.location.assign(settled.url)
-    else
-      toast.error(__('Could not download {0}', [name]), { description: settled.error ?? undefined })
+    if (settled.url) {
+      window.location.assign(settled.url)
+      if (waiting !== undefined) settle('success', __('Downloading {0}', [name]))
+    } else settle('error', __('Could not download {0}', [name]), settled.error ?? undefined)
   } catch (error) {
     const reason = error instanceof Error ? error.message : undefined
-    toast.error(__('Could not download {0}', [name]), { description: reason })
+    settle('error', __('Could not download {0}', [name]), reason)
   }
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
