@@ -207,7 +207,6 @@ const { listId } = defineProps<{
   listId: string
 }>()
 const router = useRouter()
-usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || listId, 'Mail'))
 const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddRecipients = ref(false)
@@ -216,6 +215,7 @@ const recipientSearch = ref('')
 const list = useQuery(api.mail.admin.mailingLists.get, () => ({
   list_id: listId,
 }))
+usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || listId, 'Mail'))
 watch(
   () => list.error,
   (error) => {

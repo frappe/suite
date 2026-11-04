@@ -16,15 +16,20 @@
     </template>
 
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <FormControl v-model="search" :placeholder="__('Search')" class="w-full sm:w-80">
+      <FormControl
+        v-model="search"
+        :placeholder="__('Search')"
+        :aria-label="__('Search users')"
+        class="w-full sm:w-80"
+      >
         <template #prefix>
           <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
-      <div class="flex items-center gap-3">
+      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
         <DashboardSkeletonText v-if="loading" class="flex-none text-sm" width="4rem" />
         <p v-else class="text-sm text-ink-gray-5">{{ __('{0} users', [filtered.length]) }}</p>
-        <div class="w-40">
+        <div class="min-w-0 flex-1 sm:w-40 sm:flex-none">
           <FormControl
             v-model="roleFilter"
             type="select"
@@ -36,7 +41,7 @@
             ]"
           />
         </div>
-        <div class="w-40">
+        <div class="min-w-0 flex-1 sm:w-40 sm:flex-none">
           <FormControl
             v-model="statusFilter"
             type="select"
@@ -60,15 +65,20 @@
       class="-mx-3 list-row-px-3"
       :columns="
         storage.data?.cloud
-          ? ['minmax(0,1fr)', '10rem', '10rem', '3rem']
-          : ['minmax(0,1fr)', '10rem', '3rem']
+          ? {
+              base: ['minmax(0,1fr)', '4.5rem', '2rem'],
+              sm: ['minmax(0,1fr)', '10rem', '10rem', '3rem'],
+            }
+          : { base: ['minmax(0,1fr)', '4.5rem', '2rem'], sm: ['minmax(0,1fr)', '10rem', '3rem'] }
       "
       :row-height="56"
     >
       <ListHeader>
         <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
         <ListHeaderCell>{{ __('Status') }}</ListHeaderCell>
-        <ListHeaderCell v-if="storage.data?.cloud">{{ __('Storage') }}</ListHeaderCell>
+        <ListHeaderCell v-if="storage.data?.cloud" class="max-sm:hidden">{{
+          __('Storage')
+        }}</ListHeaderCell>
         <ListHeaderCell
           ><span class="sr-only">{{ __('Actions') }}</span></ListHeaderCell
         >
@@ -83,7 +93,7 @@
             </div>
           </ListCell>
           <ListCell><Skeleton class="h-5 w-14 rounded-4" /></ListCell>
-          <ListCell v-if="storage.data?.cloud">
+          <ListCell v-if="storage.data?.cloud" class="max-sm:hidden">
             <div class="flex-1 space-y-1.5">
               <DashboardSkeletonText class="text-p-sm" width="70%" />
               <div class="h-1 rounded-7 bg-surface-gray-2" />
@@ -107,7 +117,9 @@
                   />
                 </Tooltip>
               </div>
-              <p class="truncate text-p-sm text-ink-gray-5">{{ user.account || user.email }}</p>
+              <p class="truncate text-p-sm text-ink-gray-5">
+                {{ user.account || user.email }}
+              </p>
             </div>
           </ListCell>
           <ListCell>
@@ -130,7 +142,7 @@
               </p>
             </div>
           </ListCell>
-          <ListCell v-if="storage.data?.cloud">
+          <ListCell v-if="storage.data?.cloud" class="max-sm:hidden">
             <StorageUsage v-if="userStorage(user)" :user="userStorage(user)!" />
           </ListCell>
           <ListCell class="justify-end" @click.stop>
@@ -138,7 +150,7 @@
               <Button
                 variant="ghost"
                 icon="lucide-ellipsis"
-                :label="__('Actions for {0}', [user.full_name])"
+                :label="__('Actions for {0}', [user.account || user.email])"
               />
             </Dropdown>
           </ListCell>
@@ -146,11 +158,13 @@
       </ListRows>
     </List>
 
-    <div v-if="selectedUsers.length" class="flex items-center gap-2">
+    <div v-if="selectedUsers.length" class="flex flex-wrap items-center gap-2">
       <p class="text-p-sm text-ink-gray-6">{{ __('{0} selected', [selectedUsers.length]) }}</p>
       <Button :label="__('Reactivate selected users')" @click="openLifecycle(true)" />
       <Button :label="__('Disable selected users')" @click="openLifecycle(false)" />
     </div>
+
+    <StorageLimitDialog v-if="storageEditing" v-model:open="storageEditing" :users="storageUsers" />
 
     <Dialog
       v-model:open="lifecycleOpen"
@@ -208,21 +222,21 @@
     </Dialog>
 
     <div
-      v-if="!filtered.length && !users.error"
+      v-if="!loading && !filtered.length && !users.error"
       class="flex flex-col items-center gap-1 py-16 text-center"
     >
       <span
-        :class="search ? 'lucide-search-x' : 'lucide-users'"
+        :class="hasFilters ? 'lucide-search-x' : 'lucide-users'"
         class="size-6 text-ink-gray-4"
         aria-hidden="true"
       />
       <p class="text-base font-medium text-ink-gray-7">
-        {{ search ? __('No users found') : __('No users yet') }}
+        {{ hasFilters ? __('No users found') : __('No users yet') }}
       </p>
       <p class="text-p-sm text-ink-gray-5">
         {{
-          search
-            ? __('Try a different name or email address.')
+          hasFilters
+            ? __('Try a different search or change the filters.')
             : __('Invite someone to give them access to this site.')
         }}
       </p>
@@ -569,9 +583,10 @@ import {
   Tooltip,
 } from 'frappe-ui'
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from 'frappe-ui/list'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 
 import { api, client, useMutation, useQuery, type OutputOf } from '@/api'
+import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
 import { Dropdown } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
@@ -587,6 +602,9 @@ const props = withDefaults(
   },
 )
 
+const StorageLimitDialog = defineAsyncComponent(loadStorageLimitDialog)
+const storageEditing = ref(false)
+const storageUsers = ref<string[]>([])
 const users = useQuery(api.suite.users.list)
 const loading = computed(() => users.status === 'pending')
 const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton-${index}` }))
@@ -596,6 +614,9 @@ const invite = useMutation(api.suite.invitations.create)
 const search = ref('')
 const roleFilter = ref('all')
 const statusFilter = ref('all')
+const hasFilters = computed(
+  () => !!search.value || roleFilter.value !== 'all' || statusFilter.value !== 'all',
+)
 watch(
   () => props.status,
   (status) => {
@@ -866,6 +887,15 @@ function userActions(user: User) {
       onClick: () => {
         editingProfile.value = user.name
         profileName.value = user.full_name
+      },
+    },
+    {
+      label: __('Edit storage limit'),
+      icon: 'lucide-hard-drive',
+      condition: () => !!storage.data?.cloud,
+      onClick: () => {
+        storageUsers.value = [user.name]
+        storageEditing.value = true
       },
     },
     {

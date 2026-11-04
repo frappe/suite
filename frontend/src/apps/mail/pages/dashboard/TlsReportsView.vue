@@ -2,20 +2,34 @@
   <DashboardLayout area="mail" :breadcrumbs="[{ label: __('TLS Reports') }]">
     <!-- Filters in one row; the domain and period scope both the summary and the list. -->
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <FormControl v-model="search" :placeholder="__('Search reporter or domain')" class="w-80">
+      <FormControl
+        v-model="search"
+        :placeholder="__('Search reporter or domain')"
+        class="w-full sm:w-80"
+      >
         <template #prefix>
           <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
       </FormControl>
-      <div class="flex items-center gap-3">
-        <FormControl v-model="domain" class="w-56" type="select" :options="domainOptions" />
-        <FormControl v-model="period" class="w-40" type="select" :options="PERIOD_OPTIONS" />
+      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+        <FormControl
+          v-model="domain"
+          class="min-w-0 flex-1 sm:w-56 sm:flex-none"
+          type="select"
+          :options="domainOptions"
+        />
+        <FormControl
+          v-model="period"
+          class="min-w-0 flex-1 sm:w-40 sm:flex-none"
+          type="select"
+          :options="PERIOD_OPTIONS"
+        />
       </div>
     </div>
 
     <TlsStatTiles :totals="summary.data?.totals" />
 
-    <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
       <!-- What went wrong, biggest first: the failure type says whether a certificate, the
 			     MTA-STS policy or STARTTLS itself is to blame. -->
       <DashboardCard :title="__('Failure Types')">
@@ -23,9 +37,12 @@
           <div
             v-for="row in failures"
             :key="row.result_type ?? 'other'"
-            class="flex h-12 shrink-0 items-center gap-3 border-b px-5 text-sm last:border-b-0"
+            class="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b px-5 py-3 text-sm last:border-b-0"
           >
-            <span class="min-w-0 flex-1 truncate font-medium" :title="row.result_type ?? undefined">
+            <span
+              class="w-full break-words font-medium sm:w-auto sm:min-w-0 sm:flex-1"
+              :title="row.result_type ?? undefined"
+            >
               {{ resultTypeLabel(row.result_type) }}
             </span>
             <span class="text-ink-gray-5 w-24 shrink-0 text-right tabular-nums">
@@ -53,14 +70,15 @@
       </DashboardCard>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col">
+    <ErrorMessage :message="summary.error?.message || list.error?.message" />
+    <div class="flex shrink-0 flex-col">
       <DashboardList
         :columns="LIST_COLUMNS"
         :rows="list.rows"
         row-key="id"
-        :loading="list.status !== 'success'"
+        :loading="list.status === 'pending'"
         :row-route="listOptions.getRowRoute"
-        :empty-state="listOptions.emptyState"
+        :empty-state="list.error ? undefined : listOptions.emptyState"
       >
         <template #cell="{ column, row, item }">
           <template v-if="column.key === 'success_rate'">
@@ -102,7 +120,7 @@
 
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Badge, FormControl, usePageMeta } from 'frappe-ui'
+import { Badge, ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery, useQuery } from '@/api'

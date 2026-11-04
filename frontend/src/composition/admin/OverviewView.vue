@@ -173,9 +173,8 @@ const kpis = computed(() => {
         />
         <template v-else-if="domainsComplete">
           <Alert
-            v-for="domain in pendingDomains"
+            v-for="domain in pendingDomains.slice(0, 3)"
             :key="domain.id"
-            class="domain-alert"
             theme="amber"
             :title="__('{0}: {1}', [domain.name, domainNote(domain)])"
           >
@@ -187,12 +186,12 @@ const kpis = computed(() => {
               />
             </template>
           </Alert>
-          <Alert
-            v-if="!domainCount"
-            class="domain-alert"
-            theme="amber"
-            :title="__('No domain set')"
-          >
+          <p v-if="pendingDomains.length > 3" class="text-p-sm text-ink-gray-6">
+            <RouterLink to="/admin/mail/domains" class="underline hover:text-ink-gray-9">
+              {{ __('{0} more domains need attention', [pendingDomains.length - 3]) }}
+            </RouterLink>
+          </p>
+          <Alert v-if="!domainCount" theme="amber" :title="__('No domain set')">
             <template #actions>
               <Button variant="ghost" :label="__('Add domain')" route="/admin/mail/domains?add=1" />
             </template>
@@ -220,15 +219,3 @@ const kpis = computed(() => {
     </div>
   </DashboardLayout>
 </template>
-
-<style scoped>
-.domain-alert[data-color='amber'] {
-  background-color: var(--surface-amber-2);
-  height: auto;
-  min-height: 2.5rem;
-}
-.domain-alert :deep([data-slot='title']) {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-</style>

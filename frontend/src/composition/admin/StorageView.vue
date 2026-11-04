@@ -17,7 +17,10 @@
           <List
             selectable
             class="pointer-events-none -mx-3 list-row-px-3 list-gap-6"
-            :columns="['minmax(0,1fr)', '10rem', '2rem']"
+            :columns="{
+              base: ['minmax(0,1fr)', '7rem', '2rem'],
+              sm: ['minmax(0,1fr)', '10rem', '2rem'],
+            }"
             :row-height="64"
           >
             <ListHeader>
@@ -76,7 +79,10 @@
             v-model:selection="selected"
             selectable
             class="-mx-3 list-row-px-3 list-gap-6"
-            :columns="['minmax(0,1fr)', '10rem', '2rem']"
+            :columns="{
+              base: ['minmax(0,1fr)', '7rem', '2rem'],
+              sm: ['minmax(0,1fr)', '10rem', '2rem'],
+            }"
             :row-height="64"
           >
             <ListHeader>
@@ -113,7 +119,7 @@
                   <Button
                     variant="ghost"
                     icon="lucide-pencil"
-                    :label="__('Edit storage limit for {0}', [user.full_name])"
+                    :label="__('Edit storage limit for {0}', [user.email])"
                     @click.stop="editCap(user)"
                   />
                 </ListCell>
@@ -127,7 +133,10 @@
         <h2 class="text-lg font-medium text-ink-gray-9">{{ __('Drive storage') }}</h2>
         <List
           class="-mx-3 list-row-px-3"
-          :columns="['minmax(0,1fr)', '9rem', '12rem']"
+          :columns="{
+            base: ['minmax(0,1fr)', '4rem', '6rem'],
+            sm: ['minmax(0,1fr)', '9rem', '12rem'],
+          }"
           :row-height="44"
         >
           <ListHeader>
