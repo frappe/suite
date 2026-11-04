@@ -256,6 +256,38 @@ describe('Slides offline copy', () => {
     expect(register).toHaveBeenCalledWith('/service-worker.js')
   })
 
+  describe('on a composite', () => {
+    const groups = {
+      a: [{ name: 'a1', idx: 1, parent: 'a', background: '#ffffffff', elements: [] }],
+    }
+
+    async function openedComposite() {
+      mounted = await openedSurface({ composite: groups })
+      const root = mounted.root
+      await vi.waitFor(() => expect(root.textContent).toContain('1 · ready'))
+      await nextTick()
+    }
+
+    it('offers no copy, even to the owner', async () => {
+      await openedComposite()
+
+      expect(offlineCopyButton()).toBeNull()
+    })
+
+    it.each([
+      ['the owner', 'me@example.com'],
+      ['someone else', 'someone@example.com'],
+    ])('lets %s reach an earlier copy', async (_who, user) => {
+      signedIn.user = user
+      const next = fakeServer.opens + 1
+      localStorage.setItem(`${RECORD_PREFIX}p${next}`, JSON.stringify({ node: 'node-1', keys: [] }))
+
+      await openedComposite()
+
+      expect(offlineCopyButton()).not.toBeNull()
+    })
+  })
+
   it('hides the copy from someone who is not the owner', async () => {
     signedIn.user = 'someone@example.com'
     mounted = await openedSurface()

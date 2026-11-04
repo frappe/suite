@@ -523,6 +523,11 @@ const getOfflineStatus = (id) => {
   const record = readRecord(id)
   if (!record) return 'none'
 
+  // the surface loads a composite from its group reads, and a copy holds none of them
+  if (presentationDoc.value?.is_composite) {
+    return 'unusable'
+  }
+
   // offline, no row means the list this copy holds predates the picture; online it
   // means Drive won't give it to this user as of this read, so no update could add it
   if (!navigator.onLine && mediaNodeIds().some(isMediaRefused)) {

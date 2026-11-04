@@ -41,6 +41,7 @@ import {
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
 import {
+  offlineCopyStatus,
   pruneOfflineCopy,
   refreshOfflineStatus,
   warmOfflineCopyAssets,
@@ -581,8 +582,10 @@ const canPin = computed(
     'serviceWorker' in navigator &&
     'caches' in window &&
     !window.disable_slides_service_worker &&
+    !presentationDoc.value?.is_composite &&
     isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
+const showsOfflineCopy = computed(() => canPin.value || offlineCopyStatus.value === 'unusable')
 watch([slides, () => presentationDoc.value?.modified], () => {
   if (!slides.value.length) {
     refreshOfflineStatus(null)
@@ -657,7 +660,7 @@ onBeforeUnmount(() => {
         </Dropdown>
       </template>
       <template #actions>
-        <OfflineCopyButton v-if="canPin" />
+        <OfflineCopyButton v-if="showsOfflineCopy" />
         <Button
           icon="lucide-file-down"
           tooltip="Export"

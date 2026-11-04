@@ -45,18 +45,21 @@ const showDialog = ref(false)
 const icon = computed(() => {
   if (progress.value.running) return CloudDownload
   if (status.value === 'available') return CloudCheck
-  if (status.value === 'outdated') return CloudAlert
+  if (status.value === 'outdated' || status.value === 'unusable') return CloudAlert
   return CloudDownload
 })
 
 const iconClass = computed(() =>
-  status.value === 'outdated' ? 'text-ink-amber-6' : 'text-ink-gray-6',
+  status.value === 'outdated' || status.value === 'unusable'
+    ? 'text-ink-amber-6'
+    : 'text-ink-gray-6',
 )
 
 const statusText = computed(() => {
   if (progress.value.running) return 'Saving offline copy'
   if (status.value === 'available') return 'Available offline'
   if (status.value === 'outdated') return 'Offline copy out of date'
+  if (status.value === 'unusable') return "Offline copy can't open"
   return 'Save offline copy'
 })
 
@@ -149,6 +152,15 @@ const dialog = computed((): DialogProps => {
       theme: 'amber',
       message: 'New images are not saved offline yet.',
       actions: [removeAction, { label: 'Update copy', variant: 'solid', onClick: save }],
+    }
+  }
+  if (status.value === 'unusable') {
+    return {
+      title: "Offline copy can't open",
+      icon: 'lucide-cloud-alert',
+      theme: 'amber',
+      message: 'This presentation shows slides from other presentations, which need internet.',
+      actions: [cancelAction, { ...removeAction, variant: 'solid' }],
     }
   }
   return {
