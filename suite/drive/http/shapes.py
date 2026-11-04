@@ -27,6 +27,7 @@ from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
+from frappe.utils import get_datetime, now_datetime
 from pydantic import with_config
 
 from suite.drive._core import nodes, times
@@ -636,11 +637,15 @@ class DownloadShape(TypedDict):
     name: str
     # The zip's file name.
     title: str
-    status: Literal["Preparing", "Ready", "Failed"]
+    # Expired: the zip was ready, and its day is over.
+    status: Literal["Preparing", "Ready", "Failed", "Expired"]
+    # Inbox: a notification links the zip. Page: the page that asked polls
+    # `GET downloads/<id>`, because the caller's access comes through a link.
+    delivery: Literal["Inbox", "Page"]
     size: int | None
     expires_at: str | None
     error: str | None
-    # Where the ready zip is sent from; None until it is Ready.
+    # Where the zip is sent from; set only while it is Ready.
     url: str | None
 
 
@@ -873,12 +878,16 @@ def download_notification_shape(row: Mapping) -> DownloadNotificationShape:
 
 
 def download_shape(row: Mapping) -> DownloadShape:
-    """Return one download. Its `url` is the content route, once the zip is ready."""
-    ready = row.get("status") == "Ready"
+    """Return one download. Its `url` is the content route, while the zip is ready and unexpired."""
+    status, expires_at = row.get("status"), row.get("expires_at")
+    if status == "Ready" and expires_at and get_datetime(expires_at) <= now_datetime():
+        status = "Expired"
+    ready = status == "Ready"
     return {
         "name": row.get("name"),
         "title": row.get("title"),
-        "status": row.get("status"),
+        "status": status,
+        "delivery": row.get("delivery"),
         "size": row.get("size") if ready else None,
         "expires_at": stamp(row.get("expires_at")),
         "error": row.get("error") or None,

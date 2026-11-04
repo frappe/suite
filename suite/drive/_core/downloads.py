@@ -3,18 +3,27 @@
 Asking for a download checks READ on each selected node and answers at once with
 a Preparing row. A long-queue job then zips the nodes, and every folder's
 subtree, into a private File Blob through the active storage driver. It checks
-READ on every node it writes, and one unreadable node fails the whole zip. When
-the job ends, ready or failed, the requester gets a notification in their inbox
+READ on every node it writes, and one unreadable node fails the whole zip
 (Drive spec §11.2).
 
-Sending the zip checks READ again on every node the job recorded, even one that
-has moved since. A missing, trashed or unreadable member refuses the download.
+How the zip reaches its requester depends on where their access comes from.
+Someone who reads every selected node through their own principals gets an
+Inbox download: a notification links it when the job ends. A Guest, or anyone
+whose access comes through a share link, gets a Page download: the page that
+asked polls for it, and the row keeps the link credentials, because a browser
+navigation to the zip carries no link header.
 
-A zip expires `DOWNLOAD_TTL` after it is ready. `purge_expired` deletes expired
-rows and their notifications; the storage garbage collector then deletes the
-unreferenced blob and its bytes.
+Sending the zip checks READ again on every node the job recorded, even one that
+has moved since, with the requester's own principals and the recorded links. A
+missing, trashed or unreadable member, or a revoked link, refuses the download.
+
+A zip expires `DOWNLOAD_TTL` after it is ready. `purge_expired` fails downloads
+whose job never finished and deletes expired rows and their notifications; the
+storage garbage collector then deletes the unreferenced blob and its bytes.
 """
 
+import dataclasses
+import hashlib
 import io
 import json
 import re
@@ -39,7 +48,6 @@ from suite.drive._core.changes import emit_for_users
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
-    DriveForbidden,
     DriveNotFound,
     rollback_savepoint,
 )
@@ -48,12 +56,18 @@ from suite.drive._core.principals import Principals
 DOWNLOAD_TTL = timedelta(hours=24)
 MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024
 BUILD_TIMEOUT_SECONDS = 60 * 60
+# A Preparing row older than this lost its job: a killed worker, or a fault
+# after the job's own error handling.
+STALLED_AFTER = timedelta(seconds=BUILD_TIMEOUT_SECONDS) + timedelta(minutes=15)
+MAX_PREPARING_DOWNLOADS = 3
 DOWNLOAD_FIELDS = (
     "name",
     "requester",
     "title",
     "status",
+    "delivery",
     "nodes",
+    "links",
     "members",
     "blob",
     "size",
@@ -94,36 +108,57 @@ DESCENDANTS_SQL = f"""
 
 
 def start(principals: Principals, nodes: Sequence[str]) -> frappe._dict:
-    """Queue one zip of the selected nodes for the caller and return its Preparing row.
+    """Return the caller's zip of the selected nodes: one already asked for, or a new Preparing one.
 
-    A download is delivered to a person's inbox, so a Guest is refused. The job
-    is queued after this request commits, so it always finds the row.
+    The job is queued after this request commits, so it always finds the row.
     """
-    if principals.user == "Guest":
-        raise DriveForbidden(_("Sign in to download several items at once"))
     selected = [_selectable(principals, node) for node in nodes]
     if not selected:
         raise DriveConflict(_("Select at least one item to download"))
+    own = without_links(principals)
+    page = principals.user == "Guest" or not _all_readable(own, [row.name for row in selected])
+    links = _link_credentials(principals) if page else None
+    builder = principals if page else own
+    selection = _selection(selected, links)
+    if reused := _reusable(builder, selection):
+        return reused
+    _check_preparing(principals.user, links)
     row = frappe.get_doc(
         {
             "doctype": "Drive Download",
             "requester": principals.user,
             "title": _zip_title(principals, selected),
             "status": "Preparing",
+            "delivery": "Page" if page else "Inbox",
             "nodes": json.dumps([node.name for node in selected]),
+            "selection": selection,
+            "links": links,
             "expires_at": now_datetime() + DOWNLOAD_TTL,
         }
     ).insert(ignore_permissions=True)
-    frappe.db.after_commit.add(lambda: _queue_build(row.name, principals))
+    frappe.db.after_commit.add(lambda: queue_build(row.name, builder))
     return get(principals, row.name)
 
 
 def get(principals: Principals, download: str) -> frappe._dict:
-    """Return one of the caller's own downloads. Anyone else's is not found."""
+    """Return one of the caller's own downloads. Anyone else's is not found.
+
+    Every Guest is one requester, so a Guest's download is reached by its
+    name alone: 128 random bits that only the page that asked was given.
+    """
     row = frappe.db.get_value("Drive Download", download, DOWNLOAD_FIELDS, as_dict=True)
     if not row or row.requester != principals.user:
         raise DriveNotFound(_("Drive download {0} was not found").format(download))
     return row
+
+
+def without_links(principals: Principals) -> Principals:
+    """The caller's principals without the share links their request presented."""
+    return dataclasses.replace(
+        principals,
+        open=tuple(principal for principal in principals.open if not principal.startswith("$LINK:")),
+        link_tickets=(),
+    )
 
 
 def build(download: str, principals: Principals) -> None:
@@ -154,21 +189,19 @@ def build(download: str, principals: Principals) -> None:
         rollback_savepoint(savepoint, fault)
         frappe.log_error("Drive: could not prepare a download", frappe.get_traceback())
         values = {"status": "Failed", "error": _("Drive could not prepare this download. Try again.")}
-    frappe.db.set_value("Drive Download", download, values)
-    frappe.get_doc(
-        {"doctype": "Drive Notification", "download": download, "to_user": row.requester, "read": 0}
-    ).insert(ignore_permissions=True)
-    emit_for_users((row.requester,))
+    _finish(row, values)
 
 
 def ready_blob(principals: Principals, download: str) -> tuple[Document, str]:
-    """Return a ready zip's blob and file name after rechecking READ on every member."""
+    """Return a ready zip's blob and file name after rechecking READ on every member.
+
+    A Page download is checked with the link credentials it was asked with, so
+    revoking that link refuses it.
+    """
     row = get(principals, download)
     if row.status != "Ready" or get_datetime(row.expires_at) <= now_datetime():
-        raise DriveNotFound(_("This download is not ready, or it has expired"))
-    members = frappe.parse_json(row.members) or []
-    rows = frappe.db.sql(MEMBERS_SQL, {"nodes": tuple(members)}, as_dict=True) if members else []
-    if not members or len(node_core._readable_rows(rows, principals)) != len(members):
+        raise DriveNotFound(_("This download has expired. Download the items again."))
+    if not _all_readable(_holder(principals, row), frappe.parse_json(row.members) or []):
         raise DriveNotFound(_("An item in this download was moved, deleted or unshared. Download it again."))
     blob = frappe.db.exists("File Blob", {"name": row.blob, "status": "Ready", "is_private": 1})
     if not blob:
@@ -177,28 +210,41 @@ def ready_blob(principals: Principals, download: str) -> tuple[Document, str]:
 
 
 def purge_expired() -> int:
-    """Delete expired downloads and the notifications that point at them.
+    """Fail stalled downloads, then delete expired ones and the notifications that point at them.
 
-    This drops the zip's last reference to its File Blob. The storage garbage
-    collector deletes the blob and its bytes on its next daily run.
+    Deleting a row drops the zip's last reference to its File Blob. The storage
+    garbage collector deletes the blob and its bytes on its next daily run.
     """
+    stalled = frappe.get_all(
+        "Drive Download",
+        filters={"status": "Preparing", "creation": ["<", now_datetime() - STALLED_AFTER]},
+        fields=DOWNLOAD_FIELDS,
+    )
+    for row in stalled:
+        _finish(
+            row, {"status": "Failed", "error": _("Drive took too long to prepare this download. Try again.")}
+        )
     expired = frappe.get_all(
         "Drive Download",
         filters={"expires_at": ["<", now_datetime()]},
-        fields=["name", "requester"],
+        fields=["name", "requester", "delivery"],
     )
     if not expired:
         return 0
     names = [row.name for row in expired]
     frappe.db.delete("Drive Notification", {"download": ["in", names]})
     frappe.db.delete("Drive Download", {"name": ["in", names]})
-    emit_for_users({row.requester for row in expired})
+    emit_for_users({row.requester for row in expired if row.delivery == "Inbox"})
     return len(expired)
 
 
-def _queue_build(download: str, principals: Principals) -> None:
-    # After commit, as `activity.queue_share_email` does: a Redis failure here
-    # must not turn a committed request into a 500. The row then expires unbuilt.
+def queue_build(download: str, principals: Principals) -> None:
+    """Push the build job; when that fails, fail the download at once.
+
+    This runs after the request's commit, as `activity.queue_share_email` does:
+    a Redis failure must not turn a committed request into a 500. So the failed
+    row and its notification are committed here, or no one would.
+    """
     try:
         frappe.enqueue(
             "suite.drive._core.downloads.build",
@@ -209,6 +255,92 @@ def _queue_build(download: str, principals: Principals) -> None:
         )
     except Exception:
         frappe.logger("suite.drive").exception("Drive: could not queue download %s", download)
+        row = frappe.db.get_value("Drive Download", download, DOWNLOAD_FIELDS, as_dict=True)
+        _finish(
+            row, {"status": "Failed", "error": _("Drive could not start preparing this download. Try again.")}
+        )
+        frappe.db.commit()
+
+
+def _finish(row: frappe._dict, values: dict) -> None:
+    """Record how a download ended. An Inbox download also tells its requester."""
+    frappe.db.set_value("Drive Download", row.name, values)
+    if row.delivery != "Inbox":
+        return
+    frappe.get_doc(
+        {"doctype": "Drive Notification", "download": row.name, "to_user": row.requester, "read": 0}
+    ).insert(ignore_permissions=True)
+    emit_for_users((row.requester,))
+
+
+def _all_readable(principals: Principals, nodes: Sequence[str]) -> bool:
+    """Whether every node is Active and readable. No nodes is not readable."""
+    rows = frappe.db.sql(MEMBERS_SQL, {"nodes": tuple(nodes)}, as_dict=True) if nodes else []
+    return bool(nodes) and len(node_core._readable_rows(rows, principals)) == len(set(nodes))
+
+
+def _link_credentials(principals: Principals) -> str:
+    """The share links a request presented, as the JSON a Page download keeps."""
+    links = sorted(principal for principal in principals.open if principal.startswith("$LINK:"))
+    return json.dumps({"links": links, "tickets": sorted(map(list, principals.link_tickets))})
+
+
+def _holder(principals: Principals, row: frappe._dict) -> Principals:
+    """The caller's own principals, with the links a Page download was asked with."""
+    own = without_links(principals)
+    if not row.links:
+        return own
+    recorded = frappe.parse_json(row.links)
+    return dataclasses.replace(
+        own,
+        open=(*own.open, *recorded["links"]),
+        link_tickets=tuple(tuple(ticket) for ticket in recorded["tickets"]),
+    )
+
+
+def _selection(selected: list[frappe._dict], links: str | None) -> str:
+    """A digest of what a download holds and the links it may be read with."""
+    key = json.dumps({"nodes": sorted(row.name for row in selected), "links": links})
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def _reusable(principals: Principals, selection: str) -> frappe._dict | None:
+    """The requester's live download of the same selection, so a second click builds nothing."""
+    rows = frappe.get_all(
+        "Drive Download",
+        filters={
+            "requester": principals.user,
+            "selection": selection,
+            "status": ["in", ("Preparing", "Ready")],
+            "expires_at": [">", now_datetime()],
+        },
+        fields=DOWNLOAD_FIELDS,
+        order_by="creation desc",
+        limit=1,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    # A ready zip whose member was unshared since would only be refused.
+    if row.status == "Ready" and not _all_readable(principals, frappe.parse_json(row.members) or []):
+        return None
+    return row
+
+
+def _check_preparing(requester: str, links: str | None) -> None:
+    """Refuse a new download while the requester has too many being prepared.
+
+    Every Guest is one requester, so Guests are counted per set of links.
+    """
+    filters = {"requester": requester, "status": "Preparing"}
+    if requester == "Guest":
+        filters["links"] = links
+    if frappe.db.count("Drive Download", filters) >= MAX_PREPARING_DOWNLOADS:
+        raise DriveConflict(
+            _("{0} downloads are already being prepared. Try again when one is ready.").format(
+                MAX_PREPARING_DOWNLOADS
+            )
+        )
 
 
 def _selectable(principals: Principals, node: str) -> frappe._dict:
@@ -312,7 +444,9 @@ def _file_stream(row: frappe._dict, blobs: dict[str, frappe._dict]) -> IO[bytes]
 
 
 def _write(archive: zipfile.ZipFile, path: str, stream: IO[bytes], written: int) -> int:
-    with closing(stream), archive.open(path, "w") as destination:
+    # Zip64 from the start: an entry's size is unknown until its stream ends,
+    # and without it an entry over 2 GiB fails when it closes.
+    with closing(stream), archive.open(path, "w", force_zip64=True) as destination:
         while block := stream.read(1024 * 1024):
             written += len(block)
             if written > MAX_DOWNLOAD_BYTES:

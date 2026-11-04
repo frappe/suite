@@ -497,6 +497,7 @@ class TestDownloadRoutes(BoundaryCase):
             name="d1",
             title="Talks.zip",
             status="Preparing",
+            delivery="Inbox",
             size=None,
             expires_at=None,
             error=None,
@@ -524,6 +525,17 @@ class TestDownloadRoutes(BoundaryCase):
             allow_native_redirect=True,
         )
         self.assertEqual(answer.get_data(), b"zip")
+
+    def test_a_refused_zip_answers_a_page_that_says_why(self):
+        # A browser opens this URL itself, so a JSON envelope would replace the app.
+        refusal = DriveNotFound("This download has expired. Download the items again.")
+        navigation = Request(EnvironBuilder(path="/api/suite/drive/downloads/d1/content").get_environ())
+        with local_attribute("request", navigation):
+            with patch.object(routes.downloads, "ready_blob", side_effect=refusal):
+                answer = routes.download_content(download="d1")
+        self.assertEqual(answer.status_code, 404)
+        self.assertEqual(answer.mimetype, "text/html")
+        self.assertIn("This download has expired", answer.get_data(as_text=True))
 
 
 class TestRootDiscoveryRoute(BoundaryCase):

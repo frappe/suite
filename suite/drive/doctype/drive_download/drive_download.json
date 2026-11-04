@@ -1,6 +1,5 @@
 {
  "actions": [],
- "autoname": "hash",
  "creation": "2026-11-04 10:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -8,7 +7,10 @@
   "requester",
   "title",
   "status",
+  "delivery",
   "nodes",
+  "selection",
+  "links",
   "members",
   "blob",
   "size",
@@ -42,10 +44,33 @@
    "reqd": 1
   },
   {
+   "default": "Inbox",
+   "description": "Inbox: the requester's notification links the zip. Page: the page that asked polls for it, for a requester whose access comes through a share link.",
+   "fieldname": "delivery",
+   "fieldtype": "Select",
+   "label": "Delivery",
+   "options": "Inbox\nPage",
+   "reqd": 1
+  },
+  {
    "fieldname": "nodes",
    "fieldtype": "JSON",
    "label": "Nodes",
    "reqd": 1
+  },
+  {
+   "description": "A digest of the selected nodes and link credentials, so asking again reuses this zip.",
+   "fieldname": "selection",
+   "fieldtype": "Data",
+   "label": "Selection",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The share-link credentials a Page download was asked with. Sending the zip checks access with them again.",
+   "fieldname": "links",
+   "fieldtype": "JSON",
+   "label": "Links"
   },
   {
    "fieldname": "members",
@@ -80,11 +105,11 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-04 10:00:00.000000",
+ "modified": "2026-11-04 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Download",
- "naming_rule": "Random",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {

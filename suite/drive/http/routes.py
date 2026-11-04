@@ -49,6 +49,8 @@ from uuid import uuid4
 
 import frappe
 from frappe import _
+from frappe.utils import escape_html
+from frappe.utils.response import as_page, respond_as_web_page
 from werkzeug.wrappers import Response
 
 from suite.drive import framework
@@ -352,20 +354,35 @@ def node_copy(node: Given = None, parent_node: Given = None, title: Given = None
     return shapes.node_shape(node_core.stored(copied))
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
 def download_start(nodes: Given = None) -> shapes.DownloadShape:
-    """Queue one zip of the selected nodes; the caller's inbox says when it is ready."""
+    """Queue one zip of the selected nodes, or answer the one already asked for."""
     return shapes.download_shape(downloads.start(_principals(), shapes.identifiers(nodes, "nodes")))
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@_route
+def download_get(download: Given = None) -> shapes.DownloadShape:
+    """Answer one of the caller's downloads, for the page that polls a Page download."""
+    return shapes.download_shape(downloads.get(_principals(), shapes.required_text(download, "download")))
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
 def download_content(download: Given = None) -> Response:
-    """Send the caller's ready zip, redirecting to the driver's signed URL when it has one."""
+    """Send the caller's ready zip, redirecting to the driver's signed URL when it has one.
+
+    A browser opens this URL itself, from a notification or a finished poll, so
+    a refusal answers a page that says why rather than a JSON envelope.
+    """
     from frappe.storage.serve import stream_blob
 
-    blob, filename = downloads.ready_blob(_principals(), shapes.required_text(download, "download"))
+    try:
+        blob, filename = downloads.ready_blob(_principals(), shapes.required_text(download, "download"))
+    except (DriveError, frappe.ValidationError) as refusal:
+        respond_as_web_page(_("Download unavailable"), escape_html(str(refusal)), http_status_code=404)
+        return as_page()
     return stream_blob(
         blob,
         filename,
