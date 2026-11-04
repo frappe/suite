@@ -661,7 +661,7 @@ def _comment_node(node: str, *, for_update: bool = False) -> frappe._dict:
     row = frappe.db.get_value(
         "Drive Node",
         node,
-        ["name", "parent_node", "root", "path", "kind", "state", "content_doctype", "owner"],
+        ["name", "parent_node", "root", "path", "title", "kind", "state", "content_doctype", "owner"],
         as_dict=True,
         for_update=for_update,
     )
@@ -750,7 +750,7 @@ def reach_mentioned(
             if manages and _principal_kind(user) == "user":
                 grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
             else:
-                title = node.title
+                title = node["title"]
         reached[user] = title
     return reached
 
