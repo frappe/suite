@@ -16,6 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import format_datetime, formataddr
 from html import unescape
+from typing import Self
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -51,45 +52,36 @@ def seed(fresh: bool = False) -> None:
         missing = [person.email for person in PEOPLE if not frappe.db.exists("User", person.email)]
         if missing:
             frappe.throw(f"Run suite.composition.demo.drive.seed first. Missing users: {', '.join(missing)}")
-        fill(Stalwart(), fresh)
+        with Stalwart() as stalwart:
+            stalwart.provision()
+            for person in PEOPLE:
+                link(stalwart, person.email)
+                frappe.db.commit()
+            if fresh:
+                for person in PEOPLE:
+                    stalwart.mailbox(person.email).empty()
+                print("Emptied the Northwind mailboxes and calendars.")
+            accept_colleagues()
+            now = datetime.now(ZoneInfo(get_system_timezone()))
+            delivered = deliver(stalwart, [*letters(now), *invitations(now)])
+            name_calendars()
+            scheduled = schedule(stalwart, now)
+            frappe.db.commit()
+            print(f"Imported {delivered} messages; {scheduled} calendar copies are in place.")
+            print(
+                f"Mail and Calendar are ready at {get_url()}/mail for {', '.join(p.email for p in PEOPLE)}."
+            )
 
 
 def reset() -> None:
     """Unlink the Northwind users from Mail and delete their accounts, lists and domain."""
-    with acting_as("Administrator"):
-        stalwart = Stalwart()
-        try:
-            for person in PEOPLE:
-                mail_product.forget_local_account(person.email)
-            frappe.db.commit()
-            stalwart.remove()
-            print("Removed the Northwind mail accounts, lists and domain.")
-            print("If a reseed reuses a removed account id, restart the web process to drop its old cache.")
-        finally:
-            stalwart.http.close()
-
-
-def fill(stalwart: Stalwart, fresh: bool) -> None:
-    """Provision the accounts, then import the mail and calendars; closes `stalwart` when done."""
-    try:
-        stalwart.provision()
+    with acting_as("Administrator"), Stalwart() as stalwart:
         for person in PEOPLE:
-            link(stalwart, person.email)
-            frappe.db.commit()
-        if fresh:
-            for person in PEOPLE:
-                stalwart.mailbox(person.email).empty()
-            print("Emptied the Northwind mailboxes and calendars.")
-        accept_colleagues()
-        now = datetime.now(ZoneInfo(get_system_timezone()))
-        delivered = deliver(stalwart, [*letters(now), *invitations(now)])
-        name_calendars()
-        scheduled = schedule(stalwart, now)
+            mail_product.forget_local_account(person.email)
         frappe.db.commit()
-        print(f"Imported {delivered} messages; {scheduled} calendar copies are in place.")
-        print(f"Mail and Calendar are ready at {get_url()}/mail for {', '.join(p.email for p in PEOPLE)}.")
-    finally:
-        stalwart.http.close()
+        stalwart.remove()
+        print("Removed the Northwind mail accounts, lists and domain.")
+        print("If a reseed reuses a removed account id, restart the web process to drop its old cache.")
 
 
 class Stalwart:
@@ -104,6 +96,12 @@ class Stalwart:
         self.password = conf["password"]
         self.http = httpx.Client(timeout=60, verify=bool(conf.get("verify_ssl")), follow_redirects=True)
         self.account = self.get_session(self.admin)["primaryAccounts"][MANAGEMENT]
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exception: object) -> None:
+        self.http.close()
 
     def get_session(self, login: str) -> dict:
         response = self.http.get(f"{self.url}/.well-known/jmap", auth=(login, self.password))
