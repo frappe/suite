@@ -35,13 +35,11 @@ export default defineConfig({
 		navigationTimeout: 30_000,
 	},
 	projects: [
-		// Empty trash deletes the admin's whole personal Trash, which other
-		// journeys read. As a teardown it runs once they have all finished.
+		// The destructive journey requires a disposable site and explicit opt-in.
 		{
 			name: "chromium",
 			use: { ...devices["Desktop Chrome"] },
 			testIgnore: /empty-trash\.spec\.ts/,
-			teardown: "empty-trash",
 		},
 		{ name: "empty-trash", use: { ...devices["Desktop Chrome"] }, testMatch: /empty-trash\.spec\.ts/ },
 	],

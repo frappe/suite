@@ -123,14 +123,10 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	await page.waitForTimeout(3_000);
 	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
 
-	// The copy is kept per person, under a key that ends in the node.
-	const recovery = () =>
-		page.evaluate((node) => {
-			const key = Object.keys(localStorage).find(
-				(name) => name.startsWith("suite:slides-recovery:") && name.endsWith(`:${node}`),
-			);
-			return key ? localStorage.getItem(key) : null;
-		}, deck.name);
+	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
+	expect(user).toBeDefined();
+	const recoveryKey = `suite:slides-recovery:${decodeURIComponent(user!.value)}:${deck.name}`;
+	const recovery = () => page.evaluate((key) => localStorage.getItem(key), recoveryKey);
 	expect(await recovery()).toContain("rectangle");
 
 	const download = page.waitForEvent("download");
