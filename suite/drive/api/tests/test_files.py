@@ -35,6 +35,7 @@ from suite.drive.api.permissions import (
     get_user_access_for_user,
     user_has_permission,
 )
+from suite.drive.api.storage import storage_breakdown
 from suite.drive.overrides.file import File as DriveFile
 from suite.drive.patches.normalize_attachment_file_types import execute as normalize_attachment_file_types
 from suite.drive.utils import (
@@ -762,6 +763,23 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 get_file_content(word.name)
             with self.assertRaises(frappe.PermissionError):
                 self._zip_of(word.name)
+
+    def test_storage_rows_say_which_files_are_writer_documents(self):
+        """Drive opens these rows by their content link, so the rows must carry it."""
+        with self.set_user(OWNER):
+            writer_doc = frappe.new_doc("Writer Document").insert(ignore_permissions=True)
+            writer = self._stored_file(
+                "notes",
+                "Document",
+                "frappe_doc",
+                content_doctype=WRITER_CONTENT_DOCTYPE,
+                content_docname=writer_doc.name,
+            )
+            with patch("suite.drive.api.storage.get_quota", return_value=0):
+                rows = {row["name"]: row for row in storage_breakdown()["entities"]}
+
+        self.assertEqual(rows[writer.name]["content_doctype"], WRITER_CONTENT_DOCTYPE)
+        self.assertEqual(rows[writer.name]["content_docname"], writer_doc.name)
 
     def test_trash_and_restore_preserve_status(self):
         with (
