@@ -23,7 +23,7 @@ from suite.drive._core import activity, comments, nodes
 from suite.drive._core.access import grant, revoke_grant
 from suite.drive._core.roots import archive_personal_root, create_root, purge_root
 from suite.drive.framework import principals_for
-from suite.suite_core.storage import state as storage_state
+from suite.suite_core import storage
 
 WORKSPACE = "Northwind Labs"
 PREFIX = f"{WORKSPACE} - "
@@ -180,15 +180,7 @@ def reset() -> None:
             for person in PEOPLE:
                 if frappe.db.exists("User", person.email):
                     frappe.delete_doc("User", person.email, ignore_permissions=True)
-            storage, policy, measurements = storage_state(lock=True)
-            limits = policy.get("users", {})
-            personal = measurements.get("personal", {})
-            for email in emails:
-                limits.pop(email, None)
-                personal.pop(email, None)
-            storage.policy = json.dumps(policy)
-            storage.measurements = json.dumps(measurements)
-            storage.save(ignore_permissions=True)
+            storage.forget_users(emails)
             frappe.db.commit()
             print("Removed Northwind demo users, groups, personal roots, and organization content.")
         except Exception:

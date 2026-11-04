@@ -87,6 +87,19 @@ def initialize_user_limit(user: str, *, cap: int | None = None, use_default: boo
     doc.save(ignore_permissions=True)
 
 
+def forget_users(users: list[str]) -> None:
+    """Drop deleted users' limits and Mail usage, the inverse of `initialize_user_limit`."""
+    doc, policy, measurements = state(lock=True)
+    limits = policy.get("users", {})
+    personal = measurements.get("personal", {})
+    for user in users:
+        limits.pop(user, None)
+        personal.pop(user, None)
+    doc.policy = json.dumps(policy)
+    doc.measurements = json.dumps(measurements)
+    doc.save(ignore_permissions=True)
+
+
 def check_addition(
     policy: Mapping,
     measurements: Mapping,
