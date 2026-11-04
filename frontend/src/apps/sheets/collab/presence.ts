@@ -37,6 +37,8 @@ export interface RemoteCursor {
   range: { r0: number; c0: number; r1: number; c1: number }
   subSheet: string
   colour: PeerColour
+  /** Who the tab belongs to: one person can have several tabs. */
+  person: string
   fullName: string
   firstName: string
   initials: string
@@ -96,6 +98,7 @@ export function readPresence(
         range: { r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 },
         subSheet: sel.sheet,
         colour,
+        person: key,
         fullName,
         firstName: first,
         initials,
@@ -114,6 +117,50 @@ export function readPresence(
     })
   }
   return { users, cursors }
+}
+
+/** A name label: what it reads, and everyone's full name on hover. */
+export interface CursorLabel {
+  text: string
+  title: string
+}
+
+// Past this many characters a label's other names fold into "+N".
+const LABEL_CHARS = 20
+
+/**
+ * The label on each cursor (keyed as `cursors`). Everyone whose selection
+ * starts on the same cell shares one label, on the first of their cursors:
+ * "Asha, Ravi", or "Asha, Ravi +2" once the names get long. The other
+ * cursors on that cell get null, so labels never stack.
+ */
+export function cursorLabels(cursors: Map<string, RemoteCursor>): Map<string, CursorLabel | null> {
+  const byCell = new Map<string, { key: string; names: Map<string, RemoteCursor> }>()
+  const out = new Map<string, CursorLabel | null>()
+  for (const [key, cursor] of cursors) {
+    const cell = JSON.stringify([cursor.subSheet, cursor.range.r0, cursor.range.c0])
+    const group = byCell.get(cell)
+    if (group) {
+      if (!group.names.has(cursor.person)) group.names.set(cursor.person, cursor)
+      out.set(key, null)
+    } else {
+      byCell.set(cell, { key, names: new Map([[cursor.person, cursor]]) })
+    }
+  }
+  for (const { key, names } of byCell.values()) {
+    const people = [...names.values()]
+    const shown = [people[0]!.firstName]
+    for (const p of people.slice(1)) {
+      if ([...shown, p.firstName].join(', ').length > LABEL_CHARS) break
+      shown.push(p.firstName)
+    }
+    const rest = people.length - shown.length
+    out.set(key, {
+      text: shown.join(', ') + (rest ? ` +${rest}` : ''),
+      title: people.map((p) => p.fullName).join(', '),
+    })
+  }
+  return out
 }
 
 /** Publish this tab's selection (the room sends it only while the tab can write). */

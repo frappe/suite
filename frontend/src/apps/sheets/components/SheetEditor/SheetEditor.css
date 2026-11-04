@@ -352,6 +352,10 @@
      when the peer actually changes cells (vs. local scroll). */
   transition: none;
 }
+/* The box carrying a cell's shared label draws over the others there. */
+.sn-remote-cursor--named {
+  z-index: 1;
+}
 .sn-remote-cursor--moved {
   transition:
     left 0.12s ease-out,

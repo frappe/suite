@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import type { Peer } from '@/platform/collab'
 import { roomColours } from '@/platform/collab/colours'
 
-import { readPresence, sendSelection } from './presence'
+import { cursorLabels, readPresence, sendSelection, type RemoteCursor } from './presence'
 import { addSheet, axis, initDoc } from './schema'
 import { readSavedSelection, selectionToIds } from './selection'
 
@@ -131,5 +131,83 @@ describe('presence', () => {
     expect(field).toBe('cursor')
     // Sheet2 has no row ids yet: its ends stay positions.
     expect(readSavedSelection(sent)).toMatchObject({ r0: 0, c0: 0, r1: 0, c1: 0 })
+  })
+
+  describe('the name label on a cell', () => {
+    type At = { pid: number; user: string; r0: number; c0: number; r1?: number; sheet?: string }
+
+    function labelsOf(people: At[]) {
+      const doc = sheetDoc()
+      const peers = people.map((x, i) => peer(x.pid, x.user, i + 2))
+      const states = Object.fromEntries(
+        people.map(({ pid, sheet = 'Sheet1', r0, c0, r1 = r0 }) => [
+          pid,
+          selectionToIds(doc, { sheet, r0, c0, r1, c1: c0 }),
+        ]),
+      )
+      const full = (u: string) => ({ fullName: u, image: '' })
+      const { cursors } = readPresence(presenceOf(doc, peers, states), doc, 'me@x', full)
+      return cursorLabels(cursors)
+    }
+
+    it('shows both names, comma-separated, when two people are on the same cell', () => {
+      const labels = labelsOf([
+        { pid: 7, user: 'Asha Rao', r0: 2, c0: 1 },
+        { pid: 8, user: 'Ravi Kumar', r0: 2, c0: 1 },
+      ])
+      expect(labels.get('7')).toEqual({ text: 'Asha, Ravi', title: 'Asha Rao, Ravi Kumar' })
+      expect(labels.get('8')).toBeNull()
+    })
+
+    it('gives everyone their own label on different cells or sheets', () => {
+      const labels = labelsOf([
+        { pid: 7, user: 'Asha Rao', r0: 2, c0: 1 },
+        { pid: 8, user: 'Ravi Kumar', r0: 3, c0: 1 },
+        { pid: 9, user: 'Sam Lee', r0: 2, c0: 1, sheet: 'Sheet2' },
+      ])
+      expect(labels.get('7')?.text).toBe('Asha')
+      expect(labels.get('8')?.text).toBe('Ravi')
+      expect(labels.get('9')?.text).toBe('Sam')
+    })
+
+    it('ends a long list of names with +N', () => {
+      const labels = labelsOf([
+        { pid: 7, user: 'Asha Rao', r0: 0, c0: 0 },
+        { pid: 8, user: 'Ravindranath K', r0: 0, c0: 0 },
+        { pid: 9, user: 'Samantha Lee', r0: 0, c0: 0 },
+        { pid: 10, user: 'Bo Chen', r0: 0, c0: 0 },
+      ])
+      expect(labels.get('7')).toEqual({
+        text: 'Asha, Ravindranath +2',
+        title: 'Asha Rao, Ravindranath K, Samantha Lee, Bo Chen',
+      })
+    })
+
+    it('names a person once when two of their tabs are on the cell', () => {
+      const labels = labelsOf([
+        { pid: 7, user: 'Asha Rao', r0: 0, c0: 0 },
+        { pid: 8, user: 'Asha Rao', r0: 0, c0: 0 },
+        { pid: 9, user: 'Ravi Kumar', r0: 0, c0: 0 },
+      ])
+      expect(labels.get('7')?.text).toBe('Asha, Ravi')
+    })
+
+    it('drops a name at once when its person moves away', () => {
+      const ravi = { pid: 8, user: 'Ravi Kumar', r0: 2, c0: 1 }
+      const together = labelsOf([{ pid: 7, user: 'Asha Rao', r0: 2, c0: 1 }, ravi])
+      const apart = labelsOf([{ pid: 7, user: 'Asha Rao', r0: 4, c0: 0 }, ravi])
+      expect(together.get('7')?.text).toBe('Asha, Ravi')
+      expect(apart.get('7')?.text).toBe('Asha')
+      expect(apart.get('8')).toEqual({ text: 'Ravi', title: 'Ravi Kumar' })
+    })
+
+    it('counts a range as on the cell where its label sits, its top-left', () => {
+      const labels = labelsOf([
+        { pid: 7, user: 'Asha Rao', r0: 2, c0: 1, r1: 6 },
+        { pid: 8, user: 'Ravi Kumar', r0: 2, c0: 1 },
+      ])
+      expect(labels.get('7')?.text).toBe('Asha, Ravi')
+      expect(cursorLabels(new Map<string, RemoteCursor>()).size).toBe(0)
+    })
   })
 })
