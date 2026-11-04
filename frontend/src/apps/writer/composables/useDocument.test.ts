@@ -17,8 +17,8 @@ vi.mock('@/apps/writer/resources/', () => ({ getDocuments: { updateRow: vi.fn() 
 vi.mock('@/apps/writer/router', () => ({ default: { replace: mocks.replace } }))
 // The real rule, so these tests fail if it stops telling the two kinds apart.
 vi.mock('@/apps/drive/sdk', async () => {
-  const { isUploadedDocument } = await import('@/apps/drive/utils/files')
-  return { prettyData: (doc: unknown) => doc, isUploadedDocument }
+  const { opensInWriter } = await import('@/apps/drive/utils/files')
+  return { prettyData: (doc: unknown) => doc, opensInWriter }
 })
 vi.mock('@/apps/drive/router', () => ({ default: {} }))
 vi.mock('@/apps/drive/ui/drive/js/utils', () => ({ getFileLink: vi.fn() }))
@@ -42,6 +42,13 @@ beforeEach(() => {
 })
 
 describe('useDocument', () => {
+  it('stays in Writer for a markdown file', () => {
+    useDocument('file-3')
+    mocks.emitLoaded({ name: 'file-3', file_type: 'Markdown', mime_type: 'text/markdown' })
+
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
   it('sends an old Writer link to an uploaded Word file to the Drive file page', () => {
     useDocument('file-1')
     mocks.emitLoaded({ name: 'file-1', file_type: 'Document', content_doctype: null })

@@ -76,7 +76,6 @@ import {
   isManaged,
   isAttachmentRef,
   isDownloadable,
-  isVirtual,
   openEntity,
 } from '@/apps/drive/utils/files'
 import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
@@ -225,8 +224,7 @@ const defaultActions = computed(() => {
         {
           label: __('Download'),
           icon: LucideDownload,
-          isEnabled: () =>
-            !isVirtual(rootEntity.value) && isDownloadable(rootEntity.value),
+          isEnabled: () => isDownloadable(rootEntity.value),
           onClick: () => entitiesDownload([rootEntity.value]),
         },
         {

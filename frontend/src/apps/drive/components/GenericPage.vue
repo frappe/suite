@@ -570,7 +570,7 @@ const actionItems = computed(() => {
         // Downloading is read-only, so it is safe for every real file regardless
         // of kind (parity with the file-preview navbar). Only virtual grouping
         // nodes and non-downloadable types are excluded.
-        isEnabled: (e) => !isVirtual(e) && isDownloadable(e),
+        isEnabled: (e) => isDownloadable(e),
         action: (entities) => entitiesDownload(entities),
         multi: true,
         important: true,

@@ -750,7 +750,7 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 with self.assertRaises(frappe.DoesNotExistError):
                     get_file_content(not_stored.name)
 
-            # The Office preview fetches the file without cookies, using a one-time token.
+            # The Office preview's cookieless token fetch passes the same rule.
             token = create_auth_token(word.name)
         with self.set_user("Guest"):
             response = get_file_content(word.name, trigger_download=True, token=token)

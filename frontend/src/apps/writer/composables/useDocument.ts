@@ -1,7 +1,7 @@
 import { MaybeRefOrGetter, toValue, ref } from 'vue'
 import { useDoc, createResource } from 'frappe-ui'
 import { useSessionStore } from '@/boot/session'
-import { isUploadedDocument, prettyData } from '@/apps/drive/sdk'
+import { opensInWriter, prettyData } from '@/apps/drive/sdk'
 import router from '@/apps/writer/router'
 import { getDocuments } from '@/apps/writer/resources/'
 
@@ -26,8 +26,8 @@ export default function useDocument(docId: MaybeRefOrGetter<string>) {
   // Construct a fake useDoc until we fetch data
   const document = ref({ doc: null })
   file.onSuccess((doc) => {
-    // Writer cannot show an uploaded Word file. Old links to it still arrive here.
-    if (isUploadedDocument(doc)) {
+    // Old Writer links to uploaded Word files still arrive here.
+    if (!opensInWriter(doc)) {
       router.replace({ name: 'drive-File', params: { entityName: doc.name } })
       return
     }
