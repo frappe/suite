@@ -3,9 +3,10 @@ import type { AnyExtension, Editor } from '@tiptap/core'
 import { reactive, type PropType } from 'vue'
 import type { Doc } from 'yjs'
 
-export const rooms = { next: null as object | null }
+export const rooms = { next: null as object | null, held: null as Promise<void> | null }
 // The body the server holds for a document edited without collaboration
 export const stored = {
+  contentModified: null as string | null,
   html: '',
   content: '',
   collab: 0,
@@ -105,6 +106,7 @@ export async function fakeDrive() {
     DriveDocumentHeader: define({
       props: {
         saveState: { type: String, default: null },
+        viewOnly: { type: Boolean, default: false },
         panels: { type: Array, default: () => [] },
       },
       emits: ['update:panel'],
@@ -121,6 +123,7 @@ export async function fakeDrive() {
           props.panels.includes('versions') && render('button', openVersions),
           props.panels.includes('comments') && render('button', openComments),
           render('output', { 'data-save-state': '' }, props.saveState ?? ''),
+          props.viewOnly && render('output', { 'data-view-only': '' }),
           slots.actions?.(),
         ]
       },
@@ -187,6 +190,7 @@ export async function fakeCollabPlatform() {
   return {
     ...client,
     openCollabRoom: async () => {
+      await rooms.held
       if (rooms.next) {
         return { state: 'live', room: rooms.next }
       }
@@ -206,8 +210,16 @@ export async function fakeCollabPlatform() {
 export function fakeWriterDocument(original: typeof import('./writerDocument')) {
   function writerDocument() {
     function read() {
-      const { collab, html, content, conversion } = stored
-      return { name: 'content-1', collab, settings: {}, html, content, conversion }
+      const { collab, html, content, conversion, contentModified } = stored
+      return {
+        name: 'content-1',
+        collab,
+        settings: {},
+        html,
+        content,
+        conversion,
+        content_modified: contentModified,
+      }
     }
 
     const resources = reactive({

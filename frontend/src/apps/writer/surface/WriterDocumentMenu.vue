@@ -77,80 +77,47 @@ function saveVersionOnFocusBack() {
   focusBack.focused()
 }
 
-function versionGroups() {
-  if (!props.canSaveVersion) {
-    return []
-  }
-
+function documentOptions() {
+  const lock = props.isLocked
+    ? {
+        label: __('Unlock document'),
+        icon: 'lucide-lock-open',
+        onClick: () => emit('setLocked', false),
+      }
+    : {
+        label: __('Lock document'),
+        icon: 'lucide-lock',
+        onClick: () => emit('setLocked', true),
+      }
   return [
-    {
-      group: __('Version'),
-      hideLabel: true,
-      options: [
-        {
-          label: __('Save version'),
-          icon: 'lucide-bookmark',
-          onClick: pickVersion,
-        },
-      ],
-    },
+    ...(props.canSaveVersion
+      ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
+      : []),
+    ...(props.canLock ? [lock] : []),
   ]
 }
 
-function lockGroups() {
-  if (!props.canLock) {
-    return []
-  }
-
+function fileOptions() {
+  const title = props.session.title.value
   return [
-    {
-      group: __('Lock'),
-      hideLabel: true,
-      options: [
-        props.isLocked
-          ? {
-              label: __('Unlock document'),
-              icon: 'lucide-lock-open',
-              onClick: () => emit('setLocked', false),
-            }
-          : {
-              label: __('Lock document'),
-              icon: 'lucide-lock',
-              onClick: () => emit('setLocked', true),
-            },
-      ],
-    },
+    downloadOption(__('Download as DOCX'), 'lucide-file-text', (html) =>
+      downloadDocx(html, title, props.settings, props.session.credentials.fetch),
+    ),
+    downloadOption(__('Download as Markdown'), 'lucide-file-code', (html) =>
+      downloadMarkdown(html, title, props.session.credentials.fetch),
+    ),
+    ...(props.editable
+      ? [{ label: __('Import DOCX'), icon: 'lucide-file-up', onClick: pickDocx }]
+      : []),
   ]
 }
 
 const options = computed<DropdownOptions>(() => {
-  const title = props.session.title.value
-  const versions = [...versionGroups(), ...lockGroups()]
-  const downloads = {
-    group: __('Download'),
-    hideLabel: true,
-    options: [
-      downloadOption(__('Download as DOCX'), 'lucide-file-text', (html) =>
-        downloadDocx(html, title, props.settings, props.session.credentials.fetch),
-      ),
-      downloadOption(__('Download as Markdown'), 'lucide-pilcrow', (html) =>
-        downloadMarkdown(html, title, props.session.credentials.fetch),
-      ),
-    ],
-  }
-  if (!props.editable) {
-    return [...versions, downloads]
-  }
-
-  return [
-    ...versions,
-    downloads,
-    {
-      group: __('Import'),
-      hideLabel: true,
-      options: [{ label: __('Import DOCX'), icon: 'lucide-file-up', onClick: pickDocx }],
-    },
+  const groups = [
+    { group: __('Document'), hideLabel: true, options: documentOptions() },
+    { group: __('File'), hideLabel: true, options: fileOptions() },
   ]
+  return groups.filter((group) => group.options.length > 0)
 })
 
 /** The picker input is never in the page, so the header holds one input: the title. */

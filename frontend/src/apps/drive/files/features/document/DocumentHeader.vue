@@ -73,6 +73,13 @@
         class="shrink-0"
       />
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" class="shrink-0" />
+      <Badge
+        v-if="saveState === 'failed'"
+        :label="SAVE_LABELS.failed"
+        theme="amber"
+        variant="subtle"
+        class="shrink-0"
+      />
       <template v-if="recoverable">
         <Button
           class="shrink-0 max-md:hidden"
@@ -93,8 +100,7 @@
       <!-- A compact header says it beside the title, before its menus. -->
       <span
         v-if="showsSaveBesideTitle"
-        class="ms-1 me-2 whitespace-nowrap text-sm"
-        :class="saveClass"
+        class="ms-1 me-2 whitespace-nowrap text-sm text-ink-gray-5 max-md:hidden"
         aria-live="polite"
       >
         {{ saveLabel }}
@@ -104,11 +110,10 @@
     </div>
 
     <div class="flex shrink-0 items-center gap-1" :class="centering.end">
-      <!-- A clean or saving document says so on wide screens only; a failed save always shows. -->
+      <!-- A clean or saving document says so on wide screens only; a failed save is a badge. -->
       <span
         v-if="showsSaveAtEnd"
-        class="mr-1 whitespace-nowrap text-sm"
-        :class="saveClass"
+        class="mr-1 whitespace-nowrap text-sm text-ink-gray-5 max-md:hidden"
         aria-live="polite"
       >
         {{ saveLabel }}
@@ -228,8 +233,9 @@ const CENTERED = {
 const UNCENTERED = { title: '', start: '', end: '' }
 const isCompact = computed(() => props.layout === 'compact')
 const sizeClass = computed(() => (isCompact.value ? 'h-10 px-3' : 'h-12 px-3 sm:px-4'))
-const showsSaveBesideTitle = computed(() => isCompact.value && !!props.saveState)
-const showsSaveAtEnd = computed(() => !isCompact.value && !!props.saveState)
+const showsSaveText = computed(() => !!props.saveState && props.saveState !== 'failed')
+const showsSaveBesideTitle = computed(() => isCompact.value && showsSaveText.value)
+const showsSaveAtEnd = computed(() => !isCompact.value && showsSaveText.value)
 const saveLabel = computed(() => {
   if (!props.saveState) {
     return ''
@@ -245,12 +251,6 @@ const renamable = computed(() =>
 const typeIcon = computed(() =>
   documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
 )
-/** A clean or saving document says so on wide screens only; a failed save always shows. */
-const saveClass = computed(() => [
-  props.saveState === 'failed' ? 'text-ink-red-6' : 'text-ink-gray-5',
-  props.saveState !== 'failed' && 'max-md:hidden',
-])
-
 // read on every render: slots are not reactive
 function showsSolidShare() {
   return !slots.primary

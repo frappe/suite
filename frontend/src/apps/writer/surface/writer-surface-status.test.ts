@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
-import { signedIn } from './writer-surface-fakes'
+import { rooms, signedIn, stored } from './writer-surface-fakes'
 import {
   liveRoom,
   oneVersion,
@@ -107,36 +107,77 @@ describe('what a reader sees of a document', () => {
 describe('the save status', () => {
   afterEach(() => serverMinBuilds({}))
 
-  it('shows the save status to an editor but not to a reader', async () => {
+  it('stays quiet about saves that go through, and warns everyone of one that failed', async () => {
     await serverMinBuilds({ writer: '100' })
-    pullingRoom()
+    const room = pullingRoom()
     const editorView = await openedSurface()
-    expect(saveStatus(editorView)).toBe('clean')
+    expect(saveStatus(editorView)).toBe('')
     document.body.innerHTML = ''
 
-    pullingRoom()
+    room.status = { ...room.status, saveState: 'unsaved', unsentCount: 650 }
+    const savingView = await openedSurface()
+    expect(saveStatus(savingView)).toBe('')
+    document.body.innerHTML = ''
+
+    pullingRoom().status.saveState = 'failed'
     const readerView = await openedSurface(oneVersion, '/d/node-1', undefined, ref({ role: 10 }))
-    expect(saveStatus(readerView)).toBe('')
+    expect(saveStatus(readerView)).toBe('failed')
   })
 
-  it('says Saving… while edits wait to be sent, and that they will sync while offline', async () => {
+  it('says when the document was last edited, and that this tab has just edited it', async () => {
+    await serverMinBuilds({ writer: '100' })
+    stored.contentModified = new Date(Date.now() - 3 * 60 * 60_000).toISOString()
+    const listeners: (() => void)[] = []
+    const room = Object.assign(pullingRoom(), {
+      onChange: (listener: () => void) => {
+        listeners.push(listener)
+        return () => {}
+      },
+    })
+    const root = await openedSurface()
+    expect(root.textContent).toContain('Edited 3h ago')
+
+    room.status = { ...room.status, saveState: 'unsaved' }
+    listeners.forEach((listener) => listener())
+    await vi.waitFor(() => expect(root.textContent).toContain('Edited just now'))
+  })
+
+  it('says that edits will sync while offline', async () => {
     await serverMinBuilds({ writer: '100' })
     const room = pullingRoom()
     room.status = { ...room.status, saveState: 'unsaved', unsentCount: 650 }
     const root = await openedSurface()
 
-    await vi.waitFor(() => expect(saveStatus(root)).toBe('saving'))
-    expect(root.textContent).not.toContain('unsent')
-
     window.dispatchEvent(new Event('offline'))
     await nextTick()
 
-    expect(saveStatus(root)).toBe('')
     expect(root.textContent).toContain('Changes will sync')
     window.dispatchEvent(new Event('online'))
   })
 
-  it('says Saving… while another tab’s save holds the document for a moment, and Saving paused for a real pause', async () => {
+  it('does not call an editor view only while the document opens', async () => {
+    await serverMinBuilds({ writer: '100' })
+    pullingRoom()
+    let open = () => {}
+    rooms.held = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    const opened = openedSurface()
+    await vi.waitFor(() => expect(document.querySelector('[data-save-state]')).not.toBeNull())
+    expect(document.querySelector('[data-view-only]')).toBeNull()
+
+    open()
+    await opened
+    expect(document.querySelector('[data-view-only]')).toBeNull()
+    document.body.innerHTML = ''
+
+    rooms.held = null
+    pullingRoom()
+    await openedSurface(oneVersion, '/d/node-1', undefined, ref({ role: 10 }))
+    expect(document.querySelector('[data-view-only]')).not.toBeNull()
+  })
+
+  it('says nothing while another tab’s save holds the document for a moment, and Saving paused for a real pause', async () => {
     await serverMinBuilds({ writer: '100' })
     const listeners: (() => void)[] = []
     const room = Object.assign(pullingRoom(), {
@@ -148,7 +189,6 @@ describe('the save status', () => {
     room.status = { ...room.status, saveState: 'unsaved', pauseReason: 'busy' }
     const root = await openedSurface()
 
-    await vi.waitFor(() => expect(saveStatus(root)).toBe('saving'))
     const whileBusy = root.textContent?.includes('Saving paused')
     room.status = { ...room.status, pauseReason: 'suspect' }
     listeners.forEach((listener) => listener())

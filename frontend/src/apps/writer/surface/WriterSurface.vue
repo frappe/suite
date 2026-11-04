@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { useEventListener } from '@vueuse/core'
-import { Badge, Button, dialog, Skeleton, toast } from 'frappe-ui'
+import { useEventListener, useNow } from '@vueuse/core'
+import { Badge, Button, dialog, toast } from 'frappe-ui'
 import {
   computed,
   nextTick,
@@ -31,6 +31,7 @@ import UsersBar from '@/apps/writer/components/UsersBar.vue'
 import { MENTION_NODE } from '@/apps/writer/composables/useUsers'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import { isOpening } from '@/apps/writer/opening/openingEditor'
+import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
 import OpeningEditor from '@/apps/writer/opening/OpeningEditor.vue'
 import {
   downloadCopy,
@@ -82,6 +83,7 @@ import VersionPreview from './VersionPreview.vue'
 import { convertedVersion, fetchVersion, readVersionBody, storedVersionHTML } from './versions'
 import { createWriterDocument, editorFileOf, isLocked, type EditorFile } from './writerDocument'
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
+import { editedLabel } from './editedLabel'
 import { createWriteGate } from './writes'
 
 const READ = 10
@@ -346,16 +348,24 @@ const showEditingPaused = computed(
 // Someone who can unlock it isn't only viewing
 const showLocked = computed(() => canEdit.value && isDocumentLocked.value)
 
+// Nobody can edit until the document has opened, which doesn't make them a viewer
 const isViewOnly = computed(
-  () => !editable.value && !showEditingPaused.value && !showLocked.value,
+  () => !isLoading.value && !editable.value && !showEditingPaused.value && !showLocked.value,
 )
 
-// A reader has nothing to save, so only a failed save shows to them
-const headerSaveState = computed(() => {
-  if (saveState.value === 'failed') return saveState.value
-  if (savingPaused.value || !editable.value || isWaitingOffline.value) return null
-  // Edits save as they are typed, so edits still to send read as saving
-  return saveState.value === 'unsaved' ? 'saving' : saveState.value
+// Saves nearly always go through, so only a failed one is worth saying
+const headerSaveState = computed(() => (saveState.value === 'failed' ? saveState.value : null))
+
+// Starts from the server, then follows this tab's edits. Someone else's show at the next open.
+const lastEditedHere = shallowRef<Date | null>(null)
+watch(saveState, (state) => {
+  if (state === 'saving' || state === 'unsaved') lastEditedHere.value = new Date()
+})
+const now = useNow({ interval: 60_000 })
+const editedNote = computed(() => {
+  const saved = documentResource.doc?.content_modified
+  const edited = lastEditedHere.value ?? (saved ? new Date(saved) : null)
+  return edited ? editedLabel(edited, now.value) : ''
 })
 
 const hasLostReadAccess = computed(() => !readable.value)
@@ -805,6 +815,12 @@ onBeforeUnmount(() => {
         >
           {{ saveNote }}
         </span>
+        <span
+          v-else-if="editedNote && !isLoading && saveState !== 'failed'"
+          class="mr-1 whitespace-nowrap text-sm text-ink-gray-5 max-md:hidden"
+        >
+          {{ editedNote }}
+        </span>
         <UsersBar v-if="peers.length" :users="peers" />
         <WriterDocumentMenu
           v-if="readable"
@@ -868,14 +884,7 @@ onBeforeUnmount(() => {
         <Button class="mt-3" label="Try again" @click="openCollab" />
       </div>
       <OpeningEditor v-else-if="isLoading && isOpening(session.nodeId)" :node="session.nodeId" />
-      <div v-else-if="isLoading" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
-        <Skeleton
-          v-for="width in ['70%', '92%', '84%', '60%', '88%']"
-          :key="width"
-          class="h-3.5 rounded-4"
-          :style="{ width }"
-        />
-      </div>
+      <DocumentSkeleton v-else-if="isLoading" :has-toolbar="writes.writable.value" />
       <template v-else>
         <!-- Covers the document's editor until it takes over what was typed -->
         <OpeningEditor

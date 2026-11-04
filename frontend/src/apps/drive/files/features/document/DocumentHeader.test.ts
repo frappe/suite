@@ -112,6 +112,12 @@ function titleGroup(root: HTMLElement) {
 }
 
 describe('DocumentHeader', () => {
+  it('shows a failed save as a badge', () => {
+    const { root } = mount(session(40), { saveState: 'failed' })
+    expect(root.textContent).toContain('Not saved')
+    expect(root.textContent).not.toContain('Saved')
+  })
+
   it('shows the spreadsheet icon, the title and the save status', () => {
     const { root, title } = mount(session(40), { saveState: 'clean' })
     expect(root.querySelector('.file-icon-sheet.text-ink-green-6')).not.toBeNull()
