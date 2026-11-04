@@ -23,11 +23,18 @@ import httpx
 from frappe.utils import get_system_timezone, get_url
 
 from suite.composition.demo import agenda, inbox
-from suite.composition.demo.drive import PASSWORD, PEOPLE
+from suite.composition.demo.cast import (
+    DOMAIN,
+    EVERYONE,
+    PASSWORD,
+    PEOPLE,
+    PEOPLE_BY_KEY,
+    Person,
+    acting_as,
+)
 
-DOMAIN = "northwind.test"
 LISTS = {
-    "team": ("Northwind team", ("maya", "leo", "arjun", "nisha", "theo", "sofia")),
+    "team": ("Northwind team", EVERYONE),
     "product": ("Northwind Product", ("maya", "leo")),
     "engineering": ("Northwind Engineering", ("arjun", "nisha")),
 }
@@ -45,27 +52,20 @@ ACCOUNT_DOCTYPES = (
     "Calendar Exchange",
     "User Account",
 )
-PEOPLE_BY_KEY = {person.first.lower(): person for person in PEOPLE}
 
 
 def seed(fresh: bool = False) -> None:
     """Create the Northwind mailboxes, mail and calendars; add only what is missing."""
-    caller = frappe.session.user
-    frappe.set_user("Administrator")
-    try:
+    with acting_as("Administrator"):
         missing = [person.email for person in PEOPLE if not frappe.db.exists("User", person.email)]
         if missing:
             frappe.throw(f"Run suite.composition.demo.drive.seed first. Missing users: {', '.join(missing)}")
         fill(Stalwart(), fresh)
-    finally:
-        frappe.set_user(caller)
 
 
 def reset() -> None:
     """Unlink the Northwind users from Mail and delete their accounts, lists and domain."""
-    caller = frappe.session.user
-    frappe.set_user("Administrator")
-    try:
+    with acting_as("Administrator"):
         stalwart = Stalwart()
         try:
             for person in PEOPLE:
@@ -76,8 +76,6 @@ def reset() -> None:
             print("If a reseed reuses a removed account id, restart the web process to drop its old cache.")
         finally:
             stalwart.http.close()
-    finally:
-        frappe.set_user(caller)
 
 
 def fill(stalwart: Stalwart, fresh: bool) -> None:
@@ -235,12 +233,12 @@ class Mailbox:
                 self.call(f"{object_type}/set", destroy=ids)
 
 
-def account_payload(person, domain: str) -> dict:
+def account_payload(person: Person, domain: str) -> dict:
     return {
         "@type": "User",
-        "name": person.first.lower(),
+        "name": person.key,
         "domainId": domain,
-        "description": f"{person.first} {person.last}",
+        "description": person.name,
         "credentials": {"0": {"@type": "Password", "secret": PASSWORD}},
         "roles": {"@type": "User"},
         "locale": "en_US",
@@ -298,12 +296,11 @@ def accept_colleagues() -> None:
 
     addresses = [person.email for person in PEOPLE] + [f"{name}@{DOMAIN}" for name in LISTS]
     for person in PEOPLE:
-        frappe.set_user(person.email)
-        account = personal_account(person.email)
-        others = [address for address in addresses if address != person.email]
-        screen_email_addresses(account, others, "Accepted", override=False)
+        with acting_as(person.email):
+            account = personal_account(person.email)
+            others = [address for address in addresses if address != person.email]
+            screen_email_addresses(account, others, "Accepted", override=False)
         frappe.db.commit()
-    frappe.set_user("Administrator")
 
 
 @dataclass
@@ -324,7 +321,7 @@ def deliver(stalwart: Stalwart, all_letters: list[Letter]) -> int:
     """Import every participant's copy that their mailbox does not hold yet; return the count."""
     count = 0
     for person in PEOPLE:
-        key = person.first.lower()
+        key = person.key
         mine = [letter for letter in all_letters if key == letter.sender or key in letter.recipients]
         mailbox = stalwart.mailbox(person.email)
         existing = mailbox.get_message_ids()
@@ -417,12 +414,11 @@ def name_calendars() -> None:
     from suite.mail.jmap import get_default_calendar_id
 
     for person in PEOPLE:
-        frappe.set_user(person.email)
-        account = personal_account(person.email)
-        calendar = get_default_calendar_id(account, raise_exception=True)
-        assert calendar
-        edit_calendar(account, calendar, name=f"{person.first} {person.last}")
-    frappe.set_user("Administrator")
+        with acting_as(person.email):
+            account = personal_account(person.email)
+            calendar = get_default_calendar_id(account, raise_exception=True)
+            assert calendar
+            edit_calendar(account, calendar, name=person.name)
 
 
 def schedule(stalwart: Stalwart, now: datetime) -> int:
@@ -436,10 +432,9 @@ def schedule(stalwart: Stalwart, now: datetime) -> int:
         for key in event.participants:
             email = PEOPLE_BY_KEY[key].email
             blob = stalwart.mailbox(email).upload(ics, "text/calendar")
-            frappe.set_user(email)
-            add_invite_to_calendar(personal_account(email), blob)
+            with acting_as(email):
+                add_invite_to_calendar(personal_account(email), blob)
             count += 1
-    frappe.set_user("Administrator")
     return count
 
 
@@ -458,7 +453,7 @@ def expand(target: str) -> tuple[str, ...]:
 
 def address(key: str) -> str:
     if person := PEOPLE_BY_KEY.get(key):
-        return formataddr((f"{person.first} {person.last}", person.email))
+        return formataddr((person.name, person.email))
     if key in LISTS:
         return formataddr((LISTS[key][0], f"{key}@{DOMAIN}"))
     return formataddr(inbox.OUTSIDE[key])
@@ -524,7 +519,7 @@ def calendar_file(event: agenda.Event, monday: date, now: datetime, method: str)
         lines.append(f"DESCRIPTION:{ics_text(event.description)}")
     if event.attendees:
         organizer = PEOPLE_BY_KEY[event.organizer]
-        lines.append(f"ORGANIZER;CN={organizer.first} {organizer.last}:mailto:{organizer.email}")
+        lines.append(f"ORGANIZER;CN={organizer.name}:mailto:{organizer.email}")
         lines.append(attendee(event.organizer, agenda.ACCEPTED, "CHAIR"))
         lines.extend(attendee(key, status, "REQ-PARTICIPANT") for key, status in event.attendees.items())
     lines += ["END:VEVENT", "END:VCALENDAR"]
@@ -533,7 +528,7 @@ def calendar_file(event: agenda.Event, monday: date, now: datetime, method: str)
 
 def attendee(key: str, status: str, role: str) -> str:
     person = PEOPLE_BY_KEY[key]
-    return f"ATTENDEE;CN={person.first} {person.last};ROLE={role};PARTSTAT={status};RSVP=TRUE:mailto:{person.email}"
+    return f"ATTENDEE;CN={person.name};ROLE={role};PARTSTAT={status};RSVP=TRUE:mailto:{person.email}"
 
 
 def ics_text(value: str) -> str:

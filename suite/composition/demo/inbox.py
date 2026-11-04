@@ -6,6 +6,8 @@ outside senders by the keys of OUTSIDE. Days count back from the day the seed ru
 
 from dataclasses import dataclass, field
 
+from suite.composition.demo.cast import EVERYONE, email_of
+
 OUTSIDE = {
     "weekly": ("Product Weekly", "newsletter@productweekly.example"),
     "ledgerly": ("Ledgerly", "billing@ledgerly.example"),
@@ -52,8 +54,6 @@ class Thread:
 def html(*paragraphs: str) -> str:
     return "".join(f"<p>{paragraph}</p>" for paragraph in paragraphs)
 
-
-EVERYONE = ("maya", "leo", "arjun", "nisha", "theo", "sofia")
 
 THREADS = (
     Thread(
@@ -782,7 +782,7 @@ THREADS = (
                 html(
                     "FYI, the import fix is done, so the beta date is safe from our side.",
                     "---------- Forwarded message ----------<br>From: Nisha Patel "
-                    "&lt;nisha@northwind.test&gt;",
+                    f"&lt;{email_of('nisha')}&gt;",
                     "The fix is on staging. All three customer exports import cleanly, including Acme's.",
                 ),
             ),

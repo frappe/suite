@@ -2,14 +2,13 @@
 
 import unittest
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pycrdt
 
 from suite.composition.demo import assets, content, mail
 from suite.composition.demo.agenda import EVENTS
-from suite.composition.demo.drive import PEOPLE
+from suite.composition.demo.cast import EVERYONE, PEOPLE
 from suite.content import copies
 from suite.writer.content import DECLARED, EDITOR
 from suite.writer.content.readable_copy import nodes
@@ -53,12 +52,11 @@ class TestDemoData(unittest.TestCase):
     def test_every_brand_image_and_uploaded_file_is_found(self):
         self.assertTrue((assets.BRAND / "northwind-icon.png").is_file())
         for person in PEOPLE:
-            self.assertTrue((assets.BRAND / "avatars" / f"{person.first.lower()}.png").is_file())
+            self.assertTrue((assets.BRAND / "avatars" / f"{person.key}.png").is_file())
         files = assets.uploaded_files()
         self.assertEqual(len(files), 6)
-        self.assertTrue(all(data for _title, data in files))
-        self.assertEqual(Path(files[2][0]).suffix, ".pdf")
-        self.assertTrue(files[2][1].startswith(b"%PDF"))
+        self.assertTrue(all(files.values()))
+        self.assertTrue(files["Equipment policy.pdf"].startswith(b"%PDF"))
 
     def test_mail_and_invitations_build_for_real_participants(self):
         now = datetime.now(ZoneInfo("UTC"))
@@ -66,6 +64,5 @@ class TestDemoData(unittest.TestCase):
         self.assertTrue(all(b"Message-ID" in letter.raw for letter in letters))
         one_off = [event for event in EVENTS if not event.rule and event.attendees]
         self.assertEqual(len(mail.invitations(now)), len(one_off))
-        keys = {person.first.lower() for person in PEOPLE}
         for letter in letters:
-            self.assertLessEqual(set(letter.recipients) | letter.flagged, keys)
+            self.assertLessEqual(set(letter.recipients) | letter.flagged, set(EVERYONE))

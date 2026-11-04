@@ -8,6 +8,8 @@ answered so far; NEEDS-ACTION leaves an open invitation in their inbox.
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
+from suite.composition.demo.cast import DOMAIN, EVERYONE
+
 ACCEPTED = "ACCEPTED"
 DECLINED = "DECLINED"
 TENTATIVE = "TENTATIVE"
@@ -32,7 +34,7 @@ class Event:
 
     @property
     def uid(self) -> str:
-        return f"{self.key}@northwind.test"
+        return f"{self.key}@{DOMAIN}"
 
     @property
     def participants(self) -> list[str]:
@@ -45,8 +47,7 @@ class Event:
 
 
 def everyone_but(organizer: str, **answers: str) -> dict[str, str]:
-    names = ("maya", "leo", "arjun", "nisha", "theo", "sofia")
-    return {name: answers.get(name, ACCEPTED) for name in names if name != organizer}
+    return {name: answers.get(name, ACCEPTED) for name in EVERYONE if name != organizer}
 
 
 EVENTS = (

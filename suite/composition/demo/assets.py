@@ -155,7 +155,7 @@ def presentation(parent: str, title: str, story: list[tuple[str, str, str]]) -> 
     return node
 
 
-def uploaded_files() -> list[tuple[str, bytes]]:
+def uploaded_files() -> dict[str, bytes]:
     """Answer real files without writing temporary assets into the working tree."""
     image = Image.new("RGB", (720, 420))
     image.putdata([(15 + x // 12, 45 + y // 7, 65 + (x + y) // 14) for y in range(420) for x in range(720)])
@@ -194,23 +194,14 @@ def uploaded_files() -> list[tuple[str, bytes]]:
     ]
     for index, line in enumerate(lines):
         drawing.text((60, 70 + index * 58), line, fill="#234d47", font=ImageFont.load_default(size=24))
-    return [
-        ("Northwind brand cover.png", cover),
-        ("Weekly active teams.png", _image_bytes(chart, "PNG")),
-        ("Equipment policy.pdf", _image_bytes(page, "PDF")),
-        (
-            "Beta customer feedback.csv",
-            b"account,theme,priority\nCedar Health,Sharing clarity,High\nAtlas Robotics,CSV dates,High\nHarbor Studio,Keyboard navigation,Medium\n",
-        ),
-        (
-            "Launch checklist.md",
-            b"# Beta launch\n\n- [x] Approve copy\n- [ ] Verify imports\n- [ ] Invite twelve customer teams\n\nOwner: Theo. Review on 29 October.\n",
-        ),
-        (
-            "Read me.txt",
-            b"Northwind Labs demo workspace\nAll people, customers, and financial figures are fictional.\nStart with Company / Handbook / Welcome to Northwind.\n",
-        ),
-    ]
+    return {
+        "Northwind brand cover.png": cover,
+        "Weekly active teams.png": _image_bytes(chart, "PNG"),
+        "Equipment policy.pdf": _image_bytes(page, "PDF"),
+        "Beta customer feedback.csv": b"account,theme,priority\nCedar Health,Sharing clarity,High\nAtlas Robotics,CSV dates,High\nHarbor Studio,Keyboard navigation,Medium\n",
+        "Launch checklist.md": b"# Beta launch\n\n- [x] Approve copy\n- [ ] Verify imports\n- [ ] Invite twelve customer teams\n\nOwner: Theo. Review on 29 October.\n",
+        "Read me.txt": b"Northwind Labs demo workspace\nAll people, customers, and financial figures are fictional.\nStart with Company / Handbook / Welcome to Northwind.\n",
+    }
 
 
 def brand_file(source: str, file_name: str, doctype: str, name: str, field: str) -> str:
