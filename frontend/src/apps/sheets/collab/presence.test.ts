@@ -187,10 +187,10 @@ describe('presence', () => {
 
     it('tells two guests on one cell apart', () => {
       const labels = labelsOf([
-        { pid: 36, user: 'Guest', r0: 0, c0: 0 },
-        { pid: 37, user: 'Guest', r0: 0, c0: 0 },
+        { pid: 2847193650, user: 'Guest', r0: 0, c0: 0 },
+        { pid: 1029384756, user: 'Guest', r0: 0, c0: 0 },
       ])
-      expect(labels.get('36')).toMatch(/^Guest \w+, Guest \w+$/)
+      expect(labels.get('2847193650')).toMatch(/^Guest \w{4}, Guest \w{4}$/)
     })
 
     it('drops a name at once when its person moves away', () => {

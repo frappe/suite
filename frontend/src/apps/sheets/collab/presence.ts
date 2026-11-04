@@ -38,7 +38,7 @@ export interface RemoteCursor {
   /**
    * The name label on the range's top-left cell. Everyone whose range starts
    * on that cell shares one label, on the first of their cursors: "Asha, Ravi",
-   * or "Asha, Ravi +2" once the names get long. The other cursors there get
+   * or "Asha, Ravi +2" once a third name would make it long. The other cursors there get
    * null, so labels never stack.
    */
   label: string | null
@@ -65,13 +65,13 @@ function initialsOf(fullName: string): string {
     .join('')
 }
 
-// Past this many characters a label's other names fold into "+N".
+// A label always names two people; past this many characters the rest fold into "+N".
 const LABEL_CHARS = 20
 
 // One label's text from the names of the people on its cell, in peer order.
 function labelText(names: string[]): string {
-  const shown = [names[0]!]
-  for (const name of names.slice(1)) {
+  const shown = names.slice(0, 2)
+  for (const name of names.slice(2)) {
     if ([...shown, name].join(', ').length > LABEL_CHARS) break
     shown.push(name)
   }
