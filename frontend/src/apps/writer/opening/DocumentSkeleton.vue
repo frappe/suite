@@ -13,7 +13,7 @@
       </div>
     </template>
     <template #rail>
-      <span class="flex size-8 items-center justify-center" aria-hidden="true">
+      <span class="flex size-7 items-center justify-center" aria-hidden="true">
         <Skeleton class="size-4 rounded-3" />
       </span>
     </template>
