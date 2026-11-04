@@ -1,5 +1,9 @@
 import type { RecoveryTimelineEntry } from '../../composables/useParticipantConnectionState'
-import type { ConnectionDiagnostics } from '../SFUMeetingManager'
+import type {
+  AudioDiagnosticSample,
+  ConnectionDiagnostics,
+  RTCStatsReport,
+} from '../SFUMeetingManager'
 import { getConsoleLogLines, getConsoleLogSummary } from './consoleBuffer'
 
 type TransportStats = {
@@ -20,18 +24,131 @@ type BuildProblemReportMailtoOptions = {
   localStream?: MediaStream | null
   diagnostics?: ConnectionDiagnostics | null
   consoleLogLimit?: number
-  maxBodyChars?: number
   recoveryTimeline?: RecoveryTimelineEntry[]
 }
 
-async function buildProblemReportMailto(options: BuildProblemReportMailtoOptions): Promise<string> {
+// Keep the complete encoded URI small, including the subject and escaping.
+const MAX_MAILTO_CHARS = 2000
+
+type AudioStream = AudioDiagnosticSample['streams'][number]
+
+function counterChange(
+  before: AudioStream | undefined,
+  after: AudioStream,
+  field: keyof RTCStatsReport,
+): string {
+  if (!before) return 'unavailable'
+  const relevant = (report: RTCStatsReport) => {
+    const type = after.direction === 'send' ? 'outbound-rtp' : 'inbound-rtp'
+    return (
+      typeof report[field] === 'number' &&
+      (report.type === type ||
+        (field === 'totalAudioEnergy' &&
+          (report.type === 'media-source' || report.type === 'track')))
+    )
+  }
+  const current = after.reports.filter(relevant)
+  const previous = before.reports.filter(relevant)
+  if (!current.length || current.length !== previous.length) return 'unavailable'
+  let delta = 0
+  for (const report of current) {
+    const old = previous.find((candidate) =>
+      report.id
+        ? candidate.id === report.id
+        : previous.length === 1 && candidate.type === report.type,
+    )
+    const value = report[field]
+    const oldValue = old?.[field]
+    if (
+      typeof value !== 'number' ||
+      typeof oldValue !== 'number' ||
+      !Number.isFinite(value) ||
+      !Number.isFinite(oldValue) ||
+      value < oldValue
+    ) {
+      return 'unavailable'
+    }
+    delta += value - oldValue
+  }
+  return Number.isInteger(delta) ? String(delta) : delta.toPrecision(3)
+}
+
+function audioSummary(samples: AudioDiagnosticSample[] = []): string[] {
+  const first = samples[0]
+  const latest = samples.at(-1)
+  if (!latest) return ['Audio: statistics unavailable']
+  const elapsed =
+    first && samples.length > 1
+      ? (Date.parse(latest.capturedAt) - Date.parse(first.capturedAt)) / 1000
+      : NaN
+  const comparable = Number.isFinite(elapsed) && elapsed > 0 && !first?.error && !latest.error
+  const lines = [
+    Number.isFinite(elapsed) && elapsed > 0
+      ? `Audio changes over ${elapsed.toFixed(1)}s:`
+      : 'Audio (changes unavailable):',
+  ]
+  if (latest.error) lines.push('Audio statistics unavailable or timed out')
+  if (!latest.streams.length && !latest.error) lines.push('No audio streams sampled')
+  // Keep microphone evidence ahead of remote streams when the email must be shortened.
+  const streams = [...latest.streams].sort(
+    (a, b) => Number(b.direction === 'send') - Number(a.direction === 'send'),
+  )
+  const withSource = (stream: AudioStream, sample: AudioDiagnosticSample): AudioStream => {
+    const sourceIds = new Set(stream.reports.map((report) => report.mediaSourceId).filter(Boolean))
+    const existingIds = new Set(stream.reports.map((report) => report.id))
+    return {
+      ...stream,
+      reports: [
+        ...stream.reports,
+        ...(sample.transportReports ?? [])
+          .flat()
+          .filter((report) => report.id && sourceIds.has(report.id) && !existingIds.has(report.id)),
+      ],
+    }
+  }
+  for (const stream of streams) {
+    const previous = comparable
+      ? first?.streams.find(
+          (entry) => entry.id === stream.id && entry.direction === stream.direction,
+        )
+      : undefined
+    const change = (field: keyof RTCStatsReport) =>
+      counterChange(
+        previous && first ? withSource(previous, first) : undefined,
+        withSource(stream, latest),
+        field,
+      )
+    const name = stream.direction === 'send' ? 'Mic' : `From ${stream.participantId || 'unknown'}`
+    lines.push(
+      `${name}: ${stream.trackEnabled === null || stream.trackEnabled === undefined ? 'enabled unknown' : stream.trackEnabled ? 'enabled' : 'disabled'}, ${stream.trackState || 'state unknown'}; paused=${stream.paused}; muted=${stream.muted}`,
+    )
+    lines.push(
+      `  Packets ${stream.direction === 'send' ? 'sent' : 'received'}: ${change(stream.direction === 'send' ? 'packetsSent' : 'packetsReceived')}; bytes: ${change(stream.direction === 'send' ? 'bytesSent' : 'bytesReceived')}; energy: ${change('totalAudioEnergy')}`,
+    )
+    if (stream.direction === 'receive') {
+      lines.push(
+        `  Samples received: ${change('totalSamplesReceived')}; concealed: ${change('concealedSamples')}; lost packets: ${change('packetsLost')}`,
+      )
+      const playback = latest.playback.find((entry) => entry.participantId === stream.participantId)
+      lines.push(
+        playback
+          ? `  Playback: paused=${playback.paused}; muted=${playback.muted}; volume=${Math.round(playback.volume * 100)}%; ready=${playback.readyState}; error=${playback.error ?? 'none'}`
+          : '  Playback: no audio element',
+      )
+    }
+  }
+  return lines
+}
+
+export async function buildProblemReportMailto(
+  options: BuildProblemReportMailtoOptions,
+): Promise<string> {
   const {
     meetingId,
     networkQuality,
     localStream = null,
     diagnostics = null,
     consoleLogLimit = 40,
-    maxBodyChars = 7000,
     recoveryTimeline = [],
   } = options
 
@@ -49,7 +166,7 @@ async function buildProblemReportMailto(options: BuildProblemReportMailtoOptions
   const localVideoTrack = localStream?.getVideoTracks?.()?.[0]
   const reportTime = new Date().toISOString()
   const siteDomain = window.location.hostname || 'unknown-site'
-  const subject = `[Meet] Issue report - ${siteDomain}`
+  const subject = `[Meet] Issue report - ${Array.from(siteDomain).slice(0, 80).join('')}`
   const consoleLogLines = getConsoleLogLines(consoleLogLimit)
   const consoleSummary = getConsoleLogSummary()
   const consoleHeader = `Console logs (last ${consoleLogLines.length}):`
@@ -65,9 +182,11 @@ async function buildProblemReportMailto(options: BuildProblemReportMailtoOptions
     '- Actual:',
     '- Steps to reproduce:',
     '',
-    'Diagnostic snapshot:',
-    `- Timestamp: ${reportTime}`,
     `- Meeting ID: ${meetingId}`,
+    `- Timestamp: ${reportTime}`,
+    ...audioSummary(diagnostics?.audioSamples),
+    '',
+    'Diagnostic snapshot:',
     `- URL: ${window.location.href}`,
     `- User agent: ${navigator.userAgent}`,
     `- Online: ${navigator.onLine}`,
@@ -93,6 +212,7 @@ async function buildProblemReportMailto(options: BuildProblemReportMailtoOptions
         ? Math.round(networkStats.availableOutgoingBitrate ?? 0)
         : 'n/a'
     }`,
+    `- Audio statistics samples: ${diagnostics?.audioSamples?.length ?? 0}`,
     `- Console logs captured: ${consoleSummary.total}`,
     `- Console errors/warnings: ${consoleSummary.error}/${consoleSummary.warn}`,
     '',
@@ -104,24 +224,17 @@ async function buildProblemReportMailto(options: BuildProblemReportMailtoOptions
     consoleHeader,
     ...consoleLogLines,
     '',
-    'If available, please attach the exported diagnostics file/log bundle.',
   ]
 
-  let bodyText = bodyLines.join('\n')
-  if (bodyText.length > maxBodyChars && consoleLogLines.length > 10) {
-    const trimmedLogs = consoleLogLines.slice(-10)
-    const reducedBody = [
-      ...bodyLines.slice(0, bodyLines.indexOf(consoleHeader)),
-      `Console logs (last ${trimmedLogs.length}, truncated):`,
-      '',
-      ...trimmedLogs,
-      '',
-      'If available, please attach the exported diagnostics file/log bundle.',
-    ]
-    bodyText = reducedBody.join('\n')
+  const prefix = `mailto:?to=meet@frappe.io&subject=${encodeURIComponent(subject)}&body=`
+  const encode = (lines: string[]) => prefix + encodeURIComponent(lines.join('\n'))
+  // Logs and recovery history are last, so they are removed before audio evidence.
+  const omitted = '[Report shortened to fit email link]'
+  if (encode(bodyLines).length <= MAX_MAILTO_CHARS) return encode(bodyLines)
+  while (bodyLines.length && encode([...bodyLines, omitted]).length > MAX_MAILTO_CHARS) {
+    bodyLines.pop()
   }
-
-  return `mailto:?to=meet@frappe.io&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`
+  return encode([...bodyLines, omitted])
 }
 
 export async function openProblemReportEmail(
