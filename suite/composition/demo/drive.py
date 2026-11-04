@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from io import BytesIO
 
 import frappe
+from frappe.utils import get_url
 
 from suite import drive
 from suite.api.account import delete_logo_file
@@ -25,7 +26,6 @@ from suite.drive.framework import principals_for
 from suite.suite_core.storage import state as storage_state
 
 PASSWORD = "NorthwindDemo!2026"
-URL = "https://suite.netchamp.dev"
 WORKSPACE = "Northwind Labs"
 PREFIX = f"{WORKSPACE} - "
 LOGO = "northwind-labs-logo.png"
@@ -84,11 +84,11 @@ def seed(fresh: bool = False) -> None:
         personal_nodes = _personal_content(uploaded)
         _sharing_and_activity(personal_nodes, shared_nodes, folders)
         frappe.db.commit()
-        print(f"\nNorthwind Labs is ready: {URL}\nPassword for all six users: {PASSWORD}\n")
+        print(f"\nNorthwind Labs is ready: {get_url()}\nPassword for all six users: {PASSWORD}\n")
         print(f"{'User':30} {'Name':20} Role")
         for person in PEOPLE:
             print(f"{person.email:30} {person.first + ' ' + person.last:20} {person.job}")
-        print(f"\nPublished beta brief: {URL}{drive.node_url(shared_nodes['launch brief'])}")
+        print(f"\nPublished beta brief: {get_url()}{drive.node_url(shared_nodes['launch brief'])}")
         if frappe.conf.mail:
             # Imported here: mail reads the cast from this module.
             from suite.composition.demo import mail

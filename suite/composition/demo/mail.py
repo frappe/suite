@@ -20,10 +20,10 @@ from zoneinfo import ZoneInfo
 
 import frappe
 import httpx
-from frappe.utils import get_system_timezone
+from frappe.utils import get_system_timezone, get_url
 
 from suite.composition.demo import agenda, inbox
-from suite.composition.demo.drive import PASSWORD, PEOPLE, URL
+from suite.composition.demo.drive import PASSWORD, PEOPLE
 
 DOMAIN = "northwind.test"
 LISTS = {
@@ -98,7 +98,7 @@ def fill(stalwart: Stalwart, fresh: bool) -> None:
         scheduled = schedule(stalwart, now)
         frappe.db.commit()
         print(f"Imported {delivered} messages; {scheduled} calendar copies are in place.")
-        print(f"Mail and Calendar are ready at {URL}/mail for {', '.join(p.email for p in PEOPLE)}.")
+        print(f"Mail and Calendar are ready at {get_url()}/mail for {', '.join(p.email for p in PEOPLE)}.")
     finally:
         stalwart.http.close()
 
