@@ -2,6 +2,9 @@ import { reactive } from 'vue'
 
 import { api, client, type OutputOf } from '@/api'
 import type { DocumentSession } from '@/apps/drive'
+import { TransportError } from '@/platform/transport'
+
+import { openFailureFor } from './collabMessages'
 
 export type WriterSettings = Record<string, unknown>
 export type WriterDocumentRow = Omit<OutputOf<typeof api.writer.documents.get>, 'settings'> & {
@@ -47,6 +50,14 @@ function settingsOf(stored: unknown): WriterSettings {
 }
 
 /** Writer keeps editable body state; Drive selects the open document's access scope. */
+function statusOf(error: unknown) {
+  if (error instanceof TransportError) {
+    return error.status
+  }
+
+  return null
+}
+
 export function createWriterDocument(
   session: Pick<DocumentSession, 'contentDocname' | 'credentials'>,
 ) {
@@ -54,16 +65,26 @@ export function createWriterDocument(
   const name = session.contentDocname
   const document = reactive({
     doc: null as WriterDocumentRow | null,
+    readFailure: null as string | null,
     reload: () => load(),
+    read,
   })
   async function load() {
     const row = await client.query(api.writer.documents.get, { name }, { context })
     document.doc = { ...row, settings: settingsOf(row.settings) }
+    document.readFailure = null
   }
 
-  void load().catch(() => {
-    /* The Drive session displays access refusals. */
-  })
+  async function read() {
+    document.readFailure = null
+    try {
+      await load()
+    } catch (error) {
+      document.readFailure = openFailureFor(null, statusOf(error))
+    }
+  }
+
+  void read()
   return document
 }
 

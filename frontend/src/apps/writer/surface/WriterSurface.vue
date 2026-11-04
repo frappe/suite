@@ -309,7 +309,10 @@ const headerSaveState = computed(() => {
 const isViewOnly = computed(() => !editable.value && !showEditingPaused.value)
 
 const hasLostReadAccess = computed(() => !readable.value)
-const hasFailedToOpen = computed(() => collabMode.value === 'failed')
+const hasFailedToOpen = computed(
+  () => collabMode.value === 'failed' || documentResource.readFailure !== null,
+)
+const failureMessage = computed(() => documentResource.readFailure ?? openFailure.value)
 useHideRail(() => !hasLostReadAccess.value && !hasFailedToOpen.value)
 const isLoading = computed(() => !documentResource.doc || collabMode.value === 'opening')
 
@@ -619,6 +622,17 @@ const conversionBanner = computed(() => {
   return upgradingBanner(conversion?.reason ?? null, isUnreadable)
 })
 
+// The room may have opened with only the row failing, and a live room mustn't open twice
+function tryOpeningAgain() {
+  if (documentResource.readFailure !== null) {
+    void documentResource.read()
+  }
+
+  if (collabMode.value === 'failed') {
+    void openCollab()
+  }
+}
+
 function isRefused() {
   return documentResource.doc?.conversion?.state === 'refused'
 }
@@ -758,8 +772,8 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div v-else-if="hasFailedToOpen" class="m-auto text-center">
-        <p class="text-p-sm text-ink-gray-6">{{ openFailure }}</p>
-        <Button class="mt-3" label="Try again" @click="openCollab" />
+        <p class="text-p-sm text-ink-gray-6">{{ failureMessage }}</p>
+        <Button class="mt-3" label="Try again" @click="tryOpeningAgain" />
       </div>
       <div v-else-if="isLoading" class="mx-auto w-full max-w-[770px] space-y-3 px-5 pt-10">
         <Skeleton
