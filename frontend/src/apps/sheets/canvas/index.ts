@@ -35,6 +35,7 @@ import { createRenderer } from './renderer.js'
 import { planRowRefit } from './row-refit.js'
 import { createScrollbars } from './scrollbars.js'
 import { createSelection } from './selection.js'
+import { watchTheme } from './theme-watch.js'
 import type { CellBlock, CellValue, Grid, GridOptions, RowHeightChange } from './types.js'
 import { createViewport, watchPixelRatio } from './viewport.js'
 
@@ -90,6 +91,9 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     applyCanvasSize()
     render()
   })
+  // Colours are read from the theme's tokens at paint time, so a theme
+  // switch (command menu, shortcut, settings) needs a repaint to show.
+  const stopWatchingTheme = watchTheme(() => scheduleRender())
   const renderer = createRenderer(ctx, geo)
   const overlay = createOverlay(parent)
   const scrollbars = createScrollbars(parent, { getModel: () => vp.scrollModel(), scrollTo })
@@ -586,6 +590,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
       ac.remove()
       loop.cancel()
       stopWatchingRatio()
+      stopWatchingTheme()
       ants.cancel()
       mouse?.destroy()
       keys?.destroy()
