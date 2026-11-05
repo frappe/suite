@@ -124,10 +124,10 @@ def search(
     )
     more = len(found) > PAGE_SIZE
     found = found[:PAGE_SIZE]
-    users = _users([row.name for row in found if row.kind == "user"])
+    found_users = _users([row.name for row in found if row.kind == "user"])
     counts = _member_counts([row.name for row in found if row.kind == "group"])
     rows: list[Person] = [
-        users[row.name]
+        found_users[row.name]
         if row.kind == "user"
         else {"kind": "group", "name": row.name, "member_count": counts.get(row.name, 0)}
         for row in found
