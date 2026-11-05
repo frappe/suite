@@ -261,7 +261,7 @@
   												     the full width, and the empty space after the address opened
   												     the card too. -->
                                   <div
-                                    class="flex max-w-full items-center space-x-1.5"
+                                    class="flex min-w-0 max-w-full items-center space-x-1.5"
                                     :class="{
                                       'cursor-pointer': !isCollapsed(mail) && !isMobile,
                                       'self-start': !isCollapsed(mail) || isMobile,
@@ -270,7 +270,7 @@
                                     @click="toggleSenderCard(mail, $event)"
                                   >
                                     <span
-                                      class="truncate text-[15px] !font-semibold sm:text-base"
+                                      class="max-w-full shrink-0 truncate text-[15px] !font-semibold sm:text-base"
                                       :class="{
                                         /* A collapsed row is centered against the taller avatar, so
   														   whatever sets the text block's height decides where the name
@@ -287,7 +287,8 @@
                                     </span>
                                     <!-- leading-4: 16px holds Inter's ~15.7px glyph box at 13px, so truncate's
   												     overflow-hidden keeps the descenders of a g or a p, and it still sits
-  												     under the sender name beside it, so the row does not grow. -->
+  												     under the sender name beside it, so the row does not grow. Short of room it
+  												     gives way and the name doesn't: who it's from matters more. -->
                                     <span
                                       v-if="!isMobile && !isCollapsed(mail)"
                                       class="text-ink-gray-5 truncate leading-4"
