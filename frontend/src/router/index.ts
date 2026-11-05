@@ -12,6 +12,7 @@ import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appReg
 import { takeLinkFragment } from '@/composition/linkFragment'
 import { redirectOldPath } from '@/composition/redirects'
 import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
+import { installLoadFailureRecovery } from '@/platform/load-failure'
 import { applyRouteMeta, installPageMeta } from '@/platform/page-meta'
 import { installPwa, pageLoadNeededFor } from '@/platform/pwa'
 import { installScrollRestoration } from '@/platform/scroll-restoration'
@@ -166,6 +167,7 @@ router.beforeEach(async (to, from) => {
 
 installPageMeta(router)
 installScrollRestoration(router)
+installLoadFailureRecovery(router, { errorRoute: 'app-load-error' })
 installPwa(session, {
   // Until the first navigation the router stands at `/`, so the page's own URL names the app:
   // Safari keeps the manifest a page links first, and would install the Suite from `/mail`.

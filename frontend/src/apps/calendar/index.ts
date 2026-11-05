@@ -1,9 +1,12 @@
 import { useNow } from '@vueuse/core'
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
+import { showEventReminder, type EventReminder } from '@/apps/calendar/reminders'
 import type { AreaDefinition } from '@/platform/contracts'
+import { realtime, type Realtime } from '@/platform/realtime'
+import { hasCapabilities, useSession, type Session } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 /** Calendar scheduling controls and account context used by Meet's scheduler. */
@@ -51,6 +54,43 @@ export function useUpcomingSummary(enabled: () => boolean = () => true) {
     to.setHours(23, 59, 59, 999)
     return { from: from.toISOString(), to: to.toISOString() }
   })
+}
+
+export interface EventReminderOptions {
+  /** Takes the reader to the event, from the toast's Open action or the system notification. */
+  open: (path: string) => void
+  session?: Session
+  connection?: Pick<Realtime, 'subscribe'>
+}
+
+/**
+ * Shows each event reminder the server sends (`calendar_alert`) on every page, for a signed-in
+ * reader who has Calendar. It listens on the shell's one realtime connection, so no Calendar page
+ * has to be open and no area opens a connection of its own for it. Call it once at boot.
+ */
+export function installEventReminders({
+  open,
+  session = useSession(),
+  connection = realtime,
+}: EventReminderOptions): () => void {
+  let stopListening: (() => void) | undefined
+  const stopWatching = watch(
+    () =>
+      session.status.value === 'authenticated' && hasCapabilities(calendarArea.requires, session),
+    (hasCalendar) => {
+      stopListening?.()
+      stopListening = hasCalendar
+        ? connection.subscribe<EventReminder>('calendar_alert', (reminder) =>
+            showEventReminder(reminder, open),
+          )
+        : undefined
+    },
+    { immediate: true },
+  )
+  return () => {
+    stopWatching()
+    stopListening?.()
+  }
 }
 
 /** Calendar's Settings group. Loads when Settings opens. */

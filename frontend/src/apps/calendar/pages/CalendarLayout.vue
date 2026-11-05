@@ -19,8 +19,8 @@ import { provideAreaShortcuts } from '@/platform/shortcuts'
  * FrappeUIProvider, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource) and `$dayjs`
  *     injections that calendar components depend on,
- *   - holds Calendar's site socket while mounted, which also starts the event
- *     reminders (`@/realtime`),
+ *   - holds Calendar's site socket while mounted (event reminders listen on the shell's
+ *     connection, see `installEventReminders`),
  *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - on a phone, draws the new-event button above the shell's bottom nav,
  *   - renders the nested <router-view>.
