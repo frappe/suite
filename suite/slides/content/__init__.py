@@ -11,6 +11,7 @@ from pathlib import Path
 import pycrdt
 
 from suite import content
+from suite.slides.content import files
 
 APP = "slides"
 # `slides` and `boxes` hold one fixed-shape Y.Map per item, keyed by the item's id
@@ -42,7 +43,9 @@ EDITOR = content.EditorSpec(
     schema=SCHEMA,
     checker_build=CHECKER_BUILD,
     readable_copy=None,
-    media=None,
+    media=content.MediaReferences(
+        node_ids=lambda state: files.node_ids(PART_MAP, state), value_rewriter=files.value_rewriter
+    ),
     always_on=False,
     conversion=None,
 )
