@@ -76,7 +76,7 @@
       <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" class="shrink-0" />
       <Badge
         v-if="saveState === 'failed'"
-        label="Not saved"
+        :label="__('Not saved')"
         theme="amber"
         variant="subtle"
         class="shrink-0"
@@ -154,16 +154,16 @@
         class="max-md:hidden"
         variant="ghost"
         icon="lucide-link"
-        tooltip="Copy link"
-        aria-label="Copy link"
+        :tooltip="__('Copy link')"
+        :aria-label="__('Copy link')"
         @click="copyLink(pageAddress())"
       />
       <Button
         v-if="session.canStar.value"
         class="max-md:hidden"
         variant="ghost"
-        :tooltip="session.isStarred.value ? 'Unstar' : 'Star'"
-        :aria-label="session.isStarred.value ? 'Unstar' : 'Star'"
+        :tooltip="session.isStarred.value ? __('Unstar') : __('Star')"
+        :aria-label="session.isStarred.value ? __('Unstar') : __('Star')"
         :aria-pressed="session.isStarred.value"
         @click="session.setStarred(!session.isStarred.value)"
       >

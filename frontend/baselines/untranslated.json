@@ -10,7 +10,7 @@
   "src/apps/drive/files/features/TemplatePicker.vue": 9,
   "src/apps/drive/files/features/UnlockScreen.vue": 5,
   "src/apps/drive/files/features/ViewSettings.vue": 4,
-  "src/apps/drive/files/features/document/DocumentHeader.vue": 12,
+  "src/apps/drive/files/features/document/DocumentHeader.vue": 9,
   "src/apps/drive/files/features/preview/FilePreviewSurface.vue": 12,
   "src/apps/drive/files/features/preview/PreviewFallback.vue": 1,
   "src/apps/drive/files/features/preview/TextPreview.vue": 3,
