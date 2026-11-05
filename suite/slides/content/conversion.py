@@ -6,8 +6,8 @@ slide with no id or a used one gets a new one, as does a box whose id another bo
 a connector end stays on the first box its id named on that slide, the one the old view draws it to. A
 refId stays: it is the link Magic Move shares across slides, never a box's id, so changing one would break
 the pair (Q148). Magic Move pairs on `refId || id`, so a renamed box with no refId takes its old id as one,
-unless that key already stands for another box on its slide. A table pairs on its id alone and takes none,
-so one renamed stops pairing. The converter
+unless that key already stands for another box on its slide. A table pairs on its id alone, so one that
+would need a new id leaves the deck refused. The converter
 (frontend/src/apps/slides/collab/conversion.ts) does the rest. The Slide rows are never written, so a
 deck converted wrongly can be converted again from them.
 """
@@ -35,6 +35,10 @@ SLIDE_COLUMNS = {
 }
 NEW_ID_LENGTH = 9
 SCALAR_ID = (str, int, float)
+
+
+class TableKeyLost(Exception):
+    """A table holds an id that isn't its own, and Magic Move pairs a table on its id alone."""
 
 
 @dataclass(frozen=True)
@@ -113,7 +117,10 @@ def legacy_deck(docname: str, rows: list[frappe._dict]) -> dict:
     if any(elements is None for elements in parsed):
         return {"slides": [], "isUnreadable": True}
 
-    return {"slides": repaired_slides(docname, rows, parsed)}
+    try:
+        return {"slides": repaired_slides(docname, rows, parsed)}
+    except TableKeyLost:
+        return {"slides": [], "isTableKeyLost": True}
 
 
 def parsed_elements(value: str | None) -> list[dict] | None:
@@ -190,13 +197,14 @@ def repaired_boxes(elements: list[dict], seen: set[str], new_id: Callable[[], st
 
 
 def keep_magic_move_key(element: dict, old_id: object, keys: set) -> None:
-    """Give a renamed box its old id as a refId, unless another box on its slide already stands for that key."""
-    if (
-        element.get("refId")
-        or not old_id
-        or not isinstance(old_id, SCALAR_ID)
-        or element.get("type") == "table"
-    ):
+    """Give a renamed box its old id as a refId, unless its slide has that key; a renamed table can't keep one."""
+    if not old_id or not isinstance(old_id, SCALAR_ID):
+        return
+
+    if element.get("type") == "table":
+        raise TableKeyLost
+
+    if element.get("refId"):
         return
 
     key = str(old_id)

@@ -23,6 +23,13 @@ def text_box(box_id, **fields) -> dict:
     return {"id": box_id, "type": "text", "content": "<p>a</p>", "left": 10, "top": 20, **fields}
 
 
+def table_box(box_id) -> dict:
+    # As the editor saves a one-cell table
+    cell = '<td colspan="1" rowspan="1"><p>a</p></td>'
+    body = f'<colgroup><col style="min-width: 25px"></colgroup><tbody><tr>{cell}</tr></tbody>'
+    return {"id": box_id, "type": "table", "content": f'<table style="min-width: 25px">{body}</table>'}
+
+
 def left_of(box: pycrdt.Map) -> int | None:
     return box["frame"].get("left")
 
@@ -261,6 +268,21 @@ class TestConversion(ConversionCase):
 
         frappe.set_user("slides-collab-owner@example.com")
         self.assertNotIn("reason", conversions.conversion_status(APP, node))
+
+    def test_a_table_that_would_lose_its_magic_move_key_is_refused(self):
+        # A table pairs on its id alone, so giving this one a new id would break the pair
+        table = table_box("same")
+        node = self.old_deck([table], [table])
+
+        self.assertEqual(self.convert(node), "check")
+        self.assertIn("magic_move", conversions.conversion_status(APP, node)["reason"])
+        self.assertIsNone(content.find(APP, node))
+
+    def test_a_table_with_an_id_of_its_own_still_converts(self):
+        table = table_box("only")
+        node = self.old_deck([table], [text_box("box")])
+
+        self.assertEqual(self.convert(node), "converted")
 
     def test_rows_that_do_not_parse_are_refused(self):
         node = self.old_deck([text_box("box")])

@@ -34,7 +34,7 @@ import {
   type DrawRules,
 } from './oldBody'
 
-export type RefusalDetail = 'box_type' | 'elements' | 'fault' | 'html' | 'setting'
+export type RefusalDetail = 'box_type' | 'elements' | 'fault' | 'html' | 'magic_move' | 'setting'
 
 type DroppedKind = 'default-style' | 'horizontal-rule' | 'list-marker-style' | 'video-content'
 interface Dropped {
@@ -56,6 +56,8 @@ export interface LegacyDeck {
   slides: OldSlide[]
   // A row's elements didn't parse, which conversion.py can only say here
   isUnreadable?: boolean
+  // A table would need a new id, which is all Magic Move pairs it on
+  isTableKeyLost?: boolean
 }
 
 export type ConverterAnswer =
@@ -376,6 +378,10 @@ function build(legacy: LegacyDeck) {
 export function convertLegacy(legacy: LegacyDeck, maxState: number): ConverterAnswer {
   if (legacy.isUnreadable) {
     return { kind: 'failed', reason: 'check', detail: 'elements' }
+  }
+
+  if (legacy.isTableKeyLost) {
+    return { kind: 'failed', reason: 'check', detail: 'magic_move' }
   }
 
   try {
