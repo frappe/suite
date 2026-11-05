@@ -90,7 +90,7 @@ jobs:
       - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.99-pre-alpha/install.sh | sh -s -- --version v0.0.99-pre-alpha
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
@@ -370,7 +370,7 @@ jobs:
       - name: Setup Pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.99-pre-alpha/install.sh | sh -s -- --version v0.0.99-pre-alpha
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
