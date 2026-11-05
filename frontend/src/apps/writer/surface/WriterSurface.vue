@@ -15,6 +15,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import {
+  DRIVE_ROLES,
   DriveDocumentHeader,
   type DocumentPanel,
   type DocumentSession,
@@ -87,9 +88,6 @@ import { createWriterDocument, editorFileOf, isLocked, type EditorFile } from '.
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 import { createWriteGate } from './writes'
 
-const READ = 10
-const COMMENT = 20
-const EDIT = 40
 // How often an old document's page asks whether its conversion has finished
 const CONVERSION_POLL_MS = 15_000
 
@@ -144,8 +142,8 @@ const recoveryBanner = ref<InstanceType<typeof RecoveryBanner> | null>(null)
 // A signed-out reader sees the document only. As on the server, a Guest needs a comment link
 // to see the discussion and an edit link to see the version history.
 const sessionRole = () => props.session.access.value.role ?? 0
-const seesComments = computed(() => isAuthenticated.value || sessionRole() >= COMMENT)
-const seesVersions = computed(() => isAuthenticated.value || sessionRole() >= EDIT)
+const seesComments = computed(() => isAuthenticated.value || sessionRole() >= DRIVE_ROLES.comment)
+const seesVersions = computed(() => isAuthenticated.value || sessionRole() >= DRIVE_ROLES.edit)
 const shownPanels = computed(() => {
   const panels: DocumentPanel[] = []
   if (seesComments.value) panels.push('comments')
@@ -291,11 +289,11 @@ function openThreadInPanel(name: string | null) {
 const documentResource = writerDocument
 
 const readable = computed(
-  () => props.session.state.value !== 'Refused' && writes.role.value >= READ,
+  () => props.session.state.value !== 'Refused' && writes.role.value >= DRIVE_ROLES.read,
 )
 
 const canComment = computed(
-  () => props.session.state.value === 'Active' && writes.role.value >= COMMENT,
+  () => props.session.state.value === 'Active' && writes.role.value >= DRIVE_ROLES.comment,
 )
 
 const saveState = computed<DocumentSaveState>(() => roomSaveState.value ?? 'clean')
