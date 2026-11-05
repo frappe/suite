@@ -39,6 +39,22 @@ export function openingTitle(state: HistoryState): string | null {
   return typeof title === 'string' && title ? title : null
 }
 
+const MENTIONED_BY = 'mentionedBy'
+
+/**
+ * History state naming who mentioned the reader, for a bell row that opens a
+ * node the reader may not reach. It stays out of the URL, so a link can't name anyone.
+ */
+export function mentionedByState(name: string): HistoryState {
+  return name ? { [MENTIONED_BY]: name } : {}
+}
+
+/** The person `mentionedByState` gave an entry, or `null`. */
+export function mentionedBy(state: HistoryState): string | null {
+  const name = state[MENTIONED_BY]
+  return typeof name === 'string' && name ? name : null
+}
+
 const NEW_DOCUMENT = 'newDocument'
 const NEW_DOCUMENT_MS = 10_000
 

@@ -109,6 +109,7 @@ import {
   notificationSentence,
   notificationTime,
 } from '@/composition/notifications/notificationPresentation'
+import { mentionedByState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -140,7 +141,9 @@ async function openNotification(notification: DriveNotification) {
   open.value = false
   const destination = driveNodeRoute(node)
   await router.push(
-    mentionedBy ? { ...destination, state: { ...destination.state, mentionedBy } } : destination,
+    mentionedBy
+      ? { ...destination, state: { ...destination.state, ...mentionedByState(mentionedBy) } }
+      : destination,
   )
 }
 

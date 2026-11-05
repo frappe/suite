@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
-import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView, type HistoryState } from 'vue-router'
 
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
-import { installPageMeta, openingTitleState } from '@/platform/page-meta'
+import { installPageMeta, mentionedByState, openingTitleState } from '@/platform/page-meta'
 import { translationPlugin } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
@@ -70,12 +70,15 @@ testState.preview.render = function (this: { session: { title: { value: string }
   return h('div', { 'data-preview': '' }, this.session.title.value)
 }
 
-async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
+async function mountHost(
+  provide?: (app: ReturnType<typeof createApp>) => void,
+  state?: HistoryState,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
   })
-  await router.push('/d/node-1/quarterly-plan')
+  await router.push({ path: '/d/node-1/quarterly-plan', state })
   await router.isReady()
   const root = document.createElement('div')
   document.body.append(root)
@@ -444,13 +447,11 @@ describe('DocumentHost', () => {
   })
 
   it('asks the person who mentioned the reader when the bell led here', async () => {
-    window.history.replaceState({ mentionedBy: 'Sam Rao' }, '')
     testState.open.mockRejectedValue(refusal(404, 'Refused'))
-    const { root, app } = await mountHost()
+    const { root, app } = await mountHost(undefined, mentionedByState('Sam Rao'))
 
     await vi.waitFor(() => expect(root.textContent).toContain('Ask Sam Rao to share it.'))
     app.unmount()
-    window.history.replaceState(null, '')
   })
 
   it('forgets the node when an open document is refused', async () => {

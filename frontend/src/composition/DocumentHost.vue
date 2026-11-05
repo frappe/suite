@@ -35,6 +35,7 @@ import { documentTypes, findDocumentType } from '@/composition/documentRegistry'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { describeFailure } from '@/platform/open-failure'
 import {
+  mentionedBy as historyMentionedBy,
   openingTitle as historyOpeningTitle,
   newDocumentType,
   usePageTitle,
@@ -89,12 +90,10 @@ const refused = computed(
   () => session.value?.state.value === 'Refused' || (session.value?.access.value.role ?? 0) < 10,
 )
 
-// The bell row that led here names who mentioned the reader. It stays out of the URL, so a link can't name anyone.
-const mentionedBy = computed<string | null>(() => {
-  void route.fullPath
-  const name: unknown = window.history.state?.mentionedBy
-  return typeof name === 'string' && name ? name : null
-})
+// The bell row that led here names who mentioned the reader. The entry is current once the route is.
+const mentionedBy = computed(() =>
+  nodeId.value ? historyMentionedBy(router.options.history.state) : null,
+)
 
 watch(
   [nodeId, reopen],
