@@ -9,6 +9,7 @@ import {
   onMounted,
   provide,
   ref,
+  useTemplateRef,
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -163,7 +164,7 @@ const {
   cancelRunningLoad,
 })
 const isSlideInteractionActive = ref(false)
-const previewCapture = ref<InstanceType<typeof PreviewCapture> | null>(null)
+const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
