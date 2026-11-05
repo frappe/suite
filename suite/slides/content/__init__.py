@@ -6,6 +6,7 @@ the deck's rows.
 """
 
 import json
+import uuid
 from pathlib import Path
 
 import pycrdt
@@ -34,6 +35,22 @@ SCHEMA = content.EditorSchema(
     marks=frozenset(DECLARED["marks"]),
     open_roots=OPEN_ROOTS,
 )
+
+# The place deck.ts gives a deck's first slide, so a later insert sorts around it
+FIRST_ORDER = "V"
+
+
+def blank_state() -> bytes:
+    """Encode a new deck: one blank slide under a fresh random id, as a tab adding one would write it."""
+    doc: pycrdt.Doc = pycrdt.Doc()
+    slide = pycrdt.Map()
+    slides = pycrdt.Map()
+    doc["slides"] = slides
+    doc["boxes"] = pycrdt.Map()
+    slides[str(uuid.uuid4())] = slide
+    slide["order"] = FIRST_ORDER
+    return doc.get_update()
+
 
 EDITOR = content.EditorSpec(
     app=APP,

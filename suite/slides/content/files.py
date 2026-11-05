@@ -9,13 +9,17 @@ Drive's sweep would trash, while an extra one matches no node.
 copy is renamed, so what is counted can't drift from what is rewritten.
 """
 
+import re
 from collections.abc import Callable, Mapping
 
 import pycrdt
 
 from suite import content
 from suite.content import compaction
-from suite.slides.drive import MEDIA_ID
+
+# A media reference is one whole node id. Node names are opaque hashes, so a colour and a `/files/` URL both
+# fail this and a body value is never mistaken for a picture
+MEDIA_ID = re.compile(r"[A-Za-z0-9_-]{1,140}")
 
 
 def node_ids(part_map: Mapping[str, type], state: bytes) -> set[str]:

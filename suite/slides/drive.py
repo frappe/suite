@@ -72,8 +72,10 @@ import re
 import frappe
 from frappe import _
 
-from suite import drive
-from suite.content import with_content
+from suite import content, drive
+from suite.content import checkpoints, with_content
+from suite.slides.content import APP, SCHEMA, blank_state
+from suite.slides.content.files import MEDIA_ID
 
 DOCTYPE = "Presentation"
 MIME = "frappe/slides"
@@ -90,10 +92,6 @@ VERSION_MIME = "application/json"
 
 PREVIEW_MIME = "image/webp"
 
-# A media reference is one whole node id. Node names are opaque hashes, so a
-# colour and a `/files/` URL both fail this and a body value is never mistaken
-# for a picture.
-MEDIA_ID = re.compile(r"[A-Za-z0-9_-]{1,140}")
 # What a raw scan of an unparseable `elements` column may look at. It
 # over-reports, which only keeps media alive.
 MEDIA_TOKEN = re.compile(r"[A-Za-z0-9_-]{6,140}")
@@ -298,7 +296,20 @@ _ROW_SPEC = drive.ContentTypeSpec(
     used_nodes=used_nodes,
     remap_media=remap_media,
 )
-SPEC = dataclasses.replace(with_content(_ROW_SPEC), export=None)
+_LOGGED_SPEC = with_content(_ROW_SPEC)
+
+
+def create_seeded(node: str) -> str:
+    """Create a deck; with a log, start it from one blank slide so no tab ever opens a deck with none (Q179)."""
+    docname = _LOGGED_SPEC.create_empty(node)
+    doc = content.find(APP, node)
+    if doc:
+        checkpoints.replace_start(APP, doc.id, blank_state(), SCHEMA.version)
+
+    return docname
+
+
+SPEC = dataclasses.replace(_LOGGED_SPEC, export=None, create_empty=create_seeded)
 
 
 # ---------------------------------------------------------------------------

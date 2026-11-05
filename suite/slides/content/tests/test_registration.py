@@ -41,13 +41,13 @@ NAMES_A_DECK_WRITES = {
 }
 
 
-def admitted(payload: bytes):
+def admitted(payload: bytes, client_id: int = CLIENT):
     header = PushHeader(
         lineage="",
         sid="",
         seq_from=1,
         seq_to=1,
-        client_id=CLIENT,
+        client_id=client_id,
         seen_rev=0,
         schema=SCHEMA.version,
         shas=[],
@@ -57,6 +57,11 @@ def admitted(payload: bytes):
         expected_user=None,
     )
     return pushes.admissible_row(EDITOR, header, payload)
+
+
+def unique_deck():
+    suffix = frappe.generate_hash(length=8)
+    return make_presentation(f"Saved {suffix}")
 
 
 def box_update(box: object, key: str = "box1", root: str = "boxes") -> bytes:
@@ -161,7 +166,7 @@ class TestLoggedDeck(LoggedDeckCase):
 
 class TestRowsWithCollabOff(IntegrationTestCase):
     def test_a_deck_with_no_log_saves_a_changed_body(self):
-        deck = make_presentation(self._testMethodName)
+        deck = unique_deck()
         deck.content = "changed"
         deck.save(ignore_permissions=True)
 
@@ -169,7 +174,7 @@ class TestRowsWithCollabOff(IntegrationTestCase):
 
     def test_purging_a_deck_with_no_node_needs_no_content_tables(self):
         # R1013: a patch can reach this before after_migrate has made the tables
-        deck = make_presentation(self._testMethodName).name
+        deck = unique_deck().name
         node = node_of(deck)
         frappe.db.set_value("Presentation", deck, slides_drive.NODE_FIELD, None)
         frappe.db.commit()

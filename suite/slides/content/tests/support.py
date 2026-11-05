@@ -68,6 +68,11 @@ def delete_log(node: str) -> None:
     frappe.db.commit()
 
 
+def owner_folder() -> str:
+    root = drive.ensure_personal_root(OWNER)
+    return frappe.db.get_value("Drive Root", root, "node")
+
+
 class LoggedDeckCase(IntegrationTestCase):
     """Turns Slides on for one test and back off after it, once its logs are gone."""
 
@@ -93,9 +98,9 @@ class LoggedDeckCase(IntegrationTestCase):
         frappe.db.commit()
 
     def new_deck(self) -> str:
-        root = drive.ensure_personal_root(OWNER)
-        parent = frappe.db.get_value("Drive Root", root, "node")
-        node = drive.create_document(parent, f"Pushed {uuid.uuid4().hex[:8]}", content_doctype="Presentation")
+        node = drive.create_document(
+            owner_folder(), f"Pushed {uuid.uuid4().hex[:8]}", content_doctype="Presentation"
+        )
         frappe.db.commit()
         self.addCleanup(delete_log, node)
         return node
