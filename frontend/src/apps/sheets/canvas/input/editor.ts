@@ -122,8 +122,9 @@ export function createEditor(o: EditorOptions): Editor {
     const z = o.getZoom()
     const rect = o.cellRect(r, c)
     const fmt = o.formatAt(r, c)
-    const align = fmt.align || (keepsDrawnAlign && fmt.autoAlign) || ''
-    o.overlay.position(rect.x * z, rect.y * z, rect.w * z, rect.h * z, { ...fmt, align }, z)
+    const align = fmt.align || (keepsDrawnAlign && fmt.autoAlign) || undefined
+    const shown = align ? { ...fmt, align } : fmt
+    o.overlay.position(rect.x * z, rect.y * z, rect.w * z, rect.h * z, shown, z)
   }
 
   function openEditor(value: string, m: EditMode = 'enter'): void {

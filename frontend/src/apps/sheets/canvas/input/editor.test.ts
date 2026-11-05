@@ -83,7 +83,7 @@ describe('opening', () => {
     h.editor.open('hi')
     expect(h.editor.isOpen()).toBe(true)
     expect(h.el.value).toBe('hi')
-    expect(h.overlay.position).toHaveBeenCalledWith(20, 40, 200, 42, { align: '' }, 2)
+    expect(h.overlay.position).toHaveBeenCalledWith(20, 40, 200, 42, {}, 2)
     expect(h.opts.collapseSelection).toHaveBeenCalled()
     expect(h.opts.ensureVisible).toHaveBeenCalledWith(2, 3)
     expect(h.opts.onInput).toHaveBeenCalledWith('hi')
@@ -112,8 +112,8 @@ describe('opening', () => {
     // F2, Enter or double-click on 1234: the text stays where it was drawn.
     expect(alignOn('1234', 'edit')).toBe('right')
     // Typing over the cell or editing a formula starts from the left.
-    expect(alignOn('5')).toBe('')
-    expect(alignOn('=A1*2', 'edit')).toBe('')
+    expect(alignOn('5')).toBeUndefined()
+    expect(alignOn('=A1*2', 'edit')).toBeUndefined()
   })
 
   it("uses the cell's own alignment over the automatic one", () => {
