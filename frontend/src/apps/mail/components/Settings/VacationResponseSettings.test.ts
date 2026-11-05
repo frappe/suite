@@ -15,6 +15,8 @@ vi.mock('frappe-ui', async () => {
   })
   return {
     Button: passthrough,
+    SettingsBody: passthrough,
+    SettingsHeader: passthrough,
     SettingsRow: passthrough,
     Switch: passthrough,
     // A field shows what it was handed: its label, its value and whether it can be edited.
@@ -27,17 +29,6 @@ vi.mock('frappe-ui', async () => {
             value: attrs.modelValue,
             disabled: attrs.disabled,
           })
-      },
-    }),
-  }
-})
-vi.mock('frappe-ui/experimental', async () => {
-  const { defineComponent, h } = await import('vue')
-  return {
-    TextEditor: defineComponent({
-      inheritAttrs: false,
-      setup(_props, { attrs }) {
-        return () => h('div', { 'data-editor': true, 'data-editable': String(attrs.editable) })
       },
     }),
   }
@@ -58,20 +49,6 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({
   default: { render: () => null },
 }))
-vi.mock('@/components/settings/AppSettingsHeader.vue', () => ({
-  default: { render: () => null },
-}))
-vi.mock('@/components/settings/AppSettingsBody.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return {
-    default: defineComponent({
-      setup:
-        (_props, { slots }) =>
-        () =>
-          h('div', slots.default?.()),
-    }),
-  }
-})
 
 const LONG_AGO = { from: '2020-06-01T09:00:00Z', to: '2020-06-14T09:00:00Z' }
 const AHEAD = { from: '2099-06-01T09:00:00Z', to: '2099-06-14T09:00:00Z' }
@@ -90,7 +67,7 @@ const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
   app.mount(root)
   await nextTick()
   const field = (label: string) => root.querySelector<HTMLInputElement>(`[data-label="${label}"]`)!
-  return { field, editor: root.querySelector('[data-editor]')! }
+  return { field, editor: root.querySelector('[editable]')! }
 }
 
 beforeEach(() => {
@@ -119,9 +96,9 @@ it('lets nothing be edited while the responder is off', async () => {
   const off = await mount(0, AHEAD)
   expect(off.field('Subject').disabled).toBe(true)
   expect(off.field('To Date').disabled).toBe(true)
-  expect(off.editor.getAttribute('data-editable')).toBe('false')
+  expect(off.editor.getAttribute('editable')).toBe('false')
 
   const on = await mount(1, AHEAD)
   expect(on.field('Subject').disabled).toBe(false)
-  expect(on.editor.getAttribute('data-editable')).toBe('true')
+  expect(on.editor.getAttribute('editable')).toBe('true')
 })
