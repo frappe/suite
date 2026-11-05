@@ -101,6 +101,19 @@ class MailServer(FakeJMAPServer):
 
         self.handle("Mailbox/set", count_down)
 
+    def refuse_scripts(self, account: str) -> None:
+        """Refuse every new Sieve script in one account."""
+
+        change_scripts = self.handlers["SieveScript/set"]
+
+        def refuse(arguments: dict, server: FakeJMAPServer) -> dict:
+            if arguments["accountId"] != account:
+                return change_scripts(arguments, server)
+            refusals = {creation: {"type": "forbidden"} for creation in arguments.get("create") or {}}
+            return {"accountId": account, "oldState": "s", "newState": "s", "notCreated": refusals}
+
+        self.handle("SieveScript/set", refuse)
+
     def recover(self) -> None:
         self.errors.clear()
 
@@ -268,10 +281,10 @@ class TestAccountRecreation(IntegrationTestCase):
         self.assertTrue(retried["success"], retried)
         self.assert_set_up(account)
 
-    def test_a_new_member_is_not_held_back_by_a_shared_account_without_filter_scripts(self):
+    def test_a_new_member_is_not_held_back_by_a_shared_account_that_refuses_filter_scripts(self):
         account = self.server.open_account()
         shared = self.server.add_shared_account()
-        self.server.accounts[shared]["accountCapabilities"] = {urn: {} for urn in URNS[:3]}
+        self.server.refuse_scripts(shared)
 
         result = self.add_member(f"another-{frappe.generate_hash(length=8)}")
 
