@@ -342,6 +342,51 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         frappe.db.rollback()
         self.assertEqual(self.rows(node), before)
 
+    def test_a_converted_decks_row_saved_into_a_plain_deck_is_refused_and_moves_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.rows(node)
+        plain = self.old_deck([text_box("other")])
+        row = self.owned_row(node)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(plain))
+        deck.append("slides", row.as_dict())
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.save(deck.as_dict())
+
+        frappe.db.rollback()
+        self.assertEqual(self.rows(node), before)
+
+    def test_a_plain_decks_row_saved_into_another_plain_deck_is_refused_and_moves_nothing(self):
+        node = self.old_deck([text_box("box")])
+        before = self.rows(node)
+        plain = self.old_deck([text_box("other")])
+        row = self.owned_row(node)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(plain))
+        deck.append("slides", row.as_dict())
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.save(deck.as_dict())
+
+        frappe.db.rollback()
+        self.assertEqual(self.rows(node), before)
+
+    def test_a_plain_deck_still_saves_its_own_rows_and_a_new_one(self):
+        node = self.old_deck([text_box("box")])
+        name = slides_drive.docname_for_node(node)
+        own = frappe.db.get_value("Slide", {"parent": name}, "name")
+        frappe.set_user(OWNER)
+        deck = frappe.get_doc("Presentation", name)
+        deck.slides[0].elements = "[]"
+        deck.append("slides", {"client_id": "new", "elements": "[]"})
+
+        frappe.client.save(deck.as_dict())
+
+        frappe.set_user("Administrator")
+        rows = frappe.get_all("Slide", {"parent": name}, ["name", "elements"], order_by="idx")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual((rows[0].name, rows[0].elements), (own, "[]"))
+
     def test_a_new_slide_row_is_refused_and_writes_nothing(self):
         node = self.old_deck([text_box("box")])
         self.convert(node)

@@ -48,6 +48,7 @@ class Presentation(drive.DriveContent, Document):
         if not self.is_new() and self.body_changed():
             slides_drive.refuse_row_write(self.node)
 
+        self.refuse_another_decks_rows()
         self.validate_advance_after()
 
         if not self.is_composite:
@@ -64,6 +65,19 @@ class Presentation(drive.DriveContent, Document):
             return True
 
         return any(self.has_value_changed(field) for field in LOGGED_FIELDS)
+
+    def refuse_another_decks_rows(self) -> None:
+        """Refuse a row that belongs to another deck: a parent save writes it here without `Slide.save`'s fence."""
+        names = [row.name for row in self.slides if row.name]
+        rows = frappe.db.get_values(
+            "Slide",
+            {"name": ("in", names)},
+            ["parent", "parenttype"],
+            order_by="name",
+            for_update=True,
+        )
+        if any(row != (self.name, self.doctype) for row in map(tuple, rows)):
+            raise drive.DriveConflict(_("This slide belongs to another presentation"))
 
     def validate_advance_after(self):
         for row in self.slides:
