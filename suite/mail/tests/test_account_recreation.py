@@ -9,7 +9,7 @@ from frappe.tests import IntegrationTestCase
 from jmap.testing.fake import FakeJMAPServer
 
 from suite import mail
-from suite.mail.api.admin import add_member
+from suite.mail.api.admin import add_member, retry_account_creation
 from suite.mail.jmap import DEFAULT_TIMEOUT, get_account_client, get_jmap_client, provisioning
 from suite.mail.tests.test_admin_lifecycle import Provider
 from suite.suite_core.account_state import read
@@ -102,7 +102,7 @@ class MailServer(FakeJMAPServer):
         self.handlers["Mailbox/set"] = count_down
 
     def recover(self) -> None:
-        self.errors.pop("Mailbox/set", None)
+        self.errors.clear()
 
     def stored(self, account: str, kind: str) -> list[dict]:
         return list(self.objects[account, kind].values())
@@ -241,6 +241,44 @@ class TestAccountRecreation(IntegrationTestCase):
             },
         )
 
+    def test_a_recreation_whose_filter_script_was_refused_fails_and_a_retry_finishes_it(self):
+        account = self.server.open_account()
+        self.server.fail("SieveScript/set", "serverFail")
+
+        self.assert_setup_failed()
+        self.assertEqual(self.server.stored(account, "SieveScript"), [])
+
+        self.retry()
+        self.assert_set_up(account)
+
+    def test_a_new_member_whose_filter_script_was_refused_can_be_retried(self):
+        account = self.server.open_account()
+        self.server.fail("SieveScript/set", "serverFail")
+
+        result = self.add_member("new-" + self.address.split("@", 1)[0])
+
+        self.assertFalse(result["success"], result)
+        self.assertEqual(result["status"], "Setup failed")
+        request = frappe.db.get_value("Mail Account Request", {"account": result["user"]}, "name")
+        self.server.recover()
+        frappe.local.request_cache.clear()  # a retry is a request of its own
+
+        retried = retry_account_creation(request)
+
+        self.assertTrue(retried["success"], retried)
+        self.assert_set_up(account)
+
+    def test_a_new_member_is_not_held_back_by_a_shared_account_without_filter_scripts(self):
+        account = self.server.open_account()
+        shared = self.server.add_shared_account()
+        self.server.accounts[shared]["accountCapabilities"] = {urn: {} for urn in URNS[:3]}
+
+        result = self.add_member(f"another-{frappe.generate_hash(length=8)}")
+
+        self.assertTrue(result["success"], result)
+        self.assert_set_up(account)
+        self.assertEqual(self.roles(shared).count("archive"), 1)
+
     def test_a_disabled_user_cannot_reach_their_mail_outside_their_own_account_setup(self):
         account = self.server.open_account()
         self.assertTrue(self.recreate()["success"])
@@ -255,6 +293,9 @@ class TestAccountRecreation(IntegrationTestCase):
             with provisioning("someone-else@example.test"):
                 with self.assertRaisesRegex(frappe.ValidationError, "disabled"):
                     attempt()
+
+    def add_member(self, username: str) -> dict:
+        return add_member(username, "company.frappe.cloud", False, False, "", first_name="Employee")
 
     def recreate(self) -> dict:
         return mail.administer_account("recreate", user=self.user, address=self.address)

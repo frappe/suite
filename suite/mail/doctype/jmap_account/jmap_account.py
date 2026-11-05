@@ -302,7 +302,13 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> bool:
             for account in _accounts_to_set_up(user, accounts, new_accounts):
                 create_archive_mailbox(account)
                 rename_default_mailboxes(account)
-                build_automation_sieve(account, activate=True)
+                # During setup a missing script on the user's own account fails the setup, so that a
+                # retry finishes it. A shared account's script doesn't decide whether the setup worked.
+                build_automation_sieve(
+                    account,
+                    activate=True,
+                    raise_exception=is_provisioning(user) and accounts[account]["isPersonal"],
+                )
     finally:
         frappe.flags.skip_automation_sieve_build = previous_sieve_flag
         frappe.flags.skip_archive_mailbox_creation = previous_archive_flag
