@@ -172,6 +172,12 @@ const CASES: { [name: string]: Case } = {
   'wrapped text': { value: 'Wrap me', fmt: { textWrap: 'wrap' }, h: 40 },
   'wrapped text, top': { value: 'Wrap me', fmt: { textWrap: 'wrap', valign: 'top' }, h: 40 },
   'wrapped text, bottom': { value: 'Wrap me', fmt: { textWrap: 'wrap', valign: 'bottom' }, h: 40 },
+  'text wrapped onto two lines': {
+    value: 'Wrap me please now',
+    fmt: { textWrap: 'wrap' },
+    w: 80,
+    h: 54,
+  },
   'two lines': { value: 'one\ntwo', h: 40 },
   'two lines, centred, 18px': { value: 'one\ntwo', fmt: { align: 'center', fontSize: 18 }, h: 50 },
   'zoom 0.8': { value: 'Small', zoom: 0.8 },

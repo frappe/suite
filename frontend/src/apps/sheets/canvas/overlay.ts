@@ -1,4 +1,5 @@
-import { getTextWrap, lineHeightFor } from '../utils/text-wrap.js'
+import { getTextWrap, lineHeightFor, wrapLines } from '../utils/text-wrap.js'
+import { chipFont } from './chip-geometry.js'
 import { COLORS, FRAME_W, GRID_LINE } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
 import { inkFor } from './painters/cell-text-style.js'
@@ -82,7 +83,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
   // The border width the browser draws: it snaps a border to whole device
   // pixels (1.5px is 1px on a 1x screen), and the text starts after it.
   let usedBorder = FRAME_W
-  let measure: OffscreenCanvasRenderingContext2D | null | undefined
+  let measureCtx: OffscreenCanvasRenderingContext2D | null | undefined
   let box: Box | null = null
   // Lines of the text the editor opened with. The canvas lays a cell's text
   // block out by its line count; the editor keeps that first-line position
@@ -282,15 +283,21 @@ export function createOverlay(parent: HTMLElement): Overlay {
     return centredBaseline(cellMidY(0, h), m.cap)
   }
 
+  // The canvas the overlay measures text on. OffscreenCanvas: every current
+  // browser has one; jsdom (tests) doesn't, and gets null without logging a
+  // missing canvas.
+  function _measure(): OffscreenCanvasRenderingContext2D | null {
+    if (measureCtx === undefined)
+      measureCtx =
+        typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('2d')
+    return measureCtx
+  }
+
   // Metrics of `font` (whose size is `size` px), measured on a canvas, as
   // the painter and CSS see them (canvas font-box metrics are the ones CSS
   // lays lines out with).
   function _metrics(font: string, size: number) {
-    // OffscreenCanvas: every current browser has one; jsdom (tests) doesn't,
-    // and falls back to Inter's ratios without logging a missing canvas.
-    if (measure === undefined)
-      measure =
-        typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('2d')
+    const measure = _measure()
     const fb = {
       ascent: size * FALLBACK.ascent,
       descent: size * FALLBACK.descent,
@@ -317,20 +324,17 @@ export function createOverlay(parent: HTMLElement): Overlay {
     }
   }
 
-  // Lines the textarea lays `el.value` out in: hard newlines, plus soft
-  // wraps when wrapping is on (measured from the laid-out content).
+  // Lines the painter draws `el.value` in (cell-painter.ts _drawWrappedText):
+  // its hard lines, which a wrap-mode cell also wraps to the width between
+  // its text edges, measured in the font the canvas draws. Without a canvas
+  // to measure on, the hard lines.
   function _countLines(): number {
-    const hard = el.value.split('\n').length
-    if (el.wrap !== 'soft') return hard
-    const s = el.style
-    const { height, paddingTop } = s
-    s.paddingTop = '0px'
-    s.height = '0px'
-    const contentH = el.scrollHeight - (parseFloat(s.paddingBottom) || 0)
-    s.height = height
-    s.paddingTop = paddingTop
-    const lineH = parseFloat(s.lineHeight)
-    return contentH > 0 && lineH > 0 ? Math.max(hard, Math.round(contentH / lineH)) : hard
+    const ctx = _measure()
+    if (!box || !ctx || getTextWrap(box.fmt) !== 'wrap') return el.value.split('\n').length
+    const { w, zoom, fmt } = box
+    ctx.font = chipFont(fmt)
+    const maxW = w / zoom - (fmt.insetLeft || 0) - (fmt.insetRight || 0) - 8
+    return wrapLines(el.value, maxW, (t) => ctx.measureText(t).width).length
   }
 
   // Grow the editor downward to fit newline-separated lines.
