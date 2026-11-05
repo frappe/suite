@@ -18,7 +18,11 @@
         >
           {{ r }}
         </button>
-        <Button class="rounded-full" icon="lucide-plus" @click.stop="() => (reaction = false)" />
+        <Button
+          class="ml-1 rounded-full"
+          icon="lucide-plus"
+          @click.stop="() => (reaction = false)"
+        />
       </div>
       <div v-else class="bg-surface-base max-w-max transform rounded-6 px-4 sm:px-0">
         <div
