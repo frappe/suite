@@ -237,6 +237,12 @@ const fetchPresentation = async (name, load) => {
     slide.elements = await transformElements(slide.elements)
   }
 
+  // the rows of a deck the layer holds or is about to take are only there to read,
+  // so a draft stays on the device, unrestored
+  if (doc.is_converted || doc.conversion) {
+    return { doc, content: JSON.parse(JSON.stringify(doc.slides || [])), dirty: false }
+  }
+
   const hasServerAnswered = needsServerCheck(local, doc.modified, landed) && (await serverAnswers())
   const outcome = draftOutcome(local, doc.modified, landed, hasServerAnswered)
   const keepBase = outcome === 'keep'

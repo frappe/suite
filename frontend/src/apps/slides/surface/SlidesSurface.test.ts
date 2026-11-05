@@ -205,6 +205,51 @@ function answersStartupReads() {
   })
 }
 
+describe('a deck on the content layer', () => {
+  function statusOf(root: Element) {
+    return root.querySelector('p[role="status"]')?.textContent
+  }
+
+  it('tells a waiting deck it is being upgraded and keeps it read-only', async () => {
+    mounted = await openedSurface({ deck: { conversion: { state: 'pending' } } })
+
+    expect(statusOf(mounted.root)).toContain('being upgraded')
+    expect(viewOnly.value).toBe(true)
+  })
+
+  it('tells a refused deck it stays read-only and draws its rows', async () => {
+    mounted = await openedSurface({ deck: { conversion: { state: 'refused' } } })
+
+    expect(statusOf(mounted.root)).toContain("couldn't be upgraded, so it stays read-only")
+    expect(statusOf(mounted.root)).not.toContain('Reason')
+    expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
+    expect(viewOnly.value).toBe(true)
+  })
+
+  it('shows a System Manager the reason the server sent', async () => {
+    mounted = await openedSurface({
+      deck: { conversion: { state: 'refused', reason: 'check: html' } },
+    })
+
+    expect(statusOf(mounted.root)).toContain('Reason: check: html.')
+  })
+
+  it('shows no notice on a combined deck', async () => {
+    mounted = await openedSurface({ composite: {} })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+
+    expect(statusOf(mounted.root)).toBeUndefined()
+  })
+
+  it('never draws a converted deck from its rows, and takes no save', async () => {
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+
+    expect(thumbnails(mounted.root)).toHaveLength(0)
+    expect(saves).toEqual([])
+  })
+})
+
 describe('Slides offline copy', () => {
   const posted: string[] = []
   const register = vi.fn(async () => ({}))

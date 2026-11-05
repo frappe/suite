@@ -273,6 +273,7 @@ export async function openedSurface({
   firstLoad,
   media = (() => undefined) as unknown as DocumentSession['media'],
   composite,
+  deck,
 }: {
   path?: string
   role?: number
@@ -280,6 +281,7 @@ export async function openedSurface({
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
   composite?: Record<string, unknown[] | Error>
+  deck?: Record<string, unknown>
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -364,6 +366,7 @@ export async function openedSurface({
       slides,
       name: docname,
       is_composite: composite ? 1 : 0,
+      ...deck,
     })
   })
   const access = ref({ role })
@@ -389,7 +392,7 @@ export async function openedSurface({
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
-  if (!firstLoad && !composite) {
+  if (!firstLoad && !composite && !deck?.is_converted) {
     await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
   }
 

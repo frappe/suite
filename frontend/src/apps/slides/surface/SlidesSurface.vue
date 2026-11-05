@@ -96,6 +96,8 @@ import {
   type CompositeItem,
   type MergedCompositeSlide,
 } from './compositeGroups'
+import { conversionNotice, type ConversionStatus } from './conversionNotice'
+import ConvertedDeck from './ConvertedDeck.vue'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
@@ -162,11 +164,28 @@ const isSlideInteractionActive = ref(false)
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
+// Read-only until live editing: its rows no longer change
+const isConverted = ref(false)
+// A deck still on its rows, waiting for conversion or refused by it, is read-only too
+const conversion = ref<ConversionStatus | null>(null)
+const onLayer = computed(() => isConverted.value || !!conversion.value)
+const notice = computed(() => {
+  if (!conversion.value || !access.readable.value) {
+    return ''
+  }
+
+  return conversionNotice(conversion.value)
+})
 const editable = computed(
-  () => access.writable.value && !composite.value && !restoring.value && !isOnlyCopy.value,
+  () =>
+    access.writable.value &&
+    !composite.value &&
+    !restoring.value &&
+    !isOnlyCopy.value &&
+    !onLayer.value,
 )
 const canRestoreVersions = computed(
-  () => access.writable.value && !restoring.value && !isOnlyCopy.value,
+  () => access.writable.value && !restoring.value && !isOnlyCopy.value && !onLayer.value,
 )
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
@@ -436,7 +455,7 @@ async function load() {
     // Not `editable`: a restore pauses editing, and its reload is still an editor load.
     const doc = await initPresentationDoc(
       props.session.contentDocname,
-      !access.writable.value || composite.value,
+      !access.writable.value || composite.value || onLayer.value,
     )
     if (run !== latestLoad) return
 
@@ -450,9 +469,11 @@ async function load() {
     setSlideIndex(presentedSlide.value)
     loadTemplates()
     composite.value = !!doc?.is_composite
+    isConverted.value = !!doc?.is_converted
+    conversion.value = (doc?.conversion as ConversionStatus | undefined) ?? null
     if (composite.value) {
       await loadComposite()
-    } else {
+    } else if (!onLayer.value) {
       void offerTheme()
     }
 
@@ -581,7 +602,7 @@ function setOffline() {
 }
 
 const deckUnavailable = computed(
-  () => loading.value || !access.readable.value || !slides.value.length,
+  () => loading.value || !access.readable.value || !slides.value.length || isConverted.value,
 )
 const canPin = computed(
   () =>
@@ -589,6 +610,7 @@ const canPin = computed(
     'caches' in window &&
     !window.disable_slides_service_worker &&
     !presentationDoc.value?.is_composite &&
+    !isConverted.value &&
     isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
 const showsOfflineCopy = computed(() => canPin.value || offlineCopyStatus.value === 'unusable')
@@ -686,6 +708,13 @@ onBeforeUnmount(() => {
       </template>
     </DriveDocumentHeader>
 
+    <p
+      v-if="notice"
+      role="status"
+      class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-1 px-4 py-2 text-sm text-ink-amber-7"
+    >
+      {{ notice }}
+    </p>
     <div v-if="!access.readable.value" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">
@@ -721,6 +750,7 @@ onBeforeUnmount(() => {
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError }}</p>
     </div>
+    <ConvertedDeck v-else-if="isConverted" :session="session" />
     <div v-else-if="phone" class="flex min-h-0 flex-1 flex-col bg-surface-gray-1">
       <div class="relative flex min-h-0 flex-1">
         <SlideContainer
