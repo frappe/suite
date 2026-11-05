@@ -246,6 +246,68 @@ class TestAdminLifecycle(IntegrationTestCase):
         with self.set_user(user), self.assertRaisesRegex(drive.DriveOverQuota, "user's storage cap"):
             drive.store_file(root, "too-big.txt", BytesIO(b"x" * 200))
 
+    def test_a_refresh_that_cannot_be_queued_keeps_the_change_and_leaves_additions_to_the_hourly_refresh(
+        self,
+    ):
+        from suite import drive
+        from suite.composition.admin_jobs import refresh_storage
+
+        mail.refresh_storage()
+        user = self.create()["user"]
+        with patch("frappe.enqueue", side_effect=RuntimeError("redis down")) as enqueue:
+            frappe.db.after_commit.run()
+        self.assertTrue(enqueue.called)
+
+        self.assertEqual(frappe.db.get_value("User Settings", {"user": user}, "username"), self.address)
+        self.assertIn(self.address, self.provider.accounts)
+        root = drive.personal_root_for(user) or drive.ensure_personal_root(user)
+        with self.set_user(user), self.assertRaisesRegex(frappe.ValidationError, "unavailable"):
+            drive.store_file(root, "too-soon.txt", BytesIO(b"usage is unknown"))
+
+        with patch("suite.composition.admin_jobs.is_suite_cloud_configured", return_value=True):
+            refresh_storage()
+        with self.set_user(user):
+            drive.store_file(root, "after-the-hour.txt", BytesIO(b"usage is known"))
+
+    def test_a_locked_save_keeps_what_a_worker_committed_after_this_transaction_began(self):
+        frappe.db.rollback()  # the row commits below, and earlier tests' writes must not commit with it
+        original = frappe.db.get_value(
+            "Suite Storage State", "site", ["measurements", "modified"], as_dict=True
+        )
+        self.addCleanup(self.restore_storage_state, original)
+        state()
+        frappe.db.commit()
+        with self.secondary_connection():
+            pass  # the helper's first use leaves its new connection current
+        frappe.local.db = self._primary_connection
+
+        _doc, _policy, before = state()  # opens this transaction's snapshot
+        self.assertNotIn("from_worker", before)
+        with self.secondary_connection():
+            frappe.db.set_value(
+                "Suite Storage State", "site", "measurements", json.dumps({**before, "from_worker": 1})
+            )
+            frappe.db.commit()
+        _doc, _policy, snapshot = state()
+        self.assertNotIn("from_worker", snapshot)  # a plain read here cannot see the worker's update
+
+        doc, _policy, latest = state(lock=True)
+        doc.measurements = json.dumps({**latest, "from_this_save": 1})
+        doc.save(ignore_permissions=True)
+
+        _doc, _policy, saved = state()
+        self.assertEqual((saved.get("from_worker"), saved.get("from_this_save")), (1, 1))
+
+    def restore_storage_state(self, original):
+        """Undo what the test committed. Runs after the rollback that releases the row's lock."""
+        frappe.db.rollback()
+        if original:
+            frappe.db.set_value("Suite Storage State", "site", original, update_modified=False)
+        else:
+            frappe.db.delete("Suite Storage State", {"name": "site"})
+        frappe.db.commit()
+        self._secondary_connection.close()
+
     def test_failed_provisioning_retry_keeps_the_creation_time_cap_snapshot(self):
         from suite.suite_core.storage import set_default, state
 
