@@ -221,27 +221,23 @@ const people = createUsers()
 
 export const { searchMentions, lookUp, fullName } = people
 
-function loadFirstPage() {
+/**
+ * Ranks the `@` menu for the document `node` and, for a signed-in user, loads
+ * its first page. Whatever opens a document calls it, before anyone can type
+ * `@` there.
+ */
+export function rankMentionsFor(node: string): void {
+  people.rankFor(node)
   if (useSession().user.value) {
     people.start()
   }
 }
 
 /**
- * Ranks the `@` menu for the document `node` and loads its first page. Whatever
- * opens a document calls it, before anyone can type `@` there.
- */
-export function rankMentionsFor(node: string): void {
-  people.rankFor(node)
-  loadFirstPage()
-}
-
-/**
- * The people for mentions and avatars. The first page loads once per
- * document; `searchMentions` narrows the menu as the user types after `@`.
+ * The people for mentions and avatars. `rankMentionsFor` loads the first page
+ * once per document; `searchMentions` narrows the menu as the user types after `@`.
  * Components that use `$user(...)` in templates alias `getUser` to `$user`.
  */
 export function useUsers() {
-  loadFirstPage()
   return { users: people.users, answeredQuery: people.answeredQuery, getUser: people.getUser }
 }

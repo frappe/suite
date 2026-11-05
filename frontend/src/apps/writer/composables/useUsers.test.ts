@@ -201,7 +201,6 @@ describe('people for mentions and names', () => {
     rankMentionsFor('doc-b')
     // A menu opened now waits for this document's answer; it never shows the last one's markers
     const whileAsking = users.value
-    useUsers()
     await vi.waitFor(() => expect(users.value.map((user) => user.name)).toEqual(['bob']))
 
     expect(whileAsking).toEqual([])
