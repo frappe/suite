@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
 import {
+  addBlankIfEmpty,
   addBox,
   addSlide,
   boxIds,
@@ -11,6 +12,7 @@ import {
   moveBox,
   moveBoxToSlide,
   moveSlide,
+  readSlides,
   setBox,
   slideIds,
 } from './deck'
@@ -395,5 +397,145 @@ describe('what reaches the server', () => {
 
     expect(tabA.getMap('slides')).toBeInstanceOf(Y.Map)
     expect(tabA.getMap('boxes')).toBeInstanceOf(Y.Map)
+  })
+})
+
+describe('reading', () => {
+  function readWritesNothing(doc: Y.Doc) {
+    let read: ReturnType<typeof readSlides> = []
+    const updates = captureUpdates(doc, () => {
+      read = readSlides(doc)
+    })
+    expect(updates).toEqual([])
+
+    return read
+  }
+
+  it('gives slides and boxes in order, with their fields', () => {
+    const doc = tab(1)
+    const [first, second] = [addSlide(doc, { background: 'red' }), addSlide(doc)]
+    const [under, over] = [
+      addBox(doc, first, { type: 'image' }),
+      addBox(doc, first, { type: 'text' }),
+    ]
+    moveSlide(doc, second, null)
+    moveBox(doc, under, over)
+
+    const [top, next] = readWritesNothing(doc)
+    expect(top).toEqual({ id: second, boxes: [] })
+    expect(next).toEqual({
+      id: first,
+      background: 'red',
+      boxes: [
+        { id: over, type: 'text' },
+        { id: under, type: 'image' },
+      ],
+    })
+  })
+
+  // A merge is the way a box outlives its slide: one tab deletes, one tab adds
+  function boxLeftWithoutSlide() {
+    const { tabA, tabB, slides } = twoTabs()
+    deleteSlide(tabA, slides[0])
+    const left = addBox(tabB, slides[0], { type: 'image', frame: FRAME })
+    sync(tabA, tabB)
+
+    return { doc: tabA, gone: slides[0], left }
+  }
+
+  it('hides a box whose slide is gone, and keeps it in the doc', () => {
+    const { doc, gone, left } = boxLeftWithoutSlide()
+    const drawn = readWritesNothing(doc).flatMap((slide) => slide.boxes.map(({ id }) => id))
+    expect(drawn).not.toContain(left)
+    expect(readWritesNothing(doc).map(({ id }) => id)).not.toContain(gone)
+    expect(doc.getMap('boxes').has(left)).toBe(true)
+  })
+
+  it('shows the hidden box again once its slide is back, as a version restore does', () => {
+    const { doc, gone, left } = boxLeftWithoutSlide()
+    const slide = new Y.Map()
+    doc.getMap('slides').set(gone, slide)
+    slide.set('order', 'V')
+    const back = readWritesNothing(doc).find(({ id }) => id === gone)
+    expect(back?.boxes.map(({ id }) => id)).toEqual([left])
+  })
+
+  function connectedLine() {
+    const { tabA, tabB, slides, boxes } = twoTabs()
+    const [start, end] = boxes
+    const line = addBox(tabA, slides[0], {
+      type: 'line',
+      connectorStart: { elementId: start, anchor: 'right' },
+      connectorEnd: { elementId: end, anchor: 'left' },
+    })
+    sync(tabA, tabB)
+
+    return { tabA, tabB, slides, start, end, line }
+  }
+
+  function drawnLine(doc: Y.Doc, slide: string, line: string) {
+    return readWritesNothing(doc)
+      .find(({ id }) => id === slide)!
+      .boxes.find(({ id }) => id === line)!
+  }
+
+  it('draws a connector end free when its target is gone, and stores no change', () => {
+    const { tabA, tabB, slides, start, end, line } = connectedLine()
+    deleteBox(tabA, end)
+    sync(tabA, tabB)
+    const drawn = drawnLine(tabB, slides[0], line)
+    expect(drawn.connectorEnd).toBeNull()
+    expect(drawn.connectorStart).toEqual({ elementId: start, anchor: 'right' })
+    expect(box(tabB, line).get('connectorEnd')).toEqual({ elementId: end, anchor: 'left' })
+  })
+
+  it('draws a connector end free when its target moved to another slide', () => {
+    const { tabA, slides, end, line } = connectedLine()
+    moveBoxToSlide(tabA, end, slides[1])
+    expect(drawnLine(tabA, slides[0], line).connectorEnd).toBeNull()
+  })
+
+  it('leaves a connector whose targets are both there alone', () => {
+    const { tabA, slides, start, end, line } = connectedLine()
+    const drawn = drawnLine(tabA, slides[0], line)
+    expect(drawn.connectorStart).toEqual({ elementId: start, anchor: 'right' })
+    expect(drawn.connectorEnd).toEqual({ elementId: end, anchor: 'left' })
+  })
+
+  it('draws one blank for a deck with no slides, and the doc stays empty', () => {
+    const doc = tab(1)
+    const only = addSlide(doc)
+    deleteSlide(doc, only)
+    const drawn = readWritesNothing(doc)
+    expect(drawn).toHaveLength(1)
+    expect(drawn.flatMap(({ boxes }) => boxes)).toEqual([])
+    expect(doc.getMap('slides').size).toBe(0)
+  })
+})
+
+describe('a tab that sees no slides', () => {
+  it('adds a blank, and two tabs doing it at once keep two slides and all work', () => {
+    const [tabA, tabB] = [tab(100), tab(5)]
+    addBlankIfEmpty(tabA)
+    addBlankIfEmpty(tabB)
+    const [slideA] = slideIds(tabA)
+    const [slideB] = slideIds(tabB)
+    expect(slideA).not.toBe(slideB)
+    const boxA = addBox(tabA, slideA, { type: 'image' })
+    const boxB = addBox(tabB, slideB, { type: 'image' })
+    sync(tabA, tabB)
+    for (const doc of [tabA, tabB]) {
+      expect(slideIds(doc).toSorted()).toEqual([slideA, slideB].toSorted())
+      expect(boxIds(doc, slideA)).toEqual([boxA])
+      expect(boxIds(doc, slideB)).toEqual([boxB])
+    }
+  })
+
+  it('adds nothing once a slide has arrived', () => {
+    const [tabA, tabB] = [tab(100), tab(5)]
+    addBlankIfEmpty(tabA)
+    sync(tabA, tabB)
+    expect(captureUpdates(tabB, () => addBlankIfEmpty(tabB))).toEqual([])
+    expect(slideIds(tabB)).toHaveLength(1)
   })
 })

@@ -88,12 +88,24 @@ interface Sibling {
   item: Item
 }
 
+export interface DeckItem {
+  id: string
+  [field: string]: unknown
+}
+
+export interface DeckSlide extends DeckItem {
+  boxes: DeckItem[]
+}
+
 const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 const LAST_DIGIT = DIGITS.length - 1
 const FIRST_ORDER = 'V'
 const HALVES = 2
 const SORTS_BEFORE = -1
 const SORTS_AFTER = 1
+const NOT_FIELDS = new Set(['order', 'parent', 'text'])
+const CONNECTOR_ENDS = ['connectorStart', 'connectorEnd']
+const DRAWN_BLANK = 'drawn-blank'
 
 function orderOf(item: Item) {
   return item.get('order') as string
@@ -310,4 +322,69 @@ export function slideIds(doc: Y.Doc) {
 
 export function boxIds(doc: Y.Doc, slideId: string) {
   return boxesInOrder(doc, slideId).map(({ id }) => id)
+}
+
+// Reads below fix leftovers of a merge in what they return and never write, so
+// the hidden data comes back with a version restore
+
+function plainFields(id: string, item: Item): DeckItem {
+  const fields = [...item.entries()].filter(([key]) => !NOT_FIELDS.has(key))
+
+  return { id, ...Object.fromEntries(fields) }
+}
+
+function boxEntriesBySlide(doc: Y.Doc) {
+  const bySlide = new Map<string, [string, Item][]>()
+  for (const entry of boxesOf(doc).entries()) {
+    const [, box] = entry
+    const parent = box.get('parent') as string
+    if (!bySlide.has(parent)) {
+      bySlide.set(parent, [])
+    }
+
+    bySlide.get(parent)!.push(entry)
+  }
+
+  return bySlide
+}
+
+// A connector end draws free when its target is gone, or is not on this slide
+function freeLostEnds(box: DeckItem, onSlide: Set<string>) {
+  for (const key of CONNECTOR_ENDS) {
+    const end = box[key] as { elementId: string } | null | undefined
+    if (end && !onSlide.has(end.elementId)) {
+      box[key] = null
+    }
+  }
+
+  return box
+}
+
+// The deck to draw. A box whose slide is gone has no slide to appear under, and
+// a deck with no slides draws one blank that is not in the doc
+export function readSlides(doc: Y.Doc): DeckSlide[] {
+  const bySlide = boxEntriesBySlide(doc)
+  const slides = slidesInOrder(doc).map(({ id, item }) => {
+    const entries = bySlide.get(id) ?? []
+    const onSlide = new Set(entries.map(([boxId]) => boxId))
+    const boxes = inOrder(entries).map((box) =>
+      freeLostEnds(plainFields(box.id, box.item), onSlide),
+    )
+
+    return { ...plainFields(id, item), boxes }
+  })
+
+  if (!slides.length) {
+    return [{ id: DRAWN_BLANK, boxes: [] }]
+  }
+
+  return slides
+}
+
+// For a tab that edits. The id is random so two tabs doing this at once each
+// keep their slide: a shared id would drop one tab's entry on merge
+export function addBlankIfEmpty(doc: Y.Doc) {
+  if (!slidesOf(doc).size) {
+    addSlide(doc)
+  }
 }
