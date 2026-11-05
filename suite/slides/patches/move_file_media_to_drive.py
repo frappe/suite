@@ -1,8 +1,9 @@
 """Move deck pictures and videos still stored as Frappe Files into Drive media nodes.
 
 Until T3-21 the editor uploaded media as private `File` rows and wrote their
-`/private/files/` URL into the body. Only signed-in readers could open those,
-so a public-link guest saw no pictures. Build converted every deck it found;
+`/private/files/` URL into the body. Those open through the legacy proxy, and a
+media request carries no `X-Drive-Links`, so a guest on a share link saw no
+pictures. A guest on a public deck did. Build converted every deck it found;
 this converts the media uploaded after Build. Each URL a linked deck names
 gets one media node below that deck, holding the same bytes, and the body is
 repointed with `remap_media`. The `File` rows stay, so a body it could not
@@ -35,17 +36,16 @@ def execute():
             frappe.db.commit()
         except Exception as error:
             frappe.db.rollback()
+            traceback = frappe.get_traceback()
             frappe.log_error(
                 f"Slides: could not move the media of {deck.name} to Drive",
-                f"{error!r}\n\nRetry with: {retry}\n\n{frappe.get_traceback()}",
+                f"{error!r}\n\nRetry with: {retry}\n\n{traceback}",
             )
             frappe.db.commit()
             failed.append(deck.name)
     if failed:
-        print(
-            f"Slides: could not move the media of {', '.join(failed)} to Drive. "
-            f"See the Error Log. Retry with: {retry}"
-        )
+        names = ", ".join(failed)
+        print(f"Slides: could not move the media of {names} to Drive. See the Error Log. Retry with: {retry}")
 
 
 def convert_deck(docname: str, node: str) -> dict[str, str]:

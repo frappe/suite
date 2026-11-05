@@ -18,7 +18,7 @@ RETRY = "execute suite.slides.patches.move_file_media_to_drive.execute"
 
 @contextmanager
 def deck_transactions():
-    """Stand a savepoint in for each deck's transaction, so a failed deck really rolls back."""
+    # a savepoint stands in for each deck's transaction, so a failed deck really rolls back
     savepoint = "deck_transaction"
     rollback = frappe.db.rollback
 
@@ -119,6 +119,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         with deck_transactions():
             with patch.object(move_file_media_to_drive, "convert_deck", fail_for_one_deck):
                 execute()
+
             healthy_src = frappe.parse_json(frappe.db.get_value("Slide", healthy_slide, "elements"))[0]["src"]
             self.assertEqual(
                 frappe.db.get_value("Drive Node", healthy_src, "parent_node"), node_of(healthy.name)
@@ -144,7 +145,8 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
 
         ensure_user(OTHER_OWNER)
         frappe.set_user(OTHER_OWNER)
-        healthy = make_presentation(f"Healthy deck {frappe.generate_hash(6)}")
+        suffix = frappe.generate_hash(6)
+        healthy = make_presentation(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
@@ -169,18 +171,21 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
             self.assertEqual(frappe.db.get_value("Drive Root", root, "used_bytes"), used)
             self.assertEqual(frappe.db.count("Drive Node", {"parent_node": node}), children)
             self.assertEqual(frappe.db.count("Drive Storage Reservation", {"root": root}), reservations)
-            self.assertEqual([element["src"] for element in self.body()[1]], urls)
+            _, elements = self.body()
+            self.assertEqual([element["src"] for element in elements], urls)
             logs = failure_logs(self.deck.name)
             self.assertEqual(len(logs), 1)
             self.assertIn("DriveOverQuota", logs[0])
             self.assertIn(RETRY, logs[0])
-            healthy_src = frappe.parse_json(frappe.db.get_value("Slide", healthy_slide, "elements"))[0]["src"]
+            [healthy_element] = frappe.parse_json(frappe.db.get_value("Slide", healthy_slide, "elements"))
             self.assertEqual(
-                frappe.db.get_value("Drive Node", healthy_src, "parent_node"), node_of(healthy.name)
+                frappe.db.get_value("Drive Node", healthy_element["src"], "parent_node"),
+                node_of(healthy.name),
             )
 
             frappe.db.set_value("Drive Root", root, "quota_bytes", used + sum(sizes))
             execute()
 
-        for element in self.body()[1]:
+        _, elements = self.body()
+        for element in elements:
             self.assertEqual(frappe.db.get_value("Drive Node", element["src"], "parent_node"), node)
