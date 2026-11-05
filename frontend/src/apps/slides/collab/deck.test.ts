@@ -9,6 +9,7 @@ import {
   boxText,
   deleteBox,
   deleteSlide,
+  DRAWN_BLANK,
   moveBox,
   moveBoxToSlide,
   moveSlide,
@@ -537,5 +538,87 @@ describe('a tab that sees no slides', () => {
     sync(tabA, tabB)
     expect(captureUpdates(tabB, () => addBlankIfEmpty(tabB))).toEqual([])
     expect(slideIds(tabB)).toHaveLength(1)
+  })
+})
+
+describe('a move or add after an id that is not there', () => {
+  it('sends the slide to the end when the other tab deleted B: C after B', () => {
+    const [tabA, tabB] = [tab(100), tab(5)]
+    const [slideA, slideB, slideC] = [addSlide(tabA), addSlide(tabA), addSlide(tabA)]
+    sync(tabA, tabB)
+    deleteSlide(tabA, slideB)
+    sync(tabA, tabB)
+    moveSlide(tabB, slideC, slideB)
+    sync(tabA, tabB)
+    for (const doc of [tabA, tabB]) {
+      expect(slideIds(doc)).toEqual([slideA, slideC])
+    }
+  })
+
+  it('sends a box to the top of its slide', () => {
+    const doc = tab(1)
+    const slide = addSlide(doc)
+    const [under, over] = [addBox(doc, slide, {}), addBox(doc, slide, {})]
+    moveBox(doc, under, 'gone')
+    expect(boxIds(doc, slide)).toEqual([over, under])
+  })
+
+  it('adds a slide at the end', () => {
+    const doc = tab(1)
+    const first = addSlide(doc)
+    const added = addSlide(doc, {}, 'gone')
+    expect(slideIds(doc)).toEqual([first, added])
+  })
+
+  it('still puts an item first when asked to', () => {
+    const doc = tab(1)
+    const first = addSlide(doc)
+    const second = addSlide(doc)
+    moveSlide(doc, second, null)
+    expect(slideIds(doc)).toEqual([second, first])
+  })
+
+  it('leaves an item alone when asked to follow itself', () => {
+    const doc = tab(1)
+    const slides = [addSlide(doc), addSlide(doc), addSlide(doc)]
+    const [, middle] = slides
+    const boxes = [addBox(doc, middle, {}), addBox(doc, middle, {}), addBox(doc, middle, {})]
+    const updates = captureUpdates(doc, () => {
+      moveSlide(doc, middle, middle)
+      moveBox(doc, boxes[1], boxes[1])
+    })
+    expect(updates).toEqual([])
+    expect(slideIds(doc)).toEqual(slides)
+    expect(boxIds(doc, middle)).toEqual(boxes)
+  })
+})
+
+describe('the drawn blank', () => {
+  it('is the id a reader gets on a deck with no slides', () => {
+    expect(readSlides(tab(1)).map(({ id }) => id)).toEqual([DRAWN_BLANK])
+  })
+
+  it('takes no box, added or moved, and stores nothing', () => {
+    const doc = tab(1)
+    const slide = addSlide(doc)
+    const kept = addBox(doc, slide, {})
+    expect(() => addBox(doc, DRAWN_BLANK, {})).toThrow()
+    expect(() => moveBoxToSlide(doc, kept, DRAWN_BLANK)).toThrow()
+    expect(boxIds(doc, slide)).toEqual([kept])
+    expect(doc.getMap('boxes').size).toBe(1)
+  })
+})
+
+describe('a read value', () => {
+  it('is a copy: changing it leaves the stored value alone', () => {
+    const doc = tab(1)
+    const slide = addSlide(doc)
+    const id = addBox(doc, slide, { frame: { ...FRAME } })
+    const [{ boxes }] = readSlides(doc)
+    const [drawn] = boxes
+    ;(drawn.frame as typeof FRAME).left = 999
+    expect(box(doc, id).get('frame')).toEqual(FRAME)
+    const [{ boxes: again }] = readSlides(doc)
+    expect(again[0].frame).toEqual(FRAME)
   })
 })

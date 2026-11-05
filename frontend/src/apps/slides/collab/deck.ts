@@ -105,7 +105,7 @@ const SORTS_BEFORE = -1
 const SORTS_AFTER = 1
 const NOT_FIELDS = new Set(['order', 'parent', 'text'])
 const CONNECTOR_ENDS = ['connectorStart', 'connectorEnd']
-const DRAWN_BLANK = 'drawn-blank'
+export const DRAWN_BLANK = 'drawn-blank'
 
 function orderOf(item: Item) {
   return item.get('order') as string
@@ -182,10 +182,12 @@ function boxesInOrder(doc: Y.Doc, slideId: string) {
   return inOrder([...boxesOf(doc).entries()].filter(([, box]) => box.get('parent') === slideId))
 }
 
-// The order that puts an item right after afterId (null: first). Items tied
-// with afterId share its value, so the item lands after all of them
+// The order that puts an item right after afterId. Null means first. An id that
+// is gone, as when another tab just deleted it, means last. Items tied with
+// afterId share its value, so the item lands after all of them
 function orderAfter(siblings: Sibling[], afterId: string | null) {
-  const after = siblings.find(({ id }) => id === afterId)
+  const found = siblings.find(({ id }) => id === afterId) ?? siblings.at(-1)
+  const after = afterId === null ? undefined : found
   const lo = (after?.item.get('order') ?? '') as string
   const next = siblings.find(({ item }) => orderOf(item) > lo)
 
@@ -194,6 +196,14 @@ function orderAfter(siblings: Sibling[], afterId: string | null) {
 
 function orderOnTop(siblings: Sibling[]) {
   return orderAfter(siblings, siblings.at(-1)?.id ?? null)
+}
+
+// A box under the drawn blank would stay hidden for good, on every tab, since
+// that slide never exists. The tab adds a real slide first
+function refuseDrawnBlank(parent: string) {
+  if (parent === DRAWN_BLANK) {
+    throw new Error('Add a slide before adding to the drawn blank')
+  }
 }
 
 // A name outside the declared set would get the whole push refused, so it
@@ -229,6 +239,7 @@ export function addSlide(doc: Y.Doc, fields: Fields = {}, afterId?: string) {
 
 // New boxes go on top of their slide
 export function addBox(doc: Y.Doc, parent: string, fields: Fields) {
+  refuseDrawnBlank(parent)
   const id = randomId()
   doc.transact(() => {
     const siblings = boxesInOrder(doc, parent)
@@ -267,7 +278,7 @@ export function boxText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {
 
 export function moveSlide(doc: Y.Doc, id: string, afterId: string | null) {
   const slide = slidesOf(doc).get(id)
-  if (!slide) {
+  if (!slide || afterId === id) {
     return
   }
 
@@ -277,7 +288,7 @@ export function moveSlide(doc: Y.Doc, id: string, afterId: string | null) {
 
 export function moveBox(doc: Y.Doc, id: string, afterId: string | null) {
   const box = boxesOf(doc).get(id)
-  if (!box) {
+  if (!box || afterId === id) {
     return
   }
 
@@ -289,6 +300,7 @@ export function moveBox(doc: Y.Doc, id: string, afterId: string | null) {
 
 // A box moved to another slide goes on top there
 export function moveBoxToSlide(doc: Y.Doc, id: string, parent: string) {
+  refuseDrawnBlank(parent)
   const box = boxesOf(doc).get(id)
   if (!box) {
     return
@@ -330,7 +342,9 @@ export function boxIds(doc: Y.Doc, slideId: string) {
 function plainFields(id: string, item: Item): DeckItem {
   const fields = [...item.entries()].filter(([key]) => !NOT_FIELDS.has(key))
 
-  return { id, ...Object.fromEntries(fields) }
+  // A copy, since the old stores change what they get in place, and a change to
+  // the stored object would reach this tab alone with no update sent
+  return { id, ...structuredClone(Object.fromEntries(fields)) }
 }
 
 function boxEntriesBySlide(doc: Y.Doc) {
