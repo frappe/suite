@@ -39,6 +39,14 @@ def _debt(owner, removal, entries):
 
 BASELINE_DEBT = {
     **_debt(
+        "Suite Drive and Slides",
+        "Set the root quota through a Drive test helper instead of writing Drive Root directly.",
+        (
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+        ),
+    ),
+    **_debt(
         "Suite Drive and Meet",
         "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
         ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
