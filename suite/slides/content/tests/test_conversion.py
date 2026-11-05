@@ -595,7 +595,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         moved: list[str] = []
 
         with patch.object(
-            move_file_media_to_drive, "convert_deck", lambda docname, node: moved.append(node) or {}
+            move_file_media_to_drive, "convert_deck", lambda docname, node, _: moved.append(node) or {}
         ):
             move_file_media_to_drive.execute()
 
@@ -654,7 +654,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         with (
             patch.object(content, "find", seen_only_by_a_locking_read(content.find)),
             patch.object(
-                move_file_media_to_drive, "convert_deck", lambda docname, node: moved.append(node) or {}
+                move_file_media_to_drive, "convert_deck", lambda docname, node, _: moved.append(node) or {}
             ),
         ):
             with self.assertRaises(drive.DriveConflict):

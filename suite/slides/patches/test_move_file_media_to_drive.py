@@ -1,6 +1,7 @@
 """`move_file_media_to_drive`: a deck's File-backed pictures become media nodes below it."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 
 import frappe
@@ -79,7 +80,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         )
 
         frappe.set_user("Administrator")
-        convert_deck(self.deck.name, node_of(self.deck.name))
+        convert_deck(self.deck.name, node_of(self.deck.name), set())
 
         background, elements = self.body()
         picture = elements[0]["src"]
@@ -93,10 +94,10 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
 
         frappe.set_user("Administrator")
-        convert_deck(self.deck.name, node_of(self.deck.name))
+        convert_deck(self.deck.name, node_of(self.deck.name), set())
         _, converted = self.body()
 
-        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name)), {})
+        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name), set()), {})
         self.assertEqual(self.body()[1], converted)
 
     def test_a_url_of_another_decks_file_stays_on_the_legacy_read_path(self):
@@ -105,7 +106,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         self.write_body("#ffffffff", [{"type": "image", "src": foreign.file_url}])
 
         frappe.set_user("Administrator")
-        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name)), {})
+        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name), set()), {})
         self.assertEqual(self.body()[1][0]["src"], foreign.file_url)
 
     def test_a_failed_deck_stays_legacy_and_logged_while_the_others_convert_and_a_rerun_finishes_it(self):
@@ -120,8 +121,8 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         )
         self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
 
-        def fail_for_one_deck(docname, node):
-            mapping = convert(docname, node)
+        def fail_for_one_deck(docname, node, lost_urls):
+            mapping = convert(docname, node, lost_urls)
             if docname == self.deck.name:
                 raise OSError("storage is down")
             return mapping
@@ -256,3 +257,20 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
             frappe.db.get_value("Drive Node", converted["src"], "parent_node"), node_of(self.deck.name)
         )
         self.assertEqual(failure_logs(self.deck.name), [])
+
+    def test_lost_bytes_are_counted_in_the_output_and_a_clean_run_prints_no_count(self):
+        self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
+
+        frappe.set_user("Administrator")
+        with deck_transactions():
+            with (
+                self.reading_the_file_raises(FileNotFoundError("no bytes")),
+                redirect_stdout(StringIO()) as lost_run,
+            ):
+                execute()
+
+            with redirect_stdout(StringIO()) as clean_run:
+                execute()
+
+        self.assertIn("media URLs left unread: 1.", lost_run.getvalue())
+        self.assertNotIn("left unread", clean_run.getvalue())
