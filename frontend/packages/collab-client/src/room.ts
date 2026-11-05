@@ -138,6 +138,7 @@ export class Room implements CollabRoom {
       heardRows: this.puller.heardRows,
       pull: () => void this.pull(),
       changed: () => this.notifyListeners(),
+      isGuest: () => this.options.signedIn() === 'Guest',
       appliedThrough: () => this.appliedThrough,
       showsCaret: () => this.canWrite && this.bound && !this.closed,
       position: this.options.adapter.toPeerPosition,
