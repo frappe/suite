@@ -8,19 +8,29 @@
     <Button
       v-for="group in groups"
       :key="group.emoji"
-      :variant="group.mine ? 'subtle' : 'outline'"
+      variant="subtle"
+      class="rounded-full"
+      :class="{ '!bg-surface-gray-4 hover:!bg-surface-gray-5': group.mine }"
       :tooltip="group.who"
       :aria-pressed="group.mine"
       :disabled="readonly"
       @click="emit('react', group.emoji)"
     >
-      <span class="flex items-center gap-1">
+      <span class="flex items-center gap-1.5">
         <span>{{ group.emoji }}</span>
-        <span class="tabular-nums">{{ group.count }}</span>
+        <span class="tabular-nums" :class="group.mine ? 'text-ink-gray-8' : 'text-ink-gray-6'">
+          {{ group.count }}
+        </span>
       </span>
     </Button>
 
-    <ReactionPicker v-if="!readonly" :refusal @pick="(emoji: string) => emit('react', emoji)" />
+    <ReactionPicker
+      v-if="!readonly"
+      variant="subtle"
+      class="rounded-full"
+      :refusal
+      @pick="(emoji: string) => emit('react', emoji)"
+    />
   </div>
 </template>
 
