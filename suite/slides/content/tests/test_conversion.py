@@ -4,7 +4,9 @@ import json
 from unittest.mock import patch
 
 import frappe
+import frappe.client
 import pycrdt
+from frappe.model.document import Document
 
 from suite import content, drive
 from suite.content import compaction, conversions, convert, log
@@ -322,6 +324,95 @@ def seen_only_by_a_locking_read(find):
 
 
 class TestOldPathsOnAConvertedDeck(ConversionCase):
+    def owned_row(self, node: str) -> Document:
+        name = frappe.db.get_value("Slide", {"parent": slides_drive.docname_for_node(node)}, "name")
+        frappe.set_user(OWNER)
+        return frappe.get_doc("Slide", name)
+
+    def test_a_slide_row_saved_on_its_own_is_refused_and_writes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.rows(node)
+        row = self.owned_row(node)
+        row.elements = "[]"
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.save(row.as_dict())
+
+        frappe.db.rollback()
+        self.assertEqual(self.rows(node), before)
+
+    def test_a_new_slide_row_is_refused_and_writes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.rows(node)
+        row = self.owned_row(node)
+        fresh = frappe.get_doc(
+            doctype="Slide",
+            parent=row.parent,
+            parenttype="Presentation",
+            parentfield="slides",
+            client_id="new",
+            elements="[]",
+        )
+
+        with self.assertRaises(drive.DriveConflict):
+            fresh.insert()
+
+        frappe.db.rollback()
+        self.assertEqual(self.rows(node), before)
+
+    def test_a_slide_row_deleted_on_its_own_is_refused_and_writes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.rows(node)
+        row = self.owned_row(node)
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.delete_doc("Slide", row.name)
+
+        frappe.db.rollback()
+        self.assertEqual(self.rows(node), before)
+
+    def test_the_client_delete_of_a_slide_row_is_refused_and_writes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.rows(node)
+        row = self.owned_row(node)
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.delete("Slide", row.name)
+
+        frappe.db.rollback()
+        self.assertEqual(self.rows(node), before)
+
+    def test_a_row_moved_off_or_onto_a_converted_deck_is_refused(self):
+        waiting = self.old_deck([text_box("waiting")])
+        done = self.old_deck([text_box("done")])
+        self.convert(done)
+        before = self.rows(waiting), self.rows(done)
+
+        for from_node, to_node in ((done, waiting), (waiting, done)):
+            row = self.owned_row(from_node)
+            row.parent = slides_drive.docname_for_node(to_node)
+
+            with self.assertRaises(drive.DriveConflict):
+                row.save()
+
+            frappe.db.rollback()
+
+        self.assertEqual((self.rows(waiting), self.rows(done)), before)
+
+    def test_a_row_of_a_deck_not_converted_still_saves_on_its_own(self):
+        node = self.old_deck([text_box("box")])
+        row = self.owned_row(node)
+        row.elements = "[]"
+
+        frappe.client.save(row.as_dict())
+
+        [saved] = self.rows(node)
+        self.assertEqual(saved.elements, "[]")
+
     def test_save_slides_is_refused_and_writes_nothing(self):
         node = self.old_deck([text_box("box")])
         self.convert(node)
