@@ -33,7 +33,11 @@ def open_document(app: str, node: str, *, can_write: bool) -> bytes:
     doc = log.find(app, node)
     if doc is None:
         # A body this converter refused stays as it is until it changes, so the tab stops waiting for it
-        return state_frame("unconverted", **(body_refusal(app, node) or {}))
+        refusal = body_refusal(app, node)
+        if refusal is None:
+            return state_frame("unconverted")
+
+        return state_frame("unconverted", **refusal)
 
     try:
         snapshot = read(app, doc.id)
