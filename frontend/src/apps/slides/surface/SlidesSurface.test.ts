@@ -5,6 +5,7 @@ import {
   fakeServer,
   forgetTemplates,
   openedSurface,
+  previews,
   propertiesPanel,
   saves,
   served,
@@ -14,6 +15,7 @@ import {
   startsFromEmptyStore,
   themeChange,
   thumbnails,
+  versionRestore,
   versionsPanel,
   visits,
   warms,
@@ -1985,5 +1987,65 @@ describe('Slides push refused by the server', () => {
     await expect(versionsPanel.flush()).rejects.toThrow(
       'This presentation changed elsewhere. Reload before you do this.',
     )
+  })
+})
+
+describe('the Drive preview after a version restore', () => {
+  const firstSlide = (background: string) => ({ clientId: 'c1', background, elements: [] })
+  const secondSlide = { clientId: 'c2', background: '#ffffffff', elements: [] }
+
+  beforeEach(() => {
+    previews.length = 0
+    versionRestore.run = async () => {}
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function openDeck(deck: unknown[]) {
+    mounted = await openedSurface({ slides: deck })
+    mounted.root.querySelector<HTMLElement>('[data-versions]')?.click()
+    await nextTick()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  }
+
+  it('sends one picture after the pause when the first slide changes, and none when it does not', async () => {
+    const deck = [firstSlide('#ffffffff'), secondSlide]
+    await openDeck(deck)
+    versionRestore.run = async () => {
+      deck[0] = firstSlide('#000000ff')
+    }
+
+    await versionsPanel.restore('v1')
+    await vi.advanceTimersByTimeAsync(4_900)
+    expect(previews).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.waitFor(() => expect(previews).toHaveLength(1))
+    expect(editorSlides.value[0].background).toBe('#000000ff')
+    expect(saves).toEqual([])
+    expect(dirty.value).toBe(false)
+
+    await versionsPanel.restore('v2')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(previews).toHaveLength(1)
+  })
+
+  it('sends nothing when the restore fails, or when the deck cannot be reloaded after it', async () => {
+    await openDeck([firstSlide('#ffffffff'), secondSlide])
+    versionRestore.run = async () => {
+      throw new Error('The version is gone')
+    }
+
+    await expect(versionsPanel.restore('v1')).rejects.toThrow('The version is gone')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(previews).toEqual([])
+
+    versionRestore.run = async () => {}
+    mounted?.loads.push(Promise.resolve(new Response('{}', { status: 403 })))
+    await versionsPanel.restore('v2')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(previews).toEqual([])
   })
 })

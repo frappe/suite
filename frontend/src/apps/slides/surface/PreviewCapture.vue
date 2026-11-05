@@ -12,11 +12,12 @@ const props = defineProps<{
 }>()
 
 const frame = useTemplateRef<HTMLElement>('frame')
-usePreviewCapture({
+const { captureAfterPause } = usePreviewCapture({
   node: props.session.nodeId,
   context: props.session.credentials.context,
   target: frame,
 })
+defineExpose({ captureAfterPause })
 </script>
 
 <template>

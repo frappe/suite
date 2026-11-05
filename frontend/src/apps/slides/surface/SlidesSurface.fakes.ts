@@ -16,8 +16,15 @@ import { translationPlugin } from '@/platform/translation'
 
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 export const saves: unknown[] = []
+export const previews: unknown[] = []
+// what Drive's restore route does; a test swaps it to change the deck or to fail
+export const versionRestore = { run: async (_seq: string) => {} }
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
-const versionsPanel = vi.hoisted(() => ({ flush: async () => {}, writable: false }))
+const versionsPanel = vi.hoisted(() => ({
+  flush: async () => {},
+  restore: async (_seq: string) => {},
+  writable: false,
+}))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
 const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
@@ -49,8 +56,13 @@ vi.mock('@/api', async () => {
   const { createTransport } = await import('@/platform/transport')
   const { api: slides } = await import('../client/api')
   const { registration } = await import('../client/policy')
+  const { api: drive } = await import('@/apps/drive/client/generated')
   const engine = createApiClient(
-    { slides: async () => registration },
+    // Drive's own policy imports `@/api`, which is this module still loading.
+    {
+      slides: async () => registration,
+      drive: async () => ({ policy: () => ({ effects: 'none' }) }),
+    },
     { persistence: false, transport: createTransport({ fetch: server.fetch }) },
   )
 
@@ -58,8 +70,11 @@ vi.mock('@/api', async () => {
     engine.invalidate((reference) => reference.id === 'get_templates')
   }
 
-  return { api: { slides }, ...engine }
+  return { api: { slides, drive }, ...engine }
 })
+vi.mock('modern-screenshot', () => ({
+  domToWebp: async () => 'data:image/webp;base64,UklGRg==',
+}))
 vi.mock('frappe-ui', () => {
   const passthrough = {
     setup:
@@ -227,9 +242,18 @@ vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
 
 vi.doMock('./SlidesVersionsPanel.vue', () => ({
   default: {
-    props: { flush: { type: Function, default: null }, writable: Boolean },
-    setup(props: { flush: () => Promise<void>; writable: boolean }) {
+    props: {
+      flush: { type: Function, default: null },
+      restore: { type: Function, default: null },
+      writable: Boolean,
+    },
+    setup(props: {
+      flush: () => Promise<void>
+      restore: (seq: string) => Promise<void>
+      writable: boolean
+    }) {
       versionsPanel.flush = props.flush
+      versionsPanel.restore = props.restore
       return () => {
         versionsPanel.writable = props.writable
         return null
@@ -268,6 +292,7 @@ function session(
     access,
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
+    versions: { restore: (seq: string) => versionRestore.run(seq) },
     media,
   } as unknown as DocumentSession
 }
@@ -294,6 +319,11 @@ export async function openedSurface({
   }
 
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.includes('/preview')) {
+      previews.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ preview: null }), { status: 200 })
+    }
+
     if (url.includes('save_slides')) {
       if (fakeServer.isRefusing) {
         return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })

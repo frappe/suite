@@ -165,6 +165,7 @@ const {
   cancelRunningLoad,
 })
 const isSlideInteractionActive = ref(false)
+const previewCapture = ref<InstanceType<typeof PreviewCapture> | null>(null)
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
@@ -374,6 +375,8 @@ async function restoreVersion(seq: string) {
   try {
     await props.session.versions.restore(seq)
     await load()
+    // A reload that failed leaves the old slides in place, and they are not the restored version.
+    if (!loadError.value) previewCapture.value?.captureAfterPause()
   } finally {
     restoring.value = false
   }
@@ -923,7 +926,9 @@ onBeforeUnmount(() => {
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
-      <PreviewCapture v-if="editing" :session="session" />
+      <!-- `restoring` keeps it mounted while a restore pauses editing: it holds what it last sent,
+           and it must be there to take the capture the restore asks for. -->
+      <PreviewCapture v-if="editing || restoring" ref="previewCapture" :session="session" />
       <Slideshow v-if="presenting" :active-slide-id="presentedSlide" />
     </teleport>
   </div>

@@ -1,12 +1,15 @@
 /**
  * The deck's Drive preview: a picture of the first slide (drive-layer spec §9.2).
  *
- * A few seconds after the last save lands, the tab that writes the deck draws
- * the first slide and sends it to Drive's preview route. Drive stores it
- * without stamping the deck, so a capture is not an edit. A tab that does not
- * write the deck sends nothing: view only, open for editing in another tab, or
- * refused by the server. A save that leaves the first slide as it was last
- * sent sends nothing either.
+ * A few seconds after the last save lands, or after a version restore has
+ * reloaded the deck, the tab that writes the deck draws the first slide and
+ * sends it to Drive's preview route. Drive stores it without stamping the deck,
+ * so a capture is not an edit. A tab that does not write the deck sends nothing:
+ * view only, open for editing in another tab, or refused by the server.
+ *
+ * The first capture of a session is sent even if the first slide did not change,
+ * because that is how an older deck gets a preview. After that, a first slide
+ * that is as it was last sent sends nothing. Opening a deck sends nothing.
  */
 import { onScopeDispose, watch, type ShallowRef } from 'vue'
 
@@ -33,7 +36,7 @@ interface PreviewCaptureOptions {
 }
 
 /** Keep the node's preview in step with the first slide. Call it in a component's setup. */
-export function usePreviewCapture(options: PreviewCaptureOptions): void {
+export function usePreviewCapture(options: PreviewCaptureOptions) {
   let sentSlide: string | null = null
   let capturing = false
   let timer: number | undefined
@@ -41,10 +44,14 @@ export function usePreviewCapture(options: PreviewCaptureOptions): void {
   const writes = () => !inReadonlyMode.value && !saveFailed.value
   const settled = () => writes() && !dirty.value && !isSaving.value
 
-  watch(isSaving, (saving, wasSaving) => {
-    if (saving || !wasSaving || !settled()) return
+  /** The tab may not be writing yet or any more, so `capture` checks when the pause ends. */
+  function captureAfterPause() {
     window.clearTimeout(timer)
     timer = window.setTimeout(() => void capture(), PREVIEW_DELAY_MS)
+  }
+
+  watch(isSaving, (saving, wasSaving) => {
+    if (!saving && wasSaving && settled()) captureAfterPause()
   })
   onScopeDispose(() => window.clearTimeout(timer))
 
@@ -70,6 +77,8 @@ export function usePreviewCapture(options: PreviewCaptureOptions): void {
       capturing = false
     }
   }
+
+  return { captureAfterPause }
 }
 
 function firstSlide(): string | null {
