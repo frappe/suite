@@ -6,7 +6,8 @@ import { listTabs } from '@/apps/writer/extensions/tabs'
 /** A document's tabs and the one on screen. A single tab is just the document, so it lists none. */
 export function useDocumentTabs(editor: Editor) {
   const tabs = shallowRef<ReturnType<typeof listTabs>>([])
-  const activeTabId = ref<string>()
+  // The tab row unmounts under a version preview, and no event says which tab it comes back to
+  const activeTabId = ref(editor.storage.tab?.activeTabId ?? undefined)
 
   function updateTabs() {
     const all = listTabs(editor)
