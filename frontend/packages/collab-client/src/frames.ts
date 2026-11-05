@@ -46,15 +46,19 @@ export interface LiveOpenHeader extends DocumentHeader {
   base?: number
 }
 
-interface UnavailableOpenHeader extends DocumentHeader {
-  state: Exclude<OpenState, 'live'>
-  // An unconverted document the converter refused, as an outcome code such as `too_large`; it stays as it is until it changes
+interface DisabledOpenHeader extends DocumentHeader {
+  state: 'disabled'
+}
+
+interface UnconvertedOpenHeader extends DocumentHeader {
+  state: 'unconverted'
+  // The converter refused the document, as an outcome code such as `too_large`; it stays as it is until it changes
   refused?: string
   // Why, for a System Manager only
   reason?: string
 }
 
-export type OpenHeader = LiveOpenHeader | UnavailableOpenHeader
+export type OpenHeader = LiveOpenHeader | DisabledOpenHeader | UnconvertedOpenHeader
 
 export interface PullHeader extends DocumentHeader {
   // `rebuild`: the tab may hold a change quarantined since

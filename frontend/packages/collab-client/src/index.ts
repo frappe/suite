@@ -14,6 +14,7 @@ export {
   type CollabAdapter,
   type LostAccess,
   type Opened,
+  type Refusal,
   type Peer,
   type RestoreResult,
   type RoomPresence,

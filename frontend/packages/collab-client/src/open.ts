@@ -107,9 +107,17 @@ export async function openRoom(options: OpenOptions): Promise<Opened> {
   }
 
   const { header, checkpoint, rows } = decodeFrame<OpenHeader>(openAnswer.bytes)
-  if (header.state !== 'live') {
-    const { state, refused, reason } = header
-    return { state, ...(refused && { refused }), ...(reason && { reason }) }
+  if (header.state === 'disabled') {
+    return { state: 'disabled' }
+  }
+
+  if (header.state === 'unconverted') {
+    const { refused, reason } = header
+    if (!refused) {
+      return { state: 'unconverted' }
+    }
+
+    return { state: 'unconverted', refusal: { outcome: refused, ...(reason && { reason }) } }
   }
 
   const room = await openLive(options, header, checkpoint, rows)

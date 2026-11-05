@@ -16,7 +16,12 @@
 import { toast } from 'frappe-ui'
 import { computed, shallowRef } from 'vue'
 
-import { type CollabSession, type LostAccess, type RoomStatus } from '@/platform/collab'
+import {
+  type CollabSession,
+  type LostAccess,
+  type Refusal,
+  type RoomStatus,
+} from '@/platform/collab'
 import { GUEST_USER } from '@/platform/collab/colours'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -32,7 +37,7 @@ import {
 import { createPeople } from '../../collab/people'
 import { readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
-import { conversionNow, openSheetRoom, type Refusal, type SheetRoom } from '../../collab/room'
+import { conversionNow, openSheetRoom, type SheetRoom } from '../../collab/room'
 import {
   selectionFromIds,
   selectionToIds,
@@ -83,8 +88,12 @@ export function useCollabRoom({
 }: CollabRoomOptions) {
   const sheet = shallowRef<SheetRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
-  const waiting = shallowRef(false)
-  const refusal = shallowRef<Refusal | null>(null)
+  // An old sheet's conversion while this tab shows its body read-only: null
+  // once the room is live (or never opened).
+  const conversion = shallowRef<
+    { state: 'waiting' } | { state: 'refused'; refusal: Refusal } | null
+  >(null)
+  const waiting = computed(() => conversion.value?.state === 'waiting')
   const canUndo = shallowRef(false)
   const canRedo = shallowRef(false)
   const presenceTick = shallowRef(0)
@@ -111,7 +120,10 @@ export function useCollabRoom({
   async function openNow(client: WorkbookClient): Promise<'live' | 'disabled' | 'unconverted'> {
     const opened = await open({ session, client, stores: getStores() })
     if (opened.state !== 'live') {
-      if (opened.state === 'unconverted') waitForConversion(opened.refusal ?? null)
+      if (opened.state === 'unconverted') {
+        if (opened.refusal) showRefused(opened.refusal)
+        else waitForConversion()
+      }
       return opened.state
     }
     if (closed) {
@@ -123,19 +135,23 @@ export function useCollabRoom({
   }
 
   // The editor shows the old body read-only meanwhile; once the sheet opens
-  // live, the editor is opened again on it. A refused sheet stays refused
-  // until its body or the converter changes, so this tab stops asking.
-  function waitForConversion(refused: Refusal | null) {
-    waiting.value = true
-    refusal.value = refused
-    if (refused) return
+  // live, the editor is opened again on it.
+  function waitForConversion() {
+    conversion.value = { state: 'waiting' }
     retry = setTimeout(async () => {
       if (closed) return
       const now = await probe(session).catch(() => ({ state: 'waiting' }) as const)
       if (closed) return
       if (now.state === 'live') onReopen()
-      else waitForConversion(now.state === 'refused' ? now.refusal : null)
+      else if (now.state === 'refused') showRefused(now.refusal)
+      else waitForConversion()
     }, retryMs)
+  }
+
+  // A refused sheet stays refused until its body or the converter changes, so
+  // this tab stops asking.
+  function showRefused(refusal: Refusal) {
+    conversion.value = { state: 'refused', refusal }
   }
 
   function attach(s: SheetRoom) {
@@ -225,12 +241,13 @@ export function useCollabRoom({
   // This tab's own edits the server has not taken; other tabs' are theirs.
   const hasUnsent = () => !!status.value && hasUnsentWork(status.value)
   const editingState = computed(() => {
-    if (waiting.value) return 'closed'
+    if (conversion.value) return 'closed'
     return status.value ? editingStateOf(status.value) : 'editing'
   })
   const banner = computed(() => {
-    if (refusal.value) return notPreparedBanner(refusal.value)
-    if (waiting.value) return upgradingBanner()
+    const c = conversion.value
+    if (c?.state === 'refused') return notPreparedBanner(c.refusal)
+    if (c) return upgradingBanner()
     return status.value ? bannerFor(status.value) : null
   })
 

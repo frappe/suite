@@ -20,7 +20,13 @@
 
 import * as Y from 'yjs'
 
-import { openCollabRoom, type CollabRoom, type CollabSession, type Opened } from '@/platform/collab'
+import {
+  openCollabRoom,
+  type CollabRoom,
+  type CollabSession,
+  type Opened,
+  type Refusal,
+} from '@/platform/collab'
 import { getCookieSessionUser } from '@/platform/session'
 
 import type { WorkbookClient } from '../core/client'
@@ -38,18 +44,9 @@ export interface SheetRoom {
 }
 
 /**
- * Why the converter refused an old sheet: `outcome` is a code such as
- * `too_large`; `reason` reaches System Managers only. The sheet stays read-only
- * until its body changes or the converter does.
- */
-export interface Refusal {
-  outcome: string
-  reason?: string
-}
-
-/**
  * `disabled`: Sheets' collaboration is off on this site, so the old save path runs.
- * `unconverted`: an old sheet, read-only; with `refusal` once the converter refused it.
+ * `unconverted`: an old sheet, read-only; with `refusal` once the converter
+ * refused it, which holds until its body or the converter changes.
  */
 export type OpenedSheet =
   | { state: 'live'; sheet: SheetRoom }
@@ -59,11 +56,6 @@ export type OpenedSheet =
 /** Where an old sheet's conversion stands now. */
 export type ConversionNow =
   { state: 'live' } | { state: 'waiting' } | { state: 'refused'; refusal: Refusal }
-
-function refusalOf(opened: Opened): Refusal | null {
-  if (opened.state === 'live' || !opened.refused) return null
-  return { outcome: opened.refused, ...(opened.reason && { reason: opened.reason }) }
-}
 
 export interface OpenSheetOptions {
   session: CollabSession
@@ -103,11 +95,7 @@ export async function openSheetRoom({
       return { state: 'disabled' }
     throw error
   }
-  if (opened.state === 'disabled') return { state: 'disabled' }
-  if (opened.state !== 'live') {
-    const refusal = refusalOf(opened)
-    return { state: 'unconverted', ...(refusal && { refusal }) }
-  }
+  if (opened.state !== 'live') return opened
   const { room } = opened
   try {
     return { state: 'live', sheet: await glueRoom(room, client, stores) }
@@ -123,10 +111,9 @@ export async function conversionNow(
   open: typeof openCollabRoom = openCollabRoom,
 ): Promise<ConversionNow> {
   const opened = await open({ session, adapter: sheetsAdapter })
-  if (opened.state !== 'live') {
-    const refusal = refusalOf(opened)
-    return refusal ? { state: 'refused', refusal } : { state: 'waiting' }
-  }
+  if (opened.state === 'unconverted' && opened.refusal)
+    return { state: 'refused', refusal: opened.refusal }
+  if (opened.state !== 'live') return { state: 'waiting' }
   await opened.room.close()
   return { state: 'live' }
 }

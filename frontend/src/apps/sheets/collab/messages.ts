@@ -7,7 +7,7 @@
 // - a full sheet (4 MiB) takes only deletes;
 // - lost edit access turns the sheet read-only, lost read access closes it.
 
-import type { Blocked, RoomStatus } from '@/platform/collab'
+import type { Blocked, Refusal, RoomStatus } from '@/platform/collab'
 import { translate as __ } from '@/platform/translation'
 
 export interface Banner {
@@ -180,7 +180,7 @@ export function bannerFor(s: RoomStatus): Banner | null {
  * An old spreadsheet the converter refused, read-only: it is tried again only
  * once its body or the converter changes. `reason` reaches System Managers only.
  */
-export function notPreparedBanner(refusal: { outcome: string; reason?: string }): Banner {
+export function notPreparedBanner(refusal: Refusal): Banner {
   let text =
     refusal.outcome === 'too_large'
       ? __('This spreadsheet is too large to edit together, so it stays read-only.')

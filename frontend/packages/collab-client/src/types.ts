@@ -1,7 +1,7 @@
 import type { Awareness } from 'y-protocols/awareness'
 import type * as yjs from 'yjs'
 
-import type { Limits, OpenState } from './frames'
+import type { Limits } from './frames'
 import type { DeviceStore } from './store'
 
 export interface Answer {
@@ -189,7 +189,14 @@ export interface CollabRoom {
   isCommitted(items: readonly yjs.ID[]): boolean
 }
 
-// `refused` and `reason`: as the open header carries them (frames.ts)
+// Why the converter refused a document: `outcome` is a code such as `too_large`; `reason` reaches System Managers only
+export interface Refusal {
+  outcome: string
+  reason?: string
+}
+
+// An unconverted document carries its `refusal` once the converter refused it
 export type Opened =
   | { state: 'live'; room: CollabRoom }
-  | { state: Exclude<OpenState, 'live'>; refused?: string; reason?: string }
+  | { state: 'disabled' }
+  | { state: 'unconverted'; refusal?: Refusal }

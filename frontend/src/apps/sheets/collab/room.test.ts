@@ -118,7 +118,10 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
 
   it('says when the converter refused the sheet, and why when the server says', async () => {
     const open = () =>
-      Promise.resolve<Opened>({ state: 'unconverted', refused: 'check', reason: 'check: copy' })
+      Promise.resolve<Opened>({
+        state: 'unconverted',
+        refusal: { outcome: 'check', reason: 'check: copy' },
+      })
     const opened = await openSheetRoom({ session, client: await newClient(), stores: {}, open })
     expect(opened).toEqual({
       state: 'unconverted',
@@ -227,7 +230,10 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
       state: 'waiting',
     })
     expect(
-      await conversionNow(session, async () => ({ state: 'unconverted', refused: 'too_large' })),
+      await conversionNow(session, async () => ({
+        state: 'unconverted',
+        refusal: { outcome: 'too_large' },
+      })),
     ).toEqual({ state: 'refused', refusal: { outcome: 'too_large' } })
   })
 

@@ -34,6 +34,7 @@ export {
   type LostAccess,
   type Opened,
   type Peer,
+  type Refusal,
   type RecoveryRecord,
   type RestoreResult,
   type RoomPresence,

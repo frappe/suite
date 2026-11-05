@@ -130,8 +130,7 @@ describe('collab room', () => {
     })
     await expect(opened).resolves.toEqual({
       state: 'unconverted',
-      refused: 'check',
-      reason: 'check: copy',
+      refusal: { outcome: 'check', reason: 'check: copy' },
     })
   })
 
