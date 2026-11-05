@@ -107,8 +107,10 @@ const NOT_FIELDS = new Set(['order', 'parent', 'text'])
 const CONNECTOR_ENDS = ['connectorStart', 'connectorEnd']
 export const DRAWN_BLANK = 'drawn-blank'
 
+// Undo can restore an item without a key a co-editor changed. No order sorts
+// first, then by id, so every tab agrees until ticket 53's write-back
 function orderOf(item: Item) {
-  return item.get('order') as string
+  return (item.get('order') ?? '') as string
 }
 
 function slidesOf(doc: Y.Doc): Y.Map<Item> {

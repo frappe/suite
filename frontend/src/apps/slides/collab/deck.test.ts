@@ -20,6 +20,11 @@ import {
 
 const FRAME = { left: 10, top: 10, width: 100, height: 50 }
 
+interface Steps {
+  remove: () => void
+  change: () => void
+}
+
 function tab(clientID: number) {
   const doc = new Y.Doc()
   doc.clientID = clientID
@@ -620,5 +625,105 @@ describe('a read value', () => {
     expect(box(doc, id).get('frame')).toEqual(FRAME)
     const [{ boxes: again }] = readSlides(doc)
     expect(again[0].frame).toEqual(FRAME)
+  })
+})
+
+describe('an item undo restored without a key', () => {
+  // Only a doc that keeps deleted items loses the key: with gc on, the undo
+  // brings the old value back
+  function keepingTab(clientID: number) {
+    const doc = new Y.Doc({ gc: false })
+    doc.clientID = clientID
+
+    return doc
+  }
+
+  // A deletes under an undo manager while B changes the same item. After the
+  // sync, A's undo brings the item back with no such key on either tab
+  function undoAcrossChange(tabA: Y.Doc, tabB: Y.Doc, root: string, steps: Steps) {
+    const undo = new Y.UndoManager(tabA.getMap(root))
+    steps.remove()
+    steps.change()
+    sync(tabA, tabB)
+    undo.undo()
+    sync(tabA, tabB)
+  }
+
+  function deckWithThreeBoxes() {
+    const [tabA, tabB] = [keepingTab(100), keepingTab(5)]
+    const slide = addSlide(tabA)
+    const boxes = [
+      addBox(tabA, slide, { type: 'text', frame: FRAME }),
+      addBox(tabA, slide, { type: 'text', frame: FRAME }),
+      addBox(tabA, slide, { type: 'text', frame: FRAME }),
+    ]
+    sync(tabA, tabB)
+
+    return { tabA, tabB, slide, boxes }
+  }
+
+  function loseOrder({ tabA, tabB, boxes }: ReturnType<typeof deckWithThreeBoxes>) {
+    undoAcrossChange(tabA, tabB, 'boxes', {
+      remove: () => deleteBox(tabA, boxes[1]),
+      change: () => moveBox(tabB, boxes[1], boxes[2]),
+    })
+  }
+
+  it('reads a box with no order the same on every tab and writes nothing', () => {
+    const deck = deckWithThreeBoxes()
+    const { tabA, tabB, slide, boxes } = deck
+    loseOrder(deck)
+    expect(box(tabA, boxes[1]).has('order')).toBe(false)
+    expect(box(tabB, boxes[1]).has('order')).toBe(false)
+
+    const written = captureUpdates(tabA, () => {
+      expect(boxIds(tabA, slide)).toEqual([boxes[1], boxes[0], boxes[2]])
+      const [drawn] = readSlides(tabA)
+      expect(drawn.boxes.map(({ id }) => id)).toEqual(boxIds(tabA, slide))
+    })
+    expect(boxIds(tabB, slide)).toEqual(boxIds(tabA, slide))
+    expect(written).toEqual([])
+  })
+
+  it('still places a move after the box with no order, and a new box on top', () => {
+    const deck = deckWithThreeBoxes()
+    const { tabA, slide, boxes } = deck
+    loseOrder(deck)
+    moveBox(tabA, boxes[2], boxes[1])
+    expect(boxIds(tabA, slide)).toEqual([boxes[1], boxes[2], boxes[0]])
+    const added = addBox(tabA, slide, { type: 'text', frame: FRAME })
+    expect(boxIds(tabA, slide).at(-1)).toBe(added)
+  })
+
+  it('hides a box with no parent like any leftover', () => {
+    const { tabA, tabB, slide, boxes } = deckWithThreeBoxes()
+    const other = addSlide(tabB)
+    undoAcrossChange(tabA, tabB, 'boxes', {
+      remove: () => deleteBox(tabA, boxes[1]),
+      change: () => moveBoxToSlide(tabB, boxes[1], other),
+    })
+    expect(box(tabA, boxes[1]).has('parent')).toBe(false)
+
+    const written = captureUpdates(tabA, () => {
+      for (const doc of [tabA, tabB]) {
+        expect(boxIds(doc, slide)).toEqual([boxes[0], boxes[2]])
+        const drawn = readSlides(doc).flatMap((read) => read.boxes.map(({ id }) => id))
+        expect(drawn).toEqual([boxes[0], boxes[2]])
+      }
+    })
+    expect(written).toEqual([])
+  })
+
+  it('reads a slide with no order the same on every tab', () => {
+    const [tabA, tabB] = [keepingTab(100), keepingTab(5)]
+    const slides = [addSlide(tabA), addSlide(tabA), addSlide(tabA)]
+    sync(tabA, tabB)
+    undoAcrossChange(tabA, tabB, 'slides', {
+      remove: () => deleteSlide(tabA, slides[1]),
+      change: () => moveSlide(tabB, slides[1], slides[2]),
+    })
+    expect(tabA.getMap<Y.Map<unknown>>('slides').get(slides[1])!.has('order')).toBe(false)
+    expect(slideIds(tabA)).toEqual([slides[1], slides[0], slides[2]])
+    expect(slideIds(tabB)).toEqual(slideIds(tabA))
   })
 })
