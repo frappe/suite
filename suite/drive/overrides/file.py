@@ -68,17 +68,16 @@ class File(FrappeFile):
 
     def _validate_storage_fields(self):
         """Fields of an existing row that only Drive's storage flows may change."""
-        storage_flow = self.flags.file_created or self.flags.drive_disk_rename
         if self.has_value_changed("file_url"):
             # A File row grants read access to whatever its file_url names, so only
             # Drive's storage flows may repoint it.
-            if not storage_flow:
+            if not (self.flags.file_created or self.flags.drive_disk_rename):
                 frappe.throw("Only Drive can change the URL of a file.", frappe.ValidationError)
             if not self.flags.file_created and not self._not_in_disk():
                 self.manager.get_local_path(self.file_url)
         # A Link row's url is a web address that no storage check has seen. Served as a
         # file, it would read whatever that address resolves to on the site.
-        if self._link_type_changed() and not storage_flow:
+        if self._link_type_changed():
             frappe.throw("A file cannot become a link, or a link a file.", frappe.ValidationError)
         # file_name is coupled to the blob path; only rename()/move() may change it.
         if self.has_value_changed("file_name") and not self.flags.drive_disk_rename:
@@ -105,7 +104,7 @@ class File(FrappeFile):
         url = self.file_url[len(self.get_site_url_prefix()) :]
         if ".." in storage_key(url).split("/"):
             frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
-        # Drive's own flows skip this method. A fetch url that no row holds names a bucket
+        # Drive's uploads skip this method. A fetch url that no row holds names a bucket
         # object nobody granted. Migrations run as Administrator and insert the first row.
         if (
             url.startswith(S3_URL_PREFIX)
