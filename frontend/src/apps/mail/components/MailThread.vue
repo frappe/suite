@@ -181,36 +181,28 @@
                           <Badge v-if="mail.draft" :label="__('Draft')" theme="red" class="w-fit" />
                           <MailDate :datetime="mail.received_at" />
                         </div>
-                        <div v-if="!readonly" class="flex items-center gap-1">
-                          <!-- .stop: this row folds the message when pressed. -->
-                          <div v-if="addReactionSpot(mail) === 'header'" class="flex" @click.stop>
-                            <ReactionPicker
-                              :refusal="mail.cannot_react"
-                              @pick="(emoji: string) => react(mail, emoji)"
-                            />
-                          </div>
-                          <MailActions
-                            :mailbox
-                            :mail
-                            :draft-mail="draftMails[mail.name]"
-                            :is-collapsed="isCollapsed(mail)"
-                            :show-reply-all="showReplyAll(mail)"
-                            :pop-out-draft
-                            :reply
-                            :reply-all
-                            :forward
-                            :reload-mails="handleReload"
-                            :drop-mail
-                            :thread="thread"
-                            @set-flagged="onSetFlagged"
-                            @sync-unseen="handleSyncUnseen"
-                            @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
-                            @mark-mail-spam="
-                              (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
-                            "
-                            @delete-mail="(m: Mail) => emit('deleteMail', m)"
-                          />
-                        </div>
+                        <MailActions
+                          v-if="!readonly"
+                          :mailbox
+                          :mail
+                          :draft-mail="draftMails[mail.name]"
+                          :is-collapsed="isCollapsed(mail)"
+                          :show-reply-all="showReplyAll(mail)"
+                          :pop-out-draft
+                          :reply
+                          :reply-all
+                          :forward
+                          :reload-mails="handleReload"
+                          :drop-mail
+                          :thread="thread"
+                          @set-flagged="onSetFlagged"
+                          @sync-unseen="handleSyncUnseen"
+                          @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
+                          @mark-mail-spam="
+                            (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
+                          "
+                          @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                        />
                       </div>
                       <!-- An expanded mail always needs the gap between header and body —
 								     keying it on the preview alone left image-only mails (empty text
@@ -438,17 +430,6 @@
                                         'flex gap-1 sm:-mr-1.5'
                                 "
                               >
-                                <!-- .stop: this row folds the message when pressed. -->
-                                <div
-                                  v-if="!isCollapsed(mail) && addReactionSpot(mail) === 'header'"
-                                  class="flex"
-                                  @click.stop
-                                >
-                                  <ReactionPicker
-                                    :refusal="mail.cannot_react"
-                                    @pick="(emoji: string) => react(mail, emoji)"
-                                  />
-                                </div>
                                 <MailActions
                                   :mailbox
                                   :mail
@@ -700,12 +681,6 @@
                   :class="{ '!h-16 flex-1 rounded-none': isMobile }"
                   @click="action.onClick"
                 />
-                <ReactionPicker
-                  v-if="addReactionSpot(thread.at(-1)!) === 'bar'"
-                  :refusal="thread.at(-1)!.cannot_react"
-                  variant="outline"
-                  @pick="(emoji: string) => react(thread.at(-1)!, emoji)"
-                />
               </div>
             </div>
           </div>
@@ -782,7 +757,6 @@ import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
-import ReactionPicker from '@/apps/mail/components/ReactionPicker.vue'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import SenderCard from '@/apps/mail/components/SenderCard.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
@@ -838,7 +812,6 @@ import {
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
-import { reactionButtonSpot } from '@/apps/mail/utils/reactions'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { submissionRow } from '@/apps/mail/utils/submission'
 import {
@@ -1587,14 +1560,6 @@ const { reactionsOn, react } = useMessageReactions(
     else void threadFallback.refetch().catch(() => {})
   },
 )
-// The phone's bar beside Forward holds its actions and nothing else, so there the header offers it.
-const addReactionSpot = (mail: Mail) =>
-  mail.draft
-    ? null
-    : reactionButtonSpot(
-        reactionsOn(mail).length > 0,
-        !isMobile.value && mail === thread.value.at(-1),
-      )
 const replyForwardActions = computed(() =>
   [
     {

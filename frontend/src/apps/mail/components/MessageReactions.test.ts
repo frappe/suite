@@ -58,8 +58,15 @@ function render(reactions: MailReaction[], readonly = false, refusal?: string) {
 }
 
 describe('MessageReactions', () => {
-  it('takes up no room on a message with no reactions', () => {
-    const { pick, chips } = render([])
+  it('offers adding the first reaction on a message with none', () => {
+    const { pick, chips, onReact } = render([])
+    expect(chips).toEqual([])
+    pick?.click()
+    expect(onReact).toHaveBeenCalledWith('🎉')
+  })
+
+  it('takes up no room in a read-only view of a message with none', () => {
+    const { pick, chips } = render([], true)
     expect(pick).toBeNull()
     expect(chips).toEqual([])
   })

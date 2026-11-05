@@ -1,10 +1,10 @@
 <!--
-  The reactions a message has collected, as one chip per emoji, and the button to add another. Nothing
-  at all until it has one: the button is elsewhere until then (see reactionButtonSpot). Pressing a
-  chip adds the reader to it. Pressing your own says you already reacted.
+  The foot of a message: its reactions, one chip per emoji, and the button to add one. Pressing a chip
+  adds the reader to it. Pressing your own says you already reacted. In a read-only view with nothing
+  to show, it isn't there at all.
 -->
 <template>
-  <div v-if="groups.length" class="flex flex-wrap items-center gap-1.5">
+  <div v-if="groups.length || !readonly" class="flex flex-wrap items-center gap-1.5">
     <!-- The tooltip is on a wrapper so that it still says who reacted when the chip is disabled,
          and a disabled button takes no pointer events of its own. -->
     <Tooltip v-for="group in groups" :key="group.emoji" :text="group.who">

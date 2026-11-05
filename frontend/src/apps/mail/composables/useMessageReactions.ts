@@ -11,10 +11,8 @@ import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 /**
  * Reacting to the messages of one open conversation.
  *
- * A message can be reacted to from its header, from its chips, and, for the newest, from beside
- * Forward, so what the reader just reacted with is held here for all of them, until the thread comes
- * back with it. A reaction is a mail of its own, folded onto its target by the server (see
- * collapse_reactions).
+ * What the reader just reacted with is held here until the thread comes back with it. A reaction is
+ * a mail of its own, folded onto its target by the server (see collapse_reactions).
  *
  * Delivered mail can't be recalled, so the only way to take a reaction back is the Undo on the toast.
  * Unlike a sent mail, the wait is held here and not on the server: a reaction nothing has been told

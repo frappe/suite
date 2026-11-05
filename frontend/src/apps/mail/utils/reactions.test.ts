@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MailReaction } from '@/apps/mail/types'
-import { groupReactions, hasReacted, reactionButtonSpot } from '@/apps/mail/utils/reactions'
+import { groupReactions, hasReacted } from '@/apps/mail/utils/reactions'
 
 const reaction = (emoji: string, from_email: string, from_name = ''): MailReaction => ({
   emoji,
@@ -64,20 +64,5 @@ describe('hasReacted', () => {
 
   it('does not count someone else’s reaction as the reader’s', () => {
     expect(hasReacted(reactions, '😂', own)).toBe(false)
-  })
-})
-
-describe('reactionButtonSpot', () => {
-  it('sits beside the chips once a message has any, wherever it is in the conversation', () => {
-    expect(reactionButtonSpot(true, true)).toBe('chips')
-    expect(reactionButtonSpot(true, false)).toBe('chips')
-  })
-
-  it('sits beside Forward on a message with no reactions that the row can take', () => {
-    expect(reactionButtonSpot(false, true)).toBe('bar')
-  })
-
-  it('sits in the header of a message with no reactions that the row cannot take', () => {
-    expect(reactionButtonSpot(false, false)).toBe('header')
   })
 })
