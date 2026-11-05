@@ -19,7 +19,7 @@ import { randomId } from '@/platform/random-id'
 
 export const ROOT = { slides: 'slides', boxes: 'boxes' } as const
 
-const SLIDE_FIELDS = new Set([
+export const SLIDE_FIELDS = new Set([
   'background',
   'transition',
   'transitionDuration',
@@ -27,7 +27,7 @@ const SLIDE_FIELDS = new Set([
   'advanceAfter',
 ])
 
-const BOX_FIELDS = new Set([
+export const BOX_FIELDS = new Set([
   'type',
   'frame',
   'rotation',
@@ -79,7 +79,8 @@ const BOX_FIELDS = new Set([
 export const SLIDE_KEYS = ['order', ...SLIDE_FIELDS]
 export const BOX_KEYS = ['parent', 'order', 'text', ...BOX_FIELDS]
 
-const TYPES_WITH_TEXT = new Set(['text', 'shape', 'table'])
+export const BOX_TYPES = new Set(['text', 'image', 'video', 'shape', 'table'])
+export const TYPES_WITH_TEXT = new Set(['text', 'shape', 'table'])
 
 type Item = Y.Map<unknown>
 type Fields = Record<string, unknown>
@@ -223,6 +224,38 @@ function writeFields(item: Item, fields: Fields, declared: Set<string>) {
     } else {
       item.set(key, value)
     }
+  }
+}
+
+// A whole old deck as one change, each list already in its stacking order: every item keeps its id and
+// takes the value a tab appending it would write, so later moves find room on both sides
+export function writeDeck(doc: Y.Doc, slides: DeckSlide[]) {
+  doc.transact(() => {
+    let slideOrder = ''
+    for (const { id, boxes, ...fields } of slides) {
+      slideOrder = orderPast(slideOrder)
+      const slide: Item = new Y.Map()
+      slidesOf(doc).set(id, slide)
+      slide.set('order', slideOrder)
+      writeFields(slide, fields, SLIDE_FIELDS)
+      writeBoxes(doc, id, boxes)
+    }
+  })
+}
+
+function writeBoxes(doc: Y.Doc, parent: string, boxes: DeckItem[]) {
+  let boxOrder = ''
+  for (const { id, ...fields } of boxes) {
+    boxOrder = orderPast(boxOrder)
+    const box: Item = new Y.Map()
+    boxesOf(doc).set(id, box)
+    box.set('parent', parent)
+    box.set('order', boxOrder)
+    if (TYPES_WITH_TEXT.has(fields.type as string)) {
+      box.set('text', new Y.XmlFragment())
+    }
+
+    writeFields(box, fields, BOX_FIELDS)
   }
 }
 

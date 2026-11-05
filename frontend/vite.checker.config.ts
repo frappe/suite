@@ -17,7 +17,7 @@ const converterVersion = JSON.parse(
 ).version
 
 // jsdom draws no canvas without the optional native package
-const noCanvas: Plugin = {
+export const noCanvas: Plugin = {
   name: 'no-canvas',
   resolveId: (id) => (id === 'canvas' ? '\0no-canvas' : null),
   load: (id) => (id === '\0no-canvas' ? 'module.exports = null' : null),
@@ -62,7 +62,7 @@ const publishedBuilds = [
 ]
 
 // Fails the build when an edit's text is gone or an ESM build comes back, so an upgrade can't skip one
-const jsdomInBundle: Plugin = {
+export const jsdomInBundle: Plugin = {
   name: 'jsdom-in-bundle',
   transform(code, id) {
     const unbundled = publishedBuilds.find((build) => id.startsWith(build.unbundled + path.sep))
@@ -97,7 +97,7 @@ const jsdomInBundle: Plugin = {
   },
 }
 
-const publishedAliases = publishedBuilds.map(({ name, build }) => {
+export const publishedAliases = publishedBuilds.map(({ name, build }) => {
   const find = new RegExp(`^${name}$`)
   return { find, replacement: build }
 })
