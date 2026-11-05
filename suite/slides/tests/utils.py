@@ -6,6 +6,8 @@ import uuid
 from contextlib import contextmanager
 
 import frappe
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.drive._core.access import grant, revoke
@@ -38,6 +40,26 @@ def unique_bytes(base64_data):
 def push_capture(presentation_name):
     """Push one distinct browser capture as the deck's Drive preview, as the session user."""
     drive.push_preview(node_of(presentation_name), unique_bytes(WEBP_1PX), "image/webp")
+
+
+@contextmanager
+def link_header(*tokens: str):
+    """Carry the given codes in `X-Drive-Links` for the block, as the `/d/` surface does.
+
+    A real `werkzeug` request, not a patched reader: the count the limit acts
+    on is the count of comma-separated items the header actually carries, and a
+    stub that hands over a list would skip the split the limit is written on.
+    """
+    builder = EnvironBuilder(
+        path="/api/method/suite.slides.api.composite.composite_group",
+        headers={"X-Drive-Links": ",".join(tokens)},
+    )
+    previous = getattr(frappe.local, "request", None)
+    frappe.local.request = Request(builder.get_environ())
+    try:
+        yield
+    finally:
+        frappe.local.request = previous
 
 
 def make_presentation(title, parent=None, **fields):
