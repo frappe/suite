@@ -242,8 +242,9 @@ class TestMediaFileAccess(IntegrationTestCase):
                 }
             ).insert()
             for link in (self.file.file_url, get_url() + self.file.file_url):
-                with self.subTest(link=link), self.assertRaises(
-                    (frappe.ValidationError, frappe.PermissionError)
+                with (
+                    self.subTest(link=link),
+                    self.assertRaises((frappe.ValidationError, frappe.PermissionError)),
                 ):
                     create_link(frappe.generate_hash(8), link)
 
