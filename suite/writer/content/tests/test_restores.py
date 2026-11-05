@@ -16,6 +16,7 @@ from suite.content import restore_notice
 from suite.content.http import routes
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
+from suite.writer import content as writer_content
 from suite.writer.content.tests.drive_callback_case import share_as_writer
 from suite.writer.content.tests.support import (
     WRITER,
@@ -265,11 +266,16 @@ class TestRestoreFence(CheckpointCase):
         self.assertNotIn("restored", pulled)
 
     def test_a_refused_history_reader_of_any_kind_gets_no_restore_notice(self):
-        notice = {"by": WRITER, "version": {"seq": 1}}
+        app = writer_content.APP
+        doc_id = self.doc_row(self.node).id
+        restore_notice.hold(app, doc_id, "token", None)
+        restore_notice.landed(app, doc_id, "token", 3)
+        self.addCleanup(frappe.cache.delete_value, restore_notice.latest_key(app, doc_id))
+        self.assertEqual(restore_notice.for_reader(app, doc_id, self.node)["restored"]["restore_rev"], 3)
         for refusal in (drive.DriveForbidden, drive.DriveNotFound, drive.DriveLocked, drive.DriveLinkExpired):
             with self.subTest(refusal=refusal.__name__):
                 with patch.object(drive, "check_history_reader", side_effect=refusal("No")):
-                    self.assertEqual(restore_notice.for_reader(notice, self.node), {})
+                    self.assertEqual(restore_notice.for_reader(app, doc_id, self.node), {})
 
     def test_the_version_kept_first_is_named_after_the_version_restored_and_credits_the_restorer(self):
         named = drive.take_version(self.node, kind="named", label="Draft for review")

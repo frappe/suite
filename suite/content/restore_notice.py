@@ -8,6 +8,10 @@ from frappe import _
 from frappe.utils import format_datetime, get_system_timezone
 
 from suite import drive
+from suite.content import restores
+
+# Long enough for the pull a tab makes on hearing a restore landed, polling included
+LANDED_SECONDS = 300
 
 
 def restored_version(node: str, seq: int) -> dict | None:
@@ -38,18 +42,33 @@ def local_time(stored: datetime) -> str:
     return format_datetime(moment.replace(tzinfo=None), pattern)
 
 
-def notice(version: dict | None) -> dict:
-    """What other tabs learn from their pull once the restore lands: who ran it and which version."""
+def hold(app: str, doc_id: str, token: str, version: dict | None) -> None:
+    """Keep what other tabs learn once the restore under `token` lands: who ran it and which version.
+
+    It lasts as long as the fence. Only the restoring tab holds `token`, and it gets it after this.
+    """
     restored = None
     if version is not None:
         taken_at = site_aware(version["creation"]).astimezone(UTC).isoformat(timespec="seconds")
         restored = {"seq": version["seq"], "label": version["label"], "taken_at": taken_at}
 
-    return {"by": frappe.session.user, "version": restored}
+    notice = {"by": frappe.session.user, "version": restored}
+    frappe.cache.set_value(held_key(app, doc_id, token), notice, expires_in_sec=restores.FENCE_SECONDS)
 
 
-def for_reader(notice: dict | None, node: str) -> dict:
+def landed(app: str, doc_id: str, token: str, rev: int) -> None:
+    """Keep the notice of the restore under `token` for the pulls its control message sets off.
+
+    It stays out of the room's messages, which public readers' sockets hear. Empty once it lapsed.
+    """
+    notice = frappe.cache.get_value(held_key(app, doc_id, token)) or {}
+    latest = {**notice, "restore_rev": rev}
+    frappe.cache.set_value(latest_key(app, doc_id), latest, expires_in_sec=LANDED_SECONDS)
+
+
+def for_reader(app: str, doc_id: str, node: str) -> dict:
     """A pull's field naming the last restore, only for someone who may read the node's versions."""
+    notice = frappe.cache.get_value(latest_key(app, doc_id))
     if not notice:
         return {}
 
@@ -59,6 +78,14 @@ def for_reader(notice: dict | None, node: str) -> dict:
         return {}
 
     return {"restored": notice}
+
+
+def held_key(app: str, doc_id: str, token: str) -> str:
+    return f"suite_content_restore_notice:held:{app}:{doc_id}:{token}"
+
+
+def latest_key(app: str, doc_id: str) -> str:
+    return f"suite_content_restore_notice:latest:{app}:{doc_id}"
 
 
 def site_aware(stored: datetime) -> datetime:

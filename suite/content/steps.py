@@ -109,7 +109,7 @@ def pull_rows(app: str, node: str, since_rev: str | None, q_epoch: str | None) -
 
     rows = rows_after(app, doc.id, max(after_rev, 0))
     scheduling.request_if_due(app, doc.id, jobs.COMPACT)
-    notice = restore_notice.for_reader(restores.latest_notice(app, doc.id), node)
+    notice = restore_notice.for_reader(app, doc.id, node)
     return encode_frame({**pull_header(app, doc, epoch), **notice}, rows)
 
 
@@ -207,7 +207,8 @@ def begin_restore(app: str, node: str, body: dict) -> tuple[int, dict]:
         raise log.Refusal(400, "malformed")
 
     restored = restore_notice.restored_version(node, version)
-    fence = restores.begin(app, doc.id, seen_rev, restore_notice.notice(restored))
+    fence = restores.begin(app, doc.id, seen_rev)
+    restore_notice.hold(app, doc.id, fence["token"], restored)
     if not fence["has_milestone"]:
         label = restore_notice.before_restoring_label(restored, version)
         take_milestone(app, doc.id, node, label, fence)

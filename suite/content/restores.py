@@ -21,8 +21,6 @@ from suite.content.tables import table
 from suite.content.wire import busy_refusal
 
 FENCE_SECONDS = 120
-# Long enough for the pull a tab makes on hearing a restore landed, polling included
-NOTICE_SECONDS = 300
 # One restore per document per minute (Q127)
 RESTORE_EVERY_SECONDS = 60
 RESTORING_RETRY_MS = 1_000
@@ -74,11 +72,8 @@ def fence(app: str, doc_id: str, token: str, deadline: datetime) -> None:
     )
 
 
-def begin(app: str, doc_id: str, seen_rev: int, notice: dict | None = None) -> dict:
-    """Fence the document for a restore made against `seen_rev`, which must be its head.
-
-    `notice` is what other tabs are told once the restore lands; it lasts as long as the fence.
-    """
+def begin(app: str, doc_id: str, seen_rev: int) -> dict:
+    """Fence the document for a restore made against `seen_rev`, which must be its head."""
     doc = locked(app, doc_id)
     now = now_datetime()
     try:
@@ -89,9 +84,6 @@ def begin(app: str, doc_id: str, seen_rev: int, notice: dict | None = None) -> d
     except BaseException:
         frappe.db.rollback()
         raise
-
-    if notice:
-        frappe.cache.set_value(notice_key(app, doc_id, token), notice, expires_in_sec=FENCE_SECONDS)
 
     live.publish_control(app, doc_id, doc.lineage, kind="restoring", fence_ms=FENCE_SECONDS * 1000)
     head_chain = bytes(doc.head_chain)
@@ -130,29 +122,6 @@ def check_landing(doc: frappe._dict, token: str, seen_rev: int, now: datetime) -
     same_fence = doc.restore_token is not None and secrets.compare_digest(doc.restore_token, token)
     if not (same_fence and fenced(doc, now)) or seen_rev != int(doc.head_rev):
         raise Refusal(409, "restore_lost")
-
-
-def notice_key(app: str, doc_id: str, token: str) -> str:
-    return f"suite_content_restore_notice:{app}:{doc_id}:{token}"
-
-
-def keep_landed_notice(app: str, doc_id: str, token: str, rev: int) -> None:
-    """Keep the notice of the restore under `token` for the pulls its control message sets off.
-
-    It stays out of the room's messages, which public readers' sockets hear. Empty once it lapsed.
-    """
-    notice = frappe.cache.get_value(notice_key(app, doc_id, token)) or {}
-    landed = {**notice, "restore_rev": rev}
-    frappe.cache.set_value(latest_notice_key(app, doc_id), landed, expires_in_sec=NOTICE_SECONDS)
-
-
-def latest_notice(app: str, doc_id: str) -> dict | None:
-    """The notice of the document's last restore, for a few minutes after it landed."""
-    return frappe.cache.get_value(latest_notice_key(app, doc_id))
-
-
-def latest_notice_key(app: str, doc_id: str) -> str:
-    return f"suite:collab-restore-notice:{app}:{doc_id}"
 
 
 def landed(app: str, doc_id: str, rev: int, now: datetime) -> None:
