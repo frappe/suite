@@ -18,8 +18,21 @@ from suite.slides.doctype.presentation.presentation import get_public_presentati
 from suite.slides.patches import move_file_media_to_drive
 
 
-def text_box(box_id: str, **fields) -> dict:
+def text_box(box_id, **fields) -> dict:
     return {"id": box_id, "type": "text", "content": "<p>a</p>", "left": 10, "top": 20, **fields}
+
+
+def left_of(box: pycrdt.Map) -> int | None:
+    return box["frame"].get("left")
+
+
+def boxes_by_left(boxes: pycrdt.Map) -> dict:
+    return {left_of(boxes[key]): boxes[key] for key in boxes.keys()}
+
+
+def magic_move_keys(boxes: pycrdt.Map) -> dict:
+    # What the old view pairs boxes across slides on, by each box's place
+    return {left_of(boxes[key]): boxes[key].get("refId") or key for key in boxes.keys()}
 
 
 def converted_deck(node: str) -> pycrdt.Doc:
@@ -154,6 +167,73 @@ class TestConversion(ConversionCase):
 
         boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
         self.assertEqual({boxes[key]["refId"] for key in boxes.keys()}, {"link"})
+
+    def test_a_connector_stays_on_the_box_the_old_view_drew_it_to(self):
+        # The old view takes the first box on the slide holding the id
+        line = {"id": "line", "type": "shape", "connector": {"start": {"elementId": "dup"}, "end": None}}
+        other = {**line, "id": "other", "connector": {"start": {"elementId": "twice"}, "end": None}}
+        node = self.old_deck(
+            [text_box("dup", left=1), text_box("dup", left=2), line],
+            [text_box("twice", left=1)],
+            [text_box("twice", left=3), text_box("twice", left=4), other],
+        )
+        self.assertEqual(self.convert(node), "converted")
+
+        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
+        self.assertEqual(left_of(boxes[boxes["line"]["connectorStart"]["elementId"]]), 1)
+        self.assertEqual(left_of(boxes[boxes["other"]["connectorStart"]["elementId"]]), 3)
+
+    def test_a_magic_move_pair_made_by_id_alone_still_pairs(self):
+        # Magic Move pairs boxes across slides on `refId || id`
+        node = self.old_deck(
+            [text_box("same", refId="same", left=1)],
+            [text_box("same", left=2)],
+            [text_box("alone", left=3), text_box("same", left=4)],
+        )
+        self.assertEqual(self.convert(node), "converted")
+
+        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
+        keys = magic_move_keys(boxes)
+        self.assertEqual(keys[1], keys[2])
+        self.assertEqual(keys[2], keys[4])
+
+    def test_a_repaired_box_gets_no_pair_it_did_not_have(self):
+        # Two boxes on one slide can't both be the box a pair tweens to
+        node = self.old_deck([text_box("dup", left=1), text_box("dup", left=2)])
+        self.assertEqual(self.convert(node), "converted")
+
+        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
+        keys = magic_move_keys(boxes)
+        self.assertNotEqual(keys[1], keys[2])
+
+    def test_an_explicit_ref_id_on_a_repaired_box_stays(self):
+        node = self.old_deck([text_box("same", left=1)], [text_box("same", refId="link", left=2)])
+        self.assertEqual(self.convert(node), "converted")
+
+        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
+        by_left = boxes_by_left(boxes)
+        self.assertEqual(by_left[2]["refId"], "link")
+        self.assertNotIn("refId", by_left[1])
+
+    def test_a_malformed_id_is_repaired_rather_than_leaving_the_deck_pending(self):
+        bad_end = {"id": "line", "type": "shape", "connector": {"start": {"elementId": []}, "end": None}}
+        node = self.old_deck(
+            [text_box([], left=1), text_box({"a": 1}, left=2), text_box(None, left=3), bad_end]
+        )
+        self.assertEqual(self.convert(node), "converted")
+
+        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
+        self.assertEqual(len(boxes), 4)
+        self.assertTrue(all(isinstance(key, str) and key for key in boxes.keys()))
+        self.assertEqual(boxes["line"]["connectorStart"]["elementId"], [])
+
+    def test_a_connector_follows_a_box_with_a_number_for_an_id(self):
+        line = {"id": "line", "type": "shape", "connector": {"start": {"elementId": 7}, "end": None}}
+        node = self.old_deck([text_box(7, left=1), line])
+        self.assertEqual(self.convert(node), "converted")
+
+        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
+        self.assertEqual(left_of(boxes[boxes["line"]["connectorStart"]["elementId"]]), 1)
 
     def test_a_deck_with_no_slides_converts(self):
         node = self.old_deck()

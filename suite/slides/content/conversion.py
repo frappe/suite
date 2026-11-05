@@ -3,8 +3,11 @@
 The layer's `convert_document` (suite.content.conversions) runs the converter on what `read_old` answers
 and installs the answer in one transaction under the row's lock. Python repairs the ids first (Q160): a
 slide with no id or a used one gets a new one, as does a box whose id another box in the deck holds, and
-a connector end follows its box on that slide. A refId stays: it is the link Magic Move shares across
-slides, never a box's id, so changing one would break the pair (Q148). The converter
+a connector end stays on the first box its id named on that slide, the one the old view draws it to. A
+refId stays: it is the link Magic Move shares across slides, never a box's id, so changing one would break
+the pair (Q148). Magic Move pairs on `refId || id`, so a renamed box with no refId takes its old id as one,
+unless that key already stands for another box on its slide. A table pairs on its id alone and takes none,
+so one renamed stops pairing. The converter
 (frontend/src/apps/slides/collab/conversion.ts) does the rest. The Slide rows are never written, so a
 deck converted wrongly can be converted again from them.
 """
@@ -31,6 +34,7 @@ SLIDE_COLUMNS = {
     "advance_after": "advanceAfter",
 }
 NEW_ID_LENGTH = 9
+SCALAR_ID = (str, int, float)
 
 
 @dataclass(frozen=True)
@@ -132,7 +136,7 @@ def repaired_slides(docname: str, rows: list[frappe._dict], parsed: list[list[di
     """Give every slide and box an id of its own, first holder keeping it; nothing is dropped."""
     held = {row.client_id for row in rows}
     for elements in parsed:
-        held.update(element.get("id") for element in elements)
+        held.update(element["id"] for element in elements if isinstance(element.get("id"), str))
 
     # Stable across reads, since the conversion reads again under the lock and compares
     made = (hashlib.sha256(f"{docname}:{at}".encode()).hexdigest()[:NEW_ID_LENGTH] for at in range(10**6))
@@ -162,30 +166,55 @@ def repaired_slides(docname: str, rows: list[frappe._dict], parsed: list[list[di
 
 
 def repaired_boxes(elements: list[dict], seen: set[str], new_id: Callable[[], str]) -> list[dict]:
-    """Give a slide's boxes ids no earlier item holds, with connector ends following them on this slide."""
-    renamed: dict = {}
+    """Give a slide's boxes ids no earlier item holds, keeping what connectors and Magic Move read from the old ones."""
+    keys = {element["refId"] for element in elements if isinstance(element.get("refId"), SCALAR_ID)}
+    targets: dict = {}
     for element in elements:
-        box_id = element.get("id")
-        if not isinstance(box_id, str) or not box_id or box_id in seen:
+        old_id = element.get("id")
+        if not isinstance(old_id, str) or not old_id or old_id in seen:
             element["id"] = new_id()
-            renamed.setdefault(box_id, element["id"])
+            keep_magic_move_key(element, old_id, keys)
+        elif not element.get("refId"):
+            keys.add(old_id)
 
         seen.add(element["id"])
+        if isinstance(old_id, SCALAR_ID):
+            targets.setdefault(old_id, element["id"])
 
     for element in elements:
         connector = element.get("connector")
         if isinstance(connector, dict):
-            follow_renamed(connector, renamed)
+            follow_targets(connector, targets)
 
     return elements
 
 
-def follow_renamed(connector: dict, renamed: dict) -> None:
-    """Point a connector's ends at the new ids of the boxes they name."""
+def keep_magic_move_key(element: dict, old_id: object, keys: set) -> None:
+    """Give a renamed box its old id as a refId, unless another box on its slide already stands for that key."""
+    if (
+        element.get("refId")
+        or not old_id
+        or not isinstance(old_id, SCALAR_ID)
+        or element.get("type") == "table"
+    ):
+        return
+
+    key = str(old_id)
+    if key not in keys:
+        keys.add(key)
+        element["refId"] = key
+
+
+def follow_targets(connector: dict, targets: dict) -> None:
+    """Point a connector's ends at the boxes their old ids resolved to on this slide."""
     for end in ("start", "end"):
         bound = connector.get(end)
-        if isinstance(bound, dict) and bound.get("elementId") in renamed:
-            connector[end] = {**bound, "elementId": renamed[bound["elementId"]]}
+        if not isinstance(bound, dict):
+            continue
+
+        element_id = bound.get("elementId")
+        if isinstance(element_id, SCALAR_ID) and element_id in targets:
+            connector[end] = {**bound, "elementId": targets[element_id]}
 
 
 def check(node: str, old: OldDeck, converted: convert.Converted) -> CheckedDeck:
