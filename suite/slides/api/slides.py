@@ -2,7 +2,8 @@ import frappe
 from frappe import _
 from frappe.utils import cstr, get_datetime, now_datetime
 
-from suite import drive
+from suite import content, drive
+from suite.slides.content import APP
 from suite.slides.drive import NODE_FIELD
 
 # the only fields the editor may set; a new Slide field is not client-writable by default
@@ -39,6 +40,11 @@ def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
     doc.check_permission("write")
     if doc.is_composite:
         frappe.throw(_("Composite presentations have no slides of their own"))
+
+    # Its log is the deck now, so a save from an old tab would be lost on the rows
+    if doc.node and content.find(APP, doc.node):
+        raise drive.DriveConflict(_("This document saves as you edit; reload it to keep editing"))
+
     if cstr(doc.modified) != cstr(base_modified):
         frappe.throw(
             _("This presentation was changed elsewhere. Reload to get the latest version."),
