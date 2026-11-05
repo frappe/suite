@@ -3,7 +3,12 @@ import type { AnyExtension, Editor } from '@tiptap/core'
 import { reactive, type PropType } from 'vue'
 import type { Doc } from 'yjs'
 
-export const rooms = { next: null as object | null, held: null as Promise<void> | null }
+export const rooms = {
+  next: null as object | null,
+  held: null as Promise<void> | null,
+  openFailure: null as Error | null,
+  opens: 0,
+}
 // The body the server holds for a document edited without collaboration
 export const stored = {
   html: '',
@@ -181,6 +186,11 @@ export async function fakeCollabPlatform() {
     ...client,
     openCollabRoom: async () => {
       await rooms.held
+      rooms.opens++
+      if (rooms.openFailure) {
+        throw rooms.openFailure
+      }
+
       if (rooms.next) {
         return { state: 'live', room: rooms.next }
       }
@@ -213,6 +223,7 @@ export function fakeWriterDocument(original: typeof import('./writerDocument')) 
 
     const resources = reactive({
       doc: read(),
+      readFailure: null,
       reload: async () => {
         stored.reloads++
         resources.doc = read()

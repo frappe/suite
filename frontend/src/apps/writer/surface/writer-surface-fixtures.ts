@@ -1,7 +1,7 @@
 import { fakeSocket } from '@suite/collab-client/test-support'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { expect, vi } from 'vitest'
-import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { computed, createApp, defineComponent, h, nextTick, ref, type App, type Ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { Doc } from 'yjs'
 
@@ -22,14 +22,15 @@ Element.prototype.scrollIntoView = () => {}
 const { default: WriterSurface } = await import('./WriterSurface.vue')
 const { discardCopy, listCopies } = await import('@/apps/writer/recovery/copies')
 
-export async function openedSurface(
-  versions?: Versions,
-  path = '/d/node-1',
-  comments?: Comments,
-  access = ref({ role: 50 }),
-  state = ref('Active'),
+let openedApp: App | null = null
+
+function surfaceSession(
+  versions: Versions | undefined,
+  comments: Comments | undefined,
+  access: Ref<{ role: number }>,
+  state: Ref<string>,
 ) {
-  const session = {
+  return {
     nodeId: 'node-1',
     comments,
     title: ref('Quarterly plan'),
@@ -46,6 +47,16 @@ export async function openedSurface(
       group: () => [],
     },
   } as unknown as DocumentSession
+}
+
+export async function mountedSurface(
+  versions?: Versions,
+  path = '/d/node-1',
+  comments?: Comments,
+  access = ref({ role: 50 }),
+  state = ref('Active'),
+) {
+  const session = surfaceSession(versions, comments, access, state)
   const surface = { render: () => h(WriterSurface, { session }) }
   const routes = [{ path: '/d/:node', component: surface }]
   const history = createMemoryHistory()
@@ -56,7 +67,17 @@ export async function openedSurface(
   const root = document.createElement('div')
   document.body.append(root)
   const shell = defineComponent({ setup: () => () => h(RouterView) })
-  createApp(shell).use(router).use(translationPlugin).mount(root)
+  openedApp = createApp(shell).use(router).use(translationPlugin)
+  openedApp.mount(root)
+  return root
+}
+
+export function navigateTo(path: string) {
+  return openedApp!.config.globalProperties.$router.push(path)
+}
+
+export async function openedSurface(...args: Parameters<typeof mountedSurface>) {
+  const root = await mountedSurface(...args)
   await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())
   await nextTick()
   return root
@@ -75,9 +96,13 @@ export function versionRow(root: Element, label: string) {
 }
 
 export function resetSurface() {
+  openedApp?.unmount()
+  openedApp = null
   document.body.innerHTML = ''
   rooms.next = null
   rooms.held = null
+  rooms.openFailure = null
+  rooms.opens = 0
   stored.html = ''
   stored.collab = 0
   realEditors.isOn = false

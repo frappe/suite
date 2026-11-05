@@ -393,8 +393,8 @@ class AnonymousTest(GrantCase):
         self.assertEqual(self.roles("doc0000001"), {"$PUBLIC": NONE})
         self.assertEqual(report.links_minted, 0)
 
-    def test_a_forced_public_composite_row_is_dropped(self):
-        """`presentation.py` writes it for every composite deck, so it is not a choice."""
+    def test_a_composite_read_row_is_dropped_when_the_deck_was_not_public(self):
+        # `presentation.py` writes it for every composite deck, so it is not a choice
         self.add_node("deck000001", PERSONAL_ROOT)
         self.legacy.composite_decks.add("deck000001")
         self.legacy.permissions_rows = [permission("p1", "deck000001", "", read=1)]
@@ -425,6 +425,35 @@ class AnonymousTest(GrantCase):
         report = self.run_grants()
         roles = self.roles("deck000001")
         self.assertEqual(roles["$PUBLIC"], READ)
+        self.assertEqual(report.composite_rows_dropped, 0)
+        self.assertEqual(report.links_minted, 1)
+
+    def test_a_composite_read_row_is_mapped_when_the_deck_was_public(self):
+        self.add_node("deck000001", PERSONAL_ROOT)
+        self.legacy.composite_decks.add("deck000001")
+        self.legacy.public_decks.add("deck000001")
+        self.legacy.permissions_rows = [permission("p1", "deck000001", "", read=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("deck000001"), {"$PUBLIC": READ})
+        self.assertEqual(report.composite_rows_dropped, 0)
+        self.assertEqual(report.links_minted, 0)
+
+    def test_a_public_deny_on_a_public_composite_deck_is_kept(self):
+        self.add_node("deck000001", PERSONAL_ROOT)
+        self.legacy.composite_decks.add("deck000001")
+        self.legacy.public_decks.add("deck000001")
+        self.legacy.permissions_rows = [permission("p1", "deck000001", "", deny=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("deck000001"), {"$PUBLIC": NONE})
+        self.assertEqual(report.composite_rows_dropped, 0)
+
+    def test_a_public_write_row_on_a_public_composite_deck_is_mapped(self):
+        self.add_node("deck000001", PERSONAL_ROOT)
+        self.legacy.composite_decks.add("deck000001")
+        self.legacy.public_decks.add("deck000001")
+        self.legacy.permissions_rows = [permission("p1", "deck000001", "", read=1, write=1)]
+        report = self.run_grants()
+        self.assertEqual(self.roles("deck000001")["$PUBLIC"], READ)
         self.assertEqual(report.composite_rows_dropped, 0)
         self.assertEqual(report.links_minted, 1)
 

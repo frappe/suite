@@ -6,13 +6,14 @@ from unittest.mock import patch
 import frappe
 from frappe.auth import CookieManager, LoginManager
 from frappe.utils import set_request
-from frappe.utils.password import check_password
+from frappe.utils.password import check_password, update_password
 
 from suite.mail import events
 from suite.mail.api import admin
 from suite.mail.api.account import set_reset_password_key
 from suite.mail.tests.test_suite_cloud_directory import DOMAIN, SuiteCloudTestCase
 
+OLD_PASSWORD = "a-strong-password-9"
 NEW_PASSWORD = "Another-strong-pw-9"
 
 
@@ -38,6 +39,8 @@ class TestResetPassword(SuiteCloudTestCase):
             first_name="Reset",
             last_name="Member",
         )
+        # A new member starts on a generated one-time password, on the site and on Mail
+        update_password(self.email, OLD_PASSWORD)
         self.mail_password = self.fake.passwords[self.email]
         set_request(path="/random")
         frappe.local.response = frappe._dict()
@@ -63,6 +66,7 @@ class TestResetPassword(SuiteCloudTestCase):
             events.update_password(NEW_PASSWORD, key=key),
             "The reset password link has either been used before or is invalid",
         )
+        self.assertEqual(check_password(self.email, OLD_PASSWORD), self.email)
         self.assertEqual(self.fake.passwords[self.email], self.mail_password)
 
     def test_an_expired_reset_link_leaves_the_mail_password_alone(self) -> None:

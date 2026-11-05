@@ -459,6 +459,7 @@ class FakeTree:
         self.users = dict(users or {})
         self.groups = set(groups)
         self.composite_decks = set()
+        self.public_decks: set[str] = set()
         self.sheets = {}
 
     def add(self, name, **columns):
@@ -513,6 +514,9 @@ class FakeTree:
 
     def is_composite_deck(self, entity):
         return entity in self.composite_decks
+
+    def is_public_deck(self, entity):
+        return entity in self.public_decks
 
     def sheet_entity(self, sheet):
         return self.sheets.get(sheet)

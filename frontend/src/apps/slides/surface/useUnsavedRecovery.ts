@@ -1,5 +1,5 @@
 import { toast } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, readonly, ref, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { showsSlides, viewOnly } from '@/apps/slides/stores/presentation'
@@ -51,18 +51,20 @@ export function useUnsavedRecovery(
   function narrowed() {
     // First, so no snapshot and no push leaves after this point. `stopWrites`
     // also cancels a save under way and retires the draft, so it never replays,
-    // unless no copy of an unread draft fits: that one stays for the next load
+    // unless no copy of an unread draft fits or the store refuses both ways of
+    // retiring it: that one stays for the next load
     // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
     const unsaved =
       !!slides.value?.length &&
       (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
     viewOnly.value = true
-    void stopWrites(session.contentDocname, unsaved ? undefined : keepUnreadDraft)
     if (!unsaved) {
+      void stopWrites(session.contentDocname, keepUnreadDraft)
       toast.warning('Editing access changed. This presentation is now view only.')
       return
     }
 
+    void stopWrites(session.contentDocname)
     isOnlyCopy.value = !retainRecovery()
 
     if (isOnlyCopy.value) {
@@ -140,13 +142,14 @@ export function useUnsavedRecovery(
   function keepUnreadDraft(content: unknown[]) {
     try {
       keepSticky(content)
-      showKept(
-        translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
-      )
-      return true
     } catch {
       return false
     }
+
+    showKept(
+      translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
+    )
+    return true
   }
 
   function showKept(message: string) {
@@ -305,6 +308,11 @@ export function useUnsavedRecovery(
     }
   }
 
+  // the server copy replaced the slides on screen
+  function clearOnlyCopy() {
+    isOnlyCopy.value = false
+  }
+
   function settleCopies() {
     if (hasSettledCopies) {
       return
@@ -323,7 +331,8 @@ export function useUnsavedRecovery(
   }
 
   return {
-    isOnlyCopy,
+    isOnlyCopy: readonly(isOnlyCopy),
+    clearOnlyCopy,
     canDownloadChanges,
     narrowed,
     widened,

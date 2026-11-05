@@ -540,6 +540,9 @@ class LegacyTree(Protocol):
     def is_composite_deck(self, entity: str) -> bool:
         """Whether this `File` backs a composite `Presentation` (§14.5)."""
 
+    def is_public_deck(self, entity: str) -> bool:
+        """Whether this `File` backs a `Presentation` flagged `is_public` (§14.5)."""
+
     def sheet_entity(self, sheet: str) -> str | None:
         """The `File` id backing one `Sheet`, which is also its node id."""
 
@@ -1239,17 +1242,33 @@ class SiteTree:
     def group_exists(self, name: str) -> bool:
         return bool(frappe.db.exists("User Group", name))
 
-    def is_composite_deck(self, entity: str) -> bool:
+    def deck_of(self, entity: str) -> str | None:
+        """Answer the `Presentation` this `File` backs, if any."""
         content = frappe.db.get_value(
             "File",
             [["name", "=", entity], *self._clauses()],
             ["content_doctype", "content_docname"],
             as_dict=True,
         )
-        if not content or content.content_doctype != "Presentation" or not content.content_docname:
-            return False
+        if not content or content.content_doctype != "Presentation":
+            return None
+
+        return content.content_docname or None
+
+    def is_composite_deck(self, entity: str) -> bool:
+        """Whether this `File` backs a composite `Presentation`."""
+        deck = self.deck_of(entity)
         # `Presentation` is not a `File`, so the prefix has nothing to say here.
-        return bool(frappe.db.get_value("Presentation", content.content_docname, "is_composite"))
+        return bool(deck and frappe.db.get_value("Presentation", deck, "is_composite"))
+
+    def is_public_deck(self, entity: str) -> bool:
+        """Whether this `File` backs a `Presentation` flagged `is_public`."""
+        # The doctype dropped this field, so only a site that predates that holds the column
+        if not frappe.db.has_column("Presentation", "is_public"):
+            return False
+
+        deck = self.deck_of(entity)
+        return bool(deck and frappe.db.get_value("Presentation", deck, "is_public"))
 
     def sheet_entity(self, sheet: str) -> str | None:
         return frappe.db.get_value(

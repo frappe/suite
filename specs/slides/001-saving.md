@@ -1,9 +1,9 @@
 # Slides: when a deck is saved
 
-Status: proposed
-Review: Gursheen (pending)
+Status: reviewed; records today's behaviour until Slides moves to live editing in PR 881
+Review: Gursheen (2026-11-05)
 
-Scope: how the Slides editor saves a presentation, what happens to edits that have not been saved, and what other people see while a deck is being edited. This spec records today's behaviour. Faris decided to keep it and have it reviewed ("keep slides behaviour and document it"). The T3-1 fix (October 2026) removed the slide-focus block, added tab-close protection and wrote the local copy on every tick; the sections below describe the behaviour after that fix.
+Scope: how the Slides editor saves a presentation, what happens to edits that have not been saved, and what other people see while a deck is being edited. This spec records today's behaviour. Faris decided to keep it and have it reviewed ("keep slides behaviour and document it"). The T3-1 fix (October 2026) removed the slide-focus block, added tab-close protection and made a tick write the local copy when there are new edits; the sections below describe the behaviour after that fix.
 
 Code: `frontend/src/apps/slides/surface/autosave.ts` (the timer and the local copy on `pagehide`), `frontend/src/apps/slides/surface/SlidesSurface.vue` (the tab-close prompt), `frontend/src/apps/slides/stores/saving.js` (the save), `frontend/src/apps/slides/stores/presentation.js` (the request), `suite/slides/api/slides.py` (`save_slides`).
 
@@ -29,7 +29,7 @@ Other triggers:
 | Network comes back | Saves at once, without the retry delay. |
 | Leave the editor (route change) | The leave guard waits for a save in progress. If the deck is still unsaved, it keeps a recovery copy and asks the user to confirm. |
 | Editor unmounts | Clears focus and starts one last save, without waiting for it. |
-| Close or reload the tab | If the deck is not saved, the browser asks the user to confirm, and the local copy is written. `pagehide` also writes the local copy. |
+| Close or reload the tab | If the deck is not saved, the browser asks the user to confirm, and a recovery copy is kept. `pagehide` writes the local copy. |
 
 ### What one save does
 
@@ -42,11 +42,11 @@ Other triggers:
 
 ### Unsaved edits
 
-The edits live in memory. The local copy in the browser (IndexedDB) is written on every tick while the deck is dirty, before the server save, and also during a drag.
+The edits live in memory. The local copy in the browser (IndexedDB) is written on a tick when there are new edits, before the server save, and also during a drag. If the browser refuses the write, the save still goes out.
 
 | Situation | Result |
 | --- | --- |
-| Tab closed or browser crashed while edits are unsaved | The local copy from the last tick (at most 1 second old) is restored on the next open. |
+| Tab closed or browser crashed while edits are unsaved | The local copy from the last tick is restored on the next open. It is at most 1 second old, unless the browser refused a write, which can leave it older. |
 | Network drops | The local copy is written. The save waits for the network, then runs. |
 | Server error | The deck stays dirty. The save retries with a delay that doubles, up to 30 seconds. The header shows "Not saved". |
 | Another editor saved first (version mismatch) | The deck becomes read only. The edits are kept in the local copy. The user must reload. |
@@ -61,15 +61,7 @@ Other people see changes only after a save, and only after they reload the deck.
 
 ### Compared with Writer and Sheets
 
-| | Slides | Writer | Sheets |
-| --- | --- | --- | --- |
-| Save trigger | 1 second poll, blocked while a drag is running | 5 second debounce after an edit | 2 second debounce after an edit |
-| Save on unmount | Yes, not awaited | Yes | Yes, with `keepalive` so it survives |
-| Live collaboration | None | Yes (Yjs over WebRTC) | None |
-| Concurrent editors | Second saver is refused | Edits merge | Not covered here |
-| Content sent | Whole slide list | Yjs state and HTML | Whole sheet |
-
-The Writer and Sheets rows come from `writer/composables/useYjs.ts` and `sheets/components/SheetEditor/index.vue`. Check them when this spec is reviewed.
+Writer and Sheets now edit live through the content layer (`suite/content/`). Slides joins them in PR 881.
 
 ## Why it works this way
 
@@ -87,9 +79,9 @@ Risks 1 to 4 of the first review (no save while a slide was focused, the "Unsave
 
 5. **Collaborator view.** A collaborator sees nothing until the editor saves and the collaborator reloads. If two people edit, the second to save loses their session's edits to a read only deck. Their edits are only in the local copy.
 
-## Open questions for the reviewer
+## Review answers
 
-Proposed answers to questions 1 to 4 of the first review, from T3-1, for the reviewer to confirm: no slide blocks a save, the local copy is written on every tick, and the tab asks before it closes with unsaved edits.
+Questions 1 to 4 are confirmed: no slide blocks a save, a tick writes the local copy when there are new edits, and the tab asks before it closes with unsaved edits.
 
-5. Should a save while typing be allowed? Today it can run mid-edit. Is that safe for the text editor?
-6. Is "second editor is refused and becomes read only" acceptable, or should Slides merge by slide, or show who else is editing?
+5. Should a save while typing be allowed? Yes, it is safe today. This comes from reading the code; no test or browser check covers it. A save pushes a clone of the slides, and a finished save only updates the version, not `slides`, so it does not overwrite what the user is typing. Live editing will replace this save in PR 881 and `save_slides` will be removed. A deck that isn't converted will be read only.
+6. Is "second editor is refused and becomes read only" acceptable? Not as the final behaviour. In PR 881 edits on a converted deck will merge, and presence will show who is on each slide. This is planned work, not built yet. Until then a second editor is still refused.

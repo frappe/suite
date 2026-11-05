@@ -9,18 +9,27 @@ from suite.mail.suite_cloud import get_client
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
+def ping(cached: dict) -> None:
+    """Record whether Suite Cloud answers, with no message for the user whose request this is."""
+    muted = frappe.flags.mute_messages
+    frappe.flags.mute_messages = True
+    try:
+        get_client().call("tenant.ping")
+    except Exception:
+        cached["stale"] = True
+    else:
+        cached.update(stale=False, fetched_at=now_datetime().isoformat())
+    finally:
+        frappe.flags.mute_messages = muted
+
+
 def status(*, refresh: bool = False, domains: bool = False) -> dict:
     if not is_suite_cloud_configured():
         return {"cloud": False, "suspended": False, "stale": False, "fetched_at": None, "alerts": []}
     cached = frappe.cache.get_value("suite:provider_health") or {}
     if refresh or not frappe.cache.get_value("suite:provider_health_attempt"):
         frappe.cache.set_value("suite:provider_health_attempt", True, expires_in_sec=60)
-        try:
-            get_client().call("tenant.ping")
-        except Exception:
-            cached["stale"] = True
-        else:
-            cached.update(stale=False, fetched_at=now_datetime().isoformat())
+        ping(cached)
         frappe.cache.set_value("suite:provider_health", cached)
     alerts = []
     if cached.get("stale"):

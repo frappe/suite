@@ -625,6 +625,7 @@ class TestLookupWiring(BuildTreeCase):
         legacy = SiteTree()
         self.assertIsNone(legacy.sheet_entity(self.prefix + "-no-sheet"))
         self.assertFalse(legacy.is_composite_deck(self.prefix + "-no-file"))
+        self.assertFalse(legacy.is_public_deck(self.prefix + "-no-file"))
 
     def test_docshares_pages_on_the_sheet_doctype(self):
         """Sheet rows only, and never more than the page asked for.

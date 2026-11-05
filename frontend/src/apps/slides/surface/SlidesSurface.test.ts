@@ -39,7 +39,7 @@ const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
   await import('@/apps/slides/stores/presentation')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
-const { keepRecovery, readRecovery } = await import('./recovery')
+const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
 const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
@@ -254,6 +254,38 @@ describe('Slides offline copy', () => {
 
     await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
     expect(register).toHaveBeenCalledWith('/service-worker.js')
+  })
+
+  describe('on a composite', () => {
+    const groups = {
+      a: [{ name: 'a1', idx: 1, parent: 'a', background: '#ffffffff', elements: [] }],
+    }
+
+    async function openedComposite() {
+      mounted = await openedSurface({ composite: groups })
+      const root = mounted.root
+      await vi.waitFor(() => expect(root.textContent).toContain('1 · ready'))
+      await nextTick()
+    }
+
+    it('offers no copy, even to the owner', async () => {
+      await openedComposite()
+
+      expect(offlineCopyButton()).toBeNull()
+    })
+
+    it.each([
+      ['the owner', 'me@example.com'],
+      ['someone else', 'someone@example.com'],
+    ])('lets %s reach an earlier copy', async (_who, user) => {
+      signedIn.user = user
+      const next = fakeServer.opens + 1
+      localStorage.setItem(`${RECORD_PREFIX}p${next}`, JSON.stringify({ node: 'node-1', keys: [] }))
+
+      await openedComposite()
+
+      expect(offlineCopyButton()).not.toBeNull()
+    })
   })
 
   it('hides the copy from someone who is not the owner', async () => {
@@ -1015,6 +1047,17 @@ describe('Slides push refused by the server', () => {
 
         expect(unload.defaultPrevented).toBe(true)
       })
+
+      it('keeps no copy of this clean presentation when the tab closes', async () => {
+        await openedDuringItsPush()
+        while (readRecovery('node-1').length) {
+          removeNewestRecovery('node-1')
+        }
+
+        window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+
+        expect(readRecovery('node-1')).toEqual([])
+      })
     })
 
     it('says the copy is kept when it is', async () => {
@@ -1384,6 +1427,29 @@ describe('Slides push refused by the server', () => {
 
       const [copy] = readRecovery('node-1')
       expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
+    })
+
+    it('keeps the copy and says so when the draft can be neither rewritten nor removed', async () => {
+      await seedDraft()
+      const { firstLoad, release } = holdFirstLoad()
+      mounted = await openedSurface({ firstLoad })
+      const writes = failDraftWrites()
+      const removes = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(() => {
+        throw new DOMException('broken', 'UnknownError')
+      })
+
+      mounted.access.value = { role: 10 }
+      await vi.waitFor(() => expect(refusalToast(UNREAD)).toBeDefined())
+      await vi.waitFor(() => expect(removes).toHaveBeenCalled())
+      writes.mockRestore()
+      removes.mockRestore()
+
+      const [copy] = readRecovery('node-1')
+      expect(copy.sticky).toBe(true)
+      expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
+      expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
+      release()
+      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
     })
 
     it('stays view only when access returns and the store is still full', async () => {

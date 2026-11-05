@@ -41,6 +41,7 @@ import {
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
 import {
+  offlineCopyStatus,
   pruneOfflineCopy,
   refreshOfflineStatus,
   warmOfflineCopyAssets,
@@ -139,6 +140,7 @@ const {
 const exporting = ref(false)
 const {
   isOnlyCopy,
+  clearOnlyCopy,
   canDownloadChanges,
   narrowed,
   widened,
@@ -438,8 +440,7 @@ async function load() {
     )
     if (run !== latestLoad) return
 
-    // the server copy replaced the slides on screen
-    isOnlyCopy.value = false
+    clearOnlyCopy()
     if (doc) {
       settleCopies()
     }
@@ -560,8 +561,14 @@ function unloadState(): DocumentSaveState {
 
   return saveState.value
 }
+
+// the warning is for the other push; a clean presentation has nothing of its own to keep
+function retainUnlessClean() {
+  return saveState.value === 'clean' || retainOrWarn()
+}
+
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: unloadState, retainRecovery: retainOrWarn }, event)
+  resolveDocumentUnload({ state: unloadState, retainRecovery: retainUnlessClean }, event)
 }
 
 // what a refused picture means for the copy depends on which of these it is
@@ -581,8 +588,10 @@ const canPin = computed(
     'serviceWorker' in navigator &&
     'caches' in window &&
     !window.disable_slides_service_worker &&
+    !presentationDoc.value?.is_composite &&
     isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
+const showsOfflineCopy = computed(() => canPin.value || offlineCopyStatus.value === 'unusable')
 watch([slides, () => presentationDoc.value?.modified], () => {
   if (!slides.value.length) {
     refreshOfflineStatus(null)
@@ -657,7 +666,7 @@ onBeforeUnmount(() => {
         </Dropdown>
       </template>
       <template #actions>
-        <OfflineCopyButton v-if="canPin" />
+        <OfflineCopyButton v-if="showsOfflineCopy" />
         <Button
           icon="lucide-file-down"
           tooltip="Export"

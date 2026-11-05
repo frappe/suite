@@ -47,6 +47,7 @@ import RecoveryPreview from '@/apps/writer/recovery/RecoveryPreview.vue'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
 import { watchConversion, type CollabRoom, type VersionRestored } from '@/platform/collab'
+import { useHideRail } from '@/platform/rail'
 import { isAuthenticated, useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -352,13 +353,30 @@ const showEditingPaused = computed(
 // Someone who can unlock it isn't only viewing
 const showLocked = computed(() => canEdit.value && isDocumentLocked.value)
 
+const headerSaveState = computed(() => (hasFailedToOpen.value ? null : saveState.value))
+
 // Nobody can edit until the document has opened, which doesn't make them a viewer
 const isViewOnly = computed(
-  () => !isLoading.value && !editable.value && !showEditingPaused.value && !showLocked.value,
+  () =>
+    !isLoading.value &&
+    !editable.value &&
+    !showEditingPaused.value &&
+    !showLocked.value &&
+    !hasFailedToOpen.value,
 )
 
 const hasLostReadAccess = computed(() => !readable.value)
-const hasFailedToOpen = computed(() => collabMode.value === 'failed')
+const hasFailedToOpen = computed(
+  () => collabMode.value === 'failed' || documentResource.readFailure !== null,
+)
+const failureMessage = computed(() => {
+  if (collabMode.value === 'failed') {
+    return openFailure.value
+  }
+
+  return documentResource.readFailure
+})
+useHideRail(() => !hasLostReadAccess.value && !hasFailedToOpen.value)
 const isLoading = computed(() => !documentResource.doc || collabMode.value === 'opening')
 
 const editorFile = computed(() => editorFileOf(props.session, editable.value))
@@ -706,6 +724,17 @@ const conversionBanner = computed(() => {
   return upgradingBanner(conversion?.reason ?? null, isUnreadable)
 })
 
+// The room may have opened with only the row failing, and a live room mustn't open twice
+function tryOpeningAgain() {
+  if (documentResource.readFailure !== null) {
+    void documentResource.read()
+  }
+
+  if (collabMode.value === 'failed') {
+    void openCollab()
+  }
+}
+
 function isRefused() {
   return documentResource.doc?.conversion?.state === 'refused'
 }
@@ -777,7 +806,7 @@ onBeforeUnmount(() => {
     <DriveDocumentHeader
       :session="session"
       title-label="Document title"
-      :save-state="saveState"
+      :save-state="headerSaveState"
       :save-note="saveNote"
       :view-only="isViewOnly"
     >
@@ -856,14 +885,14 @@ onBeforeUnmount(() => {
       <!-- What was typed stays on screen until a try opens the document -->
       <template v-else-if="hasFailedToOpen && isOpening(session.nodeId)">
         <DocumentStrip tone="amber">
-          <p>{{ openFailure }}</p>
-          <Button size="sm" variant="ghost" :label="__('Try again')" @click="openCollab" />
+          <p>{{ failureMessage }}</p>
+          <Button size="sm" variant="ghost" :label="__('Try again')" @click="tryOpeningAgain" />
         </DocumentStrip>
         <OpeningEditor :node="session.nodeId" />
       </template>
       <div v-else-if="hasFailedToOpen" class="m-auto text-center">
-        <p class="text-p-sm text-ink-gray-6">{{ openFailure }}</p>
-        <Button class="mt-3" label="Try again" @click="openCollab" />
+        <p class="text-p-sm text-ink-gray-6">{{ failureMessage }}</p>
+        <Button class="mt-3" label="Try again" @click="tryOpeningAgain" />
       </div>
       <OpeningEditor v-else-if="isLoading && isOpening(session.nodeId)" :node="session.nodeId" />
       <DocumentSkeleton v-else-if="isLoading" :has-toolbar="writes.writable.value" />

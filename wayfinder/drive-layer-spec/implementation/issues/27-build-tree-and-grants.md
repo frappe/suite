@@ -107,7 +107,7 @@ fixture's output is a fixed string rather than a wall clock.
 | Migrated anchors | `root_pairs._anchor_grants`, `grants._shared_floor` | the Personal MANAGE anchor lands with the pair; the Shared root keeps whatever its legacy `$GENERAL` row mapped to and gets a READ floor only when nothing produced one. `SharedFloorTest` (5) |
 | Mint required links | `grants._convert_anonymous` | a `user = ""` row above read becomes `$PUBLIC` READ plus one `$LINK:<22 base62>` at the mapped level. `AnonymousTest` (10). `LinkInterruptionTest` proves kills immediately before and after the database commit neither duplicate the link nor lose `links_minted` |
 | Drop root public and link violations | `grants._convert_anonymous`, `_convert_pair` | §5.9 refusals 7, 8, and 11 applied by hand, because bulk SQL fires no refusal. `GuardrailTest` (6) |
-| Drop forced-public composite rows | `grants._convert_anonymous` | only the shape `presentation.py:102-113` writes: a plain read grant. `test_a_public_deny_on_a_composite_deck_is_kept` |
+| Drop forced-public composite rows | `grants._convert_anonymous` | only the shape `presentation.py:102-113` writes, a plain read grant, on a deck whose `is_public` is 0. `test_a_public_deny_on_a_composite_deck_is_kept`, `test_a_composite_read_row_is_mapped_when_the_deck_was_public` |
 | Collect every specified count | `state.TreeConversion`, `state.GrantConversion` | every §14.9 key this ticket owns, decided from the source rows so a rerun over a finished site reports the same numbers. `test_a_rerun_reports_the_same_source_counters` |
 | Resumable batches of 1000, never splitting a pair | all three steps | root batches count target node, metadata, and optional anchor rows while keeping a pair atomic. Link batches use a state-file write-ahead ledger around the database commit. `TestBatching`, `RerunTest`, and `LinkInterruptionTest` cover both interruption boundaries |
 | Preserve migration source tables | `LegacyTree` | no write method exists on the protocol. `SourceTest` in both modules, and `test_the_read_port_has_no_write_method` |
@@ -436,7 +436,8 @@ proves each checked acceptance criterion without activating Build.
   `creation` is a framework column and is never NULL on a real site.
 - **The forced-public composite rule cannot separate a real public read.**
   An owner who publicly shared a deck read-only, on a deck that later became
-  composite, is indistinguishable from the forced row. §14.5 drops it and
+  composite, is indistinguishable from the forced row. §14.5 now keeps the
+  row when the deck's `is_public` is 1, and otherwise drops it and
   `composite_rows_dropped` counts it.
 
 ### Site gate command set (completed)

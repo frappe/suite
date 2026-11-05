@@ -32,6 +32,7 @@ import {
 const RETRY_DELAYS = [500, 1500]
 const QUOTA = 'quota'
 const TIMEOUT = 'timeout'
+const REFUSED = 'refused'
 
 const offlineCopyProgress = ref({ running: false, done: 0, total: 0, failed: [] })
 
@@ -106,6 +107,10 @@ function mediaNodeIds() {
   return collectMediaSources(slides.value)
     .map(({ src }) => src)
     .filter(isMediaNodeId)
+}
+
+function hasRefusedMedia() {
+  return mediaNodeIds().some(isMediaRefused)
 }
 
 // one entry per node Drive never signed
@@ -362,6 +367,7 @@ const saveOfflineCopy = async (id) => {
     await warmAssets()
     // a node-id picture has no url until Drive signs it
     const unsigned = unsignedSources(await mediaSettled(mediaNodeIds(), signal))
+    const refused = unsignedSources(mediaNodeIds().filter(isMediaRefused))
     // the slides on screen may now be another presentation's
     if (signal.aborted || presentationDoc.value?.node !== node) {
       return null
@@ -371,6 +377,10 @@ const saveOfflineCopy = async (id) => {
     progress.total = targets.length
     for (const source of unsigned) {
       recordFailure(progress, source, TIMEOUT)
+    }
+
+    for (const source of refused) {
+      recordFailure(progress, source, REFUSED)
     }
 
     const cache = await openPinnedCache()
@@ -418,7 +428,7 @@ const saveOfflineCopy = async (id) => {
     // the ledger is current, so a cancelled run needs no report
     if (signal.aborted && signal.reason !== QUOTA) return null
 
-    const count = targets.length + unsigned.length
+    const count = targets.length + unsigned.length + refused.length
     const ok = progress.failed.length === 0
     if (ok) {
       await forgetVisitedNode(node)
@@ -523,9 +533,14 @@ const getOfflineStatus = (id) => {
   const record = readRecord(id)
   if (!record) return 'none'
 
+  // the surface loads a composite from its group reads, and a copy holds none of them
+  if (presentationDoc.value?.is_composite) {
+    return 'unusable'
+  }
+
   // offline, no row means the list this copy holds predates the picture; online it
   // means Drive won't give it to this user as of this read, so no update could add it
-  if (!navigator.onLine && mediaNodeIds().some(isMediaRefused)) {
+  if (!navigator.onLine && hasRefusedMedia()) {
     return 'outdated'
   }
 
@@ -558,6 +573,7 @@ function refreshOfflineStatus(id) {
 }
 
 export {
+  hasRefusedMedia,
   offlineCopyProgress,
   offlineCopyStatus,
   saveOfflineCopy,

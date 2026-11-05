@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/api'
 import type { DocumentSession } from '@/apps/drive'
+import { TransportError } from '@/platform/transport'
 
 import { createWriterDocument, isLocked } from './writerDocument'
 
@@ -59,11 +60,39 @@ describe('the open document', () => {
     expect(document.doc?.settings).toEqual({ lock: 1 })
   })
 
-  it('holds no row, and throws nothing, when the read is refused', async () => {
-    query.mockRejectedValue(new Error('forbidden'))
+  it('holds no row, and says why, when the read fails', async () => {
+    query.mockRejectedValue(new TransportError({ type: 'Server', message: '', status: 500 }))
     const document = opened()
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
+    await vi.waitFor(() =>
+      expect(document.readFailure).toBe(
+        'The server had a problem opening this document. Try again in a moment.',
+      ),
+    )
     expect(document.doc).toBeNull()
+  })
+
+  it('shows the row once a failed read works on trying again', async () => {
+    query.mockRejectedValue(new Error('dropped'))
+    const document = opened()
+    await vi.waitFor(() => expect(document.readFailure).not.toBeNull())
+
+    query.mockResolvedValue({ name: 'content-1', settings: '{}' })
+    await document.read()
+
+    expect(document.readFailure).toBeNull()
+    expect(document.doc?.name).toBe('content-1')
+  })
+
+  it('keeps the row, with no failure, when a later reload fails', async () => {
+    query.mockResolvedValue({ name: 'content-1', settings: '{}' })
+    const document = opened()
+    await vi.waitFor(() => expect(document.doc).not.toBeNull())
+
+    query.mockRejectedValue(new Error('dropped'))
+    await expect(document.reload()).rejects.toThrow('dropped')
+
+    expect(document.readFailure).toBeNull()
+    expect(document.doc?.name).toBe('content-1')
   })
 })

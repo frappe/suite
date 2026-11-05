@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 
 import { DriveDocumentHeader, type DocumentPanel, type DocumentSession } from '@/apps/drive'
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
+import { useHideRail } from '@/platform/rail'
 import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
@@ -27,6 +28,8 @@ interface SheetEditorHandle {
   hasUnsentWork(): boolean
   goToCell(sheet: string, cell: string): boolean
   closeNotes(): void
+  /** True while the editor shows its load-error page instead of the sheet. */
+  readonly hasLoadError: boolean
   /** True while the sheet is in a live room (collab on). */
   readonly isCollab: boolean
   /** Restores a version through the live room; rejects with the message to show. */
@@ -81,6 +84,7 @@ const access = createSheetAccess(props.session, {
   },
 })
 const editorWritable = computed(() => access.writable.value && !restoring.value)
+useHideRail(() => access.readable.value && !editor.value?.hasLoadError)
 const cursor = computed<CellAnchor | null>(() =>
   editor.value
     ? {

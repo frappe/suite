@@ -5,6 +5,7 @@ import {
   buttonLabelled,
   discardCopies,
   liveRoom,
+  navigateTo,
   oneVersion,
   openedSurface,
   previewAndReturn,
@@ -216,5 +217,55 @@ describe('Writer surface', () => {
       'Typed while offline',
     )
     await discardCopy(copy)
+  })
+})
+
+describe('Writer surface on leaving', () => {
+  function liveRoomWithState(saveState: string) {
+    const room = liveRoom()
+    const changes: (() => void)[] = []
+    function setState(next: string) {
+      room.status = { ...room.status, saveState: next }
+      for (const change of changes) {
+        change()
+      }
+    }
+
+    function onChange(listener: () => void) {
+      changes.push(listener)
+      return () => {}
+    }
+
+    room.status = { ...room.status, saveState, unsentCount: 1 }
+    Object.assign(room, { onChange })
+    return { room, setState }
+  }
+
+  it('waits for a save in flight, then leaves without asking', async () => {
+    const { room, setState } = liveRoomWithState('saving')
+    const flush = vi.fn(async () => setState('clean'))
+    Object.assign(room, { flush })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openedSurface()
+
+    const failure = await navigateTo('/d/node-2')
+
+    expect(flush).toHaveBeenCalledOnce()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(failure).toBeUndefined()
+    confirm.mockRestore()
+  })
+
+  it('asks before leaving work that failed to save, and stays when told to', async () => {
+    liveRoomWithState('failed')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openedSurface()
+
+    const failure = await navigateTo('/d/node-2')
+
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(failure).toBeDefined()
+    confirm.mockRestore()
+    await discardCopies()
   })
 })

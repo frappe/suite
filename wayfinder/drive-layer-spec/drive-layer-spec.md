@@ -2336,6 +2336,8 @@ Templates [012 §6]:
 - Shipped templates are documents in Administrator's Personal Root under a
   `Templates` folder, each with a `$GENERAL` READ grant, not `$PUBLIC`: a
   logged-out visitor may view a published deck but never start a new one.
+  The exception is a template deck with no `File` row that Build migrates
+  (§14.7), which keeps the guest read it had.
 
 ### 8.11 `content_modified`
 
@@ -4519,7 +4521,7 @@ Per `Drive Permission` row. Grants round down, denies round up [002].
 | above read | one `$PUBLIC` READ grant plus one `$LINK:<token>` grant at the mapped level, fresh 22-char base62 token, `password_hash = NULL`, `expires_on = NULL` |
 | deny | one `$PUBLIC` deny |
 | on a root node | dropped, counted under the public/link root guardrails |
-| forced-public rows on composite decks (`presentation.py:47`) | dropped, not mapped [011 amendment] |
+| forced-public rows on composite decks (`presentation.py:47`): a read-only row on a composite deck whose own `is_public` is 0 | dropped, not mapped [011 amendment]. On a deck whose `is_public` is 1 the row maps as read only |
 
 Sheet `DocShare` rows become grants on the sheet's node: `read` to READ,
 `write` to EDIT, the `everyone` row to `$GENERAL` at the same level. Rows
@@ -4692,11 +4694,13 @@ From the [012] amendment to [011]:
 - `Presentation.thumbnail` Files become `Drive Node Preview` rows on the
   deck node. The field and its `attached_to_field` handling go.
 - Template decks (`is_template = 1`) gain nodes in Administrator's Personal
-  Root under `Templates`, each with a `$GENERAL` READ grant and
+  Root under `Templates`, each with `$GENERAL` and `$PUBLIC` READ grants and
   `Drive Node.is_template = 1`. They have no node today
-  (`presentation.py:43`), so this is a create, not a move.
+  (`presentation.py:43`), so this is a create, not a move. The old hook read
+  every template deck to Guest, hence the `$PUBLIC` grant.
 - `Writer Template` rows become `Writer Document` rows with nodes and
-  `is_template`, granted the same way. The doctype is then dropped.
+  `is_template`, granted the same way but without `$PUBLIC`: the old hook
+  refused Guest. The doctype is then dropped.
 - Build writes no preview rows for files or media nodes. The backfill that
   Cleanup queues makes them after the migrate (§9.2), and the daily gap
   sweep catches any it missed. Deck previews come from the thumbnail Files

@@ -404,18 +404,27 @@ async function retireDraft(id, keepContent) {
     return
   }
 
-  // if that write fails the record goes, so it can't replay either way
-  await savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
+  // if that write fails the record goes, so it can't replay; if that fails too, it stays as it was
+  await savePresentationToLocalDB({
+    ...local,
+    dirty: false,
+    retired: true,
+    updatedAt: Date.now(),
+  })
     .catch(() => deletePresentationFromLocalDB(id))
-    .catch(() => {})
+    .catch(() => null)
 }
 
 // Edit access is gone. No save starts, the one under way is aborted and lands
 // nothing, and the draft is retired so it never replays: the edits live on only
 // in the explicit recovery copy the surface keeps. The exception is a draft
-// `keepContent` found no room for: it stays, and a later load treats it as any other
+// `keepContent` found no room for, or one that can be neither rewritten nor removed:
+// it stays, and a later load treats it as any other, so it can replay once access widens
 async function stopWrites(id, keepContent) {
-  if (!id) return
+  if (!id) {
+    return
+  }
+
   stopped.add(id)
   epochs.set(id, epochFor(id) + 1)
   queuedSnapshots.delete(id)
