@@ -111,6 +111,26 @@ describe('Slides slideshow route', () => {
     expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
     expect(shown()).toBe(false)
   })
+
+  it('opens a converted deck in its view instead of a show from its rows', async () => {
+    mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
+
+    await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
+    expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
+    expect(shown()).toBe(false)
+  })
+
+  it('never mounts the show on a converted deck, even before the redirect lands', async () => {
+    const mountedShows: boolean[] = []
+    const seen = new MutationObserver(() => mountedShows.push(shown()))
+    seen.observe(document.body, { childList: true, subtree: true })
+
+    mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
+    await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
+    seen.disconnect()
+
+    expect(mountedShows).not.toContain(true)
+  })
 })
 
 describe('Slides Present button', () => {

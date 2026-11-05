@@ -119,7 +119,11 @@ const route = useRoute()
 const router = useRouter()
 const userSession = useSession()
 const presenting = computed(
-  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
+  () =>
+    route.name === 'slides-slideshow' &&
+    loaded.value &&
+    slides.value.length > 0 &&
+    !isConverted.value,
 )
 // `?slide=N`: the slide the show presents, and the one the editor opens on.
 const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.slide)) || 1))
@@ -300,12 +304,15 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
-// an empty presentation has no show, so its /present opens the editor
-watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
-  if (name === 'slides-slideshow' && done && !count) {
-    void router.replace({ name: 'document-host', params: route.params, query: route.query })
-  }
-})
+// an empty presentation has no show, and a converted one none from its rows, so /present opens the deck
+watch(
+  [() => route.name, loaded, () => slides.value.length, isConverted],
+  ([name, done, count, converted]) => {
+    if (name === 'slides-slideshow' && done && (!count || converted)) {
+      void router.replace({ name: 'document-host', params: route.params, query: route.query })
+    }
+  },
+)
 watch(
   editable,
   (canEdit) => {
