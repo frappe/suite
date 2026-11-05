@@ -567,8 +567,9 @@ class TestDriveFilesAPI(IntegrationTestCase):
     def test_file_url_update_requires_valid_storage_path(self):
         with self.set_user(OWNER):
             file = frappe.get_doc("File", self.file.name)
+            file.flags.drive_disk_rename = True
             file.file_url = "/private/files/../../invalid.txt"
-            with self.assertRaises(frappe.ValidationError):
+            with self.assertRaisesRegex(frappe.ValidationError, "incorrect"):
                 file.save()
 
     def new_file_with_url(self, file_url):
@@ -669,6 +670,53 @@ class TestDriveFilesAPI(IntegrationTestCase):
             file.file_type = "Document"
             file.save()
             self.assertEqual(frappe.db.get_value("File", file.name, "file_type"), "Document")
+
+    def assert_children_follow_the_folder(self):
+        manager = FileManager()
+        child = self.upload(b"child of a moving folder", "child.txt")
+        destination = create_drive_file(
+            frappe.generate_hash(8),
+            self.home,
+            "Folder",
+            lambda file: manager.create_folder(file),
+        )
+
+        def assert_child_is_under(*folder_names):
+            child.reload()
+            if not manager.flat:
+                for folder_name in folder_names:
+                    self.assertIn(f"/{folder_name}/", child.file_url)
+            with manager.get_file(child) as stored:
+                self.assertEqual(stored.read(), b"child of a moving folder")
+
+        renamed = frappe.generate_hash(8)
+        rename(self.folder.name, renamed)
+        assert_child_is_under(renamed)
+
+        move([self.folder.name], new_parent=destination.name)
+        assert_child_is_under(destination.file_name, renamed)
+
+        remove_or_restore([self.folder.name])
+        self.assertEqual(frappe.db.get_value("File", self.folder.name, "status"), STATUS_TRASHED)
+        remove_or_restore([self.folder.name])
+        self.assertEqual(frappe.db.get_value("File", self.folder.name, "status"), STATUS_ACTIVE)
+        assert_child_is_under(destination.file_name, renamed)
+
+    def test_children_follow_a_folder_on_tree_storage(self):
+        with self.set_user(OWNER):
+            self.assert_children_follow_the_folder()
+
+    def test_children_follow_a_folder_on_flat_storage(self):
+        frappe.db.set_single_value("Drive Disk Settings", "flat", 1)
+        self.addCleanup(frappe.db.set_single_value, "Drive Disk Settings", "flat", 0)
+        with self.set_user(OWNER):
+            self.folder = create_drive_file(
+                frappe.generate_hash(8),
+                self.home,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            self.assert_children_follow_the_folder()
 
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = "123e4567-e89b-42d3-a456-426614174000"

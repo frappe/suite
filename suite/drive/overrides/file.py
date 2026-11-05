@@ -486,7 +486,7 @@ class File(FrappeFile):
         copied across itself, or the whole subtree becomes unreadable.
         """
         if new:
-            self.file_url = new
+            self.file_url = str(new)
         manager = self.manager
         for child in self.get_children():
             if child._not_in_disk():
