@@ -45,6 +45,7 @@ const FORMATTING_TAGS = new Set([
 const FOLDED_WHITESPACE = /^[ \t\n\r\f]$/
 const HARD_BREAK = 'hard break'
 const OWN_LINE_HEIGHT = 'own line height'
+const WHITESPACE_BOX = 'whitespace box'
 // `td` and `th` take text bare; a body or cell's bare text sits in one line, as a paragraph's does
 const HOLDS_BARE_TEXT = new Set(['body', 'td', 'th'])
 const LINE_HEIGHT_RULE = new Set(['p', 'li'])
@@ -82,7 +83,8 @@ interface Run {
   place: Place
 }
 
-type Character = [text: string, look: string, block: number]
+// `isBoxed`: a whitespace-only run whose own style or class can draw where its spaces fold away
+type Character = [text: string, look: string, block: number, isBoxed?: boolean]
 
 interface Drawing {
   blocks: string[]
@@ -305,6 +307,11 @@ function drawInline(node: Node, place: Place, rules: DrawRules, drawing: Drawing
   }
 
   next.formats = formatsOf(element, drawn, own)
+  // An empty run draws nothing but what it holds, as padding or a box does
+  if (!element.hasChildNodes() && isBoxed(next.formats)) {
+    drawing.runs.push({ node: element.ownerDocument.createTextNode(''), place: next })
+  }
+
   for (const child of element.childNodes) {
     drawNode(child, next, rules, drawing)
   }
@@ -370,35 +377,55 @@ function runLook({ styles, formats, opacity, block }: Place) {
   return JSON.stringify([seen, [...formats].sort(), exactOpacity(opacity), block])
 }
 
-// A browser folds a run of spaces to one, in the first one's look, and draws none at a line's ends
-function foldedWhitespace(all: Character[]) {
-  const drawn: Character[] = []
-  let line = -1
-  let space: Character | null = null
-  let isLineStart = true
+// Each part of a block between hard breaks, which folds its whitespace on its own
+function lines(all: Character[]) {
+  const split: Character[][] = []
+  let previous: Character | null = null
   for (const character of all) {
-    const [text, look, block] = character
-    if (block !== line) {
-      line = block
-      space = null
-      isLineStart = true
+    if (!previous || previous[2] !== character[2] || previous[0] === HARD_BREAK) {
+      split.push([])
     }
 
-    if (FOLDED_WHITESPACE.test(text)) {
-      space ??= [' ', look, block]
-      continue
-    }
-
-    if (space && !isLineStart && text !== HARD_BREAK) {
-      drawn.push(space)
-    }
-
-    drawn.push(character)
-    space = null
-    isLineStart = text === HARD_BREAK
+    split.at(-1)!.push(character)
+    previous = character
   }
 
-  return drawn
+  return split
+}
+
+// What a space that folds away still draws: its run's own box, if it holds one
+function foldedAway([, look, block, isBoxedRun]: Character): Character[] {
+  if (!isBoxedRun) {
+    return []
+  }
+
+  return [[WHITESPACE_BOX, look, block]]
+}
+
+function isSpace([text]: Character) {
+  return FOLDED_WHITESPACE.test(text)
+}
+
+// A browser folds a run of spaces to one, in the first one's look, and draws none at a line's ends
+function foldedLine(line: Character[]) {
+  return line.flatMap((character, at): Character[] => {
+    if (!isSpace(character)) {
+      return [character]
+    }
+
+    const before = line[at - 1]
+    const after = line.slice(at).find((next) => !isSpace(next))
+    if (before && !isSpace(before) && after && after[0] !== HARD_BREAK) {
+      return [[' ', character[1], character[2]]]
+    }
+
+    return foldedAway(character)
+  })
+}
+
+// What draws besides marks, which draw nothing where a space folds away
+function isBoxed(formats: Map<string, string>) {
+  return [...formats.keys()].some((name) => !FORMATTING_TAGS.has(name))
 }
 
 // `held` names the items whose first character is a look run the old body doesn't have
@@ -410,7 +437,12 @@ function characters({ runs, items }: Drawing, rules: DrawRules, held: Set<number
     }
 
     const text = node.textContent ?? ''
-    const drawn = [...text].map((char): Character => [char, look, place.block])
+    const isBoxedRun = !text.trim() && isBoxed(place.formats)
+    const drawn = [...text].map((char): Character => [char, look, place.block, isBoxedRun])
+    if (!text && isBoxedRun) {
+      drawn.push([WHITESPACE_BOX, look, place.block])
+    }
+
     // An inline holding only a space sizes its line even when the space folds away, so the saved body must
     // keep it. A space is compared only where it's kept
     const isOwnLine = !text.trim() && lineFit(place.styles) !== place.lineFit
@@ -421,7 +453,7 @@ function characters({ runs, items }: Drawing, rules: DrawRules, held: Set<number
     return drawn
   })
   const added = new Set([...held].map((at) => items[at].place.block))
-  const folded = foldedWhitespace(all)
+  const folded = lines(all).flatMap(foldedLine)
   const drawn = rules.isWhitespaceKept ? all : folded
   return drawn.filter(([, , block]) => !added.delete(block))
 }

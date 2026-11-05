@@ -610,9 +610,27 @@ describe('what the deck draws, against the old view', () => {
       expect(space.marks[0].attrs.fontSize).toBe('40px')
     })
 
-    it('ignores whitespace a cell folds away, whatever its style', () => {
-      expect(isRefused('<p>a<span style="word-spacing: 5px"> </span></p>')).toBe(false)
+    it('ignores whitespace a cell folds away when only marks and inherited styles hold it', () => {
       expect(isRefused('\n<p> a  b\n</p>\n')).toBe(false)
+      expect(isRefused('<p><strong> </strong>a <em> </em>b</p>')).toBe(false)
+      expect(isRefused('<p>a <span style="color: red"> </span>b</p>')).toBe(false)
+    })
+
+    it.each([
+      ['padding', '<p><span style="padding: 20px"> </span>A</p>'],
+      [
+        'own box',
+        '<p><span style="display: inline-block; width: 40px; height: 40px"> </span>A</p>',
+      ],
+      ['border', '<p>A<span style="border: 2px solid red"> </span></p>'],
+      ['margin', '<p>A <span style="margin-left: 20px"> </span>B</p>'],
+      ['outline', '<p>A <span style="outline: 2px solid red">  </span>B</p>'],
+      ['class', '<p><span class="box"> </span>A</p>'],
+      ['word spacing', '<p>a<span style="word-spacing: 5px"> </span></p>'],
+      ['padding, in a list item', '<ul><li><p><span style="padding: 20px"> </span>A</p></li></ul>'],
+      ['padding, on no text at all', '<p>A<span style="padding: 20px"></span>B</p>'],
+    ])('refuses a space that folds away while its run holds %s', (_n, cell) => {
+      expect(isRefused(cell)).toBe(true)
     })
 
     it.each([
@@ -635,6 +653,20 @@ describe('what the deck draws, against the old view', () => {
           '<ul><li style="color: red"><p><span style="color: blue"> a</span></p></li></ul>',
         ),
       ).toBe(true)
+    })
+  })
+
+  describe('a box an empty run draws in a text box', () => {
+    it.each([
+      ['padding', '<p>A<span style="padding: 20px"></span>B</p>'],
+      ['own box', '<p><span style="display: inline-block; width: 40px"></span>A</p>'],
+      ['padding, in a list item', '<ul><li><p>A<span style="padding: 20px"></span></p></li></ul>'],
+    ])('refuses an empty run that holds %s', (_n, content) => {
+      expect(refusal({ content }).kind).toBe('failed')
+    })
+
+    it('still converts an empty run of marks', () => {
+      expect(refusal({ content: '<p>A<strong></strong>B</p>' }).kind).toBe('converted')
     })
   })
 
