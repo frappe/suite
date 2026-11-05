@@ -130,32 +130,33 @@ async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
   }
-  let mentionedBy: string | undefined
-  const node = await loadDriveNodeSummary(notification.activity.node).catch((error: unknown) => {
+  let node: Parameters<typeof driveNodeRoute>[0]
+  let mentionedBy = ''
+  try {
+    node = await loadDriveNodeSummary(notification.activity.node)
+  } catch (error) {
     if (!isRefusal(error)) {
       toast.error(__('Could not open this notification.'), {
         action: { label: __('Retry'), onClick: () => void openNotification(notification) },
       })
-      return null
+      return
     }
 
     // Someone mentioned without access can't load the node. The page they land on says whom to ask.
     mentionedBy = notification.actor.full_name
-    return {
+    node = {
       name: notification.activity.node,
       title: notification.node_title,
       kind: notification.node_kind,
     }
-  })
-  if (!node) return
+  }
 
   open.value = false
   const destination = driveNodeRoute(node)
-  await router.push(
-    mentionedBy
-      ? { ...destination, state: { ...destination.state, ...mentionedByState(mentionedBy) } }
-      : destination,
-  )
+  await router.push({
+    ...destination,
+    state: { ...destination.state, ...mentionedByState(mentionedBy) },
+  })
 }
 
 async function markAllRead() {
