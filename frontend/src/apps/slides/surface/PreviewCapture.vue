@@ -5,7 +5,7 @@ import type { DocumentSession } from '@/apps/drive'
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { slides } from '@/apps/slides/stores/slide'
 
-import { PREVIEW_HEIGHT, PREVIEW_WIDTH, usePreviewCapture } from './previewCapture'
+import { PREVIEW_HEIGHT, PREVIEW_WIDTH, usePreviewCapture } from './usePreviewCapture'
 
 const props = defineProps<{
   session: DocumentSession

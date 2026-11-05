@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope, nextTick, type EffectScope } from 'vue'
+import { effectScope, nextTick, shallowRef, type EffectScope } from 'vue'
 
 type PreviewPush = { node: string; image: string; mime: string }
 const pushedPreviews: PreviewPush[] = []
@@ -35,7 +35,7 @@ const { lockedElsewhere } = await import('@/apps/slides/stores/editLock')
 const { slides } = await import('@/apps/slides/stores/slide')
 const { clearSaveFailure, markClean, markDirty, saveChanges } =
   await import('@/apps/slides/stores/saving')
-const { PREVIEW_DELAY_MS, usePreviewCapture } = await import('./previewCapture')
+const { usePreviewCapture } = await import('./usePreviewCapture')
 
 const slide = (clientId: string) => ({ clientId, background: '#ffffffff', elements: [] })
 
@@ -50,7 +50,7 @@ async function editAndSave(index = 0) {
 }
 
 async function waitOutThePause() {
-  await vi.advanceTimersByTimeAsync(PREVIEW_DELAY_MS)
+  await vi.advanceTimersByTimeAsync(5_000)
 }
 
 describe('the deck preview', () => {
@@ -70,7 +70,7 @@ describe('the deck preview', () => {
     markClean()
     frame = document.body.appendChild(document.createElement('div'))
     scope = effectScope()
-    scope.run(() => usePreviewCapture({ node: 'deck-node', target: frame }))
+    scope.run(() => usePreviewCapture({ node: 'deck-node', target: shallowRef(frame) }))
   })
 
   afterEach(() => {
@@ -87,6 +87,20 @@ describe('the deck preview', () => {
     await vi.waitFor(() => expect(pushedPreviews).toHaveLength(1))
     expect(drawings.count).toBe(1)
     expect(pushedPreviews[0]).toEqual({ node: 'deck-node', image: 'UklGRg==', mime: 'image/webp' })
+  })
+
+  it('waits 5 seconds from the last save, so a later save starts the wait again', async () => {
+    await editAndSave()
+    await vi.advanceTimersByTimeAsync(3_000)
+    await editAndSave()
+
+    await vi.advanceTimersByTimeAsync(4_900)
+    expect(drawings.count).toBe(0)
+    expect(pushedPreviews).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.waitFor(() => expect(pushedPreviews).toHaveLength(1))
+    expect(drawings.count).toBe(1)
   })
 
   it('sends nothing when a save leaves the first slide as it was sent', async () => {

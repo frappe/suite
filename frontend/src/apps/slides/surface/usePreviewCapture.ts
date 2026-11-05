@@ -8,8 +8,7 @@
  * refused by the server. A save that leaves the first slide as it was last
  * sent sends nothing either.
  */
-import { domToWebp } from 'modern-screenshot'
-import { onScopeDispose, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { onScopeDispose, watch, type ShallowRef } from 'vue'
 
 import { api, client } from '@/api'
 import { inReadonlyMode } from '@/apps/slides/stores/presentation'
@@ -18,7 +17,7 @@ import { slides } from '@/apps/slides/stores/slide'
 import type { RequestContext } from '@/platform/transport'
 
 /** Saves come every second while someone types, so the capture waits for a pause. */
-export const PREVIEW_DELAY_MS = 5_000
+const PREVIEW_DELAY_MS = 5_000
 export const PREVIEW_WIDTH = 960
 export const PREVIEW_HEIGHT = 540
 // Images and fonts that have not arrived by then are drawn without.
@@ -30,7 +29,7 @@ interface PreviewCaptureOptions {
   node: string
   context?: RequestContext
   /** The first slide, drawn at full size where nobody sees it. */
-  target: MaybeRefOrGetter<HTMLElement | null>
+  target: Readonly<ShallowRef<HTMLElement | null>>
 }
 
 /** Keep the node's preview in step with the first slide. Call it in a component's setup. */
@@ -51,7 +50,7 @@ export function usePreviewCapture(options: PreviewCaptureOptions): void {
 
   async function capture() {
     const slide = firstSlide()
-    const element = toValue(options.target)
+    const element = options.target.value
     if (capturing || !slide || slide === sentSlide || !element?.isConnected || !settled()) return
     capturing = true
     try {
@@ -78,7 +77,9 @@ function firstSlide(): string | null {
   return slide ? JSON.stringify({ background: slide.background, elements: slide.elements }) : null
 }
 
-function draw(element: HTMLElement): Promise<string> {
+// Loaded here, so a link guest, a phone viewer or a locked tab never fetches the library.
+async function draw(element: HTMLElement): Promise<string> {
+  const { domToWebp } = await import('modern-screenshot')
   return domToWebp(element, {
     width: PREVIEW_WIDTH,
     height: PREVIEW_HEIGHT,
