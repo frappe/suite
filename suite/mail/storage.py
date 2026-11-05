@@ -96,12 +96,25 @@ def measurements(previous: dict, *, refresh: bool = False) -> dict:
 
 
 def refresh() -> None:
-    """Measure what is due and save it to the site's storage state."""
-    doc, _policy, previous = state(lock=True)
+    """Measure what is due and save it to the site's storage state.
+
+    Drive additions and account workflows lock this row, so it stays unlocked during provider calls
+    (a stalled provider would fail them). A row that changed meanwhile may say usage is unknown, and
+    these numbers may predate that change: save nothing, and measure again in a new job (spec §7).
+    """
+    seen = (
+        frappe.db.get_value("Suite Storage State", "site", ["measurements", "modified"], as_dict=True) or {}
+    )
+    previous = json.loads(seen.get("measurements") or "{}")
     updated = measurements(previous)
-    if updated != previous:
-        doc.measurements = json.dumps(updated)
-        doc.save(ignore_permissions=True)
+    if updated == previous:
+        return
+    doc, _policy, _latest = state(lock=True)
+    if doc.modified != seen.get("modified"):
+        queue_refresh()
+        return
+    doc.measurements = json.dumps(updated)
+    doc.save(ignore_permissions=True)
 
 
 def queue_refresh() -> None:

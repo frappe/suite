@@ -178,6 +178,8 @@ Inventory must include retained/disabled mailboxes and groups, not only the enab
 
 Cache successful Mail measurements on the site for **six hours**. Store per-entry success timestamps because inspected usage responses do not include measurement times; these are internal fetch times, not an atomic provider snapshot. Admin refresh bypasses cache; partial failures do not discard successful values. Refresh controls and timestamps are not shown in the dashboard.
 
+A refresh makes no provider call while it holds the site's storage row lock. If the row changed during the measurement, the refresh saves nothing and queues another, so it never overwrites a newer "usage unknown" mark.
+
 | Condition | Reporting and Drive behavior |
 | --- | --- |
 | Successful value within TTL | Use it for combined reporting/admission. |

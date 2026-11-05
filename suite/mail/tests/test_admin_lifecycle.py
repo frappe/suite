@@ -18,6 +18,7 @@ from suite.composition.access import (
     before_login,
     require_access,
 )
+from suite.mail.account_lifecycle import invalidate_measurements
 from suite.mail.api.account import create_account as accept_invitation
 from suite.mail.api.account import get_account_request, set_reset_password_key
 from suite.mail.api.admin import (
@@ -34,7 +35,13 @@ from suite.mail.events import update_password
 from suite.mail.http.invites import send_invite, update_invite
 from suite.suite_core.account_state import read, require_temporary_valid, write
 from suite.suite_core.administration import update_user
-from suite.suite_core.storage import state, update_limits
+from suite.suite_core.storage import (
+    check_addition,
+    initialize_user_limit,
+    personal_mail_usage,
+    state,
+    update_limits,
+)
 from suite.tests.utils import ensure_user
 
 
@@ -270,16 +277,7 @@ class TestAdminLifecycle(IntegrationTestCase):
             drive.store_file(root, "after-the-hour.txt", BytesIO(b"usage is known"))
 
     def test_a_locked_save_keeps_what_a_worker_committed_after_this_transaction_began(self):
-        frappe.db.rollback()  # the row commits below, and earlier tests' writes must not commit with it
-        original = frappe.db.get_value(
-            "Suite Storage State", "site", ["measurements", "modified"], as_dict=True
-        )
-        self.addCleanup(self.restore_storage_state, original)
-        state()
-        frappe.db.commit()
-        with self.secondary_connection():
-            pass  # the helper's first use leaves its new connection current
-        frappe.local.db = self._primary_connection
+        self.use_committed_storage_row()
 
         _doc, _policy, before = state()  # opens this transaction's snapshot
         self.assertNotIn("from_worker", before)
@@ -297,6 +295,150 @@ class TestAdminLifecycle(IntegrationTestCase):
 
         _doc, _policy, saved = state()
         self.assertEqual((saved.get("from_worker"), saved.get("from_this_save")), (1, 1))
+
+    def test_a_drive_addition_can_lock_the_storage_row_during_every_provider_call_of_a_refresh(self):
+        self.use_committed_storage_row()
+        self.commit_unknown_usage()
+        attempts, refusals = [], []
+
+        def try_to_lock():
+            attempts.append(1)
+            with self.secondary_connection():
+                try:
+                    frappe.db.sql(
+                        "SELECT name FROM `tabSuite Storage State` WHERE name = 'site' FOR UPDATE NOWAIT"
+                    )
+                except Exception as error:  # the refresh would swallow it as a provider failure
+                    refusals.append(error)
+                finally:
+                    frappe.db.rollback()
+
+        with self.before_each_provider_call(try_to_lock):
+            mail.refresh_storage()
+
+        self.assertTrue(attempts)
+        self.assertEqual(refusals, [])
+
+    def test_a_mailbox_change_committed_during_a_refresh_keeps_additions_paused_until_the_next_one(self):
+        self.use_committed_storage_row()
+        self.commit_unknown_usage()
+        holder = "changed-during-refresh@example.test"
+
+        with self.before_each_provider_call(
+            lambda: self.once_from_another_connection(
+                lambda: invalidate_measurements(holder, "changed-during-refresh@company.frappe.cloud")
+            )
+        ):
+            mail.refresh_storage()
+        frappe.db.commit()
+
+        self.assertEqual(self.errors_from_another_connection, [])
+        _doc, _policy, measurements = state()
+        self.assertIsNone(personal_mail_usage(measurements, holder))
+        self.assert_additions_paused()
+
+        mail.refresh_storage()
+        frappe.db.commit()
+        self.assert_additions_admitted()
+
+    def test_a_cap_saved_during_a_refresh_queues_another_refresh_that_ends_the_pause(self):
+        self.use_committed_storage_row()
+        self.commit_unknown_usage()
+        capped = "capped-during-refresh@example.test"
+
+        with self.before_each_provider_call(
+            lambda: self.once_from_another_connection(
+                lambda: initialize_user_limit(capped, cap=5, use_default=False)
+            )
+        ):
+            mail.refresh_storage()
+        frappe.db.commit()
+
+        self.assertEqual(self.errors_from_another_connection, [])
+        self.assert_additions_paused()
+        self.assertEqual(self.queued, ["suite.mail.storage.refresh"])
+
+        frappe.get_attr(self.queued.pop())()
+        frappe.db.commit()
+        self.assert_additions_admitted()
+        self.assertEqual(state()[1]["users"][capped], {"cap": 5})
+        self.assertEqual(self.queued, [])  # a refresh nothing raced with queues no other
+
+    def test_a_refresh_nothing_raced_with_saves_its_measurements_and_ends_the_pause(self):
+        self.use_committed_storage_row()
+        self.provider.accounts[self.address] = {"enabled": True}
+        self.provider.used_bytes[self.address] = 300
+        self.commit_unknown_usage()
+        self.assert_additions_paused()
+
+        mail.refresh_storage()
+        frappe.db.commit()
+
+        _doc, _policy, measurements = state()
+        self.assertEqual(measurements["site_mail"], 300)
+        self.assertEqual(measurements["allowance"], 100_000_000_000)
+        self.assert_additions_admitted()
+        self.assertEqual(self.queued, [])
+
+    def use_committed_storage_row(self):
+        """Let a test commit the storage row from two connections, and undo that afterwards.
+
+        Refresh jobs are collected in `queued`: a real worker would write to the row mid-test.
+        """
+        frappe.db.rollback()  # the row commits below, and earlier tests' writes must not commit with it
+        original = frappe.db.get_value(
+            "Suite Storage State", "site", ["policy", "measurements", "modified"], as_dict=True
+        )
+        self.addCleanup(self.restore_storage_state, original)
+        self.queued = []
+        self.enterContext(
+            patch("frappe.enqueue", side_effect=lambda method, **_options: self.queued.append(method))
+        )
+        state()
+        frappe.db.commit()
+        with self.secondary_connection():  # the helper's first use leaves its new connection current
+            frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")  # a blocked write fails fast
+        frappe.local.db = self._primary_connection
+        self.errors_from_another_connection = []
+        self.ran_from_another_connection = False
+
+    def commit_unknown_usage(self):
+        frappe.db.set_value("Suite Storage State", "site", "measurements", "{}")
+        mail.refresh_storage()
+        invalidate_measurements("earlier-change@example.test", "earlier-change@company.frappe.cloud")
+        frappe.db.commit()
+        self.queued.clear()
+
+    def before_each_provider_call(self, action):
+        call = self.provider.call
+
+        def act_then_call(method, **args):
+            action()
+            return call(method, **args)
+
+        return patch.object(self.provider, "call", act_then_call)
+
+    def once_from_another_connection(self, change):
+        """Commit one change as another request would. The refresh would swallow its failure, so note it."""
+        if self.ran_from_another_connection:
+            return
+        self.ran_from_another_connection = True
+        with self.secondary_connection():
+            try:
+                change()
+                frappe.db.commit()
+            except Exception as error:
+                self.errors_from_another_connection.append(error)
+                frappe.db.rollback()
+
+    def assert_additions_paused(self):
+        _doc, policy, measurements = state()
+        with self.assertRaisesRegex(frappe.ValidationError, "unavailable"):
+            check_addition(policy, measurements, user=None, site_drive=0, personal_drive=0, delta=1)
+
+    def assert_additions_admitted(self):
+        _doc, policy, measurements = state()
+        check_addition(policy, measurements, user=None, site_drive=0, personal_drive=0, delta=1)
 
     def restore_storage_state(self, original):
         """Undo what the test committed. Runs after the rollback that releases the row's lock."""

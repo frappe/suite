@@ -51,7 +51,10 @@ def storage_measurements(previous: dict, *, refresh: bool = False) -> dict:
 
 
 def refresh_storage() -> None:
-    """Measure Mail usage and the site allowance that are due, and save them for Drive admission."""
+    """Measure Mail usage and the site allowance that are due, and save them for Drive admission.
+
+    Holds no storage lock during provider calls, and saves nothing over a change made meanwhile.
+    """
     from suite.mail.storage import refresh
 
     refresh()
