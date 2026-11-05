@@ -187,6 +187,7 @@ import { computed, ref, shallowRef, useSlots, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
+import type { DocumentPanel } from '@/apps/drive/client/types'
 import { selectStem } from '@/apps/drive/files/internal/filename'
 import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { translate as __ } from '@/platform/translation'
@@ -196,12 +197,7 @@ import { canRename } from '../nodeActions'
 import { copyLink } from '../share/shareFormat'
 import DocumentEditedNote from './DocumentEditedNote.vue'
 import { editedDetails, editedLabel } from './editedLabel'
-import {
-  documentTypeIcon,
-  PANEL_BUTTONS,
-  type DocumentPanel,
-  type DocumentSaveState,
-} from './header'
+import { documentTypeIcon, PANEL_BUTTONS, type DocumentSaveState } from './header'
 
 /**
  * The one header every document surface shows: the Drive type icon, the title

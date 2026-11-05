@@ -169,6 +169,30 @@ describe('document session comments', () => {
   })
 })
 
+describe('document session panels', () => {
+  it('offers a signed-out person only the panels the server would answer, and a signed-in person both', async () => {
+    const panelsFor = async (role: number, user: string | null) => {
+      const session = await openDriveDocumentSession('deck', {
+        signedIn: () => user,
+        client: testClient(
+          transport((id, input) =>
+            id === 'node_get' ? { ...documentNode(input.node), access: { role } } : {},
+          ),
+        ),
+      })
+      const { value } = session.panels
+      session.dispose()
+      return value
+    }
+
+    expect(await panelsFor(10, null)).toEqual([])
+    expect(await panelsFor(20, null)).toEqual(['comments'])
+    expect(await panelsFor(30, null)).toEqual(['comments'])
+    expect(await panelsFor(40, null)).toEqual(['comments', 'versions'])
+    expect(await panelsFor(10, 'reader@suite.test')).toEqual(['comments', 'versions'])
+  })
+})
+
 describe('document session visits', () => {
   it("records a visit for the caller's own access, and none when a share link decides it or nobody is signed in", async () => {
     const visits: string[] = []

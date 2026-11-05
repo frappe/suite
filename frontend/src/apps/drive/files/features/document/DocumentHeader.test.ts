@@ -4,8 +4,9 @@ import { createApp, h, nextTick, ref, type VNode } from 'vue'
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { TransportError } from '@/platform/transport'
 
+import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'
-import type { DocumentPanel, DocumentSaveState } from './header'
+import type { DocumentSaveState } from './header'
 
 // Plain stand-ins: the test frappe-ui build has no TextInput or Badge.
 vi.mock('frappe-ui', async () => {

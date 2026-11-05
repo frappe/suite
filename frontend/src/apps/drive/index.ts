@@ -377,7 +377,8 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
 
 export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
-export type { DocumentPanel, DocumentSaveState } from '@/apps/drive/files/features/document/header'
+export type { DocumentPanel } from '@/apps/drive/client/types'
+export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),

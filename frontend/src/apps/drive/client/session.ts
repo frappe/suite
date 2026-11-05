@@ -20,7 +20,14 @@ import type {
 import { driveLinks } from './links'
 import { folderOf } from './nodes'
 import { createStar } from './star'
-import { canManage, type DriveAccess, type DriveBreadcrumb, type DriveNode } from './types'
+import {
+  canManage,
+  documentPanels,
+  type DocumentPanel,
+  type DriveAccess,
+  type DriveBreadcrumb,
+  type DriveNode,
+} from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
@@ -81,6 +88,8 @@ export interface DocumentSession {
   readonly access: Readonly<Ref<DriveAccess>>
   /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
   readonly canShare: Readonly<Ref<boolean>>
+  /** The side panels the caller can open; the server refuses the others. */
+  readonly panels: Readonly<Ref<readonly DocumentPanel[]>>
   /** The folder the document was in when it opened; null when the caller cannot read it. */
   readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
   /** When the content last changed, as of opening. The wire's UTC time. */
@@ -363,6 +372,7 @@ export async function openDriveDocumentSession(
     state: readonly(state),
     access: readonly(access),
     canShare: computed(() => canShare(state.value, access.value)),
+    panels: computed(() => documentPanels(access.value, !!signedIn())),
     folder: readonly(folder),
     editedAt: node.content_modified ?? node.modified,
     createdAt: node.creation,

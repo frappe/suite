@@ -10,7 +10,12 @@ import {
   type MediaHandle,
 } from '@/apps/drive/client/session'
 import { createStar } from '@/apps/drive/client/star'
-import type { DriveBreadcrumb, DriveNode, DrivePreview } from '@/apps/drive/client/types'
+import {
+  documentPanels,
+  type DriveBreadcrumb,
+  type DriveNode,
+  type DrivePreview,
+} from '@/apps/drive/client/types'
 import { getCookieSessionUser } from '@/platform/session'
 
 import { presentShareDialog } from '../share/present'
@@ -157,6 +162,7 @@ export async function openFilePreviewSession(
     state: readonly(state),
     access: readonly(access),
     canShare: computed(() => canShare(state.value, access.value)),
+    panels: computed(() => documentPanels(access.value, !!getCookieSessionUser())),
     async rename(nextTitle) {
       const node = await client.mutation(
         api.drive.nodes.rename,

@@ -37,6 +37,11 @@ function surfaceSession(
     state,
     access,
     canShare: computed(() => state.value === 'Active' && access.value.role >= 50),
+    // What the server answers: Drive's own test holds the session to the same rule
+    panels: computed(() => [
+      ...(signedIn.isOn || access.value.role >= 20 ? ['comments'] : []),
+      ...(signedIn.isOn || access.value.role >= 40 ? ['versions'] : []),
+    ]),
     refreshAccess: async () => {},
     versions,
     credentials: {

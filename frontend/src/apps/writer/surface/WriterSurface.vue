@@ -49,7 +49,7 @@ import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
 import { watchConversion, type CollabRoom, type VersionRestored } from '@/platform/collab'
 import { useHideRail } from '@/platform/rail'
-import { isAuthenticated, useSession } from '@/platform/session'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import { frozenBanner, isSafeOnDevice, notUpgradedBanner, upgradingBanner } from './collabMessages'
@@ -139,17 +139,7 @@ const preview = shallowRef<
 >({ version: null, copy: null })
 
 const recoveryBanner = ref<InstanceType<typeof RecoveryBanner> | null>(null)
-// A signed-out reader sees the document only. As on the server, a Guest needs a comment link
-// to see the discussion and an edit link to see the version history.
-const sessionRole = () => props.session.access.value.role ?? 0
-const seesComments = computed(() => isAuthenticated.value || sessionRole() >= DRIVE_ROLES.comment)
-const seesVersions = computed(() => isAuthenticated.value || sessionRole() >= DRIVE_ROLES.edit)
-const shownPanels = computed(() => {
-  const panels: DocumentPanel[] = []
-  if (seesComments.value) panels.push('comments')
-  if (seesVersions.value) panels.push('versions')
-  return panels
-})
+const seesComments = computed(() => props.session.panels.value.includes('comments'))
 const {
   threads: readThreads,
   readAt: threadsReadAt,
@@ -837,7 +827,7 @@ onBeforeUnmount(() => {
           :can-save-version="canSaveVersion"
           :can-lock="canEdit"
           :is-locked="isDocumentLocked"
-          :panels="shownPanels"
+          :panels="session.panels.value"
           :panel="panel"
           @toggle-panel="togglePanel"
           @save-version="nameVersion"
