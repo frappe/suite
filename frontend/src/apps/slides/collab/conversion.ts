@@ -240,6 +240,7 @@ const FORMATTING_TAGS = new Set([
 ])
 const FOLDED_WHITESPACE = /[ \t\n\r\f]/
 const HARD_BREAK = '\n'
+const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
 
 // The value the browser reads, or the raw text when jsdom can't read it, so a property jsdom doesn't
 // know still counts
@@ -368,6 +369,44 @@ export function keepsHtml(source: ParentNode, drawn: ParentNode) {
   )
 }
 
+// In the old view a list item's own style reached its text by CSS inheritance. The editor's items hold no
+// style and draw one from their first text, so the text takes what it inherited. This changes no words
+function carryItemStyles(body: HTMLElement) {
+  const walker = body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT)
+  const texts: Text[] = []
+  while (walker.nextNode()) {
+    texts.push(walker.currentNode as Text)
+  }
+
+  for (const text of texts.filter(({ data }) => data.trim())) {
+    const inherited = ITEM_STYLES.flatMap((name) => fromItem(text, name))
+    if (inherited.length) {
+      const span = body.ownerDocument.createElement('span')
+      span.setAttribute('style', inherited.join('; '))
+      text.replaceWith(span)
+      span.append(text)
+    }
+  }
+}
+
+// The declaration a text inherits from its list item, unless something nearer sets it
+function fromItem(text: Text, wanted: string) {
+  for (let at = text.parentElement; at; at = at.parentElement) {
+    const value = new Map(styleEntries(at)).get(wanted)
+    if (value && at.localName !== 'li') {
+      return []
+    }
+
+    if (value) {
+      const declaration = `${wanted}: ${value}`
+
+      return [declaration]
+    }
+  }
+
+  return []
+}
+
 function parsedContent(content: unknown): { node: PMNode; source: ParentNode | null } {
   if (isEmpty(content)) {
     return { node: schema.topNodeType.createAndFill() as PMNode, source: null }
@@ -380,7 +419,11 @@ function parsedContent(content: unknown): { node: PMNode; source: ParentNode | n
 
   const html = String(content)
   const { body } = new DOMParser().parseFromString(html, 'text/html')
-  return { node: schema.nodeFromJSON(generateJSON(html, extensions)), source: body }
+  const carried = body.cloneNode(true) as HTMLElement
+  carryItemStyles(carried)
+  const node = schema.nodeFromJSON(generateJSON(carried.innerHTML, extensions))
+
+  return { node, source: body }
 }
 
 function fillText(doc: Y.Doc, id: string, content: unknown) {

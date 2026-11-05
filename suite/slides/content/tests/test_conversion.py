@@ -78,6 +78,11 @@ class ConversionCase(LoggedDeckCase):
 
 
 class TestConversion(ConversionCase):
+    def test_a_list_item_colour_converts_where_the_old_view_inherited_it(self):
+        node = self.old_deck([text_box("box", content='<ul><li style="color: red"><p>a</p></li></ul>')])
+
+        self.assertEqual(self.convert(node), "converted")
+
     def test_a_converted_deck_keeps_its_comments(self):
         node = self.old_deck([text_box("one")])
         reader = principals_for(OWNER)

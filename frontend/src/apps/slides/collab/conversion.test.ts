@@ -264,6 +264,26 @@ describe('text', () => {
     })
   })
 
+  it('carries a list item style to the text the old view inherited it on', () => {
+    const content =
+      '<ul><li style="color: red; font-family: Inter; font-size: 24px; letter-spacing: 2px">' +
+      '<p>a<span style="color: blue">b</span></p></li></ul>'
+    const { doc } = converted([{ id: 'box', type: 'text', content }])
+    const [{ content: items }] = bodyOf(doc, 'box').content
+    const [first, second] = items[0].content[0].content
+    const inherited = { fontFamily: 'Inter', fontSize: '24px', letterSpacing: '2px' }
+    expect(first.marks[0].attrs).toMatchObject({ color: 'red', ...inherited })
+    expect(second.marks[0].attrs).toMatchObject({ color: 'blue', ...inherited })
+  })
+
+  it('carries an outer list item style to a nested list that inherited it', () => {
+    const content = '<ul><li style="color: red"><p>a</p><ul><li><p>b</p></li></ul></li></ul>'
+    const { doc } = converted([{ id: 'box', type: 'text', content }])
+    const [{ content: items }] = bodyOf(doc, 'box').content
+    const [, nested] = items[0].content
+    expect(nested.content[0].content[0].content[0].marks[0].attrs.color).toBe('red')
+  })
+
   it('takes an old list item whose opacity CSS clamps to opaque', () => {
     const content =
       '<ul><li style="opacity: 100"><p><span style="opacity: 0.5">a</span></p></li></ul>'
@@ -309,8 +329,13 @@ describe('refusals', () => {
       'html',
     ],
     [
-      'a list item colour its text does not carry',
-      { content: '<ul><li style="color: red"><p>a</p></li></ul>' },
+      'a list item colour its text overrides, which only the bullet showed',
+      { content: '<ul><li style="color: red"><p><span style="color: blue">a</span></p></li></ul>' },
+      'html',
+    ],
+    [
+      'a list item colour with no text to carry it',
+      { content: '<ul><li style="color: red"><p></p></li></ul>' },
       'html',
     ],
     ['a horizontal rule', { content: '<p>a</p><hr><p>b</p>' }, 'html'],
