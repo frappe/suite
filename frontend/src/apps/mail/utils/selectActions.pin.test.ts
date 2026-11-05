@@ -1,0 +1,51 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import type { Thread } from '@/apps/mail/types'
+
+import { selectActions } from './selectActions'
+
+const handlers = () =>
+  Object.fromEntries(
+    [
+      'star',
+      'unstar',
+      'archive',
+      'junk',
+      'notJunk',
+      'trash',
+      'delete',
+      'read',
+      'unread',
+      'pin',
+      'unpin',
+    ].map((name) => [name, vi.fn()]),
+  ) as never
+
+const offered = (rows: Partial<Thread>[], inbox: boolean) =>
+  selectActions(
+    () => rows.map((row) => ({ messages: [], mailboxes: [], ...row })) as unknown as Thread[],
+    () => ({ archive: false, trash: false, drafts: false, inbox }),
+    handlers(),
+  )
+    .filter((action) => action.condition())
+    .map((action) => action.shortLabel)
+
+describe('pinning a selection', () => {
+  it('offers Pin for unpinned rows and Unpin for pinned ones in an Inbox', () => {
+    expect(offered([{ pinned: 0 }], true)).toContain('Pin')
+    expect(offered([{ pinned: 0 }], true)).not.toContain('Unpin')
+    expect(offered([{ pinned: 1 }], true)).toContain('Unpin')
+    expect(offered([{ pinned: 1 }], true)).not.toContain('Pin')
+  })
+
+  it('offers both on a mixed selection', () => {
+    const labels = offered([{ pinned: 0 }, { pinned: 1 }], true)
+    expect(labels).toEqual(expect.arrayContaining(['Pin', 'Unpin']))
+  })
+
+  it('offers neither outside an Inbox, where a pin does nothing', () => {
+    const labels = offered([{ pinned: 0 }, { pinned: 1 }], false)
+    expect(labels).not.toContain('Pin')
+    expect(labels).not.toContain('Unpin')
+  })
+})

@@ -386,7 +386,13 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             return data.filter((row) => !isRecord(row) || !senders.has(row.from_email))
           }
           const field =
-            id === 'set_mails_seen' ? 'seen' : id === 'set_flagged' ? 'flagged' : undefined
+            id === 'set_mails_seen'
+              ? 'seen'
+              : id === 'set_flagged'
+                ? 'flagged'
+                : id === 'pin_mails'
+                  ? 'pinned'
+                  : undefined
           const patch = (row: unknown): unknown => {
             if (
               !isRecord(row) ||
@@ -422,6 +428,8 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               ...(duplicates ? { duplicates } : {}),
               ...(ids.has(row.id) ? { [field]: input[field] ? 1 : 0 } : {}),
               ...flagged,
+              // A pin is the conversation's, whichever of its messages the row stands for.
+              ...(field === 'pinned' && touched ? { pinned: input.pinned ? 1 : 0 } : {}),
             }
           }
           if (field) {

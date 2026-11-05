@@ -200,7 +200,7 @@
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
-                v-if="groupedByDate && !isMobile"
+                v-if="groupHeaderVisible(key)"
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
@@ -268,6 +268,8 @@
                     :hide-sender="row.inStack"
                     :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
                     :screened="screener.active.value && screener.isScreened(row.thread)"
+                    :pinnable="mailbox === mailboxIds.inbox"
+                    @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
@@ -332,6 +334,7 @@
           "
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
+          @set-pinned="(ids: string[], pinned: boolean) => pinMails(store.accountId, ids, pinned)"
           @archive-thread="handleArchiveThreads([threadID!])"
           @unarchive-thread="handleUnarchiveThreads([threadID!])"
           @move-thread="
@@ -412,6 +415,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
+import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import {
@@ -515,7 +519,7 @@ const screener = useScreener()
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
-  groupedByDate,
+  groupHeaderVisible,
   groupedThreads,
   getGroupThreads,
   isLastGroup,
@@ -734,6 +738,7 @@ const selectActions = buildSelectActions(
     archive: mailbox === mailboxIds.archive,
     trash: mailbox === mailboxIds.trash,
     drafts: mailbox === mailboxIds.drafts,
+    inbox: mailbox === mailboxIds.inbox,
     sent: mailboxIds.sent,
     archiveId: mailboxIds.archive,
     inboxId: mailboxIds.inbox,
@@ -749,8 +754,16 @@ const selectActions = buildSelectActions(
     delete: () => junkOrDeleteThreads(selections.value, false),
     read: () => handleSetSeen({ 1: selections.value }),
     unread: () => handleSetSeen({ 0: selections.value }),
+    pin: () => pinSelected(true),
+    unpin: () => pinSelected(false),
   },
 )
+
+const { pinThreads, pinMails } = useThreadPin()
+const pinSelected = (pinned: boolean) => {
+  pinThreads(selectedRows.value, pinned)
+  resetSelections()
+}
 
 // Search
 

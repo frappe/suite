@@ -38,6 +38,12 @@
         </span>
       </Tooltip>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
+      <!-- On a phone a row has no hover actions to show the pin, nor a header above it. -->
+      <Pin
+        v-if="mail.pinned && (isMobile || mailTweaks.pinLook !== 'tint')"
+        class="text-ink-gray-5 size-3.5 shrink-0"
+        :aria-label="__('Pinned')"
+      />
     </template>
 
     <template #subject>
@@ -53,6 +59,8 @@
         :threads="[mail]"
         :drafts
         :unarchive
+        :pinnable
+        @set-pinned="(pinned: boolean) => emit('setPinned', pinned)"
         @set-seen="(seen: boolean) => emit('setSeen', seen)"
         @archive="emit('archiveThread')"
         @unarchive="emit('unarchiveThread')"
@@ -170,7 +178,7 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Download, Loader, UserRoundSearch } from 'lucide-vue-next'
+import { Download, Loader, Pin, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -183,8 +191,9 @@ import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
-import { useOwnEmails } from '@/apps/mail/utils/composables'
+import { useOwnEmails, useScreenSize } from '@/apps/mail/utils/composables'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
+import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 import {
   threadAvatarLabel,
   threadDisplayName,
@@ -209,6 +218,7 @@ const {
   hideAvatar = false,
   outgoing,
   screened = false,
+  pinnable = false,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -242,6 +252,8 @@ const {
   outgoing?: boolean
   // A screened thread mixed into the inbox: an ordinary row, marked with the New sender icon.
   screened?: boolean
+  // The list is an Inbox, the one place a pin acts (see MailRowActions).
+  pinnable?: boolean
 }>()
 
 const emit = defineEmits([
@@ -251,12 +263,14 @@ const emit = defineEmits([
   'trashThread',
   'deleteThread',
   'setFlagged',
+  'setPinned',
   'setSelected',
   'dragStart',
   'dragEnd',
 ])
 
 const route = useRoute()
+const { isMobile } = useScreenSize()
 const { mailboxes, mailboxIds } = userStore()
 const screener = useScreener()
 
