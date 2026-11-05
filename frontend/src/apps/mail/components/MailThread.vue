@@ -703,8 +703,7 @@
                 <ReactionPicker
                   v-if="addReactionSpot(thread.at(-1)!) === 'bar'"
                   :refusal="thread.at(-1)!.cannot_react"
-                  :variant="isMobile ? 'ghost' : 'outline'"
-                  :class="{ '!h-16 !w-16 shrink-0 rounded-none': isMobile }"
+                  variant="outline"
                   @pick="(emoji: string) => react(thread.at(-1)!, emoji)"
                 />
               </div>
@@ -1588,8 +1587,14 @@ const { reactionsOn, react } = useMessageReactions(
     else void threadFallback.refetch().catch(() => {})
   },
 )
+// The phone's bar beside Forward holds its actions and nothing else, so there the header offers it.
 const addReactionSpot = (mail: Mail) =>
-  mail.draft ? null : reactionButtonSpot(reactionsOn(mail).length > 0, mail === thread.value.at(-1))
+  mail.draft
+    ? null
+    : reactionButtonSpot(
+        reactionsOn(mail).length > 0,
+        !isMobile.value && mail === thread.value.at(-1),
+      )
 const replyForwardActions = computed(() =>
   [
     {

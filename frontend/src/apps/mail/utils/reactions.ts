@@ -63,12 +63,12 @@ export function hasReacted(
 
 /**
  * Where a message offers adding a reaction, so that it only ever offers it once: beside its chips
- * once it has any, and otherwise beside Forward for the last message of the conversation, which is
- * the one that row acts on, or in the header for any other.
+ * once it has any, otherwise beside Forward if that row can take it, or in the header.
  *
- * A message with a draft after it is not the last, and the row beside Forward isn't showing.
+ * The row acts on the last message of the conversation, so it can only take that one. A message
+ * with a draft after it is not the last, and the row isn't showing then.
  */
-export function reactionButtonSpot(hasReactions: boolean, isLast: boolean) {
+export function reactionButtonSpot(hasReactions: boolean, besideForward: boolean) {
   if (hasReactions) return 'chips'
-  return isLast ? 'bar' : 'header'
+  return besideForward ? 'bar' : 'header'
 }

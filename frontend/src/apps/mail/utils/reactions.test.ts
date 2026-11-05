@@ -73,11 +73,11 @@ describe('reactionButtonSpot', () => {
     expect(reactionButtonSpot(true, false)).toBe('chips')
   })
 
-  it('sits beside Forward on the last message with no reactions', () => {
+  it('sits beside Forward on a message with no reactions that the row can take', () => {
     expect(reactionButtonSpot(false, true)).toBe('bar')
   })
 
-  it('sits in the header of an earlier message with no reactions', () => {
+  it('sits in the header of a message with no reactions that the row cannot take', () => {
     expect(reactionButtonSpot(false, false)).toBe('header')
   })
 })
