@@ -387,6 +387,76 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual((rows[0].name, rows[0].elements), (own, "[]"))
 
+    def named_rows(self, node: str) -> list[str]:
+        return frappe.get_all(
+            "Slide", {"parent": slides_drive.docname_for_node(node)}, pluck="name", order_by="idx"
+        )
+
+    def test_a_converted_decks_row_renamed_is_refused_and_keeps_its_name(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.named_rows(node)
+        row = self.owned_row(node)
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.rename_doc("Slide", row.name, f"{row.name}-renamed")
+
+        frappe.db.rollback()
+        self.assertEqual(self.named_rows(node), before)
+
+    def test_a_plain_decks_row_merged_into_a_converted_decks_row_is_refused(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.named_rows(node)
+        plain = self.old_deck([text_box("other")])
+        plain_rows = self.named_rows(plain)
+        frappe.set_user(OWNER)
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.rename_doc("Slide", plain_rows[0], before[0], merge=True)
+
+        frappe.db.rollback()
+        self.assertEqual((self.named_rows(node), self.named_rows(plain)), (before, plain_rows))
+
+    def test_a_parent_save_that_names_a_row_anew_is_refused_and_deletes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.named_rows(node)
+        frappe.set_user(OWNER)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.slides[0].name = "a-row-nobody-has"
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.save(deck.as_dict())
+
+        frappe.db.rollback()
+        self.assertEqual(self.named_rows(node), before)
+
+    def test_an_old_tab_saving_a_theme_after_its_row_was_renamed_deletes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.named_rows(node)
+        frappe.set_user(OWNER)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        # The rename is refused on its own, so it stands in for one that got past the fence
+        frappe.db.set_value("Slide", before[0], "name", f"{before[0]}-renamed")
+        renamed = self.named_rows(node)
+        deck.theme = None
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.save(deck.as_dict())
+
+        self.assertEqual(self.named_rows(node), renamed)
+
+    def test_a_plain_decks_row_still_renames(self):
+        node = self.old_deck([text_box("box")])
+        [own] = self.named_rows(node)
+        frappe.set_user(OWNER)
+
+        frappe.client.rename_doc("Slide", own, f"{own}-renamed")
+
+        self.assertEqual(self.named_rows(node), [f"{own}-renamed"])
+
     def test_a_new_slide_row_is_refused_and_writes_nothing(self):
         node = self.old_deck([text_box("box")])
         self.convert(node)

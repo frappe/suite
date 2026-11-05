@@ -22,11 +22,15 @@ class Slide(Document):
         """Delete this row alone, unless its deck is converted."""
         self.refuse_on_a_converted_deck()
 
-    def refuse_on_a_converted_deck(self) -> None:
+    def before_rename(self, old: str, new: str, merge: bool = False) -> None:
+        """Rename this row, or merge it into another, unless either deck is converted."""
+        self.refuse_on_a_converted_deck(new if merge else None)
+
+    def refuse_on_a_converted_deck(self, merged_into: str | None = None) -> None:
         """Refuse a row written on its own, past its deck's fence, on the deck it left or the one it joins."""
         places = [(self.parent, self.parenttype)]
-        if self.name:
-            places.append(frappe.db.get_value("Slide", self.name, ["parent", "parenttype"]) or (None, None))
+        for name in filter(None, (self.name, merged_into)):
+            places.append(frappe.db.get_value("Slide", name, ["parent", "parenttype"]) or (None, None))
 
         decks = {parent for parent, parenttype in places if parenttype == slides_drive.DOCTYPE}
         # In one order, as a deck's lock comes before its rows'

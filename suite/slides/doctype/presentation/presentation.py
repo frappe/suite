@@ -28,8 +28,10 @@ LOGGED_FIELDS = ("content",)
 
 
 def body_of(deck: Document) -> str:
-    """Write out what a converted deck's rows must keep, to compare: its slides and what makes it a composite."""
-    slides = [[slide.get(field) for field in slides_drive.SLIDE_BODY_FIELDS] for slide in deck.slides]
+    """Write out what a converted deck's rows must keep, to compare: its slides, by row, and what makes it a composite."""
+    slides = [
+        [slide.name, *(slide.get(field) for field in slides_drive.SLIDE_BODY_FIELDS)] for slide in deck.slides
+    ]
     references = [reference.presentation for reference in deck.reference_presentations]
     return json.dumps([slides, references, deck.is_composite], default=str)
 
