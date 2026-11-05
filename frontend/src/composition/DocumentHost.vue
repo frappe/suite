@@ -90,10 +90,12 @@ const refused = computed(
   () => session.value?.state.value === 'Refused' || (session.value?.access.value.role ?? 0) < 10,
 )
 
-// The bell row that led here names who mentioned the reader. The entry is current once the route is.
-const mentionedBy = computed(() =>
-  nodeId.value ? historyMentionedBy(router.options.history.state) : null,
-)
+// The bell row that led here names who mentioned the reader. History state is not reactive, and
+// two entries of one node differ only in their slug, so this follows the whole route.
+const mentionedBy = computed(() => {
+  void route.fullPath
+  return historyMentionedBy(router.options.history.state)
+})
 
 watch(
   [nodeId, reopen],

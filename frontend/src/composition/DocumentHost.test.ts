@@ -86,7 +86,7 @@ async function mountHost(
   provide?.(app)
   app.use(router).use(translationPlugin)
   app.mount(root)
-  return { root, app }
+  return { root, app, router }
 }
 
 const refusal = (status: number, type: string) =>
@@ -451,6 +451,21 @@ describe('DocumentHost', () => {
     const { root, app } = await mountHost(undefined, mentionedByState('Sam Rao'))
 
     await vi.waitFor(() => expect(root.textContent).toContain('Ask Sam Rao to share it.'))
+    app.unmount()
+  })
+
+  it('names who to ask for the history entry shown, on a page of the same node', async () => {
+    testState.open.mockRejectedValue(refusal(404, 'Refused'))
+    const { root, app, router } = await mountHost()
+    await vi.waitFor(() => expect(root.textContent).toContain('You don’t have access'))
+    expect(root.textContent).not.toContain('to share it.')
+
+    await router.push({ path: '/d/node-1/plan-title', state: mentionedByState('Sam Rao') })
+    await vi.waitFor(() => expect(root.textContent).toContain('Ask Sam Rao to share it.'))
+
+    router.back()
+    await vi.waitFor(() => expect(root.textContent).not.toContain('to share it.'))
+    expect(root.textContent).toContain('You don’t have access')
     app.unmount()
   })
 
