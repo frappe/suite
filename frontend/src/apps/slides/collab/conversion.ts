@@ -6,8 +6,8 @@
 // A refusal names the rule only, never a key or a value: reasons reach System Managers and server logs,
 // and a key or value can be a person's data
 
-import { generateJSON, getSchema } from '@tiptap/core'
-import { DOMSerializer, type Node as PMNode } from '@tiptap/pm/model'
+import { generateHTML, getSchema } from '@tiptap/core'
+import { DOMSerializer, DOMParser as PMDOMParser, type Node as PMNode } from '@tiptap/pm/model'
 import { prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
 
@@ -26,10 +26,20 @@ import {
   type DeckSlide,
 } from './deck'
 import { slidesFault } from './fault'
+import {
+  carryItemStyles,
+  compareBodies,
+  stateColumnWidths,
+  stateLineHeights,
+  type DrawRules,
+} from './oldBody'
 
 export type RefusalDetail = 'box_type' | 'elements' | 'fault' | 'html' | 'setting'
 
-type Dropped = { kind: 'default-style' } | { kind: 'video-content' }
+type DroppedKind = 'default-style' | 'horizontal-rule' | 'list-marker-style' | 'video-content'
+interface Dropped {
+  kind: DroppedKind
+}
 
 export interface OldSlide {
   id: string
@@ -74,6 +84,7 @@ class Refused extends Error {
 const schema = getSchema(extensions)
 const COLOUR_KEYS = ['fillColor', 'strokeColor', 'borderColor', 'shadowColor']
 const CONNECTOR_KEYS = new Set(['start', 'end', 'route'])
+const DEFAULT_LINE_HEIGHT = '1.5'
 
 function isEmpty(value: unknown) {
   return value === null || value === undefined || value === ''
@@ -171,7 +182,7 @@ function rewritten(old: OldBox) {
   return box
 }
 
-function noteDropped({ type, content, defaultStyle }: OldBox, dropped: Set<Dropped['kind']>) {
+function noteDropped({ type, content, defaultStyle }: OldBox, dropped: Set<DroppedKind>) {
   if (defaultStyle !== undefined) {
     dropped.add('default-style')
   }
@@ -186,7 +197,7 @@ function noteDropped({ type, content, defaultStyle }: OldBox, dropped: Set<Dropp
 }
 
 // A box's fields in the deck's form, with what it dropped
-function boxFields(old: OldBox, dropped: Set<Dropped['kind']>): DeckItem {
+function boxFields(old: OldBox, dropped: Set<DroppedKind>): DeckItem {
   const box = rewritten(old)
   const { id, type, connector, editorMetadata } = box
   const rest = Object.fromEntries(Object.entries(box).filter(([key]) => !REPLACED_KEYS.has(key)))
@@ -218,251 +229,138 @@ function slideFields(old: OldSlide) {
   return withoutUndefined({ ...fields, background: normalizeColor(fields.background) })
 }
 
-interface Held {
-  name: string
-  entries: Map<string, string>
-}
-
-// Tags the editor reads as its own marks, by the tag it draws them with
-const DRAWN_AS: Record<string, string> = { b: 'strong', i: 'em', del: 's', strike: 's' }
-const FORMATTING_TAGS = new Set([
-  'a',
-  'b',
-  'code',
-  'del',
-  'em',
-  'i',
-  's',
-  'span',
-  'strike',
-  'strong',
-  'u',
-])
-const FOLDED_WHITESPACE = /[ \t\n\r\f]/
-const HARD_BREAK = '\n'
-const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
-
-// The value the browser reads, or the raw text when jsdom can't read it, so a property jsdom doesn't
-// know still counts
-function styleEntries(element: Element) {
-  const scratch = element.ownerDocument.createElement('div').style
-  const entries: [string, string][] = []
-  for (const piece of (element.getAttribute('style') ?? '').split(';')) {
-    const colon = piece.indexOf(':')
-    if (colon > 0) {
-      const name = piece.slice(0, colon).trim().toLowerCase()
-      scratch.cssText = piece
-      const read = scratch.getPropertyValue(name) || piece.slice(colon + 1).trim()
-      entries.push([name, read.replace(/['"]/g, '')])
-    }
-  }
-
-  return entries
-}
-
-function drawsTheSame(tag: string, [name, value]: [string, string]) {
-  // The old editor wrote an item's `opacity` from a 0 to 100 mark, and CSS clamps all but 0 to opaque
-  return tag === 'li' && name === 'opacity' && Number(value) >= 1
-}
-
-function drawnEntry([name, value]: [string, string]): [string, string] {
-  if (name === 'font-style' && value === 'italic') {
-    return ['em', '']
-  }
-
-  return [name, value]
-}
-
-function entriesOf(element: Element, tag: string) {
-  const entries = styleEntries(element)
-    .filter((entry) => !drawsTheSame(tag, entry))
-    .map(drawnEntry)
-  for (const { name, value } of element.attributes) {
-    if (name === 'class') {
-      entries.push(
-        ...[...element.classList].map((token): [string, string] => [`class ${token}`, '']),
-      )
-    } else if (name !== 'style') {
-      entries.push([`${tag}@${name}`, value])
-    }
-  }
-
-  return entries
-}
-
-interface Holdings {
-  characters: Held[]
-  elements: Held[]
-}
-
-function holdText(text: string, formats: Map<string, string>, held: Holdings) {
-  for (const char of text) {
-    if (!FOLDED_WHITESPACE.test(char)) {
-      held.characters.push({ name: char, entries: formats })
-    }
-  }
-}
-
-function holdElement(element: Element, formats: Map<string, string>, held: Holdings) {
-  const tag = element.localName
-  if (tag === 'br') {
-    held.characters.push({ name: HARD_BREAK, entries: formats })
-    return
-  }
-
-  if (!FORMATTING_TAGS.has(tag)) {
-    held.elements.push({ name: tag, entries: new Map(entriesOf(element, tag)) })
-    holdChildren(element, formats, held)
-    return
-  }
-
-  const drawn = DRAWN_AS[tag] ?? tag
-  const inner = new Map([...formats, ...entriesOf(element, drawn)])
-  if (tag !== 'span') {
-    inner.set(drawn, '')
-  }
-
-  holdChildren(element, inner, held)
-}
-
-function holdChildren(parent: ParentNode, formats: Map<string, string>, held: Holdings) {
-  for (const node of parent.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      holdText(node.textContent ?? '', formats, held)
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      holdElement(node as Element, formats, held)
-    }
-  }
-}
-
-// What HTML holds: its text and hard breaks with the formatting on each, and its other elements
-function holdingsOf(root: ParentNode) {
-  const held: Holdings = { characters: [], elements: [] }
-  holdChildren(root, new Map(), held)
-  return held
-}
-
-function holds(held: Held, wanted: Held) {
-  return (
-    held.name === wanted.name &&
-    [...wanted.entries].every(([name, value]) => held.entries.get(name) === value)
-  )
-}
-
-/** Whether `drawn` keeps all of `source`: every character with its formatting, and every element in order. */
-export function keepsHtml(source: ParentNode, drawn: ParentNode) {
-  const [wanted, result] = [holdingsOf(source), holdingsOf(drawn)]
-  const hasSameText =
-    wanted.characters.length === result.characters.length &&
-    wanted.characters.every((character, at) => holds(result.characters[at], character))
-  let at = 0
-  return (
-    hasSameText &&
-    wanted.elements.every((element) => {
-      while (at < result.elements.length && !holds(result.elements[at], element)) {
-        at += 1
-      }
-
-      at += 1
-      return at <= result.elements.length
-    })
-  )
-}
-
-// In the old view a list item's own style reached its text by CSS inheritance. The editor's items hold no
-// style and draw one from their first text, so the text takes what it inherited. This changes no words
-function carryItemStyles(body: HTMLElement) {
-  const walker = body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT)
-  const texts: Text[] = []
-  while (walker.nextNode()) {
-    texts.push(walker.currentNode as Text)
-  }
-
-  for (const text of texts.filter(({ data }) => data.trim())) {
-    const inherited = ITEM_STYLES.flatMap((name) => fromItem(text, name))
-    if (inherited.length) {
-      const span = body.ownerDocument.createElement('span')
-      span.setAttribute('style', inherited.join('; '))
-      text.replaceWith(span)
-      span.append(text)
-    }
-  }
-}
-
-// The declaration a text inherits from its list item, unless something nearer sets it
-function fromItem(text: Text, wanted: string) {
-  for (let at = text.parentElement; at; at = at.parentElement) {
-    const value = new Map(styleEntries(at)).get(wanted)
-    if (value && at.localName !== 'li') {
-      return []
+function withoutEmptyAttrs(mark: { type: string; attrs?: Record<string, unknown> }) {
+  const attrs = Object.entries(mark.attrs ?? {}).map(([name, value]) => {
+    if (value === '') {
+      return [name, null]
     }
 
-    if (value) {
-      const declaration = `${wanted}: ${value}`
+    return [name, value]
+  })
 
-      return [declaration]
-    }
-  }
-
-  return []
+  return { ...mark, attrs: Object.fromEntries(attrs) }
 }
 
-function parsedContent(content: unknown): { node: PMNode; source: ParentNode | null } {
-  if (isEmpty(content)) {
-    return { node: schema.topNodeType.createAndFill() as PMNode, source: null }
+// The editor's colour parser answers an empty string for a span with no colour, which no old HTML holds
+function withoutEmptyStyles(json: Record<string, unknown>): Record<string, unknown> {
+  const { content, marks, ...rest } = json as {
+    content?: Record<string, unknown>[]
+    marks?: { type: string; attrs?: Record<string, unknown> }[]
+  }
+  const cleaned: Record<string, unknown> = { ...rest }
+  if (content) {
+    cleaned.content = content.map(withoutEmptyStyles)
   }
 
-  // An editor can save a box's body as the document itself, which TextElement reads as well
+  if (marks) {
+    cleaned.marks = marks.map(withoutEmptyAttrs)
+  }
+
+  return cleaned
+}
+
+function rulesOf(box: OldBox): DrawRules {
+  if (box.type === 'table') {
+    return { lineHeight: DEFAULT_LINE_HEIGHT, isWhitespaceKept: false }
+  }
+
+  const { lineHeight } = lineHeightFields(box.type, box.editorMetadata) as { lineHeight?: unknown }
+  const drawn = lineHeight || box.lineHeight || DEFAULT_LINE_HEIGHT
+  return { lineHeight: String(drawn), isWhitespaceKept: true }
+}
+
+// An editor can save a box's body as the document itself; the old view turned it into HTML to draw it
+function oldHtml(content: unknown) {
   if (typeof content === 'object') {
-    return { node: schema.nodeFromJSON(content), source: null }
+    return generateHTML(content as Parameters<typeof generateHTML>[0], extensions)
   }
 
-  const html = String(content)
-  const { body } = new DOMParser().parseFromString(html, 'text/html')
-  const carried = body.cloneNode(true) as HTMLElement
-  carryItemStyles(carried)
-  const node = schema.nodeFromJSON(generateJSON(carried.innerHTML, extensions))
-
-  return { node, source: body }
+  return String(content)
 }
 
-function fillText(doc: Y.Doc, id: string, content: unknown) {
-  const fragment = boxText(doc, id) as Y.XmlFragment
-  let parsed: ReturnType<typeof parsedContent>
+function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>) {
+  const { body } = new DOMParser().parseFromString(oldHtml(box.content), 'text/html')
+  // No screen draws one: the old view's sanitizer removes it and the schema has no place for it
+  for (const rule of body.querySelectorAll('hr')) {
+    rule.remove()
+    dropped.add('horizontal-rule')
+  }
+
+  stateColumnWidths(body, box.width)
+  const carried = body.cloneNode(true) as HTMLElement
+  stateLineHeights(carried, rules)
+  carryItemStyles(carried, rules)
+  const whitespace = rules.isWhitespaceKept && 'full'
+  const parsed = PMDOMParser.fromSchema(schema).parse(carried, { preserveWhitespace: whitespace })
+
+  return { node: schema.nodeFromJSON(withoutEmptyStyles(parsed.toJSON())), source: body }
+}
+
+function fillEmptyText(fragment: Y.XmlFragment) {
+  prosemirrorToYXmlFragment(schema.topNodeType.createAndFill() as PMNode, fragment)
+}
+
+function filled(box: OldBox, fragment: Y.XmlFragment, rules: DrawRules, dropped: Set<DroppedKind>) {
   try {
-    parsed = parsedContent(content)
+    const parsed = parsedContent(box, rules, dropped)
     prosemirrorToYXmlFragment(parsed.node, fragment)
+    return parsed
   } catch {
     // TipTap throws on a document its schema has no place for
     throw new Refused('html')
   }
+}
 
+// The saved body in the HTML the slide components are given, by the same renderers as `drawnSlides`
+function savedBody(read: PMNode, document: Document) {
+  const saved = document.createElement('body')
+  saved.append(DOMSerializer.fromSchema(schema).serializeFragment(read.content, { document }))
+  return saved
+}
+
+function fillText(doc: Y.Doc, box: OldBox, id: string, dropped: Set<DroppedKind>) {
+  const fragment = boxText(doc, id) as Y.XmlFragment
+  if (isEmpty(box.content)) {
+    fillEmptyText(fragment)
+    return
+  }
+
+  const rules = rulesOf(box)
+  const { node, source } = filled(box, fragment, rules, dropped)
   const read = yXmlFragmentToProseMirrorRootNode(fragment, schema)
-  const drawn = DOMSerializer.fromSchema(schema).serializeFragment(read.content)
-  if (!read.eq(parsed.node) || (parsed.source && !keepsHtml(parsed.source, drawn))) {
+  const { isSameBody, isSameMarkers } = compareBodies(
+    source,
+    savedBody(read, source.ownerDocument),
+    rules,
+  )
+  if (!read.eq(node) || !isSameBody) {
     throw new Refused('html')
+  }
+
+  if (!isSameMarkers) {
+    dropped.add('list-marker-style')
   }
 }
 
 function build(legacy: LegacyDeck) {
-  const dropped = new Set<Dropped['kind']>()
+  const dropped = new Set<DroppedKind>()
   const doc = new Y.Doc()
-  const contents: [string, unknown][] = []
+  const contents: [string, OldBox][] = []
   const slides: DeckSlide[] = legacy.slides.map((old) => ({
     id: old.id,
     ...slideFields(old),
     boxes: stacked(old.elements).map((box) => {
       const fields = boxFields(box, dropped)
       if (TYPES_WITH_TEXT.has(fields.type as string)) {
-        contents.push([fields.id, box.content])
+        contents.push([fields.id, box])
       }
 
       return fields
     }),
   }))
   writeDeck(doc, slides)
-  for (const [id, content] of contents) {
-    fillText(doc, id, content)
+  for (const [id, box] of contents) {
+    fillText(doc, box, id, dropped)
   }
 
   if (slidesFault(doc)) {

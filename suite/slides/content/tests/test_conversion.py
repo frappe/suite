@@ -7,9 +7,10 @@ import frappe
 import pycrdt
 
 from suite import drive
-from suite.content import conversions, convert, log
+from suite.content import compaction, conversions, convert, log
 from suite.drive._core import comments
 from suite.drive.framework import principals_for
+from suite.slides import content as slides_content
 from suite.slides import drive as slides_drive
 from suite.slides.api.slides import save_slides
 from suite.slides.content import APP, CONVERTER_BUILD
@@ -333,6 +334,38 @@ class TestDeckRoute(ConversionCase):
 
         self.assertTrue(answer["is_converted"])
         self.assertNotIn("conversion", answer)
+
+    def test_every_check_refusal_records_a_reason(self):
+        not_integrated = patch(
+            "suite.slides.content.conversion.compaction.compact",
+            return_value=frappe._dict(integrated=False),
+        )
+        failed = patch(
+            "suite.slides.content.conversion.compaction.compact",
+            side_effect=compaction.CompactionFailed("unreadable"),
+        )
+        unknown = patch(
+            "suite.slides.content.conversion.slides_content.SCHEMA",
+            **{"allows.return_value": False},
+        )
+        for name, patched in (("fallback", not_integrated), ("unreadable", failed), ("schema", unknown)):
+            with self.subTest(name), patched:
+                node = self.old_deck([text_box("box")])
+
+                self.assertEqual(self.convert(node), "check")
+
+                self.assertEqual(conversions.conversion_status(APP, node)["reason"], f"check: {name}")
+
+    def test_the_built_converter_reads_a_document_body_and_keeps_whitespace(self):
+        paragraph = {"type": "paragraph", "content": [{"type": "text", "text": "A  B"}]}
+        node = self.old_deck(
+            [
+                text_box("doc", content={"type": "doc", "content": [paragraph]}),
+                text_box("html", content="<p>A  B</p><hr>"),
+            ]
+        )
+
+        self.assertEqual(self.convert(node), "converted")
 
     def test_only_a_system_manager_gets_the_reason_for_a_refusal(self):
         node = self.old_deck([text_box("box", content="<h1>a</h1>")])
