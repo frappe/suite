@@ -1,5 +1,6 @@
 """Recreating a deleted Mail account, with Suite Cloud and the mail server faked at the network."""
 
+from base64 import b64decode
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -278,6 +279,20 @@ class TestAccountRecreation(IntegrationTestCase):
         self.assertTrue(result["success"], result)
         self.assert_set_up(account)
         self.assertEqual(self.roles(shared).count("archive"), 1)
+
+    def test_a_retry_at_another_address_signs_in_with_that_address(self):
+        self.server.open_account()
+        self.server.fail_folder_changes()
+        self.assert_setup_failed()
+
+        self.address = f"other-{self.address}"
+        signed_in = set()
+        self.server.intercept = lambda request: signed_in.add(
+            b64decode(request.headers["Authorization"].split()[1]).decode().split(":")[0]
+        )
+        self.retry()
+
+        self.assertEqual(signed_in, {self.address})
 
     def test_a_disabled_user_cannot_reach_their_mail_outside_their_own_account_setup(self):
         account = self.server.open_account()

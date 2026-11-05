@@ -55,6 +55,8 @@ def provision(user: str, address: str, *, password: str, operation: str, **optio
         settings = frappe.get_doc("User Settings", {"user": user})
         settings.username = address
         settings.app_password = account["app_password"]
+        # A failed save never clears the cache, and a client would sign in with the address it holds.
+        frappe.clear_document_cache("User Settings", settings.name)
         # Saving sets up the new account's folders and filters as the user, who stays
         # disabled while an Admin recreates their Mail account (§4.3).
         with provisioning(user):
