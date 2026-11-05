@@ -15,6 +15,12 @@ vi.mock('frappe-ui', () => ({
       return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
     },
   }),
+  Tooltip: defineComponent({
+    props: { text: String },
+    setup(props, { slots }) {
+      return () => h('div', { 'data-tooltip': props.text }, slots.default?.())
+    },
+  }),
 }))
 // Stands in for the popover: a button that picks one emoji.
 vi.mock('@/apps/mail/components/ReactionPicker.vue', () => ({
@@ -31,11 +37,13 @@ const theirs: MailReaction = { emoji: '😍', from_name: 'Ana', from_email: 'ana
 let cleanup: (() => void) | undefined
 afterEach(() => cleanup?.())
 
-function render(reactions: MailReaction[], readonly = false) {
+function render(reactions: MailReaction[], readonly = false, refusal?: string) {
   const onReact = vi.fn()
   const root = document.createElement('div')
   document.body.append(root)
-  const app = createApp({ render: () => h(MessageReactions, { reactions, readonly, onReact }) })
+  const app = createApp({
+    render: () => h(MessageReactions, { reactions, readonly, refusal, onReact }),
+  })
   app.use(translationPlugin).mount(root)
   cleanup = () => {
     app.unmount()
@@ -43,6 +51,7 @@ function render(reactions: MailReaction[], readonly = false) {
   }
   return {
     onReact,
+    root,
     pick: root.querySelector<HTMLButtonElement>('[data-pick]'),
     chips: [...root.querySelectorAll<HTMLButtonElement>('button:not([data-pick])')],
   }
@@ -70,6 +79,14 @@ describe('MessageReactions', () => {
     const { pick, onReact } = render([theirs])
     pick?.click()
     expect(onReact).toHaveBeenCalledWith('🎉')
+  })
+
+  it('cannot be pressed on a message that cannot be reacted to, but still says who reacted', () => {
+    const { chips, root, onReact } = render([theirs], false, 'A list.')
+    expect(chips[0].disabled).toBe(true)
+    chips[0].click()
+    expect(onReact).not.toHaveBeenCalled()
+    expect(root.querySelector('[data-tooltip]')?.getAttribute('data-tooltip')).toBe('Ana')
   })
 
   it('shows chips but offers no way to react in a read-only view', () => {

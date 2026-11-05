@@ -5,24 +5,30 @@
 -->
 <template>
   <div v-if="groups.length" class="flex flex-wrap items-center gap-1.5">
-    <Button
-      v-for="group in groups"
-      :key="group.emoji"
-      variant="subtle"
-      class="rounded-full"
-      :class="{ '!bg-surface-gray-4 hover:!bg-surface-gray-5': group.mine }"
-      :tooltip="group.who"
-      :aria-pressed="group.mine"
-      :disabled="readonly"
-      @click="emit('react', group.emoji)"
-    >
-      <span class="flex items-center gap-1.5">
-        <span>{{ group.emoji }}</span>
-        <span class="tabular-nums" :class="group.mine ? 'text-ink-gray-8' : 'text-ink-gray-6'">
-          {{ group.count }}
-        </span>
+    <!-- The tooltip is on a wrapper so that it still says who reacted when the chip is disabled,
+         and a disabled button takes no pointer events of its own. -->
+    <Tooltip v-for="group in groups" :key="group.emoji" :text="group.who">
+      <span class="inline-flex">
+        <Button
+          variant="subtle"
+          class="rounded-full"
+          :class="{
+            '!bg-surface-gray-4 hover:!bg-surface-gray-5': group.mine,
+            'pointer-events-none': unavailable,
+          }"
+          :aria-pressed="group.mine"
+          :disabled="unavailable"
+          @click="emit('react', group.emoji)"
+        >
+          <span class="flex items-center gap-1.5">
+            <span>{{ group.emoji }}</span>
+            <span class="tabular-nums" :class="group.mine ? 'text-ink-gray-8' : 'text-ink-gray-6'">
+              {{ group.count }}
+            </span>
+          </span>
+        </Button>
       </span>
-    </Button>
+    </Tooltip>
 
     <ReactionPicker
       v-if="!readonly"
@@ -35,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 
 import ReactionPicker from '@/apps/mail/components/ReactionPicker.vue'
@@ -53,4 +59,5 @@ const emit = defineEmits<{ react: [emoji: string] }>()
 
 const ownEmails = useOwnEmails()
 const groups = computed(() => groupReactions(reactions, ownEmails.value, __))
+const unavailable = computed(() => readonly || !!refusal)
 </script>

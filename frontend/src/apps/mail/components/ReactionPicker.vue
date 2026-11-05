@@ -4,24 +4,25 @@
   tooltip: focus returns to the button when the palette closes, and a tooltip would open on that and
   cover whatever is beside it.
 
-  On a message that can't be reacted to it stays in place, dimmed, and says why when pressed: a
-  disabled button can't explain itself on a phone, where nothing hovers.
+  On a message that can't be reacted to it stays in place, disabled, and says why on hover. The
+  tooltip hangs off a wrapper because a disabled button takes no pointer events of its own.
 -->
 <template>
-  <Button
-    v-if="refusal"
-    variant="ghost"
-    v-bind="$attrs"
-    class="opacity-50"
-    aria-disabled="true"
-    :title="refusal"
-    :aria-label="refusal"
-    @click="raiseToast(refusal, 'error')"
-  >
-    <template #icon>
-      <SmilePlus class="text-ink-gray-5 icon" />
-    </template>
-  </Button>
+  <Tooltip v-if="refusal" :text="refusal">
+    <span class="inline-flex">
+      <Button
+        variant="ghost"
+        v-bind="$attrs"
+        class="pointer-events-none"
+        disabled
+        :aria-label="refusal"
+      >
+        <template #icon>
+          <SmilePlus class="text-ink-gray-5 icon" />
+        </template>
+      </Button>
+    </span>
+  </Tooltip>
   <EmojiPicker v-else v-model="picked" v-model:reaction="shortPalette">
     <template #default="{ toggle, open }">
       <Button
@@ -40,12 +41,11 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, Tooltip } from 'frappe-ui'
 import { SmilePlus } from 'lucide-vue-next'
 import { ref, watch } from 'vue'
 
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
-import { raiseToast } from '@/apps/mail/utils'
 
 defineOptions({ inheritAttrs: false })
 

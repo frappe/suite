@@ -1,16 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 
 import ReactionPicker from '@/apps/mail/components/ReactionPicker.vue'
 import { translationPlugin } from '@/platform/translation'
 
-const raiseToast = vi.hoisted(() => vi.fn())
-
-vi.mock('@/apps/mail/utils', () => ({ raiseToast }))
 vi.mock('frappe-ui', () => ({
   Button: defineComponent({
     setup(_, { attrs }) {
       return () => h('button', attrs, 'button')
+    },
+  }),
+  Tooltip: defineComponent({
+    props: { text: String },
+    setup(props, { slots }) {
+      return () => h('div', { 'data-tooltip': props.text }, slots.default?.())
     },
   }),
 }))
@@ -25,7 +28,6 @@ vi.mock('@/apps/mail/components/EmojiPicker.vue', () => ({
 
 let cleanup: (() => void) | undefined
 afterEach(() => cleanup?.())
-beforeEach(() => raiseToast.mockClear())
 
 function render(refusal?: string) {
   const root = document.createElement('div')
@@ -44,10 +46,10 @@ describe('ReactionPicker', () => {
     expect(render().querySelector('[data-palette]')).not.toBeNull()
   })
 
-  it('says why when pressed on a message that cannot, with no palette to pick from', () => {
+  it('cannot be pressed on a message that cannot be reacted to, and says why on hover', () => {
     const root = render('A list.')
     expect(root.querySelector('[data-palette]')).toBeNull()
-    root.querySelector('button')?.click()
-    expect(raiseToast).toHaveBeenCalledWith('A list.', 'error')
+    expect(root.querySelector('button')?.hasAttribute('disabled')).toBe(true)
+    expect(root.querySelector('[data-tooltip]')?.getAttribute('data-tooltip')).toBe('A list.')
   })
 })
