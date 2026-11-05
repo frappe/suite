@@ -317,10 +317,21 @@ const takeSnapshot = () => {
   }
 }
 
-// the local copy alone, for when the edits must not go out yet; answers whether it holds them
+// the local copy alone, for when the edits must not go out yet
 const saveDraft = async () => {
   const snapshot = takeSnapshot()
-  return snapshot ? writeSnapshot(snapshot) : false
+  if (snapshot) await writeSnapshot(snapshot)
+}
+
+// Another tab takes over from the draft, so the edits it holds are no longer this tab's to
+// keep and it has nothing left to warn about. If the write fails the deck stays dirty. The
+// snapshot is taken before the first await, while the tab may still write. A deck with no
+// edits leaves no draft to restore.
+const keepDraftAsClean = async () => {
+  const snapshot = dirty.value && takeSnapshot()
+  if (!snapshot || !(await writeSnapshot(snapshot))) return
+  markClean()
+  clearSaveFailure()
 }
 
 async function holdRefused(snapshot, epoch) {
@@ -459,6 +470,7 @@ export {
   saveChanges,
   saveWithoutDelay,
   saveDraft,
+  keepDraftAsClean,
   stopWrites,
   retireDraft,
   resumeWrites,

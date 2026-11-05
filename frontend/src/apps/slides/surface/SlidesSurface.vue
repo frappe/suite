@@ -62,13 +62,11 @@ import {
   writesBlocked,
 } from '@/apps/slides/stores/presentation'
 import {
-  clearSaveFailure,
   dirty,
   isSaving,
-  markClean,
+  keepDraftAsClean,
   resumeWrites,
   saveChanges,
-  saveDraft,
   saveFailed,
   saveRefused,
   savingFor,
@@ -318,14 +316,9 @@ watch(writesBlocked, (blocked) => {
 })
 // The lock has already gone: this runs when the steal rejects this tab's request, and
 // nothing waits for the write, so the tab that took over can read the draft before it lands.
-// A deck with no edits leaves no draft to restore. Edits the draft holds are no longer this
-// tab's to keep, so it has nothing left to warn about; if the write fails it stays dirty.
-async function keepDraftForTakeover() {
+function keepDraftForTakeover() {
   flushPendingBlur()
-  if (!dirty.value) return
-  if (!(await saveDraft())) return
-  markClean()
-  clearSaveFailure()
+  void keepDraftAsClean()
 }
 async function editHere() {
   await acquireEditLock(props.session.contentDocname, keepDraftForTakeover, { steal: true })
