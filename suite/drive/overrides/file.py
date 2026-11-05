@@ -92,8 +92,26 @@ class File(FrappeFile):
         able to read a private file at that url, however the url is spelled. The
         framework's version asks its own File permission, which
         `ignore_file_permissions` turns into a yes for everyone, so this asks Drive's."""
+        if not self.file_url:
+            return
         holders = files_using_stored_file(self.file_url, is_private=1)
         if holders and not any(user_has_permission(name, "read") for name in holders):
+            frappe.throw("You do not have permission to access this file", frappe.PermissionError)
+
+        # The framework treats `/api/method/` and http(s) urls as remote and skips its url
+        # checks, but `get_local_path` resolves any url against the site folder, so `..`
+        # reaches a file no holder lookup can find. storage_key undoes a second layer of
+        # quoting, and the framework strips the site url after this check.
+        url = self.file_url[len(self.get_site_url_prefix()) :]
+        if ".." in storage_key(url).split("/"):
+            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
+        # Drive's own flows skip this method. A fetch url that no row holds names a bucket
+        # object nobody granted. Migrations run as Administrator and insert the first row.
+        if (
+            url.startswith(S3_URL_PREFIX)
+            and frappe.session.user != "Administrator"
+            and not files_using_stored_file(url)
+        ):
             frappe.throw("You do not have permission to access this file", frappe.PermissionError)
 
     def _link_type_changed(self) -> bool:

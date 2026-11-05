@@ -574,7 +574,8 @@ def file_url_spellings(file_url) -> list[str]:
     Rows store one file under several forms: `/private/files/x`, the bare key
     `private/files/x`, and the S3 fetch url of its key, quoted or not, because the
     framework unquotes a new row's url. A client can also send the site's full url,
-    or a path with `.` and `//` segments that resolves to the same file on disk.
+    or a path with `.` and `//` segments that resolves to the same file on disk. A new
+    row cannot use `..` (see `File.validate_private_file_access`), so `normpath` is enough.
     The raw key stays beside the normalised one: on S3 `a//b` and `a/b` are distinct.
     """
     url = str(file_url or "")

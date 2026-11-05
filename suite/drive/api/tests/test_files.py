@@ -600,6 +600,36 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
                     self.new_file_with_url(spelling)
 
+    def test_new_file_url_cannot_climb_out_of_storage(self):
+        # none of these names the file in a way a holder lookup can match, and all of them
+        # resolve to it on disk
+        with self.set_user(OWNER):
+            secret = self.upload(b"another user's secret", "secret.txt")
+        climb = f"../../../{frappe.local.site}/{secret.file_url.lstrip('/')}"
+        double_encoded = "private/files/" + climb.replace("..", "%252E%252E")
+
+        spellings = [
+            S3_URL_PREFIX + "private/files/" + climb,
+            f"https://x/{climb}",
+            f"/api/method/x/../{climb}",
+            S3_URL_PREFIX + double_encoded,
+            get_url() + S3_URL_PREFIX + double_encoded,
+        ]
+        with self.set_user(OTHER_USER):
+            for spelling in spellings:
+                with self.subTest(spelling=spelling), self.assertRaises(frappe.ValidationError):
+                    self.new_file_with_url(spelling)
+
+    def test_new_file_cannot_take_a_fetch_url_no_row_holds(self):
+        key = f"another-site/{frappe.generate_hash(8)}.pdf"
+        with self.set_user(OTHER_USER):
+            for spelling in (get_s3_url(key), get_url() + get_s3_url(key), S3_URL_PREFIX + "private/files/."):
+                with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
+                    self.new_file_with_url(spelling)
+
+        # the legacy Drive migration inserts the first row of each bucket object
+        self.assertEqual(self.new_file_with_url(get_s3_url(key)).file_url, S3_URL_PREFIX + key)
+
     def test_new_file_cannot_reach_an_unreadable_private_file_stored_on_s3(self):
         keys = [f"{self.folder.name}/secret file.txt", f"/{self.folder.name}/secret file.txt", "a//b c.txt"]
         for key in keys:
