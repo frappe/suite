@@ -166,7 +166,7 @@ def convert_document(app: str, node: str) -> str | None:
             return None
 
         if isinstance(converted, convert.Refused):
-            return refused_outcome(app, node, old.fingerprint, converted.reason, started)
+            return refused_outcome(app, node, old.fingerprint, converted.reason, started, converted.detail)
 
         outcome = install_conversion(app, node, old, converted, started)
         if outcome != CHANGED:
@@ -179,12 +179,55 @@ def convert_document(app: str, node: str) -> str | None:
     return None
 
 
-def refused_outcome(app: str, node: str, fingerprint: str, reason: str, started: datetime) -> str | None:
+# Run by hand: bench --site <site> execute suite.content.conversions.trial --kwargs "{'app': 'slides'}"
+def trial(app: str) -> dict[str, str]:
+    """Answer what converting would do to each waiting document, by name, writing nothing."""
+    version = conversion_of(app).version
+    held_job = getattr(frappe.local, "job", None)
+    # The child runs only in a job, and nothing but this command reaches it from outside one
+    frappe.local.job = frappe._dict(job_name="conversion_trial")
+    answers: dict[str, str] = {}
+    try:
+        page = convert.pending_page(app, version, None)
+        while page:
+            answers |= {row.name: trial_answer(app, row.node) for row in page}
+            page = convert.pending_page(app, version, page[-1])
+    finally:
+        frappe.local.job = held_job
+
+    return answers
+
+
+def trial_answer(app: str, node: str) -> str:
+    """Convert and check `node`'s old body as a run would, and stop before anything is written."""
+    conversion = conversion_of(app)
+    old = conversion.read_old(node)
+    if old is None:
+        return "not read"
+
+    converted = convert.convert(conversion.build, conversion.version, old.legacy)
+    if converted is None:
+        raise RuntimeError("the converter can't run here: it needs Node and the built bundle")
+
+    if isinstance(converted, convert.Refused):
+        return f"refused {converted.reason}: {converted.detail}"
+
+    try:
+        conversion.check(node, old, converted)
+    except ConversionRefused as refused:
+        return f"refused {refused.outcome}: {refused.reason}"
+
+    return "converted"
+
+
+def refused_outcome(
+    app: str, node: str, fingerprint: str, reason: str, started: datetime, detail: str | None = None
+) -> str | None:
     """Count a child failure that can clear up by itself; record any other refusal and tell the rooms."""
     if reason in PASSING:
         return count_failure(app, node, fingerprint, reason)
 
-    record(app, node, fingerprint, started, reason)
+    record(app, node, fingerprint, started, reason, detail)
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     live.publish_conversion(app, node, "refused")
     return reason
@@ -263,8 +306,6 @@ def write_conversion(app: str, node: str, old: OldBody, converted: convert.Conve
     """Check, then write, `converted` in the caller's transaction; what it dropped, or None if it can't start."""
     spec = spec_of(app)
     conversion = conversion_of(app)
-    # an app with old documents to convert keeps a readable copy of them
-    assert spec.readable_copy is not None
     if conversion.read_old(node, lock=True) != old or log.find(app, node):
         return None
 
@@ -273,13 +314,14 @@ def write_conversion(app: str, node: str, old: OldBody, converted: convert.Conve
     doc_id = log.create(app, node)
     replace_start(app, doc_id, converted.state, spec.schema.version)
     conversion.fix_up(node, old, checked)
-    try:
-        replaced = copies.replace_copy(app, doc_id, 1, checked.html, spec.readable_copy)
-    except copies.CopyMismatch:
-        raise ConversionRefused("check", "copy") from None
+    if spec.readable_copy is not None:
+        try:
+            replaced = copies.replace_copy(app, doc_id, 1, checked.html, spec.readable_copy)
+        except copies.CopyMismatch:
+            raise ConversionRefused("check", "copy") from None
 
-    if replaced is None:
-        raise ConversionRefused("check", "copy")
+        if replaced is None:
+            raise ConversionRefused("check", "copy")
 
     return [*converted.dropped, *checked.dropped]
 

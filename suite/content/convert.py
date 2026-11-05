@@ -13,7 +13,8 @@ A bundle is used only when it holds the version the server expects, so one built
 bump is refused.
 
 A conversion either converts or is refused with a reason: the converter's own (check, too_large,
-unreadable-yjs), or the child's failure (child_crash, child_timeout, bad_answer). `dropped` holds
+unreadable-yjs), which may name the rule it broke, or the child's failure (child_crash, child_timeout,
+bad_answer). `dropped` holds
 document text, the words of a pending edit or a comment's copy, so it goes only to the conversion's
 record, never to a log or report.
 
@@ -75,6 +76,7 @@ class Converted:
 @dataclass(frozen=True)
 class Refused:
     reason: str
+    detail: str | None = None
 
 
 def may_convert(app: str, *, lock: bool = False) -> bool:
@@ -131,6 +133,7 @@ def pending_page(app: str, version: str, after: frappe._dict | None) -> list[fra
     node = frappe.qb.DocType("Drive Node")
     doc = Table(table(app, "doc"))
     refused = refusal_of(app, row, node_field, version)
+    conversion = spec_of(app).conversion
     query = (
         frappe.qb.from_(row)
         .join(node)
@@ -145,6 +148,10 @@ def pending_page(app: str, version: str, after: frappe._dict | None) -> list[fra
         .orderby(row.name, order=Order.desc)
         .limit(PAGE)
     )
+    if conversion:
+        for column, value in conversion.excluded.items():
+            query = query.where(row[column] != value)
+
     if after is not None:
         query = query.where(sorts_after(row, after))
 
@@ -305,7 +312,7 @@ def failure_reason(error: BaseException | None) -> str:
 def read_answer(answer: dict, max_state: int) -> Converted | Refused:
     """Read the converter's answer, refusing as bad_answer one of another shape."""
     if answer.get("kind") == "failed" and answer.get("reason") in CONVERTER_REASONS:
-        return Refused(answer["reason"])
+        return Refused(answer["reason"], answer.get("detail"))
 
     try:
         state = base64.b64decode(answer["state"], validate=True)
