@@ -62,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
@@ -219,4 +220,83 @@ describe('the in-cell editor draws text where the grid does', () => {
     overlay.el.dispatchEvent(new Event('input'))
     expect(overlay.el.style.paddingTop).toBe(before)
   })
+})
+
+// On a real page the browser snaps the editor's 1.5px border to whole device
+// pixels, places a line's baseline with its own rounding, and the grid can
+// sit between device pixels. Fake that layout and check the text still lands
+// where the canvas puts it: same text edge, and the first baseline on the
+// device pixel the canvas rounds its baseline to.
+describe('on a laid-out page', () => {
+  const PAGE_TOP = 73 // grid's top in the page, CSS px
+
+  // The browser's baseline in a line box: the metrics' value snapped to a
+  // half pixel, as Chrome lays lines out (not what the metrics give).
+  const browserBaseline = (lineH: number, size: number) =>
+    Math.round(((lineH - size * (ASC + DESC)) / 2 + size * ASC) * 2) / 2
+
+  function layOut(dpr: number) {
+    vi.stubGlobal('devicePixelRatio', dpr)
+    const realStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((elt, pseudo) => {
+      const cs = realStyle(elt, pseudo)
+      if (!(elt instanceof HTMLTextAreaElement)) return cs
+      // Chrome draws a border at least 1 device px, rounded down.
+      const set = parseFloat(elt.style.borderWidth)
+      const used = Math.max(1, Math.floor(set * dpr)) / dpr
+      return { borderTopWidth: used + 'px' } as CSSStyleDeclaration
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(16)
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      let top = 0
+      if (this === document.body) top = PAGE_TOP
+      const probe = this.parentElement as HTMLElement | null
+      if (this.tagName === 'SPAN' && probe?.getAttribute('aria-hidden') === 'true')
+        top = browserBaseline(parseFloat(probe.style.lineHeight), parseFloat(probe.style.fontSize))
+      return { top, left: 0, right: 0, bottom: top, width: 0, height: 0, x: 0, y: top } as DOMRect
+    })
+    return (set: number) => Math.max(1, Math.floor(set * dpr)) / dpr
+  }
+
+  const LAID_OUT: { [name: string]: Case } = {
+    'plain text': { value: 'Hello' },
+    'right alignment': { value: 'End', fmt: { align: 'right' } },
+    'top alignment': { value: 'Top', fmt: { valign: 'top' }, h: 40 },
+    '18px, centred': { value: 'Mid', fmt: { fontSize: 18, align: 'center' }, h: 32 },
+    'two lines': { value: 'one\ntwo', h: 40 },
+  }
+
+  for (const dpr of [1, 1.25, 1.5, 2]) {
+    for (const zoom of [1, 1.25]) {
+      for (const [name, c] of Object.entries(LAID_OUT)) {
+        it(`${name} at ${dpr}x, zoom ${zoom}`, () => {
+          const usedBorder = layOut(dpr)
+          const draw = paint(c)[0]
+          const { s } = edit({ ...c, zoom })
+          const used = usedBorder(px(s.borderTopWidth))
+          // Text edge: where the textarea's content box starts or ends.
+          const left = px(s.left) + used + px(s.paddingLeft)
+          const right = px(s.left) + px(s.width) - used - px(s.paddingRight)
+          const edge =
+            s.textAlign === 'right' ? right : s.textAlign === 'center' ? (left + right) / 2 : left
+          expect(edge).toBeCloseTo(draw.x * zoom, 5)
+          // Baseline: the browser draws the editor's on the device pixel it
+          // falls in; the canvas rounds its own to the nearest one.
+          const lineH = px(s.lineHeight)
+          const editorBase =
+            (PAGE_TOP +
+              px(s.top) +
+              used +
+              px(s.paddingTop) +
+              browserBaseline(lineH, px(s.fontSize))) *
+            dpr
+          const canvasRow = Math.round(PAGE_TOP * dpr) + Math.round(draw.baseline * zoom * dpr)
+          expect(editorBase - canvasRow).toBeGreaterThanOrEqual(0)
+          expect(editorBase - canvasRow).toBeLessThan(0.5)
+        })
+      }
+    }
+  }
 })
