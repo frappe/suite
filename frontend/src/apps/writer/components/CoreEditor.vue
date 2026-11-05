@@ -3,60 +3,62 @@
     <slot name="toolbar">
       <WriterToolbar v-if="editable && editor" :editor :settings :is-painting />
     </slot>
-    <DocumentTabs v-if="editor && !hasCover()" :editor :editable="!!editable" />
     <div class="flex flex-1 overflow-hidden">
-      <div class="relative flex flex-1 min-w-0">
-        <div
-          v-show="!hasCover()"
-          id="editor-scroll-container"
-          class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden"
-        >
+      <div class="flex flex-1 min-w-0 flex-col">
+        <DocumentTabs v-if="editor && !hasCover()" :editor :editable="!!editable" />
+        <div class="relative flex flex-1 min-h-0 min-w-0">
           <div
-            class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
-            :style="gridStyle"
-            @click="onBackgroundClick"
+            v-show="!hasCover()"
+            id="editor-scroll-container"
+            class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden"
           >
-            <div class="hidden md:block [container-type:inline-size]">
-              <DocumentOutline v-if="editor" :editor :anchors />
-            </div>
-            <div class="flex flex-col grow min-w-0">
-              <FTextEditor
-                ref="textEditor"
-                v-model="localContent"
-                :upload-function="uploadFunction"
-                :autofocus="true"
-                :placeholder="__('Type / for blocks, @ to mention…')"
-                :extensions="editorExtensions"
-                :editable
-                @change="handleEditorChange"
-              >
-                <template #default="{ editor }">
-                  <WriterBubbleMenu
-                    v-if="editor"
-                    :editor
-                    :should-show="shouldShowBubbleMenu"
-                    @comment="addComment"
-                  />
-                  <!-- Stays mounted: BubbleMenu detaches its root, which Vue cannot then remove or patch beside -->
-                  <LinkPopover v-if="editor" :editor />
-                  <TableControls v-if="editor && editable" :editor />
-                  <EditorDropZone :editor :disabled="isReadOnly" class="grow flex flex-col">
-                    <EditorContent
+            <div
+              class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
+              :style="gridStyle"
+              @click="onBackgroundClick"
+            >
+              <div class="hidden md:block [container-type:inline-size]">
+                <DocumentOutline v-if="editor" :editor :anchors />
+              </div>
+              <div class="flex flex-col grow min-w-0">
+                <FTextEditor
+                  ref="textEditor"
+                  v-model="localContent"
+                  :upload-function="uploadFunction"
+                  :autofocus="true"
+                  :placeholder="__('Type / for blocks, @ to mention…')"
+                  :extensions="editorExtensions"
+                  :editable
+                  @change="handleEditorChange"
+                >
+                  <template #default="{ editor }">
+                    <WriterBubbleMenu
+                      v-if="editor"
                       :editor
-                      role="textbox"
-                      :aria-label="__('Document editor')"
-                      aria-multiline="true"
-                      :class="editorClass"
-                      :style="editorStyle"
+                      :should-show="shouldShowBubbleMenu"
+                      @comment="addComment"
                     />
-                  </EditorDropZone>
-                </template>
-              </FTextEditor>
+                    <!-- Stays mounted: BubbleMenu detaches its root, which Vue cannot then remove or patch beside -->
+                    <LinkPopover v-if="editor" :editor />
+                    <TableControls v-if="editor && editable" :editor />
+                    <EditorDropZone :editor :disabled="isReadOnly" class="grow flex flex-col">
+                      <EditorContent
+                        :editor
+                        role="textbox"
+                        :aria-label="__('Document editor')"
+                        aria-multiline="true"
+                        :class="editorClass"
+                        :style="editorStyle"
+                      />
+                    </EditorDropZone>
+                  </template>
+                </FTextEditor>
+              </div>
+              <div class="hidden md:block" />
             </div>
-            <div class="hidden md:block" />
           </div>
+          <slot name="cover" />
         </div>
-        <slot name="cover" />
       </div>
       <slot name="aside" />
     </div>
