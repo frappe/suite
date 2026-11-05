@@ -14,6 +14,8 @@ from frappe.query_builder.functions import Count
 from frappe.utils import cstr, flt
 
 from suite import content, drive
+from suite.content import log
+from suite.content.conversions import conversion_status
 from suite.slides import drive as slides_drive
 from suite.slides.content import APP
 
@@ -405,7 +407,16 @@ def get_public_presentation(name: str):
     if not frappe.has_permission("Presentation", "read", name):
         frappe.throw("You cannot access this presentation", frappe.PermissionError)
 
-    return deck_answer(frappe.get_doc("Presentation", name))
+    deck = frappe.get_doc("Presentation", name)
+    answer = deck_answer(deck)
+    # A combined deck never converts, and with collaboration off every deck stays on its rows
+    if deck.node and not deck.is_composite and log.enabled(APP):
+        if log.find(APP, deck.node):
+            answer["is_converted"] = True
+        else:
+            answer["conversion"] = conversion_status(APP, deck.node)
+
+    return answer
 
 
 @frappe.whitelist()

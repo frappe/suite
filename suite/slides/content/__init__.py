@@ -2,7 +2,7 @@
 
 The doc's layout is frontend/src/apps/slides/collab/deck.ts; PART_MAP and schema.json name its roots and
 must change with it. Collaboration stays off until ticket 57: with no log every callback falls through to
-the deck's rows.
+the deck's rows, and nothing converts while the app is off.
 """
 
 import json
@@ -13,12 +13,23 @@ import pycrdt
 
 from suite import content
 from suite.slides.content import files
+from suite.slides.content.conversion import (
+    CheckedDeck,
+    OldDeck,
+    check,
+    fix_up,
+    read_fingerprint,
+    read_old,
+)
 
 APP = "slides"
 # `slides` and `boxes` hold one fixed-shape Y.Map per item, keyed by the item's id
 PART_MAP = {"slides": pycrdt.Map, "boxes": pycrdt.Map}
 # The Node checker `bench build` makes, which judges suspect documents with the browsers' Yjs and deck.ts
 CHECKER_BUILD = Path(__file__).with_name("dist") / "checker.cjs"
+# The Node converter `bench build` makes, which turns an old deck into a collaborative one
+CONVERTER_BUILD = Path(__file__).with_name("dist") / "converter.cjs"
+CONVERTER_VERSION = json.loads(Path(__file__).with_name("converter-version.json").read_text())["version"]
 DECLARED = json.loads(Path(__file__).with_name("schema.json").read_text())
 # deck.ts writes GC, deleted, string, format, type and any content: each item is a Y.Map and each text
 # body a Y.XmlFragment of TipTap's nodes, never a Y.Array or Y.Text. `features` declares the roots, the
@@ -52,6 +63,18 @@ def blank_state() -> bytes:
     return doc.get_update()
 
 
+# Built apart from EDITOR, whose bare `Conversion` would hide the body bounds from mypy
+CONVERSION: content.Conversion[OldDeck, CheckedDeck] = content.Conversion(
+    build=CONVERTER_BUILD,
+    version=CONVERTER_VERSION,
+    read_old=read_old,
+    read_fingerprint=read_fingerprint,
+    check=check,
+    fix_up=fix_up,
+    # A combined deck has no slides of its own and never converts (Q154)
+    excluded={"is_composite": 1},
+)
+
 EDITOR = content.EditorSpec(
     app=APP,
     doctype="Presentation",
@@ -64,5 +87,5 @@ EDITOR = content.EditorSpec(
         node_ids=lambda state: files.node_ids(PART_MAP, state), value_rewriter=files.value_rewriter
     ),
     always_on=False,
-    conversion=None,
+    conversion=CONVERSION,
 )
