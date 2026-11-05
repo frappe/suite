@@ -7,9 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EditorFormat } from './input/editor.js'
 import { createOverlay } from './overlay.js'
 import { createCellPainter } from './painters/cell-painter.js'
-import { autoAlign, inkFor } from './painters/cell-text-style.js'
+import { cellBox, cellText } from './painters/cell-text-box.js'
+import { inkFor } from './painters/cell-text-style.js'
 import { createMockCtx, createMockGeo } from './painters/test-utils.js'
-import type { CellFormat, MergeInfo } from './types.js'
+import type { CellFormat, CondFormat, MergeInfo } from './types.js'
 
 // Font metrics both canvases report, as shares of the font size: the font
 // box (CSS line layout), cap height, and the em box ('top' / 'bottom').
@@ -77,6 +78,8 @@ interface Draw {
 interface Case {
   value: string
   fmt?: CellFormat
+  /** What a conditional-formatting rule gives the cell. */
+  cond?: CondFormat
   h?: number
   w?: number
   zoom?: number
@@ -84,8 +87,22 @@ interface Case {
   rightInset?: number
 }
 
-// The painter's text draws for A1 (logical x 50, y 24).
-function paint({ value, fmt = {}, h = 24, w = 100, merge, rightInset = 0 }: Case): Draw[] {
+// A1 (logical x 50, y 24) and the provider the painter and the editor both
+// read it through.
+function sheet({ fmt = {}, cond, h = 24, w = 100, merge, rightInset = 0 }: Case) {
+  const geo = createMockGeo({ colWidths: { 0: w }, rowHeights: { 0: h } })
+  const cells = {
+    getStyle: () => fmt,
+    getMergeInfo: () => merge ?? null,
+    getCondFormat: () => cond ?? null,
+    getRightInset: () => rightInset,
+  }
+  return { geo, cells }
+}
+
+// The painter's text draws for A1.
+function paint(c: Case): Draw[] {
+  const { geo, cells } = sheet(c)
   const ctx = createMockCtx()
   ctx.measureText = measureFor(ctx) as never
   const draws: Draw[] = []
@@ -99,36 +116,28 @@ function paint({ value, fmt = {}, h = 24, w = 100, merge, rightInset = 0 }: Case
           : 0
     draws.push({ text, x, baseline: y + shift, align: ctx.textAlign, font: ctx.font })
   }
-  const geo = createMockGeo({ colWidths: { 0: w }, rowHeights: { 0: h } })
   const painter = createCellPainter(ctx as never, geo as never)
-  painter.drawRegionCells(
-    0,
-    0,
-    0,
-    0,
-    () => value,
-    {
-      getStyle: () => fmt,
-      getMergeInfo: () => merge ?? null,
-      getRightInset: () => rightInset,
-    },
-    null,
-  )
+  painter.drawRegionCells(0, 0, 0, 0, () => c.value, cells, null)
   return draws
 }
 
 // Opens the overlay on A1 the way the editor does, editing the cell's own
-// value; returns where its text sits, in logical px.
-function edit({ value, fmt = {}, h = 24, w = 100, zoom = 1, merge, rightInset = 0 }: Case) {
-  const W = merge ? merge.colSpan * w : w
-  const H = merge ? merge.rowSpan * h : h
+// value: on the box the painter draws the cell in, with the format and
+// alignment it draws the text with. Returns where its text sits, in
+// logical px.
+function edit(c: Case) {
+  const { value, zoom = 1 } = c
+  const { geo, cells } = sheet(c)
+  const box = cellBox(0, 0, cells.getMergeInfo(), geo)
+  const text = cellText('A1', value, cells.getStyle(), cells.getCondFormat(), cells)
   const editorFmt: EditorFormat = {
-    ...fmt,
-    align: fmt.align || autoAlign(value, undefined),
-    insetRight: rightInset,
+    ...text.fmt,
+    align: text.align,
+    insetLeft: text.iconInset,
+    insetRight: text.rightInset,
   }
   const overlay = createOverlay(document.body)
-  overlay.position(50 * zoom, 24 * zoom, W * zoom, H * zoom, editorFmt, zoom)
+  overlay.position(box.x * zoom, box.y * zoom, box.w * zoom, box.h * zoom, editorFmt, zoom)
   overlay.show(value)
   const s = overlay.el.style
   const size = px(s.fontSize)
@@ -174,6 +183,14 @@ const CASES: { [name: string]: Case } = {
     merge: { colSpan: 2, rowSpan: 2 } as MergeInfo,
   },
   'a filter header, right': { value: 'Col', fmt: { align: 'right' }, rightInset: 19 },
+  'a conditional format, bold': { value: 'Flag', cond: { bold: true } },
+  'a conditional-format icon': { value: 'Up', cond: { icon: { shape: 'arrow-up' } } },
+  'an icon and a filter button, centred': {
+    value: 'Mid',
+    fmt: { align: 'center' },
+    cond: { icon: { shape: 'arrow-up' } },
+    rightInset: 19,
+  },
 }
 
 describe('the in-cell editor draws text where the grid does', () => {
