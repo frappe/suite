@@ -64,7 +64,7 @@ class ConversionStatus(TypedDict):
     rooms: NotRequired[live.Rooms]
 
 
-class Refusal(TypedDict):
+class BodyRefusal(TypedDict):
     refused: str
     reason: NotRequired[str]
 
@@ -299,8 +299,8 @@ def keep_old_version(node: str) -> None:
 
 def conversion_status(app: str, node: str) -> ConversionStatus:
     """Answer whether the next run converts `node`'s body, with the rooms told its outcome, or this converter refused it; the reason for System Managers."""
-    held = held_attempt(app, node, conversion_of(app).read_fingerprint(node))
-    if held is None or held.outcome in {None, "converted"}:
+    held = refused_attempt(app, node)
+    if held is None:
         pending: ConversionStatus = {
             "state": "pending",
             "rooms": live.conversion_rooms(app, node),
@@ -318,7 +318,7 @@ def conversion_status(app: str, node: str) -> ConversionStatus:
     return status
 
 
-def refused_body(app: str, node: str) -> Refusal | None:
+def body_refusal(app: str, node: str) -> BodyRefusal | None:
     """Answer the outcome this converter refused `node`'s body with, or None while a run may still convert it; the reason for System Managers.
 
     The outcome is a fixed code such as `too_large` or `check`, never the document's data, so every reader gets it.
@@ -326,15 +326,40 @@ def refused_body(app: str, node: str) -> Refusal | None:
     if spec_of(app).conversion is None:
         return None
 
-    held = held_attempt(app, node, conversion_of(app).read_fingerprint(node))
-    if held is None or held.outcome in {None, "converted"}:
+    held = refused_attempt(app, node)
+    if held is None:
         return None
 
-    refusal: Refusal = {"refused": held.outcome}
+    refusal: BodyRefusal = {"refused": held.outcome}
     if "System Manager" in frappe.get_roles():
         refusal["reason"] = refusal_reason(held)
 
     return refusal
+
+
+def refused_attempt(app: str, node: str) -> frappe._dict | None:
+    """Load this converter's record refusing `node`'s body as it stands, or None while a run may still convert it.
+
+    The body is read and hashed only when the node has a refusal, so a tab waiting on a sheet with none stays cheap.
+    """
+    conversion = Table(table(app, "conversion"))
+    refused = (
+        frappe.qb.from_(conversion)
+        .select(conversion.fingerprint)
+        .where(conversion.node == node)
+        .where(conversion.converter_version == conversion_of(app).version)
+        .where(conversion.outcome.isnotnull())
+        .where(conversion.outcome != "converted")
+        .run(pluck=True)
+    )
+    if not refused:
+        return None
+
+    fingerprint = conversion_of(app).read_fingerprint(node)
+    if fingerprint not in refused:
+        return None
+
+    return held_attempt(app, node, fingerprint)
 
 
 def refusal_reason(held: frappe._dict) -> str:
