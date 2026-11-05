@@ -4,8 +4,7 @@ import { api, client } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
 import { getCookieSessionUser } from '@/platform/session'
 import {
-  isTransientStatus,
-  MIN_SERVER_ERROR_STATUS,
+  isRefusal,
   TransportError,
   type RequestContext,
   type RequestScope,
@@ -28,7 +27,6 @@ export const MEDIA_REFRESH_MS = 10 * 60_000
 const MEDIA_RETRY_MS = 2_000
 const MEDIA_RETRY_GROWTH = 2
 const MEDIA_RETRY_MAX_MS = 30_000
-const MIN_CLIENT_ERROR_STATUS = 400
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
 /** `unanswered`: a read for this picture failed in passing and none has answered for it yet. */
 export type MediaStatus = 'loading' | 'unanswered' | 'ready' | 'refused'
@@ -658,19 +656,6 @@ export function canShare(state: SessionState, access: DriveAccess): boolean {
   return state === 'Active' && canManage({ access })
 }
 
-// the server turned the request away, unlike a network or server failure that passes
-function isRefusal(error: unknown): boolean {
-  if (!(error instanceof TransportError)) {
-    return false
-  }
-
-  const { status } = error
-  return (
-    status >= MIN_CLIENT_ERROR_STATUS &&
-    status < MIN_SERVER_ERROR_STATUS &&
-    !isTransientStatus(status)
-  )
-}
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'
   return node.state === 'Trashed' ? 'Trashed' : 'Active'

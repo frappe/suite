@@ -109,9 +109,11 @@ import {
   notificationSentence,
   notificationTime,
 } from '@/composition/notifications/notificationPresentation'
+import { toast } from '@/platform/feedback'
 import { mentionedByState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { isRefusal } from '@/platform/transport'
 
 const router = useRouter()
 const open = ref(false)
@@ -128,9 +130,16 @@ async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
   }
-  // Someone mentioned without access can't load the node. The page they land on says whom to ask.
   let mentionedBy: string | undefined
-  const node = await loadDriveNodeSummary(notification.activity.node).catch(() => {
+  const node = await loadDriveNodeSummary(notification.activity.node).catch((error: unknown) => {
+    if (!isRefusal(error)) {
+      toast.error(__('Could not open this notification.'), {
+        action: { label: __('Retry'), onClick: () => void openNotification(notification) },
+      })
+      return null
+    }
+
+    // Someone mentioned without access can't load the node. The page they land on says whom to ask.
     mentionedBy = notification.actor.full_name
     return {
       name: notification.activity.node,
@@ -138,6 +147,8 @@ async function openNotification(notification: DriveNotification) {
       kind: notification.node_kind,
     }
   })
+  if (!node) return
+
   open.value = false
   const destination = driveNodeRoute(node)
   await router.push(

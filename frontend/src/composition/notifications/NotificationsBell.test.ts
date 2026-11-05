@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
+import { TransportError } from '@/platform/transport'
 
 const state = vi.hoisted(() => ({
   push: vi.fn(),
   markRead: vi.fn(),
   loadNode: vi.fn(),
+  toastError: vi.fn(),
 }))
+vi.mock('@/platform/feedback', () => ({ toast: { error: state.toastError } }))
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
   const passthrough = defineComponent({
@@ -119,6 +122,7 @@ afterEach(() => {
   state.push.mockReset()
   state.markRead.mockReset()
   state.loadNode.mockReset()
+  state.toastError.mockReset()
 })
 describe('Notifications bell', () => {
   it('reads each notification as a sentence naming the person and the item', () => {
@@ -180,7 +184,9 @@ describe('Notifications bell', () => {
     )
   })
   it('still opens a mention of a document the reader has no access to', async () => {
-    state.loadNode.mockRejectedValue(new Error('Not found'))
+    state.loadNode.mockRejectedValue(
+      new TransportError({ type: 'DriveNotFound', message: 'Not found', status: 404 }),
+    )
     mount()
     await nextTick()
     const row = [...document.querySelectorAll('button')].find((button) =>
@@ -194,6 +200,39 @@ describe('Notifications bell', () => {
     expect(state.push).toHaveBeenCalledWith({
       path: `/d/${notification.activity.node}/item`,
       state: { openingTitle: 'Title', mentionedBy: notification.actor.full_name },
+    })
+  })
+
+  it('offers a retry, and no refused page, when the node could not be reached', async () => {
+    const mention = () =>
+      [...document.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('mentioned you in'),
+      )
+
+    for (const failure of [
+      new TypeError('Failed to fetch'),
+      new TransportError({ type: 'Server', message: 'Down', status: 503 }),
+      new TransportError({ type: 'Timeout', message: 'Busy', status: 429 }),
+    ]) {
+      state.loadNode.mockRejectedValueOnce(failure)
+      state.toastError.mockClear()
+      mount()
+      await nextTick()
+      mention()?.click()
+      await vi.waitFor(() => expect(state.toastError).toHaveBeenCalledOnce())
+      expect(state.push).not.toHaveBeenCalled()
+      cleanups.splice(0).forEach((cleanup) => cleanup())
+    }
+
+    state.loadNode.mockResolvedValue({ name: 'node-2', title: 'Q4 Roadmap', kind: 'document' })
+    const [, options] = state.toastError.mock.calls[0]!
+    expect(options.action.label).toBe('Retry')
+    options.action.onClick()
+    await vi.waitFor(() => expect(state.push).toHaveBeenCalled())
+
+    expect(state.push).toHaveBeenCalledWith({
+      path: '/d/node-2/item',
+      state: { openingTitle: 'Title' },
     })
   })
 
