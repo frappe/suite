@@ -15,7 +15,7 @@
     <template #default="{ close }">
       <div
         v-if="reaction"
-        class="bg-surface-base flex items-center justify-center gap-1 rounded-full p-1 shadow-sm"
+        class="bg-surface-base flex items-center justify-center gap-0.5 rounded-full p-1 shadow-sm"
         @pointerenter="cancelClose"
         @pointerleave="scheduleClose"
       >
