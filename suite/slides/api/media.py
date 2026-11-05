@@ -16,12 +16,13 @@ from suite import drive
 from suite.slides import drive as slides_drive
 
 MEDIA_TYPES = ("image/", "video/")
-# Still PNG and JPEG pictures are stored as WebP, which is smaller. GIF keeps its
-# animation, SVG stays a vector, and WebP and video are stored as uploaded.
+# Still PNG and JPEG pictures are stored as WebP, which is smaller, unless WebP would
+# change them. GIF keeps its animation, SVG stays a vector, and WebP and video are
+# stored as uploaded.
 WEBP_SOURCE_TYPES = ("image/png", "image/jpeg")
 # Pillow reports a multi-picture JPEG, as phones and cameras write, as MPO.
 WEBP_SOURCE_FORMATS = ("PNG", "JPEG", "MPO")
-# The 8-bit modes the encoder keeps faithfully. It brings 16-bit grey out nearly
+# The modes the encoder keeps faithfully. It brings 16-bit grey out nearly
 # white, and it converts CMYK to RGB without using the picture's colour profile.
 WEBP_SOURCE_MODES = ("1", "L", "LA", "P", "RGB", "RGBA")
 # Decoding runs inside the web request at about 4 bytes a pixel, and the header
