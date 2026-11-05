@@ -103,6 +103,10 @@ class Thread(Copy, AccountTag):
     unscreened_senders: NotRequired[list[str]]
     # Held at the top of the Inbox. Only the Inbox has pins to show (see suite.mail.pins).
     pinned: NotRequired[Flag]
+    # Back from waiting, and held near the top of the Inbox for a day (see suite.mail.reminders).
+    returned: NotRequired[Flag]
+    # On the Snoozed list: when it comes back, a UTC `...Z` time.
+    snoozed_until: NotRequired[str | None]
     subject: str | None
     preview: str
     recipients: list[Recipient]

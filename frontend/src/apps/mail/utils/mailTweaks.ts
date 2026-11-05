@@ -7,4 +7,6 @@ import { reactive } from 'vue'
 export const mailTweaks = reactive({
   /** How a pinned row reads: under a Pinned header, by its icon alone, or tinted. */
   pinLook: 'section' as 'section' | 'icon' | 'tint',
+  /** How a row back from waiting is marked: a word, or just a bell. */
+  returnedLook: 'badge' as 'badge' | 'bell',
 })

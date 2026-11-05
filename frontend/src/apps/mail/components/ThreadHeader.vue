@@ -41,6 +41,26 @@
             <component :is="pinned ? PinOff : Pin" class="icon" />
           </template>
         </Button>
+        <Button
+          v-if="(snoozable || inSnoozed) && !isMobile"
+          variant="ghost"
+          :tooltip="inSnoozed ? __('Change snooze time') : __('Snooze')"
+          @click="emit('snooze')"
+        >
+          <template #icon>
+            <Clock class="icon" />
+          </template>
+        </Button>
+        <Button
+          v-if="inSnoozed && !isMobile"
+          variant="ghost"
+          :tooltip="__('Unsnooze')"
+          @click="emit('unsnooze')"
+        >
+          <template #icon>
+            <AlarmClockOff class="icon" />
+          </template>
+        </Button>
         <AdaptiveDropdown v-if="!inDrafts" :options="moveToOptions" :title="__('Move To')">
           <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
             <template #icon>
@@ -106,6 +126,7 @@
 import { Button, Checkbox } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
 import {
+  AlarmClockOff,
   Archive,
   ArchiveRestore,
   ArrowLeft,
@@ -113,6 +134,7 @@ import {
   ChevronLeft,
   CircleAlert,
   CircleCheck,
+  Clock,
   Ellipsis,
   FolderInput,
   Folders,
@@ -148,6 +170,8 @@ const { thread, threads, canGoNext } = defineProps<{
 const emit = defineEmits([
   'setSeen',
   'setPinned',
+  'snooze',
+  'unsnooze',
   'archiveThread',
   'unarchiveThread',
   'moveThread',
@@ -211,8 +235,22 @@ const inInbox = computed(() =>
 const pinnable = computed(() => !inDrafts.value && inInbox.value.length > 0)
 const pinned = computed(() => inInbox.value.some((mail: Mail) => mail.pinned))
 
-const laterOptions = computed(() =>
-  pinnable.value
+// Snoozing takes what it finds in the Inbox or Archive (see suite/mail/filing.py).
+const received = computed(() => (thread ?? []).filter((mail: Mail) => mail.id && !mail.draft))
+const isIn = (mail: Mail, box: string) => mail.mailboxes.some((m) => m.mailbox_id === box)
+const inSnoozed = computed(() =>
+  received.value.some((mail: Mail) => isIn(mail, mailboxIds.value.snoozed)),
+)
+const snoozable = computed(
+  () =>
+    !inSnoozed.value &&
+    received.value.some(
+      (mail: Mail) => isIn(mail, mailboxIds.value.inbox) || isIn(mail, mailboxIds.value.archive),
+    ),
+)
+
+const laterOptions = computed(() => [
+  ...(pinnable.value
     ? [
         {
           label: pinned.value ? __('Unpin') : __('Pin to Top'),
@@ -220,8 +258,20 @@ const laterOptions = computed(() =>
           onClick: () => emit('setPinned', !pinned.value),
         },
       ]
-    : [],
-)
+    : []),
+  ...(snoozable.value || inSnoozed.value
+    ? [
+        {
+          label: inSnoozed.value ? __('Change snooze time') : __('Snooze'),
+          icon: Clock,
+          onClick: () => emit('snooze'),
+        },
+      ]
+    : []),
+  ...(inSnoozed.value
+    ? [{ label: __('Unsnooze'), icon: AlarmClockOff, onClick: () => emit('unsnooze') }]
+    : []),
+])
 
 const moreActions = computed((): Action[] => [
   {

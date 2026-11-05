@@ -16,6 +16,8 @@ const WEEKS = 3
 
 /** The group pinned conversations stand in, ahead of the dates: a pin outranks when it arrived. */
 export const PINNED_GROUP = 'pinned'
+/** The group mail back from waiting stands in, under the pins: it is what the reader asked to see. */
+export const RETURNED_GROUP = 'returned'
 
 const thisWeekOf = (now: Date | string) => dayjs(now).startOf('day').startOf('week')
 
@@ -36,6 +38,7 @@ export const dateGroup = (date: Date | string, now: Date | string = new Date()):
 /** What a group's header reads. */
 export const dateGroupLabel = (key: string, now: Date | string = new Date()): string => {
   if (key === PINNED_GROUP) return __('Pinned')
+  if (key === RETURNED_GROUP) return __('Reminders')
   const today = dayjs(now).startOf('day')
   if (key.startsWith('day:')) {
     const day = dayjs(key.slice(4))

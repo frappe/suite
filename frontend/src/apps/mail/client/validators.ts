@@ -345,12 +345,16 @@ import type {
   SignaturesOutput,
   SignupInput,
   SignupOutput,
+  SnoozeMailsInput,
+  SnoozeMailsOutput,
   SubscribeMailboxInput,
   SubscribeMailboxOutput,
   UndoScreeningVerdictInput,
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
   UnscreenEmailAddressesOutput,
+  UnsnoozeMailsInput,
+  UnsnoozeMailsOutput,
   UnsubscribeMailInput,
   UnsubscribeMailOutput,
   UpdateAccountPreferencesInput,
@@ -1714,7 +1718,16 @@ export const operationGetMailboxes: Validators<GetMailboxesInput, GetMailboxesOu
               role: {
                 anyOf: [
                   {
-                    enum: ['inbox', 'sent', 'drafts', 'trash', 'junk', 'archive', 'important'],
+                    enum: [
+                      'inbox',
+                      'sent',
+                      'drafts',
+                      'trash',
+                      'junk',
+                      'archive',
+                      'important',
+                      'snoozed',
+                    ],
                     type: 'string',
                   },
                   { type: 'null' },
@@ -7335,6 +7348,11 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
                 type: 'array',
               },
               pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
+              returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              snoozed_until: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Snoozed Until',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7626,6 +7644,11 @@ export const operationGetUnifiedThreads: Validators<
                 type: 'array',
               },
               pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
+              returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              snoozed_until: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Snoozed Until',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -8315,6 +8338,11 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
                 type: 'array',
               },
               pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
+              returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              snoozed_until: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Snoozed Until',
+              },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -8890,6 +8918,77 @@ export const operationPinMails: Validators<PinMailsInput, PinMailsOutput> = {
         type: 'object',
       },
       'pin_mails output',
+    )
+  },
+}
+
+export const operationSnoozeMails: Validators<SnoozeMailsInput, SnoozeMailsOutput> = {
+  validateInput(value: unknown): asserts value is SnoozeMailsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          until: { title: 'Until', type: 'string' },
+          leaves: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Leaves' },
+        },
+        required: ['account', 'ids', 'until'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'snooze_mails input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SnoozeMailsOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          updated: { items: { type: 'string' }, title: 'Updated', type: 'array' },
+          left_inbox: { title: 'Left Inbox', type: 'boolean' },
+        },
+        required: ['updated', 'left_inbox'],
+        title: 'FiledResult',
+        type: 'object',
+      },
+      'snooze_mails output',
+    )
+  },
+}
+
+export const operationUnsnoozeMails: Validators<UnsnoozeMailsInput, UnsnoozeMailsOutput> = {
+  validateInput(value: unknown): asserts value is UnsnoozeMailsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          leaves: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Leaves' },
+        },
+        required: ['account', 'ids'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'unsnooze_mails input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UnsnoozeMailsOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          updated: { items: { type: 'string' }, title: 'Updated', type: 'array' },
+          left_inbox: { title: 'Left Inbox', type: 'boolean' },
+        },
+        required: ['updated', 'left_inbox'],
+        title: 'FiledResult',
+        type: 'object',
+      },
+      'unsnooze_mails output',
     )
   },
 }

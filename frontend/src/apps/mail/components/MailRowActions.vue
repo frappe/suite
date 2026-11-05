@@ -6,6 +6,11 @@
       </button>
     </Tooltip>
   </template>
+  <Tooltip v-if="snoozable && isHovered && !isMobile" :text="__('Snooze')">
+    <button class="action-btn" :aria-label="__('Snooze')" @click.stop.prevent="emit('snooze')">
+      <Clock class="icon text-ink-gray-5" />
+    </button>
+  </Tooltip>
   <Tooltip
     v-if="pinnable && isHovered && !isMobile"
     :text="pinned ? __('Unpin') : __('Pin to Top')"
@@ -45,7 +50,17 @@
 
 <script setup lang="ts">
 import { Tooltip } from 'frappe-ui'
-import { Archive, ArchiveRestore, Mail, MailOpen, Pin, PinOff, Star, Trash2 } from 'lucide-vue-next'
+import {
+  Archive,
+  ArchiveRestore,
+  Clock,
+  Mail,
+  MailOpen,
+  Pin,
+  PinOff,
+  Star,
+  Trash2,
+} from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
@@ -67,6 +82,7 @@ const {
   unarchive = false,
   drafts = false,
   pinnable = false,
+  snoozable = false,
 } = defineProps<{
   isHovered: boolean
   // One thread for a mail row; the whole run for a stack row.
@@ -80,6 +96,8 @@ const {
   drafts?: boolean
   // The list is an Inbox, the one place a pin acts. Not on a stack, whose members are never pinned.
   pinnable?: boolean
+  // The list is one a conversation can be snoozed from.
+  snoozable?: boolean
 }>()
 
 const emit = defineEmits([
@@ -90,6 +108,7 @@ const emit = defineEmits([
   'delete',
   'setFlagged',
   'setPinned',
+  'snooze',
 ])
 
 const { isMobile } = useScreenSize()

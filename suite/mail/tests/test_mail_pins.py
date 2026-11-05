@@ -47,13 +47,14 @@ class PinnedList(unittest.TestCase):
         ):
             return mail_api.get_threads(ACCOUNT, mailbox, limit=20)["rows"], fetch
 
-    def test_the_inbox_lists_pinned_conversations_first_then_by_date(self):
+    def test_the_inbox_lists_pinned_then_returned_conversations_first_then_by_date(self):
         _rows, fetch = self.listing("inbox")
 
         self.assertEqual(
             fetch.call_args.kwargs["sort"],
             [
                 {"property": "hasKeyword", "keyword": "pinned", "isAscending": False},
+                {"property": "hasKeyword", "keyword": "returned", "isAscending": False},
                 {"property": "receivedAt", "isAscending": False},
             ],
         )
@@ -81,12 +82,36 @@ class PinnedList(unittest.TestCase):
     def test_all_inboxes_lists_every_account_pins_first_then_by_date(self):
         rows = {
             "a1": [
-                {"thread_id": "old-pin", "pinned": 1, "received_at": "2026-01-01", "reaction_only": 0},
-                {"thread_id": "a-new", "pinned": 0, "received_at": "2026-11-03", "reaction_only": 0},
+                {
+                    "thread_id": "old-pin",
+                    "pinned": 1,
+                    "returned": 0,
+                    "received_at": "2026-01-01",
+                    "reaction_only": 0,
+                },
+                {
+                    "thread_id": "a-new",
+                    "pinned": 0,
+                    "returned": 0,
+                    "received_at": "2026-11-03",
+                    "reaction_only": 0,
+                },
             ],
             "a2": [
-                {"thread_id": "b-pin", "pinned": 1, "received_at": "2026-06-01", "reaction_only": 0},
-                {"thread_id": "b-new", "pinned": 0, "received_at": "2026-11-04", "reaction_only": 0},
+                {
+                    "thread_id": "b-pin",
+                    "pinned": 1,
+                    "returned": 0,
+                    "received_at": "2026-06-01",
+                    "reaction_only": 0,
+                },
+                {
+                    "thread_id": "b-new",
+                    "pinned": 0,
+                    "returned": 0,
+                    "received_at": "2026-11-04",
+                    "reaction_only": 0,
+                },
             ],
         }
         with (

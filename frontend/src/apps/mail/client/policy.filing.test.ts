@@ -46,3 +46,33 @@ it('shows a conversation that stays on the list in the folders it is filed into'
     ],
   })
 })
+
+const snoozeUpdate = () => {
+  const policy = registration.policy({
+    id: 'snooze_mails',
+    kind: 'mutation',
+    publicName: 'messages.snooze',
+  } as never) as {
+    effects: {
+      optimisticReads: { update: (input: unknown, query: unknown, data: unknown) => unknown }
+    }
+  }
+  return policy.effects.optimisticReads.update
+}
+
+it('takes a snoozed conversation off the list it left, and no other', () => {
+  const update = snoozeUpdate()
+  const snoozed = { account: 'a', ids: ['q', 'r'], until: '2026-11-06T09:00:00Z', leaves: 'inbox' }
+
+  expect(update(snoozed, { account: 'a', mailbox: 'inbox' }, list)).toEqual({
+    rows: [{ id: 'other' }],
+  })
+  expect(update(snoozed, { account: 'a', mailbox: 'projects' }, list)).toBeUndefined()
+})
+
+it('keeps the row when only the time changes, in Snoozed', () => {
+  const update = snoozeUpdate()
+  const again = { account: 'a', ids: ['q'], until: '2026-11-06T09:00:00Z', leaves: null }
+
+  expect(update(again, { account: 'a', mailbox: 'snoozed' }, list)).toBeUndefined()
+})

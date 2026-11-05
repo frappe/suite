@@ -4,7 +4,7 @@ import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { dateGroup, PINNED_GROUP } from '@/apps/mail/utils/dateGroups'
+import { dateGroup, PINNED_GROUP, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
 import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
@@ -84,15 +84,19 @@ export const useListRows = ({
 
   const groupedThreads = computed<Record<string, Thread[]>>(() => {
     const pinned = threads().filter((thread) => thread.pinned)
+    const returned = threads().filter((thread) => !thread.pinned && thread.returned)
     return threads().reduce(
       (groups: Record<string, Thread[]>, thread: Thread) => {
-        if (thread.pinned) return groups
+        if (thread.pinned || thread.returned) return groups
         const date = dateGroup(thread.received_at)
         if (!groups[date]) groups[date] = []
         groups[date].push(thread)
         return groups
       },
-      pinned.length ? { [PINNED_GROUP]: pinned } : {},
+      {
+        ...(pinned.length ? { [PINNED_GROUP]: pinned } : {}),
+        ...(returned.length ? { [RETURNED_GROUP]: returned } : {}),
+      },
     )
   })
 

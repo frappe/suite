@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { dateGroup, dateGroupLabel, PINNED_GROUP } from './dateGroups'
+import { dateGroup, dateGroupLabel, PINNED_GROUP, RETURNED_GROUP } from './dateGroups'
 
 // A Wednesday. Weeks start on Sunday, so this week began on 11 October.
 const WEDNESDAY = '2026-10-14T12:00:00'
@@ -113,8 +113,9 @@ describe('dateGroupLabel', () => {
   })
 })
 
-describe('the pinned group', () => {
-  it('is named for what it holds, not a date', () => {
+describe('the groups ahead of the dates', () => {
+  it('are named for what they hold, not a date', () => {
     expect(dateGroupLabel(PINNED_GROUP)).toBe('Pinned')
+    expect(dateGroupLabel(RETURNED_GROUP)).toBe('Reminders')
   })
 })

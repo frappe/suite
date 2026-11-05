@@ -39,6 +39,23 @@
       </Tooltip>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
       <!-- On a phone a row has no hover actions to show the pin, nor a header above it. -->
+      <Badge
+        v-if="mail.snoozed_until"
+        size="sm"
+        theme="gray"
+        :label="formatDateTime(mail.snoozed_until, 'ddd, MMM D, h:mm A')"
+      />
+      <Badge
+        v-if="mail.returned && mailTweaks.returnedLook === 'badge'"
+        size="sm"
+        theme="blue"
+        :label="__('Back')"
+      />
+      <Bell
+        v-if="mail.returned && mailTweaks.returnedLook === 'bell'"
+        class="text-ink-gray-5 size-3.5 shrink-0"
+        :aria-label="__('Back')"
+      />
       <Pin
         v-if="mail.pinned && (isMobile || mailTweaks.pinLook !== 'tint')"
         class="text-ink-gray-5 size-3.5 shrink-0"
@@ -60,6 +77,8 @@
         :drafts
         :unarchive
         :pinnable
+        :snoozable
+        @snooze="emit('snooze')"
         @set-pinned="(pinned: boolean) => emit('setPinned', pinned)"
         @set-seen="(seen: boolean) => emit('setSeen', seen)"
         @archive="emit('archiveThread')"
@@ -178,7 +197,7 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Download, Loader, Pin, UserRoundSearch } from 'lucide-vue-next'
+import { Bell, Download, Loader, Pin, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -192,6 +211,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails, useScreenSize } from '@/apps/mail/utils/composables'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 import {
@@ -219,6 +239,7 @@ const {
   outgoing,
   screened = false,
   pinnable = false,
+  snoozable = false,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -254,6 +275,8 @@ const {
   screened?: boolean
   // The list is an Inbox, the one place a pin acts (see MailRowActions).
   pinnable?: boolean
+  // The list is one a conversation can be snoozed from.
+  snoozable?: boolean
 }>()
 
 const emit = defineEmits([
@@ -264,6 +287,7 @@ const emit = defineEmits([
   'deleteThread',
   'setFlagged',
   'setPinned',
+  'snooze',
   'setSelected',
   'dragStart',
   'dragEnd',

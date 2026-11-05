@@ -35,10 +35,24 @@ import dayjs from '@/apps/mail/utils/dayjs'
 
 const show = defineModel<boolean>()
 
-const { title, initialValue, save } = defineProps<{
+const {
+  title,
+  action,
+  pastMessage,
+  failedMessage,
+  presets: givenPresets,
+  initialValue,
+  save,
+} = defineProps<{
   // Dialog title; defaults to "Schedule send" (the reschedule flow overrides it).
   save: (sendAt: string) => Promise<unknown>
   title?: string
+  // For another time being picked (a snooze): its words, and the choices it offers. Without a delivery
+  // to hold, it has no limit on how far ahead the time can be.
+  action?: string
+  pastMessage?: string
+  failedMessage?: string
+  presets?: () => { label: string; display: string; value: string }[]
   // UTC `...Z` timestamp that seeds the custom input (the current send_at when rescheduling).
   initialValue?: string
 }>()
@@ -65,6 +79,7 @@ watch(show, () => {
 const minLocal = computed(() => dayjs().tz(userTimeZone()).format(LOCAL_FORMAT))
 
 const presets = computed(() => {
+  if (givenPresets) return givenPresets()
   const now = dayjs().tz(userTimeZone())
   const tomorrow = now.add(1, 'day')
   const monday = now.add((8 - now.day()) % 7 || 7, 'day')
@@ -88,8 +103,8 @@ const confirm = async (sendAt: string) => {
   error.value = ''
 
   if (dayjs.utc(sendAt).isBefore(dayjs.utc()))
-    return (error.value = __('The delivery time must be in the future.'))
-  if (dayjs.utc(sendAt).isAfter(dayjs.utc().add(MAX_DELAY_DAYS, 'day')))
+    return (error.value = pastMessage || __('The delivery time must be in the future.'))
+  if (!givenPresets && dayjs.utc(sendAt).isAfter(dayjs.utc().add(MAX_DELAY_DAYS, 'day')))
     return (error.value = __('The delivery time cannot be more than {0} days ahead.', [
       MAX_DELAY_DAYS,
     ]))
@@ -99,7 +114,8 @@ const confirm = async (sendAt: string) => {
     await save(sendAt)
     show.value = false
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : __('Could not schedule delivery.')
+    error.value =
+      cause instanceof Error ? cause.message : failedMessage || __('Could not schedule delivery.')
   } finally {
     saving.value = false
   }
@@ -114,7 +130,7 @@ const dialogOptions = computed(() => ({
   title: title || __('Schedule send'),
   actions: [
     {
-      label: __('Schedule'),
+      label: action || __('Schedule'),
       variant: 'solid' as const,
       onClick: confirmCustom,
       loading: saving.value,

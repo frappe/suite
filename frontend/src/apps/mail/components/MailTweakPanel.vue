@@ -9,6 +9,13 @@
       :label="__('Pinned row')"
       :options="pinLooks"
     />
+    <FormControl
+      v-model="mailTweaks.returnedLook"
+      class="mt-2"
+      type="select"
+      :label="__('Returned row')"
+      :options="returnedLooks"
+    />
   </div>
 </template>
 
@@ -17,6 +24,10 @@ import { FormControl } from 'frappe-ui'
 
 import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 
+const returnedLooks = [
+  { label: __('Word'), value: 'badge' },
+  { label: __('Bell'), value: 'bell' },
+]
 const pinLooks = [
   { label: __('Pinned section'), value: 'section' },
   { label: __('Icon only'), value: 'icon' },

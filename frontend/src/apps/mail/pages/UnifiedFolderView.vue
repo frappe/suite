@@ -207,6 +207,8 @@
                     :selection-mode="mobileSelectionMode"
                     :screened="screener.isScreened(row.thread)"
                     :pinnable="folder === INBOX_FOLDER"
+                    :snoozable="canSnooze"
+                    @snooze="askSnooze([row.thread])"
                     @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned)"
                     :outgoing="isOutgoingFolder"
                     :thread-route-name="UNIFIED_THREAD_ROUTE"
@@ -261,6 +263,8 @@
             (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
           "
           @set-pinned="(ids: string[], pinned: boolean) => pinMails(openRow!.account!, ids, pinned)"
+          @snooze-thread="askSnooze([openRow!])"
+          @unsnooze-thread="unsnoozeThreads([openRow!])"
           @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
           @delete-thread="
             isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
@@ -299,6 +303,7 @@
   </div>
 
   <Dialog v-model:open="showDelete" v-bind="deleteOptions" />
+  <SnoozeModal v-model="showSnooze" :initial-value="snoozedUntil" :save="saveSnooze" />
   <MobileSelectionBar :open="mobileSelectionMode" :actions="selectActions" />
 </template>
 
@@ -324,6 +329,7 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import SnoozeModal from '@/apps/mail/components/Modals/SnoozeModal.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
@@ -355,6 +361,7 @@ import {
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
@@ -1287,6 +1294,61 @@ const fileThreads = (
     },
   )
 }
+// Snoozing, per account as filing is. Asked of what is already snoozed it only changes the time, and
+// the row stays. Undo, or a refusal, puts the mail back as filing's do; its row at the server then
+// comes due with nothing to return, and goes.
+const SNOOZED_FOLDER = 'snoozed'
+const canSnooze = computed(() => [INBOX_FOLDER, 'archive', SNOOZED_FOLDER].includes(folder))
+const showSnooze = ref(false)
+const snoozing = ref<Thread[]>([])
+const snoozedUntil = computed(
+  () => (snoozing.value.length === 1 && snoozing.value[0].snoozed_until) || undefined,
+)
+const askSnooze = (threads: Thread[]) => {
+  snoozing.value = threads
+  showSnooze.value = true
+}
+const leaveList = (threads: Thread[]) => {
+  const at = keptRead.current()
+  goToNextThreadOrClose(threads.map(threadKey))
+  keptRead.release(threads.map(threadKey))
+  return (rows: Thread[]) => keptRead.restore(rows, at)
+}
+const saveSnooze = async (until: string) => {
+  const threads = snoozing.value
+  const leaves = folder !== SNOOZED_FOLDER
+  const putBack = leaves ? leaveList(threads) : undefined
+  actPerAccount(
+    threads,
+    (account, rows) =>
+      client.mutation(api.mail.messages.snooze, {
+        account,
+        ids: copyIds(rows),
+        until,
+        leaves: leaves ? folder : null,
+      }),
+    __('Snoozed until {0}.', [formatDateTime(until, 'ddd, MMM D, h:mm A')]),
+    threads.length === 1 ? __('Thread moved back.') : __('Threads moved back.'),
+    { putBack },
+  )
+}
+const unsnoozeThreads = (threads: Thread[]) => {
+  if (!threads.length) return
+  const putBack = leaveList(threads)
+  actPerAccount(
+    threads,
+    (account, rows) =>
+      client.mutation(api.mail.messages.unsnooze, {
+        account,
+        ids: copyIds(rows),
+        leaves: folder,
+      }),
+    threads.length === 1 ? __('Thread back in the Inbox.') : __('Threads back in the Inbox.'),
+    threads.length === 1 ? __('Thread moved back.') : __('Threads moved back.'),
+    { putBack },
+  )
+}
+
 const handleArchive = (thread: Thread) => fileThreads([thread], 'archive')
 const handleUnarchive = (thread: Thread) => fileThreads([thread], 'unarchive')
 const handleTrash = (thread: Thread) => fileThreads([thread], 'trash')
@@ -1443,6 +1505,8 @@ const selectActions = buildSelectActions(
     trash: isTrashFolder.value,
     drafts: folder === 'drafts',
     inbox: folder === INBOX_FOLDER,
+    snoozable: canSnooze.value && folder !== SNOOZED_FOLDER,
+    snoozed: folder === SNOOZED_FOLDER,
   }),
   {
     star: () => setThreadsFlagged(takeSelected(), true),
@@ -1457,6 +1521,8 @@ const selectActions = buildSelectActions(
     unread: () => setThreadsSeen(takeSelected(), false),
     pin: () => pinThreads(takeSelected(), true),
     unpin: () => pinThreads(takeSelected(), false),
+    snooze: () => askSnooze(takeSelected()),
+    unsnooze: () => unsnoozeThreads(takeSelected()),
   },
 )
 

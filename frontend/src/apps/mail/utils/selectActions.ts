@@ -1,8 +1,10 @@
 import {
+  AlarmClockOff,
   Archive,
   ArchiveRestore,
   CircleAlert,
   CircleCheck,
+  Clock,
   Mail as MailIcon,
   MailOpen,
   Pin,
@@ -41,6 +43,8 @@ export interface SelectHandlers {
   unread: () => void
   pin: () => void
   unpin: () => void
+  snooze: () => void
+  unsnooze: () => void
 }
 
 /**
@@ -58,6 +62,9 @@ export const selectActions = (
     drafts: boolean
     // The list is an Inbox, the one place a pin acts.
     inbox?: boolean
+    // The list is one a conversation can be snoozed from; or is Snoozed, where it can be brought back.
+    snoozable?: boolean
+    snoozed?: boolean
     sent?: string
     archiveId?: string
     inboxId?: string
@@ -105,6 +112,20 @@ export const selectActions = (
       onClick: run.unpin,
       icon: PinOff,
       condition: () => !!folder().inbox && some((t) => !!t.pinned)(),
+    },
+    {
+      label: __('Snooze'),
+      shortLabel: __('Snooze'),
+      onClick: run.snooze,
+      icon: Clock,
+      condition: () => !!(folder().snoozable || folder().snoozed) && some(() => true)(),
+    },
+    {
+      label: __('Unsnooze'),
+      shortLabel: __('Unsnooze'),
+      onClick: run.unsnooze,
+      icon: AlarmClockOff,
+      condition: () => !!folder().snoozed && some(() => true)(),
     },
     {
       label: __('Archive (E)'),

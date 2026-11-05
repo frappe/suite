@@ -7,6 +7,8 @@
       :can-go-next="canGoNext"
       @set-seen="setThreadSeen"
       @set-pinned="onSetPinned"
+      @snooze="emit('snoozeThread')"
+      @unsnooze="emit('unsnoozeThread')"
       @archive-thread="emit('archiveThread')"
       @unarchive-thread="emit('unarchiveThread')"
       @move-thread="onMoveThread"
@@ -875,6 +877,8 @@ const emit = defineEmits([
   'setSeen',
   'setFlagged',
   'setPinned',
+  'snoozeThread',
+  'unsnoozeThread',
   'moveThread',
   'addThreadToMailbox',
   'removeThreadFromMailbox',
