@@ -3,7 +3,6 @@
 
 import os
 from contextlib import contextmanager
-from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -198,7 +197,12 @@ class TestMediaFileAccess(IntegrationTestCase):
 
             # the same blob under another spelling, which a plain url match would miss
             victim_urls = (self.file.file_url, self.file.file_url.replace("/files/", "/files/./"))
-            for url, file_type in [*((url, own.file_type) for url in victim_urls), (victim_urls[0], "Link")]:
+            repoints = [
+                (victim_urls[0], own.file_type),
+                (victim_urls[1], own.file_type),
+                (victim_urls[0], "Link"),
+            ]
+            for url, file_type in repoints:
                 with self.subTest("repoint", url=url, file_type=file_type):
                     file = frappe.get_doc("File", own.name)
                     file.file_type = file_type
@@ -245,21 +249,6 @@ class TestMediaFileAccess(IntegrationTestCase):
 
         with self.set_user("Guest"), self.assertRaises(Forbidden):
             validate_media_file(self.file.file_url, template.name)
-
-    def test_deleting_a_file_keeps_a_blob_another_file_still_uses(self):
-        content = unique_bytes(PNG_1PX)
-        with self.set_user(OWNER):
-            kept = make_private_image(make_presentation("Kept").name, content=content)
-        with self.set_user(OTHER_USER):
-            deleted = make_private_image(make_presentation("Deleted").name, content=content)
-            self.assertEqual(deleted.file_url, kept.file_url)
-
-            with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
-                frappe.get_doc("File", deleted.name).permanent_delete()
-            for call in after_commit.add.call_args_list:
-                call.args[0]()
-
-        self.assertTrue(os.path.exists(frappe.get_doc("File", kept.name).get_full_path()))
 
     def test_unknown_url_not_found(self):
         with self.set_user(OWNER):

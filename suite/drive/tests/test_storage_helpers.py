@@ -227,6 +227,11 @@ class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
     def stored_file(self, file):
         return Path(frappe.get_doc("File", file.name).get_full_path())
 
+    def test_deleting_a_file_keeps_a_blob_another_file_still_uses(self):
+        kept, deleted = self.make_twins()
+        self.permanently_delete(deleted.name, OTHER_USER)
+        self.assertTrue(self.stored_file(kept).exists())
+
     def test_deleting_the_last_file_removes_the_blob(self):
         kept, deleted = self.make_twins()
         stored = self.stored_file(kept)
