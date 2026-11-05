@@ -81,6 +81,8 @@ export interface Mail {
   junk: 0 | 1
   /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
   unscreened?: 0 | 1
+  /** Carries the pin: holds the conversation at the top of the Inbox while it is in there. */
+  pinned?: 0 | 1
   mailboxes: Mailbox[]
   recipients: Recipient[]
   groupedRecipients?: {
@@ -199,6 +201,8 @@ export interface Thread {
   unscreened?: 0 | 1
   /** The senders of the thread's unscreened mail, in the order they first wrote. */
   unscreened_senders?: string[]
+  /** Held at the top of the Inbox. Only the Inbox has pins to show. */
+  pinned?: 0 | 1
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

@@ -248,3 +248,11 @@ describe('buildListRows', () => {
     ])
   })
 })
+
+describe('a pinned thread', () => {
+  it('stands alone, beside mail from the same sender that stacks', () => {
+    const pinned = thread({ name: 'p', thread_id: 'p', pinned: 1 })
+    expect(stackKeyOf(pinned)).toBeNull()
+    expect(stackKeyOf(thread())).not.toBeNull()
+  })
+})

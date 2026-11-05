@@ -5352,6 +5352,7 @@ export type GetThreadsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<GetThreadsOutputReaction>
   mailing_list: 0 | 1
@@ -5404,6 +5405,7 @@ export type GetThreadsOutputThread = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
   subject: string | null
   preview: string
   recipients: Array<GetThreadsOutputRecipient>
@@ -5501,6 +5503,7 @@ export type GetUnifiedThreadsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<GetUnifiedThreadsOutputReaction>
   mailing_list: 0 | 1
@@ -5553,6 +5556,7 @@ export type GetUnifiedThreadsOutputThread = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
   subject: string | null
   preview: string
   recipients: Array<GetUnifiedThreadsOutputRecipient>
@@ -5743,6 +5747,7 @@ export type GetThreadOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<GetThreadOutputReaction>
   mailing_list: 0 | 1
@@ -5870,6 +5875,7 @@ export type SearchMailsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<SearchMailsOutputReaction>
   mailing_list: 0 | 1
@@ -5922,6 +5928,7 @@ export type SearchMailsOutputSearchRow = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
   subject: string | null
   preview: string
   recipients: Array<SearchMailsOutputRecipient>
@@ -6298,6 +6305,28 @@ const operationSetFlagged: MutationRef<SetFlaggedInput, SetFlaggedOutput, SetFla
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationSetFlagged,
+}
+
+export type PinMailsInput = { account: string; ids: Array<string>; pinned: boolean }
+
+export type PinMailsOutput = { ids: Array<string>; pinned: boolean }
+
+export type PinMailsError = 'PermissionError' | 'ValidationError'
+
+const operationPinMails: MutationRef<PinMailsInput, PinMailsOutput, PinMailsError> = {
+  id: 'pin_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.pin',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.pin_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationPinMails,
 }
 
 export type SetMailsSeenInput = { account: string; ids: Array<string>; seen: boolean }
@@ -7358,6 +7387,7 @@ export const api = {
     updateDraft: operationUpdateDraftMail,
     deleteDraft: operationDeleteMail,
     flag: operationSetFlagged,
+    pin: operationPinMails,
     seen: operationSetMailsSeen,
     move: operationMoveMails,
     file: operationFileMails,

@@ -233,6 +233,7 @@
                     v-if="row.type === 'stack'"
                     :drafts="mailbox === mailboxIds.drafts"
                     :unarchive="true"
+                    :trailing-slots="rowSlots"
                     :threads="row.threads"
                     :expanded="row.expanded"
                     :is-selected="isStackSelected(row.threads.map((t) => t.thread_id))"
@@ -257,6 +258,7 @@
                     :mailbox
                     :drafts="mailbox === mailboxIds.drafts"
                     :unarchive="!isAllAccountsSearch"
+                    :trailing-slots="rowSlots"
                     :mail="row.thread"
                     :account-id="isAllAccountsSearch ? row.thread.account : undefined"
                     :account-label="
@@ -268,6 +270,8 @@
                     :hide-sender="row.inStack"
                     :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
                     :screened="screener.active.value && screener.isScreened(row.thread)"
+                    :pinnable="mailbox === mailboxIds.inbox"
+                    @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
@@ -332,6 +336,7 @@
           "
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
+          @set-pinned="(ids: string[], pinned: boolean) => pinMails(store.accountId, ids, pinned)"
           @archive-thread="handleArchiveThreads([threadID!])"
           @unarchive-thread="handleUnarchiveThreads([threadID!])"
           @move-thread="
@@ -412,6 +417,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
+import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import {
@@ -442,6 +448,7 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
+import { rowActionSlots } from '@/apps/mail/utils/rowActionSlots'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
@@ -540,6 +547,8 @@ const {
   rowKey: (mail: Thread) =>
     isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name,
   stackingEnabled: () => stackingEnabled.value,
+  pinsLead: () => mailbox === mailboxIds.inbox,
+  hasMore: () => canGoNext.value,
   openThreadID: () => threadID,
   onOpenThreadHidden: () => goToMailbox(),
   container: mailListRef,
@@ -734,6 +743,7 @@ const selectActions = buildSelectActions(
     archive: mailbox === mailboxIds.archive,
     trash: mailbox === mailboxIds.trash,
     drafts: mailbox === mailboxIds.drafts,
+    inbox: mailbox === mailboxIds.inbox,
     sent: mailboxIds.sent,
     archiveId: mailboxIds.archive,
     inboxId: mailboxIds.inbox,
@@ -749,8 +759,16 @@ const selectActions = buildSelectActions(
     delete: () => junkOrDeleteThreads(selections.value, false),
     read: () => handleSetSeen({ 1: selections.value }),
     unread: () => handleSetSeen({ 0: selections.value }),
+    pin: () => pinSelected(true),
+    unpin: () => pinSelected(false),
   },
 )
+
+const { pinThreads, pinMails } = useThreadPin()
+const pinSelected = (pinned: boolean) => {
+  pinThreads(selectedRows.value, pinned)
+  resetSelections()
+}
 
 // Search
 
@@ -765,6 +783,15 @@ const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
 // the query (kept out of the filter conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
+
+// Stacks are off in search, so the thread rows' answer stands for the whole list.
+const rowSlots = computed(() =>
+  rowActionSlots({
+    drafts: mailbox === mailboxIds.drafts,
+    unarchive: !isAllAccountsSearch.value,
+    pinnable: mailbox === mailboxIds.inbox,
+  }),
+)
 
 // The row's account, by its short name: blank for the currently open account (only
 // the odd ones out get labelled), the local part otherwise, unless two accounts share one.
