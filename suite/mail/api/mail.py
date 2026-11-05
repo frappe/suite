@@ -1926,6 +1926,10 @@ def _search_all_accounts(filter: dict, limit: int, start: int) -> dict:
     # page size, and start so the per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH.
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
     start = max(cint(start), 0)
+    # Nothing past the bound can be listed, so nothing is fetched. The count stays what was reached:
+    # the header would otherwise read "0 results" above a full list.
+    if start >= ALL_INBOX_MAX_FETCH:
+        return {"rows": [], "total": start}
     per_account_limit = min(start + limit, ALL_INBOX_MAX_FETCH)
 
     # Mailbox ids are account-specific, so a "Look In" folder filter can't carry across accounts.

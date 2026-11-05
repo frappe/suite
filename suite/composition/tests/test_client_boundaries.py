@@ -39,15 +39,18 @@ class TestClientBoundaries(TestCase):
             patch.object(mail, "get_user_jmap_accounts", return_value=[{"name": "a", "_name": "Work"}]),
             patch.object(mail, "search_threads") as search,
         ):
-            self.assertEqual(mail._search_all_accounts({"text": "hello"}, 25, 500), ([], 0))
+            self.assertEqual(
+                mail._search_all_accounts({"text": "hello"}, 25, 500), {"rows": [], "total": 500}
+            )
             search.assert_not_called()
 
     def test_single_account_search_returns_explicit_rows_and_total(self):
         with (
             patch.object(mail, "normalize_filter", return_value={"text": "hello"}),
-            patch.object(mail, "search_threads", return_value=([{"id": "a"}], 42)),
+            patch.object(mail, "search_threads", return_value=([{"id": "a", "matches": []}], 42)),
             patch.object(mail, "_tag_search_results"),
         ):
             self.assertEqual(
-                mail.search_mails("account", {"text": "hello"}), {"rows": [{"id": "a"}], "total": 42}
+                mail.search_mails("account", {"text": "hello"}),
+                {"rows": [{"id": "a", "matches": []}], "total": 42},
             )
