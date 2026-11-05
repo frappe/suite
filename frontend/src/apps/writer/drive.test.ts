@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { client } from '@/api'
 import { transport } from '@/platform/transport'
 
 import { peopleWithoutAccess, searchUsers, uploadMedia } from './drive'
@@ -74,9 +75,10 @@ describe('the people a comment newly names', () => {
   })
 
   it('counts nobody when the lookup fails, so the comment still posts', async () => {
-    vi.mocked(transport.request).mockRejectedValue(new Error('offline'))
+    const failed = vi.spyOn(client, 'query').mockRejectedValueOnce(new Error('offline'))
 
     await expect(peopleWithoutAccess('doc-1', ['ann@x.test'])).resolves.toEqual([])
+    expect(failed).toHaveBeenCalledOnce()
   })
 })
 
