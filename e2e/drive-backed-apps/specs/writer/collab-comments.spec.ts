@@ -7,11 +7,12 @@ import {
 	createWriterDocument,
 	openWriterDocument,
 	uniqueWriterTitle,
+	toggleWriterPanel,
 	writerEditor,
 } from "../../helpers/writer";
 
 async function openComments(page: Page) {
-	await page.getByRole("banner").getByRole("button", { name: "Comments", exact: true }).click();
+	await toggleWriterPanel(page, "Comments");
 	return page.getByRole("complementary", { name: "Comments" });
 }
 
@@ -254,7 +255,7 @@ test.describe("Writer collaboration comments", () => {
 		await expect(threadRow(panel, "About this word")).toContainText("Text deleted");
 		await expectSaved(page);
 
-		await page.getByRole("button", { name: /versions/i }).first().click();
+		await toggleWriterPanel(page, "Versions");
 		await page.getByRole("complementary", { name: "Versions" }).getByRole("button", { name: /^With the word/ }).click();
 		await page.getByRole("complementary", { name: "Versions" }).getByRole("button", { name: "Restore this version" }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();

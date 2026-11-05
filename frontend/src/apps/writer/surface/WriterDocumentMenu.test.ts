@@ -177,3 +177,50 @@ describe('Writer document menu', () => {
     expect(onSaveVersion.mock.calls.length).toBe(0)
   })
 })
+
+describe('the side panels in the menu', () => {
+  function showMenu(panels: ('comments' | 'versions')[]) {
+    const toggled: string[] = []
+    host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(WriterDocumentMenu, {
+        session,
+        editor: null,
+        settings: {},
+        editable: false,
+        canSaveVersion: false,
+        canLock: false,
+        isLocked: false,
+        panels,
+        onTogglePanel: (panel: string) => toggled.push(panel),
+      }),
+    )
+    app.mount(host)
+    unmount = () => app.unmount()
+    return { toggled, items: [...host.querySelectorAll<HTMLElement>('[role="menuitem"]')] }
+  }
+
+  it('offers the panels this person can open, first, and toggles the one picked', () => {
+    const { items, toggled } = showMenu(['comments', 'versions'])
+
+    items[1].click()
+
+    expect([items.slice(0, 2).map((item) => item.textContent), toggled]).toEqual([
+      ['Comments', 'Versions'],
+      ['versions'],
+    ])
+  })
+
+  it('offers no panel that this person cannot open', () => {
+    const { items } = showMenu(['comments'])
+
+    expect(items.map((item) => item.textContent)).not.toContain('Versions')
+  })
+
+  it('stays usable for the panels before the editor has opened', () => {
+    showMenu(['comments'])
+
+    expect(host!.querySelector('button')!.disabled).toBe(false)
+  })
+})

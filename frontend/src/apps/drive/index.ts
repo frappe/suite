@@ -376,6 +376,7 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 /** The document header's shape while a document opens. Shows `title` when one is known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
 
+export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel, DocumentSaveState } from '@/apps/drive/files/features/document/header'
 
 export const filePreviewSurface = defineAsyncComponent(

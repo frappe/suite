@@ -59,6 +59,7 @@ import {
   type DocumentSaveState,
   type LeaveGuardOptions,
 } from './navigation'
+import { panelPressed } from './panelShortcuts'
 import { goToPlace, readingPlace } from './readingPlace'
 import {
   othersPresentWarning,
@@ -421,7 +422,6 @@ async function downloadVersion(shown: DocumentVersion) {
   }
 }
 
-const header = shallowRef<{ focusPanelToggle(name: DocumentPanel): void } | null>(null)
 const sidePanel = shallowRef<InstanceType<typeof DocumentSidePanel> | null>(null)
 const versionPreview = shallowRef<InstanceType<typeof VersionPreview> | null>(null)
 const isRestoringVersion = ref(false)
@@ -565,14 +565,30 @@ async function backToCurrent() {
   editorSurface.value?.editor?.commands.focus()
 }
 
+function togglePanel(name: DocumentPanel) {
+  panel.value = panel.value === name ? null : name
+}
+
+// Works from anywhere in the page, unless a dialog or menu over it takes the keys
+useEventListener(document, 'keydown', (event: KeyboardEvent) => {
+  const pressed = panelPressed(event)
+  if (pressed && shownPanels.value.includes(pressed) && !isOverlayOpen()) {
+    event.preventDefault()
+    togglePanel(pressed)
+  }
+})
+
+function isOverlayOpen() {
+  return !!document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+}
+
 // Escape leaves a version shown, unless a dialog or menu over it takes the key
 useEventListener(document, 'keydown', (event: KeyboardEvent) => {
-  const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
   if (
     event.key === 'Escape' &&
     !event.defaultPrevented &&
     preview.value.version &&
-    !isOverlayOpen
+    !isOverlayOpen()
   ) {
     void backToCurrent()
   }
@@ -772,14 +788,11 @@ onBeforeUnmount(() => {
     :class="{ 'writer-hides-comments': !seesComments }"
   >
     <DriveDocumentHeader
-      ref="header"
-      v-model:panel="panel"
       :session="session"
       title-label="Document title"
       :save-state="saveState"
       :save-note="saveNote"
       :view-only="isViewOnly"
-      :panels="shownPanels"
     >
       <template #status>
         <Badge
@@ -810,6 +823,9 @@ onBeforeUnmount(() => {
           :can-save-version="canSaveVersion"
           :can-lock="canEdit"
           :is-locked="isDocumentLocked"
+          :panels="shownPanels"
+          :panel="panel"
+          @toggle-panel="togglePanel"
           @save-version="nameVersion"
           @set-locked="setDocumentLocked"
         />
@@ -951,7 +967,7 @@ onBeforeUnmount(() => {
                 @restore-version="confirmRestore"
                 @download-version="downloadVersion"
                 @save-version="nameVersion"
-                @closed="header?.focusPanelToggle($event)"
+                @closed="backToText"
                 @comment-sent="backToText"
               />
             </template>

@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 
-import type { DocumentSession } from '@/apps/drive'
+import { PANEL_BUTTONS, type DocumentPanel, type DocumentSession } from '@/apps/drive'
+import { formatShortcut } from '@/apps/writer/components/core-editor/formatting'
 import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './exports'
 import { waitForFocusBack } from './focusBack'
+import { PANEL_SHORTCUTS } from './panelShortcuts'
 
 /**
- * The Writer document's menu in the Drive header: download as DOCX or
+ * The Writer document's menu in the Drive header: the side panels, download as DOCX or
  * Markdown, and, with edit access, lock the document or import a DOCX into it. A
  * document with tabs asks in a submenu whether to download the open tab or all
  * of them.
@@ -27,9 +29,16 @@ const props = defineProps<{
   /** The person could edit the body if it weren't locked. Locking needs it. */
   canLock: boolean
   isLocked: boolean
+  /** The side panels this person can open, and the one open now. */
+  panels?: readonly DocumentPanel[]
+  panel?: DocumentPanel | null
 }>()
 
-const emit = defineEmits<{ saveVersion: []; setLocked: [lock: boolean] }>()
+const emit = defineEmits<{
+  saveVersion: []
+  setLocked: [lock: boolean]
+  togglePanel: [panel: DocumentPanel]
+}>()
 
 const DOCX_TYPES = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
@@ -77,6 +86,19 @@ function saveVersionOnFocusBack() {
   focusBack.focused()
 }
 
+function panelOptions() {
+  return (props.panels ?? []).map((name) => ({
+    label: __(PANEL_BUTTONS[name].label),
+    icon: PANEL_BUTTONS[name].icon,
+    selected: props.panel === name,
+    slots: {
+      suffix: () =>
+        h('span', { class: 'ms-6 text-sm text-ink-gray-5' }, formatShortcut(PANEL_SHORTCUTS[name])),
+    },
+    onClick: () => emit('togglePanel', name),
+  }))
+}
+
 function documentOptions() {
   const lock = props.isLocked
     ? {
@@ -114,6 +136,7 @@ function fileOptions() {
 
 const options = computed<DropdownOptions>(() => {
   const groups = [
+    { group: __('Panels'), hideLabel: true, options: panelOptions() },
     { group: __('Document'), hideLabel: true, options: documentOptions() },
     { group: __('File'), hideLabel: true, options: fileOptions() },
   ]
@@ -151,7 +174,7 @@ async function importFile(file: File) {
       icon="lucide-ellipsis"
       :tooltip="__('More document actions')"
       :aria-label="__('More document actions')"
-      :disabled="!editor"
+      :disabled="!editor && !panels?.length"
       @focus="saveVersionOnFocusBack"
     />
   </Dropdown>

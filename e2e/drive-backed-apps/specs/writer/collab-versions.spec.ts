@@ -19,6 +19,7 @@ import { discardNode, getNode, mediaNodes, purgeNode, trashNode } from "../../he
 import {
 	createWriterDocument,
 	openWriterDocument,
+	toggleWriterPanel,
 	uniqueWriterTitle,
 	writerEditor,
 } from "../../helpers/writer";
@@ -48,10 +49,7 @@ test.describe("Writer collaboration", () => {
 		await saveNamedVersion(owner.context.request, node, "Before the preview");
 		await openWriterDocument(collaborator.page, node);
 
-		await owner.page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(owner.page, "Versions");
 		await owner.page
 			.getByRole("complementary", { name: "Versions" })
 			.getByRole("button", { name: /^Before the preview/ })
@@ -212,10 +210,7 @@ test.describe("Writer collaboration", () => {
 		await owner.page.keyboard.type("First words");
 		await expectSaved(owner.page);
 
-		await owner.page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(owner.page, "Versions");
 		const versions = owner.page
 			.getByRole("complementary", { name: "Versions" })
 			.getByRole("button", { name: AUTOMATIC_VERSION });
@@ -239,10 +234,7 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(page, "Typed after the version");
 		await expectSaved(page);
 
-		await page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Versions");
 		const panel = page.getByRole("complementary", { name: "Versions" });
 		async function download() {
 			const downloaded = page.waitForEvent("download");
@@ -302,20 +294,28 @@ test.describe("Writer collaboration", () => {
 		await expect(panel.getByRole("button", { name: /^Offline try/ })).toHaveCount(0);
 	});
 
-	test("closing the Versions or Comments panel returns focus to the button that opened it", async ({
-		owner,
-	}) => {
+	test("closing the Versions or Comments panel returns focus to the text", async ({ owner }) => {
 		const { page } = owner;
 		await openWriterDocument(page, node);
-		for (const name of ["Versions", "Comments"]) {
-			const opener = page.getByRole("banner").getByRole("button", { name, exact: true });
-			await opener.click();
+		for (const name of ["Versions", "Comments"] as const) {
+			await toggleWriterPanel(page, name);
 			await page
 				.getByRole("complementary", { name })
 				.getByRole("button", { name: "Close panel" })
 				.click();
-			await expect(opener).toBeFocused();
+			await expect(writerEditor(page)).toBeFocused();
 		}
+	});
+
+	test("the panels toggle from their keys", async ({ owner }) => {
+		const { page } = owner;
+		await openWriterDocument(page, node);
+		await page.keyboard.press("ControlOrMeta+Alt+Shift+KeyH");
+		await expect(page.getByRole("complementary", { name: "Versions" })).toBeVisible();
+		await page.keyboard.press("ControlOrMeta+Alt+Shift+KeyA");
+		await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
+		await page.keyboard.press("ControlOrMeta+Alt+Shift+KeyA");
+		await expect(page.getByRole("complementary")).toHaveCount(0);
 	});
 
 	test("the Versions panel opens on the right and moves the text with it", async ({
@@ -380,10 +380,7 @@ test.describe("Writer collaboration", () => {
 		}
 
 		const opening = sampleMotion();
-		await page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Versions");
 		expectInStep(await opening);
 		const versionsPanel = page.getByRole("complementary", { name: "Versions" });
 		const row = versionsPanel.getByRole("button", { name: /^One/ });
@@ -439,10 +436,7 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(page, "Second version");
 		await expectSaved(page);
 		await saveNamedVersion(owner.context.request, node, "Two");
-		await page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Versions");
 		const panel = page.getByRole("complementary", { name: "Versions" });
 		await expect.poll(async () => (await panel.boundingBox())?.width).toBe(321);
 		const editorText = page.getByLabel("Document editor");
@@ -531,10 +525,7 @@ async function slowPushes(route: Route) {
 const AUTOMATIC_VERSION = /^\d{1,2}:\d{2}/;
 
 async function openVersions(page: Page) {
-	await page
-		.getByRole("button", { name: /versions/i })
-		.first()
-		.click();
+	await toggleWriterPanel(page, "Versions");
 	return page.getByRole("complementary", { name: "Versions" });
 }
 

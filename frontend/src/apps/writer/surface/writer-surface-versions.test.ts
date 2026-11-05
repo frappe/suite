@@ -306,8 +306,8 @@ describe('Writer surface', () => {
 
   it('goes back to the current version from the version bar, or on Escape', async () => {
     const root = await openedSurface(oneVersion)
+    root.querySelector<HTMLElement>('[data-open-versions]')!.click()
     const backAfter = async (leave: () => void) => {
-      root.querySelector<HTMLElement>('[data-open-versions]')!.click()
       await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
       versionRow(root, 'Before review').click()
       await nextTick()

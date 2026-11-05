@@ -107,28 +107,16 @@ export async function fakeDrive() {
         saveState: { type: String, default: null },
         saveNote: { type: String, default: '' },
         viewOnly: { type: Boolean, default: false },
-        panels: { type: Array, default: () => [] },
       },
-      emits: ['update:panel'],
-      setup: (props, { emit, slots }) => {
-        const openVersions = {
-          'data-open-versions': '',
-          onClick: () => emit('update:panel', 'versions'),
-        }
-        const openComments = {
-          'data-open-comments': '',
-          onClick: () => emit('update:panel', 'comments'),
-        }
-        return () => [
-          props.panels.includes('versions') && render('button', openVersions),
-          props.panels.includes('comments') && render('button', openComments),
+      setup:
+        (props, { slots }) =>
+        () => [
           render('output', { 'data-save-state': '' }, props.saveState ?? ''),
           props.viewOnly && render('output', { 'data-view-only': '' }),
           render('output', props.saveNote),
           slots.actions?.(),
           slots.menu?.(),
-        ]
-      },
+        ],
     }),
     DriveCommentAuthor: define({ setup: () => () => null }),
     DRIVE_ROLES: { read: 10, comment: 20, upload: 30, edit: 40, manage: 50 },
@@ -304,11 +292,18 @@ export async function fakeDocumentMenu() {
         canSaveVersion: Boolean,
         editable: Boolean,
         editor: Object as PropType<Editor | null>,
+        panels: { type: Array as PropType<string[]>, default: () => [] },
       },
-      emits: ['saveVersion'],
+      emits: ['saveVersion', 'togglePanel'],
       setup:
         (props, { emit }) =>
         () => [
+          ...props.panels.map((panel) =>
+            render('button', {
+              [`data-open-${panel}`]: '',
+              onClick: () => emit('togglePanel', panel),
+            }),
+          ),
           render('button', {
             'data-save-version': '',
             hidden: !props.canSaveVersion,
