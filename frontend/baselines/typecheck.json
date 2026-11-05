@@ -21,7 +21,7 @@
   "src/apps/mail/components/EmojiPicker.vue": 6,
   "src/apps/mail/components/MailActions.vue": 3,
   "src/apps/mail/components/MailDetails.vue": 1,
-  "src/apps/mail/components/MailListItem.vue": 2,
+  "src/apps/mail/components/MailListItem.vue": 1,
   "src/apps/mail/components/MailThread.vue": 21,
   "src/apps/mail/components/Modals/AddAccountEmailModal.vue": 1,
   "src/apps/mail/components/Modals/AddAccountGroupsModal.vue": 1,

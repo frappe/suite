@@ -26,6 +26,7 @@ import { useRootStore } from '@/stores/root'
 // top rather than `export ... from`, which would re-export the name without binding it here — this
 // file calls it too.
 export { useScreenSize }
+export { isUnifiedRoute } from '@/apps/mail/utils/unifiedFolders'
 
 /**
  * Split View: the reading pane sits beside the list rather than over it. One user setting, read the

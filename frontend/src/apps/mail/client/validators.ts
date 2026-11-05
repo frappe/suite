@@ -8275,6 +8275,25 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
             title: 'ReplyAddress',
             type: 'object',
           },
+          SearchMatch: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
+              received_at: { title: 'Received At', type: 'string' },
+              snippet: {
+                anyOf: [
+                  { items: { $ref: '#/$defs/SearchSegment' }, type: 'array' },
+                  { type: 'null' },
+                ],
+                title: 'Snippet',
+              },
+              in_attachment: { enum: [0, 1], title: 'In Attachment', type: 'integer' },
+            },
+            required: ['id', 'from_name', 'from_email', 'received_at', 'snippet', 'in_attachment'],
+            title: 'SearchMatch',
+            type: 'object',
+          },
           SearchRow: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -8321,6 +8340,8 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               messages: { items: { $ref: '#/$defs/Message' }, title: 'Messages', type: 'array' },
               user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
               match_id: { title: 'Match Id', type: 'string' },
+              matches: { items: { $ref: '#/$defs/SearchMatch' }, title: 'Matches', type: 'array' },
+              marked_words: { items: { type: 'string' }, title: 'Marked Words', type: 'array' },
             },
             required: [
               'name',
@@ -8340,14 +8361,30 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               'attachments',
               'messages',
               'match_id',
+              'matches',
+              'marked_words',
             ],
             title: 'SearchRow',
+            type: 'object',
+          },
+          SearchSegment: {
+            properties: {
+              text: { title: 'Text', type: 'string' },
+              hit: { title: 'Hit', type: 'boolean' },
+            },
+            required: ['text', 'hit'],
+            title: 'SearchSegment',
             type: 'object',
           },
         },
         properties: {
           rows: { items: { $ref: '#/$defs/SearchRow' }, title: 'Rows', type: 'array' },
           total: { title: 'Total', type: 'integer' },
+          unavailable_accounts: {
+            items: { type: 'string' },
+            title: 'Unavailable Accounts',
+            type: 'array',
+          },
         },
         required: ['rows', 'total'],
         title: 'SearchPage',

@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import type { Mail, MailCopy, Thread } from '@/apps/mail/types'
 
-import { mailCopies, mailCopyIds, mailCopyNames, rowMailIds, threadStarIds } from './mailCopies'
+import {
+  mailCopies,
+  mailCopyIds,
+  mailCopyNames,
+  rowMailIds,
+  threadMailIds,
+  threadStarIds,
+} from './mailCopies'
 
 const mail = (overrides: Partial<Mail> = {}): Mail =>
   ({ name: 'message-d1', id: 'd1', ...overrides }) as Mail
@@ -66,5 +73,20 @@ describe('threadStarIds', () => {
 
   it('unstars every starred message, so the thread leaves Starred', () => {
     expect(threadStarIds(row('b', [older, newest]), false).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('threadMailIds', () => {
+  it('reaches every copy of every message, so an action takes the whole conversation', () => {
+    const thread = {
+      id: 'd2',
+      messages: [mail({ duplicates: [sentCopy] }), mail({ name: 'message-d2', id: 'd2' })],
+    } as Thread
+
+    expect(threadMailIds(thread)).toEqual(['d1', 's1', 'd2'])
+  })
+
+  it('is the row itself when the conversation has not been listed out', () => {
+    expect(threadMailIds({ id: 'd1' } as Thread)).toEqual(['d1'])
   })
 })

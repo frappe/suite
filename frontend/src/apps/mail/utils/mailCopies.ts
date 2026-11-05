@@ -25,6 +25,10 @@ export const mailCopyIds = (mail: Mail): string[] => mailCopies(mail).map((copy)
 /** The same, as Mail Message document names — what deletes are addressed by. */
 export const mailCopyNames = (mail: Mail): string[] => mailCopies(mail).map((copy) => copy.name)
 
+/** The mail ids an action on a whole conversation carries: every copy of every message. */
+export const threadMailIds = (thread: Thread): string[] =>
+  thread.messages?.length ? thread.messages.flatMap(mailCopyIds) : [thread.id]
+
 /**
  * The mail ids a list row's star, or any action naming no message of its own, should carry.
  *

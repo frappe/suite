@@ -9,6 +9,7 @@ const accounts = vi.hoisted(() => ({ value: ['work', 'personal'] }))
 const searches = vi.hoisted(() => [] as Record<string, unknown>[])
 
 const answer = vi.hoisted(() => ({ value: async (_rows?: unknown[], _matched?: number) => {} }))
+const refuse = vi.hoisted(() => ({ value: async () => {} }))
 const engines = vi.hoisted(() => ({ current: null as unknown, dispose: () => {} }))
 vi.mock('@vueuse/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@vueuse/core')>()),
@@ -27,7 +28,11 @@ vi.mock('@/api', async () => {
           request: async (reference, input) => {
             if (!reference.path.endsWith('search_mails')) return []
             searches.push(input)
-            return await new Promise((resolve) => {
+            return await new Promise((resolve, reject) => {
+              refuse.value = async () => {
+                reject(new Error('The mail server did not answer'))
+                await new Promise((done) => setTimeout(done, 0))
+              }
               answer.value = async (rows = [], total = 0) => {
                 resolve({
                   rows: rows.map((row) => ({ attachments: [], mailboxes: [], ...row })),
@@ -552,6 +557,46 @@ describe('how many matched', () => {
     await settle()
 
     expect(search.total.value).toBe(0)
+  })
+})
+
+describe('what a search found', () => {
+  it('leaves out a conversation only a reaction was found in, from the rows and the count', async () => {
+    const search = openSearch()
+    search.query.value = 'budget'
+    search.search('budget', 'work')
+    await settle()
+
+    await answer.value(
+      [
+        { id: 'written', reaction_only: 0 },
+        { id: 'reacted', reaction_only: 1 },
+      ],
+      2,
+    )
+
+    expect(search.results.value.map((row) => row.id)).toEqual(['written'])
+    expect(search.total.value).toBe(1)
+  })
+
+  it('tells a search the server refused from one that found nothing', async () => {
+    const search = openSearch()
+    search.query.value = 'budget'
+    search.search('budget', 'work')
+    await settle()
+    expect(search.failed.value).toBe(false)
+
+    await refuse.value()
+    await vi.waitFor(() => expect(search.failed.value).toBe(true))
+    expect(search.results.value).toEqual([])
+
+    search.query.value = 'budgets'
+    search.search('budgets', 'work')
+    await settle()
+    await answer.value([], 0)
+    await vi.waitFor(() => expect(search.pending.value).toBe(false))
+    expect(search.failed.value).toBe(false)
+    expect(search.results.value).toEqual([])
   })
 })
 

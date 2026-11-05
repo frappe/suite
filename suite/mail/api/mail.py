@@ -81,6 +81,14 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
+from suite.mail.search_matches import (
+    JMAP_ERRORS,
+    SHOWN_MATCHES,
+    found_in_attachment,
+    get_snippets,
+    marked_words,
+    matching_messages,
+)
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
 from suite.mail.utils.reaction import (
@@ -1728,20 +1736,22 @@ def search_mails(
     act on — it in the correct account.
     """
 
+    # `filter` may arrive carrying the search-page query blob (see MailboxView), which includes the
+    # out-of-band `all_accounts` flag — drop it so it never becomes a bogus JMAP search condition, nor
+    # leaves a search of nothing, which JMAP answers with every mail there is.
+    filter = {k: v for k, v in (filter or {}).items() if k != "all_accounts"}
     if not filter:
         return {"rows": [], "total": 0}
-
-    # `filter` may arrive carrying the search-page query blob (see MailboxView), which includes the
-    # out-of-band `all_accounts` flag — drop it so it never becomes a bogus JMAP search condition.
-    filter = {k: v for k, v in filter.items() if k != "all_accounts"}
 
     # The flag crosses the wire as a bool, an int, or a "true"/"1" string depending on the caller, so
     # normalize all truthy forms (cint("true") would be 0).
     if str(all_accounts).lower() in ("1", "true"):
-        rows, total = _search_all_accounts(filter, limit=limit, start=start)
-        return {"rows": rows, "total": total}
+        return _search_all_accounts(filter, limit=limit, start=start)
 
-    rows, total = search_threads(account, normalize_filter(filter), start, limit)
+    limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
+    normalized_filter = normalize_filter(filter)
+    rows, total = search_threads(account, normalized_filter, cint(start), limit)
+    add_match_words(account, normalized_filter, rows)
     _tag_search_results(account, rows)
 
     return {"rows": rows, "total": total}
@@ -1752,22 +1762,31 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
 
     A row is the whole conversation, as in a folder's list, but described by its newest matching
     message: the sender, snippet and date are the match's, so the snippet holds what was searched for
-    and the row is dated when it happened. `match_id` names that message, for opening on it.
+    and the row is dated when it happened. `match_id` names that message, for opening on it, and
+    `matches` lists those that matched, newest first, without their words (see add_match_words).
+
+    A reaction is mail like any other to the server, but not a result: it only says something about
+    the message it answers, which the pane folds it onto. A conversation found by nothing but a
+    reaction stays on the page marked `reaction_only`, for the client to leave out, because the next
+    page starts at this page's row count, and `total` still counts it, because only the page is known.
     """
 
-    conversations, matches, total = query_threads(account, filter, start, limit, calculate_total=True)
+    conversations, newest_matches, total = query_threads(account, filter, start, limit, calculate_total=True)
+    found, saw_all_matches = matching_messages(account, filter, newest_matches)
     ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_cached_mailboxes(account)}
     trash, junk = ids_by_role.get("trash"), ids_by_role.get("junk")
 
     rows = []
     for thread_id, conversation in conversations.items():
-        match = next((m for m in conversation if m["id"] == matches.get(thread_id)), None)
-        if not match:
+        if not conversation:
             continue
-        # A reaction has no words to have matched but its fallback's, and the pane folds it away.
         written = written_messages(conversation)
-        if match not in written:
-            match = written[-1]
+        by_id = {m["id"]: m for m in conversation}
+        matched = [by_id[id] for id in found.get(thread_id) or [newest_matches.get(thread_id)] if id in by_id]
+        written_matches = [m for m in matched if m in written]
+        # Only what was seen of the matches can rule a conversation out.
+        reaction_only = bool(matched and not written_matches and saw_all_matches and found.get(thread_id))
+        match = written_matches[0] if written_matches else written[-1]
         # Found in Trash or Junk, the conversation is shown as those folders show it; anywhere else,
         # as every other list does.
         if trash and any(mb["mailbox_id"] == trash for mb in match["mailboxes"]):
@@ -1786,12 +1805,62 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
         )
         row["received_at"] = match["received_at"]
         row["match_id"] = match["id"]
+        row["reaction_only"] = cint(reaction_only)
+        row["matches"] = _row_matches(written_matches or [match], visible)
+        row["marked_words"] = []
         rows.append(row)
 
+    # Found by a message older than a reaction to it, a row's date is earlier than the place the
+    # server listed it in.
+    rows.sort(key=lambda row: row["received_at"], reverse=True)
     add_user_images_to_emails(account, rows, is_thread=False)
     add_user_images_to_emails(account, [m for row in rows for m in row["messages"]], is_thread=True)
     add_reaction_refusals(account, [m for row in rows for m in row["messages"]])
     return rows, total
+
+
+def _row_matches(matched: list[dict], visible: list[dict]) -> list[dict]:
+    """The matches a row can show: those the view holds, one for a message and its copies."""
+
+    shown = {m["id"] for m in visible}
+    seen_copies: set[str] = set()
+    matches = []
+    for message in matched:
+        copy_key = message.get("message_id") or message["id"]
+        if message["id"] in shown and copy_key not in seen_copies:
+            seen_copies.add(copy_key)
+            matches.append(
+                {
+                    "id": message["id"],
+                    "from_name": message.get("from_name"),
+                    "from_email": message.get("from_email"),
+                    "received_at": message["received_at"],
+                    "snippet": None,
+                    "in_attachment": 0,
+                }
+            )
+    return matches
+
+
+def add_match_words(account: str, filter: dict, rows: list[dict]) -> None:
+    """Reads the words of the matches a page's rows show. Asked once the page is settled, because it
+    fetches every mail it reads: a search across accounts lists far more rows than it returns."""
+
+    shown = [row for row in rows if not row.get("reaction_only")]
+    ids = [match["id"] for row in shown for match in row["matches"][:SHOWN_MATCHES]]
+    snippets = get_snippets(account, filter, ids)
+    if not snippets:
+        return
+
+    for row in shown:
+        messages = {copy["id"]: copy for m in row["messages"] for copy in [m, *m.get("duplicates", [])]}
+        words: list[str] = []
+        for match in row["matches"][:SHOWN_MATCHES]:
+            snippet = snippets.get(match["id"])
+            match["snippet"] = snippet["preview"] if snippet else None
+            match["in_attachment"] = cint(found_in_attachment(messages.get(match["id"], {}), snippet))
+            words += marked_words(snippet)
+        row["marked_words"] = list(dict.fromkeys(words))
 
 
 @frappe.whitelist()
@@ -1839,25 +1908,24 @@ def get_recent_threads_from(account: str, email: str, limit: int = 4) -> list[di
     return sorted(rows, key=lambda row: row["received_at"], reverse=True)
 
 
-def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dict], int]:
+def _search_all_accounts(filter: dict, limit: int, start: int) -> dict:
     """Search across every JMAP account the user owns, returning a merged newest-first page.
 
     Mirrors the unified folder fan-out (`get_unified_threads`): each account is over-fetched to the
     deepest global position this page can reach (`start + limit`, clamped), the results are tagged,
     merged, sorted newest-first, then sliced to the requested window. `total` is the summed match
-    count across accounts.
+    count across accounts. An account that can't be reached doesn't cost the others their results:
+    it is named in `unavailable_accounts`, for the page to say what it left out.
     """
 
     accounts = get_user_jmap_accounts()
     if not accounts:
-        return ([], 0)
+        return {"rows": [], "total": 0}
 
     # Clamp user input before it fans out across accounts (see the All Inboxes bounds): limit to a sane
     # page size, and start so the per-account fetch (start + limit) can never exceed ALL_INBOX_MAX_FETCH.
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
     start = max(cint(start), 0)
-    if start >= ALL_INBOX_MAX_FETCH:
-        return [], 0
     per_account_limit = min(start + limit, ALL_INBOX_MAX_FETCH)
 
     # Mailbox ids are account-specific, so a "Look In" folder filter can't carry across accounts.
@@ -1866,15 +1934,28 @@ def _search_all_accounts(filter: dict, limit: int, start: int) -> tuple[list[dic
 
     merged: list[dict] = []
     total = 0
+    unavailable: list[str] = []
     for account in accounts:
         account_id = account["name"]
-        rows, account_total = search_threads(account_id, normalized_filter, 0, per_account_limit)
+        try:
+            rows, account_total = search_threads(account_id, normalized_filter, 0, per_account_limit)
+        except JMAP_ERRORS:
+            frappe.log_error(title="Mail search: searching an account", message=frappe.get_traceback())
+            unavailable.append(account["_name"])
+            continue
         total += account_total
         _tag_search_results(account_id, rows, account_name=account["_name"])
         merged.extend(rows)
 
     merged.sort(key=lambda mail: mail["received_at"], reverse=True)
-    return merged[start : start + limit], total
+    page = merged[start : start + limit]
+    for account in accounts:
+        add_match_words(
+            account["name"],
+            normalized_filter,
+            [row for row in page if row["account"] == account["name"]],
+        )
+    return {"rows": page, "total": total, **({"unavailable_accounts": unavailable} if unavailable else {})}
 
 
 def _tag_search_results(account: str, mails: list[dict], account_name: str | None = None) -> None:
