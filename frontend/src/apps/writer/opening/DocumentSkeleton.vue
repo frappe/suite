@@ -16,7 +16,7 @@
         </div>
       </div>
     </template>
-    <div class="min-w-0 grow px-5 pt-10" aria-hidden="true">
+    <div class="min-w-0 grow px-5 pt-6" aria-hidden="true">
       <Skeleton class="mb-5 h-6 w-2/5 rounded-4" />
       <div v-for="(lines, paragraph) in PARAGRAPHS" :key="paragraph" class="mb-5">
         <div v-for="width in lines" :key="width" class="flex h-[22.5px] items-center">

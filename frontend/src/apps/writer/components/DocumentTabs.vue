@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="tabs.length"
-    class="hidden h-9 shrink-0 items-center border-b border-outline-gray-1 px-3 md:flex"
+    class="hidden h-11 shrink-0 items-center px-3 md:flex"
     @drop.prevent="onDrop"
     @dragover.prevent
   >
@@ -14,33 +14,35 @@
         <TabList variant="ghost" size="sm">
           <template v-for="(tab, index) in tabs" :key="tab.id">
             <span v-if="isDropBefore(index)" class="drop-mark" aria-hidden="true" />
-            <TextInput
-              v-if="isRenaming(tab.id)"
-              v-model="renamedLabel"
-              v-on-outside-click="() => finishRenaming()"
-              class="shrink-0"
-              :style="{ width: `${Math.max(renamedLabel.length + 4, 10)}ch` }"
-              size="sm"
-              autofocus
-              aria-label="Tab name"
-              @keydown.enter="finishRenaming()"
-              @keydown.esc="stopRenaming()"
-            />
-            <!-- Stays mounted while renaming: Tabs selects the first tab when the selected trigger goes away. -->
-            <ContextMenu :options="tabActions(tab.id)">
-              <TabTrigger
-                v-show="!isRenaming(tab.id)"
-                :value="tab.id"
-                :label="tab.label"
-                class="shrink-0"
-                :class="tab.id === draggedId && 'opacity-40'"
-                :draggable="editable"
-                @dblclick="editable && startRenaming(tab.id)"
-                @dragstart="onDragStart($event, tab.id, index)"
-                @dragover.prevent="onDragOver($event, index)"
-                @dragend="stopDragging"
+            <!-- One cell: the trigger sizes it to the name, and the field lies exactly over the trigger. No position of its own, as the sliding highlight measures tabs against the list. -->
+            <span class="tab-cell grid min-w-10 max-w-60 shrink-0">
+              <ContextMenu :options="tabActions(tab.id)">
+                <TabTrigger
+                  :value="tab.id"
+                  :label="isRenaming(tab.id) ? renamedLabel : tab.label"
+                  class="min-w-0 max-w-full [&>*]:max-w-full"
+                  :class="[
+                    tab.id === draggedId && 'opacity-40',
+                    isRenaming(tab.id) && 'opacity-0 [&_span]:whitespace-pre',
+                  ]"
+                  :draggable="editable"
+                  @dblclick="editable && startRenaming(tab.id)"
+                  @dragstart="onDragStart($event, tab.id, index)"
+                  @dragover.prevent="onDragOver($event, index)"
+                  @dragend="stopDragging"
+                />
+              </ContextMenu>
+              <input
+                v-if="isRenaming(tab.id)"
+                v-model="renamedLabel"
+                v-on-outside-click="() => finishRenaming()"
+                v-select-on-mount
+                class="tab-name-field"
+                :aria-label="__('Tab name')"
+                @keydown.enter="finishRenaming()"
+                @keydown.esc="stopRenaming()"
               />
-            </ContextMenu>
+            </span>
           </template>
           <span v-if="isDropBefore(tabs.length)" class="drop-mark" aria-hidden="true" />
         </TabList>
@@ -56,7 +58,6 @@ import {
   TabList,
   Tabs,
   TabTrigger,
-  TextInput,
   vOnOutsideClick,
   type ContextMenuOptions,
 } from 'frappe-ui'
@@ -81,7 +82,15 @@ function isRenaming(id: string) {
   return renamingId.value === id && isRenameReady.value
 }
 
+const vSelectOnMount = {
+  mounted(input: HTMLInputElement) {
+    input.focus()
+    input.select()
+  },
+}
+
 async function startRenaming(id: string) {
+  selectTab(id)
   renamingId.value = id
   renamedLabel.value = tabs.value.find((tab) => tab.id === id)?.label ?? ''
   await nextTick()
@@ -97,11 +106,15 @@ function stopRenaming(refocus = true) {
 
 function finishRenaming(refocus = true) {
   const label = renamedLabel.value.trim()
-  if (renamingId.value && label) props.editor.commands.renameTab(renamingId.value, label, refocus)
+  // An unchanged name stays automatic, so it keeps following the tab's first heading
+  const current = tabs.value.find((tab) => tab.id === renamingId.value)
+  if (current && label && label !== current.label) {
+    props.editor.commands.renameTab(current.id, label, refocus)
+  }
   stopRenaming(refocus)
 }
 
-// Moving to another tab keeps a rename; the first click of a double-click selects the tab being renamed.
+// Moving to another tab ends a rename.
 watch(activeTabId, (id) => {
   if (renamingId.value && renamingId.value !== id) finishRenaming(false)
 })
@@ -177,6 +190,19 @@ function tabActions(id: string): ContextMenuOptions {
 </script>
 
 <style scoped>
+.tab-cell > * {
+  grid-area: 1 / 1;
+}
+
+/* Text sits exactly where the tab's own label sits, so renaming starts in place. */
+.tab-name-field {
+  @apply w-full min-w-0 rounded-md border-0 bg-transparent px-2 py-0 text-base leading-tighter text-ink-gray-8 outline-none ring-1 ring-inset ring-outline-gray-3;
+}
+
+.tab-name-field:focus {
+  @apply border-0 shadow-none outline-none ring-1 ring-inset ring-outline-gray-3;
+}
+
 /* No position of its own: the sliding highlight measures tabs against the list. */
 .drop-mark {
   @apply -mx-px h-4 w-0.5 shrink-0 bg-surface-gray-7;

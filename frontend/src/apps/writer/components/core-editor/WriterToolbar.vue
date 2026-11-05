@@ -73,35 +73,6 @@
         </Dropdown>
       </div>
 
-      <div class="writer-toolbar-group" role="group" :aria-label="__('Font size')">
-        <ToolbarButton
-          icon="lucide-minus"
-          :label="__('Smaller text')"
-          :disabled="!hasMixedSizes && fontSize <= FONT_SIZE_MIN"
-          @click="stepFontSize(editor, -1)"
-        />
-        <TextInput
-          class="w-9"
-          variant="ghost"
-          size="sm"
-          inputmode="numeric"
-          :aria-label="__('Font size')"
-          :placeholder="hasMixedSizes ? '–' : undefined"
-          :model-value="typedSize ?? (hasMixedSizes ? '' : fontSize)"
-          @update:model-value="typedSize = String($event)"
-          @focus="($event.target as HTMLInputElement).select()"
-          @blur="applyTypedSize"
-          @keydown.enter.prevent="finishTypingSize(applyTypedSize)"
-          @keydown.esc.prevent="finishTypingSize(() => (typedSize = null))"
-        />
-        <ToolbarButton
-          icon="lucide-plus"
-          :label="__('Larger text')"
-          :disabled="!hasMixedSizes && fontSize >= FONT_SIZE_MAX"
-          @click="stepFontSize(editor, 1)"
-        />
-      </div>
-
       <div class="writer-toolbar-group">
         <ToolbarButton
           v-for="mark in MARKS"
@@ -163,7 +134,6 @@
             <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
           </ToolbarButton>
         </Dropdown>
-        <SpacingDialog :editor :settings="settings ?? undefined" />
         <ToolbarButton
           icon="lucide-indent-decrease"
           :label="__('Outdent')"
@@ -230,22 +200,14 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { useResizeObserver } from '@vueuse/core'
-import { Dropdown, Popover, TextInput, type DropdownOptions } from 'frappe-ui'
-import { computed, defineAsyncComponent, h, ref, toRef, useTemplateRef, watch } from 'vue'
+import { Dropdown, Popover, type DropdownOptions } from 'frappe-ui'
+import { computed, h, ref, toRef, useTemplateRef, watch } from 'vue'
 
 import { FONT_FAMILIES } from '@/apps/writer/utils'
 import type { LayoutSettings } from '@/apps/writer/utils/editor-layout'
-import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '@/apps/writer/utils/typography'
 import { translate as __ } from '@/platform/translation'
 
 import ColorPanel from './ColorPanel.vue'
-import {
-  hasMixedFontSizes,
-  selectionFontSize,
-  setFontSize,
-  stepFontSize,
-  typedFontSize,
-} from './fontSize'
 import {
   activeBlockStyle,
   BLOCK_STYLES,
@@ -259,10 +221,6 @@ import TableToolbarButton from './table/TableToolbarButton.vue'
 import ToolbarButton from './ToolbarButton.vue'
 import { useEditorVersion } from './useEditorVersion'
 import { useReturnFocus } from './useReturnFocus'
-
-const SpacingDialog = defineAsyncComponent(
-  () => import('@/apps/writer/components/SpacingDialog.vue'),
-)
 
 const props = defineProps<{
   editor: Editor
@@ -312,22 +270,6 @@ const activeFont = live(
   () => FONT_FAMILIES.find((font) => font.isActive(props.editor))?.key ?? defaultFont.value,
 )
 
-const fontSize = live(() => selectionFontSize(props.editor))
-const hasMixedSizes = live(() => hasMixedFontSizes(props.editor))
-// What's being typed in the font size box, until Enter or leaving the box applies it
-const typedSize = ref<string | null>(null)
-
-// A size outside the range is refused, and the box shows the real size again
-function applyTypedSize() {
-  const size = typedFontSize(typedSize.value ?? '')
-  typedSize.value = null
-  if (size !== null) setFontSize(props.editor, size)
-}
-
-function finishTypingSize(finish: () => void) {
-  finish()
-  props.editor.commands.focus()
-}
 const canUndo = live(() => props.editor.can().undo())
 const canRedo = live(() => props.editor.can().redo())
 

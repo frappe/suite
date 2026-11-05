@@ -1,6 +1,7 @@
 import { Editor } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
+import Heading from '@tiptap/extension-heading'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -175,7 +176,7 @@ describe('the first tab', () => {
     const peerB = openPeer()
     syncDocs(peerA.ydoc, peerB.ydoc)
     await waitForUpdates()
-    expect(listTabs(peerA.editor)).toEqual([{ id: 'main', label: 'Untitled' }])
+    expect(listTabs(peerA.editor)).toEqual([{ id: 'main', label: 'Hello' }])
 
     peerA.editor.commands.renameTab('main', 'Notes', false)
     syncDocs(peerA.ydoc, peerB.ydoc)
@@ -236,5 +237,54 @@ describe('the first tab', () => {
     await waitForUpdates()
 
     expect(viewer.editor.storage.tab.activeTabId).toBe('tab-a')
+  })
+})
+
+describe('tab names', () => {
+  function names(content: string) {
+    const editor = new Editor({
+      extensions: [Document, Paragraph, Text, Heading, TabsExtension],
+      content,
+    })
+    editors.push(editor)
+    return listTabs(editor).map((tab) => tab.label)
+  }
+  const tab = (id: string, label: string, body: string) =>
+    `<div data-tab-id="${id}" data-tab-label="${label}">${body}</div>`
+
+  it('names an unnamed tab after its first heading, even below other text', () => {
+    expect(names(tab('a', 'Untitled', '<p>Intro</p><h2>Budget</h2><h1>Later</h1>'))).toEqual([
+      'Budget',
+    ])
+  })
+
+  it('falls back to the first line of text, then to Untitled', () => {
+    expect(names(tab('a', 'Untitled', '<p></p><p>Some notes</p>'))).toEqual(['Some notes'])
+    expect(names(tab('a', 'Untitled', '<p></p>'))).toEqual(['Untitled'])
+  })
+
+  it('keeps a name someone gave the tab', () => {
+    expect(names(tab('a', 'Plan', '<h1>Budget</h1>'))).toEqual(['Plan'])
+  })
+
+  it('names the first tab the same way', () => {
+    expect(names(`<h1>Overview</h1>${tab('a', 'Plan', '<p>x</p>')}`)).toEqual(['Overview', 'Plan'])
+  })
+
+  it('shortens a long line', () => {
+    const line = 'A first line that goes on for much longer than a tab should be'
+    expect(names(tab('a', 'Untitled', `<p>${line}</p>`))).toEqual([
+      'A first line that goes on for…',
+    ])
+  })
+
+  it('follows the heading as it changes', () => {
+    const editor = new Editor({
+      extensions: [Document, Paragraph, Text, Heading, TabsExtension],
+      content: tab('a', 'Untitled', '<h1>Budget</h1>'),
+    })
+    editors.push(editor)
+    editor.commands.insertContentAt(2, 'Q3 ')
+    expect(listTabs(editor).map((entry) => entry.label)).toEqual(['Q3 Budget'])
   })
 })

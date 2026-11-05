@@ -72,7 +72,7 @@ function goToAnchor(id: string) {
   display: none;
   max-height: calc(100vh - 8rem);
   overflow-y: auto;
-  padding: 2.5rem 0.75rem 2.5rem 1rem;
+  padding: 1.5rem 0.75rem 2.5rem 1rem;
 }
 
 @container (min-width: 10rem) {

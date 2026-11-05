@@ -81,7 +81,7 @@ onBeforeUnmount(() => {
     :is-failed="failed"
   >
     <template #loading>
-      <div class="space-y-3 px-5 pt-10">
+      <div class="space-y-3 px-5 pt-6">
         <Skeleton
           v-for="width in ['70%', '92%', '84%', '60%']"
           :key="width"

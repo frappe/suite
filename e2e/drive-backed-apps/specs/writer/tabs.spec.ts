@@ -12,11 +12,11 @@ function tocTabs(page: Page) {
 	return page.locator('[draggable="true"]');
 }
 
-function tabPanel(page: Page, label: string) {
-	return page.locator(`[data-tab-label="${label}"]`);
+function tabPanel(page: Page, text: string) {
+	return page.locator("[data-tab-id]").filter({ hasText: text });
 }
 
-// Typing a first line and pressing Enter renames an "Untitled" tab to that line.
+// A tab nobody has named shows its first line of text.
 async function addTab(page: Page, text: string) {
 	await page.getByRole("button", { name: "Insert" }).click();
 	await page.getByRole("menuitem", { name: "Add tab" }).click();
@@ -47,7 +47,7 @@ test("a document without tabs lists its headings, not a tab", async ({ owner, ru
 	await expect(tocTabs(page)).toHaveCount(0);
 
 	await addTab(page, "notes");
-	await expect(tocTabs(page)).toHaveText(["Untitled", "notes"]);
+	await expect(tocTabs(page)).toHaveText(["Alpha", "notes"]);
 	await tocTabs(page).first().click();
 	await expect(writerEditor(page)).toContainText("Alpha", { useInnerText: true });
 	await expect(writerEditor(page)).not.toContainText("notes", { useInnerText: true });
@@ -83,7 +83,7 @@ test("mobile tab bar reflects added tabs and switches the active tab", async ({
 
 	// Bug 1: the third tab (added after the bar mounted) shows up in the bar
 	const barButtons = page.locator('[data-slot="tab-button"]');
-	await expect(barButtons).toHaveText(["Untitled", "second", "third"]);
+	await expect(barButtons).toHaveText(["first", "second", "third"]);
 
 	// Only the active tab is shown; the freshly-added one stays active
 	await expect(editor).toContainText("third", { useInnerText: true });
@@ -116,7 +116,7 @@ test("the tab's right-click menu renames it", async ({ owner, run }) => {
 	await expect(input).toBeHidden();
 	await expect(tocTabs(page)).toHaveText(["Untitled", "alpha", "renamed"]);
 	// The panel keeps its content and follows the new label.
-	await expect(tabPanel(page, "renamed")).toContainText("bravo");
+	await expect(page.locator('[data-tab-label="renamed"]')).toContainText("bravo");
 
 	// Persisted in the stored document.
 	await page.reload();
