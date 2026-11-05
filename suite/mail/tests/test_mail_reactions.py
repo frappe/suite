@@ -220,6 +220,11 @@ def stored(id: str, mailbox: str, at: str, target: str | None = None, **fields) 
 
 
 class ListRows(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(mail_api, "try_set_seen", return_value=([], True))
+        self.seen = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def rows(self, *conversations: list[dict], limit: int = 50) -> dict:
         with (
             mock.patch.object(
@@ -249,21 +254,41 @@ class ListRows(unittest.TestCase):
         self.assertEqual(row["subject"], "Re: Plans m1")
         self.assertEqual([m["id"] for m in row["messages"]], ["m1"])
 
-    def test_a_reaction_to_mail_only_in_sent_does_not_list_it_in_the_inbox(self):
+    def reaction_to_sent_mail(self, **reaction) -> list[dict]:
+        return [
+            stored("m1", "sent", "2026-11-01T10:00:00Z"),
+            stored("r2", "inbox", "2026-11-04T10:00:00Z", target="m1", **reaction),
+        ]
+
+    def test_a_reaction_to_mail_only_in_sent_marks_its_inbox_row_to_be_left_out(self):
+        rows = self.rows(self.reaction_to_sent_mail())["rows"]
+        self.assertEqual([r["reaction_only"] for r in rows], [1])
+
+    def test_a_row_left_out_still_counts_towards_the_page_the_client_pages_by(self):
+        page = self.rows(self.reaction_to_sent_mail(), limit=1)
+        self.assertEqual(len(page["rows"]), 1)
+        self.assertTrue(page["has_more"])
+
+    def test_a_row_with_written_mail_here_is_shown(self):
         rows = self.rows(
             [
-                stored("m1", "sent", "2026-11-01T10:00:00Z"),
+                stored("m1", "inbox", "2026-11-01T10:00:00Z"),
                 stored("r2", "inbox", "2026-11-04T10:00:00Z", target="m1"),
             ]
         )["rows"]
-        self.assertEqual(rows, [])
+        self.assertEqual([r["reaction_only"] for r in rows], [0])
 
-    def test_a_page_of_hidden_rows_still_has_more_after_it(self):
-        conversation = [
-            stored("m1", "sent", "2026-11-01T10:00:00Z"),
-            stored("r2", "inbox", "2026-11-04T10:00:00Z", target="m1"),
-        ]
-        self.assertTrue(self.rows(conversation, limit=1)["has_more"])
+    def test_an_unread_reaction_with_no_row_to_clear_it_is_marked_read(self):
+        self.rows(self.reaction_to_sent_mail(seen=0))
+        self.seen.assert_called_once_with("acct", ["r2"], True)
+
+    def test_a_read_reaction_is_left_alone(self):
+        self.rows(self.reaction_to_sent_mail(seen=1))
+        self.seen.assert_not_called()
+
+    def test_an_unread_message_people_can_open_is_not_marked_read(self):
+        self.rows([stored("m1", "inbox", "2026-11-01T10:00:00Z", seen=0)])
+        self.seen.assert_not_called()
 
     def test_each_message_says_why_it_cannot_be_reacted_to(self):
         row = self.rows(

@@ -633,6 +633,7 @@
                         <MessageReactions
                           v-if="!mail.draft"
                           :reactions="reactionsOn(mail)"
+                          :own-emails="ownEmails"
                           :readonly="readonly"
                           :refusal="mail.cannot_react"
                           class="mt-4"
@@ -1556,8 +1557,13 @@ const handleReload = (isUndo = false) => {
 }
 // Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
 // added to it out of sight. The fresh rows sync in place (see syncWithSource).
+// The conversation's account, which in All Inboxes need not be the active one.
+const ownEmails = computed(
+  () => new Set((identities.value.data ?? []).map((identity) => identity.email.toLowerCase())),
+)
 const { reactionsOn, react } = useMessageReactions(
   () => scopeAccountId.value,
+  ownEmails,
   () => {
     if (messages?.length) emit('reloadMails')
     else void threadFallback.refetch().catch(() => {})

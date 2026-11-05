@@ -96,6 +96,8 @@ class AccountTag(TypedDict, total=False):
 
 
 class Thread(Copy, AccountTag):
+    # Listed here only by a reaction, so kept on the page for paging and left out of what is shown.
+    reaction_only: NotRequired[Flag]
     # The senders of this thread's unscreened mail, in the order they first wrote.
     unscreened_senders: NotRequired[list[str]]
     subject: str | None

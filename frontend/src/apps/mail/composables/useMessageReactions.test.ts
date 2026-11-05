@@ -18,7 +18,6 @@ vi.mock('@/api', () => ({
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: mocks.raiseToast }))
 vi.mock('@/apps/mail/utils/composables', () => ({
-  useOwnEmails: () => computed(() => new Set(['me@frappe.io'])),
   useUndo: () => ({ setUndoAction: mocks.setUndoAction, retireUndoAction: mocks.retireUndoAction }),
 }))
 
@@ -30,7 +29,8 @@ const setup = () => {
   const reload = vi.fn()
   const app = createApp({})
   app.provide('$user', { data: { undo_send_period: String(UNDO_SECONDS) } })
-  return { reload, ...app.runWithContext(() => useMessageReactions(() => 'acct', reload)) }
+  const own = computed(() => new Set(['me@frappe.io']))
+  return { reload, ...app.runWithContext(() => useMessageReactions(() => 'acct', own, reload)) }
 }
 
 const emojis = (reactions: { emoji: string }[]) => reactions.map((reaction) => reaction.emoji)

@@ -46,18 +46,17 @@ import { computed } from 'vue'
 
 import ReactionPicker from '@/apps/mail/components/ReactionPicker.vue'
 import type { MailReaction } from '@/apps/mail/types'
-import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { groupReactions } from '@/apps/mail/utils/reactions'
 
-const { reactions, readonly, refusal } = defineProps<{
+const { reactions, ownEmails, readonly, refusal } = defineProps<{
   reactions: MailReaction[]
+  ownEmails: Set<string>
   readonly?: boolean
   refusal?: string | null
 }>()
 
 const emit = defineEmits<{ react: [emoji: string] }>()
 
-const ownEmails = useOwnEmails()
-const groups = computed(() => groupReactions(reactions, ownEmails.value, __))
+const groups = computed(() => groupReactions(reactions, ownEmails, __))
 const unavailable = computed(() => readonly || !!refusal)
 </script>

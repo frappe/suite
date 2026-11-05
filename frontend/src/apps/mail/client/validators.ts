@@ -7325,6 +7325,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               sent: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sent' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              reaction_only: { enum: [0, 1], title: 'Reaction Only', type: 'integer' },
               unscreened_senders: {
                 items: { type: 'string' },
                 title: 'Unscreened Senders',
@@ -7613,6 +7614,7 @@ export const operationGetUnifiedThreads: Validators<
               sent: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sent' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              reaction_only: { enum: [0, 1], title: 'Reaction Only', type: 'integer' },
               unscreened_senders: {
                 items: { type: 'string' },
                 title: 'Unscreened Senders',
@@ -8298,6 +8300,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               sent: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Sent' },
               archive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Archive' },
               trash: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash' },
+              reaction_only: { enum: [0, 1], title: 'Reaction Only', type: 'integer' },
               unscreened_senders: {
                 items: { type: 'string' },
                 title: 'Unscreened Senders',

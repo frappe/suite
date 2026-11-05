@@ -101,10 +101,11 @@ const scheduleClose = (event: PointerEvent) => {
   if (reaction.value) hoverTimer = setTimeout(() => (isOpen.value = false), CLOSE_DELAY_MS)
 }
 
-// A mouse that hovered and then clicks wants what it already sees, not to have it close.
+// The popover's own trigger toggles on a press, which is right for a tap or a key. A mouse that
+// hovered and then clicks wants what it already sees, so it is held open against that toggle.
 const press = (event: PointerEvent) => {
   clearTimeout(hoverTimer)
-  isOpen.value = openOnHover && isMouse(event) ? true : !isOpen.value
+  if (openOnHover && isMouse(event)) isOpen.value = true
 }
 
 // It opens on the short palette each time, whichever view it was left on.

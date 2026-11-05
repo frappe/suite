@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { computed, createApp, defineComponent, h } from 'vue'
+import { createApp, defineComponent, h } from 'vue'
 
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import type { MailReaction } from '@/apps/mail/types'
 import { translationPlugin } from '@/platform/translation'
 
-vi.mock('@/apps/mail/utils/composables', () => ({
-  useOwnEmails: () => computed(() => new Set(['me@frappe.io'])),
-}))
 vi.mock('frappe-ui', () => ({
   Button: defineComponent({
     props: { disabled: Boolean },
@@ -42,7 +39,14 @@ function render(reactions: MailReaction[], readonly = false, refusal?: string) {
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
-    render: () => h(MessageReactions, { reactions, readonly, refusal, onReact }),
+    render: () =>
+      h(MessageReactions, {
+        reactions,
+        ownEmails: new Set(['me@frappe.io']),
+        readonly,
+        refusal,
+        onReact,
+      }),
   })
   app.use(translationPlugin).mount(root)
   cleanup = () => {

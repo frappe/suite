@@ -5402,6 +5402,7 @@ export type GetThreadsOutputThread = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
+  reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
   subject: string | null
   preview: string
@@ -5550,6 +5551,7 @@ export type GetUnifiedThreadsOutputThread = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
+  reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
   subject: string | null
   preview: string
@@ -5918,6 +5920,7 @@ export type SearchMailsOutputSearchRow = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
+  reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
   subject: string | null
   preview: string

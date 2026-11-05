@@ -15874,6 +15874,14 @@
                 ],
                 "title": "Trash"
               },
+              "reaction_only": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Reaction Only",
+                "type": "integer"
+              },
               "unscreened_senders": {
                 "items": {
                   "type": "string"
@@ -16763,6 +16771,14 @@
                   }
                 ],
                 "title": "Trash"
+              },
+              "reaction_only": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Reaction Only",
+                "type": "integer"
               },
               "unscreened_senders": {
                 "items": {
@@ -18697,6 +18713,14 @@
                   }
                 ],
                 "title": "Trash"
+              },
+              "reaction_only": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Reaction Only",
+                "type": "integer"
               },
               "unscreened_senders": {
                 "items": {

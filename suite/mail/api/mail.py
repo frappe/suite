@@ -353,6 +353,7 @@ def get_threads(
     outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
 
     threads = []
+    unread_reactions: list[str] = []
     for conversation in conversations.values():
         if not conversation:
             continue
@@ -365,11 +366,17 @@ def get_threads(
         written = written_messages(visible)
 
         # A reaction is delivered to the Inbox like any mail, but it doesn't bring back a thread
-        # you archived, or show mail you only sent there as if it had come in.
-        if not any(in_mailbox_view(m, mailbox) for m in written) and any(
+        # you archived, or show mail you only sent there as if it had come in. The row stays on the
+        # page, marked for the client to leave out: the next page starts at this page's row count.
+        # Nothing here can be opened to read it, so a reaction that missed `fetch_changes` is read
+        # here, or the mailbox would count it unread with no row to clear it.
+        reaction_only = not any(in_mailbox_view(m, mailbox) for m in written) and any(
             in_mailbox_view(m, mailbox) for m in visible
-        ):
-            continue
+        )
+        if reaction_only:
+            unread_reactions += [
+                m["id"] for m in visible if in_mailbox_view(m, mailbox) and not m.get("seen")
+            ]
 
         # The summary row is derived from the thread's messages in the current mailbox (falling back
         # to the whole conversation for cross-mailbox views like "starred").
@@ -381,22 +388,27 @@ def get_threads(
         # answers receives a newer mail. The row's date is not read off this message.
         latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else written[-1]
         threads.append(
-            serialize_thread(
-                in_mailbox,
-                visible,
-                latest,
-                first=written_messages(conversation)[0],
-                sent_mailbox=ids_by_role.get("sent"),
-            )
+            {
+                **serialize_thread(
+                    in_mailbox,
+                    visible,
+                    latest,
+                    first=written_messages(conversation)[0],
+                    sent_mailbox=ids_by_role.get("sent"),
+                ),
+                "reaction_only": cint(reaction_only),
+            }
         )
+
+    if unread_reactions:
+        try_set_seen(account, unread_reactions, True)
 
     # Avatars for the list-view summary rows, and for each message in the nested threads.
     add_user_images_to_emails(account, threads, is_thread=False)
     add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
     add_reaction_refusals(account, [m for thread in threads for m in thread["messages"]])
 
-    # Counted off what the server returned: a page can hold rows that aren't shown (see above).
-    return {"rows": threads, "mailbox": mailbox, "has_more": len(conversations) == limit}
+    return {"rows": threads, "mailbox": mailbox, "has_more": len(threads) == limit}
 
 
 def in_mailbox_view(message: dict, mailbox: str) -> bool:
@@ -658,7 +670,8 @@ def get_unified_threads(
         for view_mailbox in view_mailboxes:
             threads = get_threads(account_id, view_mailbox, per_account_limit, 0, filter_by, category)["rows"]
             for thread in threads:
-                if thread["thread_id"] in seen:
+                # This list is cut to its window here, so what it leaves out doesn't disturb paging.
+                if thread["thread_id"] in seen or thread["reaction_only"]:
                     continue
                 seen.add(thread["thread_id"])
                 thread["account"] = account_id

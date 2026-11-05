@@ -1,10 +1,10 @@
 import { toast } from 'frappe-ui'
-import { inject, reactive } from 'vue'
+import { inject, reactive, type ComputedRef } from 'vue'
 
 import { api, useMutation } from '@/api'
 import type { Mail, MailReaction, UserResource } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
-import { useOwnEmails, useUndo } from '@/apps/mail/utils/composables'
+import { useUndo } from '@/apps/mail/utils/composables'
 import { hasReacted } from '@/apps/mail/utils/reactions'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 
@@ -19,9 +19,12 @@ import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
  * about yet is not a pending send, so it doesn't bring the Outbox out to show it. Closing the page
  * during the wait drops the reaction, which is the cheaper way for this to fail.
  */
-export function useMessageReactions(account: () => string, reload: () => void) {
+export function useMessageReactions(
+  account: () => string,
+  ownEmails: ComputedRef<Set<string>>,
+  reload: () => void,
+) {
   const user = inject<UserResource>('$user')
-  const ownEmails = useOwnEmails()
   const { setUndoAction, retireUndoAction } = useUndo()
   const send = useMutation(api.mail.messages.react)
 
