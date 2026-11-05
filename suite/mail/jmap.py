@@ -673,14 +673,10 @@ def get_account_client(
 
     user = get_user_for_jmap_account(account, raise_exception=True)
     client = get_jmap_client(user, ignore_permissions=ignore_permissions, timeout=timeout)
-    return _cached_account_view(client, account)
-
-
-@request_cache
-def _cached_account_view(client: SuiteJMAPClient, account: str) -> SuiteJMAPClient:
     return account_view(client, account)
 
 
+@request_cache
 def account_view(client: SuiteJMAPClient, account: str) -> SuiteJMAPClient:
     """Re-scopes a client to another account, sharing its session and HTTP pool."""
 
