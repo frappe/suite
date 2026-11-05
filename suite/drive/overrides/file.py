@@ -481,7 +481,10 @@ class File(FrappeFile):
         # Run when a row is purged. The framework only spares a row with this exact
         # url and content hash, which misses a live row under another spelling.
         if stored_file_in_use(self.file_url, other_than=self.name):
-            return self.delete_file_data_content(only_thumbnail=True)
+            # FileV1 only: FileV2 has no such method, and leaves a shared file's thumbnail
+            if hasattr(self, "delete_file_data_content"):
+                self.delete_file_data_content(only_thumbnail=True)
+            return
         return super()._delete_file_on_disk()
 
     # Utils

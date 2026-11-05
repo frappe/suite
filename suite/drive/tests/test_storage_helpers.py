@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, PropertyMock, patch
 
 import frappe
+from frappe.core.doctype.file.file_v2 import FileV2
 from frappe.tests import IntegrationTestCase
 
 from suite.drive.overrides.file import File
@@ -297,6 +298,16 @@ class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
             frappe.get_doc("File", deleted.name).delete(ignore_permissions=True)
         for call in after_commit.add.call_args_list:
             call.args[0]()
+
+        self.assertTrue(stored.exists())
+
+    def test_purging_on_storage_v2_keeps_a_blob_a_live_file_still_uses(self):
+        kept, deleted = self.make_twins()
+        kept.db_set("file_url", kept.file_url.lstrip("/"))
+        stored = self.stored_file(deleted)
+
+        file_v2 = type("DriveFileV2", (File, FileV2), {})
+        file_v2(frappe.get_doc("File", deleted.name).as_dict())._delete_file_on_disk()
 
         self.assertTrue(stored.exists())
 
