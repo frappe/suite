@@ -4,6 +4,7 @@
 import base64
 import uuid
 from contextlib import contextmanager
+from io import BytesIO
 
 import frappe
 from werkzeug.test import EnvironBuilder
@@ -43,23 +44,32 @@ def push_capture(presentation_name):
 
 
 @contextmanager
-def link_header(*tokens: str):
-    """Carry the given codes in `X-Drive-Links` for the block, as the `/d/` surface does.
-
-    A real `werkzeug` request, not a patched reader: the count the limit acts
-    on is the count of comma-separated items the header actually carries, and a
-    stub that hands over a list would skip the split the limit is written on.
-    """
-    builder = EnvironBuilder(
-        path="/api/method/suite.slides.api.composite.composite_group",
-        headers={"X-Drive-Links": ",".join(tokens)},
-    )
+def _in_request(**request):
+    builder = EnvironBuilder(**request)
     previous = getattr(frappe.local, "request", None)
     frappe.local.request = Request(builder.get_environ())
     try:
         yield
     finally:
         frappe.local.request = previous
+
+
+def link_header(*tokens: str):
+    """Carry the given codes in `X-Drive-Links` for the block, as the `/d/` surface does.
+
+    A real `werkzeug` request, not a patched reader: Drive reads the codes by
+    splitting the header, and a stub that hands over a list would skip that.
+    """
+    return _in_request(headers={"X-Drive-Links": ",".join(tokens)})
+
+
+def upload_request(content: bytes, filename: str = "banner.png", mimetype: str = "image/png"):
+    """Carry one file upload for the block, as the editor's uploader sends it to `media.add`."""
+    return _in_request(
+        path="/api/method/suite.slides.api.media.add",
+        method="POST",
+        data={"file": (BytesIO(content), filename, mimetype)},
+    )
 
 
 def make_presentation(title, parent=None, **fields):

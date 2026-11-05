@@ -6,38 +6,29 @@ add media at all. A still PNG or JPEG is stored as WebP; other media, and any
 picture that cannot be converted whole, as uploaded.
 """
 
-from contextlib import contextmanager
 from io import BytesIO
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from PIL import Image, ImageCms, ImageFile
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.slides import drive as slides_drive
 from suite.slides.api import media
-from suite.slides.tests.utils import PNG_1PX, make_presentation, make_public, node_of, share, unique_bytes
+from suite.slides.tests.utils import (
+    PNG_1PX,
+    make_presentation,
+    make_public,
+    node_of,
+    share,
+    unique_bytes,
+    upload_request,
+)
 from suite.tests.utils import ensure_user
 
 OWNER = "slides-media-owner@example.com"
 READER = "slides-media-reader@example.com"
-
-
-@contextmanager
-def upload_request(content: bytes, filename: str, mimetype: str = "image/png"):
-    builder = EnvironBuilder(
-        path="/api/method/suite.slides.api.media.add",
-        method="POST",
-        data={"file": (BytesIO(content), filename, mimetype)},
-    )
-    frappe.local.request = Request(builder.get_environ())
-    try:
-        yield
-    finally:
-        del frappe.local.request
 
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
@@ -60,10 +51,6 @@ def encoded(image: Image.Image, image_format: str = "PNG", **options) -> bytes:
 def with_a_flipped_idat_byte(png: bytes) -> bytes:
     start = png.index(b"IDAT") + 4
     return png[:start] + bytes([png[start] ^ 0xFF]) + png[start + 1 :]
-
-
-def animated_gif() -> bytes:
-    return animated("GIF")
 
 
 def animated(image_format: str) -> bytes:
@@ -134,7 +121,7 @@ class TestSlidesMedia(IntegrationTestCase):
     def test_an_svg_or_an_animated_gif_is_stored_as_uploaded(self):
         for filename, mimetype, content in (
             ("logo.svg", "image/svg+xml", SVG),
-            ("spinner.gif", "image/gif", animated_gif()),
+            ("spinner.gif", "image/gif", animated("GIF")),
             ("spinner.png", "image/png", animated("PNG")),
         ):
             with self.subTest(filename):

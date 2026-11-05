@@ -7,37 +7,27 @@ share route, as the share dialog makes it. Those Drive calls are whole requests,
 which run on their own connection, so each side commits before the other reads.
 """
 
-from contextlib import contextmanager
-from io import BytesIO
-
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import make_request
 from frappe.utils import get_test_client
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.slides.api import media
 from suite.slides.doctype.presentation import presentation
-from suite.slides.tests.utils import PNG_1PX, link_header, make_presentation, node_of, unique_bytes
+from suite.slides.tests.utils import (
+    PNG_1PX,
+    link_header,
+    make_presentation,
+    node_of,
+    unique_bytes,
+    upload_request,
+)
 from suite.tests.utils import ensure_user, session_for
 
 OWNER = "slides-link-owner@example.com"
 DRIVE = "/api/suite/drive"
 REFUSED = (frappe.PermissionError, drive.DriveError)
-
-
-@contextmanager
-def upload_request(content: bytes):
-    upload = {"file": (BytesIO(content), "banner.png", "image/png")}
-    builder = EnvironBuilder(path="/api/method/suite.slides.api.media.add", method="POST", data=upload)
-    previous = getattr(frappe.local, "request", None)
-    frappe.local.request = Request(builder.get_environ())
-    try:
-        yield
-    finally:
-        frappe.local.request = previous
 
 
 class TestDeckThroughAShareLink(IntegrationTestCase):
