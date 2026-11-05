@@ -2,7 +2,7 @@ import { getTextWrap, lineHeightFor, wrapLines } from '../utils/text-wrap.js'
 import { chipFont } from './chip-geometry.js'
 import { COLORS, FRAME_W, GRID_LINE } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
-import { inkFor } from './painters/cell-text-style.js'
+import { inkFor, textAlignOf } from './painters/cell-text-style.js'
 import { cellMidY, centredBaseline, firstLineMid } from './painters/text-anchor.js'
 import type { CellFormat } from './types.js'
 
@@ -139,7 +139,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     // the editor to that size's design; at zoom 125% the 25px design is
     // narrower than the scaled 20px one.
     el.style.setProperty('font-variation-settings', `"opsz" ${size0}`)
-    el.style.textAlign = fmt.align === 'center' || fmt.align === 'right' ? fmt.align : 'left'
+    el.style.textAlign = textAlignOf(fmt.align)
     const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through']
       .filter(Boolean)
       .join(' ')
@@ -161,7 +161,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     // ascent + descent in the line box; pad the top so the first baseline
     // lands where the canvas drew it. The canvas measures its font unzoomed
     // and scales; CSS lays out the zoomed font.
-    const drawn = _metrics(_font(size0), size0)
+    const drawn = _metrics(chipFont(fmt), size0)
     const css = _metrics(_font(size), size)
     const multi = wrap || openLines > 1
     const baseline0 = _canvasBaseline(h / zoom, fmt, multi, drawn)
@@ -241,7 +241,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
     return result
   }
 
-  // The canvas font string (chip-geometry.ts chipFont) at `px`.
+  // The editor's font as a canvas font string, at `px`: the zoomed size, so
+  // not chipFont, which clamps the size to 8…72.
   function _font(px: number): string {
     const st = el.style
     return `${st.fontStyle} ${st.fontWeight} ${px}px ${st.fontFamily}`
