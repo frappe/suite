@@ -105,6 +105,7 @@ import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } 
 import { useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
+import SurfaceNotice from './SurfaceNotice.vue'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
 
 type Panel = DocumentPanel
@@ -156,7 +157,7 @@ const {
   downloadChanges,
   discardChanges,
   settleCopies,
-  dismissToasts,
+  heldNotice,
 } = useUnsavedRecovery(props.session, {
   isWritable: () => access.writable.value,
   isEditable: () => editable.value,
@@ -659,7 +660,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
-  dismissToasts()
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveChanges().finally(() => {
@@ -796,21 +796,29 @@ onBeforeUnmount(() => {
       <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
       <Toolbar v-if="editing && presentationDoc" />
       <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
-      <div
-        v-if="editable && lockedElsewhere"
-        role="alert"
-        class="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-4 bg-surface-elevation-1 p-0.5 shadow-md"
+      <SurfaceNotice
+        v-if="editable && lockedElsewhere && !heldNotice"
+        icon="lucide-lock"
+        :message="__('This presentation is open for editing in another tab.')"
       >
-        <div class="flex items-center gap-2 p-2">
-          <span class="lucide-lock size-4 text-ink-gray-7" aria-hidden="true" />
-          <span class="text-base text-ink-gray-7">{{
-            __('This presentation is open for editing in another tab.')
-          }}</span>
-        </div>
-        <div class="h-5 w-px bg-surface-gray-4" />
         <Button variant="ghost" :label="__('Edit here')" @click="editHere" />
-      </div>
+      </SurfaceNotice>
     </div>
+
+    <SurfaceNotice
+      v-if="heldNotice && !loading"
+      icon="lucide-triangle-alert"
+      icon-class="text-ink-amber-6"
+      :message="heldNotice.message"
+    >
+      <Button variant="ghost" :label="__('Download')" @click="downloadChanges" />
+      <Button
+        v-if="heldNotice.reload"
+        variant="ghost"
+        :label="__('Reload')"
+        @click="heldNotice.reload"
+      />
+    </SurfaceNotice>
 
     <div
       v-if="compositeItems.length && access.readable.value"

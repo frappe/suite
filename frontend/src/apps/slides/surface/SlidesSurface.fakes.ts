@@ -272,7 +272,6 @@ vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
 }))
 
 const { default: SlidesSurface } = await import('./SlidesSurface.vue')
-const { toast } = await import('frappe-ui')
 
 function answer(message: unknown) {
   return new Response(JSON.stringify({ message }), { status: 200 })
@@ -444,7 +443,6 @@ export function thumbnails(root: Element) {
 export function startsFromEmptyStore() {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(toast.warning).mockReturnValue('refusal')
     localStorage.clear()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)

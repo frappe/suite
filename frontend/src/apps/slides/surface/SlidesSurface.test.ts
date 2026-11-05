@@ -729,10 +729,8 @@ describe('Slides push refused by the server', () => {
   const REFUSED_UNSTORED =
     'This presentation changed elsewhere. Download your changes before you reload.'
 
-  interface RefusalActions {
+  interface KeptToast {
     action: { label: string; onClick: (event: Event) => void }
-    cancel: { label: string; onClick: () => void }
-    duration: number
   }
 
   let files: ReturnType<typeof vi.fn<(file: File) => string>>
@@ -746,18 +744,31 @@ describe('Slides push refused by the server', () => {
     URL.revokeObjectURL = () => {}
   })
 
-  function refusalToast(message: string) {
+  function keptToast(message: string) {
     const call = vi.mocked(toast.warning).mock.calls.find(([text]) => text === message)
     const [, actions] = call ?? []
-    return actions as unknown as RefusalActions | undefined
+    return actions as unknown as KeptToast | undefined
+  }
+
+  function heldNotice(message: string) {
+    const notices = Array.from(mounted?.root.querySelectorAll('[role="alert"]') ?? [])
+    const notice = notices.find((element) => element.textContent?.includes(message))
+    if (!notice) return undefined
+
+    const button = (label: string) => notice.querySelector<HTMLElement>(`[label="${label}"]`)
+    return {
+      canReload: () => button('Reload') !== null,
+      download: () => button('Download')?.click(),
+      reload: () => button('Reload')?.click(),
+    }
   }
 
   async function refused(message = REFUSED) {
     mounted = await openedSurface()
     fakeServer.isRefusing = true
     duplicateSlide()
-    await vi.waitFor(() => expect(refusalToast(message)).toBeDefined(), { timeout: 3000 })
-    return refusalToast(message) as RefusalActions
+    await vi.waitFor(() => expect(heldNotice(message)).toBeDefined(), { timeout: 3000 })
+    return heldNotice(message) as NonNullable<ReturnType<typeof heldNotice>>
   }
 
   function serverMoves() {
@@ -765,8 +776,8 @@ describe('Slides push refused by the server', () => {
     served.modified = 'M2'
   }
 
-  async function reloaded(toastShown: RefusalActions) {
-    toastShown.cancel.onClick()
+  async function reloaded(notice: NonNullable<ReturnType<typeof heldNotice>>) {
+    notice.reload()
     await vi.waitFor(() => expect(saveRefused.value).toBe(false))
     await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
   }
@@ -800,23 +811,21 @@ describe('Slides push refused by the server', () => {
     return JSON.parse(await file.text()).slides as unknown[]
   }
 
-  it('says so in a toast that stays up, and keeps a copy at that moment', async () => {
+  it('says so in a notice that stays up, and keeps a copy at that moment', async () => {
     const refusal = await refused()
 
-    expect(refusal.duration).toBe(Number.POSITIVE_INFINITY)
-    expect(refusal.action.label).toBe('Download')
-    expect(refusal.cancel.label).toBe('Reload')
+    expect(refusal.canReload()).toBe(true)
     const [copy] = readRecovery('node-1')
     expect(copy.slides).toHaveLength(3)
     expect(copy.sticky).toBe(true)
   })
 
-  it('stops editing, with only the Reload toast and no second banner', async () => {
+  it('stops editing, with only the Reload notice and no second banner', async () => {
     const refusal = await refused()
 
     await vi.waitFor(() => expect(toolbar()).toBeNull())
-    expect(refusal.cancel.label).toBe('Reload')
-    expect(banner()).toBeNull()
+    expect(refusal.canReload()).toBe(true)
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1)
     await press('Mod+D')
     expect(editorSlides.value).toHaveLength(3)
   })
@@ -827,7 +836,8 @@ describe('Slides push refused by the server', () => {
     serverMoves()
     await reloaded(refusal)
     expect(readRecovery('node-1')).toHaveLength(1)
-    expect(toast.dismiss).toHaveBeenCalledWith('refusal')
+    await nextTick()
+    expect(heldNotice(REFUSED)).toBeUndefined()
 
     duplicateSlide()
     await vi.waitFor(() => expect(saves).toHaveLength(1), { timeout: 3000 })
@@ -868,9 +878,7 @@ describe('Slides push refused by the server', () => {
     expect(readRecovery('node-1')).toEqual([])
     expect(downloadButton()).not.toBeNull()
 
-    const click = new MouseEvent('click', { cancelable: true })
-    refusal.action.onClick(click)
-    expect(click.defaultPrevented).toBe(true)
+    refusal.download()
     expect(await downloadedSlides()).toHaveLength(3)
 
     serverMoves()
@@ -1038,7 +1046,7 @@ describe('Slides push refused by the server', () => {
     fillTheStore()
     const refusal = await refused(REFUSED_UNSTORED)
 
-    refusal.action.onClick(new MouseEvent('click', { cancelable: true }))
+    refusal.download()
 
     expect(await downloadedSlides()).toHaveLength(3)
     expect(await draftDirty()).toBe(true)
@@ -1049,7 +1057,7 @@ describe('Slides push refused by the server', () => {
     const refusal = await refused()
     const before = readRecovery('node-1')
 
-    refusal.action.onClick(new MouseEvent('click', { cancelable: true }))
+    refusal.download()
 
     expect(await downloadedSlides()).toHaveLength(3)
     expect(readRecovery('node-1')).toEqual(before)
@@ -1251,16 +1259,16 @@ describe('Slides push refused by the server', () => {
     it('says the copy is kept when it is', async () => {
       await narrowedWithEdits()
 
-      expect(refusalToast(KEPT)).toBeDefined()
-      expect(refusalToast(UNSTORED)).toBeUndefined()
+      expect(keptToast(KEPT)).toBeDefined()
+      expect(heldNotice(UNSTORED)).toBeUndefined()
       expect(readRecovery('node-1')).toHaveLength(1)
     })
 
     it('says to download, and nothing else, when the store is full', async () => {
       await narrowedWithEdits(fillTheStore)
 
-      expect(refusalToast(UNSTORED)?.duration).toBe(Number.POSITIVE_INFINITY)
-      expect(refusalToast(KEPT)).toBeUndefined()
+      expect(heldNotice(UNSTORED)).toBeDefined()
+      expect(keptToast(KEPT)).toBeUndefined()
       expect(toast.error).not.toHaveBeenCalled()
     })
 
@@ -1270,7 +1278,7 @@ describe('Slides push refused by the server', () => {
         fillTheStore()
       })
 
-      refusalToast(UNSTORED)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      heldNotice(UNSTORED)?.download()
       expect(await downloadedSlides()).toHaveLength(3)
 
       await nextTick()
@@ -1294,11 +1302,10 @@ describe('Slides push refused by the server', () => {
 
       expect(editorSlides.value).toHaveLength(3)
       expect(server.fetch.mock.calls.length).toBe(reads)
-      const back = refusalToast(BACK_UNSTORED)
-      expect(back?.action.label).toBe('Download')
-      expect(back?.cancel.label).toBe('Reload')
+      const back = heldNotice(BACK_UNSTORED)
+      expect(back?.canReload()).toBe(true)
 
-      back?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      back?.download()
       expect(await downloadedSlides()).toHaveLength(3)
     })
 
@@ -1310,12 +1317,12 @@ describe('Slides push refused by the server', () => {
       expect(saves).toEqual([])
 
       vi.spyOn(window, 'confirm').mockReturnValue(true)
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      heldNotice(BACK_UNSTORED)?.reload()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
       await nextTick()
 
       expect(downloadButton()).toBeNull()
-      expect(toast.dismiss).toHaveBeenCalled()
+      expect(heldNotice(BACK_UNSTORED)).toBeUndefined()
     })
 
     it('keeps a copy and then loads when access returns with room', async () => {
@@ -1325,7 +1332,7 @@ describe('Slides push refused by the server', () => {
       widen()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
 
-      expect(refusalToast(BACK_UNSTORED)).toBeUndefined()
+      expect(heldNotice(BACK_UNSTORED)).toBeUndefined()
       const [copy] = readRecovery('node-1')
       expect(copy.slides).toHaveLength(3)
     })
@@ -1347,7 +1354,7 @@ describe('Slides push refused by the server', () => {
       })
 
       duplicateSlide()
-      await vi.waitFor(() => expect(refusalToast(UNSTORED)).toBeDefined(), { timeout: 3000 })
+      await vi.waitFor(() => expect(heldNotice(UNSTORED)).toBeDefined(), { timeout: 3000 })
       await vi.waitFor(() => expect(dirty.value || isSaving.value).toBe(false))
       await nextTick()
     }
@@ -1376,7 +1383,8 @@ describe('Slides push refused by the server', () => {
           release = resolve
         }),
       )
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await nextTick()
+      heldNotice(BACK_UNSTORED)?.reload()
       await vi.waitFor(() =>
         expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
       )
@@ -1394,7 +1402,8 @@ describe('Slides push refused by the server', () => {
       expect(thumbnails(mounted?.root as Element)).toHaveLength(3)
 
       widen()
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await nextTick()
+      heldNotice(BACK_UNSTORED)?.reload()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
     })
 
@@ -1415,7 +1424,7 @@ describe('Slides push refused by the server', () => {
       await saveLands()
 
       expect(readRecovery('node-1').map((copy) => copy.slides.length)).toEqual([3])
-      refusalToast(KEPT)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      keptToast(KEPT)?.action.onClick(new MouseEvent('click', { cancelable: true }))
       expect(await downloadedSlides()).toHaveLength(3)
     })
 
@@ -1491,8 +1500,8 @@ describe('Slides push refused by the server', () => {
       expect(copy.sticky).toBe(true)
       expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(false)
-      expect(refusalToast(KEPT)).toBeUndefined()
-      refusalToast(UNREAD)?.action.onClick(new MouseEvent('click', { cancelable: true }))
+      expect(keptToast(KEPT)).toBeUndefined()
+      keptToast(UNREAD)?.action.onClick(new MouseEvent('click', { cancelable: true }))
       expect(await downloadedSlides()).toEqual(copy.slides)
     })
 
@@ -1549,7 +1558,7 @@ describe('Slides push refused by the server', () => {
       await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
 
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
-      expect(refusalToast(UNREAD)).toBeUndefined()
+      expect(keptToast(UNREAD)).toBeUndefined()
     })
 
     function failDraftWrites() {
@@ -1627,7 +1636,7 @@ describe('Slides push refused by the server', () => {
       })
 
       mounted.access.value = { role: 10 }
-      await vi.waitFor(() => expect(refusalToast(UNREAD)).toBeDefined())
+      await vi.waitFor(() => expect(keptToast(UNREAD)).toBeDefined())
       await vi.waitFor(() => expect(removes).toHaveBeenCalled())
       writes.mockRestore()
       removes.mockRestore()
@@ -1646,7 +1655,7 @@ describe('Slides push refused by the server', () => {
       await nextTick()
 
       expect(inReadonlyMode.value).toBe(true)
-      expect(refusalToast(BACK_UNSTORED)).toBeDefined()
+      expect(heldNotice(BACK_UNSTORED)).toBeDefined()
       expect(toast.info).not.toHaveBeenCalled()
     })
 
@@ -1656,7 +1665,8 @@ describe('Slides push refused by the server', () => {
       vi.mocked(Storage.prototype.setItem).mockRestore()
       const confirm = vi.spyOn(window, 'confirm')
 
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await nextTick()
+      heldNotice(BACK_UNSTORED)?.reload()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
 
       expect(confirm).not.toHaveBeenCalled()
@@ -1670,17 +1680,16 @@ describe('Slides push refused by the server', () => {
       await narrowedWithEdits(fillTheStore)
       widen()
       const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-      const shownBefore = vi.mocked(toast.warning).mock.calls.length
       const reads = server.fetch.mock.calls.length
 
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await nextTick()
+      heldNotice(BACK_UNSTORED)?.reload()
       await new Promise((resolve) => setTimeout(resolve, 50))
 
       expect(confirm).toHaveBeenCalledTimes(1)
       expect(editorSlides.value).toHaveLength(3)
       expect(server.fetch.mock.calls.length).toBe(reads)
-      expect(vi.mocked(toast.warning).mock.calls.length).toBe(shownBefore + 1)
-      expect(vi.mocked(toast.warning).mock.lastCall?.[0]).toBe(BACK_UNSTORED)
+      expect(heldNotice(BACK_UNSTORED)).toBeDefined()
     })
 
     it('shows no load error from a load the only copy cancelled', async () => {
@@ -1693,7 +1702,8 @@ describe('Slides push refused by the server', () => {
           fail = resolve
         }),
       )
-      refusalToast(BACK_UNSTORED)?.cancel.onClick()
+      await nextTick()
+      heldNotice(BACK_UNSTORED)?.reload()
       await vi.waitFor(() =>
         expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
       )
@@ -1716,8 +1726,8 @@ describe('Slides push refused by the server', () => {
         mounted.access.value = { role: 10 }
       }
 
-      expect(refusalToast(UNSTORED)).toBeDefined()
-      expect(refusalToast(VIEW_ONLY)).toBeUndefined()
+      expect(heldNotice(UNSTORED)).toBeDefined()
+      expect(keptToast(VIEW_ONLY)).toBeUndefined()
     })
 
     it('keeps writes stopped after a discard while view only', async () => {
@@ -1883,18 +1893,13 @@ describe('Slides push refused by the server', () => {
     it('closes the refusal when the only copy takes over', async () => {
       await refused()
       fillTheStore()
-      vi.mocked(toast.dismiss).mockClear()
-      vi.mocked(toast.warning).mockClear()
-      vi.mocked(toast.warning).mockReturnValue('only copy')
-
       if (mounted) {
         mounted.access.value = { role: 10 }
       }
 
       await nextTick()
-      expect(toast.dismiss).toHaveBeenCalledWith('refusal')
-      expect(refusalToast(UNSTORED)).toBeDefined()
-      expect(vi.mocked(toast.warning).mock.calls).toHaveLength(1)
+      expect(heldNotice(UNSTORED)).toBeDefined()
+      expect(heldNotice(REFUSED)).toBeUndefined()
     })
   })
 
