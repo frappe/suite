@@ -1,5 +1,6 @@
 """Complete provider account workflows, including first-login credential isolation."""
 
+import json
 import secrets
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from frappe.utils.password import update_password as set_local_password
 
 from suite.mail.directory import get_active_domain_names, provision_account, set_account_enabled
 from suite.mail.jmap import clear_jmap_session, provisioning
+from suite.mail.storage import queue_refresh
 from suite.mail.suite_cloud import get_client
 from suite.suite_core.account_state import read, write
 from suite.suite_core.administration import require_admin
@@ -148,10 +150,6 @@ def recreate(user: str, address: str) -> dict:
 
 
 def invalidate_measurements(user: str, address: str) -> None:
-    import json
-
-    from suite.mail.storage import queue_refresh
-
     doc, _policy, measurements = state(lock=True)
     measurements.get("entries", {}).pop(address, None)
     # None, not removed: a user the refresh doesn't list has no mailbox (`personal_mail_usage`).
