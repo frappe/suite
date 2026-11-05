@@ -196,10 +196,13 @@ const ticksAtGate = new Map()
 // the generation each draft holds, so a blocked push does not rewrite it every tick
 const draftGenerations = new Map()
 
+// answers whether the draft holds the snapshot's edits
 const writeSnapshot = async (snapshot, epoch) => {
   const generation = generationFor(snapshot.id)
-  if (draftGenerations.get(snapshot.id) === generation) return
-  if (await writeDraft(snapshot, epoch)) draftGenerations.set(snapshot.id, generation)
+  if (draftGenerations.get(snapshot.id) === generation) return true
+  const written = await writeDraft(snapshot, epoch)
+  if (written) draftGenerations.set(snapshot.id, generation)
+  return written
 }
 
 // true when an online save to the server failed; drives the "Not saved" indicator
@@ -314,10 +317,10 @@ const takeSnapshot = () => {
   }
 }
 
-// the local copy alone, for when the edits must not go out yet
+// the local copy alone, for when the edits must not go out yet; answers whether it holds them
 const saveDraft = async () => {
   const snapshot = takeSnapshot()
-  if (snapshot) await writeSnapshot(snapshot)
+  return snapshot ? writeSnapshot(snapshot) : false
 }
 
 async function holdRefused(snapshot, epoch) {

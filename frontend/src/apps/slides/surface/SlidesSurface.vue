@@ -61,8 +61,10 @@ import {
   viewOnly,
 } from '@/apps/slides/stores/presentation'
 import {
+  clearSaveFailure,
   dirty,
   isSaving,
+  markClean,
   resumeWrites,
   saveChanges,
   saveDraft,
@@ -312,10 +314,16 @@ watch(blocked, (isBlocked) => {
   flushPendingBlur()
   resetFocus()
 })
-// The tab that took the deck over restores this draft, so it is written before the lock goes.
-function keepDraftForTakeover() {
+// The lock has already gone: this runs when the steal rejects this tab's request, and
+// nothing waits for the write, so the tab that took over can read the draft before it lands.
+// A deck with no edits leaves no draft to restore. Edits the draft holds are no longer this
+// tab's to keep, so it has nothing left to warn about; if the write fails it stays dirty.
+async function keepDraftForTakeover() {
   flushPendingBlur()
-  void saveDraft()
+  if (!dirty.value) return
+  if (!(await saveDraft())) return
+  markClean()
+  clearSaveFailure()
 }
 /** Load the server copy, which replaces what is on screen and its undo history. */
 async function reload() {

@@ -84,36 +84,32 @@ describe('Slides autosave', () => {
   })
 })
 
+// frappe-ui's dispatcher: a shortcut runs only while it is enabled
+async function press(combo: string) {
+  const [shortcuts] = vi.mocked(useKeyboardShortcut).mock.lastCall as [
+    { combo: string; enabled?: () => boolean; handler: (event: KeyboardEvent) => void }[],
+  ]
+  const shortcut = shortcuts.find((entry) => entry.combo === combo)!
+  if (shortcut.enabled?.() ?? true) shortcut.handler(new KeyboardEvent('keydown'))
+  await nextTick()
+}
+
+function banner() {
+  return document.querySelector('[role="alert"]')
+}
+
+function toolbar() {
+  return document.querySelector('[data-toolbar]')
+}
+
 describe('Slides editing a deck another tab holds', () => {
-  // frappe-ui's dispatcher: a shortcut runs only while it is enabled
-  async function press(combo: string) {
-    const [shortcuts] = vi.mocked(useKeyboardShortcut).mock.lastCall as [
-      { combo: string; enabled?: () => boolean; handler: (event: KeyboardEvent) => void }[],
-    ]
-    const shortcut = shortcuts.find((entry) => entry.combo === combo)!
-    if (shortcut.enabled?.() ?? true) shortcut.handler(new KeyboardEvent('keydown'))
-    await nextTick()
-  }
-
-  function banner() {
-    return document.querySelector('[role="alert"]')
-  }
-
   // the Button stand-in keeps its label as an attribute
   function action(label: string) {
     return document.querySelector<HTMLElement>(`[role="alert"] [label="${label}"]`)!
   }
 
-  function toolbar() {
-    return document.querySelector('[data-toolbar]')
-  }
-
-  afterEach(() => {
-    delete (navigator as { locks?: unknown }).locks
-  })
-
-  it('opens read-only while another tab edits the deck, and edits here on request', async () => {
-    // another tab holds every deck: only a steal is granted
+  // another tab holds every deck: only a steal is granted
+  function anotherTabHoldsTheDeck() {
     Object.defineProperty(navigator, 'locks', {
       configurable: true,
       value: {
@@ -124,11 +120,56 @@ describe('Slides editing a deck another tab holds', () => {
         ) => hold(options.steal ? { name } : null),
       },
     })
-    mounted = await openedSurface()
+  }
 
+  // this tab gets the lock; the answer is what another tab's "Edit here" does to it
+  function thisTabHoldsTheDeck() {
+    let takeOver = () => {}
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: (
+          name: string,
+          _options: unknown,
+          hold: (lock: { name: string }) => Promise<unknown>,
+        ) =>
+          new Promise((resolve, reject) => {
+            takeOver = () => reject(new DOMException('Stolen', 'AbortError'))
+            void hold({ name }).then(resolve, reject)
+          }),
+      },
+    })
+    return () => takeOver()
+  }
+
+  function asksBeforeLeaving() {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  async function lockedDeck() {
+    anotherTabHoldsTheDeck()
+    const opened = await openedSurface()
     await vi.waitFor(() =>
       expect(banner()?.textContent).toContain('open for editing in another tab'),
     )
+    return opened
+  }
+
+  async function storedDraft() {
+    return (await getPresentationFromLocalDB(mounted?.docname)) as {
+      dirty: boolean
+      content: unknown[]
+    } | null
+  }
+
+  afterEach(() => {
+    delete (navigator as { locks?: unknown }).locks
+  })
+
+  it('opens read-only while another tab edits the deck, and edits here on request', async () => {
+    mounted = await lockedDeck()
     expect(toolbar()).toBeNull()
     await press('Mod+D')
     expect(thumbnails(mounted.root)).toHaveLength(2)
@@ -138,6 +179,58 @@ describe('Slides editing a deck another tab holds', () => {
     expect(toolbar()).not.toBeNull()
     await press('Mod+D')
     expect(thumbnails(mounted.root)).toHaveLength(3)
+  })
+
+  describe('when another tab takes the deck from this one', () => {
+    it('leaves the unsaved edit in the draft and has nothing left to warn about', async () => {
+      const takeOver = thisTabHoldsTheDeck()
+      mounted = await openedSurface()
+      duplicateSlide()
+
+      takeOver()
+
+      await vi.waitFor(() => expect(banner()).not.toBeNull())
+      await vi.waitFor(() => expect(dirty.value).toBe(false))
+      const draft = await storedDraft()
+      expect(draft?.dirty).toBe(true)
+      expect(draft?.content).toHaveLength(3)
+      expect(saves).toEqual([])
+      expect(asksBeforeLeaving()).toBe(false)
+    })
+
+    it('stays dirty when the draft could not be written', async () => {
+      const takeOver = thisTabHoldsTheDeck()
+      mounted = await openedSurface()
+      duplicateSlide()
+      const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(() => {
+        throw new DOMException('Refused', 'UnknownError')
+      })
+
+      takeOver()
+      await vi.waitFor(() => expect(banner()).not.toBeNull())
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      put.mockRestore()
+
+      expect(dirty.value).toBe(true)
+      expect(asksBeforeLeaving()).toBe(true)
+    })
+
+    it('sends nothing and warns of nothing when no edit was made', async () => {
+      const takeOver = thisTabHoldsTheDeck()
+      mounted = await openedSurface()
+
+      takeOver()
+      await vi.waitFor(() => expect(banner()).not.toBeNull())
+      expect((await storedDraft())?.dirty).not.toBe(true)
+
+      // what the tab that took over does next: it loads, and saves only if something is dirty
+      action('Edit here').click()
+      await vi.waitFor(() => expect(banner()).toBeNull())
+      await new Promise((resolve) => setTimeout(resolve, 1100))
+
+      expect(dirty.value).toBe(false)
+      expect(saves).toEqual([])
+    })
   })
 })
 
