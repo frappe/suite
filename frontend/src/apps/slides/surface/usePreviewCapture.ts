@@ -5,7 +5,8 @@
  * reloaded the deck, the tab that writes the deck draws the first slide and
  * sends it to Drive's preview route. Drive stores it without stamping the deck,
  * so a capture is not an edit. A tab that does not write the deck sends nothing:
- * view only, open for editing in another tab, or refused by the server.
+ * view only, open for editing in another tab, or refused by the server. A reload
+ * that fails cancels the capture, as the slides may no longer be what the deck holds.
  *
  * The first capture of a session is sent even if the first slide did not change,
  * because that is how an older deck gets a preview. After that, a first slide
@@ -40,6 +41,7 @@ export function usePreviewCapture(options: PreviewCaptureOptions) {
   let sentSlide: string | null = null
   let capturing = false
   let timer: number | undefined
+  let cancels = 0
 
   const writes = () => !inReadonlyMode.value && !saveFailed.value
   const settled = () => writes() && !dirty.value && !isSaving.value
@@ -48,6 +50,12 @@ export function usePreviewCapture(options: PreviewCaptureOptions) {
   function captureAfterPause() {
     window.clearTimeout(timer)
     timer = window.setTimeout(() => void capture(), PREVIEW_DELAY_MS)
+  }
+
+  /** The deck may no longer hold what the slides show, so nothing waiting or being drawn is sent. */
+  function cancelCapture() {
+    window.clearTimeout(timer)
+    cancels++
   }
 
   watch(isSaving, (saving, wasSaving) => {
@@ -60,9 +68,10 @@ export function usePreviewCapture(options: PreviewCaptureOptions) {
     const element = options.target.value
     if (capturing || !slide || slide === sentSlide || !element?.isConnected || !settled()) return
     capturing = true
+    const cancelsAtStart = cancels
     try {
       const picture = IMAGE_DATA_URL.exec(await draw(element))
-      if (!picture || !writes()) return
+      if (!picture || !writes() || cancels !== cancelsAtStart) return
       const [, mime, image] = picture
       await client.mutation(
         api.drive.nodes.setPreview,
@@ -78,7 +87,7 @@ export function usePreviewCapture(options: PreviewCaptureOptions) {
     }
   }
 
-  return { captureAfterPause }
+  return { captureAfterPause, cancelCapture }
 }
 
 function firstSlide(): string | null {

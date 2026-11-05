@@ -501,6 +501,8 @@ async function load() {
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
+    // The server may have rewritten the deck, so an earlier save's capture would send old slides.
+    previewCapture.value?.cancelCapture()
   } finally {
     if (run === latestLoad) {
       loading.value = false

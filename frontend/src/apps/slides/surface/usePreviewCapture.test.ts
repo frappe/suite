@@ -19,10 +19,11 @@ vi.mock('@/api', async (original) => {
   }
   return { ...real, client: { ...real.client, mutation } }
 })
-const drawings = vi.hoisted(() => ({ count: 0 }))
+const drawings = vi.hoisted(() => ({ count: 0, finish: Promise.resolve() }))
 vi.mock('modern-screenshot', () => ({
   domToWebp: async () => {
     drawings.count++
+    await drawings.finish
     return 'data:image/webp;base64,UklGRg=='
   },
 }))
@@ -40,6 +41,7 @@ const { usePreviewCapture } = await import('./usePreviewCapture')
 const slide = (clientId: string) => ({ clientId, background: '#ffffffff', elements: [] })
 
 let scope: EffectScope
+let preview: ReturnType<typeof usePreviewCapture> | undefined
 let frame: HTMLElement
 
 async function editAndSave(index = 0) {
@@ -58,6 +60,7 @@ describe('the deck preview', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     pushedPreviews.length = 0
     drawings.count = 0
+    drawings.finish = Promise.resolve()
     serverRefusesSaves = false
     viewOnly.value = false
     lockedElsewhere.value = false
@@ -70,7 +73,7 @@ describe('the deck preview', () => {
     markClean()
     frame = document.body.appendChild(document.createElement('div'))
     scope = effectScope()
-    scope.run(() => usePreviewCapture({ node: 'deck-node', target: shallowRef(frame) }))
+    preview = scope.run(() => usePreviewCapture({ node: 'deck-node', target: shallowRef(frame) }))
   })
 
   afterEach(() => {
@@ -113,6 +116,27 @@ describe('the deck preview', () => {
 
     expect(drawings.count).toBe(1)
     expect(pushedPreviews).toHaveLength(1)
+  })
+
+  it('sends nothing once cancelled, whether it is waiting or drawing, and the next save sends again', async () => {
+    await editAndSave()
+    preview?.cancelCapture()
+    await waitOutThePause()
+    expect(drawings.count).toBe(0)
+
+    let finishDrawing = () => {}
+    drawings.finish = new Promise((resolve) => (finishDrawing = resolve))
+    await editAndSave()
+    await waitOutThePause()
+    expect(drawings.count).toBe(1)
+    preview?.cancelCapture()
+    finishDrawing()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(pushedPreviews).toHaveLength(0)
+
+    await editAndSave()
+    await waitOutThePause()
+    await vi.waitFor(() => expect(pushedPreviews).toHaveLength(1))
   })
 
   it('sends nothing from a tab another tab took the deck from', async () => {

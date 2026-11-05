@@ -31,6 +31,7 @@ const {
   dirty,
   getPresentationFromLocalDB,
   isSaving,
+  markDirty,
   saveCurrentState,
   saveFailed,
   saveRefused,
@@ -2010,6 +2011,12 @@ describe('the Drive preview after a version restore', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   }
 
+  async function editFirstSlide() {
+    editorSlides.value[0].background = '#123456ff'
+    markDirty()
+    await nextTick()
+  }
+
   it('sends one picture after the pause when the first slide changes, and none when it does not', async () => {
     const deck = [firstSlide('#ffffffff'), secondSlide]
     await openDeck(deck)
@@ -2042,10 +2049,34 @@ describe('the Drive preview after a version restore', () => {
     await vi.advanceTimersByTimeAsync(5_000)
     expect(previews).toEqual([])
 
-    versionRestore.run = async () => {}
-    mounted?.loads.push(Promise.resolve(new Response('{}', { status: 403 })))
+    // The save before this restore started the wait for a picture of the old slides.
+    versionRestore.run = async () => {
+      mounted?.loads.push(Promise.resolve(new Response('{}', { status: 404 })))
+    }
+    await editFirstSlide()
     await versionsPanel.restore('v2')
+    expect(saves).toHaveLength(1)
+    expect(inReadonlyMode.value).toBe(false)
     await vi.advanceTimersByTimeAsync(5_000)
     expect(previews).toEqual([])
+
+    versionRestore.run = async () => {}
+    mounted?.loads.push(Promise.resolve(new Response('{}', { status: 403 })))
+    await versionsPanel.restore('v3')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(previews).toEqual([])
+  })
+
+  it('still sends the save it made first when the server refuses the restore', async () => {
+    await openDeck([firstSlide('#ffffffff'), secondSlide])
+    versionRestore.run = async () => {
+      throw new Error('The version is gone')
+    }
+
+    await editFirstSlide()
+    await expect(versionsPanel.restore('v1')).rejects.toThrow('The version is gone')
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await vi.waitFor(() => expect(previews).toHaveLength(1))
   })
 })
