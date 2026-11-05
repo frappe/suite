@@ -326,14 +326,11 @@ async function keepDraftForTakeover() {
   markClean()
   clearSaveFailure()
 }
-/** Load the server copy, which replaces what is on screen and its undo history. */
-async function reload() {
-  await load()
-  history.clearHistory()
-}
 async function editHere() {
   await acquireEditLock(props.session.contentDocname, keepDraftForTakeover, { steal: true })
-  await reload()
+  await load()
+  // The loaded deck can hold another tab's edits, which this tab's undo steps know nothing about.
+  history.clearHistory()
 }
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
