@@ -6,6 +6,7 @@ import { Mention } from 'frappe-ui/editor'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import MentionMenu from '@/apps/writer/components/MentionMenu.vue'
+import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
 import type { WriterUser } from '@/apps/writer/drive'
 
 import { mentionMenuExtension } from './mention-menu'
@@ -54,6 +55,7 @@ function menuRows() {
 }
 
 it('offers people with their email and access, asks the server as you type, and inserts the pick', async () => {
+  rankMentionsFor('document-1')
   const element = document.createElement('div')
   document.body.append(element)
   editor = new Editor({
