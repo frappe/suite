@@ -223,6 +223,13 @@ def get_template_thumbnail(template_title: str, index: int) -> str:
     return f"/assets/suite/slides/frontend/images/layouts/{template_title}/thumbnail-{index}.webp"
 
 
+def deck_answer(deck: Presentation) -> dict:
+    """Answer a deck for a route, without the stored Yjs state `as_dict` would keep."""
+    answer = deck.as_dict()
+    answer.pop("content", None)
+    return answer
+
+
 @frappe.whitelist()
 def create_presentation(
     template: str | None = None, duplicate_from: str | None = None, parent: str | None = None
@@ -292,7 +299,7 @@ def create_presentation(
 
     presentation = frappe.get_doc("Presentation", docname)
     # Drive owns the title (§10.2); it rides along for the response only.
-    answer = presentation.as_dict()
+    answer = deck_answer(presentation)
     answer["title"] = presentation.node_title
     return answer
 
@@ -389,7 +396,7 @@ def get_public_presentation(name: str):
     if not frappe.has_permission("Presentation", "read", name):
         frappe.throw("You cannot access this presentation", frappe.PermissionError)
 
-    return frappe.get_doc("Presentation", name).as_dict()
+    return deck_answer(frappe.get_doc("Presentation", name))
 
 
 @frappe.whitelist()
@@ -483,7 +490,7 @@ def get_composite_presentation(name: str):
             continue
         composite_slides.extend(frappe.get_cached_doc("Presentation", reference["presentation"]).slides)
     doc.slides = composite_slides
-    answer = doc.as_dict()
+    answer = deck_answer(doc)
     answer["references"] = references
     return answer
 

@@ -6,12 +6,15 @@ import json
 from unittest.mock import patch
 
 import frappe
-from frappe.client import set_value
+from frappe.client import get as client_get
+from frappe.client import get_list, get_value, set_value
+from frappe.desk import reportview
 from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite import drive
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.roles import EDIT
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -644,3 +647,80 @@ class TestCreateIsAtomic(IntegrationTestCase):
             with self.assertRaises(frappe.ValidationError):
                 create_presentation(template=self.template.name)
         self.assertEqual(self._decks(), before)
+
+
+class TestDeckBodyStaysServerSide(IntegrationTestCase):
+    """The stored Yjs state reaches no reader and takes no generic write (R1011)."""
+
+    BODY = "c3RvcmVkLXlqcy1zdGF0ZQ=="
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+        ensure_user(OTHER_USER)
+
+    def setUp(self):
+        with self.set_user(OWNER):
+            self.deck = make_presentation(self._testMethodName).name
+
+        frappe.db.set_value("Presentation", self.deck, "content", self.BODY, update_modified=False)
+
+    def stored(self):
+        return frappe.db.get_value("Presentation", self.deck, "content")
+
+    def read_through_reportview(self):
+        frappe.local.form_dict.update(
+            doctype="Presentation",
+            fields=json.dumps(["name", "content"]),
+            filters=json.dumps({"name": self.deck}),
+        )
+        self.addCleanup(frappe.local.form_dict.clear)
+        return reportview.get()
+
+    def test_no_generic_read_gives_a_viewer_the_body(self):
+        share(self.deck, OTHER_USER)
+
+        def read_answer(read):
+            try:
+                return read()
+            except frappe.PermissionError:
+                return None
+
+        reads = {
+            "get_value": lambda: get_value("Presentation", "content", self.deck),
+            "get_list": lambda: get_list(
+                "Presentation", fields=["name", "content"], filters={"name": self.deck}
+            ),
+            "reportview": self.read_through_reportview,
+            "client_get": lambda: client_get("Presentation", self.deck),
+        }
+        for route, read in reads.items():
+            with self.subTest(route), self.set_user(OTHER_USER):
+                self.assertNotIn(self.BODY, frappe.as_json(read_answer(read)))
+
+    def test_deck_routes_answer_without_the_body(self):
+        share(self.deck, OTHER_USER)
+        with self.set_user(OTHER_USER):
+            self.assertNotIn("content", get_public_presentation(self.deck))
+
+        with self.set_user(OWNER):
+            composite = make_presentation(
+                "Composite With A Body",
+                is_composite=1,
+                reference_presentations=[{"presentation": self.deck}],
+            )
+            frappe.db.set_value("Presentation", composite.name, "content", self.BODY, update_modified=False)
+            answer = get_composite_presentation(composite.name)
+            self.assertNotIn("content", answer)
+            self.assertNotIn("content", create_presentation(duplicate_from=self.deck))
+
+    def test_a_writer_cannot_set_the_body(self):
+        share(self.deck, OTHER_USER, role=EDIT)
+        with self.set_user(OTHER_USER):
+            try:
+                set_value("Presentation", self.deck, "content", "overwritten")
+            except frappe.PermissionError:
+                pass
+
+        self.assertEqual(self.stored(), self.BODY)
