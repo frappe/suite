@@ -13,6 +13,26 @@ from typing import NotRequired, TypedDict
 import frappe
 
 
+# Who people search lists: a `tabUser` condition. The narrowest rule the tickets allow. A disabled
+# account and a user without the Suite User role cannot use Suite, so nobody picks them. The role is
+# the test, not `user_type`: it does not open Desk, so a Suite user is a Website User like any
+# signed-up visitor. Administrator and Guest are system identities, not people.
+IN_DIRECTORY_SQL = """
+    enabled = 1
+    AND EXISTS (
+        SELECT 1 FROM `tabHas Role`
+        WHERE parenttype = 'User' AND parent = `tabUser`.name AND role = 'Suite User'
+    )
+    AND name NOT IN ('Administrator', 'Guest')
+"""
+
+_ENABLED_PEOPLE = f"""
+    SELECT name, ({IN_DIRECTORY_SQL}) AS in_directory
+    FROM `tabUser`
+    WHERE name IN %(ids)s AND enabled = 1 AND name != 'Guest'
+"""
+
+
 class Person(TypedDict):
     # The `User` id, the value stored in `owner`, `principal`, and `actor`.
     id: str
@@ -49,24 +69,12 @@ def people(ids: Iterable[str | None]) -> dict[str, Person]:
 def enabled_people(ids: Iterable[str]) -> dict[str, bool]:
     """Answer each enabled user among `ids` by stored name, and whether people search lists them.
 
-    The test is the one `suite.api.people` uses for its directory: the Suite User role. Administrator
-    is a system identity, not listed. Guest is no one. One query answers any number of ids.
+    Guest is no one. One query answers any number of ids.
     """
     wanted = list({user for user in ids if user})
     if not wanted:
         return {}
-    rows = frappe.db.sql(
-        """
-        SELECT name, name != 'Administrator' AND EXISTS (
-            SELECT 1 FROM `tabHas Role`
-            WHERE parenttype = 'User' AND parent = `tabUser`.name AND role = 'Suite User'
-        ) AS in_directory
-        FROM `tabUser`
-        WHERE name IN %(ids)s AND enabled = 1 AND name != 'Guest'
-        """,
-        {"ids": wanted},
-        as_dict=True,
-    )
+    rows = frappe.db.sql(_ENABLED_PEOPLE, {"ids": wanted}, as_dict=True)
     return {row.name: bool(row.in_directory) for row in rows}
 
 

@@ -678,6 +678,7 @@ class TestArchitecture(unittest.TestCase):
             (
                 "COMMENT",
                 "EDIT",
+                "IN_DIRECTORY_SQL",
                 "MANAGE",
                 "READ",
                 "UPLOAD",

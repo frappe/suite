@@ -20,20 +20,10 @@ PAGE_SIZE = 20
 # keeps a crafted cursor out of `int()` and out of the SQL OFFSET.
 _CURSOR_DIGITS = 9
 
-# The narrowest rule the tickets allow. A disabled account and a user without
-# the Suite User role cannot use Suite, so nobody picks them. The role is the
-# test, not `user_type`: it does not open Desk, so a Suite user is a Website
-# User like any signed-up visitor. Administrator and Guest are system
-# identities, not people.
-_USERS = """
+_USERS = f"""
     SELECT 'user' AS kind, name, IF(IFNULL(full_name, '') = '', name, full_name) AS label
     FROM `tabUser`
-    WHERE enabled = 1
-        AND EXISTS (
-            SELECT 1 FROM `tabHas Role`
-            WHERE parenttype = 'User' AND parent = `tabUser`.name AND role = 'Suite User'
-        )
-        AND name NOT IN ('Administrator', 'Guest')
+    WHERE {drive.IN_DIRECTORY_SQL}
         AND (full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)
 """
 

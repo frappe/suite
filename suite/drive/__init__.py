@@ -242,7 +242,7 @@ from suite.drive._core.errors import (
     DriveOverQuota,
     rollback_savepoint,
 )
-from suite.drive._core.people import PersonOnNode
+from suite.drive._core.people import IN_DIRECTORY_SQL, PersonOnNode
 from suite.drive._core.quota import (
     bind_legacy_storage_reservation,
     create_storage_reservation,
@@ -595,6 +595,7 @@ def _principals():
 __all__ = (
     "COMMENT",
     "EDIT",
+    "IN_DIRECTORY_SQL",
     "MANAGE",
     "READ",
     "UPLOAD",
