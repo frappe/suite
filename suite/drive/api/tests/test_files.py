@@ -6,9 +6,11 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import get_url
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
@@ -17,6 +19,7 @@ from suite.drive.api.files import (
     _build_zip,
     _collect_download_files,
     create_auth_token,
+    create_link,
     does_entity_exist,
     get_file_content,
     get_new_title,
@@ -50,7 +53,7 @@ from suite.drive.utils import (
     create_drive_file,
     get_user_folder,
 )
-from suite.drive.utils.files import FileManager, get_s3_url
+from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-files-owner@example.com"
@@ -564,9 +567,235 @@ class TestDriveFilesAPI(IntegrationTestCase):
     def test_file_url_update_requires_valid_storage_path(self):
         with self.set_user(OWNER):
             file = frappe.get_doc("File", self.file.name)
+            file.flags.drive_disk_rename = True
             file.file_url = "/private/files/../../invalid.txt"
-            with self.assertRaises(frappe.ValidationError):
+            with self.assertRaisesRegex(frappe.ValidationError, "incorrect"):
                 file.save()
+
+    def new_file_with_url(self, file_url):
+        return frappe.get_doc(
+            {"doctype": "File", "file_name": "added.txt", "file_url": file_url, "is_private": 1}
+        ).insert()
+
+    def test_new_file_cannot_reach_an_unreadable_private_file_under_any_spelling(self):
+        with self.set_user(OWNER):
+            secret = self.upload(b"another user's secret", "secret file.txt")
+        url = "/" + secret.file_url.lstrip("/")
+        key = url.lstrip("/")
+
+        spellings = [
+            url,
+            key,
+            url.replace("/files/", "/files/./"),
+            url.replace("/files/", "/files//"),
+            get_url() + url,
+            get_url() + "/" + url,
+            "https://x/../.." + url,
+            get_s3_url(key),
+            S3_URL_PREFIX + key,
+            S3_URL_PREFIX + "x/../" + key,
+        ]
+        with self.set_user(OTHER_USER):
+            for spelling in spellings:
+                with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
+                    self.new_file_with_url(spelling)
+
+    def new_stored_file(self, content, file_name):
+        return frappe.get_doc(
+            {"doctype": "File", "file_name": file_name, "content": content, "is_private": 1}
+        ).insert()
+
+    def test_a_name_differing_by_case_or_accent_is_a_different_file(self):
+        # the file_url column treats these names as equal, the disk does not
+        tag = frappe.generate_hash(length=8)
+        for theirs, mine in (
+            (f"Salary{tag}.txt", f"salary{tag}.txt"),
+            (f"résumé{tag}.txt", f"resume{tag}.txt"),
+        ):
+            with self.subTest(theirs=theirs):
+                with self.set_user(OWNER):
+                    secret = self.new_stored_file(frappe.generate_hash().encode(), theirs)
+                with self.set_user(OTHER_USER):
+                    content = frappe.generate_hash().encode()
+                    own = self.new_stored_file(content, mine)
+                    self.assertNotEqual(own.file_url, secret.file_url)
+
+                    with self.assertRaises(frappe.PermissionError):
+                        self.new_file_with_url(secret.file_url)
+
+                    added = self.new_file_with_url(own.file_url)
+                    self.assertEqual(FileManager().get_file(added).read(), content)
+
+    def test_a_trailing_space_does_not_reach_the_file_without_it(self):
+        with self.set_user(OWNER):
+            secret = self.new_stored_file(
+                frappe.generate_hash().encode(), f"{frappe.generate_hash(length=8)}.txt"
+            )
+        with self.set_user(OTHER_USER), self.assertRaises(FileNotFoundError):
+            self.new_file_with_url(secret.file_url + " ")
+
+    def test_a_fetch_url_differing_by_case_is_a_different_object(self):
+        folder = frappe.generate_hash(length=8)
+        with self.set_user(OTHER_USER):
+            own = self.new_stored_file(
+                frappe.generate_hash().encode(), f"{frappe.generate_hash(length=8)}.txt"
+            )
+        own.db_set("file_url", get_s3_url(f"{folder}/report.pdf"))
+
+        # no row holds Report.pdf, and then only another user's row does
+        for holder in (None, self.file):
+            if holder:
+                holder.db_set("file_url", get_s3_url(f"{folder}/Report.pdf"))
+            with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
+                self.new_file_with_url(get_s3_url(f"{folder}/Report.pdf"))
+
+    def test_new_file_url_cannot_climb_out_of_storage(self):
+        # none of these names the file in a way a holder lookup can match, and all of them
+        # resolve to it on disk
+        with self.set_user(OWNER):
+            secret = self.upload(b"another user's secret", "secret.txt")
+        climb = f"../../../{frappe.local.site}/{secret.file_url.lstrip('/')}"
+        double_encoded = "private/files/" + climb.replace("..", "%252E%252E")
+
+        spellings = [
+            S3_URL_PREFIX + "private/files/" + climb,
+            f"https://x/{climb}",
+            f"/api/method/x/../{climb}",
+            S3_URL_PREFIX + double_encoded,
+            get_url() + S3_URL_PREFIX + double_encoded,
+        ]
+        with self.set_user(OTHER_USER):
+            for spelling in spellings:
+                with self.subTest(spelling=spelling), self.assertRaises(frappe.ValidationError):
+                    self.new_file_with_url(spelling)
+
+    def test_new_file_cannot_take_a_fetch_url_no_row_holds(self):
+        key = f"another-site/{frappe.generate_hash(8)}.pdf"
+        with self.set_user(OTHER_USER):
+            for spelling in (get_s3_url(key), get_url() + get_s3_url(key), S3_URL_PREFIX + "private/files/."):
+                with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
+                    self.new_file_with_url(spelling)
+
+        # the legacy Drive migration inserts the first row of each bucket object
+        self.assertEqual(self.new_file_with_url(get_s3_url(key)).file_url, S3_URL_PREFIX + key)
+
+    def test_new_file_cannot_reach_an_unreadable_private_file_stored_on_s3(self):
+        keys = [f"{self.folder.name}/secret file.txt", f"/{self.folder.name}/secret file.txt", "a//b c.txt"]
+        for key in keys:
+            self.file.db_set("file_url", get_s3_url(key))
+            spellings = [
+                get_s3_url(key),
+                get_url() + get_s3_url(key),
+                S3_URL_PREFIX + quote(quote(key)),
+            ]
+            with self.set_user(OTHER_USER):
+                for spelling in spellings:
+                    with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
+                        self.new_file_with_url(spelling)
+
+    def test_user_with_a_drive_share_can_add_a_file_for_that_private_file(self):
+        with self.set_user(OWNER):
+            shared = self.upload(b"shared with the member", "shared.txt")
+            frappe.get_doc("File", shared.name).share(user=MEMBER, read=1)
+        url = "/" + shared.file_url.lstrip("/")
+
+        with self.set_user(MEMBER):
+            added = self.new_file_with_url(url)
+            self.assertEqual(FileManager().get_file(added).read(), b"shared with the member")
+
+        with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
+            self.new_file_with_url(url)
+
+        # the same on an S3 site, where the url is the fetch url of the bucket key
+        fetch_url = get_s3_url(f"{self.folder.name}/shared file.txt")
+        frappe.db.set_value("File", shared.name, "file_url", fetch_url)
+        with self.set_user(MEMBER):
+            added = self.new_file_with_url(fetch_url)
+            self.assertEqual(storage_key(added.file_url), f"{self.folder.name}/shared file.txt")
+        with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
+            self.new_file_with_url(fetch_url)
+
+    def test_link_must_be_a_web_address(self):
+        with self.set_user(OWNER):
+            secret = self.upload(b"linked secret", "linked.txt")
+            create_link(frappe.generate_hash(8), "https://frappe.io/x", self.folder.name)
+        url = "/" + secret.file_url.lstrip("/")
+
+        with self.set_user(OTHER_USER):
+            parent = get_user_folder(OTHER_USER).name
+            refused = [url, secret.file_url, "example.com", "javascript:alert(1)", "ftp://example.com/x"]
+            for link in refused:
+                with self.subTest(link=link), self.assertRaises(frappe.ValidationError):
+                    create_link(frappe.generate_hash(8), link, parent)
+
+            with self.assertRaises(frappe.PermissionError):
+                create_link(frappe.generate_hash(8), get_url() + url, parent)
+
+            link = create_link(frappe.generate_hash(8), "https://frappe.io/x", parent)
+            self.assertEqual(frappe.db.get_value("File", link.name, "file_url"), "https://frappe.io/x")
+            self.assertEqual(frappe.db.get_value("File", link.name, "file_type"), "Link")
+
+    def test_a_row_cannot_become_or_stop_being_a_link(self):
+        with self.set_user(OWNER):
+            link = create_link(frappe.generate_hash(8), "https://frappe.io/x", self.folder.name)
+            for name, file_type in ((link.name, "Text"), (self.file.name, "Link")):
+                with self.subTest(file_type=file_type):
+                    file = frappe.get_doc("File", name)
+                    file.file_type = file_type
+                    with self.assertRaises(frappe.ValidationError):
+                        file.save()
+
+            file = frappe.get_doc("File", self.file.name)
+            file.file_type = "Document"
+            file.save()
+            self.assertEqual(frappe.db.get_value("File", file.name, "file_type"), "Document")
+
+    def assert_children_follow_the_folder(self):
+        manager = FileManager()
+        child = self.upload(b"child of a moving folder", "child.txt")
+        destination = create_drive_file(
+            frappe.generate_hash(8),
+            self.home,
+            "Folder",
+            lambda file: manager.create_folder(file),
+        )
+
+        def assert_child_is_under(*folder_names):
+            child.reload()
+            if not manager.flat:
+                for folder_name in folder_names:
+                    self.assertIn(f"/{folder_name}/", child.file_url)
+            with manager.get_file(child) as stored:
+                self.assertEqual(stored.read(), b"child of a moving folder")
+
+        renamed = frappe.generate_hash(8)
+        rename(self.folder.name, renamed)
+        assert_child_is_under(renamed)
+
+        move([self.folder.name], new_parent=destination.name)
+        assert_child_is_under(destination.file_name, renamed)
+
+        remove_or_restore([self.folder.name])
+        self.assertEqual(frappe.db.get_value("File", self.folder.name, "status"), STATUS_TRASHED)
+        remove_or_restore([self.folder.name])
+        self.assertEqual(frappe.db.get_value("File", self.folder.name, "status"), STATUS_ACTIVE)
+        assert_child_is_under(destination.file_name, renamed)
+
+    def test_children_follow_a_folder_on_tree_storage(self):
+        with self.set_user(OWNER):
+            self.assert_children_follow_the_folder()
+
+    def test_children_follow_a_folder_on_flat_storage(self):
+        frappe.db.set_single_value("Drive Disk Settings", "flat", 1)
+        self.addCleanup(frappe.db.set_single_value, "Drive Disk Settings", "flat", 0)
+        with self.set_user(OWNER):
+            self.folder = create_drive_file(
+                frappe.generate_hash(8),
+                self.home,
+                "Folder",
+                lambda file: FileManager().create_folder(file),
+            )
+            self.assert_children_follow_the_folder()
 
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = "123e4567-e89b-42d3-a456-426614174000"

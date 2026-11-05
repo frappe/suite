@@ -128,7 +128,7 @@ class _Copier:
         target_row = frappe._dict(name=target.name, file_url=target.file_url, is_folder=1)
         # track the folder too, so a mid-copy failure's cleanup removes its
         # storage marker (an empty S3 object) and not just the copied files
-        self.created_blobs.append(frappe._dict(name=target.name, file_url=target.file_url))
+        self.created_blobs.append(target_row)
 
         total = 0
         if self.recurse:

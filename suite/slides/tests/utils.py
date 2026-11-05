@@ -34,14 +34,14 @@ def make_presentation(title):
     ).insert()
 
 
-def make_private_image(presentation_name, content=None):
+def make_private_image(presentation_name, content=None, file_name="private-image.png"):
     if content is None:
         content = unique_bytes(PNG_1PX)
 
     return frappe.get_doc(
         {
             "doctype": "File",
-            "file_name": "private-image.png",
+            "file_name": file_name,
             "content": content,
             "is_private": 1,
             "attached_to_doctype": "Presentation",
