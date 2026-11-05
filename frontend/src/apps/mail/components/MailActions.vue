@@ -3,7 +3,7 @@
 	     the click bubbling to its own span, so stopping on the Button itself
 	     would keep the sheet from opening. -->
   <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
-    <AdaptiveDropdown :options="moreActions(mail)">
+    <AdaptiveDropdown :options="moreActions(mail)" align="end">
       <Button variant="ghost" :tooltip="__('More')">
         <template #icon>
           <Ellipsis class="text-ink-gray-5 icon" />
