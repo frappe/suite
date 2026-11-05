@@ -20,7 +20,7 @@
         </button>
         <Button class="rounded-full" icon="lucide-plus" @click.stop="() => (reaction = false)" />
       </div>
-      <div v-else class="bg-surface-base my-3 max-w-max transform rounded-6 px-4 sm:px-0">
+      <div v-else class="bg-surface-base max-w-max transform rounded-6 px-4 sm:px-0">
         <div
           class="relative max-h-96 overflow-y-auto rounded-6 pb-3 shadow-2xl ring-1 ring-black ring-opacity-5"
         >

@@ -182,9 +182,8 @@
                           <MailDate :datetime="mail.received_at" />
                         </div>
                         <div v-if="!readonly" class="flex items-center gap-1">
-                          <!-- .stop: this row folds the message when pressed. A message alone
-                               has the button beside Forward, so it needs no second one here. -->
-                          <div v-if="!mail.draft && thread.length > 1" class="flex" @click.stop>
+                          <!-- .stop: this row folds the message when pressed. -->
+                          <div v-if="addReactionSpot(mail) === 'header'" class="flex" @click.stop>
                             <ReactionPicker
                               :refusal="mail.cannot_react"
                               @pick="(emoji: string) => react(mail, emoji)"
@@ -439,10 +438,9 @@
                                         'flex gap-1 sm:-mr-1.5'
                                 "
                               >
-                                <!-- .stop: this row folds the message when pressed. A message alone
-                                     has the button beside Forward, so it needs no second one here. -->
+                                <!-- .stop: this row folds the message when pressed. -->
                                 <div
-                                  v-if="!isCollapsed(mail) && !mail.draft && thread.length > 1"
+                                  v-if="!isCollapsed(mail) && addReactionSpot(mail) === 'header'"
                                   class="flex"
                                   @click.stop
                                 >
@@ -703,6 +701,7 @@
                   @click="action.onClick"
                 />
                 <ReactionPicker
+                  v-if="addReactionSpot(thread.at(-1)!) === 'bar'"
                   :refusal="thread.at(-1)!.cannot_react"
                   :variant="isMobile ? 'ghost' : 'outline'"
                   :class="{ '!h-16 !w-16 shrink-0 rounded-none': isMobile }"
@@ -840,6 +839,7 @@ import {
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
+import { reactionButtonSpot } from '@/apps/mail/utils/reactions'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { submissionRow } from '@/apps/mail/utils/submission'
 import {
@@ -1588,6 +1588,8 @@ const { reactionsOn, react } = useMessageReactions(
     else void threadFallback.refetch().catch(() => {})
   },
 )
+const addReactionSpot = (mail: Mail) =>
+  mail.draft ? null : reactionButtonSpot(reactionsOn(mail).length > 0, mail === thread.value.at(-1))
 const replyForwardActions = computed(() =>
   [
     {

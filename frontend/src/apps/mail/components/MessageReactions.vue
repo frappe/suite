@@ -1,7 +1,7 @@
 <!--
-  The reactions a message has collected, as one chip per emoji. Nothing at all until it has one:
-  adding the first is the message header's, and for the newest message the bar beside Forward's.
-  Pressing a chip adds the reader to it. Pressing your own says you already reacted.
+  The reactions a message has collected, as one chip per emoji, and the button to add another. Nothing
+  at all until it has one: the button is elsewhere until then (see reactionButtonSpot). Pressing a
+  chip adds the reader to it. Pressing your own says you already reacted.
 -->
 <template>
   <div v-if="groups.length" class="flex flex-wrap items-center gap-1.5">
