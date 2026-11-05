@@ -29,7 +29,7 @@ import { slidesFault } from './fault'
 import {
   carryItemStyles,
   compareBodies,
-  stateColumnWidths,
+  holdItemLooks,
   stateLineHeights,
   type DrawRules,
 } from './oldBody'
@@ -279,17 +279,19 @@ function oldHtml(content: unknown) {
 }
 
 function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>) {
-  const { body } = new DOMParser().parseFromString(oldHtml(box.content), 'text/html')
+  // The old view sets this as a `div`'s HTML; alone, the parser would drop leading whitespace it draws
+  const html = oldHtml(box.content)
+  const { body } = new DOMParser().parseFromString(`<body>${html}`, 'text/html')
   // No screen draws one: the old view's sanitizer removes it and the schema has no place for it
   for (const rule of body.querySelectorAll('hr')) {
     rule.remove()
     dropped.add('horizontal-rule')
   }
 
-  stateColumnWidths(body, box.width)
   const carried = body.cloneNode(true) as HTMLElement
   stateLineHeights(carried, rules)
   carryItemStyles(carried, rules)
+  holdItemLooks(carried, rules)
   const whitespace = rules.isWhitespaceKept && 'full'
   const parsed = PMDOMParser.fromSchema(schema).parse(carried, { preserveWhitespace: whitespace })
 

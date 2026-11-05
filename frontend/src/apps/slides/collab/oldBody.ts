@@ -15,12 +15,16 @@ const INHERITED = [
 ]
 const MARKER_OPACITY = '--marker-opacity'
 const OPACITY = 'opacity'
-const PERCENT = 100
+// Removes the floats' own noise from a product of opacities and nothing a browser could draw
+const OPACITY_DIGITS = 12
+const ZERO_WIDTH_SPACE = '\u200b'
 // A value the browser rejects here does nothing, where an unknown property still counts
 const READ_BY_THE_BROWSER = new Set([...INHERITED, OPACITY])
 const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
 // Tags the editor reads as its own marks, by the tag it draws them with
-const DRAWN_AS: Record<string, string> = { b: 'strong', i: 'em', del: 's', strike: 's' }
+const DRAWN_AS: Record<string, string> = { b: 'strong', i: 'em' }
+// The old view's sanitizer takes these off and keeps what's inside, so they draw nothing
+const STRIPPED_TAGS = new Set(['a', 'code', 'del', 'strike'])
 const FORMATTING_TAGS = new Set([
   'a',
   'b',
@@ -39,14 +43,13 @@ const HARD_BREAK = 'hard break'
 // `td` and `th` take text bare; a body or cell's bare text sits in one line, as a paragraph's does
 const HOLDS_BARE_TEXT = new Set(['body', 'td', 'th'])
 const LINE_HEIGHT_RULE = new Set(['p', 'li'])
-const TABLE_MINIMUMS = new Set(['table', 'col'])
+// On an inherited property these take the value from above, as if nothing were stated
+const INHERIT_KEYWORDS = new Set(['inherit', 'unset', 'revert', 'revert-layer'])
 // What an attribute means when it's left out; the rest of an element's attributes draw nothing
 const ATTRIBUTE_DEFAULTS: Record<string, string | null> = {
   colspan: '1',
   colwidth: null,
-  href: null,
   rowspan: '1',
-  start: '1',
 }
 
 export interface DrawRules {
@@ -76,25 +79,37 @@ interface Drawing {
   blocks: string[]
   markers: string[]
   runs: Run[]
+  items: { paragraph: Element; place: Place }[]
 }
 
 // The value the browser reads, or the raw text when jsdom can't read it, so a property jsdom doesn't
-// know still counts
+// know still counts. An `!important` declaration beats a later plain one
 function styleEntries(element: Element) {
   const scratch = element.ownerDocument.createElement('div').style
-  const entries: [string, string][] = []
+  const entries = new Map<string, string>()
+  const important = new Set<string>()
   for (const piece of (element.getAttribute('style') ?? '').split(';')) {
     const colon = piece.indexOf(':')
     const name = piece.slice(0, Math.max(colon, 0)).trim().toLowerCase()
     scratch.cssText = piece
     const read = scratch.getPropertyValue(name)
-    if (name && (read || !READ_BY_THE_BROWSER.has(name))) {
-      const value = read || piece.slice(colon + 1).trim()
-      entries.push([name, value.replace(/['"]/g, '')])
+    const isImportant = !!scratch.getPropertyPriority(name)
+    if (
+      !name ||
+      (!read && READ_BY_THE_BROWSER.has(name)) ||
+      (!isImportant && important.has(name))
+    ) {
+      continue
+    }
+
+    const value = read || piece.slice(colon + 1).trim()
+    entries.set(name, value.replace(/['"]/g, ''))
+    if (isImportant) {
+      important.add(name)
     }
   }
 
-  return entries
+  return [...entries]
 }
 
 function attributeEntries(element: Element, tag: string) {
@@ -136,9 +151,14 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
   }
 
   for (const [name, value] of styleEntries(element)) {
+    const isKeyword = isInherited(name) && INHERIT_KEYWORDS.has(value.toLowerCase())
     if (name === OPACITY) {
       next.opacity *= clampedOpacity(value)
       next.isFadedByItem ||= tag === 'li' && clampedOpacity(value) < 1
+    } else if (isKeyword && place.styles.has(name)) {
+      next.styles.set(name, place.styles.get(name)!)
+    } else if (isKeyword) {
+      next.styles.delete(name)
     } else if (isInherited(name)) {
       next.styles.set(name, value)
       next.fromItem[tag === 'li' ? 'add' : 'delete'](name)
@@ -152,9 +172,8 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
   return next
 }
 
-// To the mark's whole percent
-function roundedOpacity(opacity: number) {
-  return Math.round(opacity * PERCENT) / PERCENT
+function exactOpacity(opacity: number) {
+  return Number(opacity.toFixed(OPACITY_DIGITS))
 }
 
 function blockEntry(tag: string, styles: Map<string, string>, own: Map<string, string>) {
@@ -166,28 +185,32 @@ function blockEntry(tag: string, styles: Map<string, string>, own: Map<string, s
   return JSON.stringify([tag, looks, [...own].sort()])
 }
 
-function markerEntry({ styles, opacity }: Place) {
-  const markerOpacity = clampedOpacity(styles.get(MARKER_OPACITY) ?? '1')
-  return JSON.stringify([
-    styles.get('color'),
-    styles.get('font-family'),
-    styles.get('letter-spacing'),
-    roundedOpacity(opacity * markerOpacity),
-  ])
+function markerOpacity({ styles, opacity }: Place) {
+  return exactOpacity(opacity * clampedOpacity(styles.get(MARKER_OPACITY) ?? '1'))
 }
 
 function isOrderedItem(element: Element, tag: string) {
   return tag === 'li' && element.parentElement?.localName === 'ol'
 }
 
+// A bullet sits at the left of a fixed-width box, so its letter spacing moves no pixel; an ordered
+// item's number sits at the right of its box, so its spacing does
+function markerStyles(item: Element | null) {
+  if (item?.parentElement?.localName === 'ol') {
+    return ITEM_STYLES
+  }
+
+  return ITEM_STYLES.filter((name) => name !== 'letter-spacing')
+}
+
+function markerEntry(place: Place, item: Element | null) {
+  const looks = markerStyles(item).map((name) => place.styles.get(name))
+  return JSON.stringify([...looks, markerOpacity(place)])
+}
+
 function blockAttributes(element: Element, tag: string, own: Map<string, string>, place: Place) {
   for (const [name, value] of attributeEntries(element, tag)) {
     own.set(name, value)
-  }
-
-  // The tiptap table states a minimum where the old HTML may not; only a stated width sets a column
-  if (TABLE_MINIMUMS.has(tag)) {
-    own.delete('min-width')
   }
 
   // An ordered item's marker column is measured in `ch` of its own font, so its font reaches its text
@@ -213,7 +236,8 @@ function drawBlock(element: Element, place: Place, rules: DrawRules, drawing: Dr
 
   next.block = drawing.blocks.push(blockEntry(tag, next.styles, own)) - 1
   if (tag === 'p' && place.parentTag === 'li' && !element.previousElementSibling) {
-    drawing.markers.push(markerEntry(next))
+    drawing.markers.push(markerEntry(next, element.parentElement))
+    drawing.items.push({ paragraph: element, place: next })
   }
 
   drawChildren(element, next, rules, drawing)
@@ -224,11 +248,8 @@ function formatsOf(element: Element, drawn: string, own: Map<string, string>) {
     own.set(drawn, '')
   }
 
-  // A link's target and rel draw nothing, and the editor sets its own
   for (const [name, value] of attributeEntries(element, drawn)) {
-    if (drawn !== 'a' || name === 'a@href') {
-      own.set(name, value)
-    }
+    own.set(name, value)
   }
 
   return own
@@ -246,14 +267,24 @@ function drawInline(node: Node, place: Place, rules: DrawRules, drawing: Drawing
 
   const element = node as Element
   const tag = element.localName
-  if (tag === 'br') {
-    drawing.runs.push({ node: element, place })
+  if (STRIPPED_TAGS.has(tag)) {
+    for (const child of element.childNodes) {
+      drawNode(child, place, rules, drawing)
+    }
+
     return
   }
 
   const drawn = DRAWN_AS[tag] ?? tag
   const own = new Map(place.formats)
   const next = entered(element, drawn, place, own)
+  if (tag === 'br') {
+    // The saved break holds its marks and no style or class of its own, so one that has them differs
+    next.formats = formatsOf(element, 'span', own)
+    drawing.runs.push({ node: element, place: next })
+    return
+  }
+
   next.formats = formatsOf(element, drawn, own)
   for (const child of element.childNodes) {
     drawNode(child, next, rules, drawing)
@@ -298,7 +329,7 @@ function drawChildren(parent: Element, place: Place, rules: DrawRules, drawing: 
 }
 
 function drawingOf(root: Element, rules: DrawRules): Drawing {
-  const drawing: Drawing = { blocks: [], markers: [], runs: [] }
+  const drawing: Drawing = { blocks: [], markers: [], runs: [], items: [] }
   const place: Place = {
     // The app's own line height, which the rule above only overrides on a line and an item
     styles: new Map([['line-height', '1.5']]),
@@ -316,17 +347,28 @@ function drawingOf(root: Element, rules: DrawRules): Drawing {
 
 function runLook({ styles, formats, opacity, block }: Place) {
   const seen = [...styles].filter(([name]) => name !== MARKER_OPACITY).sort()
-  return JSON.stringify([seen, [...formats].sort(), roundedOpacity(opacity), block])
+  return JSON.stringify([seen, [...formats].sort(), exactOpacity(opacity), block])
 }
 
-function characters({ runs }: Drawing, rules: DrawRules) {
+function characters({ runs, items }: Drawing, rules: DrawRules) {
+  const itemBlocks = new Set(items.map(({ place }) => place.block))
+  const seen = new Set<number>()
   return runs.flatMap(({ node, place }) => {
     const look = runLook(place)
     if (node.nodeType !== Node.TEXT_NODE) {
+      seen.add(place.block)
       return [[HARD_BREAK, look]]
     }
 
-    const text = node.textContent ?? ''
+    let text = node.textContent ?? ''
+    // A zero-width space at an item's start draws nothing, so its look is all it holds
+    if (itemBlocks.has(place.block) && !seen.has(place.block)) {
+      text = text.replace(/^\u200b+/, '')
+      if (text) {
+        seen.add(place.block)
+      }
+    }
+
     return [...text]
       .filter((char) => rules.isWhitespaceKept || !FOLDED_WHITESPACE.test(char))
       .map((char) => [char, look])
@@ -357,8 +399,8 @@ function carriedStyle({ styles, fromItem, isFadedByItem, opacity }: Place) {
     return `${name}: ${value}`
   })
   if (isFadedByItem) {
-    const faded = roundedOpacity(opacity)
-    carried.push(`opacity: ${faded}`)
+    const exact = exactOpacity(opacity)
+    carried.push(`opacity: ${exact}`)
   }
 
   return carried.join('; ')
@@ -376,96 +418,51 @@ export function carryItemStyles(root: Element, rules: DrawRules) {
   }
 }
 
+function holdsItemLook(item: Place, first: Place, paragraph: Element) {
+  return (
+    markerStyles(paragraph.parentElement).every(
+      (name) => first.styles.get(name) === item.styles.get(name),
+    ) && exactOpacity(first.opacity) === markerOpacity(item)
+  )
+}
+
+// The editor draws an item's bullet, indent and inherited look from its first text. When that text looks
+// different, a leading zero-width space takes the item's look, as the editor's own new items do
+export function holdItemLooks(root: Element, rules: DrawRules) {
+  const { items, runs } = drawingOf(root, rules)
+  for (const { paragraph, place } of items) {
+    const first = runs.find((run) => run.place.block === place.block)
+    const isTextFirst = first?.node.nodeType === Node.TEXT_NODE
+    if (!first || !isTextFirst || first.node.textContent?.startsWith(ZERO_WIDTH_SPACE)) {
+      continue
+    }
+
+    if (holdsItemLook(place, first.place, paragraph)) {
+      continue
+    }
+
+    const look = ITEM_STYLES.filter((name) => place.styles.has(name)).map((name) => {
+      const value = place.styles.get(name)
+      return `${name}: ${value}`
+    })
+    const opacity = markerOpacity(place)
+    if (opacity < 1) {
+      look.push(`opacity: ${opacity}`)
+    }
+
+    const span = root.ownerDocument.createElement('span')
+    span.setAttribute('style', look.join('; '))
+    span.textContent = ZERO_WIDTH_SPACE
+    paragraph.prepend(span)
+  }
+}
+
 // A line's height comes from the rule, which the editor's paragraphs would hide behind their own default,
 // so each one states the height it drew at
 export function stateLineHeights(root: Element, rules: DrawRules) {
   for (const paragraph of root.querySelectorAll<HTMLElement>('p')) {
     if (!new Map(styleEntries(paragraph)).has('line-height')) {
       paragraph.style.setProperty('line-height', rules.lineHeight)
-    }
-  }
-}
-
-function pixels(value: string | undefined) {
-  const match = /^([0-9.]+)px$/.exec(value ?? '')
-  return match && Number(match[1])
-}
-
-function statedWidth(table: Element, frameWidth: unknown) {
-  const { width, 'min-width': minimum, ...rest } = Object.fromEntries(styleEntries(table))
-  let stated = pixels(width)
-  if (width === '100%' && typeof frameWidth === 'number') {
-    stated = frameWidth
-  }
-
-  const isOverridden = minimum && (pixels(minimum) ?? Infinity) > (stated ?? 0)
-  if (Object.keys(rest).length || !stated || isOverridden) {
-    return null
-  }
-
-  return Math.round(stated)
-}
-
-function columnCount(rows: HTMLTableRowElement[]) {
-  const cells = rows.flatMap((row) => [...row.cells])
-  const counts = rows.map((row) => [...row.cells].reduce((all, cell) => all + cell.colSpan, 0))
-  const isGrid =
-    counts.length > 0 &&
-    counts.every((count) => count === counts[0]) &&
-    cells.every((cell) => cell.rowSpan === 1 && !cell.hasAttribute('colwidth'))
-
-  return isGrid && counts[0]
-}
-
-function columnWidths(table: HTMLTableElement, count: number, total: number) {
-  const cols = [...table.querySelectorAll('col')]
-  if (!cols.length) {
-    // A fixed table with no widths shares its width equally, and a cell's width is whole pixels
-    const share = Math.floor(total / count)
-    const wider = total - share * count
-    return Array.from({ length: count }, (_, at) => share + Number(at < wider))
-  }
-
-  const stated = cols.map((col) => pixels(new Map(styleEntries(col)).get('width')))
-  const sum = stated.reduce<number>((all, width) => all + (width ?? NaN), 0)
-  const isExact = stated.length === count && sum === total && stated.every(Number.isInteger)
-  if (!isExact) {
-    return null
-  }
-
-  return stated as number[]
-}
-
-function setColumnWidths(table: HTMLTableElement, widths: number[], total: number) {
-  for (const row of table.rows) {
-    let at = 0
-    for (const cell of row.cells) {
-      cell.setAttribute('colwidth', widths.slice(at, at + cell.colSpan).join(','))
-      at += cell.colSpan
-    }
-  }
-
-  table.querySelector('colgroup')?.remove()
-  const colgroup = table.ownerDocument.createElement('colgroup')
-  for (const width of widths) {
-    colgroup.append(table.ownerDocument.createElement('col'))
-    ;(colgroup.lastElementChild as HTMLElement).style.setProperty('width', `${width}px`)
-  }
-
-  table.prepend(colgroup)
-  table.setAttribute('style', `width: ${total}px`)
-}
-
-// The editor reads a table's widths from its cells. A table laid out at a stated width, with no cell
-// widths, can say the same thing on its cells. One with no stated width lays itself out from its text,
-// which only a browser can measure, so it stays as it is and the comparison refuses it
-export function stateColumnWidths(root: Element, frameWidth: unknown) {
-  for (const table of root.querySelectorAll('table')) {
-    const total = statedWidth(table, frameWidth)
-    const count = columnCount([...table.rows])
-    const widths = total && count && columnWidths(table, count, total)
-    if (total && widths) {
-      setColumnWidths(table, widths, total)
     }
   }
 }

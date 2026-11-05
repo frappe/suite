@@ -1,5 +1,5 @@
 import { getSchema } from '@tiptap/core'
-import { prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
+import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
@@ -16,7 +16,6 @@ import {
   readSlides,
   ROOT,
   slideIds,
-  writeDeck,
 } from './deck'
 import { drawnSlides } from './drawnDeck'
 import { slidesFault } from './fault'
@@ -291,7 +290,7 @@ describe('text', () => {
       '<ul><li style="opacity: 100"><p><span style="opacity: 0.5">a</span></p></li></ul>'
     const { doc } = converted([{ id: 'box', type: 'text', content }])
     const [{ content: items }] = bodyOf(doc, 'box').content
-    expect(items[0].content[0].content[0].marks[0].attrs.opacity).toBe(50)
+    expect(items[0].content[0].content.at(-1).marks[0].attrs.opacity).toBe(50)
   })
 
   it('takes italic written as a style', () => {
@@ -439,60 +438,6 @@ describe('what the deck draws, against the old view', () => {
     return { id: 'box', type: 'text', content }
   }
 
-  // A deck holding this list body as it stands, which the converter would not save
-  function deckHolding(content: unknown[]) {
-    const item = { type: 'listItem', content: [{ type: 'paragraph', content }] }
-    const list = { type: 'bulletList', content: [item] }
-    const doc = new Y.Doc()
-    writeDeck(doc, [{ id: 'slide', boxes: [{ id: 'box', type: 'text' }] }])
-    prosemirrorToYXmlFragment(
-      schema.nodeFromJSON({ type: 'doc', content: [list] }),
-      boxText(doc, 'box') as Y.XmlFragment,
-    )
-    return drawnParts(contentOf(doc))
-  }
-
-  it('refuses a first text size the item renderer would spread to the next text and the indent', () => {
-    const html =
-      '<ul><li style="color: red"><p><span style="font-size: 40px">A</span>B</p></li></ul>'
-    const big = [{ type: 'textStyle', attrs: { color: 'red', fontSize: '40px' } }]
-    const red = [{ type: 'textStyle', attrs: { color: 'red' } }]
-    const saved = deckHolding([
-      { type: 'text', text: 'A', marks: big },
-      { type: 'text', text: 'B', marks: red },
-    ])
-    const old = drawnParts(html)
-    expect(drawn(old.textOf('B'), 'font-size')).toBe('')
-    expect(drawn(old.item, 'font-size')).toBe('')
-    expect(drawn(saved.textOf('B'), 'font-size')).toBe('40px')
-    expect(drawn(saved.item, 'font-size')).toBe('40px')
-    expect(refusal({ content: html })).toMatchObject({ detail: 'html' })
-  })
-
-  it('refuses an unstyled item whose first text size the renderer would spread', () => {
-    const html = '<ul><li><p><span style="font-size: 40px">a</span>b</p></li></ul>'
-    const big = [{ type: 'textStyle', attrs: { fontSize: '40px' } }]
-    const saved = deckHolding([
-      { type: 'text', text: 'a', marks: big },
-      { type: 'text', text: 'b' },
-    ])
-    expect(drawn(drawnParts(html).item, 'font-size')).toBe('')
-    expect(drawn(saved.item, 'font-size')).toBe('40px')
-    expect(drawn(saved.textOf('b'), 'font-size')).toBe('40px')
-    expect(refusal({ content: html })).toMatchObject({ detail: 'html' })
-  })
-
-  it('draws an unstyled item with one coloured text the same but for its bullet, and says so', () => {
-    const html = '<ul><li><p><span style="color: red">a</span></p></li></ul>'
-    const { item, textOf, dropped } = drawnDeck(textBox(html))
-    const old = drawnParts(html)
-    expect(drawn(textOf('a'), 'color')).toBe(drawn(old.textOf('a'), 'color'))
-    expect(drawn(item, 'font-size')).toBe(drawn(old.item, 'font-size'))
-    expect(drawn(old.item, 'color')).toBe('')
-    expect(drawn(item, 'color')).toBe('red')
-    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
-  })
-
   it('draws an item style on text, bullet and indent as the old view did', () => {
     const { item, textOf, dropped } = drawnDeck(
       textBox(
@@ -505,29 +450,6 @@ describe('what the deck draws, against the old view', () => {
     expect(drawn(item, 'color')).toBe('red')
     expect(drawn(item, 'font-size')).toBe('40px')
     expect(dropped).toEqual([])
-  })
-
-  it.each([
-    [
-      'an item colour its text overrides',
-      '<ul><li style="color: red"><p><span style="color: blue">a</span></p></li></ul>',
-    ],
-    ['an item colour with no text', '<ul><li style="color: red"><p></p></li></ul>'],
-    [
-      'an item spacing its text overrides',
-      '<ul><li style="letter-spacing: 2px"><p><span style="letter-spacing: 1px">a</span></p></li></ul>',
-    ],
-    [
-      'an unstyled item with coloured first text',
-      '<ul><li><p><span style="color: red">a</span></p></li></ul>',
-    ],
-    [
-      'a marker faded from the first text',
-      '<ul><li><p><span style="opacity: 0.5">a</span></p></li></ul>',
-    ],
-  ])('records a bullet-only change: %s', (_name, content) => {
-    const { dropped } = converted([textBox(content)])
-    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
   })
 
   it('keeps the body when the bullet alone changes', () => {
@@ -545,6 +467,148 @@ describe('what the deck draws, against the old view', () => {
     expect(dropped).toEqual([])
   })
 
+  it('holds an unstyled item look on a zero-width run, so only its first text changes colour', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox('<ul><li><p><span style="color: red">a</span>b</p></li></ul>'),
+    )
+    expect(drawn(textOf('a'), 'color')).toBe('red')
+    expect(drawn(textOf('b'), 'color')).toBe('')
+    expect(drawn(item, 'color')).toBe('')
+    expect(dropped).toEqual([])
+  })
+
+  it('keeps an item indent and its next text when only the first text is big', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox('<ul><li><p><span style="font-size: 40px">a</span>b</p></li></ul>'),
+    )
+    expect(drawn(textOf('a'), 'font-size')).toBe('40px')
+    expect(drawn(textOf('b'), 'font-size')).toBe('')
+    expect(drawn(item, 'font-size')).toBe('')
+    expect(dropped).toEqual([])
+  })
+
+  it('keeps a nested list from the colour of its parent item first text', () => {
+    const { textOf, dropped } = drawnDeck(
+      textBox(
+        '<ul><li><p><span style="color: red">a</span></p><ul><li><p>b</p></li></ul></li></ul>',
+      ),
+    )
+    expect(drawn(textOf('b'), 'color')).toBe('')
+    expect(dropped).toEqual([])
+  })
+
+  it('keeps a styled item bullet when its first text differs', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox('<ul><li style="color: red"><p><span style="color: blue">a</span></p></li></ul>'),
+    )
+    expect(drawn(item, 'color')).toBe('red')
+    expect(drawn(textOf('a'), 'color')).toBe('blue')
+    expect(dropped).toEqual([])
+  })
+
+  it('keeps an ordered item marker font, which sets its column', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox(
+        '<ol><li style="font-family: Inter"><p><span style="font-family: Arial">a</span></p></li></ol>',
+      ),
+    )
+    expect(drawn(item, 'font-family')).toBe('Inter')
+    expect(drawn(textOf('a'), 'font-family')).toBe('Arial')
+    expect(dropped).toEqual([])
+  })
+
+  it('adds no words to hold a look, only one zero-width space', () => {
+    const { doc } = converted([
+      textBox('<ul><li><p><span style="color: red">a</span>b</p></li></ul>'),
+    ])
+    const runs = bodyOf(doc, 'box').content[0].content[0].content[0].content
+    expect(runs.map(({ text }: { text: string }) => text).join('')).toBe('​ab')
+  })
+
+  it('adds nothing to an item whose first text already draws its look', () => {
+    const { doc, dropped } = converted([textBox('<ul><li><p>a</p></li></ul>')])
+    const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content
+    expect(run.text).toBe('a')
+    expect(dropped).toEqual([])
+  })
+
+  it('adds nothing for a bullet letter spacing, which moves no pixel', () => {
+    const { doc, dropped } = converted([
+      textBox('<ul><li><p><span style="letter-spacing: 2px">a</span></p></li></ul>'),
+    ])
+    const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content
+    expect(run.text).toBe('a')
+    expect(dropped).toEqual([])
+  })
+
+  it('holds an ordered item letter spacing, which moves its right-aligned number', () => {
+    const { doc, dropped } = converted([
+      textBox('<ol><li><p><span style="letter-spacing: 2px">a</span></p></li></ol>'),
+    ])
+    const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content
+    expect(run.text).toBe('​')
+    expect(dropped).toEqual([])
+  })
+
+  it('records a bullet the editor cannot hold when nothing else changes', () => {
+    const { textOf, dropped } = drawnDeck(
+      textBox('<ul><li style="--marker-opacity: 0.504"><p>a</p></li></ul>'),
+    )
+    expect(textOf('a')).toBeTruthy()
+    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
+  })
+
+  it('takes the declaration that wins by priority, not the last one written', () => {
+    const { textOf } = drawnDeck(
+      textBox('<ul><li style="color: red !important; color: blue"><p>a</p></li></ul>'),
+    )
+    expect(drawn(textOf('a'), 'color')).toBe('red')
+  })
+
+  it('takes an inherit keyword with no outer value as saying nothing', () => {
+    const { dropped } = converted([textBox('<p><span style="color: inherit">a</span></p>')])
+    expect(dropped).toEqual([])
+  })
+
+  it('carries an item colour past a span that says to inherit it', () => {
+    const { textOf } = drawnDeck(
+      textBox('<ul><li style="color: red"><p><span style="color: inherit">a</span></p></li></ul>'),
+    )
+    expect(drawn(textOf('a'), 'color')).toBe('red')
+  })
+
+  it('keeps the blank line that leading whitespace draws', () => {
+    const { doc, dropped } = converted([textBox('\n<p>a</p>')])
+    const { content } = bodyOf(doc, 'box')
+    expect(
+      content.map(({ content: runs }: { content: { text: string }[] }) => runs[0].text),
+    ).toEqual(['\n', 'a'])
+    expect(dropped).toEqual([])
+  })
+
+  it('takes a product of whole percents as whole, whatever the floats answer', () => {
+    const { doc } = converted([
+      textBox('<ul><li style="opacity: 0.7"><p><span style="opacity: 0.3">a</span></p></li></ul>'),
+    ])
+    const runs = bodyOf(doc, 'box').content[0].content[0].content[0].content
+    expect(runs.at(-1).marks[0].attrs.opacity).toBe(21)
+  })
+
+  it('keeps a table as the editor saved it, with its whole widths and minimum', () => {
+    const content = `<table style="width: 100px"><colgroup><col style="width: 40px"><col style="width: 60px"></colgroup><tbody><tr><td colspan="1" rowspan="1" colwidth="40"><p>a</p></td><td colspan="1" rowspan="1" colwidth="60"><p>b</p></td></tr></tbody></table>`
+    const { doc, dropped } = converted([{ id: 'box', type: 'table', width: 100, content }])
+    const [{ content: rows }] = bodyOf(doc, 'box').content
+    expect(rows[0].content[1].attrs.colwidth).toEqual([60])
+    expect(dropped).toEqual([])
+  })
+
+  it('keeps a table with no widths at the minimum the editor draws', () => {
+    const content =
+      '<table style="min-width: 25px"><colgroup><col style="min-width: 25px"></colgroup><tbody><tr><td colspan="1" rowspan="1"><p>a</p></td></tr></tbody></table>'
+    const { dropped } = converted([{ id: 'box', type: 'table', width: 100, content }])
+    expect(dropped).toEqual([])
+  })
+
   it('drops a horizontal rule and keeps the text around it', () => {
     const { doc, dropped } = converted([textBox('<p>a</p><hr><p>b</p>')])
     expect(dropped).toEqual([{ kind: 'horizontal-rule' }])
@@ -554,62 +618,35 @@ describe('what the deck draws, against the old view', () => {
       ),
     ).toEqual(['a', 'b'])
   })
-
-  it.each([
-    [
-      'a table as wide as its box',
-      '<table style="width: 100%"><tr><td><p>a</p></td><td><p>b</p></td></tr></table>',
-      300,
-      150,
-    ],
-    [
-      'a stated width with an equal minimum',
-      '<table style="width: 50px; min-width: 50px"><tr><td><p>a</p></td><td><p>b</p></td></tr></table>',
-      500,
-      25,
-    ],
-  ])('carries %s to its cells', (_name, content, width, column) => {
-    const { doc, dropped } = converted([{ id: 'box', type: 'table', width, content }])
-    const [{ content: rows }] = bodyOf(doc, 'box').content
-    expect(rows[0].content[0].attrs.colwidth).toEqual([column])
-    expect(rows[0].content[1].attrs.colwidth).toEqual([column])
-    expect(dropped).toEqual([])
-  })
 })
 
 describe('refusals', () => {
+  // The old view's sanitizer takes these off, so they never reach the screen
+  it.each([
+    ['a plain link', '<p><a>a</a></p>'],
+    ['a styled link', '<p><a href="x" style="color: red">a</a></p>'],
+    ['a code tag', '<p><code>a</code></p>'],
+    ['href on a span', '<p><span href="x">a</span></p>'],
+    ['start on a bullet list', '<ul start="3"><li><p>a</p></li></ul>'],
+  ])('converts %s, which the old view never draws', (_name, content) => {
+    expect(refusal({ content }).kind).toBe('converted')
+  })
+
+  // Old draws plain text here and the saved deck would draw a line through it
+  it.each(['del', 'strike'])('refuses %s, whose line the old view never drew', (tag) => {
+    expect(refusal({ content: `<p><${tag}>a</${tag}></p>` })).toEqual({
+      kind: 'failed',
+      reason: 'check',
+      detail: 'html',
+    })
+  })
+
   it.each([
     ['HTML the editor has no place for', { content: '<p>a</p><img src="x.png">' }, 'html'],
     ['a heading the editor would flatten', { content: '<h1>a</h1>' }, 'html'],
     [
       'a style the editor would lose',
       { content: '<p><span style="text-shadow: 1px 1px red">a</span></p>' },
-      'html',
-    ],
-    [
-      'a list item size only its first text holds, which reaches the indent and the next text',
-      {
-        content:
-          '<ul><li style="color: red"><p><span style="font-size: 40px">A</span>B</p></li></ul>',
-      },
-      'html',
-    ],
-    [
-      'an unstyled list item whose first colour would reach its next text',
-      { content: '<ul><li><p><span style="color: red">a</span>b</p></li></ul>' },
-      'html',
-    ],
-    [
-      'an unstyled list item whose first size would change its indent',
-      { content: '<ul><li><p><span style="font-size: 40px">a</span></p></li></ul>' },
-      'html',
-    ],
-    [
-      'a first text colour that would spread to an unstyled nested list',
-      {
-        content:
-          '<ul><li><p><span style="color: red">a</span></p><ul><li><p>b</p></li></ul></li></ul>',
-      },
       'html',
     ],
     [
@@ -624,6 +661,68 @@ describe('refusals', () => {
         content:
           '<table><colgroup><col style="width: 50px"></colgroup><tr><td><p>a</p></td></tr></table>',
       },
+      'html',
+    ],
+    [
+      'a span that inherits a colour its saved mark would lose',
+      { content: '<p><span style="color: red"><span style="color: inherit">a</span></span></p>' },
+      'html',
+    ],
+    [
+      'a span that inherits a font its saved mark would lose',
+      {
+        content:
+          '<p><span style="font-family: serif"><span style="font-family: inherit">a</span></span></p>',
+      },
+      'html',
+    ],
+    ['a hidden break', { content: '<p>a<br style="display: none">b</p>' }, 'html'],
+    ['a classed break', { content: '<p>a<br class="hidden">b</p>' }, 'html'],
+    ['a sized break', { content: '<p>a<br style="font-size: 80px">b</p>' }, 'html'],
+    [
+      'a table minimum the editor would replace',
+      {
+        type: 'table',
+        content: '<table style="min-width: 1000px"><tr><td><p>a</p></td></tr></table>',
+      },
+      'html',
+    ],
+    [
+      'a fractional table width',
+      {
+        type: 'table',
+        content:
+          '<table style="width: 100.4px"><tr><td><p>a</p></td><td><p>b</p></td></tr></table>',
+      },
+      'html',
+    ],
+    [
+      'a table as wide as its box, whose equal columns need a browser',
+      {
+        type: 'table',
+        width: 100,
+        content:
+          '<table style="width: 100%"><tr><td><p>a</p></td><td><p>b</p></td><td><p>c</p></td></tr></table>',
+      },
+      'html',
+    ],
+    [
+      'a stated width with an equal minimum and no cell widths',
+      {
+        type: 'table',
+        content:
+          '<table style="width: 50px; min-width: 50px"><tr><td><p>a</p></td><td><p>b</p></td></tr></table>',
+      },
+      'html',
+    ],
+    [
+      'an opacity a whole percent would change',
+      { content: '<ul><li><p><span style="opacity: 0.504">a</span></p></li></ul>' },
+      'html',
+    ],
+    [
+      'a faded item a whole percent would hide',
+      { content: '<ul><li style="opacity: 0.004"><p>a</p></li></ul>' },
       'html',
     ],
     [
