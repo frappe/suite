@@ -12,7 +12,6 @@ from typing import NotRequired, TypedDict
 
 import frappe
 
-
 # Who people search lists: a `tabUser` condition. The narrowest rule the tickets allow. A disabled
 # account and a user without the Suite User role cannot use Suite, so nobody picks them. The role is
 # the test, not `user_type`: it does not open Desk, so a Suite user is a Website User like any
