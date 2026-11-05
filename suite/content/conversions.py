@@ -179,47 +179,6 @@ def convert_document(app: str, node: str) -> str | None:
     return None
 
 
-# Run by hand: bench --site <site> execute suite.content.conversions.trial --kwargs "{'app': 'slides'}"
-def trial(app: str) -> dict[str, str]:
-    """Answer what converting would do to each waiting document, by name, writing nothing."""
-    version = conversion_of(app).version
-    held_job = getattr(frappe.local, "job", None)
-    # The child runs only in a job, and nothing but this command reaches it from outside one
-    frappe.local.job = frappe._dict(job_name="conversion_trial")
-    answers: dict[str, str] = {}
-    try:
-        page = convert.pending_page(app, version, None)
-        while page:
-            answers |= {row.name: trial_answer(app, row.node) for row in page}
-            page = convert.pending_page(app, version, page[-1])
-    finally:
-        frappe.local.job = held_job
-
-    return answers
-
-
-def trial_answer(app: str, node: str) -> str:
-    """Convert and check `node`'s old body as a run would, and stop before anything is written."""
-    conversion = conversion_of(app)
-    old = conversion.read_old(node)
-    if old is None:
-        return "not read"
-
-    converted = convert.convert(conversion.build, conversion.version, old.legacy)
-    if converted is None:
-        raise RuntimeError("the converter can't run here: it needs Node and the built bundle")
-
-    if isinstance(converted, convert.Refused):
-        return f"refused {converted.reason}: {converted.detail}"
-
-    try:
-        conversion.check(node, old, converted)
-    except ConversionRefused as refused:
-        return f"refused {refused.outcome}: {refused.reason}"
-
-    return "converted"
-
-
 def refused_outcome(
     app: str, node: str, fingerprint: str, reason: str, started: datetime, detail: str | None = None
 ) -> str | None:
