@@ -116,6 +116,7 @@ export function showList({
   openThread = null as string | null,
   isRefusingResolve = false,
   isRefusingEdit = false,
+  isRefusingRemove = false,
   refusedReplies = 0,
   heldReplies = Promise.resolve(),
   canEditDocument = false,
@@ -196,6 +197,10 @@ export function showList({
     },
     remove: async (name: string) => {
       await record(`remove ${name}`)
+      if (isRefusingRemove) {
+        throw new Error('The comment was not deleted.')
+      }
+
       changeListed((listedThread) => ({
         ...listedThread,
         comments: listedThread.comments.filter((listedComment) => listedComment.name !== name),

@@ -276,6 +276,16 @@ describe('editing and deleting a comment', () => {
     ])
   })
 
+  it('brings an open thread back, still open, when deleting its only comment is refused', async () => {
+    const { host } = showList({ isRefusingRemove: true, canEditDocument: true })
+    await click(rowButton(host, 'Looks good overall'))
+
+    await pick(host, 'Looks good overall', 'Delete')
+    await settled()
+
+    expect([openRows(host), errors]).toEqual([['whole'], ['The comment was not deleted.']])
+  })
+
   it('saves no edit over the limit, keeping the box and words and saying why, but saves one at it', async () => {
     const { host, asked } = showList()
     await click(rowButton(host, 'Is this right?'))

@@ -421,7 +421,7 @@ async function toggleResolved(thread: DocumentThread) {
   if (isChanged && isResolving) {
     offerUndoResolve(thread)
   } else if (!isChanged && wasOpen) {
-    openThread.value = thread.name
+    openThread.value ??= thread.name
   }
 }
 
@@ -466,8 +466,14 @@ async function deleteComment(comment: ThreadComment) {
     confirmLabel: 'Delete',
     destructive: true,
   })
-  if (isConfirmed) {
-    await props.actions.removeComment(comment.name)
+  if (!isConfirmed) {
+    return
+  }
+
+  const wasOpen = openThread.value
+  const isRemoved = await props.actions.removeComment(comment.name)
+  if (!isRemoved) {
+    openThread.value ??= wasOpen
   }
 }
 
