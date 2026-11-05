@@ -8,9 +8,11 @@ gets one media node below that deck, holding the same bytes, and the body is
 repointed with `remap_media`. The `File` rows stay, so a body it could not
 convert still renders through the legacy proxy.
 
-A deck that fails rolls back alone and the patch raises once every deck has had
-its turn, so Frappe does not record it and the next migrate tries again. A
-converted body names no legacy URL, so a second run has nothing to do for it.
+A deck that fails rolls back alone and keeps its legacy URLs, and the migrate
+carries on. Frappe records the patch, so no later migrate retries it: each
+failure lands in the Error Log, and the retry is
+`bench --site <site> execute suite.slides.patches.move_file_media_to_drive.execute`.
+A converted body names no legacy URL, so a second run has nothing to do for it.
 """
 
 import io
@@ -25,21 +27,24 @@ LEGACY_PREFIXES = ("/private/files/", "/files/")
 
 
 def execute():
+    retry = f"bench --site {frappe.local.site} execute suite.slides.patches.move_file_media_to_drive.execute"
     failed = []
     for deck in frappe.get_all("Presentation", filters={"node": ("is", "set")}, fields=["name", "node"]):
         try:
             convert_deck(deck.name, deck.node)
             frappe.db.commit()
-        except Exception:
+        except Exception as error:
             frappe.db.rollback()
             frappe.log_error(
-                f"Slides: could not move the media of {deck.name} to Drive", frappe.get_traceback()
+                f"Slides: could not move the media of {deck.name} to Drive",
+                f"{error!r}\n\nRetry with: {retry}\n\n{frappe.get_traceback()}",
             )
             frappe.db.commit()
             failed.append(deck.name)
     if failed:
-        raise frappe.ValidationError(
-            f"Slides: could not move the media of {', '.join(failed)} to Drive. See the Error Log."
+        print(
+            f"Slides: could not move the media of {', '.join(failed)} to Drive. "
+            f"See the Error Log. Retry with: {retry}"
         )
 
 
