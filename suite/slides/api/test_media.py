@@ -170,6 +170,27 @@ class TestSlidesMedia(IntegrationTestCase):
     def test_a_picture_above_the_pixel_limit_is_stored_as_uploaded(self):
         self.assertStoredAsUploaded(encoded(Image.new("1", (8100, 8100))), "poster.png")
 
+    def test_a_picture_webp_would_change_is_stored_as_uploaded(self):
+        grey_ramp = Image.new("I;16", (7, 1))
+        grey_ramp.putdata([0, 1, 2, 64, 128, 200, 255])
+        colour_key = Image.new("RGB", (8, 8), (1, 2, 3))
+        for filename, mimetype, content in (
+            ("ramp.png", "image/png", encoded(grey_ramp)),
+            ("key.png", "image/png", encoded(colour_key, transparency=(1, 2, 3))),
+            ("print.jpg", "image/jpeg", encoded(Image.new("CMYK", (8, 8), (255, 0, 0, 0)), "JPEG")),
+        ):
+            with self.subTest(filename):
+                self.assertStoredAsUploaded(content, filename, mimetype)
+
+    def test_a_grey_png_keeps_its_transparent_shade_as_a_webp(self):
+        grey = Image.new("L", (64, 8), 200)
+        grey.paste(10, (0, 0, 32, 8))
+
+        stored = self.stored_picture(encoded(grey, transparency=10), "grey.png", "image/png").convert("RGBA")
+
+        self.assertEqual(stored.getpixel((8, 4))[3], 0)
+        self.assertEqual(stored.getpixel((56, 4))[3], 255)
+
     def test_a_multi_picture_jpeg_is_stored_as_a_webp_of_its_first_picture(self):
         first, second = gradient((32, 16)), gradient((8, 8))
         jpeg = encoded(first, "MPO", save_all=True, append_images=[second])

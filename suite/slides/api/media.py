@@ -21,6 +21,9 @@ MEDIA_TYPES = ("image/", "video/")
 WEBP_SOURCE_TYPES = ("image/png", "image/jpeg")
 # Pillow reports a multi-picture JPEG, as phones and cameras write, as MPO.
 WEBP_SOURCE_FORMATS = ("PNG", "JPEG", "MPO")
+# The 8-bit modes the encoder keeps faithfully. It brings 16-bit grey out nearly
+# white, and it converts CMYK to RGB without using the picture's colour profile.
+WEBP_SOURCE_MODES = ("1", "L", "LA", "P", "RGB", "RGBA")
 # Decoding runs inside the web request at about 4 bytes a pixel, and the header
 # gives the size before any of that. This passes a 61 Mpx camera's photo. A larger
 # one is stored as uploaded, as is any picture WebP cannot hold.
@@ -71,6 +74,9 @@ def _encode_webp(picture: bytes) -> bytes | None:
         if (
             image.format not in WEBP_SOURCE_FORMATS
             or animated
+            or image.mode not in WEBP_SOURCE_MODES
+            # The encoder drops an RGB PNG's transparent colour (tRNS). Other modes keep theirs.
+            or (image.mode == "RGB" and "transparency" in image.info)
             or width * height > MAX_WEBP_SOURCE_PIXELS
             or not _is_whole(picture, image.format)
         ):
