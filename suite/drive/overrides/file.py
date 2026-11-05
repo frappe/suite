@@ -52,29 +52,8 @@ class File(FrappeFile):
         self._validate_content_link()
         if self.is_new() and not self.flags.file_created:
             return super().validate()
-        # A File row grants read access to whatever its file_url names, so only Drive's
-        # storage flows may repoint it.
-        if (
-            not self.is_new()
-            and self.has_value_changed("file_url")
-            and not (self.flags.file_created or self.flags.drive_disk_rename)
-        ):
-            frappe.throw("Only Drive can change the URL of a file.", frappe.ValidationError)
-        # A Link row's url is a web address that no storage check has seen. Served as a
-        # file, it would read whatever that address resolves to on the site.
-        if (
-            not self.is_new()
-            and self._link_type_changed()
-            and not (self.flags.file_created or self.flags.drive_disk_rename)
-        ):
-            frappe.throw("A file cannot become a link, or a link a file.", frappe.ValidationError)
-        if (
-            not self.is_new()
-            and not self.flags.file_created
-            and self.has_value_changed("file_url")
-            and not self._not_in_disk()
-        ):
-            self.manager.get_local_path(self.file_url)
+        if not self.is_new():
+            self._validate_storage_fields()
         # Blob-backed Drive files must be private: they're served only through
         # Drive's permission layer, never the public /files/ path. Folders, links
         # and content-doctype files have no on-disk blob, and adopted framework
@@ -86,8 +65,23 @@ class File(FrappeFile):
             and not self.is_private
         ):
             frappe.throw("Drive files must be private.", frappe.ValidationError)
+
+    def _validate_storage_fields(self):
+        """Fields of an existing row that only Drive's storage flows may change."""
+        storage_flow = self.flags.file_created or self.flags.drive_disk_rename
+        if self.has_value_changed("file_url"):
+            # A File row grants read access to whatever its file_url names, so only
+            # Drive's storage flows may repoint it.
+            if not storage_flow:
+                frappe.throw("Only Drive can change the URL of a file.", frappe.ValidationError)
+            if not self.flags.file_created and not self._not_in_disk():
+                self.manager.get_local_path(self.file_url)
+        # A Link row's url is a web address that no storage check has seen. Served as a
+        # file, it would read whatever that address resolves to on the site.
+        if self._link_type_changed() and not storage_flow:
+            frappe.throw("A file cannot become a link, or a link a file.", frappe.ValidationError)
         # file_name is coupled to the blob path; only rename()/move() may change it.
-        if not self.is_new() and self.has_value_changed("file_name") and not self.flags.drive_disk_rename:
+        if self.has_value_changed("file_name") and not self.flags.drive_disk_rename:
             frappe.throw(
                 "Rename Drive files from the Drive interface, not the File form.",
                 frappe.ValidationError,
