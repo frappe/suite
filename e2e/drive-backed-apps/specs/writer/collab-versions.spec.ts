@@ -307,17 +307,6 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
-	test("the panels toggle from their keys", async ({ owner }) => {
-		const { page } = owner;
-		await openWriterDocument(page, node);
-		await page.keyboard.press("ControlOrMeta+Alt+Shift+KeyH");
-		await expect(page.getByRole("complementary", { name: "Versions" })).toBeVisible();
-		await page.keyboard.press("ControlOrMeta+Alt+Shift+KeyA");
-		await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
-		await page.keyboard.press("ControlOrMeta+Alt+Shift+KeyA");
-		await expect(page.getByRole("complementary")).toHaveCount(0);
-	});
-
 	test("the Versions panel opens on the right and moves the text with it", async ({
 		owner,
 	}) => {

@@ -59,7 +59,6 @@ import {
   type DocumentSaveState,
   type LeaveGuardOptions,
 } from './navigation'
-import { panelPressed } from './panelShortcuts'
 import { goToPlace, readingPlace } from './readingPlace'
 import {
   othersPresentWarning,
@@ -569,26 +568,14 @@ function togglePanel(name: DocumentPanel) {
   panel.value = panel.value === name ? null : name
 }
 
-// Works from anywhere in the page, unless a dialog or menu over it takes the keys
-useEventListener(document, 'keydown', (event: KeyboardEvent) => {
-  const pressed = panelPressed(event)
-  if (pressed && shownPanels.value.includes(pressed) && !isOverlayOpen()) {
-    event.preventDefault()
-    togglePanel(pressed)
-  }
-})
-
-function isOverlayOpen() {
-  return !!document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-}
-
 // Escape leaves a version shown, unless a dialog or menu over it takes the key
 useEventListener(document, 'keydown', (event: KeyboardEvent) => {
+  const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
   if (
     event.key === 'Escape' &&
     !event.defaultPrevented &&
     preview.value.version &&
-    !isOverlayOpen()
+    !isOverlayOpen
   ) {
     void backToCurrent()
   }

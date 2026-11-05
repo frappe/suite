@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
-import { computed, h, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { PANEL_BUTTONS, type DocumentPanel, type DocumentSession } from '@/apps/drive'
-import { formatShortcut } from '@/apps/writer/components/core-editor/formatting'
 import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './exports'
 import { waitForFocusBack } from './focusBack'
-import { PANEL_SHORTCUTS } from './panelShortcuts'
 
 /**
  * The Writer document's menu in the Drive header: the side panels, download as DOCX or
@@ -91,10 +89,6 @@ function panelOptions() {
     label: __(PANEL_BUTTONS[name].label),
     icon: PANEL_BUTTONS[name].icon,
     selected: props.panel === name,
-    slots: {
-      suffix: () =>
-        h('span', { class: 'ms-6 text-sm text-ink-gray-5' }, formatShortcut(PANEL_SHORTCUTS[name])),
-    },
     onClick: () => emit('togglePanel', name),
   }))
 }

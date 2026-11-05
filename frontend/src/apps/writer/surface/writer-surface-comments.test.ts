@@ -121,27 +121,6 @@ describe('commenting from the editor', () => {
     ])
   })
 
-  it('toggles each panel with its keys from anywhere, and has no panel buttons in the header', async () => {
-    const { root } = await openedOnText()
-    const panelShown = () => root.querySelector('aside')?.getAttribute('aria-label') ?? null
-    function press(code: string) {
-      const keys = { code, ctrlKey: true, altKey: true, shiftKey: true, bubbles: true }
-      document.body.dispatchEvent(new KeyboardEvent('keydown', keys))
-      return settled()
-    }
-
-    const shown = []
-    for (const code of ['KeyA', 'KeyH', 'KeyH']) {
-      await press(code)
-      shown.push(panelShown())
-    }
-
-    expect([shown, root.querySelector('header [data-panel]')]).toEqual([
-      ['Comments', 'Versions', null],
-      null,
-    ])
-  })
-
   it('lights the text of a pointed-at row, then shows it darker and in view once opened', async () => {
     const { root, editor } = await openedOnText((doc) => [threadOnWorld(doc)])
     root.querySelector<HTMLElement>('[data-open-comments]')!.click()
