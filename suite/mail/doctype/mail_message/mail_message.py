@@ -56,6 +56,7 @@ from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.quoted_content import strip_quote_trail
+from suite.mail.utils.reaction import MAILING_LIST_PROPERTIES, from_mailing_list, read_reactions
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
 from suite.utils.dt import get_utc_now
@@ -89,6 +90,7 @@ EMAIL_PROPERTIES = [
     "textBody",
     "bodyValues",
     "attachments",
+    *MAILING_LIST_PROPERTIES,
 ]
 
 
@@ -1446,6 +1448,7 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
         "has_attachment": cint(message["hasAttachment"]),
         "keywords": json.dumps(message["keywords"], indent=4),
         "received_after": time_diff_in_seconds(received_at, sent_at),
+        "mailing_list": cint(from_mailing_list(message)),
     }
 
     for key in ["sender", "from"]:
@@ -1787,8 +1790,15 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
 
                 notify_candidates = []
                 mailboxes_to_reload = set()
+                reactions = []
 
                 for message in messages:
+                    # A reaction is a mark on a message rather than mail to read: no push, and read
+                    # as it lands so that nothing counts it, though a chip is new on the thread.
+                    if not message["draft"] and not message["seen"] and read_reactions(message):
+                        reactions.append(message["id"])
+                        continue
+
                     # Mail from a sender nobody has decided on yet waits quietly, as it did in the
                     # Screener folder: no push until the sender is allowed.
                     if message["draft"] or message["seen"] or is_unscreened_message(message):
@@ -1836,6 +1846,11 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
 
                 if mailboxes_to_reload:
                     frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
+
+                if reactions:
+                    logger.info("marking-reactions-read", count=len(reactions))
+                    try_set_seen(account, reactions, True)
+                    frappe.publish_realtime("mail_changed", user=user)
 
         if updated_ids := _without_classification_echoes(account, client, result.updated):
             logger.info("messages-updated", count=len(updated_ids))

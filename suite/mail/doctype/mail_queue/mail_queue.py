@@ -99,6 +99,7 @@ class MailQueue(OwnerFromUser, Document):
         priority: DF.Literal["", "Low", "Normal", "High"]
         queued_at: DF.Datetime | None
         raw_message: DF.Code | None
+        reaction: DF.Data | None
         recipients: DF.JSON | None
         reply_to: DF.JSON | None
         retries: DF.Int
@@ -187,6 +188,7 @@ class MailQueue(OwnerFromUser, Document):
         doc.text_body = (
             to_flowed(kwargs.text_body) if kwargs.text_body else html_to_text(kwargs.html_body, flowed=True)
         ) or None
+        doc.reaction = kwargs.reaction
         doc.forwarded_from_id = kwargs.forwarded_from_id
         doc.message_id = kwargs.message_id
         doc.id = kwargs.id
@@ -641,9 +643,10 @@ class MailQueue(OwnerFromUser, Document):
             self.in_reply_to = self.in_reply_to.strip("<>")
 
     def validate_in_reply_to_id(self) -> None:
-        """Validates the In Reply To ID."""
+        """Validates the In Reply To ID, the message marked answered once this one is sent. A
+        reaction leaves it unset: it answers nothing."""
 
-        if self.in_reply_to and not self.in_reply_to_id:
+        if self.in_reply_to and not self.in_reply_to_id and not self.reaction:
             try:
                 client = get_account_client(self.account)
                 with client.batch() as b:
@@ -807,6 +810,7 @@ class MailQueue(OwnerFromUser, Document):
                         text_body=self.text_body,
                         html_body=self.html_body,
                         attachments=attachments,
+                        reaction=self.reaction,
                     )
                     draft_h = b.mail.email.set(create={draft_ref: draft})
 

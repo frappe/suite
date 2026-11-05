@@ -30,6 +30,12 @@ _Avoid_: Unsent mail
 A list row folding several conversations in a row from one sender.
 _Avoid_: Group, Bundle
 
+**Reaction**:
+An emoji a person puts on a message, shown as a chip under it rather than as a
+message of its own. It doesn't notify or count as unread, and once delivered it
+can't be taken back.
+_Avoid_: Emoji reply, Like
+
 ### Where mail lives
 
 **Folder**:
@@ -109,4 +115,3 @@ _Avoid_: Delete, Trash
   these, and what screening is called waits on its own decision (ticket 013).
 - **Outbox**: what it is for is undecided (ticket 020), so it has no definition
   here yet.
-- **Reaction**: being built; add it once it ships.

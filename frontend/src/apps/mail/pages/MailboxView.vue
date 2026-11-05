@@ -883,6 +883,8 @@ const keptRead = useKeptRead({
 const threadRows = computed(() =>
   keptRead.withKept(
     activeThreads.value.rows
+      // On the page only so that paging by row count holds (see get_threads).
+      .filter((row) => !('reaction_only' in row && row.reaction_only))
       .map((row) => threadRow(row, store.accountId))
       .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
       .map(withoutHeldDrafts),

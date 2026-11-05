@@ -35,6 +35,7 @@ from jmap.models.responses import SetResponse
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.store import Entity, get_data_store
 from suite.mail.utils import get_config, log_mail_error
+from suite.mail.utils.reaction import GMAIL_REACTION_TYPE, reaction_payload
 from suite.utils.user import is_system_manager
 
 # Gateway statuses a reverse proxy returns when the JMAP server behind it is down or overloaded,
@@ -1049,11 +1050,13 @@ def build_email_draft(
     text_body: str | None = None,
     html_body: str | None = None,
     attachments: list[dict] | None = None,
+    reaction: str | None = None,
 ) -> dict:
     """Builds an Email/set create payload for a draft.
 
     `recipients` rows carry type ("to"/"cc"/"bcc"), name, email; `attachments` rows carry
-    name, type, cid, blob_id, disposition; `reply_to` rows carry name, email.
+    name, type, cid, blob_id, disposition; `reply_to` rows carry name, email. `reaction` is the
+    emoji of a mail that is a reaction, its bodies being what a client with no chip shows instead.
     """
 
     from jmap.models.mail.create import validate_email_create
@@ -1115,10 +1118,19 @@ def build_email_draft(
         html_part = {"partId": "html", "type": "text/html"}
         draft["bodyValues"]["html"] = {"value": html_body, "charset": "utf-8", "isTruncated": False}
 
+    reaction_part = None
+    if reaction:
+        reaction_part = {"partId": "reaction", "type": GMAIL_REACTION_TYPE}
+        draft["bodyValues"]["reaction"] = {
+            "value": reaction_payload(reaction),
+            "charset": "utf-8",
+            "isTruncated": False,
+        }
+
     attachments = attachments or []
     inline_attachments = [a for a in attachments if a["disposition"] == "inline"]
     regular_attachments = [a for a in attachments if a["disposition"] != "inline"]
-    body_parts = [p for p in (text_part, html_part) if p]
+    body_parts = [p for p in (text_part, reaction_part, html_part) if p]
 
     if not body_parts:
         if attachments:
