@@ -6,7 +6,7 @@ from unittest.mock import patch
 import frappe
 import pycrdt
 
-from suite import drive
+from suite import content, drive
 from suite.content import compaction, conversions, convert, log
 from suite.drive._core import comments
 from suite.drive.framework import principals_for
@@ -15,7 +15,7 @@ from suite.slides import drive as slides_drive
 from suite.slides.api.slides import save_slides
 from suite.slides.content import APP, CONVERTER_BUILD
 from suite.slides.content.tests.support import OWNER, LoggedDeckCase, delete_log, opened
-from suite.slides.doctype.presentation.presentation import get_public_presentation
+from suite.slides.doctype.presentation.presentation import apply_theme, get_public_presentation
 from suite.slides.patches import move_file_media_to_drive
 
 
@@ -289,6 +289,16 @@ class TestConversion(ConversionCase):
         self.assertIsNone(conversions.conversion_of(APP).read_old(node))
 
 
+def seen_only_by_a_locking_read(find):
+    def read(app: str, node: str, for_update: bool = False):
+        if for_update:
+            return find(app, node, for_update=True)
+
+        return None
+
+    return read
+
+
 class TestOldPathsOnAConvertedDeck(ConversionCase):
     def test_save_slides_is_refused_and_writes_nothing(self):
         node = self.old_deck([text_box("box")])
@@ -315,6 +325,83 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
 
         self.assertIn(waiting, moved)
         self.assertNotIn(converted_node, moved)
+
+    def test_a_save_that_changes_a_slide_is_refused_and_writes_nothing(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        before = self.rows(node)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.slides[0].elements = "[]"
+
+        with self.assertRaises(drive.DriveConflict):
+            deck.save()
+
+        self.assertEqual(self.rows(node), before)
+
+    def test_turning_a_converted_deck_composite_is_refused(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.is_composite = 1
+
+        with self.assertRaises(drive.DriveConflict):
+            deck.save()
+
+    def test_apply_theme_is_refused_on_a_converted_deck(self):
+        node = self.old_deck([])
+        self.convert(node)
+        before = self.rows(node)
+
+        with self.assertRaises(drive.DriveConflict):
+            apply_theme(slides_drive.docname_for_node(node), "any theme")
+
+        self.assertEqual(self.rows(node), before)
+
+    def test_a_theme_alone_still_saves_on_a_converted_deck(self):
+        node = self.old_deck([text_box("box")])
+        self.convert(node)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.theme = None
+
+        deck.save()
+
+    def test_a_write_decides_on_the_log_it_reads_under_the_lock(self):
+        node = self.old_deck([text_box("box")])
+        waiting = self.old_deck([text_box("box")])
+        self.convert(node)
+        docname = slides_drive.docname_for_node(node)
+        before = self.rows(node)
+        modified = str(frappe.db.get_value("Presentation", docname, "modified"))
+        moved: list[str] = []
+
+        # A conversion that landed after this transaction's snapshot shows only to a locking read
+        with (
+            patch.object(content, "find", seen_only_by_a_locking_read(content.find)),
+            patch.object(
+                move_file_media_to_drive, "convert_deck", lambda docname, node: moved.append(node) or {}
+            ),
+        ):
+            with self.assertRaises(drive.DriveConflict):
+                save_slides(docname, [{"client_id": "new", "elements": "[]"}], modified)
+
+            move_file_media_to_drive.execute()
+
+        self.assertEqual(self.rows(node), before)
+        self.assertIn(waiting, moved)
+        self.assertNotIn(node, moved)
+
+
+class TestVersionsOfADeck(ConversionCase):
+    def test_a_version_keeps_how_long_a_slide_waits(self):
+        node = self.old_deck([text_box("box")])
+        docname = slides_drive.docname_for_node(node)
+        frappe.db.set_value("Slide", {"parent": docname}, "advance_after", 5)
+        stored, _mime = slides_drive.version_bytes(docname)
+        frappe.db.set_value("Slide", {"parent": docname}, "advance_after", None)
+
+        slides_drive.restore_version(docname, stored)
+
+        self.assertEqual(frappe.db.get_value("Slide", {"parent": docname}, "advance_after"), "5")
 
 
 class TestDeckRoute(ConversionCase):

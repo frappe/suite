@@ -13,7 +13,7 @@ from frappe.model.document import Document
 from frappe.query_builder.functions import Count
 from frappe.utils import cstr, flt
 
-from suite import content, drive
+from suite import drive
 from suite.content import log
 from suite.content.conversions import conversion_status
 from suite.slides import drive as slides_drive
@@ -27,6 +27,13 @@ NODE_FIELD = slides_drive.NODE_FIELD
 LOGGED_FIELDS = ("content",)
 
 
+def body_of(deck: Document) -> str:
+    """Write out what a converted deck's rows must keep, to compare: its slides and what makes it a composite."""
+    slides = [[slide.get(field) for field in slides_drive.SLIDE_BODY_FIELDS] for slide in deck.slides]
+    references = [reference.presentation for reference in deck.reference_presentations]
+    return json.dumps([slides, references, deck.is_composite], default=str)
+
+
 class Presentation(drive.DriveContent, Document):
     """One deck.
 
@@ -38,12 +45,8 @@ class Presentation(drive.DriveContent, Document):
     """
 
     def validate(self):
-        if (
-            not self.is_new()
-            and any(self.has_value_changed(field) for field in LOGGED_FIELDS)
-            and content.find(APP, self.node, for_update=True)
-        ):
-            raise drive.DriveConflict(_("This document saves as you edit; reload it to keep editing"))
+        if not self.is_new() and self.body_changed():
+            slides_drive.refuse_row_write(self.node)
 
         self.validate_advance_after()
 
@@ -54,6 +57,13 @@ class Presentation(drive.DriveContent, Document):
         # §6.6: you may reference what you can read. Nothing is copied and
         # nothing is forced public.
         slides_drive.refuse_unreadable_references(self)
+
+    def body_changed(self) -> bool:
+        """Whether this save writes the deck's body; the theme and Drive's fields aren't part of it."""
+        if body_of(self) != body_of(self.get_doc_before_save()):
+            return True
+
+        return any(self.has_value_changed(field) for field in LOGGED_FIELDS)
 
     def validate_advance_after(self):
         for row in self.slides:
@@ -350,11 +360,24 @@ def update_theme(name: str, theme: str):
     return {"modified": presentation.modified, "base_modified": base_modified}
 
 
+def first_layout(layouts: list, theme_node: str) -> dict:
+    """Copy the layout a new deck starts from: a system template's first two are its covers."""
+    is_system = is_system_template(slides_drive.node_title_of(theme_node))
+    first = SYSTEM_TEMPLATE_FIRST_LAYOUT if is_system and len(layouts) > SYSTEM_TEMPLATE_FIRST_LAYOUT else 0
+    slide: dict = {}
+    for field in slides_drive.SLIDE_BODY_FIELDS:
+        if field != "thumbnail":
+            slide[field] = layouts[first].get(field)
+
+    return slide
+
+
 @frappe.whitelist(methods=["POST"])
 def apply_theme(name: str, theme: str) -> dict:
     """Turn a new deck's blank slide into the theme's first layout; any other deck is refused."""
     deck_node = slides_drive.node_of(name)
     drive.check(deck_node, drive.EDIT)
+    slides_drive.refuse_row_write(deck_node)
     if slides_drive.node_is_template(deck_node):
         frappe.throw(_("A template cannot take a theme"), frappe.ValidationError)
 
@@ -367,12 +390,7 @@ def apply_theme(name: str, theme: str) -> dict:
     if not layouts:
         frappe.throw(_("This theme has no slides to start from"), frappe.ValidationError)
 
-    is_system = is_system_template(slides_drive.node_title_of(theme_node))
-    first = SYSTEM_TEMPLATE_FIRST_LAYOUT if is_system and len(layouts) > SYSTEM_TEMPLATE_FIRST_LAYOUT else 0
-    slide: dict = {}
-    for field in slides_drive.SLIDE_BODY_FIELDS:
-        if field != "thumbnail":
-            slide[field] = layouts[first].get(field)
+    slide = first_layout(layouts, theme_node)
 
     elements = slides_drive.elements_of(slide)
     remap_element_ids(elements)

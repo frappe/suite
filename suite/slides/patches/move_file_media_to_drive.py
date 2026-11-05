@@ -23,7 +23,7 @@ import io
 
 import frappe
 
-from suite import content, drive
+from suite import drive
 from suite.content import tables
 from suite.slides import drive as slides_drive
 from suite.slides.api.file import get_reference_presentations
@@ -38,7 +38,9 @@ def execute():
     # The first migrate reaches this before after_migrate makes the log tables, and then no deck has a log
     has_logs = tables.table(APP, "doc") in frappe.db.get_tables(cached=False)
     for deck in frappe.get_all("Presentation", filters={"node": ("is", "set")}, fields=["name", "node"]):
-        if has_logs and content.find(APP, deck.node):
+        if has_logs and slides_drive.holds_log(deck.node):
+            # Lets go of the row it locked
+            frappe.db.rollback()
             continue
 
         try:

@@ -75,6 +75,7 @@ from frappe import _
 from suite import content, drive
 from suite.content import checkpoints, with_content
 from suite.slides.content import APP, SCHEMA, blank_state
+from suite.slides.content.conversion import old_row
 from suite.slides.content.files import MEDIA_ID
 
 DOCTYPE = "Presentation"
@@ -108,11 +109,24 @@ SLIDE_BODY_FIELDS = (
     "transition",
     "transition_duration",
     "fade_unmatched_elements",
+    "advance_after",
 )
 
 
 class UnreadableBody(frappe.ValidationError):
     """One deck body Slides could not read."""
+
+
+def holds_log(node: str) -> bool:
+    """Lock `node`'s row, as a conversion does, and say whether its log is the deck now."""
+    old_row(node, lock=True)
+    return bool(content.find(APP, node, for_update=True))
+
+
+def refuse_row_write(node: str) -> None:
+    """Refuse a write to `node`'s rows once its log is the deck: an old tab's save would be lost on them."""
+    if holds_log(node):
+        raise drive.DriveConflict(_("This document saves as you edit; reload it to keep editing"))
 
 
 def create_empty(node: str) -> str:
