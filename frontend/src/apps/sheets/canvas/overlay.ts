@@ -12,6 +12,16 @@ import type { CellFormat } from './types.js'
 // and 'bottom' baselines sit on (above / below the alphabetic baseline).
 const FALLBACK = { ascent: 0.96875, descent: 0.2421875, cap: 0.727, emAscent: 0.8, emDescent: 0.2 }
 
+// The device pixel row, from the canvas's top, that the canvas draws a
+// baseline at logical `y` on. The renderer scales by k = devicePixelRatio ×
+// zoom (renderer.ts); the canvas keeps that scale in single precision, maps
+// `y` through it in single precision and rounds to the nearest row, a half
+// up. The same sum in double precision can land just under a half pixel
+// and round to the row above.
+function canvasRow(k: number, y: number): number {
+  return Math.floor(Math.fround(Math.fround(k) * Math.fround(y)) + 0.5)
+}
+
 /** The in-cell editor's <textarea>, added to `parent`. */
 export interface Overlay extends EditorOverlay {
   remove(): void
@@ -158,7 +168,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
     const drawn = _metrics(_font(size0), size0)
     const css = _metrics(_font(size), size)
     const multi = wrap || openLines > 1
-    let baseline = _canvasBaseline(h / zoom, fmt, multi, drawn) * zoom
+    const baseline0 = _canvasBaseline(h / zoom, fmt, multi, drawn)
+    let baseline = baseline0 * zoom
     // Where CSS puts the baseline in a line box: measured when the page has
     // layout (the browser rounds its font metrics and snaps the line, so the
     // canvas's metrics can be half a pixel off); from the metrics otherwise.
@@ -172,7 +183,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     if (_layoutBaseline(lineH) !== null) {
       const dpr = globalThis.devicePixelRatio || 1
       const top = parent.getBoundingClientRect().top
-      const row = Math.round(top * dpr) + Math.round((y + baseline) * dpr)
+      const row = Math.round(top * dpr) + canvasRow(dpr * zoom, y / zoom + baseline0)
       baseline = (row + 0.25) / dpr - top - y
     }
     let padTop = baseline - inner - baselineInLine(lineH)

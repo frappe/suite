@@ -241,10 +241,17 @@ describe('the in-cell editor draws text where the grid does', () => {
 describe('on a laid-out page', () => {
   const PAGE_TOP = 73 // grid's top in the page, CSS px
 
-  // The browser's baseline in a line box: the metrics' value snapped to a
-  // half pixel, as Chrome lays lines out (not what the metrics give).
-  const browserBaseline = (lineH: number, size: number) =>
-    Math.round(((lineH - size * (ASC + DESC)) / 2 + size * ASC) * 2) / 2
+  // The browser's baseline in a line box: the metrics' value rounded to a
+  // whole device pixel, as Chrome lays a line out (13px text in a 16px line
+  // has it 13 device px down at 1x, 16 at 1.25x, 19 at 1.5x, 25 at 2x).
+  const browserBaseline = (lineH: number, size: number, dpr: number) =>
+    Math.round(((lineH - size * (ASC + DESC)) / 2 + size * ASC) * dpr) / dpr
+
+  // The device row the canvas draws a baseline on: Chrome keeps the canvas's
+  // scale (dpr × zoom) and maps the baseline through it in single precision,
+  // then rounds to the nearest row.
+  const canvasRow = (baseline: number, k: number) =>
+    Math.floor(Math.fround(Math.fround(k) * Math.fround(baseline)) + 0.5)
 
   function layOut(dpr: number) {
     vi.stubGlobal('devicePixelRatio', dpr)
@@ -265,7 +272,11 @@ describe('on a laid-out page', () => {
       if (this === document.body) top = PAGE_TOP
       const probe = this.parentElement as HTMLElement | null
       if (this.tagName === 'SPAN' && probe?.getAttribute('aria-hidden') === 'true')
-        top = browserBaseline(parseFloat(probe.style.lineHeight), parseFloat(probe.style.fontSize))
+        top = browserBaseline(
+          parseFloat(probe.style.lineHeight),
+          parseFloat(probe.style.fontSize),
+          dpr,
+        )
       return { top, left: 0, right: 0, bottom: top, width: 0, height: 0, x: 0, y: top } as DOMRect
     })
     return (set: number) => Math.max(1, Math.floor(set * dpr)) / dpr
@@ -279,35 +290,45 @@ describe('on a laid-out page', () => {
     'two lines': { value: 'one\ntwo', h: 40 },
   }
 
+  function expectOnCanvasPixels(c: Case, dpr: number, zoom: number) {
+    const usedBorder = layOut(dpr)
+    const draw = paint(c)[0]
+    const { s } = edit({ ...c, zoom })
+    const used = usedBorder(px(s.borderTopWidth))
+    // Text edge: where the textarea's content box starts or ends.
+    const left = px(s.left) + used + px(s.paddingLeft)
+    const right = px(s.left) + px(s.width) - used - px(s.paddingRight)
+    const edge =
+      s.textAlign === 'right' ? right : s.textAlign === 'center' ? (left + right) / 2 : left
+    expect(edge).toBeCloseTo(draw.x * zoom, 5)
+    // Baseline: the browser draws the editor's on the device pixel it falls
+    // in; the canvas rounds its own to the nearest one.
+    const lineH = px(s.lineHeight)
+    const editorBase =
+      (PAGE_TOP +
+        px(s.top) +
+        used +
+        px(s.paddingTop) +
+        browserBaseline(lineH, px(s.fontSize), dpr)) *
+      dpr
+    const canvasBase = Math.round(PAGE_TOP * dpr) + canvasRow(draw.baseline, dpr * zoom)
+    expect(editorBase - canvasBase).toBeGreaterThanOrEqual(0)
+    expect(editorBase - canvasBase).toBeLessThan(0.5)
+  }
+
   for (const dpr of [1, 1.25, 1.5, 2]) {
     for (const zoom of [1, 1.25]) {
       for (const [name, c] of Object.entries(LAID_OUT)) {
-        it(`${name} at ${dpr}x, zoom ${zoom}`, () => {
-          const usedBorder = layOut(dpr)
-          const draw = paint(c)[0]
-          const { s } = edit({ ...c, zoom })
-          const used = usedBorder(px(s.borderTopWidth))
-          // Text edge: where the textarea's content box starts or ends.
-          const left = px(s.left) + used + px(s.paddingLeft)
-          const right = px(s.left) + px(s.width) - used - px(s.paddingRight)
-          const edge =
-            s.textAlign === 'right' ? right : s.textAlign === 'center' ? (left + right) / 2 : left
-          expect(edge).toBeCloseTo(draw.x * zoom, 5)
-          // Baseline: the browser draws the editor's on the device pixel it
-          // falls in; the canvas rounds its own to the nearest one.
-          const lineH = px(s.lineHeight)
-          const editorBase =
-            (PAGE_TOP +
-              px(s.top) +
-              used +
-              px(s.paddingTop) +
-              browserBaseline(lineH, px(s.fontSize))) *
-            dpr
-          const canvasRow = Math.round(PAGE_TOP * dpr) + Math.round(draw.baseline * zoom * dpr)
-          expect(editorBase - canvasRow).toBeGreaterThanOrEqual(0)
-          expect(editorBase - canvasRow).toBeLessThan(0.5)
-        })
+        it(`${name} at ${dpr}x, zoom ${zoom}`, () => expectOnCanvasPixels(c, dpr, zoom))
       }
     }
   }
+
+  it('a baseline on an exact half device pixel at 1x, zoom 0.7', () => {
+    // 10px text at the bottom of a 27px row has its baseline at logical 45.
+    // The canvas maps that to 0.7 × 45 = 31.5 and rounds up; the same sum
+    // from the zoomed numbers in double precision is 31.4999…
+    const c: Case = { value: 'Low', fmt: { valign: 'bottom', fontSize: 10 }, h: 27 }
+    expectOnCanvasPixels(c, 1, 0.7)
+  })
 })
