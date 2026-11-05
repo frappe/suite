@@ -60,6 +60,18 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         row = frappe.db.get_value("Slide", self.slide, ["background", "elements"], as_dict=True)
         return row.background, frappe.parse_json(row.elements)
 
+    def reading_the_file_raises(self, error):
+        file_class = type(self.file)
+        read = file_class._read_content
+
+        def read_or_raise(file):
+            if file.name == self.file.name:
+                raise error
+
+            return read(file)
+
+        return patch.object(file_class, "_read_content", read_or_raise)
+
     def test_every_legacy_url_in_the_body_becomes_one_media_node_below_the_deck(self):
         url = self.file.file_url
         self.write_body(
@@ -189,3 +201,58 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         _, elements = self.body()
         for element in elements:
             self.assertEqual(frappe.db.get_value("Drive Node", element["src"], "parent_node"), node)
+
+    def test_a_file_that_cannot_be_read_fails_its_deck_and_the_others_still_convert(self):
+        suffix = frappe.generate_hash(6)
+        healthy = make_presentation(f"Healthy deck {suffix}")
+        healthy_file = make_private_image(healthy.name)
+        healthy_slide = healthy.slides[0].name
+        frappe.db.set_value(
+            "Slide",
+            healthy_slide,
+            "elements",
+            frappe.as_json([{"type": "image", "src": healthy_file.file_url}]),
+        )
+        self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
+
+        frappe.set_user("Administrator")
+        with deck_transactions():
+            with self.reading_the_file_raises(PermissionError("the disk refused")):
+                execute()
+
+            [healthy_element] = frappe.parse_json(frappe.db.get_value("Slide", healthy_slide, "elements"))
+            self.assertEqual(
+                frappe.db.get_value("Drive Node", healthy_element["src"], "parent_node"),
+                node_of(healthy.name),
+            )
+            _, elements = self.body()
+            self.assertEqual(elements[0]["src"], self.file.file_url)
+            logs = failure_logs(self.deck.name)
+            self.assertEqual(len(logs), 1)
+            self.assertIn("the disk refused", logs[0])
+            self.assertIn(RETRY, logs[0])
+
+            execute()
+
+        _, elements = self.body()
+        self.assertEqual(
+            frappe.db.get_value("Drive Node", elements[0]["src"], "parent_node"), node_of(self.deck.name)
+        )
+
+    def test_a_file_whose_bytes_are_lost_keeps_its_url_and_is_not_a_failure(self):
+        readable = make_private_image(self.deck.name)
+        self.write_body(
+            "#ffffffff",
+            [{"type": "image", "src": self.file.file_url}, {"type": "image", "src": readable.file_url}],
+        )
+
+        frappe.set_user("Administrator")
+        with deck_transactions(), self.reading_the_file_raises(FileNotFoundError("no bytes")):
+            execute()
+
+        _, (lost, converted) = self.body()
+        self.assertEqual(lost["src"], self.file.file_url)
+        self.assertEqual(
+            frappe.db.get_value("Drive Node", converted["src"], "parent_node"), node_of(self.deck.name)
+        )
+        self.assertEqual(failure_logs(self.deck.name), [])

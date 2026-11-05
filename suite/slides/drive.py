@@ -242,7 +242,17 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
     """Repoint this deck at the media nodes Drive copied for it (§8.9)."""
     if not mapping:
         return
-    for row in _slide_rows(docname):
+
+    # a locking read sees a save that landed since this transaction began
+    rows = frappe.db.get_values(
+        SATELLITE_DOCTYPE,
+        {"parent": docname, "parenttype": DOCTYPE, "parentfield": SATELLITE_PARENT_FIELD},
+        ["name", "idx", *SLIDE_BODY_FIELDS],
+        as_dict=True,
+        for_update=True,
+        order_by="idx asc",
+    )
+    for row in rows:
         values = {}
         background = mapping.get(row.get("background"))
         if background is not None:

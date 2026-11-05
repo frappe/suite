@@ -2,9 +2,9 @@
 
 Until T3-21 the editor uploaded media as private `File` rows and wrote their
 `/private/files/` URL into the body. Those open through the legacy proxy, and a
-media request carries no `X-Drive-Links`, so a guest on a share link saw no
-pictures. A guest on a public deck did. Build converted every deck it found;
-this converts the media uploaded after Build. Each URL a linked deck names
+media request carries no `X-Drive-Links`, so anyone reading only through a share
+link saw no pictures. A guest on a public deck did. Build converted every deck
+it found; this converts the media uploaded after Build. Each URL a linked deck names
 gets one media node below that deck, holding the same bytes, and the body is
 repointed with `remap_media`. The `File` rows stay, so a body it could not
 convert still renders through the legacy proxy.
@@ -13,7 +13,8 @@ A deck that fails rolls back alone and keeps its legacy URLs, and the migrate
 carries on. Frappe records the patch, so no later migrate retries it: each
 failure lands in the Error Log, and the retry is
 `bench --site <site> execute suite.slides.patches.move_file_media_to_drive.execute`.
-A converted body names no legacy URL, so a second run has nothing to do for it.
+A second run stores nothing twice: all a converted body still names by legacy URL
+is another deck's files and lost bytes, and those stay as they are.
 """
 
 import io
@@ -89,7 +90,7 @@ def file_content(url: str, docname: str) -> tuple[bytes | None, str]:
         file = frappe.get_doc("File", name)
         try:
             content = file.get_content()
-        except OSError:
+        except FileNotFoundError:
             # the row outlived its bytes; the body keeps the URL it had
             return None, ""
         return (content.encode() if isinstance(content, str) else content), file.file_name
