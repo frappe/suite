@@ -627,13 +627,15 @@
                         </div>
 
                         <!-- Under the message rather than inside its body: the chips are about the
-                             message, not part of what was written. -->
+                             message, not part of what was written. A message alone has no card
+                             edge to set them off from the Reply row below, so it takes the room. -->
                         <MessageReactions
                           v-if="!mail.draft"
                           :reactions="reactionsOn(mail)"
                           :readonly="readonly"
                           :refusal="mail.cannot_react"
                           class="mt-4"
+                          :class="{ 'sm:mb-5': thread.length === 1 }"
                           @react="(emoji: string) => react(mail, emoji)"
                         />
                       </div>
