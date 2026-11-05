@@ -343,8 +343,6 @@ export function createCellPainter(ctx: CanvasRenderingContext2D, geo: PaintGeome
     return '#'.repeat(Math.max(1, Math.floor(room / hash)))
   }
 
-  // Numbers right, text left, as in Google Sheets. The cell's type decides
-  // (`1,000` and `50%` are numbers); until it is known, guess from the text.
   // ── Single-line text ─────────────────────────────────────────────────────────
 
   function _drawCellText(

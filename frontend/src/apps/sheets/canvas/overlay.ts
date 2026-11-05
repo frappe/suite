@@ -276,9 +276,10 @@ export function createOverlay(parent: HTMLElement): Overlay {
     return measureCtx
   }
 
-  // Metrics of `font` (whose size is `size` px), measured on a canvas, as
-  // the painter and CSS see them (canvas font-box metrics are the ones CSS
-  // lays lines out with).
+  // Metrics of `font` (whose size is `size` px), measured on a canvas: the
+  // cap height and em box the painter places text by, and the font box,
+  // which places the baseline in a CSS line box only when there is no
+  // layout to measure it on (_layoutBaseline).
   function _metrics(font: string, size: number) {
     const measure = _measure()
     const fb = {

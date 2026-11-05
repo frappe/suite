@@ -20,7 +20,9 @@ export function inkFor(fmt: CellFormat): string {
 }
 
 /** How a value with no alignment of its own is drawn: numbers right, text
- *  left. `isNumber` is the engine's answer when it has one. */
+ *  left, as in Google Sheets. The cell's type decides (`1,000` and `50%`
+ *  are numbers), given as `isNumber`; until the engine knows it, guess from
+ *  the text. */
 export function autoAlign(s: string, isNumber: boolean | undefined): 'left' | 'right' {
   if (isNumber !== undefined) return isNumber ? 'right' : 'left'
   return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
