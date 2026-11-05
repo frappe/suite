@@ -47,7 +47,8 @@ def get_reference_presentations(name: str) -> set[str]:
 
 
 def get_attached_presentations(src: str, names: set[str]) -> set[str]:
-    """Which of `names` hold `src`, deduped: one url collects a File row per upload."""
+    """Which of `names` hold `src`, deduped: one url collects a File row per upload. A Link
+    row names a web address, not a stored file, so it holds nothing."""
     if not names:
         return set()
 
@@ -56,6 +57,7 @@ def get_attached_presentations(src: str, names: set[str]) -> set[str]:
             "File",
             filters={
                 "file_url": src,
+                "file_type": ("!=", "Link"),
                 "attached_to_doctype": "Presentation",
                 "attached_to_name": ("in", list(names)),
             },
@@ -71,7 +73,7 @@ def is_template_media(src: str) -> bool:
     every template it ever drew a slide from without holding a File row for any."""
     holders = frappe.get_all(
         "File",
-        filters={"file_url": src, "attached_to_doctype": "Presentation"},
+        filters={"file_url": src, "file_type": ("!=", "Link"), "attached_to_doctype": "Presentation"},
         pluck="attached_to_name",
         distinct=True,
         order_by=None,

@@ -248,6 +248,22 @@ class TestMediaFileAccess(IntegrationTestCase):
                 ):
                     create_link(frappe.generate_hash(8), link)
 
+            # a row already holding a local url, which create_link refuses: it names a
+            # web address, so it must not unlock the stored file at that address
+            link_row = frappe.get_doc(
+                {
+                    "doctype": "File",
+                    "file_name": frappe.generate_hash(8),
+                    "file_url": self.file.file_url,
+                    "file_type": "Link",
+                    "is_private": 1,
+                    "attached_to_doctype": "Presentation",
+                    "attached_to_name": template.name,
+                }
+            )
+            link_row.flags.file_created = True
+            link_row.insert()
+
         with self.set_user("Guest"), self.assertRaises(Forbidden):
             validate_media_file(self.file.file_url, template.name)
 
