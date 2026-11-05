@@ -150,6 +150,8 @@ export async function openFilePreviewSession(
     trashRoot: readonly(trashRoot),
     preview: readonly(preview),
     editedAt: initial.content_modified ?? initial.modified,
+    createdAt: initial.creation,
+    createdBy: initial.owner?.full_name ?? null,
     ...star,
     title: readonly(title),
     state: readonly(state),

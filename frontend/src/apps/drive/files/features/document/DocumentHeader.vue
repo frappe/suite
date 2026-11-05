@@ -99,27 +99,27 @@
         />
       </template>
       <!-- A compact header says it beside the title, before its menus. -->
-      <span
+      <DocumentEditedNote
         v-if="isCompact && shownNote"
         class="ms-1 me-2 whitespace-nowrap text-sm text-ink-gray-5"
         :class="saveNote ? '' : 'max-md:hidden'"
         :aria-live="saveNote ? 'polite' : 'off'"
-      >
-        {{ shownNote }}
-      </span>
+        :text="shownNote"
+        :details="noteDetails"
+      />
       <slot name="status" />
       <slot name="menus" />
     </div>
 
     <div class="flex shrink-0 items-center gap-1" :class="centering.end">
-      <span
+      <DocumentEditedNote
         v-if="!isCompact && shownNote"
         class="mr-1 whitespace-nowrap text-sm text-ink-gray-5"
         :class="saveNote ? '' : 'max-md:hidden'"
         :aria-live="saveNote ? 'polite' : 'off'"
-      >
-        {{ shownNote }}
-      </span>
+        :text="shownNote"
+        :details="noteDetails"
+      />
       <slot name="actions" />
       <Button
         v-for="name in panels"
@@ -168,11 +168,8 @@
         @click="session.setStarred(!session.isStarred.value)"
       >
         <template #icon>
-          <span
-            class="lucide-star size-4"
-            :class="session.isStarred.value && 'text-ink-amber-6'"
-            aria-hidden="true"
-          />
+          <StarredIcon v-if="session.isStarred.value" class="size-4" />
+          <span v-else class="lucide-star size-4" aria-hidden="true" />
         </template>
       </Button>
       <slot name="menu" />
@@ -191,12 +188,14 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { selectStem } from '@/apps/drive/files/internal/filename'
+import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import { canRename } from '../nodeActions'
 import { copyLink } from '../share/shareFormat'
-import { editedLabel } from './editedLabel'
+import DocumentEditedNote from './DocumentEditedNote.vue'
+import { editedDetails, editedLabel } from './editedLabel'
 import {
   documentTypeIcon,
   PANEL_BUTTONS,
@@ -275,13 +274,19 @@ watch(
 )
 const now = useNow({ interval: 60_000 })
 // A failed save is a badge, and content with no save state, such as a file preview, says nothing.
-const editedNote = computed(() => {
-  if (!props.saveState || props.saveState === 'failed') return ''
+const edited = computed(() => {
+  if (!props.saveState || props.saveState === 'failed') return null
   const stored = props.session.editedAt
-  const edited = editedHere.value ?? (stored ? new Date(stored) : null)
-  return edited ? editedLabel(edited, now.value) : ''
+  return editedHere.value ?? (stored ? new Date(stored) : null)
 })
+const editedNote = computed(() => (edited.value ? editedLabel(edited.value, now.value) : ''))
 const shownNote = computed(() => props.saveNote || editedNote.value)
+// A note about saving says all it has to; only the time edited has more behind it
+const noteDetails = computed(() => {
+  if (props.saveNote || !edited.value) return []
+  const { createdAt, createdBy } = props.session
+  return editedDetails(edited.value, createdAt ? new Date(createdAt) : null, createdBy)
+})
 const centering = computed(() => (props.layout === 'centered' ? CENTERED : UNCENTERED))
 const trashed = computed(() => props.session.state.value === 'Trashed')
 const renamable = computed(() =>

@@ -5,6 +5,28 @@ const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
+function exactTime(date: Date) {
+  return date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: userTimeZone(),
+  })
+}
+
+/** The exact moments behind the label, one line each, with who created the document. */
+export function editedDetails(edited: Date, created: Date | null, creator: string | null) {
+  const lines = [__('Edited {0}', [exactTime(edited)])]
+  if (created) {
+    lines.push(
+      creator
+        ? __('Created {0} by {1}', [exactTime(created), creator])
+        : __('Created {0}', [exactTime(created)]),
+    )
+  }
+
+  return lines
+}
+
 /** "Edited 1h ago", or the date once that is over a month back. */
 export function editedLabel(edited: Date, now: Date): string {
   const elapsed = now.getTime() - edited.getTime()

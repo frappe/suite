@@ -87,6 +87,9 @@ export interface DocumentSession {
   readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
   /** When the content last changed, as of opening. The wire's UTC time. */
   readonly editedAt: string | null
+  /** When the document was created, and the name of who created it. */
+  readonly createdAt: string | null
+  readonly createdBy: string | null
   /** The caller's own star. */
   readonly isStarred: Readonly<Ref<boolean>>
   /** Starred sends no link codes, so a node reached only through a link takes no star (spec §10.7). */
@@ -364,6 +367,8 @@ export async function openDriveDocumentSession(
     canShare: computed(() => canShare(state.value, access.value)),
     folder: readonly(folder),
     editedAt: node.content_modified ?? node.modified,
+    createdAt: node.creation,
+    createdBy: node.owner?.full_name ?? null,
     ...star,
     async rename(nextTitle) {
       const updated = await requester.mutation(

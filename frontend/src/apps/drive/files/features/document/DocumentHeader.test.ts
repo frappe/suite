@@ -16,9 +16,18 @@ vi.mock('frappe-ui', async () => {
       inheritAttrs: false,
       props: { label: String },
       setup:
-        (props, { attrs }) =>
+        (props, { attrs, slots }) =>
         () =>
-          render('button', attrs, props.label),
+          render('button', attrs, props.label ?? slots.icon?.() ?? slots.default?.()),
+    }),
+    Tooltip: define({
+      props: { disabled: Boolean },
+      setup:
+        (props, { slots }) =>
+        () => [
+          slots.default?.(),
+          props.disabled ? null : render('div', { role: 'tooltip' }, slots.content?.()),
+        ],
     }),
     Badge: define({
       props: { label: String },
@@ -58,6 +67,8 @@ function session(role: number, canShare = true) {
     access: ref({ role }),
     canShare: ref(canShare),
     editedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    createdAt: '2026-03-02T16:05:00Z',
+    createdBy: 'Asha Rao',
     isStarred: ref(false),
     canStar: ref(true),
     setStarred: vi.fn(async function (this: { isStarred: { value: boolean } }, next: boolean) {
@@ -159,6 +170,13 @@ describe('DocumentHeader', () => {
     expect(root.textContent).toContain('Edited just now')
   })
 
+  it('gives the exact times and the creator on hovering the edited time', () => {
+    const { root } = mount(session(40), { saveState: 'clean' })
+    const details = root.querySelector('[role="tooltip"]')!.textContent
+    expect(details).toMatch(/Edited .*\d{4}/)
+    expect(details).toMatch(/Created .*2026.* by Asha Rao/)
+  })
+
   it('says why saving is held up in place of the edited time', () => {
     const { root } = mount(session(40), { saveState: 'unsaved', saveNote: 'Changes will sync' })
     expect(root.textContent).toContain('Changes will sync')
@@ -177,6 +195,8 @@ describe('DocumentHeader', () => {
     expect(doc.setStarred).toHaveBeenCalledWith(true)
     await nextTick()
     expect(button('Unstar')!.getAttribute('aria-pressed')).toBe('true')
+    expect(button('Unstar')!.querySelector('.fill-current')).toBeTruthy()
+    expect(button('Unstar')!.querySelector('.lucide-star')).toBeNull()
     cleanup?.()
 
     const linkOnly = session(40)
