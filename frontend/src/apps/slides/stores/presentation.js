@@ -32,11 +32,10 @@ const presentationId = ref(null)
 // the user may not write this presentation at all
 const viewOnly = ref(false)
 
-// no write access, another tab of this browser holds the edit lock, or the server
-// refused this tab's version; a reload is the only way on from the last one
 // Another tab of this browser edits the presentation, or the server refused this
-// tab's version. Nothing more is saved here until a reload.
+// tab's version. Only the refusal needs a reload.
 const writesBlocked = computed(() => lockedElsewhere.value || saveRefused.value)
+// That, or the user has no write access.
 const inReadonlyMode = computed(() => viewOnly.value || writesBlocked.value)
 
 const applyReverseTransition = ref(false)
