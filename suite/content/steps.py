@@ -11,6 +11,7 @@ from frappe.query_builder import Table
 from frappe.query_builder.functions import Coalesce
 
 from suite.content import copies, jobs, live, log, restores, scheduling, sessions, stage, suspect, touches
+from suite.content.conversions import refused_body
 from suite.content.pushes import push, put_piece
 from suite.content.snapshot import read, rows_after, with_tombstones
 from suite.content.tables import table
@@ -31,7 +32,8 @@ def open_document(app: str, node: str, *, can_write: bool) -> bytes:
 
     doc = log.find(app, node)
     if doc is None:
-        return state_frame("unconverted")
+        # A body this converter refused stays as it is until it changes, so the tab stops waiting for it
+        return state_frame("unconverted", **(refused_body(app, node) or {}))
 
     try:
         snapshot = read(app, doc.id)
@@ -264,6 +266,6 @@ def logged_doc(app: str, node: str) -> frappe._dict:
     return require_log(app, node)
 
 
-def state_frame(state: str, **extra: int) -> bytes:
+def state_frame(state: str, **extra: object) -> bytes:
     """Build a frame with no rows that tells the tab what state the document is in."""
     return encode_frame({"state": state, "proto": PROTOCOL_VERSION, **extra})

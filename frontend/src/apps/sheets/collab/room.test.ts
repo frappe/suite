@@ -9,7 +9,7 @@ import {
 } from '@/platform/collab'
 
 import { sheetsAdapter } from './adapter'
-import { isLiveNow, openSheetRoom, type SheetRoom } from './room'
+import { conversionNow, openSheetRoom, type SheetRoom } from './room'
 import { roots } from './schema'
 import { docSheets } from './stores'
 import { fakeServer } from './test-room'
@@ -116,6 +116,16 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
     expect(opened).toEqual({ state: 'unconverted' })
   })
 
+  it('says when the converter refused the sheet, and why when the server says', async () => {
+    const open = () =>
+      Promise.resolve<Opened>({ state: 'unconverted', refused: 'check', reason: 'check: copy' })
+    const opened = await openSheetRoom({ session, client: await newClient(), stores: {}, open })
+    expect(opened).toEqual({
+      state: 'unconverted',
+      refusal: { outcome: 'check', reason: 'check: copy' },
+    })
+  })
+
   it('opens with the Sheets adapter', async () => {
     const server = fakeServer((await existingSheet()).doc)
     const open = vi.fn(server.open)
@@ -211,9 +221,14 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
 
   it('asks whether a sheet opens live without keeping the room', async () => {
     const server = fakeServer()
-    expect(await isLiveNow(session, server.open)).toBe(true)
+    expect(await conversionNow(session, server.open)).toEqual({ state: 'live' })
     expect(server.rooms[0]!.close).toHaveBeenCalledTimes(1)
-    expect(await isLiveNow(session, async () => ({ state: 'unconverted' }))).toBe(false)
+    expect(await conversionNow(session, async () => ({ state: 'unconverted' }))).toEqual({
+      state: 'waiting',
+    })
+    expect(
+      await conversionNow(session, async () => ({ state: 'unconverted', refused: 'too_large' })),
+    ).toEqual({ state: 'refused', refusal: { outcome: 'too_large' } })
   })
 
   it('keeps the room clientID through forwarded commits and a restore made in the room', async () => {

@@ -64,6 +64,11 @@ class ConversionStatus(TypedDict):
     rooms: NotRequired[live.Rooms]
 
 
+class Refusal(TypedDict):
+    refused: str
+    reason: NotRequired[str]
+
+
 class ConversionRefused(Exception):
     def __init__(self, outcome: str, reason: str | None = None) -> None:
         super().__init__(outcome)
@@ -308,11 +313,36 @@ def conversion_status(app: str, node: str) -> ConversionStatus:
 
     status: ConversionStatus = {"state": "refused"}
     if "System Manager" in frappe.get_roles():
-        status["reason"] = held.outcome
-        if held.reason:
-            status["reason"] = f"{held.outcome}: {held.reason}"
+        status["reason"] = refusal_reason(held)
 
     return status
+
+
+def refused_body(app: str, node: str) -> Refusal | None:
+    """Answer the outcome this converter refused `node`'s body with, or None while a run may still convert it; the reason for System Managers.
+
+    The outcome is a fixed code such as `too_large` or `check`, never the document's data, so every reader gets it.
+    """
+    if spec_of(app).conversion is None:
+        return None
+
+    held = held_attempt(app, node, conversion_of(app).read_fingerprint(node))
+    if held is None or held.outcome in {None, "converted"}:
+        return None
+
+    refusal: Refusal = {"refused": held.outcome}
+    if "System Manager" in frappe.get_roles():
+        refusal["reason"] = refusal_reason(held)
+
+    return refusal
+
+
+def refusal_reason(held: frappe._dict) -> str:
+    """Name a refused record's outcome, with the check that refused it when there is one."""
+    if held.reason:
+        return f"{held.outcome}: {held.reason}"
+
+    return held.outcome
 
 
 def conversion_started(app: str) -> bool:

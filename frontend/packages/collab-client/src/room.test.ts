@@ -6,6 +6,7 @@ import {
   adapterAt,
   device,
   fakeServer,
+  frame,
   heldPushes,
   idle,
   join,
@@ -115,6 +116,23 @@ describe('collab room', () => {
         state,
       })
     }
+  })
+
+  it('says when the converter refused the document, and the reason the server gave', async () => {
+    const endpoints = fakeServer('unconverted').endpoints()
+    endpoints.open = async () =>
+      frame({ state: 'unconverted', proto: 1, refused: 'check', reason: 'check: copy' })
+    const opened = openRoom({
+      endpoints,
+      expectedUser: 'a@x.com',
+      adapter: adapterAt(1),
+      signedIn: () => 'a@x.com',
+    })
+    await expect(opened).resolves.toEqual({
+      state: 'unconverted',
+      refused: 'check',
+      reason: 'check: copy',
+    })
   })
 
   it('when the device store fails at start, the lock name keeps the doc id', async () => {

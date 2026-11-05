@@ -37,9 +37,33 @@ export interface SheetRoom {
   close(): Promise<void>
 }
 
-/** `disabled`: Sheets' collaboration is off on this site, so the old save path runs. */
+/**
+ * Why the converter refused an old sheet: `outcome` is a code such as
+ * `too_large`; `reason` reaches System Managers only. The sheet stays read-only
+ * until its body changes or the converter does.
+ */
+export interface Refusal {
+  outcome: string
+  reason?: string
+}
+
+/**
+ * `disabled`: Sheets' collaboration is off on this site, so the old save path runs.
+ * `unconverted`: an old sheet, read-only; with `refusal` once the converter refused it.
+ */
 export type OpenedSheet =
-  { state: 'live'; sheet: SheetRoom } | { state: 'disabled' } | { state: 'unconverted' }
+  | { state: 'live'; sheet: SheetRoom }
+  | { state: 'disabled' }
+  | { state: 'unconverted'; refusal?: Refusal }
+
+/** Where an old sheet's conversion stands now. */
+export type ConversionNow =
+  { state: 'live' } | { state: 'waiting' } | { state: 'refused'; refusal: Refusal }
+
+function refusalOf(opened: Opened): Refusal | null {
+  if (opened.state === 'live' || !opened.refused) return null
+  return { outcome: opened.refused, ...(opened.reason && { reason: opened.reason }) }
+}
 
 export interface OpenSheetOptions {
   session: CollabSession
@@ -79,8 +103,10 @@ export async function openSheetRoom({
       return { state: 'disabled' }
     throw error
   }
+  if (opened.state === 'disabled') return { state: 'disabled' }
   if (opened.state !== 'live') {
-    return { state: opened.state === 'unconverted' ? 'unconverted' : 'disabled' }
+    const refusal = refusalOf(opened)
+    return { state: 'unconverted', ...(refusal && { refusal }) }
   }
   const { room } = opened
   try {
@@ -91,15 +117,18 @@ export async function openSheetRoom({
   }
 }
 
-/** Whether the sheet opens live now (its conversion is done). The room opened to ask is closed again. */
-export async function isLiveNow(
+/** Whether the sheet opens live now, was refused, or still waits. A room opened to ask is closed again. */
+export async function conversionNow(
   session: CollabSession,
   open: typeof openCollabRoom = openCollabRoom,
-): Promise<boolean> {
+): Promise<ConversionNow> {
   const opened = await open({ session, adapter: sheetsAdapter })
-  if (opened.state !== 'live') return false
+  if (opened.state !== 'live') {
+    const refusal = refusalOf(opened)
+    return refusal ? { state: 'refused', refusal } : { state: 'waiting' }
+  }
   await opened.room.close()
-  return true
+  return { state: 'live' }
 }
 
 async function glueRoom(

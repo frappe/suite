@@ -1044,7 +1044,8 @@ async function runSmartFill() {
 // ── Collaboration (collab v1) ─────────────────────────────────────────────────
 // The sheet's live room (useCollabRoom.ts): every edit is saved through it.
 // 'pending' until the load asks the server. A sheet the room can't open shows
-// its old body read-only: 'unconverted' until the server has converted it,
+// its old body read-only: 'unconverted' until the server has converted it
+// (or for good once the converter refused it),
 // 'disabled' for a guest on a share link (the room takes signed-in people only).
 const collabState = ref(props.collabSession ? 'pending' : 'disabled')
 const collabOn = computed(() => collabState.value === 'live')

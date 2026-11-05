@@ -189,4 +189,7 @@ export interface CollabRoom {
   isCommitted(items: readonly yjs.ID[]): boolean
 }
 
-export type Opened = { state: 'live'; room: CollabRoom } | { state: Exclude<OpenState, 'live'> }
+// `refused` and `reason`: as the open header carries them (frames.ts)
+export type Opened =
+  | { state: 'live'; room: CollabRoom }
+  | { state: Exclude<OpenState, 'live'>; refused?: string; reason?: string }

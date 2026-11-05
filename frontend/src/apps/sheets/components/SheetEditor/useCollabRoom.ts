@@ -25,13 +25,14 @@ import {
   bannerFor,
   editingStateOf,
   hasUnsentWork,
+  notPreparedBanner,
   saveStateOf,
   upgradingBanner,
 } from '../../collab/messages'
 import { createPeople } from '../../collab/people'
 import { readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
-import { isLiveNow, openSheetRoom, type SheetRoom } from '../../collab/room'
+import { conversionNow, openSheetRoom, type Refusal, type SheetRoom } from '../../collab/room'
 import {
   selectionFromIds,
   selectionToIds,
@@ -56,7 +57,7 @@ export interface CollabRoomOptions {
   onReopen: () => void
   /** Tests pass fakes. */
   open?: typeof openSheetRoom
-  probe?: typeof isLiveNow
+  probe?: typeof conversionNow
   retryMs?: number
   commitSoonMs?: number
 }
@@ -76,13 +77,14 @@ export function useCollabRoom({
   onRemote,
   onReopen,
   open = openSheetRoom,
-  probe = isLiveNow,
+  probe = conversionNow,
   retryMs = CONVERSION_RETRY_MS,
   commitSoonMs = COMMIT_SOON_MS,
 }: CollabRoomOptions) {
   const sheet = shallowRef<SheetRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
   const waiting = shallowRef(false)
+  const refusal = shallowRef<Refusal | null>(null)
   const canUndo = shallowRef(false)
   const canRedo = shallowRef(false)
   const presenceTick = shallowRef(0)
@@ -109,7 +111,7 @@ export function useCollabRoom({
   async function openNow(client: WorkbookClient): Promise<'live' | 'disabled' | 'unconverted'> {
     const opened = await open({ session, client, stores: getStores() })
     if (opened.state !== 'live') {
-      if (opened.state === 'unconverted') waitForConversion()
+      if (opened.state === 'unconverted') waitForConversion(opened.refusal ?? null)
       return opened.state
     }
     if (closed) {
@@ -121,15 +123,18 @@ export function useCollabRoom({
   }
 
   // The editor shows the old body read-only meanwhile; once the sheet opens
-  // live, the editor is opened again on it.
-  function waitForConversion() {
+  // live, the editor is opened again on it. A refused sheet stays refused
+  // until its body or the converter changes, so this tab stops asking.
+  function waitForConversion(refused: Refusal | null) {
     waiting.value = true
+    refusal.value = refused
+    if (refused) return
     retry = setTimeout(async () => {
       if (closed) return
-      const live = await probe(session).catch(() => false)
+      const now = await probe(session).catch(() => ({ state: 'waiting' }) as const)
       if (closed) return
-      if (live) onReopen()
-      else waitForConversion()
+      if (now.state === 'live') onReopen()
+      else waitForConversion(now.state === 'refused' ? now.refusal : null)
     }, retryMs)
   }
 
@@ -224,6 +229,7 @@ export function useCollabRoom({
     return status.value ? editingStateOf(status.value) : 'editing'
   })
   const banner = computed(() => {
+    if (refusal.value) return notPreparedBanner(refusal.value)
     if (waiting.value) return upgradingBanner()
     return status.value ? bannerFor(status.value) : null
   })

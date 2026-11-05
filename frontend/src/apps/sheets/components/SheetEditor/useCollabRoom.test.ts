@@ -239,7 +239,7 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
 
   it('shows a sheet waiting for its conversion read-only, then reopens once it is converted', async () => {
     let converted = false
-    const probe = vi.fn(async () => converted)
+    const probe = vi.fn(async () => ({ state: converted ? 'live' : 'waiting' }) as const)
     const { collab, onReopen } = editor(fakeServer(), {
       open: async () => ({ state: 'unconverted' as const }),
       probe,
@@ -252,6 +252,69 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
     expect(onReopen).not.toHaveBeenCalled()
     converted = true
     await vi.waitFor(() => expect(onReopen).toHaveBeenCalledTimes(1))
+    await collab.close()
+  })
+
+  it('shows a refused sheet read-only, says it could not be prepared, and stops checking', async () => {
+    const probe = vi.fn(async () => ({ state: 'waiting' }) as const)
+    const { collab } = editor(fakeServer(), {
+      open: async () => ({ state: 'unconverted' as const, refusal: { outcome: 'check' } }),
+      probe,
+      retryMs: 5,
+    })
+    expect(await collab.open(await newClient())).toBe('unconverted')
+    expect(collab.editingState.value).toBe('closed')
+    expect(collab.banner.value?.text).toContain("couldn't be prepared for editing together")
+    expect(collab.banner.value?.text).not.toContain('being upgraded')
+    expect(collab.banner.value?.text).not.toContain('Reason')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(probe).not.toHaveBeenCalled()
+    await collab.close()
+  })
+
+  it('says a sheet refused for being too large is too large to edit together', async () => {
+    const { collab } = editor(fakeServer(), {
+      open: async () => ({ state: 'unconverted' as const, refusal: { outcome: 'too_large' } }),
+    })
+    await collab.open(await newClient())
+    expect(collab.banner.value?.text).toContain('too large to edit together')
+    await collab.close()
+  })
+
+  it('names the reason when the server gives one (to a System Manager)', async () => {
+    const { collab } = editor(fakeServer(), {
+      open: async () => ({
+        state: 'unconverted' as const,
+        refusal: { outcome: 'check', reason: 'check: copy' },
+      }),
+    })
+    await collab.open(await newClient())
+    expect(collab.banner.value?.text).toContain('Reason: check: copy.')
+    await collab.close()
+  })
+
+  it('stops checking once a waiting sheet is refused', async () => {
+    let refused = false
+    const probe = vi.fn(async () =>
+      refused
+        ? ({ state: 'refused', refusal: { outcome: 'too_large' } } as const)
+        : ({ state: 'waiting' } as const),
+    )
+    const { collab, onReopen } = editor(fakeServer(), {
+      open: async () => ({ state: 'unconverted' as const }),
+      probe,
+      retryMs: 5,
+    })
+    await collab.open(await newClient())
+    expect(collab.banner.value?.text).toContain('being upgraded')
+    await vi.waitFor(() => expect(probe.mock.calls.length).toBeGreaterThan(0))
+    refused = true
+    await vi.waitFor(() => expect(collab.banner.value?.text).toContain('too large'))
+    const calls = probe.mock.calls.length
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(probe.mock.calls.length).toBe(calls)
+    expect(collab.editingState.value).toBe('closed')
+    expect(onReopen).not.toHaveBeenCalled()
     await collab.close()
   })
 

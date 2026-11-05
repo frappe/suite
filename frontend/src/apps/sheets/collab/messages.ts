@@ -176,6 +176,19 @@ export function bannerFor(s: RoomStatus): Banner | null {
   return null
 }
 
+/**
+ * An old spreadsheet the converter refused, read-only: it is tried again only
+ * once its body or the converter changes. `reason` reaches System Managers only.
+ */
+export function notPreparedBanner(refusal: { outcome: string; reason?: string }): Banner {
+  let text =
+    refusal.outcome === 'too_large'
+      ? __('This spreadsheet is too large to edit together, so it stays read-only.')
+      : __("This spreadsheet couldn't be prepared for editing together, so it stays read-only.")
+  if (refusal.reason) text += ' ' + __('Reason: {0}.', [refusal.reason])
+  return { text }
+}
+
 /** An old spreadsheet waiting for its conversion, read-only until then. */
 export function upgradingBanner(): Banner {
   return {

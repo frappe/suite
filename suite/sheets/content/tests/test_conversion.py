@@ -1,4 +1,6 @@
 import io
+import json
+import struct
 import uuid
 from unittest.mock import patch
 
@@ -9,7 +11,7 @@ from bs4 import BeautifulSoup
 from frappe.tests import IntegrationTestCase
 
 from suite import drive
-from suite.content import capacity, conversions, convert, log, logged, scheduling, tables
+from suite.content import capacity, conversions, convert, log, logged, scheduling, steps, tables
 from suite.content.conversions import ConversionRefused
 from suite.sheets import content as sheets_content
 from suite.sheets.content import conversion
@@ -224,6 +226,59 @@ class TestConvertDocument(IntegrationTestCase):
         self.assertIsNone(log.find(sheets_content.APP, node))
         self.assertEqual(self.records(node), (("check", None),))
         self.assertTrue(frappe.db.get_value("Sheet", docname, "sheets_data"))
+
+    def opened_header(self, node: str) -> dict:
+        """The header of the frame a tab gets when it opens `node`."""
+        frame = steps.open_document(sheets_content.APP, node, can_write=True)
+        (length,) = struct.unpack(">I", frame[:4])
+        return json.loads(frame[4 : 4 + length])
+
+    def refuse(self, node: str, outcome: str, reason: str | None = None):
+        """Record that this converter refused `node`'s body as it stands now."""
+        fingerprint = conversion.read_fingerprint(node)
+        conversions.record(
+            sheets_content.APP, node, fingerprint, frappe.utils.now_datetime(), outcome, reason
+        )
+        frappe.db.commit()
+
+    def test_a_refused_sheet_opens_saying_it_was_refused(self):
+        node = self.old_sheet("not json")
+        conversions.convert_document(sheets_content.APP, node)
+
+        header = self.opened_header(node)
+
+        self.assertEqual((header["state"], header.get("refused")), ("unconverted", "check"))
+        self.assertNotIn("reason", header)
+
+    def test_a_sheet_refused_as_too_large_opens_saying_so(self):
+        node = self.old_sheet(CURRENT_BODY)
+        self.refuse(node, "too_large")
+
+        self.assertEqual(self.opened_header(node).get("refused"), "too_large")
+
+    def test_a_system_manager_opens_a_refused_sheet_with_its_reason(self):
+        node = self.old_sheet(CURRENT_BODY)
+        self.refuse(node, "check", "copy")
+        frappe.set_user("Administrator")
+
+        header = self.opened_header(node)
+
+        self.assertEqual((header.get("refused"), header.get("reason")), ("check", "check: copy"))
+
+    def test_a_sheet_waiting_for_its_conversion_opens_as_not_refused(self):
+        node = self.old_sheet(CURRENT_BODY)
+
+        self.assertEqual(self.opened_header(node)["state"], "unconverted")
+        self.assertNotIn("refused", self.opened_header(node))
+
+    def test_a_refused_sheet_that_changed_opens_as_waiting_again(self):
+        node = self.old_sheet(CURRENT_BODY)
+        self.refuse(node, "too_large")
+        docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        frappe.db.set_value("Sheet", docname, "sheets_data", encode_sheets_data(DEVELOP_BODY))
+        frappe.db.commit()
+
+        self.assertNotIn("refused", self.opened_header(node))
 
     def test_a_changed_body_fingerprints_again(self):
         node = self.old_sheet(CURRENT_BODY)
