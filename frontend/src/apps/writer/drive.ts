@@ -11,6 +11,7 @@ import type { MentionSuggestionItem, UploadedMedia, UploadFunction } from 'frapp
 import { watch } from 'vue'
 
 import { api, client, useUpload } from '@/api'
+import { documentCredentials } from '@/apps/drive'
 import { randomId } from '@/platform/random-id'
 
 /** A person on this site, in the shape the mention menu reads. */
@@ -83,13 +84,18 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
   if (trashed.ok.length) await client.mutation(api.drive.nodes.purgeBatch, { nodes: trashed.ok })
 }
 
-/** The route pages users and groups together, so groups are dropped. */
+/**
+ * The route pages users and groups together, so groups are dropped. A question
+ * about a document carries its share link, as the server reads a link commenter's
+ * role from it.
+ */
 async function findPeople(input: {
   q?: string
   node?: string
   users?: string[]
 }): Promise<WriterUser[]> {
-  const page = await client.query(api.suite.people.list, input)
+  const context = input.node ? documentCredentials(input.node).context : undefined
+  const page = await client.query(api.suite.people.list, input, { context })
   return page.rows.flatMap((row) =>
     row.kind === 'user'
       ? [

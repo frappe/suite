@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { client } from '@/api'
-import { transport } from '@/platform/transport'
+import { rememberDriveLink } from '@/apps/drive'
+import { createTransport, transport } from '@/platform/transport'
 
 import { peopleWithoutAccess, searchUsers, uploadMedia } from './drive'
 
 vi.mock(import('@/platform/transport'), async (importOriginal) => ({
   ...(await importOriginal()),
-  transport: { request: vi.fn() },
+  transport: { request: vi.fn(async () => ({})) },
 }))
 
 const user = (name: string, full_name: string | null) => ({
@@ -79,6 +80,59 @@ describe('the people a comment newly names', () => {
 
     await expect(peopleWithoutAccess('doc-1', ['ann@x.test'])).resolves.toEqual([])
     expect(failed).toHaveBeenCalledOnce()
+  })
+})
+
+describe('a person whose only access to a document is a share link', () => {
+  const CODE = 'SharedDocumentLink0001'
+  const ben = { ...user('ben@x.test', 'Ben'), has_access: false }
+
+  // Plays the people route: a question about the shared document needs its link, as Comment does
+  function peopleServer() {
+    const sent: Array<string | null> = []
+    const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      const link = new Headers(init?.headers).get('X-Drive-Links')
+      sent.push(link)
+      const asksAboutDocument = String(url).includes('node=')
+      if (asksAboutDocument && link !== CODE) {
+        return new Response(JSON.stringify({ errors: [{ type: 'DriveForbidden' }] }), {
+          status: 403,
+        })
+      }
+      return new Response(JSON.stringify({ data: { rows: [ben], next_cursor: null } }))
+    })
+    vi.mocked(transport.request).mockImplementation(createTransport({ fetch: fetcher }).request)
+    return sent
+  }
+
+  beforeEach(() => {
+    vi.mocked(transport.request).mockReset()
+    rememberDriveLink(CODE, 'shared-doc')
+  })
+
+  it('finds people to mention', async () => {
+    peopleServer()
+
+    const found = await searchUsers('', 'shared-doc')
+
+    expect(found.map((person) => person.name)).toEqual(['ben@x.test'])
+  })
+
+  it('learns who a comment names without access', async () => {
+    peopleServer()
+
+    const locked = await peopleWithoutAccess('shared-doc', ['ben@x.test'])
+
+    expect(locked.map((person) => person.name)).toEqual(['ben@x.test'])
+  })
+
+  it('sends the link only with a question about that document', async () => {
+    const sent = peopleServer()
+
+    await searchUsers('ben')
+    await searchUsers('ben', 'another-doc').catch(() => [])
+
+    expect(sent).toEqual([null, null])
   })
 })
 

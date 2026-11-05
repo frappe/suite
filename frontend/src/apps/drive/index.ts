@@ -40,6 +40,7 @@ export type {
   SessionState,
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
+export { documentCredentials } from '@/apps/drive/client/session'
 export { hasDefaultDocumentTitle, nodeContentUrl } from '@/apps/drive/client/nodes'
 
 /** Remembers the share link a `#link=` fragment carried, for the node it opened. */
