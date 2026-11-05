@@ -1187,26 +1187,24 @@ class TestCommentWorkflows(IntegrationTestCase):
         asked = [MENTIONED, OUTSIDER, COMMENTER, WEBSITE_ONLY, "nobody@example.com"]
 
         frappe.set_user(COMMENTER)
-        commenter_page = people.search(node=self.document.name, users=asked)
+        commenter_answer = people.look_up(self.document.name, asked)
         frappe.set_user(OWNER)
-        manager_page = people.search(node=self.document.name, users=[MENTIONED])
+        manager_answer = people.look_up(self.document.name, [MENTIONED])
 
         self.assertEqual(
-            [(row["name"], row["has_access"], "is_blocked" in row) for row in commenter_page["rows"]],
+            [(row["name"], row["has_access"], "is_blocked" in row) for row in commenter_answer],
             [(OUTSIDER, True, False), (MENTIONED, False, False)],
         )
-        self.assertTrue(manager_page["rows"][0]["is_blocked"])
+        self.assertTrue(manager_answer[0]["is_blocked"])
 
-    def test_a_lookup_needs_comment_access_a_document_and_a_short_list(self):
+    def test_a_lookup_needs_comment_access_and_a_short_list(self):
         frappe.set_user(OUTSIDER)
         with self.assertRaises(DriveNotFound):
-            people.search(node=self.document.name, users=[MENTIONED])
+            people.look_up(self.document.name, [MENTIONED])
 
         frappe.set_user(COMMENTER)
         with self.assertRaises(people.BadLookup):
-            people.search(users=[MENTIONED])
-        with self.assertRaises(people.BadLookup):
-            people.search(node=self.document.name, users=["x"] * (comments.MAX_MENTIONS + 1))
+            people.look_up(self.document.name, ["x"] * (comments.MAX_MENTIONS + 1))
 
     def test_a_mention_of_someone_with_access_is_unchanged(self):
         grant(self.document.name, MENTIONED, READ, self.admin)

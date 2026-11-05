@@ -33,7 +33,7 @@ export const mutationEffects = {
   'suite.push.unsubscribe': 'none',
   errors_post: 'none',
   update_preferences: {
-    invalidates: ['get_preferences', 'account_get', 'people_get', 'users_get'],
+    invalidates: ['get_preferences', 'account_get', 'people_get', 'people_lookup', 'users_get'],
   },
   'frappe.user.switch_theme': { invalidates: ['get_preferences'] },
   'frappe.user.reset_password': 'none',
@@ -41,7 +41,9 @@ export const mutationEffects = {
   'site_patch.complete_onboarding': { invalidates: ['site_get', 'account_get'] },
   'site_patch.update_site_settings': { invalidates: ['site_get'] },
   'suite.generate_user_keys': { invalidates: ['drive.webdav_get'] },
-  invitations_post: { invalidates: ['invitations_get', 'users_get', 'people_get'] },
+  invitations_post: {
+    invalidates: ['invitations_get', 'users_get', 'people_get', 'people_lookup'],
+  },
 } as const
 
 export const registration: OwnerRegistration = {

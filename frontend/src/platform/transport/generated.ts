@@ -838,7 +838,7 @@ export type PeopleGetOutputPersonUser = {
   is_blocked?: boolean
 }
 
-export type PeopleGetInput = { q?: string; cursor?: string; node?: string; users?: Array<string> }
+export type PeopleGetInput = { q?: string; cursor?: string; node?: string }
 
 export type PeopleGetOutput = {
   rows: Array<PeopleGetOutputPersonUser | PeopleGetOutputPersonGroup>
@@ -846,7 +846,7 @@ export type PeopleGetOutput = {
 }
 
 export type PeopleGetError =
-  'BadRequest' | 'BadCursor' | 'BadLookup' | 'PermissionError' | 'DriveForbidden' | 'DriveNotFound'
+  'BadRequest' | 'BadCursor' | 'PermissionError' | 'DriveForbidden' | 'DriveNotFound'
 
 const operationPeopleGet: PageRef<
   PeopleGetInput,
@@ -865,15 +865,40 @@ const operationPeopleGet: PageRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: [
-    'BadRequest',
-    'BadCursor',
-    'BadLookup',
-    'PermissionError',
-    'DriveForbidden',
-    'DriveNotFound',
-  ],
+  errors: ['BadRequest', 'BadCursor', 'PermissionError', 'DriveForbidden', 'DriveNotFound'],
   loadValidators: async () => (await import('./validators')).operationPeopleGet,
+}
+
+export type PeopleLookupOutputPersonUser = {
+  kind: 'user'
+  name: string
+  email: string
+  full_name: string | null
+  user_image: string | null
+  has_access?: boolean
+  is_blocked?: boolean
+}
+
+export type PeopleLookupInput = { node: string; users: Array<string> }
+
+export type PeopleLookupOutput = Array<PeopleLookupOutputPersonUser>
+
+export type PeopleLookupError =
+  'BadRequest' | 'BadLookup' | 'PermissionError' | 'DriveForbidden' | 'DriveNotFound'
+
+const operationPeopleLookup: QueryRef<PeopleLookupInput, PeopleLookupOutput, PeopleLookupError> = {
+  id: 'people_lookup',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'people.lookup',
+  method: 'GET',
+  path: 'people/lookup',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest', 'BadLookup', 'PermissionError', 'DriveForbidden', 'DriveNotFound'],
+  loadValidators: async () => (await import('./validators')).operationPeopleLookup,
 }
 
 export type FrappeLoginInput = { usr: string; pwd: string }
@@ -1173,6 +1198,7 @@ export const api = {
   },
   people: {
     list: operationPeopleGet,
+    lookup: operationPeopleLookup,
   },
   auth: {
     login: operationFrappeLogin,

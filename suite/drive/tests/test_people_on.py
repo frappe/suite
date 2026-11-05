@@ -1,4 +1,6 @@
-"""`GET /api/suite/people?node=` ranks people by whether they can open the node."""
+"""`GET /api/suite/people?node=` ranks people on a node; `/people/lookup` asks about exact people."""
+
+import json
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -111,6 +113,44 @@ class TestPeopleOnANode(IntegrationTestCase):
     def lift_block(self, owner):
         revoke(self.node, STRANGER, owner)
         frappe.db.commit()
+
+    def look_up(self, query: dict, auth: str):
+        return make_request(
+            target=self.CLIENT.open,
+            args=("/api/suite/people/lookup",),
+            kwargs={"method": "GET", "headers": {"Authorization": auth}, "query_string": query},
+        )
+
+    def test_a_lookup_answers_only_the_people_named(self):
+        response = self.look_up(
+            {"node": self.node, "users": json.dumps([READER, STRANGER, "nobody@example.com"])},
+            self.commenter,
+        )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            [(row["name"], row["has_access"]) for row in response.json["data"]],
+            [(READER, True), (STRANGER, False)],
+        )
+
+    def test_a_lookup_refuses_a_missing_argument_and_a_long_list(self):
+        too_many = json.dumps(["x"] * (drive.MAX_MENTIONS + 1))
+        for query, error in (
+            ({"users": json.dumps([READER])}, "BadRequest"),
+            ({"node": self.node}, "BadRequest"),
+            ({"node": self.node, "users": READER}, "BadRequest"),
+            ({"node": self.node, "users": too_many}, "BadLookup"),
+        ):
+            with self.subTest(query=query):
+                response = self.look_up(query, self.commenter)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.json["errors"][0]["type"], error)
+
+    def test_a_lookup_on_a_node_the_caller_cannot_comment_on_is_refused(self):
+        for auth, status in ((self.stranger, 404), (self.reader, 403)):
+            with self.subTest(status=status):
+                response = self.look_up({"node": self.node, "users": json.dumps([OWNER])}, auth)
+                self.assertEqual(response.status_code, status, response.get_data(as_text=True))
+                self.assertNotIn(OWNER, response.get_data(as_text=True))
 
     def test_a_node_the_caller_cannot_comment_on_is_refused(self):
         for auth, status in ((self.stranger, 404), (self.reader, 403)):

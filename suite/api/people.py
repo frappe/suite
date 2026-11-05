@@ -26,9 +26,11 @@ _DIRECTORY_USERS = f"""
     WHERE {drive.IN_DIRECTORY_SQL}
 """
 
+_MATCHES_TEXT = "(full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)"
+
 _USERS = f"""
     {_DIRECTORY_USERS}
-        AND (full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)
+        AND {_MATCHES_TEXT}
 """
 
 _USERS_AMONG = f"""
@@ -48,12 +50,16 @@ _PEOPLE = f"""
 
 
 # People a node names who are not in the directory above: Administrator as a
-# document's creator. They match the same text.
+# document's creator.
 _NAMED_USERS = """
     SELECT name, IF(IFNULL(full_name, '') = '', name, full_name) AS label
     FROM `tabUser`
     WHERE name IN %(users)s AND enabled = 1 AND name != 'Guest'
-        AND (full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)
+"""
+
+_NAMED_USERS_MATCHING = f"""
+    {_NAMED_USERS}
+        AND {_MATCHES_TEXT}
 """
 
 
@@ -91,12 +97,7 @@ class PeoplePage(TypedDict):
     next_cursor: str | None
 
 
-def search(
-    query: str | None = None,
-    cursor: str | None = None,
-    node: str | None = None,
-    users: list[str] | None = None,
-) -> PeoplePage:
+def search(query: str | None = None, cursor: str | None = None, node: str | None = None) -> PeoplePage:
     """Page the users and groups whose name or email contains `query`.
 
     Rows sort by what a picker shows: a user's full name, or else their
@@ -107,13 +108,8 @@ def search(
     each marked with `has_access`. Only someone who manages the node also gets `is_blocked`:
     to anyone else a block looks like any other lack of access. It adds the people the node
     names, such as its creator, and is one page with no cursor.
-
-    With `node` and `users`, the page answers exactly those people, in place of
-    a search. It offers no one a search on the node would not.
     """
     frappe.only_for("Suite User")
-    if users is not None:
-        return _look_up_on(node, users)
     if node:
         return _search_on(node, query or "")
     offset = _offset(cursor)
@@ -135,46 +131,47 @@ def search(
     return {"rows": rows, "next_cursor": str(offset + PAGE_SIZE) if more else None}
 
 
-def _search_on(node: str, query: str) -> PeoplePage:
-    pattern = _contains(query)
-    found = frappe.db.sql(
-        f"{_USERS} ORDER BY label, name LIMIT %(limit)s",
-        {"pattern": pattern, "limit": PAGE_SIZE},
-        as_dict=True,
-    )
-    labels = {row.name: row.label for row in found}
-    return _page_on(labels, drive.people_on(node, labels), pattern, PAGE_SIZE)
+def look_up(node: str, users: list[str]) -> list[PersonUser]:
+    """Answer whether exactly `users` can open `node`, as `search` marks them with `node`.
 
-
-def _look_up_on(node: str | None, users: list[str]) -> PeoplePage:
-    if not node:
-        frappe.throw(_("Looking up people needs a document"), BadLookup)
-    # A lookup answers one comment, so it names as many people as a comment can.
+    It offers no one a search on the node would not, and leaves out anyone else. A lookup answers one
+    comment, so it names as many people as a comment can.
+    """
+    frappe.only_for("Suite User")
     if len(users) > drive.MAX_MENTIONS:
         frappe.throw(_("A lookup can name at most {0} people").format(drive.MAX_MENTIONS), BadLookup)
-    found = frappe.db.sql(_USERS_AMONG, {"users": users}, as_dict=True) if users else []
-    labels = {row.name: row.label for row in found}
+    labels = _labels(_USERS_AMONG, {"users": users}) if users else {}
     access = drive.people_on(node, labels)
     asked = {user: answer for user, answer in access.items() if user in labels or user in users}
-    return _page_on(labels, asked, _contains(""), drive.MAX_MENTIONS)
+    named = [user for user in asked if user not in labels]
+    if named:
+        labels |= _labels(_NAMED_USERS, {"users": named})
+    return _ranked_on(labels, asked, drive.MAX_MENTIONS)
 
 
-def _page_on(
-    labels: dict[str, str], access: dict[str, drive.PersonOnNode], pattern: str, limit: int
-) -> PeoplePage:
+def _search_on(node: str, query: str) -> PeoplePage:
+    pattern = _contains(query)
+    labels = _labels(
+        f"{_USERS} ORDER BY label, name LIMIT %(limit)s", {"pattern": pattern, "limit": PAGE_SIZE}
+    )
+    access = drive.people_on(node, labels)
     named = [user for user in access if user not in labels]
     if named:
-        rows = frappe.db.sql(_NAMED_USERS, {"users": named, "pattern": pattern}, as_dict=True)
-        labels |= {row.name: row.label for row in rows}
+        labels |= _labels(_NAMED_USERS_MATCHING, {"users": named, "pattern": pattern})
+    return {"rows": [*_ranked_on(labels, access, PAGE_SIZE)], "next_cursor": None}
+
+
+def _labels(query: str, values: dict[str, object]) -> dict[str, str]:
+    return {row.name: row.label for row in frappe.db.sql(query, values, as_dict=True)}
+
+
+def _ranked_on(labels: dict[str, str], access: dict[str, drive.PersonOnNode], limit: int) -> list[PersonUser]:
     labels.pop(frappe.session.user, None)
     ranked = sorted(labels, key=lambda user: (not access[user]["has_access"], labels[user].casefold(), user))[
         :limit
     ]
     users = _users(ranked)
-    return {
-        "rows": [{**users[user], **access[user]} for user in ranked if user in users],
-        "next_cursor": None,
-    }
+    return [{**users[user], **access[user]} for user in ranked if user in users]
 
 
 def _offset(cursor: str | None) -> int:

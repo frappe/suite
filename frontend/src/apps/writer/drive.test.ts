@@ -49,20 +49,26 @@ describe('mention search', () => {
     expect(found[0]?.label).toBe('ben@x.test')
     expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([{}])
   })
+
+  it('searches on a document with the search route', async () => {
+    vi.mocked(transport.request).mockResolvedValue({ rows: [], next_cursor: null })
+
+    await searchUsers('as', 'doc-1')
+
+    const [[operation, input]] = vi.mocked(transport.request).mock.calls
+    expect([operation.path, input]).toEqual(['people', { q: 'as', node: 'doc-1' }])
+  })
 })
 
 describe('the people a comment newly names', () => {
   beforeEach(() => vi.mocked(transport.request).mockReset())
 
   it('asks once about everyone, and answers the people who cannot open the document', async () => {
-    vi.mocked(transport.request).mockResolvedValue({
-      rows: [
-        { ...user('ann@x.test', 'Ann'), has_access: true },
-        { ...user('ben@x.test', 'Ben'), has_access: false },
-        { ...user('cam@x.test', 'Cam'), has_access: false, is_blocked: true },
-      ],
-      next_cursor: null,
-    })
+    vi.mocked(transport.request).mockResolvedValue([
+      { ...user('ann@x.test', 'Ann'), has_access: true },
+      { ...user('ben@x.test', 'Ben'), has_access: false },
+      { ...user('cam@x.test', 'Cam'), has_access: false, is_blocked: true },
+    ])
 
     const locked = await peopleWithoutAccess('doc-1', ['ann@x.test', 'ben@x.test', 'cam@x.test'])
 
@@ -70,8 +76,10 @@ describe('the people a comment newly names', () => {
       ['ben@x.test', undefined],
       ['cam@x.test', true],
     ])
-    expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([
-      { node: 'doc-1', users: ['ann@x.test', 'ben@x.test', 'cam@x.test'] },
+    expect(
+      vi.mocked(transport.request).mock.calls.map(([operation, input]) => [operation.path, input]),
+    ).toEqual([
+      ['people/lookup', { node: 'doc-1', users: ['ann@x.test', 'ben@x.test', 'cam@x.test'] }],
     ])
   })
 
@@ -87,7 +95,7 @@ describe('a person whose only access to a document is a share link', () => {
   const CODE = 'SharedDocumentLink0001'
   const ben = { ...user('ben@x.test', 'Ben'), has_access: false }
 
-  // Plays the people route: a question about the shared document needs its link, as Comment does
+  // Plays both people routes: a question about the shared document needs its link, as Comment does
   function peopleServer() {
     const sent: Array<string | null> = []
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
@@ -99,7 +107,10 @@ describe('a person whose only access to a document is a share link', () => {
           status: 403,
         })
       }
-      return new Response(JSON.stringify({ data: { rows: [ben], next_cursor: null } }))
+      const data = String(url).includes('people/lookup')
+        ? [ben]
+        : { rows: [ben], next_cursor: null }
+      return new Response(JSON.stringify({ data }))
     })
     vi.mocked(transport.request).mockImplementation(createTransport({ fetch: fetcher }).request)
     return sent

@@ -13,6 +13,7 @@ import { watch } from 'vue'
 import { api, client, useUpload } from '@/api'
 import { documentCredentials } from '@/apps/drive'
 import { randomId } from '@/platform/random-id'
+import type { PeopleLookupOutputPersonUser } from '@/platform/transport/generated'
 
 /** A person on this site, in the shape the mention menu reads. */
 export interface WriterUser extends MentionSuggestionItem {
@@ -84,55 +85,53 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
   if (trashed.ok.length) await client.mutation(api.drive.nodes.purgeBatch, { nodes: trashed.ok })
 }
 
-/**
- * The route pages users and groups together, so groups are dropped. A question
- * about a document carries its share link, as the server reads a link commenter's
- * role from it.
- */
-async function findPeople(input: {
-  q?: string
-  node?: string
-  users?: string[]
-}): Promise<WriterUser[]> {
-  const context = input.node ? documentCredentials(input.node).context : undefined
-  const page = await client.query(api.suite.people.list, input, { context })
-  return page.rows.flatMap((row) =>
-    row.kind === 'user'
-      ? [
-          {
-            name: row.name,
-            email: row.email,
-            full_name: row.full_name ?? '',
-            user_image: row.user_image,
-            value: row.email,
-            label: (row.full_name || row.email).trimEnd(),
-            ...(row.has_access !== undefined && { has_access: row.has_access }),
-            ...(row.is_blocked && { is_blocked: true }),
-          },
-        ]
-      : [],
-  )
+function writerUser(person: PeopleLookupOutputPersonUser): WriterUser {
+  return {
+    name: person.name,
+    email: person.email,
+    full_name: person.full_name ?? '',
+    user_image: person.user_image,
+    value: person.email,
+    label: (person.full_name || person.email).trimEnd(),
+    ...(person.has_access !== undefined && { has_access: person.has_access }),
+    ...(person.is_blocked && { is_blocked: true }),
+  }
 }
 
 /**
  * The first page of people who match `query`, from `GET /api/suite/people`,
  * which any Suite user may call. With no query it is the first page of
  * everyone. With `node`, people who can open that document come first, the
- * caller is left out, and each person says whether they can open it.
+ * caller is left out, and each person says whether they can open it. The route
+ * pages users and groups together, so groups are dropped. A question about a
+ * document carries its share link, as the server reads a link commenter's role
+ * from it.
  */
-export function searchUsers(query: string, node?: string | null): Promise<WriterUser[]> {
+export async function searchUsers(query: string, node?: string | null): Promise<WriterUser[]> {
   const q = query.trim()
-  return findPeople({ ...(q && { q }), ...(node && { node }) })
+  const page = await client.query(
+    api.suite.people.list,
+    { ...(q && { q }), ...(node && { node }) },
+    { context: node ? documentCredentials(node).context : undefined },
+  )
+  return page.rows.flatMap((row) => (row.kind === 'user' ? [writerUser(row)] : []))
 }
 
 /**
  * The people among `users` who can't open `node`, as the mention menu marks
- * them. A failed lookup counts nobody, so it never stops a comment.
+ * them. The lookup carries the share link, as a search on the document does. A
+ * failed lookup counts nobody, so it never stops a comment.
  */
 export async function peopleWithoutAccess(
   node: string,
   users: readonly string[],
 ): Promise<WriterUser[]> {
-  const found = await findPeople({ node, users: [...users] }).catch(() => [])
-  return found.filter((person) => person.has_access === false)
+  const found = await client
+    .query(
+      api.suite.people.lookup,
+      { node, users: [...users] },
+      { context: documentCredentials(node).context },
+    )
+    .catch(() => [])
+  return found.filter((person) => person.has_access === false).map(writerUser)
 }

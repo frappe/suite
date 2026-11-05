@@ -126,7 +126,10 @@ class PeopleQuery(TypedDict, total=False):
     q: str
     cursor: str
     node: str
-    # With `node`: exactly these people, in place of a search.
+
+
+class PeopleLookupQuery(TypedDict):
+    node: str
     users: list[str]
 
 
@@ -375,7 +378,6 @@ ROUTES = (
         errors=(
             BadRequest,
             people.BadCursor,
-            people.BadLookup,
             frappe.PermissionError,
             drive.DriveForbidden,
             drive.DriveNotFound,
@@ -385,6 +387,22 @@ ROUTES = (
         kind="query",
         public_name="people.list",
         page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
+    ),
+    Route(
+        "GET",
+        "people/lookup",
+        "people_lookup",
+        errors=(
+            BadRequest,
+            people.BadLookup,
+            frappe.PermissionError,
+            drive.DriveForbidden,
+            drive.DriveNotFound,
+        ),
+        query=PeopleLookupQuery,
+        output=list[people.PersonUser],
+        kind="query",
+        public_name="people.lookup",
     ),
 )
 
@@ -482,15 +500,17 @@ def invitations_post(emails: Given = None) -> InvitationResult:
 
 
 @frappe.whitelist(methods=["GET"])
-def people_get(
-    q: Given = None, cursor: Given = None, node: Given = None, users: Given = None
-) -> people.PeoplePage:
+def people_get(q: Given = None, cursor: Given = None, node: Given = None) -> people.PeoplePage:
     return people.search(
         _optional_text(q, "q"),
         _optional_text(cursor, "cursor"),
         _optional_text(node, "node"),
-        _optional_text_list(users, "users"),
     )
+
+
+@frappe.whitelist(methods=["GET"])
+def people_lookup(node: Given = None, users: Given = None) -> list[people.PersonUser]:
+    return people.look_up(_required_text(node, "node"), _required_text_list(users, "users"))
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -506,10 +526,10 @@ def _optional_text(value: Given, name: str) -> str | None:
     return value
 
 
-def _optional_text_list(value: Given, name: str) -> list[str] | None:
+def _required_text_list(value: Given, name: str) -> list[str]:
     """A list sent in a query string, which the client writes as JSON."""
     if value is None:
-        return None
+        frappe.throw(_("Suite argument {0} is required").format(name), BadRequest)
     try:
         answer = json.loads(value) if isinstance(value, str) else value
     except ValueError:
