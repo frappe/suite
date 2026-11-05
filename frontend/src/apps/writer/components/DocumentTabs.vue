@@ -194,9 +194,9 @@ function tabActions(id: string): ContextMenuOptions {
   grid-area: 1 / 1;
 }
 
-/* Text sits exactly where the tab's own label sits, so renaming starts in place. */
+/* Text sits exactly where the tab's own label sits, and the field adds no width of its own, so renaming starts in place. */
 .tab-name-field {
-  @apply w-full min-w-0 rounded-4 border-0 bg-transparent px-2 py-0 text-base leading-tighter text-ink-gray-8 outline-none ring-1 ring-inset ring-outline-gray-3;
+  @apply w-0 min-w-full rounded-[7px] border-0 bg-transparent px-2 py-0 text-base leading-tighter text-ink-gray-8 outline-none ring-1 ring-inset ring-outline-gray-3;
 }
 
 .tab-name-field:focus {
