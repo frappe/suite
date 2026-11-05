@@ -2,6 +2,7 @@ import { getTextWrap, lineHeightFor } from '../utils/text-wrap.js'
 import { COLORS, FRAME_W, GRID_LINE } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
 import { inkFor } from './painters/cell-text-style.js'
+import { cellMidY, centredBaseline, firstLineMid } from './painters/text-anchor.js'
 import type { CellFormat } from './types.js'
 
 // The editor's border takes the selection frame's place (FRAME_W centred on
@@ -261,30 +262,24 @@ export function createOverlay(parent: HTMLElement): Overlay {
   }
 
   // Where the canvas puts the first line's alphabetic baseline, below the
-  // cell's top edge, in unzoomed pixels. Mirrors cell-painter.ts: one line
-  // anchors on the em box 4px from the top or bottom, or centres its
-  // capitals on the white area below the gridline; wrapped or multi-line
-  // text lays out a block of `openLines` lines.
+  // cell's top edge, in unzoomed pixels: wrapped or multi-line text lays
+  // out a block of `openLines` lines, and one line centres its capitals on
+  // the white area below the gridline (text-anchor.ts).
   function _canvasBaseline(
     h: number,
     fmt: EditorFormat,
     multi: boolean,
     m: ReturnType<typeof _metrics>,
   ): number {
-    if (!multi) {
-      if (fmt.valign === 'top') return 4 + m.emAscent
-      if (fmt.valign === 'bottom') return h - 4 - m.emDescent
-      return (h + 1) / 2 + m.cap / 2
+    if (multi) {
+      const mid = firstLineMid(0, h, fmt.valign, openLines, lineHeightFor(fmt))
+      return centredBaseline(mid, m.cap)
     }
-    const lineH = lineHeightFor(fmt)
-    const total = openLines * lineH
-    const firstMid =
-      fmt.valign === 'top'
-        ? lineH / 2 + 2
-        : fmt.valign === 'bottom'
-          ? h - total + lineH / 2 - 2
-          : 1 + Math.max(lineH / 2, (h - 1 - total) / 2 + lineH / 2)
-    return firstMid + m.cap / 2
+    // One top or bottom line sits on the canvas's 'top' or 'bottom'
+    // baseline, 4px in from the edge (cell-painter.ts _computeTextAnchor).
+    if (fmt.valign === 'top') return 4 + m.emAscent
+    if (fmt.valign === 'bottom') return h - 4 - m.emDescent
+    return centredBaseline(cellMidY(0, h), m.cap)
   }
 
   // Metrics of `font` (whose size is `size` px), measured on a canvas, as

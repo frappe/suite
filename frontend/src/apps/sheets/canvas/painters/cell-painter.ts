@@ -13,7 +13,7 @@ import type {
 } from '../types.js'
 import { createCellDecorations, ICON_INSET } from './cell-decorations.js'
 import { autoAlign, inkFor, setCellFont } from './cell-text-style.js'
-import { cellMidY, centredBaseline, createCapHeight } from './text-anchor.js'
+import { cellMidY, centredBaseline, createCapHeight, firstLineMid } from './text-anchor.js'
 
 export interface CellPainter {
   drawRegionCells(
@@ -448,15 +448,9 @@ export function createCellPainter(
       : String(val).split('\n')
     if (!lines.length) return
     const lineH = lineHeightFor(fmt)
-    const totalH = lines.length * lineH
     // Centre of the first line; a middle-aligned block centres on the white
     // area below the gridline, like single-line text.
-    const startY =
-      fmt.valign === 'top'
-        ? y + lineH / 2 + 2
-        : fmt.valign === 'bottom'
-          ? y + h - totalH + lineH / 2 - 2
-          : y + 1 + Math.max(lineH / 2, (h - 1 - totalH) / 2 + lineH / 2)
+    const startY = firstLineMid(y, h, fmt.valign, lines.length, lineH)
     const textX =
       fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4
     const capH = capHeight()
