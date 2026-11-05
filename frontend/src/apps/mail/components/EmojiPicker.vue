@@ -15,7 +15,7 @@
     <template #default="{ close }">
       <div
         v-if="reaction"
-        class="bg-surface-base flex items-center justify-center rounded-full p-1 shadow-sm"
+        class="bg-surface-base flex items-center justify-center gap-1 rounded-full p-1 shadow-sm"
         @pointerenter="cancelClose"
         @pointerleave="scheduleClose"
       >
@@ -27,11 +27,7 @@
         >
           {{ r }}
         </button>
-        <Button
-          class="ml-1 rounded-full"
-          icon="lucide-plus"
-          @click.stop="() => (reaction = false)"
-        />
+        <Button class="rounded-full" icon="lucide-plus" @click.stop="() => (reaction = false)" />
       </div>
       <div v-else class="bg-surface-base max-w-max transform rounded-6 px-4 sm:px-0">
         <div
