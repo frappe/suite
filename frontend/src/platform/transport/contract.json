@@ -2590,6 +2590,13 @@
           "node": {
             "title": "Node",
             "type": "string"
+          },
+          "users": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Users",
+            "type": "array"
           }
         },
         "title": "PeopleQuery",
@@ -2716,6 +2723,7 @@
       "errors": [
         "BadRequest",
         "BadCursor",
+        "BadLookup",
         "PermissionError",
         "DriveForbidden",
         "DriveNotFound"

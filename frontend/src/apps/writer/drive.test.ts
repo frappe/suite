@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { transport } from '@/platform/transport'
 
-import { searchUsers, uploadMedia } from './drive'
+import { peopleWithoutAccess, searchUsers, uploadMedia } from './drive'
 
 vi.mock(import('@/platform/transport'), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -46,6 +46,37 @@ describe('mention search', () => {
 
     expect(found[0]?.label).toBe('ben@x.test')
     expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([{}])
+  })
+})
+
+describe('the people a comment newly names', () => {
+  beforeEach(() => vi.mocked(transport.request).mockReset())
+
+  it('asks once about everyone, and answers the people who cannot open the document', async () => {
+    vi.mocked(transport.request).mockResolvedValue({
+      rows: [
+        { ...user('ann@x.test', 'Ann'), has_access: true },
+        { ...user('ben@x.test', 'Ben'), has_access: false },
+        { ...user('cam@x.test', 'Cam'), has_access: false, is_blocked: true },
+      ],
+      next_cursor: null,
+    })
+
+    const locked = await peopleWithoutAccess('doc-1', ['ann@x.test', 'ben@x.test', 'cam@x.test'])
+
+    expect(locked.map((person) => [person.name, person.is_blocked])).toEqual([
+      ['ben@x.test', undefined],
+      ['cam@x.test', true],
+    ])
+    expect(vi.mocked(transport.request).mock.calls.map(([, input]) => input)).toEqual([
+      { node: 'doc-1', users: ['ann@x.test', 'ben@x.test', 'cam@x.test'] },
+    ])
+  })
+
+  it('counts nobody when the lookup fails, so the comment still posts', async () => {
+    vi.mocked(transport.request).mockRejectedValue(new Error('offline'))
+
+    await expect(peopleWithoutAccess('doc-1', ['ann@x.test'])).resolves.toEqual([])
   })
 })
 

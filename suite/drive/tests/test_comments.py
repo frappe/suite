@@ -11,6 +11,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime, get_system_timezone
 
 from suite import drive
+from suite.api import people
 from suite.api.test_people import make_group, make_user, make_website_user
 from suite.drive._core import activity, comments
 from suite.drive._core.access import grant, people_on, revoke
@@ -1179,6 +1180,33 @@ class TestCommentWorkflows(IntegrationTestCase):
         self.assertEqual(
             people_on(self.document.name, self.commenter, [MENTIONED])[MENTIONED], {"has_access": False}
         )
+
+    def test_a_lookup_answers_exactly_the_people_asked_about(self):
+        grant(self.document.name, MENTIONED, NONE, self.admin)
+        grant(self.document.name, OUTSIDER, READ, self.admin)
+        asked = [MENTIONED, OUTSIDER, COMMENTER, WEBSITE_ONLY, "nobody@example.com"]
+
+        frappe.set_user(COMMENTER)
+        commenter_page = people.search(node=self.document.name, users=asked)
+        frappe.set_user(OWNER)
+        manager_page = people.search(node=self.document.name, users=[MENTIONED])
+
+        self.assertEqual(
+            [(row["name"], row["has_access"], "is_blocked" in row) for row in commenter_page["rows"]],
+            [(OUTSIDER, True, False), (MENTIONED, False, False)],
+        )
+        self.assertTrue(manager_page["rows"][0]["is_blocked"])
+
+    def test_a_lookup_needs_comment_access_a_document_and_a_short_list(self):
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(DriveNotFound):
+            people.search(node=self.document.name, users=[MENTIONED])
+
+        frappe.set_user(COMMENTER)
+        with self.assertRaises(people.BadLookup):
+            people.search(users=[MENTIONED])
+        with self.assertRaises(people.BadLookup):
+            people.search(node=self.document.name, users=["x"] * (people.LOOKUP_LIMIT + 1))
 
     def test_a_mention_of_someone_with_access_is_unchanged(self):
         grant(self.document.name, MENTIONED, READ, self.admin)

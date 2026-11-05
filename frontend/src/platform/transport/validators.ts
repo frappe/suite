@@ -1297,6 +1297,7 @@ export const operationPeopleGet: Validators<PeopleGetInput, PeopleGetOutput> = {
           q: { title: 'Q', type: 'string' },
           cursor: { title: 'Cursor', type: 'string' },
           node: { title: 'Node', type: 'string' },
+          users: { items: { type: 'string' }, title: 'Users', type: 'array' },
         },
         required: [],
         additionalProperties: false,

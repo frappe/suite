@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Literal, NotRequired, TypedDict
 
 import frappe
@@ -125,6 +126,8 @@ class PeopleQuery(TypedDict, total=False):
     q: str
     cursor: str
     node: str
+    # With `node`: exactly these people, in place of a search.
+    users: list[str]
 
 
 class UserKeysInput(TypedDict):
@@ -372,6 +375,7 @@ ROUTES = (
         errors=(
             BadRequest,
             people.BadCursor,
+            people.BadLookup,
             frappe.PermissionError,
             drive.DriveForbidden,
             drive.DriveNotFound,
@@ -478,9 +482,14 @@ def invitations_post(emails: Given = None) -> InvitationResult:
 
 
 @frappe.whitelist(methods=["GET"])
-def people_get(q: Given = None, cursor: Given = None, node: Given = None) -> people.PeoplePage:
+def people_get(
+    q: Given = None, cursor: Given = None, node: Given = None, users: Given = None
+) -> people.PeoplePage:
     return people.search(
-        _optional_text(q, "q"), _optional_text(cursor, "cursor"), _optional_text(node, "node")
+        _optional_text(q, "q"),
+        _optional_text(cursor, "cursor"),
+        _optional_text(node, "node"),
+        _optional_text_list(users, "users"),
     )
 
 
@@ -495,6 +504,19 @@ def _optional_text(value: Given, name: str) -> str | None:
     if not isinstance(value, str):
         frappe.throw(_("Suite argument {0} is invalid").format(name), BadRequest)
     return value
+
+
+def _optional_text_list(value: Given, name: str) -> list[str] | None:
+    """A list sent in a query string, which the client writes as JSON."""
+    if value is None:
+        return None
+    try:
+        answer = json.loads(value) if isinstance(value, str) else value
+    except ValueError:
+        answer = None
+    if not isinstance(answer, list) or not all(isinstance(item, str) for item in answer):
+        frappe.throw(_("Suite argument {0} is invalid").format(name), BadRequest)
+    return answer
 
 
 def _required_text(value: Given, name: str) -> str:

@@ -83,19 +83,13 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
   if (trashed.ok.length) await client.mutation(api.drive.nodes.purgeBatch, { nodes: trashed.ok })
 }
 
-/**
- * The first page of people who match `query`, from `GET /api/suite/people`,
- * which any Suite user may call. With no query it is the first page of
- * everyone. The route pages users and groups together, so groups are dropped.
- * With `node`, people who can open that document come first, the caller is
- * left out, and each person says whether they can open it.
- */
-export async function searchUsers(query: string, node?: string | null): Promise<WriterUser[]> {
-  const q = query.trim()
-  const page = await client.query(api.suite.people.list, {
-    ...(q && { q }),
-    ...(node && { node }),
-  })
+/** The route pages users and groups together, so groups are dropped. */
+async function findPeople(input: {
+  q?: string
+  node?: string
+  users?: string[]
+}): Promise<WriterUser[]> {
+  const page = await client.query(api.suite.people.list, input)
   return page.rows.flatMap((row) =>
     row.kind === 'user'
       ? [
@@ -115,6 +109,17 @@ export async function searchUsers(query: string, node?: string | null): Promise<
 }
 
 /**
+ * The first page of people who match `query`, from `GET /api/suite/people`,
+ * which any Suite user may call. With no query it is the first page of
+ * everyone. With `node`, people who can open that document come first, the
+ * caller is left out, and each person says whether they can open it.
+ */
+export function searchUsers(query: string, node?: string | null): Promise<WriterUser[]> {
+  const q = query.trim()
+  return findPeople({ ...(q && { q }), ...(node && { node }) })
+}
+
+/**
  * The people among `users` who can't open `node`, as the mention menu marks
  * them. A failed lookup counts nobody, so it never stops a comment.
  */
@@ -122,8 +127,6 @@ export async function peopleWithoutAccess(
   node: string,
   users: readonly string[],
 ): Promise<WriterUser[]> {
-  const found = await Promise.all(users.map((user) => searchUsers(user, node).catch(() => [])))
-  return found.flatMap((rows, index) =>
-    rows.filter((row) => row.name === users[index] && row.has_access === false),
-  )
+  const found = await findPeople({ node, users: [...users] }).catch(() => [])
+  return found.filter((person) => person.has_access === false)
 }

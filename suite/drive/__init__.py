@@ -608,6 +608,7 @@ __all__ = (
     "DriveLocked",
     "DriveNotFound",
     "DriveOverQuota",
+    "PersonOnNode",
     "Satellite",
     "administration_usage",
     "adopt_media",

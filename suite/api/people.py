@@ -16,15 +16,27 @@ from suite import drive
 
 PAGE_SIZE = 20
 
+# A comment can name this many people, and a lookup answers one comment.
+LOOKUP_LIMIT = 50
+
 # A cursor is an offset. Nine digits is far past any real directory, and it
 # keeps a crafted cursor out of `int()` and out of the SQL OFFSET.
 _CURSOR_DIGITS = 9
 
-_USERS = f"""
+_DIRECTORY_USERS = f"""
     SELECT 'user' AS kind, name, IF(IFNULL(full_name, '') = '', name, full_name) AS label
     FROM `tabUser`
     WHERE {drive.IN_DIRECTORY_SQL}
+"""
+
+_USERS = f"""
+    {_DIRECTORY_USERS}
         AND (full_name LIKE %(pattern)s OR name LIKE %(pattern)s OR email LIKE %(pattern)s)
+"""
+
+_USERS_AMONG = f"""
+    {_DIRECTORY_USERS}
+        AND name IN %(users)s
 """
 
 _PEOPLE = f"""
@@ -49,6 +61,10 @@ _NAMED_USERS = """
 
 
 class BadCursor(frappe.ValidationError):
+    http_status_code = 400
+
+
+class BadLookup(frappe.ValidationError):
     http_status_code = 400
 
 
@@ -78,7 +94,12 @@ class PeoplePage(TypedDict):
     next_cursor: str | None
 
 
-def search(query: str | None = None, cursor: str | None = None, node: str | None = None) -> PeoplePage:
+def search(
+    query: str | None = None,
+    cursor: str | None = None,
+    node: str | None = None,
+    users: list[str] | None = None,
+) -> PeoplePage:
     """Page the users and groups whose name or email contains `query`.
 
     Rows sort by what a picker shows: a user's full name, or else their
@@ -89,8 +110,13 @@ def search(query: str | None = None, cursor: str | None = None, node: str | None
     each marked with `has_access`. Only someone who manages the node also gets `is_blocked`:
     to anyone else a block looks like any other lack of access. It adds the people the node
     names, such as its creator, and is one page with no cursor.
+
+    With `node` and `users`, the page answers exactly those people, in place of
+    a search. It offers no one a search on the node would not.
     """
     frappe.only_for("Suite User")
+    if users is not None:
+        return _look_up_on(node, users)
     if node:
         return _search_on(node, query or "")
     offset = _offset(cursor)
@@ -120,14 +146,31 @@ def _search_on(node: str, query: str) -> PeoplePage:
         as_dict=True,
     )
     labels = {row.name: row.label for row in found}
+    return _page_on(labels, drive.people_on(node, labels), pattern, PAGE_SIZE)
+
+
+def _look_up_on(node: str | None, users: list[str]) -> PeoplePage:
+    if not node:
+        frappe.throw(_("Looking up people needs a document"), BadLookup)
+    if len(users) > LOOKUP_LIMIT:
+        frappe.throw(_("A lookup can name at most {0} people").format(LOOKUP_LIMIT), BadLookup)
+    found = frappe.db.sql(_USERS_AMONG, {"users": users}, as_dict=True) if users else []
+    labels = {row.name: row.label for row in found}
     access = drive.people_on(node, labels)
+    asked = {user: answer for user, answer in access.items() if user in labels or user in users}
+    return _page_on(labels, asked, _contains(""), LOOKUP_LIMIT)
+
+
+def _page_on(
+    labels: dict[str, str], access: dict[str, drive.PersonOnNode], pattern: str, limit: int
+) -> PeoplePage:
     named = [user for user in access if user not in labels]
     if named:
         rows = frappe.db.sql(_NAMED_USERS, {"users": named, "pattern": pattern}, as_dict=True)
         labels |= {row.name: row.label for row in rows}
     labels.pop(frappe.session.user, None)
     ranked = sorted(labels, key=lambda user: (not access[user]["has_access"], labels[user].casefold(), user))[
-        :PAGE_SIZE
+        :limit
     ]
     users = _users(ranked)
     return {

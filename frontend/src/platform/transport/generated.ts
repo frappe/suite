@@ -838,7 +838,7 @@ export type PeopleGetOutputPersonUser = {
   is_blocked?: boolean
 }
 
-export type PeopleGetInput = { q?: string; cursor?: string; node?: string }
+export type PeopleGetInput = { q?: string; cursor?: string; node?: string; users?: Array<string> }
 
 export type PeopleGetOutput = {
   rows: Array<PeopleGetOutputPersonUser | PeopleGetOutputPersonGroup>
@@ -846,7 +846,7 @@ export type PeopleGetOutput = {
 }
 
 export type PeopleGetError =
-  'BadRequest' | 'BadCursor' | 'PermissionError' | 'DriveForbidden' | 'DriveNotFound'
+  'BadRequest' | 'BadCursor' | 'BadLookup' | 'PermissionError' | 'DriveForbidden' | 'DriveNotFound'
 
 const operationPeopleGet: PageRef<
   PeopleGetInput,
@@ -865,7 +865,14 @@ const operationPeopleGet: PageRef<
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['BadRequest', 'BadCursor', 'PermissionError', 'DriveForbidden', 'DriveNotFound'],
+  errors: [
+    'BadRequest',
+    'BadCursor',
+    'BadLookup',
+    'PermissionError',
+    'DriveForbidden',
+    'DriveNotFound',
+  ],
   loadValidators: async () => (await import('./validators')).operationPeopleGet,
 }
 
