@@ -52,8 +52,8 @@ class File(FrappeFile):
         self._validate_content_link()
         if self.is_new() and not self.flags.file_created:
             return super().validate()
-        # file_url names the blob this row owns. Pointed at another blob, serving
-        # or deleting the row would serve or delete someone else's file.
+        # A File row grants read access to whatever its file_url names, so only Drive's
+        # storage flows may repoint it.
         if (
             not self.is_new()
             and self.has_value_changed("file_url")
