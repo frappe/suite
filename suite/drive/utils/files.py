@@ -1,4 +1,5 @@
 import os
+import posixpath
 import shutil
 import unicodedata
 from contextlib import contextmanager
@@ -11,6 +12,7 @@ import frappe
 import mimemapper
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from frappe.utils import get_url
 from PIL import Image, ImageOps
 from werkzeug.http import dump_options_header
 
@@ -560,6 +562,40 @@ def storage_key(file_url):
     if file_url.startswith(S3_URL_PREFIX):
         return unquote(file_url[len(S3_URL_PREFIX) :])
     return file_url.lstrip("/")
+
+
+def file_url_spellings(file_url) -> list[str]:
+    """Every file_url that reaches the same stored file as `file_url`.
+
+    Rows store one file under several forms: `/private/files/x`, the bare key
+    `private/files/x`, and the S3 fetch url of its key, quoted or not, because the
+    framework unquotes a new row's url. A client can also send the site's full url,
+    or a path with `.` and `//` segments that resolves to the same file on disk.
+    The raw key stays beside the normalised one: on S3 `a//b` and `a/b` are distinct.
+    """
+    url = str(file_url or "")
+    site_url = get_url()
+    if url.startswith(site_url + "/"):
+        url = url[len(site_url) :]
+
+    key = storage_key(url)
+    bare_key = key.lstrip("/")
+    if not bare_key:
+        return []
+
+    keys = {key, bare_key, posixpath.normpath(bare_key)}
+    keys |= {"/" + k for k in keys}
+    return sorted({spelling for k in keys for spelling in (k, S3_URL_PREFIX + k, get_s3_url(k))})
+
+
+def files_using_stored_file(file_url, **filters) -> list[str]:
+    """Names of the File rows whose file_url reaches the same stored file as `file_url`.
+    A Link row names a web address, not a stored file, and many users can link one page."""
+    spellings = file_url_spellings(file_url)
+    if not spellings:
+        return []
+    filters = {"file_url": ("in", spellings), "file_type": ("!=", "Link"), **filters}
+    return frappe.get_all("File", filters=filters, pluck="name")
 
 
 def stored_on_disk(file_url):

@@ -6,9 +6,11 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import get_url
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
@@ -50,7 +52,7 @@ from suite.drive.utils import (
     create_drive_file,
     get_user_folder,
 )
-from suite.drive.utils.files import FileManager, get_s3_url
+from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-files-owner@example.com"
@@ -567,6 +569,70 @@ class TestDriveFilesAPI(IntegrationTestCase):
             file.file_url = "/private/files/../../invalid.txt"
             with self.assertRaises(frappe.ValidationError):
                 file.save()
+
+    def new_file_with_url(self, file_url):
+        return frappe.get_doc(
+            {"doctype": "File", "file_name": "added.txt", "file_url": file_url, "is_private": 1}
+        ).insert()
+
+    def test_new_file_cannot_reach_an_unreadable_private_file_under_any_spelling(self):
+        with self.set_user(OWNER):
+            secret = self.upload(b"another user's secret", "secret file.txt")
+        url = "/" + secret.file_url.lstrip("/")
+        key = url.lstrip("/")
+
+        spellings = [
+            url,
+            key,
+            url.replace("/files/", "/files/./"),
+            url.replace("/files/", "/files//"),
+            get_url() + url,
+            get_url() + "/" + url,
+            "https://x/../.." + url,
+            get_s3_url(key),
+            S3_URL_PREFIX + key,
+            S3_URL_PREFIX + "x/../" + key,
+        ]
+        with self.set_user(OTHER_USER):
+            for spelling in spellings:
+                with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
+                    self.new_file_with_url(spelling)
+
+    def test_new_file_cannot_reach_an_unreadable_private_file_stored_on_s3(self):
+        keys = [f"{self.folder.name}/secret file.txt", f"/{self.folder.name}/secret file.txt", "a//b c.txt"]
+        for key in keys:
+            self.file.db_set("file_url", get_s3_url(key))
+            spellings = [
+                get_s3_url(key),
+                get_url() + get_s3_url(key),
+                S3_URL_PREFIX + quote(quote(key)),
+            ]
+            with self.set_user(OTHER_USER):
+                for spelling in spellings:
+                    with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
+                        self.new_file_with_url(spelling)
+
+    def test_user_with_a_drive_share_can_add_a_file_for_that_private_file(self):
+        with self.set_user(OWNER):
+            shared = self.upload(b"shared with the member", "shared.txt")
+            frappe.get_doc("File", shared.name).share(user=MEMBER, read=1)
+        url = "/" + shared.file_url.lstrip("/")
+
+        with self.set_user(MEMBER):
+            added = self.new_file_with_url(url)
+            self.assertEqual(FileManager().get_file(added).read(), b"shared with the member")
+
+        with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
+            self.new_file_with_url(url)
+
+        # the same on an S3 site, where the url is the fetch url of the bucket key
+        fetch_url = get_s3_url(f"{self.folder.name}/shared file.txt")
+        frappe.db.set_value("File", shared.name, "file_url", fetch_url)
+        with self.set_user(MEMBER):
+            added = self.new_file_with_url(fetch_url)
+            self.assertEqual(storage_key(added.file_url), f"{self.folder.name}/shared file.txt")
+        with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
+            self.new_file_with_url(fetch_url)
 
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = "123e4567-e89b-42d3-a456-426614174000"

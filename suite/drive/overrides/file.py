@@ -1,4 +1,3 @@
-import posixpath
 import shutil
 from pathlib import Path
 
@@ -33,7 +32,13 @@ from suite.drive.utils import (
     update_file_size,
     validate_filename,
 )
-from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
+from suite.drive.utils.files import (
+    S3_URL_PREFIX,
+    FileManager,
+    files_using_stored_file,
+    get_s3_url,
+    storage_key,
+)
 
 
 class File(FrappeFile):
@@ -80,20 +85,11 @@ class File(FrappeFile):
             )
 
     def validate_private_file_access(self):
-        """Run by the framework before a new File takes an existing file_url: the
-        user must already be able to read a private file at that url. The framework's
-        version asks its own File permission, which `ignore_file_permissions` turns
-        into a yes for everyone, so this asks Drive's. The url is normalised first,
-        because `/private/files/./x` reads the same blob as `/private/files/x`, and
-        Drive stores its own urls without the leading slash."""
-        if not self.file_url:
-            return
-
-        key = posixpath.normpath(storage_key(self.file_url))
-        filters = {"file_url": ("in", [key, "/" + key]), "is_private": 1}
-        if not self.is_new():
-            filters["name"] = ("!=", self.name)
-        holders = frappe.get_all("File", filters=filters, pluck="name")
+        """Run before a new File takes an existing file_url: the user must already be
+        able to read a private file at that url, however the url is spelled. The
+        framework's version asks its own File permission, which
+        `ignore_file_permissions` turns into a yes for everyone, so this asks Drive's."""
+        holders = files_using_stored_file(self.file_url, is_private=1)
         if holders and not any(user_has_permission(name, "read") for name in holders):
             frappe.throw("You do not have permission to access this file", frappe.PermissionError)
 
