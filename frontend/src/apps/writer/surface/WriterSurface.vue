@@ -829,7 +829,7 @@ onBeforeUnmount(() => {
       </template>
       <template #menu>
         <WriterDocumentMenu
-          v-if="readable"
+          v-if="readable && !hasFailedToOpen"
           :session="session"
           :editor="editorSurface?.editor ?? null"
           :settings="settings"
