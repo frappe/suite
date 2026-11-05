@@ -94,7 +94,7 @@ Expose **Delete Mail account**, never Delete Suite user. Require a disabled Suit
 - Invalidate prior Mail credentials/sessions. Address reuse must never revive old access.
 - Release the primary address for reuse only after deletion is confirmed consistent. Warn about future messages reaching a new holder.
 - A recreated mailbox is empty; deleted messages/memberships do not return. If the old address has been reassigned, require another available address; never reclaim it automatically.
-- Recreating the mailbox does not reactivate the Suite user. Reactivation is separate and readiness-gated.
+- Recreating the mailbox does not reactivate the Suite user. Its setup reaches only that user's own new account. Reactivation is separate and readiness-gated.
 - Partial failure reports Deletion failed, identifies completed effects, permits retry, and keeps the user disabled until consistent.
 
 Current `suite/mail/api/admin.py:delete_members()` deletes the Frappe User and triggers cross-product deletion hooks. It is **not** the required mailbox-only operation and must not be exposed by the new dashboard.
