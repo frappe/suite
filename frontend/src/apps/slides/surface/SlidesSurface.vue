@@ -59,6 +59,7 @@ import {
   slidesLength,
   startLoad,
   viewOnly,
+  writesBlocked,
 } from '@/apps/slides/stores/presentation'
 import {
   clearSaveFailure,
@@ -170,19 +171,20 @@ const restoring = ref(false)
 const editable = computed(
   () => access.writable.value && !composite.value && !restoring.value && !isOnlyCopy.value,
 )
-// Another tab of this browser edits the deck, or the server refused this tab's
-// version. Nothing more is saved here, so nothing more is edited until a reload.
-const blocked = computed(() => lockedElsewhere.value || saveRefused.value)
+// A composite can restore a version of itself, so this is not `inReadonlyMode`.
 const canRestoreVersions = computed(
-  () => access.writable.value && !restoring.value && !isOnlyCopy.value && !blocked.value,
+  () => access.writable.value && !restoring.value && !isOnlyCopy.value && !writesBlocked.value,
 )
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
-const editing = computed(() => editable.value && !blocked.value && !phone.value)
+// What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
+// stores keep their own `inReadonlyMode`, which follows access, the edit lock and a refused save.
+const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
+const editing = computed(() => !canvasReadonly.value)
 const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
   props.session.contentDocname,
-  editable,
+  computed(() => !inReadonlyMode.value),
 )
 useHideRail()
 
@@ -201,9 +203,6 @@ const history = useCommandHistory(slides, {
   actionOrder: historyMetaActionOrder,
 })
 setCommandHistory(history)
-// What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
-// stores keep their own `inReadonlyMode`, which follows access, the edit lock and a refused save.
-const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
 useShortcuts(canvasReadonly, inSlideShowMode)
 provide('inReadonlyMode', canvasReadonly)
 provide('inSlideShowMode', inSlideShowMode)
@@ -227,8 +226,8 @@ async function writeTheme(
 ) {
   showThemeDialog.value = false
   showThemeChange.value = false
-  // a dialog stays open through a change of access
-  if (!editable.value) {
+  // a dialog stays open through a change of access, or of the edit lock
+  if (inReadonlyMode.value) {
     return
   }
 
@@ -259,7 +258,7 @@ const presentationMenu = computed(() => [
       {
         label: 'Change theme',
         icon: 'lucide-swatch-book',
-        condition: () => editable.value && !blocked.value,
+        condition: () => !inReadonlyMode.value,
         onClick: () => {
           showThemeChange.value = true
         },
@@ -308,9 +307,11 @@ watch(
 watch(phone, (isPhone) => {
   if (isPhone) resetFocus()
 })
-// An open text box would keep taking keystrokes that no save carries.
-watch(blocked, (isBlocked) => {
-  if (!isBlocked) return
+// An open text box would keep taking keystrokes that no save carries. Not on every
+// entry to read-only: closing a box marks the deck dirty, which a tab that has just
+// lost access could never clear, and a restore that fails should keep the selection.
+watch(writesBlocked, (blocked) => {
+  if (!blocked) return
   flushPendingBlur()
   resetFocus()
 })

@@ -17,7 +17,7 @@ import { translationPlugin } from '@/platform/translation'
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 export const saves: unknown[] = []
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
-const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
+const versionsPanel = vi.hoisted(() => ({ flush: async () => {}, writable: false }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
 const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
@@ -227,10 +227,13 @@ vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
 
 vi.doMock('./SlidesVersionsPanel.vue', () => ({
   default: {
-    props: { flush: { type: Function, default: null } },
-    setup(props: { flush: () => Promise<void> }) {
+    props: { flush: { type: Function, default: null }, writable: Boolean },
+    setup(props: { flush: () => Promise<void>; writable: boolean }) {
       versionsPanel.flush = props.flush
-      return () => null
+      return () => {
+        versionsPanel.writable = props.writable
+        return null
+      }
     },
   },
 }))

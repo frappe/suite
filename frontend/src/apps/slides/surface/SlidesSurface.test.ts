@@ -108,6 +108,10 @@ describe('Slides editing a deck another tab holds', () => {
     return document.querySelector<HTMLElement>(`[role="alert"] [label="${label}"]`)!
   }
 
+  function menuItem(label: string) {
+    return [...document.querySelectorAll('button')].find((item) => item.textContent === label)
+  }
+
   // another tab holds every deck: only a steal is granted
   function anotherTabHoldsTheDeck() {
     Object.defineProperty(navigator, 'locks', {
@@ -179,6 +183,26 @@ describe('Slides editing a deck another tab holds', () => {
     expect(toolbar()).not.toBeNull()
     await press('Mod+D')
     expect(thumbnails(mounted.root)).toHaveLength(3)
+  })
+
+  it('does not let a locked tab restore a version or change the theme', async () => {
+    mounted = await lockedDeck()
+    versionsPanel.writable = true
+    mounted.root.querySelector<HTMLElement>('[data-versions]')?.click()
+    await nextTick()
+
+    expect(versionsPanel.writable).toBe(false)
+    expect(menuItem('Change theme')).toBeUndefined()
+    themeChange.update('Dark')
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(server.fetch.mock.calls.filter(([url]) => String(url).includes('update_theme'))).toEqual(
+      [],
+    )
+
+    action('Edit here').click()
+    await vi.waitFor(() => expect(banner()).toBeNull())
+    expect(versionsPanel.writable).toBe(true)
+    expect(menuItem('Change theme')).toBeDefined()
   })
 
   describe('when another tab takes the deck from this one', () => {
@@ -782,6 +806,16 @@ describe('Slides push refused by the server', () => {
     const [copy] = readRecovery('node-1')
     expect(copy.slides).toHaveLength(3)
     expect(copy.sticky).toBe(true)
+  })
+
+  it('stops editing, with only the Reload toast and no second banner', async () => {
+    const refusal = await refused()
+
+    await vi.waitFor(() => expect(toolbar()).toBeNull())
+    expect(refusal.cancel.label).toBe('Reload')
+    expect(banner()).toBeNull()
+    await press('Mod+D')
+    expect(editorSlides.value).toHaveLength(3)
   })
 
   it('keeps the copy through a reload, an edit and a landed save', async () => {
