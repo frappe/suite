@@ -23,7 +23,14 @@ URNS = (
     "urn:ietf:params:jmap:submission",
     "urn:ietf:params:jmap:sieve",
 )
-DEFAULT_ROLES = ("inbox", "drafts", "sent", "junk", "trash")
+# The folders the server opens an account with, under the server's own names.
+DEFAULT_FOLDERS = {
+    "inbox": "Inbox",
+    "drafts": "Drafts",
+    "sent": "Sent Items",
+    "junk": "Junk Mail",
+    "trash": "Deleted Items",
+}
 # What the server sets on an object that the client does not send.
 SERVER_SET = {
     "Mailbox": {"parentId": None, "sortOrder": 0, "isSubscribed": True, "totalEmails": 0, "unreadEmails": 0},
@@ -60,11 +67,43 @@ class MailServer(FakeJMAPServer):
         }
         self.primary_accounts = dict.fromkeys(URNS, account)
         self.objects[account, "Mailbox"] = {
-            role: {**SERVER_SET["Mailbox"], "id": role, "name": role.title(), "role": role}
-            for role in DEFAULT_ROLES
+            role: {**SERVER_SET["Mailbox"], "id": role, "name": name, "role": role}
+            for role, name in DEFAULT_FOLDERS.items()
         }
         self.objects[account, "SieveScript"] = {}
         return account
+
+    def add_shared_account(self) -> str:
+        """List an account the user shares with others, next to their own."""
+
+        account = uuid4().hex
+        self.accounts[account] = {**self.accounts[self.primary_accounts[URNS[0]]], "isPersonal": False}
+        self.objects[account, "Mailbox"] = {}
+        self.objects[account, "SieveScript"] = {}
+        return account
+
+    def fail_folder_changes(self, *, after: int = 0) -> None:
+        """Refuse every folder change once ``after`` more have gone through."""
+
+        refusal = {"type": "serverFail"}
+        if not after:
+            self.errors["Mailbox/set"] = refusal
+            return
+
+        change_folders = self.handlers["Mailbox/set"]
+
+        def count_down(arguments: dict, server: FakeJMAPServer) -> dict:
+            nonlocal after
+            result = dict(change_folders(arguments, server))
+            after -= 1
+            if not after:
+                self.errors["Mailbox/set"] = refusal
+            return result
+
+        self.handlers["Mailbox/set"] = count_down
+
+    def recover(self) -> None:
+        self.errors.pop("Mailbox/set", None)
 
     def stored(self, account: str, kind: str) -> list[dict]:
         return list(self.objects[account, kind].values())
@@ -164,11 +203,43 @@ class TestAccountRecreation(IntegrationTestCase):
         self.assertTrue(result["success"], result)
         self.assertEqual(read(self.user)["status"], "Password change required")
         self.assertEqual(frappe.db.get_value("User", self.user, "enabled"), 0)
-        roles = {mailbox.get("role") for mailbox in self.server.stored(account, "Mailbox")}
-        self.assertIn("archive", roles)
-        scripts = self.server.stored(account, "SieveScript")
+        self.assert_set_up(account)
+
+    def test_a_recreation_that_failed_before_any_folder_was_made_can_be_retried(self):
+        account = self.server.open_account()
+        shared = self.server.add_shared_account()
+        self.server.fail_folder_changes()
+
+        self.assert_setup_failed()
+        self.assertTrue(frappe.db.exists("JMAP Account", account))
+        self.assertNotIn("archive", self.roles(account))
+
+        self.retry()
+        self.assert_set_up(account)
+        # The setup reaches the user's own account only, not what they share with others.
+        self.assertEqual(self.server.stored(shared, "Mailbox"), [])
+        self.assertEqual(self.server.stored(shared, "SieveScript"), [])
+
+    def test_a_retry_finishes_a_setup_that_stopped_halfway_without_repeating_it(self):
+        account = self.server.open_account()
+        self.server.fail_folder_changes(after=1)  # the Archive folder is made, the renames are refused
+
+        self.assert_setup_failed()
+        self.assertIn("archive", self.roles(account))
+
+        self.retry()
+        self.assert_set_up(account)
+        names = {mailbox["role"]: mailbox["name"] for mailbox in self.server.stored(account, "Mailbox")}
         self.assertEqual(
-            [(script["name"], script["isActive"]) for script in scripts], [("frappe_mail_automation", True)]
+            names,
+            {
+                "inbox": "Inbox",
+                "drafts": "Drafts",
+                "sent": "Sent",
+                "junk": "Spam",
+                "trash": "Trash",
+                "archive": "Archive",
+            },
         )
 
     def test_a_disabled_user_cannot_reach_their_mail_outside_their_own_account_setup(self):
@@ -179,3 +250,28 @@ class TestAccountRecreation(IntegrationTestCase):
         for scope in (nullcontext(), provisioning("someone-else@example.test")):
             with self.subTest(scope=scope), scope, self.assertRaisesRegex(frappe.ValidationError, "disabled"):
                 get_jmap_client(self.user, ignore_permissions=True)
+
+    def recreate(self) -> dict:
+        return mail.administer_account("recreate", user=self.user, address=self.address)
+
+    def assert_setup_failed(self) -> None:
+        self.assertFalse(self.recreate()["success"])
+        self.assertEqual(read(self.user)["status"], "Setup failed")
+
+    def retry(self) -> None:
+        self.server.recover()
+        frappe.local.request_cache.clear()  # a retry is a request of its own
+        result = self.recreate()
+        self.assertTrue(result["success"], result)
+
+    def roles(self, account: str) -> list[str | None]:
+        return [mailbox.get("role") for mailbox in self.server.stored(account, "Mailbox")]
+
+    def assert_set_up(self, account: str) -> None:
+        """One Archive folder and one active automation script, however many attempts it took."""
+
+        self.assertEqual(self.roles(account).count("archive"), 1)
+        scripts = self.server.stored(account, "SieveScript")
+        self.assertEqual(
+            [(script["name"], script["isActive"]) for script in scripts], [("frappe_mail_automation", True)]
+        )
