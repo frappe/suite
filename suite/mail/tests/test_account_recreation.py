@@ -1,6 +1,5 @@
 """Recreating a deleted Mail account, with Suite Cloud and the mail server faked at the network."""
 
-from contextlib import nullcontext
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -11,7 +10,7 @@ from jmap.testing.fake import FakeJMAPServer
 
 from suite import mail
 from suite.mail.api.admin import add_member
-from suite.mail.jmap import get_jmap_client, provisioning
+from suite.mail.jmap import DEFAULT_TIMEOUT, get_account_client, get_jmap_client, provisioning
 from suite.mail.tests.test_admin_lifecycle import Provider
 from suite.suite_core.account_state import read
 from suite.suite_core.administration import update_user
@@ -243,13 +242,19 @@ class TestAccountRecreation(IntegrationTestCase):
         )
 
     def test_a_disabled_user_cannot_reach_their_mail_outside_their_own_account_setup(self):
-        self.server.open_account()
-        self.assertTrue(mail.administer_account("recreate", user=self.user, address=self.address)["success"])
-        frappe.local.request_cache.clear()
+        account = self.server.open_account()
+        self.assertTrue(self.recreate()["success"])
 
-        for scope in (nullcontext(), provisioning("someone-else@example.test")):
-            with self.subTest(scope=scope), scope, self.assertRaisesRegex(frappe.ValidationError, "disabled"):
-                get_jmap_client(self.user, ignore_permissions=True)
+        # Still in the request that set the account up, asking as the setup asked.
+        for attempt in (
+            lambda: get_jmap_client(self.user, ignore_permissions=False, timeout=DEFAULT_TIMEOUT),
+            lambda: get_account_client(account),
+        ):
+            with self.assertRaisesRegex(frappe.ValidationError, "disabled"):
+                attempt()
+            with provisioning("someone-else@example.test"):
+                with self.assertRaisesRegex(frappe.ValidationError, "disabled"):
+                    attempt()
 
     def recreate(self) -> dict:
         return mail.administer_account("recreate", user=self.user, address=self.address)
