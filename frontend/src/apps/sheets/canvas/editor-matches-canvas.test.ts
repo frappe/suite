@@ -219,19 +219,13 @@ describe('the in-cell editor draws text where the grid does', () => {
   }
 
   it('draws with the optical size the canvas uses', () => {
-    // A `font` shorthand on the textarea would reset font-variation-settings.
+    // A `font` shorthand on the textarea would reset the font settings that
+    // it, like the canvas, inherits from the grid.
     expect(edit({ value: 'x' }).s.cssText).not.toMatch(/(^|;)\s*font:/)
     // The canvas draws the unzoomed size and scales it, so a variable font
     // picks the unzoomed size's design; the editor pins the same one.
     const { s } = edit({ value: 'x', fmt: { fontSize: 20 }, zoom: 1.25 })
     expect(s.getPropertyValue('font-variation-settings')).toBe('"opsz" 20')
-  })
-
-  it('takes the grid’s own optical size when it sets one', () => {
-    document.body.style.setProperty('font-variation-settings', '"opsz" 24')
-    const { s } = edit({ value: 'x' })
-    expect(s.getPropertyValue('font-variation-settings')).toBe('inherit')
-    document.body.style.removeProperty('font-variation-settings')
   })
 
   it('writes in the ink the grid draws over a fill', () => {

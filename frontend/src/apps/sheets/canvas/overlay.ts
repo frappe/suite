@@ -48,11 +48,11 @@ export function createOverlay(parent: HTMLElement): Overlay {
   el.wrap = 'off'
   el.spellcheck = false
   el.autocomplete = 'off'
-  // No `font` shorthand: it resets font-variation-settings, and the canvas
-  // draws with the variation settings it inherits from the grid's wrapper
-  // (Inter's optical-size axis). The textarea is the canvas's sibling, so
-  // inheriting gives it the same glyphs and the same widths (_layout pins
-  // the optical size when the grid leaves it to the font size).
+  // Font longhands, no `font` shorthand: the shorthand resets the font
+  // settings that the textarea, like the canvas beside it, inherits from the
+  // grid's wrapper. _layout pins Inter's optical size to the unzoomed font
+  // size, the size the canvas draws before it scales, so the editor draws
+  // the same glyphs at the same widths.
   el.style.cssText = [
     'position:absolute',
     'display:none',
@@ -62,7 +62,6 @@ export function createOverlay(parent: HTMLElement): Overlay {
     'padding:0 4px',
     'font-size:13px',
     'font-family:InterVar,Inter,ui-sans-serif,system-ui,sans-serif',
-    'font-variation-settings:inherit',
     'font-feature-settings:inherit',
     'font-optical-sizing:inherit',
     'letter-spacing:0',
@@ -92,7 +91,6 @@ export function createOverlay(parent: HTMLElement): Overlay {
   // Layout-measured baselines (_layoutBaseline), per font and line height.
   const baselines = new Map<string, number | null>()
   let probe: HTMLDivElement | null = null
-  let parentOpsz: boolean | undefined
   let mark: HTMLSpanElement | null = null
 
   function position(
@@ -139,12 +137,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
     // A variable font with an optical-size axis (Inter) picks its design from
     // the font size. The canvas draws the unzoomed size and scales it, so pin
     // the editor to that size's design; at zoom 125% the 25px design is
-    // narrower than the scaled 20px one. A grid that sets its own optical
-    // size passes it down instead.
-    el.style.setProperty(
-      'font-variation-settings',
-      _parentSetsOpsz() ? 'inherit' : `"opsz" ${size0}`,
-    )
+    // narrower than the scaled 20px one.
+    el.style.setProperty('font-variation-settings', `"opsz" ${size0}`)
     el.style.textAlign = fmt.align === 'center' || fmt.align === 'right' ? fmt.align : 'left'
     const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through']
       .filter(Boolean)
@@ -223,7 +217,6 @@ export function createOverlay(parent: HTMLElement): Overlay {
         'margin:0',
         'padding:0',
         'border:0',
-        'font-variation-settings:inherit',
         'font-feature-settings:inherit',
         'font-optical-sizing:inherit',
       ].join(';')
@@ -246,14 +239,6 @@ export function createOverlay(parent: HTMLElement): Overlay {
     // Until the web font loads this measures a fallback font: don't keep it.
     if (document.fonts?.status !== 'loading') baselines.set(key, result)
     return result
-  }
-
-  // Whether the grid sets an optical size the canvas inherits (frappe-ui's
-  // default sets one on every div; the sheet's grid resets it to normal).
-  function _parentSetsOpsz(): boolean {
-    if (parentOpsz === undefined)
-      parentOpsz = /opsz/.test(getComputedStyle(parent).fontVariationSettings || '')
-    return parentOpsz
   }
 
   // The canvas font string (chip-geometry.ts chipFont) at `px`.

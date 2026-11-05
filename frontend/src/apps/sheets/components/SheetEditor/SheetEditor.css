@@ -300,8 +300,10 @@
   background: var(--surface-base);
   /* Cell text in Inter's text design. frappe-ui sets Inter's optical size to
      24 (its display cut, cramped at 13px) on every div, span, p and button;
-     the canvas and the in-cell editor inherit from here instead, so both get
-     the cut that matches their font size and keep drawing the same glyphs. */
+     the canvas inherits from here instead, so it draws each font size in
+     that size's cut. The in-cell editor pins the cut of the unzoomed font
+     size, which the canvas draws and then scales, so both draw the same
+     glyphs. */
   font-variation-settings: normal;
 }
 .sn-grid-wrap canvas {
