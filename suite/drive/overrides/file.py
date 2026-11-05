@@ -38,6 +38,7 @@ from suite.drive.utils.files import (
     files_using_stored_file,
     get_s3_url,
     storage_key,
+    stored_file_in_use,
 )
 
 
@@ -433,16 +434,15 @@ class File(FrappeFile):
     def _delete_blob_after_commit(self, blob_is_trashed: bool):
         # frappe stores identical uploads once, so other rows can hold this blob; a
         # trashed blob sits at a trash path named after this row alone
-        if not blob_is_trashed and frappe.db.exists(
-            "File", {"file_url": self.file_url, "name": ("!=", self.name)}
-        ):
-            return
+        in_use = not blob_is_trashed and stored_file_in_use(self.file_url, other_than=self.name)
         entity = frappe._dict(name=self.name, file_url=self.file_url)
 
         def delete_blob():
             try:
                 if blob_is_trashed:
                     self.manager.delete_from_trash(entity)
+                elif in_use:
+                    self.manager.delete_thumbnail(entity.name)
                 else:
                     self.manager.delete_file(entity)
             except Exception:
@@ -452,6 +452,13 @@ class File(FrappeFile):
                 )
 
         frappe.db.after_commit.add(delete_blob)
+
+    def _delete_file_on_disk(self):
+        # Run when a row is purged. The framework only spares a row with this exact
+        # url and content hash, which misses a live row under another spelling.
+        if stored_file_in_use(self.file_url, other_than=self.name):
+            return self.delete_file_data_content(only_thumbnail=True)
+        return super()._delete_file_on_disk()
 
     # Utils
     @property

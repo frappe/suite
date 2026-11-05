@@ -18,7 +18,7 @@ from werkzeug.http import dump_options_header
 
 from suite.drive.locks.distributed_lock import DistributedLock
 
-from . import STATUS_ACTIVE, get_root_folder
+from . import STATUS_ACTIVE, STATUS_REMOVED, get_root_folder
 
 S3_URL_PREFIX = "/api/method/suite.drive.api.s3.fetch?path="
 # Sidecar directories under the Drive root, beside the mirrored tree.
@@ -508,14 +508,9 @@ class FileManager:
             pass
 
     def delete_file(self, entity):
-        thumbnail_path = self.get_thumbnail_path(entity.name)
-
         if self.s3_enabled:
-            bucket = self.bucket
             try:
-                self.conn.delete_object(Bucket=bucket, Key=storage_key(entity.file_url))
-                if thumbnail_path:
-                    self.conn.delete_object(Bucket=bucket, Key=str(thumbnail_path))
+                self.conn.delete_object(Bucket=self.bucket, Key=storage_key(entity.file_url))
             except Exception:
                 pass
         else:
@@ -525,10 +520,19 @@ class FileManager:
                     shutil.rmtree(path)
                 else:
                     path.unlink()
-                if thumbnail_path:
-                    (self.site_folder / thumbnail_path).unlink()
             except FileNotFoundError:
                 pass
+        self.delete_thumbnail(entity.name)
+
+    def delete_thumbnail(self, name):
+        thumbnail_path = self.get_thumbnail_path(name)
+        if self.s3_enabled:
+            try:
+                self.conn.delete_object(Bucket=self.bucket, Key=str(thumbnail_path))
+            except Exception:
+                pass
+        else:
+            (self.site_folder / thumbnail_path).unlink(missing_ok=True)
 
     def delete_from_trash(self, entity):
         trash_path = self.__get_trash_path(entity)
@@ -596,6 +600,11 @@ def files_using_stored_file(file_url, **filters) -> list[str]:
         return []
     filters = {"file_url": ("in", spellings), "file_type": ("!=", "Link"), **filters}
     return frappe.get_all("File", filters=filters, pluck="name")
+
+
+def stored_file_in_use(file_url, other_than: str) -> bool:
+    """Whether a row other than `other_than`, not yet permanently deleted, uses this file."""
+    return bool(files_using_stored_file(file_url, status=("!=", STATUS_REMOVED), name=("!=", other_than)))
 
 
 def stored_on_disk(file_url):
