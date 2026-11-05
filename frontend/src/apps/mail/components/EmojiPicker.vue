@@ -1,7 +1,14 @@
 <template>
-  <Popover bare>
+  <Popover v-model:open="isOpen" bare :auto-focus="!openOnHover">
     <template #trigger="{ setOpen, open }">
-      <slot v-bind="{ open, toggle: () => setOpen(!open) }">
+      <slot
+        v-bind="{
+          open,
+          toggle: () => setOpen(!open),
+          press,
+          hover: { onPointerenter: scheduleOpen, onPointerleave: scheduleClose },
+        }"
+      >
         <span class="text-base"> {{ modelValue || '' }} </span>
       </slot>
     </template>
@@ -9,6 +16,8 @@
       <div
         v-if="reaction"
         class="bg-surface-base flex items-center justify-center rounded-full p-1 shadow-sm"
+        @pointerenter="cancelClose"
+        @pointerleave="scheduleClose"
       >
         <button
           v-for="r in reactionEmojis"
@@ -63,11 +72,49 @@
 <script setup lang="ts">
 import { Button, FormControl, Popover } from 'frappe-ui'
 import { gemoji } from 'gemoji'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+
+const { openOnHover = false } = defineProps<{ openOnHover?: boolean }>()
 
 const search = ref('')
 const emoji = defineModel()
 const reaction = defineModel('reaction')
+
+const OPEN_DELAY_MS = 150
+const CLOSE_DELAY_MS = 300
+
+// Opening on hover is for a mouse. A touch has no hover to end, so it still goes by tapping.
+const isMouse = (event: PointerEvent) => event.pointerType === 'mouse'
+
+const isOpen = ref(false)
+let hoverTimer: ReturnType<typeof setTimeout> | undefined
+const cancelClose = () => clearTimeout(hoverTimer)
+onBeforeUnmount(cancelClose)
+
+const scheduleOpen = (event: PointerEvent) => {
+  if (!openOnHover || !isMouse(event)) return
+  clearTimeout(hoverTimer)
+  hoverTimer = setTimeout(() => (isOpen.value = true), OPEN_DELAY_MS)
+}
+
+// Crossing the gap from the button to the palette is what the delay is for. The full list stays
+// open: it has a search box to type in, and is dismissed by clicking away.
+const scheduleClose = (event: PointerEvent) => {
+  if (!openOnHover || !isMouse(event)) return
+  clearTimeout(hoverTimer)
+  if (reaction.value) hoverTimer = setTimeout(() => (isOpen.value = false), CLOSE_DELAY_MS)
+}
+
+// A mouse that hovered and then clicks wants what it already sees, not to have it close.
+const press = (event: PointerEvent) => {
+  clearTimeout(hoverTimer)
+  isOpen.value = openOnHover && isMouse(event) ? true : !isOpen.value
+}
+
+// It opens on the short palette each time, whichever view it was left on.
+watch(isOpen, (open) => {
+  if (open && openOnHover) reaction.value = true
+})
 
 const reactionEmojis = ref(['👍', '❤️', '😂', '😮', '😢', '🙏'])
 
