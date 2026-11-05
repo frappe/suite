@@ -145,7 +145,7 @@ function edit(c: Case) {
     insetRight: text.rightInset,
   }
   const overlay = createOverlay(document.body)
-  overlay.position(box.x * zoom, box.y * zoom, box.w * zoom, box.h * zoom, editorFmt, zoom)
+  overlay.position(box.x, box.y, box.w, box.h, editorFmt, zoom)
   overlay.show(value)
   const s = overlay.el.style
   const size = px(s.fontSize)
@@ -191,6 +191,16 @@ const CASES: { [name: string]: Case } = {
   'zoom 0.8': { value: 'Small', zoom: 0.8 },
   'zoom 1.5, 18px, right': { value: 'Zoomed', fmt: { fontSize: 18, align: 'right' }, zoom: 1.5 },
   'zoom 2, 60px': { value: 'Huge', fmt: { fontSize: 60 }, h: 80, zoom: 2 },
+  // 20 letters 7.7px wide fill the 154px between the text edges exactly, so
+  // the painter draws one line. At zoom 0.8, (162 × 0.8) / 0.8 is
+  // 161.99999999999997: a width zoomed and divided back is too narrow.
+  'wrapped text that fills the cell, zoom 0.8': {
+    value: 'x'.repeat(20),
+    fmt: { textWrap: 'wrap', fontSize: 14 },
+    w: 162,
+    h: 40,
+    zoom: 0.8,
+  },
   'a merged cell, centred': {
     value: 'Title',
     fmt: { align: 'center' },

@@ -43,6 +43,7 @@ afterEach(() => {
 
 // Where the textarea puts its first line's capitals and text start, from its
 // inline styles: CSS centres the font's ascent + descent in the line box.
+// The cell's box is in logical px; the result is in CSS px.
 function layout(x: number, y: number, w: number, h: number, fontSize = 13, zoom = 1) {
   const overlay = createOverlay(document.body)
   overlay.position(x, y, w, h, { fontSize }, zoom)
@@ -67,7 +68,7 @@ describe('in-cell editor lines up with the canvas', () => {
 
   it('follows the zoom', () => {
     // At zoom 0.8 a 24px row is 19.2px on screen; its gridline is 0.8px.
-    const { capCentre, textLeft } = layout(120, 38.4, 80, 19.2, 13, 0.8)
+    const { capCentre, textLeft } = layout(150, 48, 100, 24, 13, 0.8)
     expect(capCentre).toBeCloseTo(38.4 + (19.2 + 0.8) / 2, 5)
     expect(textLeft).toBeCloseTo(120 + 4 * 0.8, 5)
   })

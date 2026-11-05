@@ -78,12 +78,14 @@ function setup(over: Partial<EditorOptions> = {}) {
 }
 
 describe('opening', () => {
-  it('shows the value, pins the textarea to the zoomed cell rect and collapses the selection', () => {
+  it('shows the value, pins the textarea to the cell at its zoom and collapses the selection', () => {
     const h = setup()
     h.editor.open('hi')
     expect(h.editor.isOpen()).toBe(true)
     expect(h.el.value).toBe('hi')
-    expect(h.overlay.position).toHaveBeenCalledWith(20, 40, 200, 42, {}, 2)
+    // The cell's logical rect: the overlay wraps and places text in the
+    // painter's units and zooms only its styles.
+    expect(h.overlay.position).toHaveBeenCalledWith(10, 20, 100, 21, {}, 2)
     expect(h.opts.collapseSelection).toHaveBeenCalled()
     expect(h.opts.ensureVisible).toHaveBeenCalledWith(2, 3)
     expect(h.opts.onInput).toHaveBeenCalledWith('hi')

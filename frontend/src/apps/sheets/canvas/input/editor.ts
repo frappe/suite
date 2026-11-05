@@ -43,6 +43,8 @@ export interface EditorFormat extends CellFormat {
 /** overlay.js: the textarea and its show/hide/position helpers. */
 export interface EditorOverlay {
   el: HTMLTextAreaElement
+  /** Lay the textarea over a cell's box, given in logical px as the cell
+   *  painter draws it, at `zoom`. */
   position(x: number, y: number, w: number, h: number, fmt: EditorFormat, zoom: number): void
   show(value: string): void
   hide(): void
@@ -124,7 +126,7 @@ export function createEditor(o: EditorOptions): Editor {
     const fmt = o.formatAt(r, c)
     const align = fmt.align || (keepsDrawnAlign && fmt.autoAlign) || undefined
     const shown = align ? { ...fmt, align } : fmt
-    o.overlay.position(rect.x * z, rect.y * z, rect.w * z, rect.h * z, shown, z)
+    o.overlay.position(rect.x, rect.y, rect.w, rect.h, shown, z)
   }
 
   function openEditor(value: string, m: EditMode = 'enter'): void {

@@ -28,6 +28,8 @@ export interface Overlay extends EditorOverlay {
   remove(): void
 }
 
+// The cell's box as the painter draws it, in logical px (before zoom), and
+// the zoom the grid shows it at.
 interface Box {
   x: number
   y: number
@@ -112,14 +114,14 @@ export function createOverlay(parent: HTMLElement): Overlay {
   function _layout({ x, y, w, h, fmt, zoom }: Box): void {
     borderW = FRAME_W * zoom
     const outer = GRID_LINE * zoom - borderW / 2
-    el.style.left = x + outer + 'px'
-    el.style.top = y + outer + 'px'
-    el.style.width = w + borderW + 'px'
-    el.style.height = h + borderW + 'px'
+    el.style.left = x * zoom + outer + 'px'
+    el.style.top = y * zoom + outer + 'px'
+    el.style.width = w * zoom + borderW + 'px'
+    el.style.height = h * zoom + borderW + 'px'
     el.style.borderWidth = borderW + 'px'
     usedBorder = parseFloat(getComputedStyle(el).borderTopWidth) || borderW
-    // The content box starts `inner` after x and y, and ends `innerRight`
-    // before x + w.
+    // The content box starts `inner` CSS px after the cell's left and top
+    // edges, and ends `innerRight` before its right edge.
     const inner = outer + usedBorder
     const innerRight = -outer - borderW + usedBorder
     // The canvas draws from x + 4 (plus a conditional-format icon) to
@@ -161,7 +163,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     const drawn = _metrics(chipFont(fmt), size0)
     const css = _metrics(_font(size), size)
     const multi = wrap || openLines > 1
-    const baseline0 = _canvasBaseline(h / zoom, fmt, multi, drawn)
+    const baseline0 = _canvasBaseline(h, fmt, multi, drawn)
     let baseline = baseline0 * zoom
     // Where CSS puts the baseline in a line box: measured when the page has
     // layout (the browser rounds its font metrics and snaps the line, so the
@@ -176,8 +178,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
     const dpr = globalThis.devicePixelRatio || 1
     if (_layoutBaseline(lineH) !== null) {
       const top = parent.getBoundingClientRect().top
-      const row = Math.round(top * dpr) + canvasRow(dpr * zoom, y / zoom + baseline0)
-      baseline = (row + 0.25) / dpr - top - y
+      const row = Math.round(top * dpr) + canvasRow(dpr * zoom, y + baseline0)
+      baseline = (row + 0.25) / dpr - top - y * zoom
     }
     let padTop = baseline - inner - baselineInLine(lineH)
     // Padding can't go negative: a font too big for its row draws its
@@ -193,7 +195,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
     }
     el.style.lineHeight = lineH + 'px'
     el.style.paddingTop = Math.max(0, padTop) + 'px'
-    baseH = h + borderW
+    baseH = h * zoom + borderW
   }
 
   // The baseline's offset from the top of a `lineH` line box in the
@@ -319,9 +321,9 @@ export function createOverlay(parent: HTMLElement): Overlay {
   function _countLines(): number {
     const ctx = _measure()
     if (!box || !ctx || getTextWrap(box.fmt) !== 'wrap') return el.value.split('\n').length
-    const { w, zoom, fmt } = box
+    const { w, fmt } = box
     ctx.font = chipFont(fmt)
-    const maxW = w / zoom - (fmt.insetLeft || 0) - (fmt.insetRight || 0) - 8
+    const maxW = w - (fmt.insetLeft || 0) - (fmt.insetRight || 0) - 8
     return wrapLines(el.value, maxW, (t) => ctx.measureText(t).width).length
   }
 
