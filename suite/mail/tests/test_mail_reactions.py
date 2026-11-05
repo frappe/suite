@@ -225,7 +225,7 @@ class ListRows(unittest.TestCase):
         self.seen = patcher.start()
         self.addCleanup(patcher.stop)
 
-    def rows(self, *conversations: list[dict], limit: int = 50) -> dict:
+    def rows(self, *conversations: list[dict], limit: int = 50, roles: list[dict] | None = None) -> dict:
         with (
             mock.patch.object(
                 mail_api,
@@ -233,7 +233,9 @@ class ListRows(unittest.TestCase):
                 return_value={str(i): c for i, c in enumerate(conversations)},
             ),
             mock.patch.object(
-                mail_api, "get_cached_mailboxes", return_value=[{"id": "sent", "role": "sent"}]
+                mail_api,
+                "get_cached_mailboxes",
+                return_value=[{"id": "sent", "role": "sent"}, *(roles or [])],
             ),
             mock.patch.object(mail_api, "add_user_images_to_emails"),
             mock.patch.object(mail_api, "get_cached_identities", return_value=[{"email": "me@frappe.io"}]),
@@ -319,6 +321,26 @@ class ListRows(unittest.TestCase):
             mail_api.add_reaction_refusals("acct", conversation)
         self.assertIsNone(conversation[0]["cannot_react"])
 
+    def test_a_reaction_to_trashed_mail_marks_its_row_to_be_left_out(self):
+        rows = self.rows(
+            [
+                stored("m1", "trash", "2026-11-01T10:00:00Z"),
+                stored("r2", "inbox", "2026-11-04T10:00:00Z", target="m1"),
+            ],
+            roles=[{"id": "trash", "role": "trash"}],
+        )["rows"]
+        self.assertEqual([r["reaction_only"] for r in rows], [1])
+
+    def test_a_reaction_to_junked_mail_marks_its_row_to_be_left_out(self):
+        rows = self.rows(
+            [
+                stored("m1", "junk", "2026-11-01T10:00:00Z", junk=1),
+                stored("r2", "inbox", "2026-11-04T10:00:00Z", target="m1"),
+            ],
+            roles=[{"id": "junk", "role": "junk"}],
+        )["rows"]
+        self.assertEqual([r["reaction_only"] for r in rows], [1])
+
     def test_a_reaction_whose_target_is_gone_is_listed_as_the_message_it_then_is(self):
         rows = self.rows([stored("r2", "inbox", "2026-11-04T10:00:00Z", target="gone")])["rows"]
         self.assertEqual([r["id"] for r in rows], ["r2"])
@@ -372,6 +394,35 @@ class WhenAReactionIsRefused(unittest.TestCase):
 
     def test_nineteen_of_your_reactions_leave_room_for_one_more(self):
         self.assertIsNone(reaction_refusal(self.message(), self.own, 19))
+
+    def test_replies_going_elsewhere_are_refused(self):
+        message = self.message(reply_to=[{"email": "tickets@example.com"}])
+        self.assertIn("different address", reaction_refusal(message, self.own))
+
+    def test_reply_to_that_is_the_sender_is_fine(self):
+        message = self.message(reply_to=[{"email": "ANA@example.com"}])
+        self.assertIsNone(reaction_refusal(message, self.own))
+
+    def test_a_reply_to_on_your_own_mail_is_yours_to_mark(self):
+        message = self.message(
+            from_email="me@frappe.io",
+            reply_to=[{"email": "team@frappe.io"}],
+            recipients=[{"type": "To", "email": "ana@example.com"}],
+        )
+        self.assertIsNone(reaction_refusal(message, self.own))
+
+    def test_addresses_that_take_no_replies_are_refused(self):
+        for sender in (
+            "noreply@example.com",
+            "no-reply@marketplace.aws",
+            "No_Reply+abc@example.com",
+            "do.not.reply@example.com",
+        ):
+            self.assertIn("take replies", reaction_refusal(self.message(from_email=sender), self.own), sender)
+
+    def test_an_address_merely_containing_those_words_is_fine(self):
+        message = self.message(from_email="ana.noreply@example.com")
+        self.assertIsNone(reaction_refusal(message, self.own))
 
     def test_twenty_of_your_reactions_are_the_limit(self):
         self.assertIsNotNone(reaction_refusal(self.message(), self.own, 20))

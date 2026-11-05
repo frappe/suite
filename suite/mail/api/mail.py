@@ -363,13 +363,16 @@ def get_threads(
         # The row describes what was written: reacting to a thread must not redate it, rename its
         # sender or replace its preview with an emoji the pane then folds away. The reactions stay
         # in `visible`, which is what the pane is built from (see collapse_reactions).
-        written = written_messages(visible)
+        # Judged against the whole conversation, not what this view shows: a reaction to a message
+        # now in Trash or Junk is still a reaction, and must not stand in for the mail thrown away.
+        folded = {m["id"] for m in conversation} - {m["id"] for m in written_messages(conversation)}
+        written = [m for m in visible if m["id"] not in folded]
 
         # A reaction is delivered to the Inbox like any mail, but it doesn't bring back a thread
-        # you archived, or show mail you only sent there as if it had come in. The row stays on the
-        # page, marked for the client to leave out: the next page starts at this page's row count.
-        # Nothing here can be opened to read it, so a reaction that missed `fetch_changes` is read
-        # here, or the mailbox would count it unread with no row to clear it.
+        # you archived or trashed, or show mail you only sent there as if it had come in. The row
+        # stays on the page, marked for the client to leave out: the next page starts at this page's
+        # row count. Nothing here can be opened to read it, so a reaction that missed `fetch_changes`
+        # is read here, or the mailbox would count it unread with no row to clear it.
         reaction_only = not any(in_mailbox_view(m, mailbox) for m in written) and any(
             in_mailbox_view(m, mailbox) for m in visible
         )
@@ -380,6 +383,7 @@ def get_threads(
 
         # The summary row is derived from the thread's messages in the current mailbox (falling back
         # to the whole conversation for cross-mailbox views like "starred").
+        written = written or visible
         in_mailbox = [m for m in written if in_mailbox_view(m, mailbox)] or written
 
         # The preview and sender reflect the latest message in the conversation (the most recent

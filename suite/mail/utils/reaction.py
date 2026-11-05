@@ -159,6 +159,15 @@ def from_mailing_list(email: dict) -> bool:
     return precedence in MAILING_LIST_PRECEDENCES
 
 
+def _takes_no_replies(address: str) -> bool:
+    """Whether an address says it isn't read: "no-reply", "noreply+abc" and "do_not_reply" alike."""
+
+    from suite.mail.classification.headers import AUTOMATED_SENDER_PREFIXES
+
+    local = address.rpartition("@")[0].partition("+")[0]
+    return local.translate(str.maketrans("", "", "-_.")).startswith(AUTOMATED_SENDER_PREFIXES)
+
+
 def reaction_refusal(message: dict, own_emails: set[str], own_reactions: int = 0) -> str | None:
     """Why this message can't be reacted to, in words for the reader, or None if it can.
 
@@ -177,6 +186,15 @@ def reaction_refusal(message: dict, own_emails: set[str], own_reactions: int = 0
     sender = (message.get("from_email") or "").lower()
     if own_emails and sender not in own_emails and not addressed & own_emails:
         return _("You can't react to this message because you aren't in To or Cc.")
+
+    # A reaction goes where a reply would. Reply-To can lead somewhere that files what it gets, like
+    # a helpdesk's ticket, where a reaction reads as an odd comment; your own mail is yours to mark.
+    if sender not in own_emails:
+        reply_to = {(address.get("email") or "").lower() for address in message.get("reply_to") or []}
+        if reply_to - {"", sender}:
+            return _("You can't react to this message because replies to it go to a different address.")
+        if _takes_no_replies(sender):
+            return _("You can't react to mail from an address that doesn't take replies.")
 
     if len(addressed) > MAX_REACTION_RECIPIENTS:
         return _("This message went to too many people to react to.")
