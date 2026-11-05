@@ -835,7 +835,9 @@ class TestCommentWorkflows(IntegrationTestCase):
                 grant(node, principal, NONE, self.admin)
                 create_thread(self.owner, self.document.name, "anchor", f"Look @[{MENTIONED}]")
 
-                self.assertTrue(people_on(self.document.name, self.owner, [MENTIONED])[MENTIONED]["is_blocked"])
+                self.assertTrue(
+                    people_on(self.document.name, self.owner, [MENTIONED])[MENTIONED]["is_blocked"]
+                )
                 self.assertNotEqual(self.role_of(), COMMENT)
                 self.assertEqual(activity.unread_count(principals_for(MENTIONED)), 0)
                 revoke(node, principal, self.admin)

@@ -136,9 +136,9 @@ def _search_on(node: str, query: str) -> PeoplePage:
         rows = frappe.db.sql(_NAMED_USERS, {"users": named, "pattern": pattern}, as_dict=True)
         labels |= {row.name: row.label for row in rows}
     labels.pop(frappe.session.user, None)
-    ranked = sorted(
-        labels, key=lambda user: (not access[user]["has_access"], labels[user].casefold(), user)
-    )[:PAGE_SIZE]
+    ranked = sorted(labels, key=lambda user: (not access[user]["has_access"], labels[user].casefold(), user))[
+        :PAGE_SIZE
+    ]
     users = _users(ranked)
     return {
         "rows": [{**users[user], **access[user]} for user in ranked if user in users],
