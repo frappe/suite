@@ -278,10 +278,21 @@ class TestConvertDocument(IntegrationTestCase):
 
         self.assertEqual(
             [status(node) for node in (waiting, refused, done)],
-            [{"state": "pending"}, {"state": "refused"}, {"state": "converted"}],
+            [{"state": "pending"}, {"state": "refused", "outcome": "check"}, {"state": "converted"}],
         )
         frappe.set_user("Administrator")
-        self.assertEqual(status(refused), {"state": "refused", "reason": "check"})
+        self.assertEqual(status(refused), {"state": "refused", "outcome": "check", "reason": "check"})
+
+    def test_a_reader_learns_a_sheet_was_refused_as_too_large(self):
+        node = self.old_sheet(CURRENT_BODY)
+        with patch.object(capacity, "STATE_MAX", 1):
+            self.assertEqual(conversions.convert_document(sheets_content.APP, node), "too_large")
+
+        grant(node, READER, drive.READ, principals_for())
+        frappe.db.commit()
+        frappe.set_user(READER)
+        docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        self.assertEqual(get_conversion(docname), {"state": "refused", "outcome": "too_large"})
 
     def test_a_changed_body_fingerprints_again(self):
         node = self.old_sheet(CURRENT_BODY)

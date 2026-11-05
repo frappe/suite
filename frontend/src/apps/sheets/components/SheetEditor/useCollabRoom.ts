@@ -231,7 +231,7 @@ export function useCollabRoom({
   })
   const banner = computed(() => {
     if (conversion.value?.state === 'refused')
-      return notUpgradedBanner(conversion.value.reason ?? null)
+      return notUpgradedBanner(conversion.value.outcome ?? null, conversion.value.reason ?? null)
     if (conversion.value) return upgradingBanner()
     return status.value ? bannerFor(status.value) : null
   })

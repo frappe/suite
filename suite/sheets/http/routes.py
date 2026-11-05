@@ -23,6 +23,8 @@ class SheetBody(TypedDict):
 
 class SheetConversion(TypedDict):
     state: Literal["converted", "pending", "refused"]
+    # A refused sheet's outcome code, such as `too_large`
+    outcome: NotRequired[str]
     reason: NotRequired[str]
 
 

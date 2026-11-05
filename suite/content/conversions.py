@@ -308,14 +308,26 @@ def keep_old_version(node: str) -> None:
 
 def is_waiting(app: str, node: str) -> bool:
     """Whether `node`'s body waits for a conversion: this converter has not refused it."""
+    return refused_attempt(app, node) is None
+
+
+def refused_attempt(app: str, node: str) -> frappe._dict | None:
+    """Load this converter's record refusing `node`'s body as it stands, or None while a run may still convert it."""
     held = held_attempt(app, node, conversion_of(app).read_fingerprint(node))
-    return held is None or held.outcome in {None, "converted"}
+    if held is None or held.outcome in {None, "converted"}:
+        return None
+
+    return held
 
 
 def conversion_status(app: str, node: str) -> ConversionStatus:
     """Answer whether the next run converts `node`'s body, with the rooms told its outcome, or this converter refused it; the reason for System Managers."""
-    held = held_attempt(app, node, conversion_of(app).read_fingerprint(node))
-    if held is None or held.outcome in {None, "converted"}:
+    return status_of(app, node, refused_attempt(app, node))
+
+
+def status_of(app: str, node: str, held: frappe._dict | None) -> ConversionStatus:
+    """Answer `conversion_status` for `node`, given its `refused_attempt`."""
+    if held is None:
         pending: ConversionStatus = {
             "state": "pending",
             "rooms": live.conversion_rooms(app, node),

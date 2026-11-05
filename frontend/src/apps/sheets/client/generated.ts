@@ -32,7 +32,11 @@ const operationGetSheet: QueryRef<GetSheetInput, GetSheetOutput, GetSheetError> 
 
 export type GetConversionInput = { name: string }
 
-export type GetConversionOutput = { state: 'converted' | 'pending' | 'refused'; reason?: string }
+export type GetConversionOutput = {
+  state: 'converted' | 'pending' | 'refused'
+  outcome?: string
+  reason?: string
+}
 
 export type GetConversionError = never
 

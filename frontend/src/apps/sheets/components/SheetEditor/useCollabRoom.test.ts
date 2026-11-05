@@ -259,6 +259,7 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
   it('shows a refused conversion with its reason, and stops asking', async () => {
     const readConversion = vi.fn(async (): Promise<SheetConversion> => ({
       state: 'refused',
+      outcome: 'check',
       reason: 'check: orphan',
     }))
     const { collab, onReopen } = editor(fakeServer(), {
@@ -275,6 +276,26 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(readConversion).toHaveBeenCalledTimes(1)
     expect(onReopen).not.toHaveBeenCalled()
+    await collab.close()
+  })
+
+  it('says a sheet refused as too large is too large to edit together', async () => {
+    const { collab } = editor(fakeServer(), {
+      open: async () => ({ state: 'unconverted' as const }),
+      readConversion: async (): Promise<SheetConversion> => ({
+        state: 'refused',
+        outcome: 'too_large',
+      }),
+      retryMs: 5,
+    })
+    await collab.open(await newClient())
+
+    await vi.waitFor(() =>
+      expect(collab.banner.value?.text).toBe(
+        'This spreadsheet is too large to edit together, so it stays read-only.',
+      ),
+    )
+    expect(collab.editingState.value).toBe('closed')
     await collab.close()
   })
 

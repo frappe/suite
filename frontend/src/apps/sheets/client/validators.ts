@@ -75,6 +75,7 @@ export const operationGetConversion: Validators<GetConversionInput, GetConversio
       {
         properties: {
           state: { enum: ['converted', 'pending', 'refused'], title: 'State', type: 'string' },
+          outcome: { title: 'Outcome', type: 'string' },
           reason: { title: 'Reason', type: 'string' },
         },
         required: ['state'],
