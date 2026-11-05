@@ -487,6 +487,7 @@ class File(FrappeFile):
         """
         if new:
             self.file_url = str(new)
+            self.flags.drive_disk_rename = True
         manager = self.manager
         for child in self.get_children():
             if child._not_in_disk():
@@ -505,7 +506,6 @@ class File(FrappeFile):
             # only where a restore would put it back, so repoint it and move nothing
             if manager.s3_enabled and child.status != STATUS_TRASHED:
                 manager.move(child, new_child_url)
-            child.flags.drive_disk_rename = True
             child.recursive_path_move(child.file_url, new_child_url)
         self.save()
 
