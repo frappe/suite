@@ -680,6 +680,7 @@ class TestArchitecture(unittest.TestCase):
                 "EDIT",
                 "IN_DIRECTORY_SQL",
                 "MANAGE",
+                "MAX_MENTIONS",
                 "READ",
                 "UPLOAD",
                 "ContentTypeSpec",

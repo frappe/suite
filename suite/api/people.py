@@ -16,9 +16,6 @@ from suite import drive
 
 PAGE_SIZE = 20
 
-# A comment can name this many people, and a lookup answers one comment.
-LOOKUP_LIMIT = 50
-
 # A cursor is an offset. Nine digits is far past any real directory, and it
 # keeps a crafted cursor out of `int()` and out of the SQL OFFSET.
 _CURSOR_DIGITS = 9
@@ -152,13 +149,14 @@ def _search_on(node: str, query: str) -> PeoplePage:
 def _look_up_on(node: str | None, users: list[str]) -> PeoplePage:
     if not node:
         frappe.throw(_("Looking up people needs a document"), BadLookup)
-    if len(users) > LOOKUP_LIMIT:
-        frappe.throw(_("A lookup can name at most {0} people").format(LOOKUP_LIMIT), BadLookup)
+    # A lookup answers one comment, so it names as many people as a comment can.
+    if len(users) > drive.MAX_MENTIONS:
+        frappe.throw(_("A lookup can name at most {0} people").format(drive.MAX_MENTIONS), BadLookup)
     found = frappe.db.sql(_USERS_AMONG, {"users": users}, as_dict=True) if users else []
     labels = {row.name: row.label for row in found}
     access = drive.people_on(node, labels)
     asked = {user: answer for user, answer in access.items() if user in labels or user in users}
-    return _page_on(labels, asked, _contains(""), LOOKUP_LIMIT)
+    return _page_on(labels, asked, _contains(""), drive.MAX_MENTIONS)
 
 
 def _page_on(

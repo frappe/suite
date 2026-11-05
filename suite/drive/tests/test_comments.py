@@ -1206,7 +1206,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         with self.assertRaises(people.BadLookup):
             people.search(users=[MENTIONED])
         with self.assertRaises(people.BadLookup):
-            people.search(node=self.document.name, users=["x"] * (people.LOOKUP_LIMIT + 1))
+            people.search(node=self.document.name, users=["x"] * (comments.MAX_MENTIONS + 1))
 
     def test_a_mention_of_someone_with_access_is_unchanged(self):
         grant(self.document.name, MENTIONED, READ, self.admin)

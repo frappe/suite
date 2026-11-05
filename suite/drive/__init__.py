@@ -242,7 +242,7 @@ from suite.drive._core.errors import (
     DriveOverQuota,
     rollback_savepoint,
 )
-from suite.drive._core.people import IN_DIRECTORY_SQL, PersonOnNode
+from suite.drive._core.people import IN_DIRECTORY_SQL, MAX_MENTIONS, PersonOnNode
 from suite.drive._core.quota import (
     bind_legacy_storage_reservation,
     create_storage_reservation,
@@ -597,6 +597,7 @@ __all__ = (
     "EDIT",
     "IN_DIRECTORY_SQL",
     "MANAGE",
+    "MAX_MENTIONS",
     "READ",
     "UPLOAD",
     "ContentTypeSpec",

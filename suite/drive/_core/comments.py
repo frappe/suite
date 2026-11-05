@@ -33,7 +33,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive._core.nodes import MAX_PAGE_SIZE, node_owner
-from suite.drive._core.people import people
+from suite.drive._core.people import MAX_MENTIONS, people
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ
 from suite.drive._core.roots import lock_trees
@@ -46,7 +46,6 @@ _CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 MAX_COMMENT_BYTES = 65_535
 # The characters of a comment its activity keeps, for the notification to quote
 EXCERPT_LENGTH = 140
-MAX_MENTIONS = 50
 MAX_OUTSIDERS_TOLD = 10
 # The most an old Drive commenter's name holds, as the old Data column did
 MAX_AUTHOR_NAME_CHARS = 140
