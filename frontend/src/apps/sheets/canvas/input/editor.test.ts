@@ -83,7 +83,7 @@ describe('opening', () => {
     h.editor.open('hi')
     expect(h.editor.isOpen()).toBe(true)
     expect(h.el.value).toBe('hi')
-    expect(h.overlay.position).toHaveBeenCalledWith(20, 40, 200, 42, {}, 2)
+    expect(h.overlay.position).toHaveBeenCalledWith(20, 40, 200, 42, { align: '' }, 2)
     expect(h.opts.collapseSelection).toHaveBeenCalled()
     expect(h.opts.ensureVisible).toHaveBeenCalledWith(2, 3)
     expect(h.opts.onInput).toHaveBeenCalledWith('hi')
@@ -100,6 +100,26 @@ describe('opening', () => {
     h.editor.open('x')
     expect(h.editor.isOpen()).toBe(false)
     expect(h.opts.onBlockedEdit).toHaveBeenCalled()
+  })
+
+  it('keeps a number right-aligned when editing it in place', () => {
+    const fmt = { autoAlign: 'right' }
+    const alignOn = (value: string, mode?: 'edit') => {
+      const h = setup({ formatAt: () => fmt })
+      h.editor.open(value, mode)
+      return vi.mocked(h.overlay.position).mock.calls[0][4].align
+    }
+    // F2, Enter or double-click on 1234: the text stays where it was drawn.
+    expect(alignOn('1234', 'edit')).toBe('right')
+    // Typing over the cell or editing a formula starts from the left.
+    expect(alignOn('5')).toBe('')
+    expect(alignOn('=A1*2', 'edit')).toBe('')
+  })
+
+  it("uses the cell's own alignment over the automatic one", () => {
+    const h = setup({ formatAt: () => ({ align: 'center', autoAlign: 'right' }) })
+    h.editor.open('7')
+    expect(vi.mocked(h.overlay.position).mock.calls[0][4].align).toBe('center')
   })
 
   it('reposition is a no-op while closed', () => {

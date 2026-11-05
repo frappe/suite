@@ -1,26 +1,44 @@
+import { getTextWrap, lineHeightFor } from '../utils/text-wrap.js'
 import { COLORS, FRAME_W, GRID_LINE } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
 
 // The editor's border takes the selection frame's place (FRAME_W centred on
 // the gridline, GRID_LINE after the cell edge), so opening the editor doesn't
 // move the frame.
-// Inter's metrics as shares of the font size, for when no canvas can measure.
-const FALLBACK = { ascent: 0.96875, descent: 0.2421875, cap: 0.727 }
+// Inter's metrics as shares of the font size, for when no canvas can measure:
+// font box (CSS line layout), cap height, and the em box the canvas's 'top'
+// and 'bottom' baselines sit on (above / below the alphabetic baseline).
+const FALLBACK = { ascent: 0.96875, descent: 0.2421875, cap: 0.727, emAscent: 0.8, emDescent: 0.2 }
 
 /** The in-cell editor's <textarea>, added to `parent`. */
 export interface Overlay extends EditorOverlay {
   remove(): void
 }
 
+interface Box {
+  x: number
+  y: number
+  w: number
+  h: number
+  fmt: EditorFormat
+  zoom: number
+}
+
 export function createOverlay(parent: HTMLElement): Overlay {
   // A textarea (not an input) so Cmd/Ctrl/Alt+Enter can insert real newlines
   // inside a cell, like Google Sheets. wrap=off keeps lines breaking only at
-  // explicit \n, matching the old single-line horizontal-scroll behavior.
+  // explicit \n, matching the old single-line horizontal-scroll behavior;
+  // a wrap-mode cell turns soft wrapping on, as the canvas wraps it.
   const el = document.createElement('textarea')
   el.rows = 1
   el.wrap = 'off'
   el.spellcheck = false
   el.autocomplete = 'off'
+  // No `font` shorthand: it resets font-variation-settings, and the canvas
+  // draws with the variation settings it inherits from the grid's wrapper
+  // (Inter's optical-size axis). The textarea is the canvas's sibling, so
+  // inheriting gives it the same glyphs and the same widths (_layout pins
+  // the optical size when the grid leaves it to the font size).
   el.style.cssText = [
     'position:absolute',
     'display:none',
@@ -28,7 +46,13 @@ export function createOverlay(parent: HTMLElement): Overlay {
     `border:${FRAME_W}px solid ${COLORS.selBorder}`,
     'background:var(--surface-base, #FFFFFF)',
     'padding:0 4px',
-    'font:13px InterVar,Inter,ui-sans-serif,system-ui,sans-serif',
+    'font-size:13px',
+    'font-family:InterVar,Inter,ui-sans-serif,system-ui,sans-serif',
+    'font-variation-settings:inherit',
+    'font-feature-settings:inherit',
+    'font-optical-sizing:inherit',
+    'letter-spacing:0',
+    'word-spacing:0',
     `color:${COLORS.cellText}`,
     'outline:none',
     'box-shadow:none',
@@ -43,6 +67,16 @@ export function createOverlay(parent: HTMLElement): Overlay {
   let baseH = 0 // cell height; autosize never shrinks below it
   let borderW = FRAME_W
   let measure: OffscreenCanvasRenderingContext2D | null | undefined
+  let box: Box | null = null
+  // Lines of the text the editor opened with. The canvas lays a cell's text
+  // block out by its line count; the editor keeps that first-line position
+  // while typing and grows downward.
+  let openLines = 1
+  // Layout-measured baselines (_layoutBaseline), per font and line height.
+  const baselines = new Map<string, number | null>()
+  let probe: HTMLDivElement | null = null
+  let parentOpsz: boolean | undefined
+  let mark: HTMLSpanElement | null = null
 
   function position(
     x: number,
@@ -52,10 +86,16 @@ export function createOverlay(parent: HTMLElement): Overlay {
     fmt: EditorFormat = {},
     zoom = 1,
   ): void {
-    // The text has to stay where the canvas drew it (cell-painter.ts): 4px
-    // in from the left, capitals centred on the white area below the
-    // gridline. The border sits on the selection frame, so its outer edge
-    // starts a quarter of a (zoomed) pixel before the cell edge.
+    box = { x, y, w, h, fmt, zoom }
+    _layout(box)
+  }
+
+  // The text has to stay where the canvas drew it (cell-painter.ts): same
+  // font, 4px in from the cell's text edges, and the first line's baseline
+  // where the canvas put it for this alignment and line count. The border
+  // sits on the selection frame, so its outer edge starts a quarter of a
+  // (zoomed) pixel before the cell edge.
+  function _layout({ x, y, w, h, fmt, zoom }: Box): void {
     borderW = FRAME_W * zoom
     const outer = GRID_LINE * zoom - borderW / 2
     const inner = outer + borderW
@@ -64,14 +104,28 @@ export function createOverlay(parent: HTMLElement): Overlay {
     el.style.width = w + borderW + 'px'
     el.style.height = h + borderW + 'px'
     el.style.borderWidth = borderW + 'px'
-    el.style.paddingLeft = el.style.paddingRight = 4 * zoom - inner + 'px'
+    // The canvas draws from x + 4 (plus a conditional-format icon) to
+    // x + w - 4 (minus a filter button); the inner border edge is `inner`
+    // after x on the left and `-outer` after x + w on the right.
+    el.style.paddingLeft = (4 + (fmt.insetLeft || 0)) * zoom - inner + 'px'
+    el.style.paddingRight = (4 + (fmt.insetRight || 0)) * zoom + outer + 'px'
     el.style.fontWeight = fmt.bold ? 'bold' : 'normal'
     el.style.fontStyle = fmt.italic ? 'italic' : 'normal'
     // Same size the canvas draws (chipFont clamps it to 8…72 before zoom).
-    const size = Math.max(8, Math.min(72, fmt.fontSize || 13)) * zoom
+    const size0 = Math.max(8, Math.min(72, fmt.fontSize || 13))
+    const size = size0 * zoom
     el.style.fontSize = size + 'px'
     el.style.fontFamily = fmt.fontFamily || 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
-    el.style.textAlign = fmt.align || 'left'
+    // A variable font with an optical-size axis (Inter) picks its design from
+    // the font size. The canvas draws the unzoomed size and scales it, so pin
+    // the editor to that size's design; at zoom 125% the 25px design is
+    // narrower than the scaled 20px one. A grid that sets its own optical
+    // size passes it down instead.
+    el.style.setProperty(
+      'font-variation-settings',
+      _parentSetsOpsz() ? 'inherit' : `"opsz" ${size0}`,
+    )
+    el.style.textAlign = fmt.align === 'center' || fmt.align === 'right' ? fmt.align : 'left'
     const deco = [fmt.underline && 'underline', fmt.strikethrough && 'line-through']
       .filter(Boolean)
       .join(' ')
@@ -79,43 +133,182 @@ export function createOverlay(parent: HTMLElement): Overlay {
     el.style.color = fmt.color || COLORS.cellText
     el.style.backgroundColor = fmt.backgroundColor || fmt.bg || COLORS.white
     el.style.borderColor = COLORS.selBorder
+    const wrap = getTextWrap(fmt) === 'wrap'
+    el.wrap = wrap ? 'soft' : 'off'
+    // The canvas's line pitch (text-wrap.ts), so a second line lands where
+    // the canvas draws it.
+    let lineH = lineHeightFor(fmt) * zoom
     // A textarea top-aligns its first line, and CSS centres the font's
-    // ascent + descent in the line box; pad the top so the capitals' middle
-    // lands on the canvas's centre line, y + (h + zoom) / 2.
-    const lineH = Math.round(size * 1.3)
-    const m = _metrics(size)
-    const baselineInLine = (lineH - m.ascent - m.descent) / 2 + m.ascent
-    const contentTop = inner // the border's inner top edge, relative to y
-    const capCentre = (h + zoom) / 2
+    // ascent + descent in the line box; pad the top so the first baseline
+    // lands where the canvas drew it. The canvas measures its font unzoomed
+    // and scales; CSS lays out the zoomed font.
+    const drawn = _metrics(_font(size0), size0)
+    const css = _metrics(_font(size), size)
+    const multi = wrap || openLines > 1
+    let baseline = _canvasBaseline(h / zoom, fmt, multi, drawn) * zoom
+    // Where CSS puts the baseline in a line box: measured when the page has
+    // layout (the browser rounds its font metrics and snaps the line, so the
+    // canvas's metrics can be half a pixel off); from the metrics otherwise.
+    const baselineInLine = (lh: number) =>
+      _layoutBaseline(lh) ?? (lh - css.ascent - css.descent) / 2 + css.ascent
+    // On screen, the canvas draws text on the nearest whole device pixel to
+    // its baseline, while CSS rounds a fractional baseline its own way (at
+    // zoom 125% they land a device pixel apart). Put the editor's baseline
+    // on the canvas's pixel, a quarter pixel down so any rounding keeps it.
+    if (_layoutBaseline(lineH) !== null) {
+      const dpr = globalThis.devicePixelRatio || 1
+      baseline = (Math.round((y + baseline) * dpr) + 0.25) / dpr - y
+    }
+    let padTop = baseline - inner - baselineInLine(lineH)
+    // Padding can't go negative: a font too big for its row draws its
+    // baseline higher than a full line box allows. One line has no pitch to
+    // keep, so shrink the line box instead (its baseline rises by half).
+    if (padTop < 0 && !multi) {
+      lineH += 2 * padTop
+      padTop = baseline - inner - baselineInLine(lineH)
+    }
     el.style.lineHeight = lineH + 'px'
-    el.style.paddingTop = Math.max(0, capCentre + m.cap / 2 - baselineInLine - contentTop) + 'px'
+    el.style.paddingTop = Math.max(0, padTop) + 'px'
     baseH = h + borderW
   }
 
-  // Line metrics of the editor's font at this zoom, measured on a canvas
-  // (canvas font-box metrics are the ones CSS lays lines out with).
-  function _metrics(size: number) {
+  // The baseline's offset from the top of a `lineH` line box in the
+  // editor's current font, as the browser lays it out: a hidden line in the
+  // same parent (so it inherits the same font settings) with a zero-size box
+  // sitting on the baseline. Null without layout (jsdom).
+  function _layoutBaseline(lineH: number): number | null {
+    const st = el.style
+    const key = `${st.fontStyle} ${st.fontWeight} ${st.fontSize} ${st.fontFamily} ${st.getPropertyValue('font-variation-settings')}/${lineH}@${globalThis.devicePixelRatio || 1}`
+    const known = baselines.get(key)
+    if (known !== undefined) return known
+    if (!probe) {
+      probe = document.createElement('div')
+      probe.setAttribute('aria-hidden', 'true')
+      probe.style.cssText = [
+        'position:absolute',
+        'left:0',
+        'top:0',
+        'visibility:hidden',
+        'pointer-events:none',
+        'white-space:pre',
+        'margin:0',
+        'padding:0',
+        'border:0',
+        'font-variation-settings:inherit',
+        'font-feature-settings:inherit',
+        'font-optical-sizing:inherit',
+      ].join(';')
+      mark = document.createElement('span')
+      mark.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
+      probe.append('H', mark)
+      parent.appendChild(probe)
+    }
+    const ps = probe.style
+    ps.fontStyle = st.fontStyle
+    ps.fontWeight = st.fontWeight
+    ps.fontSize = st.fontSize
+    ps.fontFamily = st.fontFamily
+    ps.setProperty('font-variation-settings', st.getPropertyValue('font-variation-settings'))
+    ps.lineHeight = lineH + 'px'
+    const result =
+      probe.offsetHeight > 0
+        ? mark!.getBoundingClientRect().top - probe.getBoundingClientRect().top
+        : null
+    // Until the web font loads this measures a fallback font: don't keep it.
+    if (document.fonts?.status !== 'loading') baselines.set(key, result)
+    return result
+  }
+
+  // Whether the grid sets an optical size the canvas inherits (frappe-ui's
+  // default sets one on every div; the sheet's grid resets it to normal).
+  function _parentSetsOpsz(): boolean {
+    if (parentOpsz === undefined)
+      parentOpsz = /opsz/.test(getComputedStyle(parent).fontVariationSettings || '')
+    return parentOpsz
+  }
+
+  // The canvas font string (chip-geometry.ts chipFont) at `px`.
+  function _font(px: number): string {
+    const st = el.style
+    return `${st.fontStyle} ${st.fontWeight} ${px}px ${st.fontFamily}`
+  }
+
+  // Where the canvas puts the first line's alphabetic baseline, below the
+  // cell's top edge, in unzoomed pixels. Mirrors cell-painter.ts: one line
+  // anchors on the em box 4px from the top or bottom, or centres its
+  // capitals on the white area below the gridline; wrapped or multi-line
+  // text lays out a block of `openLines` lines.
+  function _canvasBaseline(
+    h: number,
+    fmt: EditorFormat,
+    multi: boolean,
+    m: ReturnType<typeof _metrics>,
+  ): number {
+    if (!multi) {
+      if (fmt.valign === 'top') return 4 + m.emAscent
+      if (fmt.valign === 'bottom') return h - 4 - m.emDescent
+      return (h + 1) / 2 + m.cap / 2
+    }
+    const lineH = lineHeightFor(fmt)
+    const total = openLines * lineH
+    const firstMid =
+      fmt.valign === 'top'
+        ? lineH / 2 + 2
+        : fmt.valign === 'bottom'
+          ? h - total + lineH / 2 - 2
+          : 1 + Math.max(lineH / 2, (h - 1 - total) / 2 + lineH / 2)
+    return firstMid + m.cap / 2
+  }
+
+  // Metrics of `font` (whose size is `size` px), measured on a canvas, as
+  // the painter and CSS see them (canvas font-box metrics are the ones CSS
+  // lays lines out with).
+  function _metrics(font: string, size: number) {
     // OffscreenCanvas: every current browser has one; jsdom (tests) doesn't,
     // and falls back to Inter's ratios without logging a missing canvas.
     if (measure === undefined)
       measure =
         typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('2d')
-    if (!measure) {
-      return {
-        ascent: size * FALLBACK.ascent,
-        descent: size * FALLBACK.descent,
-        cap: size * FALLBACK.cap,
-      }
+    const fb = {
+      ascent: size * FALLBACK.ascent,
+      descent: size * FALLBACK.descent,
+      cap: size * FALLBACK.cap,
+      emAscent: size * FALLBACK.emAscent,
+      emDescent: size * FALLBACK.emDescent,
     }
-    const st = el.style
-    measure.font = `${st.fontStyle} ${st.fontWeight} ${size}px ${st.fontFamily}`
+    if (!measure) return fb
+    measure.font = font
+    measure.textBaseline = 'top'
+    const top = measure.measureText('H').alphabeticBaseline
+    measure.textBaseline = 'bottom'
+    const bottom = measure.measureText('H').alphabeticBaseline
     measure.textBaseline = 'alphabetic'
     const t = measure.measureText('H')
     return {
       ascent: t.fontBoundingBoxAscent,
       descent: t.fontBoundingBoxDescent,
       cap: t.actualBoundingBoxAscent,
+      // alphabeticBaseline: how far the alphabetic baseline sits above the
+      // current one (so below 'top' it is negative).
+      emAscent: Number.isFinite(top) ? -top : fb.emAscent,
+      emDescent: Number.isFinite(bottom) ? bottom : fb.emDescent,
     }
+  }
+
+  // Lines the textarea lays `el.value` out in: hard newlines, plus soft
+  // wraps when wrapping is on (measured from the laid-out content).
+  function _countLines(): number {
+    const hard = el.value.split('\n').length
+    if (el.wrap !== 'soft') return hard
+    const s = el.style
+    const { height, paddingTop } = s
+    s.paddingTop = '0px'
+    s.height = '0px'
+    const contentH = el.scrollHeight - (parseFloat(s.paddingBottom) || 0)
+    s.height = height
+    s.paddingTop = paddingTop
+    const lineH = parseFloat(s.lineHeight)
+    return contentH > 0 && lineH > 0 ? Math.max(hard, Math.round(contentH / lineH)) : hard
   }
 
   // Grow the editor downward to fit newline-separated lines.
@@ -128,6 +321,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
   function show(value: string): void {
     el.style.display = 'block'
     el.value = value
+    openLines = _countLines()
+    if (box && openLines > 1) _layout(box)
     autosize()
     el.focus()
     el.setSelectionRange(value.length, value.length)
@@ -136,6 +331,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
   function hide(): void {
     el.style.display = 'none'
     el.value = ''
+    openLines = 1
   }
 
   function getValue(): string {
@@ -144,6 +340,7 @@ export function createOverlay(parent: HTMLElement): Overlay {
 
   function remove(): void {
     el.remove()
+    probe?.remove()
   }
 
   return { el, position, show, hide, getValue, remove }

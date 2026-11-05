@@ -19,6 +19,13 @@ export function inkFor(fmt: CellFormat): string {
   return light ? COLORS.inkOnDark : COLORS.inkOnLight
 }
 
+/** How a value with no alignment of its own is drawn: numbers right, text
+ *  left. `isNumber` is the engine's answer when it has one. */
+export function autoAlign(s: string, isNumber: boolean | undefined): 'left' | 'right' {
+  if (isNumber !== undefined) return isNumber ? 'right' : 'left'
+  return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
+}
+
 /** The canvas text alignment for a format's `align`; anything unknown is left. */
 export function textAlignOf(align: string | undefined): CanvasTextAlign {
   return align === 'center' || align === 'right' ? align : 'left'

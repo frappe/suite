@@ -12,7 +12,7 @@ import type {
   MergeInfo,
 } from '../types.js'
 import { createCellDecorations, ICON_INSET } from './cell-decorations.js'
-import { inkFor, setCellFont } from './cell-text-style.js'
+import { autoAlign, inkFor, setCellFont } from './cell-text-style.js'
 import { cellMidY, centredBaseline, createCapHeight } from './text-anchor.js'
 
 export interface CellPainter {
@@ -190,7 +190,7 @@ export function createCellPainter(
     const isNumber = cells.isNumber?.(id)
     const efmt: CellFormat = {
       ...baseFmt,
-      align: baseFmt.align || _autoAlign(s, isNumber),
+      align: baseFmt.align || autoAlign(s, isNumber),
     }
     const rightInset = cells.getRightInset?.(id) || 0
     const iconInset = condFmt?.icon ? ICON_INSET : 0
@@ -358,11 +358,6 @@ export function createCellPainter(
 
   // Numbers right, text left, as in Google Sheets. The cell's type decides
   // (`1,000` and `50%` are numbers); until it is known, guess from the text.
-  function _autoAlign(s: string, isNumber: boolean | undefined): string {
-    if (isNumber !== undefined) return isNumber ? 'right' : 'left'
-    return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
-  }
-
   // ── Single-line text ─────────────────────────────────────────────────────────
 
   function _drawCellText(

@@ -33,10 +33,22 @@ export interface EditorFormat {
   strikethrough?: boolean
   fontSize?: number
   fontFamily?: string
+  /** The cell's own horizontal alignment. */
   align?: string
+  /** The alignment the grid draws the value with when `align` is unset
+   *  (numbers right, text left). */
+  autoAlign?: string
+  valign?: string
+  textWrap?: string
+  wrapText?: boolean
   color?: string
   backgroundColor?: string
   bg?: string
+  /** Logical px the drawn text keeps clear of the cell's left edge on top
+   *  of the 4px padding (a conditional-format icon). */
+  insetLeft?: number
+  /** Same on the right (a filter button). */
+  insetRight?: number
 }
 
 /** overlay.js: the textarea and its show/hide/position helpers. */
@@ -110,13 +122,19 @@ export function createEditor(o: EditorOptions): Editor {
   const el = o.overlay.el
   let open = false
   let mode: EditMode = 'enter'
+  // Editing the cell's own value keeps it where the grid drew it, numbers
+  // right-aligned included. Typing over the cell or editing a formula starts
+  // new text, which reads from the left unless the cell sets an alignment.
+  let keepsDrawnAlign = false
 
   function reposition(): void {
     if (!open) return
     const { r, c } = o.activeCell()
     const z = o.getZoom()
     const rect = o.cellRect(r, c)
-    o.overlay.position(rect.x * z, rect.y * z, rect.w * z, rect.h * z, o.formatAt(r, c), z)
+    const fmt = o.formatAt(r, c)
+    const align = fmt.align || (keepsDrawnAlign && fmt.autoAlign) || ''
+    o.overlay.position(rect.x * z, rect.y * z, rect.w * z, rect.h * z, { ...fmt, align }, z)
   }
 
   function openEditor(value: string, m: EditMode = 'enter'): void {
@@ -129,6 +147,7 @@ export function createEditor(o: EditorOptions): Editor {
       return
     }
     mode = m
+    keepsDrawnAlign = m === 'edit' && !value.startsWith('=')
     o.collapseSelection()
     // Typing or F2 doesn't move the selection, which may be scrolled off
     // screen; bring it back or the editor opens out of view.

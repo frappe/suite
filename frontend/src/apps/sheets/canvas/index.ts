@@ -30,6 +30,8 @@ import { createRangePicker } from './input/range-picker.js'
 import { createTextSink } from './input/text-sink.js'
 import { createMarchingAnts } from './marching-ants.js'
 import { createOverlay } from './overlay.js'
+import { ICON_INSET } from './painters/cell-decorations.js'
+import { autoAlign } from './painters/cell-text-style.js'
 import { createRenderLoop } from './render-loop.js'
 import { createRenderer } from './renderer.js'
 import { planRowRefit } from './row-refit.js'
@@ -166,8 +168,30 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     picker: pick,
     autocomplete: ac,
     activeCell: () => S.anchor,
-    cellRect: (r, c) => ({ x: geo.colX(c), y: geo.rowY(r), w: geo.cw(c), h: geo.rh(r) }),
-    formatAt: (r, c) => cells.getStyle?.(cellId(r, c)) || {},
+    // The box and format the cell painter draws the cell's text with, so the
+    // editor opens on top of it: a merge spans its cells, and conditional
+    // formats, auto alignment and icon / filter-button insets apply.
+    cellRect: (r, c) => {
+      const m = cells.getMergeInfo?.(cellId(r, c))
+      let w = 0
+      let h = 0
+      for (let i = 0; i < (m?.colSpan || 1); i++) w += geo.cw(c + i)
+      for (let i = 0; i < (m?.rowSpan || 1); i++) h += geo.rh(r + i)
+      return { x: geo.colX(c), y: geo.rowY(r), w, h }
+    },
+    formatAt: (r, c) => {
+      const id = cellId(r, c)
+      const val = getValue(id)
+      const style = cells.getStyle?.(id) || {}
+      const cond = cells.getCondFormat?.(id, val ?? '')
+      const fmt = cond ? { ...style, ...cond } : style
+      return {
+        ...fmt,
+        autoAlign: autoAlign(String(val ?? ''), cells.isNumber?.(id)),
+        insetLeft: cond?.icon ? ICON_INSET : 0,
+        insetRight: cells.getRightInset?.(id) || 0,
+      }
+    },
     getZoom: () => vm.zoom,
     canEdit,
     isCellEditable: (r, c) => !cells.isCellEditable || cells.isCellEditable(r, c),
