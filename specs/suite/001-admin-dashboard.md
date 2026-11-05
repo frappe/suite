@@ -94,7 +94,7 @@ Expose **Delete Mail account**, never Delete Suite user. Require a disabled Suit
 - Invalidate prior Mail credentials/sessions. Address reuse must never revive old access.
 - Release the primary address for reuse only after deletion is confirmed consistent. Warn about future messages reaching a new holder.
 - A recreated mailbox is empty; deleted messages/memberships do not return. If the old address has been reassigned, require another available address; never reclaim it automatically.
-- Recreating the mailbox does not reactivate the Suite user. Reactivation is separate and readiness-gated.
+- Recreating the mailbox does not reactivate the Suite user. Its setup reaches only that user's own new account. Reactivation is separate and readiness-gated.
 - Partial failure reports Deletion failed, identifies completed effects, permits retry, and keeps the user disabled until consistent.
 
 Current `suite/mail/api/admin.py:delete_members()` deletes the Frappe User and triggers cross-product deletion hooks. It is **not** the required mailbox-only operation and must not be exposed by the new dashboard.
@@ -178,6 +178,8 @@ Inventory must include retained/disabled mailboxes and groups, not only the enab
 
 Cache successful Mail measurements on the site for **six hours**. Store per-entry success timestamps because inspected usage responses do not include measurement times; these are internal fetch times, not an atomic provider snapshot. Admin refresh bypasses cache; partial failures do not discard successful values. Refresh controls and timestamps are not shown in the dashboard.
 
+A refresh makes no provider call while it holds the site's storage row lock. If the row changed during the measurement, the refresh saves nothing and queues another, so it never overwrites a newer "usage unknown" mark.
+
 | Condition | Reporting and Drive behavior |
 | --- | --- |
 | Successful value within TTL | Use it for combined reporting/admission. |
@@ -218,7 +220,7 @@ Alerts live with their remediation: site storage/measurement/allowance alerts in
 
 UI copy states what needs attention and what the Admin can do next. Do not explain cache/accounting implementation, repeat a metric in a second caption, or add explanatory labels to self-evident controls. Show extra-storage limits when they become relevant to an alert; describe pending reserved space as “In progress”. Developer-facing accounting rules remain in this spec, not in dashboard footnotes.
 
-Storage usage refreshes automatically through the scheduled job. Do not show refresh-usage controls, prompts, stale-measurement notices, or updated timestamps in Overview or Storage. Retain the admin refresh API for manual intervention outside the dashboard. If unavailable usage or limits pause uploads, explain that impact without exposing refresh machinery.
+Storage usage refreshes automatically: a Mail account change queues a refresh once it commits, and the hourly scheduled job stays for drift. Do not show refresh-usage controls, prompts, stale-measurement notices, or updated timestamps in Overview or Storage. Retain the admin refresh API for manual intervention outside the dashboard. If unavailable usage or limits pause uploads, explain that impact without exposing refresh machinery.
 
 Warn at **90% of configured personal cap** and **90% of site base allowance**, with stronger buffer-use/over-threshold alerts. Uncapped users have no personal-cap percentage warning. Prioritize failed provisioning, partial deletion/transfer failures, domain health, missing/stale usage, and storage problems. Storage alerts must not imply Mail will stop at the threshold.
 

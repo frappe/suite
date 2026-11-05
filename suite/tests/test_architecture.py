@@ -44,6 +44,14 @@ BASELINE_DEBT = {
         ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
     ),
     **_debt(
+        "Suite Drive and Slides",
+        "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
+        (
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+        ),
+    ),
+    **_debt(
         "Drive and adopting product owners",
         "Remove through Drive implementation tickets 15-23 and the backend integration review (30).",
         (
