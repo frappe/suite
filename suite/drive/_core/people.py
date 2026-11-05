@@ -8,7 +8,7 @@ grant list collects the ids it names and calls `people` once.
 """
 
 from collections.abc import Iterable
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import frappe
 
@@ -20,6 +20,12 @@ class Person(TypedDict):
     full_name: str
     # `User.user_image` as stored: a `/files` or `/private/files` URL.
     user_image: str | None
+
+
+class PersonOnNode(TypedDict):
+    has_access: bool
+    # Only to someone who manages the node: whether a deny naming them or their group keeps them out.
+    is_blocked: NotRequired[bool]
 
 
 def people(ids: Iterable[str | None]) -> dict[str, Person]:

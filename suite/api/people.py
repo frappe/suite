@@ -136,17 +136,14 @@ def _search_on(node: str, query: str) -> PeoplePage:
         rows = frappe.db.sql(_NAMED_USERS, {"users": named, "pattern": pattern}, as_dict=True)
         labels |= {row.name: row.label for row in rows}
     labels.pop(frappe.session.user, None)
-    ranked = sorted(labels, key=lambda user: (not access[user], labels[user].casefold(), user))[:PAGE_SIZE]
+    ranked = sorted(
+        labels, key=lambda user: (not access[user]["has_access"], labels[user].casefold(), user)
+    )[:PAGE_SIZE]
     users = _users(ranked)
-    blocked = drive.blocked_on(node, [user for user in ranked if not access[user]])
-    rows_out: list[Person] = []
-    for user in ranked:
-        if user in users:
-            row: Person = {**users[user], "has_access": access[user]}
-            if blocked is not None:
-                row["is_blocked"] = user in blocked
-            rows_out.append(row)
-    return {"rows": rows_out, "next_cursor": None}
+    return {
+        "rows": [{**users[user], **access[user]} for user in ranked if user in users],
+        "next_cursor": None,
+    }
 
 
 def _offset(cursor: str | None) -> int:

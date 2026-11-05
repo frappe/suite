@@ -23,7 +23,7 @@ from suite.drive._core.errors import (
     DriveNotFound,
     rollback_savepoint,
 )
-from suite.drive._core.people import enabled_people
+from suite.drive._core.people import PersonOnNode, enabled_people
 from suite.drive._core.principals import TICKET_TTL, Principals, make_ticket, ticket_ok
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, ROLES
 from suite.drive._core.roots import lock_trees
@@ -618,15 +618,16 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
     return {"role": answer, "source": "grant" if answer else "none", "rows": out}
 
 
-def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dict[str, bool]:
+def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dict[str, PersonOnNode]:
     """Answer who can read a node, for a picker there: the users it names, and `users`.
 
-    Each of `users` maps to whether they can read the
-    node now, and so does each named user who can: a named user who can't is
-    left out, so a deny or an expiry looks like never having been named. A
-    mention picker ranks people by this, so it needs COMMENT, the right to
-    mention anyone here. It answers who can read the node, never their role
-    or where it comes from: that stays with MANAGE and the share dialog (§7.2).
+    Each of `users` says whether they can read the node now, and so does each
+    named user who can: a named user who can't is left out, so a deny or an
+    expiry looks like never having been named. A mention picker ranks people
+    by this, so it needs COMMENT, the right to mention anyone here. It answers
+    who can read the node, never their role or where it comes from: that stays
+    with MANAGE and the share dialog (§7.2). Only someone who manages the node
+    also learns who is blocked: to anyone else a block is any other lack of access.
     """
     from suite.drive.framework import principals_for
 
@@ -636,7 +637,15 @@ def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dic
     for user in named_on(node):
         if user not in access and check(node, READ, principals_for(user)):
             access[user] = True
-    return access
+    if not check(node, MANAGE, principals):
+        return {user: {"has_access": has_access} for user, has_access in access.items()}
+    return {
+        user: {
+            "has_access": has_access,
+            "is_blocked": not has_access and is_blocked(node, principals_for(user)),
+        }
+        for user, has_access in access.items()
+    }
 
 
 def named_on(node: Mapping) -> list[str]:
@@ -671,16 +680,6 @@ def is_blocked(node: Mapping, principals: Principals) -> bool:
         if own_tier(row.principal, principals.user) < SITE_TIER:
             acc.offer(row.principal, row.role, depth[row.node], principals)
     return role == NONE and acc.own == NONE
-
-
-def blocked_on(node_id: str, principals: Principals, users: Iterable[str]) -> list[str] | None:
-    """Answer which of `users` are blocked from a node, or None to anyone who can't manage it."""
-    from suite.drive.framework import principals_for
-
-    node = _node_or_not_found(node_id)
-    if not check(node, MANAGE, principals):
-        return None
-    return [user for user in users if is_blocked(node, principals_for(user))]
 
 
 def grants_for(

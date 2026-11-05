@@ -242,6 +242,7 @@ from suite.drive._core.errors import (
     DriveOverQuota,
     rollback_savepoint,
 )
+from suite.drive._core.people import PersonOnNode
 from suite.drive._core.quota import (
     bind_legacy_storage_reservation,
     create_storage_reservation,
@@ -495,23 +496,17 @@ def install_threads(node: str, anchors: dict[str, str], new_threads: list[dict])
     return _install_threads(_principals(), node, anchors, new_threads)
 
 
-def people_on(node: str, users: Iterable[str] = ()) -> dict[str, bool]:
+def people_on(node: str, users: Iterable[str] = ()) -> dict[str, PersonOnNode]:
     """Answer which users can read `node`: the ones it names, and `users`.
 
     A picker on a node, such as a comment's mention list, ranks people with
     this. The node names its creator and the users its grants name. Needs
-    COMMENT, and answers whether each user can read, not their role.
+    COMMENT, and answers whether each user can read, not their role. Only a
+    caller who manages the node also gets `is_blocked`.
     """
     from suite.drive._core.access import people_on as _people_on
 
     return _people_on(node, _principals(), users)
-
-
-def blocked_on(node: str, users: Iterable[str]) -> list[str] | None:
-    """Answer which of `users` are blocked from `node`, or None unless the caller manages it."""
-    from suite.drive._core.access import blocked_on as _blocked_on
-
-    return _blocked_on(node, _principals(), users)
 
 
 def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
@@ -616,7 +611,6 @@ __all__ = (
     "administration_usage",
     "adopt_media",
     "bind_legacy_storage_reservation",
-    "blocked_on",
     "check",
     "comment_threads",
     "copy",

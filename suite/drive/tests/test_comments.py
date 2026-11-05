@@ -13,7 +13,7 @@ from frappe.utils import get_datetime, get_system_timezone
 from suite import drive
 from suite.api.test_people import make_group, make_user, make_website_user
 from suite.drive._core import activity, comments
-from suite.drive._core.access import blocked_on, grant, people_on, revoke
+from suite.drive._core.access import grant, people_on, revoke
 from suite.drive._core.comments import (
     _locked_comment,
     _locked_thread,
@@ -810,7 +810,7 @@ class TestCommentWorkflows(IntegrationTestCase):
         create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
 
         self.assertIsNone(self.role_of())
-        self.assertEqual(blocked_on(self.document.name, self.owner, [MENTIONED]), [])
+        self.assertFalse(people_on(self.document.name, self.owner, [MENTIONED])[MENTIONED]["is_blocked"])
         self.assertEqual(activity.unread_count(mentioned), 1)
         with self.assertRaises(DriveNotFound):
             threads(mentioned, self.document.name)
@@ -835,7 +835,7 @@ class TestCommentWorkflows(IntegrationTestCase):
                 grant(node, principal, NONE, self.admin)
                 create_thread(self.owner, self.document.name, "anchor", f"Look @[{MENTIONED}]")
 
-                self.assertEqual(blocked_on(self.document.name, self.owner, [MENTIONED]), [MENTIONED])
+                self.assertTrue(people_on(self.document.name, self.owner, [MENTIONED])[MENTIONED]["is_blocked"])
                 self.assertNotEqual(self.role_of(), COMMENT)
                 self.assertEqual(activity.unread_count(principals_for(MENTIONED)), 0)
                 revoke(node, principal, self.admin)
@@ -850,7 +850,7 @@ class TestCommentWorkflows(IntegrationTestCase):
 
         create_thread(self.commenter, self.document.name, "anchor", f"Hi @[{MENTIONED}]")
 
-        self.assertEqual(blocked_on(self.document.name, self.owner, [MENTIONED]), [])
+        self.assertFalse(people_on(self.document.name, self.owner, [MENTIONED])[MENTIONED]["is_blocked"])
         self.assertEqual(activity.unread_count(principals_for(MENTIONED)), before + 1)
 
     def test_a_suite_admin_with_a_comment_grant_shares_by_mentioning(self):
@@ -1169,12 +1169,14 @@ class TestCommentWorkflows(IntegrationTestCase):
 
     def test_people_on_leaves_out_a_named_person_a_deny_keeps_out(self):
         grant(self.root.name, MENTIONED, READ, self.admin)
-        self.assertTrue(people_on(self.document.name, self.commenter, [])[MENTIONED])
+        self.assertEqual(people_on(self.document.name, self.commenter, [])[MENTIONED], {"has_access": True})
 
         grant(self.document.name, MENTIONED, NONE, self.admin)
 
         self.assertNotIn(MENTIONED, people_on(self.document.name, self.commenter, []))
-        self.assertFalse(people_on(self.document.name, self.commenter, [MENTIONED])[MENTIONED])
+        self.assertEqual(
+            people_on(self.document.name, self.commenter, [MENTIONED])[MENTIONED], {"has_access": False}
+        )
 
     def test_a_mention_of_someone_with_access_is_unchanged(self):
         grant(self.document.name, MENTIONED, READ, self.admin)
