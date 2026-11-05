@@ -457,6 +457,31 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
 
         self.assertEqual(self.named_rows(node), [f"{own}-renamed"])
 
+    def test_a_parent_save_that_reorders_a_converted_decks_rows_is_refused(self):
+        node = self.old_deck([text_box("first")], [text_box("second")])
+        self.convert(node)
+        before = self.named_rows(node)
+        frappe.set_user(OWNER)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.slides[0].idx = 999
+
+        with self.assertRaises(drive.DriveConflict):
+            frappe.client.save(deck.as_dict())
+
+        frappe.db.rollback()
+        self.assertEqual(self.named_rows(node), before)
+
+    def test_a_plain_deck_still_reorders_its_rows(self):
+        node = self.old_deck([text_box("first")], [text_box("second")])
+        first, second = self.named_rows(node)
+        frappe.set_user(OWNER)
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.slides[0].idx = 999
+
+        frappe.client.save(deck.as_dict())
+
+        self.assertEqual(self.named_rows(node), [second, first])
+
     def test_a_new_slide_row_is_refused_and_writes_nothing(self):
         node = self.old_deck([text_box("box")])
         self.convert(node)
