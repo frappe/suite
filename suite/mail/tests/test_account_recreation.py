@@ -206,13 +206,13 @@ class TestAccountRecreation(IntegrationTestCase):
 
     def test_a_recreation_that_failed_before_any_folder_was_made_can_be_retried(self):
         account = self.server.open_account()
-        shared = self.server.add_shared_account()
         self.server.fail_folder_changes()
 
         self.assert_setup_failed()
         self.assertTrue(frappe.db.exists("JMAP Account", account))
         self.assertNotIn("archive", self.roles(account))
 
+        shared = self.server.add_shared_account()  # first listed now, so the retry is what inserts its row
         self.retry()
         self.assert_set_up(account)
         # The setup reaches the user's own account only, not what they share with others.
