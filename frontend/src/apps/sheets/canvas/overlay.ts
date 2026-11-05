@@ -1,6 +1,8 @@
 import { getTextWrap, lineHeightFor } from '../utils/text-wrap.js'
 import { COLORS, FRAME_W, GRID_LINE } from './constants.js'
 import type { EditorFormat, EditorOverlay } from './input/editor.js'
+import { inkFor } from './painters/cell-text-style.js'
+import type { CellFormat } from './types.js'
 
 // The editor's border takes the selection frame's place (FRAME_W centred on
 // the gridline, GRID_LINE after the cell edge), so opening the editor doesn't
@@ -136,7 +138,12 @@ export function createOverlay(parent: HTMLElement): Overlay {
       .filter(Boolean)
       .join(' ')
     el.style.textDecoration = deco || 'none'
-    el.style.color = fmt.color || COLORS.cellText
+    // The painter's ink: over a fill, it reads the ink off the fill.
+    const ink: CellFormat = {}
+    if (fmt.color) ink.color = fmt.color
+    const fill = fmt.backgroundColor || fmt.bg
+    if (fill) ink.backgroundColor = fill
+    el.style.color = inkFor(ink)
     el.style.backgroundColor = fmt.backgroundColor || fmt.bg || COLORS.white
     el.style.borderColor = COLORS.selBorder
     const wrap = getTextWrap(fmt) === 'wrap'

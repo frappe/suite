@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EditorFormat } from './input/editor.js'
 import { createOverlay } from './overlay.js'
 import { createCellPainter } from './painters/cell-painter.js'
-import { autoAlign } from './painters/cell-text-style.js'
+import { autoAlign, inkFor } from './painters/cell-text-style.js'
 import { createMockCtx, createMockGeo } from './painters/test-utils.js'
 import type { CellFormat, MergeInfo } from './types.js'
 
@@ -209,6 +209,17 @@ describe('the in-cell editor draws text where the grid does', () => {
     const { s } = edit({ value: 'x' })
     expect(s.getPropertyValue('font-variation-settings')).toBe('inherit')
     document.body.style.removeProperty('font-variation-settings')
+  })
+
+  it('writes in the ink the grid draws over a fill', () => {
+    // A dark fill (from the fill picker or a colour scale) gets light ink on
+    // the canvas; the editor must not switch to the theme's dark ink.
+    const fmt = { backgroundColor: '#1e3a8a' }
+    const { s } = edit({ value: 'x', fmt })
+    const probe = document.createElement('i')
+    probe.style.color = inkFor(fmt)
+    expect(s.color).toBe(probe.style.color)
+    expect(s.backgroundColor).toBe('rgb(30, 58, 138)')
   })
 
   it('keeps the first line put while typing more lines', () => {
