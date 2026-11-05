@@ -19,7 +19,7 @@ function tabPanel(page: Page, text: string) {
 // A tab nobody has named shows its first line of text.
 async function addTab(page: Page, text: string) {
 	await page.getByRole("button", { name: "Insert" }).click();
-	await page.getByRole("menuitem", { name: "Add tab" }).click();
+	await page.getByRole("menuitem", { name: "Tab", exact: true }).click();
 	await writerEditor(page).click();
 	await page.keyboard.type(text);
 	await page.keyboard.press("Enter");
