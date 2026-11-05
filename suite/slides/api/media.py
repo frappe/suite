@@ -19,6 +19,14 @@ MEDIA_TYPES = ("image/", "video/")
 # Still PNG and JPEG pictures are stored as WebP, which is smaller. GIF keeps its
 # animation, SVG stays a vector, and WebP and video are stored as uploaded.
 WEBP_SOURCE_TYPES = ("image/png", "image/jpeg")
+# Pillow reports a multi-picture JPEG, as phones and cameras write, as MPO.
+WEBP_SOURCE_FORMATS = ("PNG", "JPEG", "MPO")
+# Decoding runs inside the web request at about 4 bytes a pixel, and the header
+# gives the size before any of that. This passes a 61 Mpx camera's photo. A larger
+# one is stored as uploaded, as is any picture WebP cannot hold.
+MAX_WEBP_SOURCE_PIXELS = 64_000_000
+JPEG_START_OF_SCAN = 0xDA
+JPEG_END_OF_IMAGE = b"\xff\xd9"
 
 
 @frappe.whitelist(methods=["POST"])
@@ -46,12 +54,54 @@ def as_webp(file_name: str, stream: IO[bytes]) -> tuple[str, IO[bytes]]:
     """Re-encode a still PNG or JPEG as WebP, upright. Anything else is kept as uploaded."""
     original = stream.read()
     try:
-        with Image.open(BytesIO(original)) as image:
-            if getattr(image, "is_animated", False):
-                return file_name, BytesIO(original)
-            output = BytesIO()
-            ImageOps.exif_transpose(image).save(output, format="WEBP")
-    except (OSError, Image.DecompressionBombError):
+        webp = _encode_webp(original)
+    # Pillow answers bad input with many error types, and every one means "keep the upload".
+    except Exception:
+        webp = None
+    if webp is None:
         return file_name, BytesIO(original)
-    output.seek(0)
-    return f"{file_name.rsplit('.', 1)[0]}.webp", output
+    return f"{file_name.rsplit('.', 1)[0]}.webp", BytesIO(webp)
+
+
+def _encode_webp(picture: bytes) -> bytes | None:
+    """Answer `picture` as WebP, or None when it should stay as uploaded."""
+    with Image.open(BytesIO(picture)) as image:
+        width, height = image.size
+        animated = getattr(image, "is_animated", False) and image.format != "MPO"
+        if (
+            image.format not in WEBP_SOURCE_FORMATS
+            or animated
+            or width * height > MAX_WEBP_SOURCE_PIXELS
+            or not _is_whole(picture, image.format)
+        ):
+            return None
+        output = BytesIO()
+        ImageOps.exif_transpose(image).save(output, format="WEBP", icc_profile=image.info.get("icc_profile"))
+    return output.getvalue()
+
+
+def _is_whole(picture: bytes, image_format: str) -> bool:
+    """Answer whether the file is complete, so a decode has no missing pixels to fill in.
+
+    `frappe.utils.image` turns on Pillow's process-wide `LOAD_TRUNCATED_IMAGES`, and
+    then a decode pads damage instead of raising. Workers are threaded, so turning
+    it off around a decode would race with other requests. This looks at the file
+    itself, which gives the same answer whatever the flag says.
+    """
+    if image_format != "PNG":
+        return _jpeg_has_an_end(picture)
+    with Image.open(BytesIO(picture)) as image:
+        # Checks every chunk's checksum through to the last chunk, and raises otherwise.
+        image.verify()
+    return True
+
+
+def _jpeg_has_an_end(picture: bytes) -> bool:
+    """Skip the header segments, which can hold a whole thumbnail, then look for the end marker."""
+    position = 2
+    while position + 4 <= len(picture) and picture[position] == 0xFF:
+        if picture[position + 1] == JPEG_START_OF_SCAN:
+            # The scan data escapes every 0xFF byte, so this pair can only be the marker.
+            return JPEG_END_OF_IMAGE in picture[position:]
+        position += 2 + int.from_bytes(picture[position + 2 : position + 4])
+    return False
