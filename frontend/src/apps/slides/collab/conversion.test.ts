@@ -19,6 +19,7 @@ import {
 } from './deck'
 import { drawnSlides } from './drawnDeck'
 import { slidesFault } from './fault'
+import { compareBodies } from './oldBody'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -550,12 +551,178 @@ describe('what the deck draws, against the old view', () => {
     expect(dropped).toEqual([])
   })
 
-  it('records a bullet the editor cannot hold when nothing else changes', () => {
-    const { textOf, dropped } = drawnDeck(
-      textBox('<ul><li style="--marker-opacity: 0.504"><p>a</p></li></ul>'),
+  it('keeps a red bullet and blue text when the item colour is marked important', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox(
+        '<ul><li style="color: #ff0000 !important"><p><span style="color: blue">a</span></p></li></ul>',
+      ),
     )
-    expect(textOf('a')).toBeTruthy()
-    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
+    expect(drawn(item, 'color')).toBe('rgb(255, 0, 0)')
+    expect(drawn(textOf('a'), 'color')).toBe('blue')
+    expect(dropped).toEqual([])
+  })
+
+  it('keeps text after a spaced first text off its letter spacing', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox('<ul><li><p><span style="letter-spacing: 10px">a</span>b</p></li></ul>'),
+    )
+    expect(drawn(item, 'letter-spacing')).toBe('')
+    expect(drawn(textOf('b'), 'letter-spacing')).toBe('')
+    expect(dropped).toEqual([])
+  })
+
+  describe('whitespace a table cell draws', () => {
+    function tableBox(cell: string) {
+      return {
+        id: 'box',
+        type: 'table',
+        width: 200,
+        content: `<table style="width: 200px"><colgroup><col style="width: 200px"></colgroup><tbody><tr><td colwidth="200">${cell}</td></tr></tbody></table>`,
+      }
+    }
+
+    function isRefused(cell: string) {
+      return refusal(tableBox(cell)).kind === 'failed'
+    }
+
+    it('keeps the plain space after a spaced first text off its letter spacing', () => {
+      const { item, textOf, dropped } = drawnDeck(
+        tableBox(
+          '<ul><li style="font-size: 18px"><p><span style="letter-spacing: 10px">a</span> <span style="letter-spacing: 0px">b</span></p></li></ul>',
+        ),
+      )
+      expect(drawn(item, 'letter-spacing')).toBe('')
+      expect(drawn(textOf('a'), 'letter-spacing')).toBe('10px')
+      expect(drawn(textOf('b'), 'letter-spacing')).toBe('0px')
+      expect(dropped).toEqual([])
+    })
+
+    it('refuses a style on a space between words that the saved body has no place for', () => {
+      expect(isRefused('<p>a<span style="word-spacing: 5px"> </span>b</p>')).toBe(true)
+    })
+
+    it('keeps a space between words in the size it drew at', () => {
+      const { doc } = converted([
+        tableBox('<p>a<span style="font-size: 40px"> </span>b</p>') as OldBox,
+      ])
+      const [, space] = bodyOf(doc, 'box').content[0].content[0].content[0].content[0].content
+      expect(space.text).toBe(' ')
+      expect(space.marks[0].attrs.fontSize).toBe('40px')
+    })
+
+    it('ignores whitespace a cell folds away, whatever its style', () => {
+      expect(isRefused('<p>a<span style="word-spacing: 5px"> </span></p>')).toBe(false)
+      expect(isRefused('\n<p> a  b\n</p>\n')).toBe(false)
+    })
+
+    it.each([
+      ['between words', '<p>a <span style="font-size: 40px"> </span>b</p>'],
+      ['at the end of a line', '<p>a<span style="font-size: 40px"> </span></p>'],
+      ['at the start of a line', '<p><span style="line-height: 3"> </span>a</p>'],
+    ])('refuses a folded space %s that a browser still makes its line taller for', (_n, cell) => {
+      expect(isRefused(cell)).toBe(true)
+    })
+
+    it('keeps a space between bare runs in a cell', () => {
+      const { doc } = converted([tableBox('<span>a</span> <span>b</span>') as OldBox])
+      const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content[0].content
+      expect(run.text).toBe('a b')
+    })
+
+    it('refuses a look run that would make a folded leading space draw', () => {
+      expect(
+        isRefused(
+          '<ul><li style="color: red"><p><span style="color: blue"> a</span></p></li></ul>',
+        ),
+      ).toBe(true)
+    })
+  })
+
+  describe('a first character a look run can change', () => {
+    it.each([
+      ['a combining accent', '́'],
+      ['a spacing mark', 'ः'],
+      ['an enclosing mark', '⃝'],
+      ['a zero-width joiner', '‍'],
+      ['a zero-width non-joiner', '‌'],
+      ['a word joiner', '⁠'],
+      ['a variation selector', '️'],
+      ['a supplementary variation selector', '\u{e0100}'],
+      ['an emoji modifier', '\u{1f3fb}'],
+      ['a conjoining Hangul vowel', 'ᅠ'],
+    ])('refuses %s where a run is needed', (_name, first) => {
+      const content = `<ol><li style="letter-spacing: 10px"><p><span style="color: red">${first}ab</span></p></li></ol>`
+      expect(refusal({ content })).toEqual({ kind: 'failed', reason: 'check', detail: 'html' })
+    })
+
+    it('leaves it alone where no run is needed', () => {
+      const { doc, dropped } = converted([textBox('<ul><li><p>́ab</p></li></ul>')])
+      const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content
+      expect(run.text).toBe('́ab')
+      expect(dropped).toEqual([])
+    })
+
+    it('still compares a zero-width space the old body had, which is not the look run', () => {
+      function parsed(html: string) {
+        return new DOMParser().parseFromString(`<body>${html}`, 'text/html').body
+      }
+
+      const rules = { lineHeight: '1.5', isWhitespaceKept: true }
+      const { isSameBody } = compareBodies(
+        parsed('<ul><li><p>​a</p></li></ul>'),
+        parsed('<ul><li><p>a</p></li></ul>'),
+        rules,
+        new Set(),
+      )
+      expect(isSameBody).toBe(false)
+    })
+  })
+
+  describe('a run only where the bullet needs one', () => {
+    it('adds none for a first text whose size reads the same on the bullet', () => {
+      const { doc, dropped } = converted([
+        textBox(
+          '<ul><li style="font-size: 28px"><p><span style="font-size: 28.5px">a</span></p></li></ul>',
+        ),
+      ])
+      const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content
+      expect(run.text).toBe('a')
+      expect(dropped).toEqual([])
+    })
+
+    it('adds none on a nested item that inherits its fade from the item above', () => {
+      const { doc, dropped } = converted([
+        textBox(
+          '<ul><li style="--marker-opacity: 0.5"><p>a</p><ul><li><p>b</p></li></ul></li></ul>',
+        ),
+      ])
+      const outer = bodyOf(doc, 'box').content[0].content[0].content
+      const nested = outer[1].content[0].content[0].content
+      expect(nested[0].text).toBe('b')
+      expect(outer[0].content[0].text).toBe('​')
+      expect(dropped).toEqual([])
+    })
+
+    it('holds a bullet behind a leading run the deck already had, with no record', () => {
+      const { doc, dropped } = converted([
+        textBox('<ul><li><p><span style="opacity: 0.5">​a</span>b</p></li></ul>'),
+      ])
+      const runs = bodyOf(doc, 'box').content[0].content[0].content[0].content
+      expect(runs.map(({ text }: { text: string }) => text).join('')).toBe('​​ab')
+      expect(dropped).toEqual([])
+    })
+  })
+
+  it.each([
+    ['a fade over text faded differently', '0.504', '<span style="opacity: 0.5">a</span>'],
+    ['a fade that no whole percent holds', '0.504', 'a'],
+    ['an unreadable word', 'lots', 'a'],
+    ['not a number', 'nan', 'a'],
+    ['a percent', '50%', 'a'],
+    ['nothing', '', 'a'],
+  ])('refuses a bullet with %s', (_name, value, text) => {
+    const content = `<ul><li style="--marker-opacity: ${value}"><p>${text}</p></li></ul>`
+    expect(refusal({ content })).toEqual({ kind: 'failed', reason: 'check', detail: 'html' })
   })
 
   it('takes the declaration that wins by priority, not the last one written', () => {
@@ -608,6 +775,16 @@ describe('what the deck draws, against the old view', () => {
     const { dropped } = converted([{ id: 'box', type: 'table', width: 100, content }])
     expect(dropped).toEqual([])
   })
+
+  it.each([
+    ['text after it', '<p>x<hr>y</p>'],
+    ['text before it', 'x<hr><p>y</p>'],
+  ])(
+    'refuses a horizontal rule with %s, which the parser splits out of a paragraph',
+    (_n, content) => {
+      expect(refusal({ content })).toEqual({ kind: 'failed', reason: 'check', detail: 'html' })
+    },
+  )
 
   it('drops a horizontal rule and keeps the text around it', () => {
     const { doc, dropped } = converted([textBox('<p>a</p><hr><p>b</p>')])

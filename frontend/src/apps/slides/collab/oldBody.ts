@@ -17,7 +17,11 @@ const MARKER_OPACITY = '--marker-opacity'
 const OPACITY = 'opacity'
 // Removes the floats' own noise from a product of opacities and nothing a browser could draw
 const OPACITY_DIGITS = 12
+const PERCENT = 100
 const ZERO_WIDTH_SPACE = '\u200b'
+// What a zero-width space before it would change: combining marks, variation selectors and joiners join
+// what comes before them, and a conjoining vowel or emoji modifier does too. A zero-width space itself doesn't
+const JOINS_WHAT_IS_BEFORE = /^(?!\u200b)[\p{M}\p{Cf}\p{Emoji_Modifier}\u1160-\u11ff\ud7b0-\ud7ff]/u
 // A value the browser rejects here does nothing, where an unknown property still counts
 const READ_BY_THE_BROWSER = new Set([...INHERITED, OPACITY])
 const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
@@ -38,8 +42,9 @@ const FORMATTING_TAGS = new Set([
   'strong',
   'u',
 ])
-const FOLDED_WHITESPACE = /[ \t\n\r\f]/
+const FOLDED_WHITESPACE = /^[ \t\n\r\f]$/
 const HARD_BREAK = 'hard break'
+const OWN_LINE_HEIGHT = 'own line height'
 // `td` and `th` take text bare; a body or cell's bare text sits in one line, as a paragraph's does
 const HOLDS_BARE_TEXT = new Set(['body', 'td', 'th'])
 const LINE_HEIGHT_RULE = new Set(['p', 'li'])
@@ -67,6 +72,8 @@ interface Place {
   fromItem: Set<string>
   isFadedByItem: boolean
   block: number
+  // What sets the height of the line this sits on
+  lineFit: string
   parentTag: string
 }
 
@@ -74,6 +81,8 @@ interface Run {
   node: Text | Element
   place: Place
 }
+
+type Character = [text: string, look: string, block: number]
 
 interface Drawing {
   blocks: string[]
@@ -135,7 +144,12 @@ function isInherited(name: string) {
   return INHERITED.includes(name) || name === MARKER_OPACITY
 }
 
+// An empty value isn't 0, and reads like any other that isn't a number
 function clampedOpacity(value: string) {
+  if (!value) {
+    return NaN
+  }
+
   return Math.min(1, Math.max(0, Number(value)))
 }
 
@@ -189,6 +203,10 @@ function markerOpacity({ styles, opacity }: Place) {
   return exactOpacity(opacity * clampedOpacity(styles.get(MARKER_OPACITY) ?? '1'))
 }
 
+function lineFit(styles: Map<string, string>) {
+  return JSON.stringify(['font-size', 'font-family', 'line-height'].map((name) => styles.get(name)))
+}
+
 function isOrderedItem(element: Element, tag: string) {
   return tag === 'li' && element.parentElement?.localName === 'ol'
 }
@@ -235,6 +253,7 @@ function drawBlock(element: Element, place: Place, rules: DrawRules, drawing: Dr
   }
 
   next.block = drawing.blocks.push(blockEntry(tag, next.styles, own)) - 1
+  next.lineFit = lineFit(next.styles)
   if (tag === 'p' && place.parentTag === 'li' && !element.previousElementSibling) {
     drawing.markers.push(markerEntry(next, element.parentElement))
     drawing.items.push({ paragraph: element, place: next })
@@ -309,7 +328,7 @@ function isDrawnInLine(node: Node, rules: DrawRules) {
 
 function implicitLine(place: Place, drawing: Drawing) {
   const block = drawing.blocks.push(blockEntry('p', place.styles, new Map())) - 1
-  return { ...place, block }
+  return { ...place, block, lineFit: lineFit(place.styles) }
 }
 
 function drawChildren(parent: Element, place: Place, rules: DrawRules, drawing: Drawing) {
@@ -321,7 +340,7 @@ function drawChildren(parent: Element, place: Place, rules: DrawRules, drawing: 
       drawBlock(child as Element, place, rules, drawing)
     } else if (!HOLDS_BARE_TEXT.has(parent.localName)) {
       drawInline(child, place, rules, drawing)
-    } else if (isDrawnInLine(child, rules)) {
+    } else if (line || isDrawnInLine(child, rules)) {
       line ??= implicitLine(place, drawing)
       drawInline(child, line, rules, drawing)
     }
@@ -338,6 +357,7 @@ function drawingOf(root: Element, rules: DrawRules): Drawing {
     fromItem: new Set(),
     isFadedByItem: false,
     block: -1,
+    lineFit: '',
     parentTag: 'body',
   }
   drawChildren(root, place, rules, drawing)
@@ -350,44 +370,99 @@ function runLook({ styles, formats, opacity, block }: Place) {
   return JSON.stringify([seen, [...formats].sort(), exactOpacity(opacity), block])
 }
 
-function characters({ runs, items }: Drawing, rules: DrawRules) {
-  const itemBlocks = new Set(items.map(({ place }) => place.block))
-  const seen = new Set<number>()
-  return runs.flatMap(({ node, place }) => {
+// A browser folds a run of spaces to one, in the first one's look, and draws none at a line's ends
+function foldedWhitespace(all: Character[]) {
+  const drawn: Character[] = []
+  let line = -1
+  let space: Character | null = null
+  let isLineStart = true
+  for (const character of all) {
+    const [text, look, block] = character
+    if (block !== line) {
+      line = block
+      space = null
+      isLineStart = true
+    }
+
+    if (FOLDED_WHITESPACE.test(text)) {
+      space ??= [' ', look, block]
+      continue
+    }
+
+    if (space && !isLineStart && text !== HARD_BREAK) {
+      drawn.push(space)
+    }
+
+    drawn.push(character)
+    space = null
+    isLineStart = text === HARD_BREAK
+  }
+
+  return drawn
+}
+
+// `held` names the items whose first character is a look run the old body doesn't have
+function characters({ runs, items }: Drawing, rules: DrawRules, held: Set<number>) {
+  const all = runs.flatMap(({ node, place }): Character[] => {
     const look = runLook(place)
     if (node.nodeType !== Node.TEXT_NODE) {
-      seen.add(place.block)
-      return [[HARD_BREAK, look]]
+      return [[HARD_BREAK, look, place.block]]
     }
 
-    let text = node.textContent ?? ''
-    // A zero-width space at an item's start draws nothing, so its look is all it holds
-    if (itemBlocks.has(place.block) && !seen.has(place.block)) {
-      text = text.replace(/^\u200b+/, '')
-      if (text) {
-        seen.add(place.block)
-      }
+    const text = node.textContent ?? ''
+    const drawn = [...text].map((char): Character => [char, look, place.block])
+    // An inline holding only a space sizes its line even when the space folds away, so the saved body must
+    // keep it. A space is compared only where it's kept
+    const isOwnLine = !text.trim() && lineFit(place.styles) !== place.lineFit
+    if (!rules.isWhitespaceKept && isOwnLine) {
+      drawn.unshift([OWN_LINE_HEIGHT, look, place.block])
     }
 
-    return [...text]
-      .filter((char) => rules.isWhitespaceKept || !FOLDED_WHITESPACE.test(char))
-      .map((char) => [char, look])
+    return drawn
   })
+  const added = new Set([...held].map((at) => items[at].place.block))
+  const folded = foldedWhitespace(all)
+  const drawn = rules.isWhitespaceKept ? all : folded
+  return drawn.filter(([, , block]) => !added.delete(block))
 }
 
 function sameList(left: unknown[], right: unknown[]) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-/** How `saved` draws against `old`: `body` for everything but list markers, then the markers alone. */
-export function compareBodies(old: Element, saved: Element, rules: DrawRules) {
+/** How `saved`, with look runs on `held` items, draws against `old`: `body` for everything but list markers, then the markers alone. */
+export function compareBodies(old: Element, saved: Element, rules: DrawRules, held: Set<number>) {
   const [oldDrawing, savedDrawing] = [drawingOf(old, rules), drawingOf(saved, rules)]
   return {
     isSameBody:
       sameList(oldDrawing.blocks, savedDrawing.blocks) &&
-      sameList(characters(oldDrawing, rules), characters(savedDrawing, rules)),
+      sameList(characters(oldDrawing, rules, new Set()), characters(savedDrawing, rules, held)),
     isSameMarkers: sameList(oldDrawing.markers, savedDrawing.markers),
   }
+}
+
+/** The items of `old`, past those already `held`, that `saved` draws differently without a look run. */
+export function itemsToHold(old: Element, saved: Element, rules: DrawRules, held: Set<number>) {
+  const [oldDrawing, savedDrawing] = [drawingOf(old, rules), drawingOf(saved, rules)]
+  const needed = new Set<number>()
+  if (oldDrawing.items.length !== savedDrawing.items.length) {
+    return needed
+  }
+
+  const isSameBody = compareBodies(old, saved, rules, held).isSameBody
+  for (const [at, { place }] of oldDrawing.items.entries()) {
+    // A bullet shows no letter spacing, but what's after its first text inherits it from the item
+    const savedPlace = savedDrawing.items[at].place
+    const isSameSpacing =
+      place.styles.get('letter-spacing') === savedPlace.styles.get('letter-spacing')
+    const isSameItem =
+      oldDrawing.markers[at] === savedDrawing.markers[at] && (isSameBody || isSameSpacing)
+    if (!isSameItem && !held.has(at)) {
+      needed.add(at)
+    }
+  }
+
+  return needed
 }
 
 // In the old view a list item's style reached its text and breaks by CSS inheritance. The editor's items
@@ -418,43 +493,62 @@ export function carryItemStyles(root: Element, rules: DrawRules) {
   }
 }
 
-function holdsItemLook(item: Place, first: Place, paragraph: Element) {
-  return (
-    markerStyles(paragraph.parentElement).every(
-      (name) => first.styles.get(name) === item.styles.get(name),
-    ) && exactOpacity(first.opacity) === markerOpacity(item)
-  )
+function isWholePercent(opacity: number) {
+  return Number.isInteger(exactOpacity(opacity * PERCENT))
 }
 
-// The editor draws an item's bullet, indent and inherited look from its first text. When that text looks
-// different, a leading zero-width space takes the item's look, as the editor's own new items do
-export function holdItemLooks(root: Element, rules: DrawRules) {
-  const { items, runs } = drawingOf(root, rules)
-  for (const { paragraph, place } of items) {
-    const first = runs.find((run) => run.place.block === place.block)
-    const isTextFirst = first?.node.nodeType === Node.TEXT_NODE
-    if (!first || !isTextFirst || first.node.textContent?.startsWith(ZERO_WIDTH_SPACE)) {
-      continue
-    }
-
-    if (holdsItemLook(place, first.place, paragraph)) {
-      continue
-    }
-
-    const look = ITEM_STYLES.filter((name) => place.styles.has(name)).map((name) => {
-      const value = place.styles.get(name)
-      return `${name}: ${value}`
-    })
-    const opacity = markerOpacity(place)
-    if (opacity < 1) {
-      look.push(`opacity: ${opacity}`)
-    }
-
-    const span = root.ownerDocument.createElement('span')
-    span.setAttribute('style', look.join('; '))
-    span.textContent = ZERO_WIDTH_SPACE
-    paragraph.prepend(span)
+function prependLookRun(paragraph: Element, place: Place) {
+  const look = ITEM_STYLES.filter((name) => place.styles.has(name)).map((name) => {
+    const value = place.styles.get(name)
+    return `${name}: ${value}`
+  })
+  const opacity = markerOpacity(place)
+  if (opacity < 1) {
+    look.push(`opacity: ${opacity}`)
   }
+
+  const span = paragraph.ownerDocument.createElement('span')
+  span.setAttribute('style', look.join('; '))
+  span.textContent = ZERO_WIDTH_SPACE
+  paragraph.prepend(span)
+}
+
+// The editor draws an item's bullet, indent and inherited look from its first text. Where `needed` says that
+// differs, a leading zero-width space takes the item's look, as the editor's own new items do. An item inside
+// one held here waits for the next pass, since it inherits from that one. Throws on what no run can hold
+export function holdItemLooks(root: Element, rules: DrawRules, needed: Set<number>) {
+  const { items, runs } = drawingOf(root, rules)
+  const held = new Set<number>()
+  const heldItems: Element[] = []
+  for (const [at, { paragraph, place }] of items.entries()) {
+    if (!isWholePercent(markerOpacity(place))) {
+      throw new Error('A saved mark holds a whole percent of opacity')
+    }
+
+    const first = runs.find((run) => run.place.block === place.block)
+    const isInsideHeld = heldItems.some((item) => item.contains(paragraph))
+    if (!needed.has(at) || first?.node.nodeType !== Node.TEXT_NODE || isInsideHeld) {
+      continue
+    }
+
+    if (JOINS_WHAT_IS_BEFORE.test(first.node.textContent ?? '')) {
+      throw new Error('A look run would change the first character')
+    }
+
+    prependLookRun(paragraph, place)
+    held.add(at)
+    heldItems.push(paragraph.parentElement!)
+  }
+
+  return held
+}
+
+/** Whether text beside a rule says the parser split a paragraph around it: the text's own line is new. */
+export function isBesideBareText(rule: Element) {
+  return [...rule.parentNode!.childNodes].some((node) => {
+    const isText = node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim()
+    return isText || (node.nodeType === Node.ELEMENT_NODE && isFormatting(node))
+  })
 }
 
 // A line's height comes from the rule, which the editor's paragraphs would hide behind their own default,

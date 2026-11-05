@@ -30,6 +30,8 @@ import {
   carryItemStyles,
   compareBodies,
   holdItemLooks,
+  isBesideBareText,
+  itemsToHold,
   stateLineHeights,
   type DrawRules,
 } from './oldBody'
@@ -280,12 +282,23 @@ function oldHtml(content: unknown) {
   return String(content)
 }
 
+function parsedNode(html: HTMLElement, rules: DrawRules) {
+  const whitespace = rules.isWhitespaceKept && 'full'
+  const parsed = PMDOMParser.fromSchema(schema).parse(html, { preserveWhitespace: whitespace })
+
+  return schema.nodeFromJSON(withoutEmptyStyles(parsed.toJSON()))
+}
+
 function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>) {
   // The old view sets this as a `div`'s HTML; alone, the parser would drop leading whitespace it draws
   const html = oldHtml(box.content)
   const { body } = new DOMParser().parseFromString(`<body>${html}`, 'text/html')
   // No screen draws one: the old view's sanitizer removes it and the schema has no place for it
   for (const rule of body.querySelectorAll('hr')) {
+    if (isBesideBareText(rule)) {
+      throw new Refused('html')
+    }
+
     rule.remove()
     dropped.add('horizontal-rule')
   }
@@ -293,11 +306,19 @@ function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>)
   const carried = body.cloneNode(true) as HTMLElement
   stateLineHeights(carried, rules)
   carryItemStyles(carried, rules)
-  holdItemLooks(carried, rules)
-  const whitespace = rules.isWhitespaceKept && 'full'
-  const parsed = PMDOMParser.fromSchema(schema).parse(carried, { preserveWhitespace: whitespace })
+  const held = new Set<number>()
+  for (;;) {
+    const node = parsedNode(carried, rules)
+    const saved = savedBody(node, body.ownerDocument)
+    const added = holdItemLooks(carried, rules, itemsToHold(body, saved, rules, held))
+    if (!added.size) {
+      return { node, source: body, held }
+    }
 
-  return { node: schema.nodeFromJSON(withoutEmptyStyles(parsed.toJSON())), source: body }
+    for (const at of added) {
+      held.add(at)
+    }
+  }
 }
 
 function fillEmptyText(fragment: Y.XmlFragment) {
@@ -310,7 +331,7 @@ function filled(box: OldBox, fragment: Y.XmlFragment, rules: DrawRules, dropped:
     prosemirrorToYXmlFragment(parsed.node, fragment)
     return parsed
   } catch {
-    // TipTap throws on a document its schema has no place for
+    // TipTap throws on a document its schema has no place for, and `holdItemLooks` on what no run holds
     throw new Refused('html')
   }
 }
@@ -330,12 +351,13 @@ function fillText(doc: Y.Doc, box: OldBox, id: string, dropped: Set<DroppedKind>
   }
 
   const rules = rulesOf(box)
-  const { node, source } = filled(box, fragment, rules, dropped)
+  const { node, source, held } = filled(box, fragment, rules, dropped)
   const read = yXmlFragmentToProseMirrorRootNode(fragment, schema)
   const { isSameBody, isSameMarkers } = compareBodies(
     source,
     savedBody(read, source.ownerDocument),
     rules,
+    held,
   )
   if (!read.eq(node) || !isSameBody) {
     throw new Refused('html')
