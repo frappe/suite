@@ -90,11 +90,11 @@ jobs:
       - name: Setup Pilot
         if: steps.backend-changes.outputs.run == '1'
         run: |
-          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.94-pre-alpha/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.99-pre-alpha/install.sh | sh -s -- --version v0.0.99-pre-alpha
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          pilot -b frappe-bench init
+          pilot -b frappe-bench init --skip-frontend
 
       - name: Install Suite
         if: steps.backend-changes.outputs.run == '1'
@@ -116,7 +116,7 @@ jobs:
       - name: Create Test Site
         if: steps.backend-changes.outputs.run == '1'
         working-directory: /home/runner/pilot/benches/frappe-bench
-        run: pilot new-site test_site --admin-password admin --apps frappe suite
+        run: pilot new-site test_site --admin-password admin --apps frappe suite --skip-assets
 
       - name: Run Backend Tests
         if: steps.backend-changes.outputs.run == '1'
@@ -370,11 +370,11 @@ jobs:
       - name: Setup Pilot
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.94-pre-alpha/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.99-pre-alpha/install.sh | sh -s -- --version v0.0.99-pre-alpha
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          pilot -b frappe-bench init
+          pilot -b frappe-bench init --skip-frontend
 
       - name: Install Suite
         if: steps.mail-calendar-changes.outputs.run == '1'
@@ -396,7 +396,7 @@ jobs:
       - name: Create Test Site
         if: steps.mail-calendar-changes.outputs.run == '1'
         working-directory: /home/runner/pilot/benches/frappe-bench
-        run: pilot new-site test_site --admin-password admin --apps frappe suite
+        run: pilot new-site test_site --admin-password admin --apps frappe suite --skip-assets
 
       - name: Run ${{ matrix.name }} Tests
         if: steps.mail-calendar-changes.outputs.run == '1'
