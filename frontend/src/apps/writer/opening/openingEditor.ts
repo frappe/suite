@@ -5,6 +5,7 @@ import { setPlaceholder } from 'frappe-ui/editor'
 import { shallowRef } from 'vue'
 
 import MentionMenu from '@/apps/writer/components/MentionMenu.vue'
+import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
 import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import { EDITOR_TEXT_CLASS, editorTextStyle } from '@/apps/writer/utils/editor-layout'
 import { translate as __ } from '@/platform/translation'
@@ -29,6 +30,7 @@ export function isOpening(node: string): boolean {
  * caret stay.
  */
 export function placeOpeningEditor(node: string, place: HTMLElement): void {
+  rankMentionsFor(node)
   if (opening.value?.node !== node) {
     closeOpeningEditor()
     opening.value = createOpening(node)

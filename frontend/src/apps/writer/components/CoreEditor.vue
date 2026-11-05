@@ -83,7 +83,6 @@ import {
 } from 'vue'
 
 import { hasDefaultDocumentTitle, useDriveDialogs } from '@/apps/drive'
-import { useUsers } from '@/apps/writer/composables/useUsers'
 import { uploadMedia } from '@/apps/writer/drive'
 import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import emitter from '@/apps/writer/emitter'
@@ -191,8 +190,6 @@ function onCommentActivated(id: string) {
   }
 }
 
-// Ranks the `@` menu for this document and loads its first page
-useUsers()
 const renameDocument = inject(RENAME_DOCUMENT, null)
 
 const driveDialogs = useDriveDialogs()

@@ -1,4 +1,4 @@
-import { hasInjectionContext, inject, shallowRef, type InjectionKey, type ShallowRef } from 'vue'
+import { shallowRef, type ShallowRef } from 'vue'
 
 import { searchUsers, type WriterUser } from '@/apps/writer/drive'
 import { useSession } from '@/platform/session'
@@ -6,9 +6,6 @@ import { useSession } from '@/platform/session'
 const SEARCH_DELAY_MS = 250
 
 type Search = (query: string, node?: string | null) => Promise<WriterUser[]>
-
-/** The document whose people the `@` menu ranks; a Writer surface provides it. */
-export const MENTION_NODE: InjectionKey<string> = Symbol('mentionNode')
 
 // Everyone seen so far, for avatars and names on mentions, comments and carets
 function createDirectory() {
@@ -224,21 +221,27 @@ const people = createUsers()
 
 export const { searchMentions, lookUp, fullName } = people
 
-/**
- * The people for mentions and avatars. The first page loads once per
- * document; `searchMentions` narrows the menu as the user types after `@`.
- * Under a provided `MENTION_NODE`, the menu ranks people who can open it first.
- * Components that use `$user(...)` in templates alias `getUser` to `$user`.
- */
-export function useUsers() {
-  const node = hasInjectionContext() ? inject(MENTION_NODE, null) : null
-  if (node) {
-    people.rankFor(node)
-  }
-
+function loadFirstPage() {
   if (useSession().user.value) {
     people.start()
   }
+}
 
+/**
+ * Ranks the `@` menu for the document `node` and loads its first page. Whatever
+ * opens a document calls it, before anyone can type `@` there.
+ */
+export function rankMentionsFor(node: string): void {
+  people.rankFor(node)
+  loadFirstPage()
+}
+
+/**
+ * The people for mentions and avatars. The first page loads once per
+ * document; `searchMentions` narrows the menu as the user types after `@`.
+ * Components that use `$user(...)` in templates alias `getUser` to `$user`.
+ */
+export function useUsers() {
+  loadFirstPage()
   return { users: people.users, answeredQuery: people.answeredQuery, getUser: people.getUser }
 }

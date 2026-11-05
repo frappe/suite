@@ -28,7 +28,7 @@ import CollabTextEditor from '@/apps/writer/components/CollabTextEditor.vue'
 import DocumentStrip from '@/apps/writer/components/DocumentStrip.vue'
 import ReadOnlyEditor from '@/apps/writer/components/ReadOnlyEditor.vue'
 import UsersBar from '@/apps/writer/components/UsersBar.vue'
-import { MENTION_NODE } from '@/apps/writer/composables/useUsers'
+import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
 import { isOpening } from '@/apps/writer/opening/openingEditor'
@@ -417,7 +417,7 @@ provide(RENAME_DOCUMENT, async (title) => {
 })
 
 provide(DOCUMENT_MEDIA, (id) => props.session.media(id))
-provide(MENTION_NODE, props.session.nodeId)
+rankMentionsFor(props.session.nodeId)
 
 function showVersion(shown: DocumentVersion | null) {
   if (!shown) {

@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
 
-import type { WriterUser } from '@/apps/writer/drive'
+import { searchUsers, type WriterUser } from '@/apps/writer/drive'
 
-import { createUsers } from './useUsers'
+import { createUsers, rankMentionsFor, useUsers } from './useUsers'
+
+vi.mock('@/apps/writer/drive', () => ({ searchUsers: vi.fn() }))
+vi.mock('@/platform/session', () => ({ useSession: () => ({ user: { value: 'me@x.test' } }) }))
 
 function person(name: string, full_name = name.toUpperCase()): WriterUser {
   return {
@@ -182,6 +185,29 @@ describe('people for mentions and names', () => {
         ['', 'doc-1'],
         ['', 'doc-2'],
       ],
+    ])
+  })
+
+  it("a document opened after another offers its own people, not the other's", async () => {
+    vi.mocked(searchUsers).mockImplementation(async (_query, node) =>
+      node === 'doc-a'
+        ? [{ ...person('ann'), has_access: false }]
+        : [{ ...person('bob'), has_access: true }],
+    )
+    rankMentionsFor('doc-a')
+    const { users } = useUsers()
+    await vi.waitFor(() => expect(users.value.map((user) => user.name)).toEqual(['ann']))
+
+    rankMentionsFor('doc-b')
+    // A menu opened now waits for this document's answer; it never shows the last one's markers
+    const whileAsking = users.value
+    useUsers()
+    await vi.waitFor(() => expect(users.value.map((user) => user.name)).toEqual(['bob']))
+
+    expect(whileAsking).toEqual([])
+    expect(vi.mocked(searchUsers).mock.calls).toEqual([
+      ['', 'doc-a'],
+      ['', 'doc-b'],
     ])
   })
 })
