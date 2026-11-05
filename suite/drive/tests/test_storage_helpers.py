@@ -26,9 +26,9 @@ def after_commit_replayed():
         call.args[0]()
 
 
-def make_stored_file(content):
+def make_stored_file(content, file_name="stored.txt"):
     return frappe.get_doc(
-        {"doctype": "File", "file_name": "stored.txt", "content": content, "is_private": 1}
+        {"doctype": "File", "file_name": file_name, "content": content, "is_private": 1}
     ).insert()
 
 
@@ -293,6 +293,19 @@ class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
             self.permanently_delete(deleted.name, OTHER_USER)
             self.assertTrue(stored.exists(), kept.file_url)
             stored.unlink()
+
+    def test_a_file_differing_by_case_does_not_keep_the_blob(self):
+        # the file_url column treats these names as equal, the disk does not
+        tag = frappe.generate_hash(length=8)
+        with self.set_user(OWNER):
+            kept = make_stored_file(frappe.generate_hash().encode(), f"Report{tag}.txt")
+        with self.set_user(OTHER_USER):
+            deleted = make_stored_file(frappe.generate_hash().encode(), f"report{tag}.txt")
+        stored = self.stored_file(deleted)
+
+        self.permanently_delete(deleted.name, OTHER_USER)
+        self.assertFalse(stored.exists())
+        self.assertTrue(self.stored_file(kept).exists())
 
     def test_purging_a_removed_file_keeps_a_blob_a_live_file_still_uses(self):
         kept, deleted = self.make_twins()

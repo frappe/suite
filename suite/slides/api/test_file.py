@@ -272,6 +272,51 @@ class TestMediaFileAccess(IntegrationTestCase):
             with self.assertRaises(NotFound):
                 validate_media_file("/private/files/no-such-file.png")
 
+    def make_lookalikes(self, attacker_presentation):
+        """The victim's private image, and the attacker's at a name the file_url column
+        treats as equal. The disk does not, so they are different files."""
+        tag = frappe.generate_hash(length=8)
+        for theirs, mine in (
+            (f"Salary{tag}.png", f"salary{tag}.png"),
+            (f"résumé{tag}.png", f"resume{tag}.png"),
+        ):
+            with self.set_user(OWNER):
+                secret = make_private_image(self.presentation.name, file_name=theirs)
+            with self.set_user(OTHER_USER):
+                own = make_private_image(attacker_presentation, file_name=mine)
+            self.assertNotEqual(own.file_url, secret.file_url)
+            yield secret, own
+
+    def test_a_lookalike_name_on_my_presentation_grants_nothing(self):
+        with self.set_user(OTHER_USER):
+            mine = make_presentation("Lookalike")
+        for secret, own in self.make_lookalikes(mine.name):
+            with self.set_user(OTHER_USER), self.subTest(url=secret.file_url):
+                self.assertIsNone(validate_media_file(own.file_url, mine.name))
+                with self.assertRaises(Forbidden):
+                    validate_media_file(secret.file_url, mine.name)
+
+    def test_a_lookalike_name_on_a_template_grants_nothing(self):
+        with self.set_user(OTHER_USER):
+            mine = make_presentation("Lookalike Viewer")
+            template = frappe.get_doc(
+                {
+                    "doctype": "Presentation",
+                    "title": "Lookalike",
+                    "is_template": 1,
+                    "slides": [{"elements": "[]"}],
+                }
+            ).insert()
+        for secret, _own in self.make_lookalikes(template.name):
+            with self.set_user(OTHER_USER), self.subTest(url=secret.file_url):
+                with self.assertRaises(Forbidden):
+                    validate_media_file(secret.file_url, mine.name)
+
+    def test_a_lookalike_of_a_held_url_is_not_found(self):
+        with self.set_user(OWNER):
+            with self.assertRaises(NotFound):
+                validate_media_file(self.file.file_url.upper())
+
     def make_template(self, title):
         """Inserted as a template, so `after_insert` skips `create_drive_file`: the
         shape templates actually have in production, with no backing Drive File."""

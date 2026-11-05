@@ -596,14 +596,25 @@ def file_url_spellings(file_url) -> list[str]:
     return sorted({spelling for k in keys for spelling in (k, S3_URL_PREFIX + k, get_s3_url(k))})
 
 
+def files_at_exact_url(urls, fields: list[str], **filters) -> list[frappe._dict]:
+    """File rows whose file_url is exactly one of `urls`.
+
+    The Python check is not redundant. MariaDB's collation on file_url ignores case and
+    accents and pads trailing spaces, while disk and S3 paths are exact: `Salary.pdf` and
+    `salary.pdf` are different files, and a row at one must grant nothing at the other."""
+    filters = {"file_url": ("in", list(urls)), **filters}
+    rows = frappe.get_all("File", filters=filters, fields=["file_url", *fields], order_by=None)
+    return [row for row in rows if row.file_url in urls]
+
+
 def files_using_stored_file(file_url, **filters) -> list[str]:
     """Names of the File rows whose file_url reaches the same stored file as `file_url`.
     A Link row names a web address, not a stored file, and many users can link one page."""
     spellings = file_url_spellings(file_url)
     if not spellings:
         return []
-    filters = {"file_url": ("in", spellings), "file_type": ("!=", "Link"), **filters}
-    return frappe.get_all("File", filters=filters, pluck="name")
+    rows = files_at_exact_url(spellings, ["name"], file_type=("!=", "Link"), **filters)
+    return [row.name for row in rows]
 
 
 def stored_file_in_use(file_url, other_than: str) -> bool:

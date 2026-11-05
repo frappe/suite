@@ -600,6 +600,55 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 with self.subTest(spelling=spelling), self.assertRaises(frappe.PermissionError):
                     self.new_file_with_url(spelling)
 
+    def new_stored_file(self, content, file_name):
+        return frappe.get_doc(
+            {"doctype": "File", "file_name": file_name, "content": content, "is_private": 1}
+        ).insert()
+
+    def test_a_name_differing_by_case_or_accent_is_a_different_file(self):
+        # the file_url column treats these names as equal, the disk does not
+        tag = frappe.generate_hash(length=8)
+        for theirs, mine in (
+            (f"Salary{tag}.txt", f"salary{tag}.txt"),
+            (f"résumé{tag}.txt", f"resume{tag}.txt"),
+        ):
+            with self.subTest(theirs=theirs):
+                with self.set_user(OWNER):
+                    secret = self.new_stored_file(frappe.generate_hash().encode(), theirs)
+                with self.set_user(OTHER_USER):
+                    content = frappe.generate_hash().encode()
+                    own = self.new_stored_file(content, mine)
+                    self.assertNotEqual(own.file_url, secret.file_url)
+
+                    with self.assertRaises(frappe.PermissionError):
+                        self.new_file_with_url(secret.file_url)
+
+                    added = self.new_file_with_url(own.file_url)
+                    self.assertEqual(FileManager().get_file(added).read(), content)
+
+    def test_a_trailing_space_does_not_reach_the_file_without_it(self):
+        with self.set_user(OWNER):
+            secret = self.new_stored_file(
+                frappe.generate_hash().encode(), f"{frappe.generate_hash(length=8)}.txt"
+            )
+        with self.set_user(OTHER_USER), self.assertRaises(FileNotFoundError):
+            self.new_file_with_url(secret.file_url + " ")
+
+    def test_a_fetch_url_differing_by_case_is_a_different_object(self):
+        folder = frappe.generate_hash(length=8)
+        with self.set_user(OTHER_USER):
+            own = self.new_stored_file(
+                frappe.generate_hash().encode(), f"{frappe.generate_hash(length=8)}.txt"
+            )
+        own.db_set("file_url", get_s3_url(f"{folder}/report.pdf"))
+
+        # no row holds Report.pdf, and then only another user's row does
+        for holder in (None, self.file):
+            if holder:
+                holder.db_set("file_url", get_s3_url(f"{folder}/Report.pdf"))
+            with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
+                self.new_file_with_url(get_s3_url(f"{folder}/Report.pdf"))
+
     def test_new_file_url_cannot_climb_out_of_storage(self):
         # none of these names the file in a way a holder lookup can match, and all of them
         # resolve to it on disk
