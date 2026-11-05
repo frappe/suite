@@ -125,7 +125,6 @@
   "src/composition/DocumentHost.vue": 4,
   "src/composition/home/HomePage.vue": 2,
   "src/composition/notifications/NotificationsBell.vue": 1,
-  "src/shell/AppLoadErrorView.vue": 4,
   "src/shell/GuestSurface.vue": 1,
   "src/shell/NotFoundView.vue": 2,
   "src/shell/SuiteCommandPalette.vue": 17

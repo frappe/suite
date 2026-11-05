@@ -15481,6 +15481,50 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -15582,6 +15626,9 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -15592,6 +15639,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -15789,6 +15873,14 @@
                   }
                 ],
                 "title": "Trash"
+              },
+              "reaction_only": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Reaction Only",
+                "type": "integer"
               },
               "unscreened_senders": {
                 "items": {
@@ -16287,6 +16379,50 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -16388,6 +16524,9 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -16398,6 +16537,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -16595,6 +16771,14 @@
                   }
                 ],
                 "title": "Trash"
+              },
+              "reaction_only": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Reaction Only",
+                "type": "integer"
               },
               "unscreened_senders": {
                 "items": {
@@ -17365,6 +17549,50 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -17466,6 +17694,9 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -17476,6 +17707,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -18053,6 +18321,50 @@
                 ],
                 "title": "Message Id"
               },
+              "in_reply_to": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "In Reply To"
+              },
+              "reacts_with": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Reacts With",
+                "type": "array"
+              },
+              "reactions": {
+                "items": {
+                  "$ref": "#/$defs/Reaction"
+                },
+                "title": "Reactions",
+                "type": "array"
+              },
+              "mailing_list": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Mailing List",
+                "type": "integer"
+              },
+              "cannot_react": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cannot React"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -18154,6 +18466,9 @@
               "flagged",
               "draft",
               "message_id",
+              "in_reply_to",
+              "reacts_with",
+              "mailing_list",
               "subject",
               "html_body",
               "text_body",
@@ -18164,6 +18479,43 @@
               "dsn_blob_id"
             ],
             "title": "Message",
+            "type": "object"
+          },
+          "Reaction": {
+            "properties": {
+              "emoji": {
+                "title": "Emoji",
+                "type": "string"
+              },
+              "from_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Name"
+              },
+              "from_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
+              }
+            },
+            "required": [
+              "emoji",
+              "from_name",
+              "from_email"
+            ],
+            "title": "Reaction",
             "type": "object"
           },
           "Recipient": {
@@ -18361,6 +18713,14 @@
                   }
                 ],
                 "title": "Trash"
+              },
+              "reaction_only": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Reaction Only",
+                "type": "integer"
               },
               "unscreened_senders": {
                 "items": {
@@ -19180,6 +19540,80 @@
           "undo_send_period"
         ],
         "title": "DraftResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "react",
+      "kind": "mutation",
+      "publicName": "messages.react",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.react",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "emoji": {
+            "title": "Emoji",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "id",
+          "emoji"
+        ],
+        "title": "ReactInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "required": [
+          "id",
+          "thread_id"
+        ],
+        "title": "SendResult",
         "type": "object"
       },
       "errors": [

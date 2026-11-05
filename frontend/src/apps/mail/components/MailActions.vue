@@ -1,4 +1,17 @@
 <template>
+  <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens via
+	     the click bubbling to its own span, so stopping on the Button itself
+	     would keep the sheet from opening. -->
+  <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
+    <AdaptiveDropdown :options="moreActions(mail)" align="end">
+      <Button variant="ghost" :tooltip="__('More')">
+        <template #icon>
+          <Ellipsis class="text-ink-gray-5 icon" />
+        </template>
+      </Button>
+    </AdaptiveDropdown>
+  </div>
+
   <Button
     v-for="action in shown(mail).filter((d) => !d.star)"
     :key="action.label"
@@ -11,21 +24,8 @@
     </template>
   </Button>
 
-  <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens via
-	     the click bubbling to its own span, so stopping on the Button itself
-	     would keep the sheet from opening. -->
-  <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
-    <AdaptiveDropdown :options="moreActions(mail)">
-      <Button variant="ghost" :tooltip="__('More')">
-        <template #icon>
-          <Ellipsis class="text-ink-gray-5 icon" />
-        </template>
-      </Button>
-    </AdaptiveDropdown>
-  </div>
-
-  <!-- The star last, past More: it says whether the message is marked as much as it acts, and the
-	     edge is where every list and folded row keeps it. -->
+  <!-- The star last: it says whether the message is marked as much as it acts, and the edge is
+	     where every list and folded row keeps it. -->
   <Button
     v-for="action in shown(mail).filter((d) => d.star)"
     :key="action.label"
