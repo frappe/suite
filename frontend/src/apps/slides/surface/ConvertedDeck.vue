@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useElementSize } from '@vueuse/core'
 import { Button } from 'frappe-ui'
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, shallowRef } from 'vue'
 
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { drawnSlides, type DrawnSlide } from '@/apps/slides/collab/drawnDeck'
@@ -18,6 +18,8 @@ const props = defineProps<{
   /** Tests pass a fake. */
   open?: typeof openCollabRoom
 }>()
+
+provide('inReadonlyMode', ref(true))
 
 const slides = shallowRef<DrawnSlide[]>([])
 const index = ref(0)
@@ -107,6 +109,7 @@ onBeforeUnmount(() => {
         :key="slide.id"
         :slide="slide"
         :scale="scale"
+        mode="viewer"
         class="shrink-0 shadow-sm"
         :style="{ width: slideWidth }"
       />

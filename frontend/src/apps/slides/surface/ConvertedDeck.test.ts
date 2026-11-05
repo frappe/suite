@@ -8,7 +8,7 @@ import { translationPlugin } from '@/platform/translation'
 
 import ConvertedDeck from './ConvertedDeck.vue'
 
-vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
+vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (src: string) => src }))
 
 const session = {} as CollabSession
 let cleanup: (() => void) | null = null
@@ -22,11 +22,12 @@ function elementsSaying(text: string) {
   return [{ id: `box-${text}`, type: 'text', content: `<p>${text}</p>` }]
 }
 
-function liveRoom() {
-  const slides = [
+function liveRoom(
+  slides: { id: string; elements: object[] }[] = [
     { id: 'one', elements: elementsSaying('first') },
     { id: 'two', elements: elementsSaying('second') },
-  ]
+  ],
+) {
   const answer = convertLegacy({ slides }, 4 * 1024 * 1024)
   if (answer.kind !== 'converted') {
     throw new Error(JSON.stringify(answer))
@@ -89,6 +90,48 @@ describe('a converted deck, read-only', () => {
 
     expect(root.querySelector('[contenteditable="true"]')).toBeNull()
     expect(writes).not.toHaveBeenCalled()
+  })
+
+  describe('a video', () => {
+    function oneSlide(element: object) {
+      return liveRoom([{ id: 'one', elements: [{ id: 'clip', ...element }] }])
+    }
+
+    it('plays on a click, as the old shared view does, with or without a poster', async () => {
+      const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+      const posters = ['', '/files/still.png']
+
+      for (const poster of posters) {
+        const room = oneSlide({ type: 'video', src: '/files/clip.mp4', poster })
+        const { root, unmount } = await mounted(async () => ({ state: 'live', room }))
+
+        expect(root.querySelector('video source')?.getAttribute('src')).toBe('/files/clip.mp4')
+        root.querySelector('video')?.click()
+        expect(play).toHaveBeenCalledOnce()
+
+        play.mockClear()
+        unmount()
+      }
+
+      play.mockRestore()
+    })
+
+    it('stays still until asked, even when set to autoplay in a show', async () => {
+      const room = oneSlide({ type: 'video', src: '/files/clip.mp4', autoplay: true })
+      const { root } = await mounted(async () => ({ state: 'live', room }))
+
+      expect(root.querySelector('video')?.autoplay).toBe(false)
+    })
+  })
+
+  it('moves a gif, where a thumbnail would hold it still', async () => {
+    const elements = [
+      { id: 'pic', type: 'image', src: '/files/moving.gif', poster: '/files/still.png' },
+    ]
+    const room = liveRoom([{ id: 'one', elements }])
+    const { root } = await mounted(async () => ({ state: 'live', room }))
+
+    expect(root.querySelector('img')?.getAttribute('src')).toBe('/files/moving.gif')
   })
 
   it('leaves the room when it goes away', async () => {
