@@ -85,9 +85,8 @@ class MailServer(FakeJMAPServer):
     def fail_folder_changes(self, *, after: int = 0) -> None:
         """Refuse every folder change once ``after`` more have gone through."""
 
-        refusal = {"type": "serverFail"}
         if not after:
-            self.errors["Mailbox/set"] = refusal
+            self.fail("Mailbox/set", "serverFail")
             return
 
         change_folders = self.handlers["Mailbox/set"]
@@ -97,10 +96,10 @@ class MailServer(FakeJMAPServer):
             result = dict(change_folders(arguments, server))
             after -= 1
             if not after:
-                self.errors["Mailbox/set"] = refusal
+                self.fail("Mailbox/set", "serverFail")
             return result
 
-        self.handlers["Mailbox/set"] = count_down
+        self.handle("Mailbox/set", count_down)
 
     def recover(self) -> None:
         self.errors.clear()
