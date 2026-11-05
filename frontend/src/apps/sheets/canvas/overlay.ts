@@ -173,8 +173,8 @@ export function createOverlay(parent: HTMLElement): Overlay {
     // 125%, or with the grid between device pixels on a 1.5x screen, they
     // land a device pixel apart). Put the editor's baseline on the canvas's
     // pixel, a quarter pixel down so any rounding keeps it.
+    const dpr = globalThis.devicePixelRatio || 1
     if (_layoutBaseline(lineH) !== null) {
-      const dpr = globalThis.devicePixelRatio || 1
       const top = parent.getBoundingClientRect().top
       const row = Math.round(top * dpr) + canvasRow(dpr * zoom, y / zoom + baseline0)
       baseline = (row + 0.25) / dpr - top - y
@@ -182,9 +182,13 @@ export function createOverlay(parent: HTMLElement): Overlay {
     let padTop = baseline - inner - baselineInLine(lineH)
     // Padding can't go negative: a font too big for its row draws its
     // baseline higher than a full line box allows. One line has no pitch to
-    // keep, so shrink the line box instead (its baseline rises by half).
-    if (padTop < 0 && !multi) {
-      lineH += 2 * padTop
+    // keep, so shrink the line box instead (its baseline rises by half). The
+    // browser keeps the baseline on whole device pixels, so a shrink of less
+    // than two device pixels can leave it where it was: shrink again, at
+    // least a device pixel each time. Each line height costs a layout to
+    // measure, so stop after a few tries.
+    for (let pass = 0; padTop < 0 && !multi && pass < 4; pass++) {
+      lineH += pass === 0 ? 2 * padTop : Math.min(2 * padTop, -1 / dpr)
       padTop = baseline - inner - baselineInLine(lineH)
     }
     el.style.lineHeight = lineH + 'px'

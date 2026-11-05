@@ -277,11 +277,17 @@ describe('the in-cell editor draws text where the grid does', () => {
 describe('on a laid-out page', () => {
   const PAGE_TOP = 73 // grid's top in the page, CSS px
 
-  // The browser's baseline in a line box: the metrics' value rounded to a
-  // whole device pixel, as Chrome lays a line out (13px text in a 16px line
-  // has it 13 device px down at 1x, 16 at 1.25x, 19 at 1.5x, 25 at 2x).
-  const browserBaseline = (lineH: number, size: number, dpr: number) =>
-    Math.round(((lineH - size * (ASC + DESC)) / 2 + size * ASC) * dpr) / dpr
+  // The browser's baseline in a line box, as Chrome lays a line out: it
+  // rounds the font's ascent and descent to whole device pixels and puts
+  // half the leading above the ascent, rounded down to a whole device pixel
+  // (13px text in a 16px line has it 13 device px down at 1x, 16 at 1.25x,
+  // 19 at 1.5x, 25 at 2x). So the baseline moves in whole device pixels, and
+  // a line box shrunk by less than two device pixels can keep it in place.
+  const browserBaseline = (lineH: number, size: number, dpr: number) => {
+    const ascent = Math.round(size * ASC * dpr)
+    const descent = Math.round(size * DESC * dpr)
+    return (Math.floor((lineH * dpr - ascent - descent) / 2) + ascent) / dpr
+  }
 
   // The device row the canvas draws a baseline on: Chrome keeps the canvas's
   // scale (dpr × zoom) and maps the baseline through it in single precision,
@@ -324,6 +330,11 @@ describe('on a laid-out page', () => {
     'top alignment': { value: 'Top', fmt: { valign: 'top' }, h: 40 },
     '18px, centred': { value: 'Mid', fmt: { fontSize: 18, align: 'center' }, h: 32 },
     'two lines': { value: 'one\ntwo', h: 40 },
+    // Text that draws its baseline higher than a full line box allows: the
+    // editor shrinks its line box to lift the baseline.
+    '24px in a 28px row': { value: 'Big', fmt: { fontSize: 24 }, h: 28 },
+    'top alignment, 24px': { value: 'Top', fmt: { valign: 'top', fontSize: 24 }, h: 40 },
+    'top alignment, 36px': { value: 'Top', fmt: { valign: 'top', fontSize: 36 }, h: 56 },
   }
 
   function expectOnCanvasPixels(c: Case, dpr: number, zoom: number) {
