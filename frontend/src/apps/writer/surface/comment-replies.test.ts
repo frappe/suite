@@ -10,6 +10,7 @@ import {
   LONGEST,
   openRows,
   rowButton,
+  rows,
   settled,
   showList,
   TOO_LONG,
@@ -108,32 +109,24 @@ describe('replying in an open thread', () => {
     return { heldReplies, release }
   }
 
-  it('keeps the words typed while a reply sends, and empties only what was sent', async () => {
+  it('empties the box and shows the reply at once, before Drive answers', async () => {
     const { heldReplies, release } = holdReplies()
     const { host, asked } = showList({ heldReplies })
     await click(rowButton(host, 'Is this right?'))
     await type('Agreed')
 
     await press({})
-    await type('Agreed. One more thing')
+    await settled()
+    const whileSending = [replyBox()?.value, rows(host).join(' ').includes('Agreed')]
+    await type('One more thing')
     release()
     await settled()
 
-    expect([asked, replyBox()?.value]).toEqual([['reply on-text "Agreed"'], '. One more thing'])
-  })
-
-  it('keeps the whole box when the words being sent are changed while they send', async () => {
-    const { heldReplies, release } = holdReplies()
-    const { host } = showList({ heldReplies })
-    await click(rowButton(host, 'Is this right?'))
-    await type('Agreed')
-
-    await press({})
-    await type('Agree, mostly')
-    release()
-    await settled()
-
-    expect(replyBox()?.value).toBe('Agree, mostly')
+    expect([asked, whileSending, replyBox()?.value]).toEqual([
+      ['reply on-text "Agreed"'],
+      ['', true],
+      'One more thing',
+    ])
   })
 
   it('sends nothing on Shift+Enter or while a word is being composed', async () => {
@@ -174,48 +167,42 @@ describe('replying in an open thread', () => {
     expect(asked).toEqual(['reply on-text "Agreed"'])
   })
 
-  it('sends the same words again under the same client id after a refusal, so Drive posts them once', async () => {
+  it('keeps a refused reply in the thread, to send again under the same client id', async () => {
     const { host, asked, replyIds } = showList({ refusedReplies: 1 })
     await click(rowButton(host, 'Is this right?'))
     await type('Agreed')
 
     await press({})
-    const kept = replyBox()?.value
-    await press({})
+    await settled()
+    const box = replyBox()?.value
+    const row = rows(host).join(' ')
+    await click(buttonNamed(host, 'Retry'))
+    await settled()
 
     const [first, second] = replyIds
-    expect([asked, kept, replyIds.length, first === second]).toEqual([
+    expect([box, asked, first === second, errors]).toEqual([
+      '',
       ['reply on-text "Agreed"', 'reply on-text "Agreed"'],
-      'Agreed',
-      2,
       true,
+      ['The reply was refused.'],
     ])
+    expect(row).toContain('Agreed Not sent Retry Discard')
+    expect(rows(host).join(' ')).not.toContain('Not sent')
   })
 
-  it('sends changed words after a refusal under a new client id', async () => {
-    const { host, replyIds } = showList({ refusedReplies: 1 })
+  it('drops a refused reply on Discard', async () => {
+    const { host, asked } = showList({ refusedReplies: 1 })
     await click(rowButton(host, 'Is this right?'))
     await type('Agreed')
+
     await press({})
+    await settled()
+    await click(buttonNamed(host, 'Discard'))
 
-    await type('Agreed, mostly')
-    await press({})
-
-    const [first, second] = replyIds
-    expect([replyIds.length, first === second]).toEqual([2, false])
-  })
-
-  it('sends earlier refused words again under their first client id, after other words in between', async () => {
-    const { host, replyIds } = showList({ refusedReplies: 2 })
-    await click(rowButton(host, 'Is this right?'))
-
-    for (const words of ['Agreed', 'Not sure', 'Agreed']) {
-      await type(words)
-      await press({})
-    }
-
-    const [first, second, third] = replyIds
-    expect([replyIds.length, first === third, first === second]).toEqual([3, true, false])
+    expect([asked, rows(host).join(' ').includes('Agreed')]).toEqual([
+      ['reply on-text "Agreed"'],
+      false,
+    ])
   })
 
   it('gives a new reply of the same words its own client id once the last one is posted', async () => {

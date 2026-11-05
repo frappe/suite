@@ -12,7 +12,6 @@ import { DOCUMENT_ANCHOR } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 import { fullName } from '@/apps/writer/composables/useUsers'
 import { confirm, toast } from '@/platform/feedback'
-import { randomId } from '@/platform/random-id'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -27,7 +26,7 @@ import PersonAvatar from './PersonAvatar.vue'
 import { useSeenThreads } from './seenThreads'
 import { threadRows, type ThreadRow } from './threadRows'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
-import type { ThreadActions } from './useDocumentPanel'
+import type { ThreadActions } from './useThreadChanges'
 import { dayOrTime } from './versionDates'
 
 type ThreadComment = DocumentThread['comments'][number]
@@ -79,10 +78,8 @@ const documentCard = ref<{ focus(): void } | null>(null)
 const replyBoxes = ref<{ focus(): void }[]>([])
 /** A reply typed into each thread, kept while another is open. */
 const replyTexts = ref<Record<string, string>>({})
-/** The replies sent to each thread that Drive hasn't confirmed, by words, with the client id each went under. */
-const unsentReplies = new Map<string, Map<string, string>>()
-/** Threads being resolved or reopened, faded until they leave their part of the list. */
-const leavingThreads = ref(new Set<string>())
+/** Threads whose resolve or reopen Drive hasn't answered. */
+const changingThreads = new Set<string>()
 let isSendingReply = false
 const editingComment = ref<string | null>(null)
 const editText = ref('')
@@ -291,19 +288,31 @@ function fitsInComment(text: string) {
   return isFitting
 }
 
-// Sending again is a retry: the same words under the same client id
+// Opens the new thread unless the writer has opened another since
+async function sendDraft(draft: ShownDraft, announce: () => void, afterSend = () => {}) {
+  const posting = props.drafts.post(draft, takeGuestName())
+  afterSend()
+  const thread = await posting
+  if (thread) {
+    openThread.value ??= thread
+    announce()
+  }
+}
+
+// The writer goes back to the text at once, with the comment already in the list
 async function postDraft(draft: ShownDraft) {
   const text = draft.text.trim()
   const announce = fitsInComment(text) ? await mayMention(text) : null
-  if (!announce) {
-    return
+  if (announce) {
+    await sendDraft(draft, announce, () => emit('sent'))
   }
+}
 
-  const thread = await props.drafts.post(draft, takeGuestName())
-  if (thread) {
-    openThread.value = thread
-    emit('sent')
-    announce()
+// Sending again is a retry: the same words under the same client id
+async function retryDraft(draft: ShownDraft) {
+  const announce = await mayMention(draft.text.trim())
+  if (announce) {
+    await sendDraft(draft, announce)
   }
 }
 
@@ -330,15 +339,6 @@ function mayMention(text: string, mentionedBefore?: string[]) {
   return confirmMentionAccess(props.node, text, { canShare: props.canShare, mentionedBefore })
 }
 
-// Sending the same words again reuses their client id, so Drive posts them once
-function replyClientId(thread: string, text: string) {
-  const unsent = unsentReplies.get(thread) ?? new Map<string, string>()
-  const clientId = unsent.get(text) ?? randomId()
-  unsent.set(text, clientId)
-  unsentReplies.set(thread, unsent)
-  return clientId
-}
-
 // What was typed after the sent words; all of it when the sent words themselves changed
 function typedSince(now: string, sent: string) {
   if (!now.startsWith(sent)) {
@@ -356,20 +356,15 @@ async function submitReply(thread: DocumentThread) {
   }
 
   isSendingReply = true
-  try {
-    const announce = await mayMention(text)
-    if (!announce) {
-      return
-    }
+  const announce = await mayMention(text)
+  isSendingReply = false
+  if (!announce) {
+    return
+  }
 
-    const clientId = replyClientId(thread.name, text)
-    if (await props.actions.reply(thread.name, text, takeGuestName(), clientId)) {
-      replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
-      unsentReplies.delete(thread.name)
-      announce()
-    }
-  } finally {
-    isSendingReply = false
+  replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
+  if (await props.actions.reply(thread.name, text, takeGuestName())) {
+    announce()
   }
 }
 
@@ -412,18 +407,21 @@ async function setResolved(thread: string, isResolved: boolean) {
   return isChanged
 }
 
-// A thread leaves its part of the list, so it closes and fades until it has gone
+// The thread leaves its part of the list at once, and comes back open if Drive refuses
 async function toggleResolved(thread: DocumentThread) {
-  if (leavingThreads.value.has(thread.name)) {
+  if (changingThreads.has(thread.name)) {
     return
   }
 
   const isResolving = !thread.resolved
-  leavingThreads.value.add(thread.name)
+  const wasOpen = isOpen(thread)
+  changingThreads.add(thread.name)
   const isChanged = await setResolved(thread.name, isResolving)
-  leavingThreads.value.delete(thread.name)
+  changingThreads.delete(thread.name)
   if (isChanged && isResolving) {
     offerUndoResolve(thread)
+  } else if (!isChanged && wasOpen) {
+    openThread.value = thread.name
   }
 }
 
@@ -460,14 +458,6 @@ function commentTextClass(thread: DocumentThread, comment: ThreadComment) {
   return 'text-sm'
 }
 
-function actionsClass(thread: DocumentThread) {
-  if (isOpen(thread)) {
-    return ''
-  }
-
-  return 'invisible group-hover:visible group-focus-within:visible'
-}
-
 async function deleteComment(comment: ThreadComment) {
   const excerpt = commentExcerpt(comment.content, comment.mentions, fullName)
   const isConfirmed = await confirm({
@@ -499,7 +489,7 @@ function isEditing(comment: ThreadComment) {
 }
 
 function hasMenu(comment: ThreadComment) {
-  return canChange(comment) && !isEditing(comment)
+  return canChange(comment) && !isEditing(comment) && !props.actions.isUnsent(comment.name)
 }
 
 function menuClass(comment: ThreadComment) {
@@ -539,7 +529,7 @@ function stopEdit() {
   editText.value = ''
 }
 
-// An unchanged text sends nothing; a refused one keeps the box and the words
+// An unchanged text sends nothing; a refused one comes back to the box with its words
 async function saveEdit(comment: ThreadComment) {
   const text = editText.value.trim()
   if (text === comment.content) {
@@ -552,9 +542,14 @@ async function saveEdit(comment: ThreadComment) {
     return
   }
 
+  stopEdit()
   if (await props.actions.editComment(comment.name, text)) {
-    stopEdit()
     announce()
+  } else if (!editingComment.value) {
+    editingComment.value = comment.name
+    editText.value = text
+    await nextTick()
+    editBoxes.value[0]?.focus()
   }
 }
 
@@ -625,15 +620,7 @@ function repliesLabel(thread: DocumentThread) {
 defineExpose({ startDocumentComment })
 
 function rowClass(thread: DocumentThread) {
-  if (leavingThreads.value.has(thread.name)) {
-    return 'pointer-events-none opacity-0'
-  }
-
-  if (isOpen(thread)) {
-    return 'bg-surface-elevation-3 shadow-sm'
-  }
-
-  return 'hover:bg-surface-gray-2'
+  return isOpen(thread) ? 'bg-surface-gray-1' : 'hover:bg-surface-gray-1'
 }
 </script>
 
@@ -681,7 +668,7 @@ function rowClass(thread: DocumentThread) {
         v-for="draft in sentDrafts"
         :key="draft.clientId"
         :draft
-        @retry="postDraft(draft)"
+        @retry="retryDraft(draft)"
         @discard="discardSentDraft(draft)"
       />
       <template v-for="{ key, row } in shownItems" :key>
@@ -689,7 +676,7 @@ function rowClass(thread: DocumentThread) {
           v-if="row"
           ref="rowItems"
           :data-thread="row.thread.name"
-          class="group relative rounded-4 transition-opacity duration-200"
+          class="group relative rounded-4"
           :class="rowClass(row.thread)"
           @mouseenter="lightThread(row.thread)"
           @mouseleave="dimThread"
@@ -748,8 +735,8 @@ function rowClass(thread: DocumentThread) {
           </button>
           <div
             v-if="canComment"
-            class="absolute right-2 top-[3px] flex items-center"
-            :class="actionsClass(row.thread)"
+            class="invisible absolute right-2 top-[3px] flex items-center group-focus-within:visible group-hover:visible"
+            :class="isOpen(row.thread) && '[@media(hover:none)]:visible'"
           >
             <Dropdown
               v-if="hasHeaderMenu(row.thread)"
@@ -831,6 +818,26 @@ function rowClass(thread: DocumentThread) {
                   :class="commentTextClass(row.thread, comment)"
                 >
                   <CommentText :content="comment.content" :mentions="comment.mentions" />
+                </p>
+                <p
+                  v-if="actions.isNotSent(comment.name)"
+                  class="flex items-center gap-1.5 text-xs text-ink-gray-5"
+                >
+                  {{ __('Not sent') }}
+                  <button
+                    type="button"
+                    class="text-ink-gray-8 hover:underline"
+                    @click="actions.retryReply(comment.name)"
+                  >
+                    {{ __('Retry') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-ink-gray-8 hover:underline"
+                    @click="actions.discardReply(comment.name)"
+                  >
+                    {{ __('Discard') }}
+                  </button>
                 </p>
                 <div
                   v-if="isReply(row.thread, comment) && hasMenu(comment)"

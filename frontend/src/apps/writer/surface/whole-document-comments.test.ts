@@ -21,7 +21,7 @@ import {
   TOO_LONG_MESSAGE,
 } from './comment-list-fixtures'
 import CommentList from './CommentList.vue'
-import type { ThreadActions } from './useDocumentPanel'
+import type { ThreadActions } from './useThreadChanges'
 
 vi.mock('@/platform/session', async () => {
   const { fakeSession } = await import('./comment-list-fakes')
@@ -78,7 +78,7 @@ describe('commenting on the whole document', () => {
       canComment: true,
       canEditDocument: false,
       canShare: true,
-      actions: {} as ThreadActions,
+      actions: { isUnsent: () => false, isNotSent: () => false } as unknown as ThreadActions,
       drafts,
     }
     const app = createApp(() => h(CommentList, props))
@@ -260,6 +260,6 @@ describe('commenting on the whole document', () => {
     ])
     const { host } = showList({ threads: [], drafts: list })
 
-    expect(rows(host)).toEqual(['You Posting… Ship it'])
+    expect(rows(host)).toEqual([expect.stringMatching(/^Asha Rao \S.* Ship it$/)])
   })
 })

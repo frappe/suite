@@ -90,6 +90,7 @@ export async function fakeFrappeUi() {
   }
 
   return {
+    toast: { error: (message: string) => errors.push(message) },
     Avatar: define({
       props: { image: String, label: String },
       setup: (props) => () =>

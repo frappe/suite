@@ -51,7 +51,7 @@ function isViewed(version: DocumentVersion) {
 }
 
 function versionRowClass(version: DocumentVersion) {
-  return isViewed(version) ? 'bg-surface-elevation-3 shadow-sm' : 'hover:bg-surface-gray-2'
+  return isViewed(version) ? 'bg-surface-gray-1' : 'hover:bg-surface-gray-1'
 }
 
 function view(version: DocumentVersion | null) {

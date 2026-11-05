@@ -366,16 +366,17 @@ describe('people a comment mentions', () => {
       { text: 'Ask @[ben@x.com]', isSent: true },
     ])
     const { host } = showList({ threads: [], drafts: list })
+    const POSTING = expect.stringMatching(/^Asha Rao \S.* Ask @Ben Roy$/)
     const closed = rows(host)
 
     const [, notPosted] = [...host.querySelectorAll('button')].filter(
-      (button) => button.textContent?.trim() === 'You',
+      (button) => button.textContent?.trim() === 'Asha Rao',
     )
     await click(notPosted)
 
     expect([closed, rows(host)]).toEqual([
-      ['You Posting… Ask @Ben Roy', 'You Not posted · Retry Ask @Ben Roy'],
-      ['You Posting… Ask @Ben Roy', 'You Not posted · Retry Ask @Ben Roy Discard'],
+      [POSTING, 'Asha Rao Not posted · Retry Ask @Ben Roy'],
+      [POSTING, 'Asha Rao Not posted · Retry Ask @Ben Roy Discard'],
     ])
   })
 })

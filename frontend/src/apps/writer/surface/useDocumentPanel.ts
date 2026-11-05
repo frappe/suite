@@ -55,59 +55,6 @@ async function loadMoreVersions(session: PanelSession, lists: PanelLists) {
   }
 }
 
-// Whether Drive took the change
-async function tryChange(change: () => Promise<unknown>, fallback: string) {
-  try {
-    await change()
-    return true
-  } catch (error) {
-    showError(error, fallback)
-    return false
-  }
-}
-
-/** Replies to, resolves, edits and deletes the document's comments. */
-function threadActions(session: PanelSession, refreshThreads: () => Promise<void>) {
-  // The threads are read again after a change goes in
-  async function change(action: () => Promise<unknown>, fallback: string) {
-    const isTaken = await tryChange(action, fallback)
-    if (isTaken) {
-      await refreshThreads()
-    }
-
-    return isTaken
-  }
-
-  const { comments } = session
-  return {
-    // Answers as soon as Drive takes the reply: a slow read of the threads must not hold the box
-    reply: async (
-      thread: string,
-      text: string,
-      authorName: string | undefined,
-      clientId: string,
-    ) => {
-      const isTaken = await tryChange(
-        () => comments.reply(thread, text, authorName, clientId),
-        __('Could not add the reply.'),
-      )
-      if (isTaken) {
-        void refreshThreads()
-      }
-
-      return isTaken
-    },
-    resolve: (thread: string, isResolved: boolean) =>
-      change(() => comments.resolve(thread, isResolved), __('Could not change the thread.')),
-    editComment: (comment: string, text: string) =>
-      change(() => comments.edit(comment, text), __('Could not save the comment.')),
-    removeComment: (comment: string) =>
-      change(() => comments.remove(comment), __('Could not delete the comment.')),
-  }
-}
-
-export type ThreadActions = ReturnType<typeof threadActions>
-
 // Whether the version was taken; `saveFirst` saves the tab's edits and throws why it couldn't
 async function saveVersion(
   session: PanelSession,
@@ -164,7 +111,7 @@ async function renameVersion(
   return renamed
 }
 
-// The side panel's comments and versions; comments are the document's threads, read again when the panel opens
+// The side panel's versions, and the document's threads read again when the panel opens
 export function useDocumentPanel(session: PanelSession, refreshThreads: () => Promise<void>) {
   const lists = reactive<PanelLists>({
     versions: [],
@@ -189,6 +136,5 @@ export function useDocumentPanel(session: PanelSession, refreshThreads: () => Pr
       saveVersion(session, lists, label, saveFirst),
     renameVersion: (version: DocumentVersion, label: string) =>
       renameVersion(session, lists, version, label),
-    ...threadActions(session, refreshThreads),
   }
 }

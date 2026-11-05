@@ -70,6 +70,7 @@ import { saveFirst } from './saveFirst'
 import { useCommentDrafts } from './useCommentDrafts'
 import { showError } from './useDocumentPanel'
 import { useDocumentThreads } from './useDocumentThreads'
+import { useThreadChanges } from './useThreadChanges'
 import { useWriterCollab } from './useWriterCollab'
 import { versionTitle } from './versionDates'
 import {
@@ -151,10 +152,16 @@ const shownPanels = computed(() => {
   return panels
 })
 const {
-  threads,
+  threads: readThreads,
   readAt: threadsReadAt,
   refresh: refreshThreads,
 } = useDocumentThreads(props.session, () => seesComments.value)
+const { threads, actions: threadActions } = useThreadChanges({
+  session: props.session,
+  readThreads,
+  readAt: threadsReadAt,
+  refresh: refreshThreads,
+})
 
 const {
   mode: collabMode,
@@ -253,10 +260,8 @@ function refusesComment() {
   return true
 }
 
-// The text of a draft still being written is marked until it is sent or discarded
-const draftAnchors = computed(() =>
-  commentDrafts.drafts.value.filter((draft) => !draft.isSent).map((draft) => draft.anchor),
-)
+// The text of a comment stays marked from its draft until it is posted or discarded
+const draftAnchors = computed(() => commentDrafts.drafts.value.map((draft) => draft.anchor))
 
 // A comment on the selected text starts as a draft in the comments panel
 function commentOnText(anchor: string) {
@@ -939,6 +944,7 @@ onBeforeUnmount(() => {
                 :threads-read-at="threadsReadAt"
                 :places="threadPlaces"
                 :refresh-threads="refreshThreads"
+                :thread-actions="threadActions"
                 :drafts="commentDrafts"
                 :save-first="saveBeforeVersion"
                 @update:previewed-version="showVersion"

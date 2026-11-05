@@ -202,8 +202,7 @@ describe('editing and deleting a comment', () => {
     await pick(host, 'Is this right?', 'Edit')
     await click(buttonNamed(host, 'Cancel'))
 
-    // Only the open thread's header ⋯, beside Resolve, stays shown
-    expect([afterSave, alwaysShown(host)]).toEqual([1, 1])
+    expect([afterSave, alwaysShown(host)]).toEqual([0, 0])
   })
 
   it('sends nothing for an unchanged comment, and can’t save an empty one', async () => {
@@ -261,15 +260,20 @@ describe('editing and deleting a comment', () => {
     ])
   })
 
-  it('keeps the box and the words when the edit is refused', async () => {
+  it('brings back the box with its words, and says why, when the edit is refused', async () => {
     const { host, asked } = showList({ isRefusingEdit: true })
     await click(rowButton(host, 'Is this right?'))
     await pick(host, 'Is this right?', 'Edit')
 
     await type('Reworded')
     await save()
+    await settled()
 
-    expect([asked, editBox()?.value]).toEqual([['edit c1 "Reworded"'], 'Reworded'])
+    expect([asked, editBox()?.value, errors]).toEqual([
+      ['edit c1 "Reworded"'],
+      'Reworded',
+      ['The comment was not saved.'],
+    ])
   })
 
   it('saves no edit over the limit, keeping the box and words and saying why, but saves one at it', async () => {
