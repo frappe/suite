@@ -56,7 +56,7 @@ vi.mock('@/api', async () => {
   const { createTransport } = await import('@/platform/transport')
   const { api: slides } = await import('../client/api')
   const { registration } = await import('../client/policy')
-  const { api: drive } = await import('@/apps/drive/client/generated')
+  const { api: real } = await vi.importActual<typeof import('@/api')>('@/api')
   const engine = createApiClient(
     // Drive's own policy imports `@/api`, which is this module still loading.
     {
@@ -70,7 +70,7 @@ vi.mock('@/api', async () => {
     engine.invalidate((reference) => reference.id === 'get_templates')
   }
 
-  return { api: { slides, drive }, ...engine }
+  return { api: { slides, drive: real.drive }, ...engine }
 })
 vi.mock('modern-screenshot', () => ({
   domToWebp: async () => 'data:image/webp;base64,UklGRg==',
