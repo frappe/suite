@@ -508,7 +508,7 @@ class FileManager:
             pass
 
     def delete_file(self, entity):
-        if self.s3_enabled:
+        if self.s3_enabled and not stored_on_disk(entity.file_url):
             try:
                 self.conn.delete_object(Bucket=self.bucket, Key=storage_key(entity.file_url))
             except Exception:

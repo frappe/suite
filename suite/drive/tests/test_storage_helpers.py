@@ -175,6 +175,31 @@ class TestStorageHelpers(unittest.TestCase):
                 self.assertEqual(file.read(), b"video")
             manager.conn.get_object.assert_not_called()
 
+    def test_deleting_a_disk_file_on_an_s3_site_removes_it_from_disk(self):
+        with TemporaryDirectory() as site_folder:
+            manager = object.__new__(FileManager)
+            manager.s3_enabled = True
+            manager.bucket = "bucket"
+            manager.conn = Mock()
+            manager.site_folder = Path(site_folder)
+            manager.settings = frappe._dict(thumbnail_prefix=".thumbnails")
+            file_path = manager.site_folder / "private/files/framework-upload.txt"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_bytes(b"framework upload")
+
+            with patch(
+                "suite.drive.utils.files.get_root_folder",
+                return_value={"file_url": get_s3_url("prefix")},
+            ):
+                manager.delete_file(
+                    frappe._dict(name="file-id", file_url="/private/files/framework-upload.txt")
+                )
+
+            self.assertFalse(file_path.exists())
+            manager.conn.delete_object.assert_called_once_with(
+                Bucket="bucket", Key="prefix/.thumbnails/file-id.thumbnail"
+            )
+
 
 class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
     @classmethod
