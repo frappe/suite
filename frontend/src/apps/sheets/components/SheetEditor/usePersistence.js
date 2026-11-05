@@ -9,8 +9,9 @@ import { isRefusal } from '../../utils/relay.js'
 
 // The sheet's old body (`sheets_data`), read-only. The live room saves every
 // edit (useCollabRoom.ts); this only shows a sheet the room can't open — a
-// guest's, or one still waiting for its conversion — and builds the whole
-// workbook as JSON for the surface's recovery copy.
+// guest's, one still waiting for its conversion, or one the converter
+// refused — and builds the whole workbook as JSON for the surface's recovery
+// copy.
 //
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /

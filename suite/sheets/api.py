@@ -26,9 +26,9 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
     # it decompress. Clients without it (older Safari) get the decoded payload.
     raw = doc.sheets_data
     # The old body, read-only: the editor saves only through the live room
-    # (`suite.sheets.content`), and shows this to a guest on a share link or
-    # while the sheet waits for its conversion. `can_write` says what the
-    # caller may do once the room opens it.
+    # (`suite.sheets.content`), and shows this to a guest on a share link, while
+    # the sheet waits for its conversion, or once the converter refused it.
+    # `can_write` says what the caller may do once the room opens it.
     return {
         "name": doc.name,
         # Drive owns the title (§10.2); the row carries none.
