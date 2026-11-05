@@ -91,7 +91,9 @@ def activated():
 
     def hooks(hook=None, *args, **kwargs):
         if hook == "drive_content_types":
-            return list(ACTIVATION[hook])
+            real = real_get_hooks(hook, *args, **kwargs) or []
+            return list(dict.fromkeys([*real, *ACTIVATION[hook]]))
+
         if hook in ("has_permission", "permission_query_conditions"):
             wired = dict(real_get_hooks(hook, *args, **kwargs) or {})
             wired.update({name: list(paths) for name, paths in ACTIVATION[hook].items()})
