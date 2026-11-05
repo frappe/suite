@@ -3067,7 +3067,8 @@
                       "trash",
                       "junk",
                       "archive",
-                      "important"
+                      "important",
+                      "snoozed"
                     ],
                     "type": "string"
                   },
@@ -15905,6 +15906,25 @@
                 "title": "Pinned",
                 "type": "integer"
               },
+              "returned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Returned",
+                "type": "integer"
+              },
+              "snoozed_until": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed Until"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -16818,6 +16838,25 @@
                 ],
                 "title": "Pinned",
                 "type": "integer"
+              },
+              "returned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Returned",
+                "type": "integer"
+              },
+              "snoozed_until": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed Until"
               },
               "subject": {
                 "anyOf": [
@@ -18785,6 +18824,25 @@
                 "title": "Pinned",
                 "type": "integer"
               },
+              "returned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Returned",
+                "type": "integer"
+              },
+              "snoozed_until": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed Until"
+              },
               "subject": {
                 "anyOf": [
                   {
@@ -20140,6 +20198,155 @@
           "pinned"
         ],
         "title": "PinResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "snooze_mails",
+      "kind": "mutation",
+      "publicName": "messages.snooze",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.snooze_mails",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "until": {
+            "title": "Until",
+            "type": "string"
+          },
+          "leaves": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leaves"
+          }
+        },
+        "required": [
+          "account",
+          "ids",
+          "until"
+        ],
+        "title": "SnoozeInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          },
+          "left_inbox": {
+            "title": "Left Inbox",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "updated",
+          "left_inbox"
+        ],
+        "title": "FiledResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "unsnooze_mails",
+      "kind": "mutation",
+      "publicName": "messages.unsnooze",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.unsnooze_mails",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "leaves": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leaves"
+          }
+        },
+        "required": [
+          "account",
+          "ids"
+        ],
+        "title": "UnsnoozeInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          },
+          "left_inbox": {
+            "title": "Left Inbox",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "updated",
+          "left_inbox"
+        ],
+        "title": "FiledResult",
         "type": "object"
       },
       "errors": [

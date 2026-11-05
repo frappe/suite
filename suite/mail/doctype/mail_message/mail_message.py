@@ -1883,6 +1883,15 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 if mailboxes_to_reload:
                     frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
 
+                try:
+                    # Imported here: suite.mail.reminders imports this module.
+                    from suite.mail.reminders import wake_on_reply
+
+                    wake_on_reply(account, messages)
+                except Exception:
+                    # Waking early is a courtesy: the row still brings it back on time.
+                    log_mail_error(_("Failed to wake snoozed mail"), frappe.get_traceback(with_context=True))
+
                 if reactions:
                     logger.info("marking-reactions-read", count=len(reactions))
                     try_set_seen(account, reactions, True)

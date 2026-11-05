@@ -1,42 +1,14 @@
-import { toast } from 'frappe-ui'
-import { h } from 'vue'
+import { showReminderToast, showSystemReminder, type Reminder } from '@/platform/reminders'
 
-import { translate as __ } from '@/platform/translation'
-
-/**
- * A triggered event alert, as the server publishes it over the socket
- * (`calendar_alert`): the same title and line the device push carries, and
- * the in-app path to the event.
- */
-export interface EventReminder {
-  title: string
-  body: string
-  path: string
-}
+/** A triggered event alert, as the server publishes it over the socket (`calendar_alert`). */
+export type EventReminder = Reminder
 
 /** Shows a reminder in the open tab. `open` takes the reader to the event. */
 export function showEventReminder(reminder: EventReminder, open: (path: string) => void): void {
-  // Both surfaces, deliberately: the toast is the in-app affordance with an
-  // Open action, the system notification is the one the OS manages — Do Not
-  // Disturb, stacking, and (via the tag) deduping across open tabs.
-  toast.message(reminder.title, {
-    icon: () => h('span', { class: 'lucide-bell size-4' }),
-    description: reminder.body,
-    duration: 15_000,
-    action: { label: __('Open'), onClick: () => open(reminder.path) },
-  })
-  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-    const notification = new Notification(reminder.title, {
-      body: reminder.body,
-      tag: reminder.path,
-      icon: '/assets/suite/calendar/images/logo.png',
-    })
-    notification.onclick = () => {
-      window.focus()
-      open(reminder.path)
-      notification.close()
-    }
-  }
+  // Both surfaces, deliberately: the toast is the in-app affordance, the system notification the one
+  // the OS manages.
+  showReminderToast(reminder, open)
+  showSystemReminder(reminder, open, '/assets/suite/calendar/images/logo.png')
 }
 
 /**

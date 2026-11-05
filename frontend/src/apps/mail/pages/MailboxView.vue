@@ -337,6 +337,8 @@
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
           @set-pinned="(ids: string[], pinned: boolean) => pinMails(store.accountId, ids, pinned)"
+          @snooze-thread="(until: string) => snoozeTo([threadID!], until)"
+          @unsnooze-thread="unsnoozeThreads([threadID!])"
           @archive-thread="handleArchiveThreads([threadID!])"
           @unarchive-thread="handleUnarchiveThreads([threadID!])"
           @move-thread="
@@ -378,6 +380,11 @@
   <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
   <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
   <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
+  <SnoozeMenu
+    v-model:open="showSnooze"
+    :current="snoozedUntilOf(snoozing)"
+    @pick="(until: string) => snoozeTo(snoozing, until)"
+  />
   <MobileSelectionBar
     :open="mobileSelectionMode"
     :actions="selectActions"
@@ -387,7 +394,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -407,6 +414,7 @@ import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
+import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
@@ -744,6 +752,8 @@ const selectActions = buildSelectActions(
     trash: mailbox === mailboxIds.trash,
     drafts: mailbox === mailboxIds.drafts,
     inbox: mailbox === mailboxIds.inbox,
+    snoozable: canSnooze.value && mailbox !== mailboxIds.snoozed,
+    snoozed: !!mailbox && mailbox === mailboxIds.snoozed,
     sent: mailboxIds.sent,
     archiveId: mailboxIds.archive,
     inboxId: mailboxIds.inbox,
@@ -761,8 +771,41 @@ const selectActions = buildSelectActions(
     unread: () => handleSetSeen({ 0: selections.value }),
     pin: () => pinSelected(true),
     unpin: () => pinSelected(false),
+    snooze: () => askSnooze([...selections.value]),
+    snoozeMenu: (_, { slots }) =>
+      h(
+        SnoozeMenu,
+        {
+          current: snoozedUntilOf(selections.value),
+          onPick: (until: string) => snoozeTo([...selections.value], until),
+        },
+        slots,
+      ),
+    unsnooze: () => {
+      unsnoozeThreads([...selections.value])
+      resetSelections()
+    },
   },
 )
+
+// Snoozing. Each button asks for the time in a menu of its own; a phone's selection bar has none to
+// hang one off, so it asks in the list's sheet, and what it asked about is held here meanwhile.
+const canSnooze = computed(() =>
+  [mailboxIds.inbox, mailboxIds.archive, mailboxIds.snoozed].includes(mailbox),
+)
+const showSnooze = ref(false)
+const snoozing = ref<string[]>([])
+const snoozedUntilOf = (ids: string[]) =>
+  (ids.length === 1 && threadRows.value?.find((row) => row.thread_id === ids[0])?.snoozed_until) ||
+  undefined
+const askSnooze = (threadIds: string[]) => {
+  snoozing.value = threadIds
+  showSnooze.value = true
+}
+const snoozeTo = (ids: string[], until: string) => {
+  resetSelections()
+  void snoozeThreads(ids, until)
+}
 
 const { pinThreads, pinMails } = useThreadPin()
 const pinSelected = (pinned: boolean) => {
@@ -1158,6 +1201,8 @@ const {
   handleMoveThreads,
   handleArchiveThreads,
   handleUnarchiveThreads,
+  snoozeThreads,
+  unsnoozeThreads,
   handleSetSpamStatus,
   handleAddThreadsToMailbox,
   handleRemoveThreadsFromMailbox,

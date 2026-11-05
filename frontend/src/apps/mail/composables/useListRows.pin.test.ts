@@ -122,3 +122,24 @@ describe('pinning and unpinning in place', () => {
     )
   })
 })
+
+describe('a list with mail back from waiting', () => {
+  it('lists it under the pins and ahead of the dates', () => {
+    const threads = [
+      { ...row('pin', '2024-01-01 10:00:00', 1) },
+      { ...row('back', '2025-01-01 10:00:00'), returned: 1 as const },
+      row('new', '2026-11-04 10:00:00'),
+    ]
+    const groups = listOf(threads).groupedThreads.value
+
+    expect(Object.keys(groups).slice(0, 2)).toEqual(['pinned', 'returned'])
+    expect(groups.returned.map((thread: Thread) => thread.thread_id)).toEqual(['back'])
+  })
+
+  it('lists pinned mail that came back with the pins, once', () => {
+    const both = [{ ...row('both', '2025-01-01 10:00:00', 1), returned: 1 as const }]
+    const groups = listOf(both).groupedThreads.value
+
+    expect(Object.keys(groups)).toEqual(['pinned'])
+  })
+})

@@ -3,7 +3,7 @@
 
 from enum import StrEnum
 
-from suite.mail.pins import PINNED_KEYWORD
+from suite.mail.pins import PINNED_KEYWORD, RETURNED_KEYWORD
 
 
 class Category(StrEnum):
@@ -55,5 +55,6 @@ def tab_filter(category: Category, tabs: tuple[Category, ...] = INBOX_TABS) -> d
                 "conditions": [{"notKeyword": tab.keyword} for tab in tabs if tab != Category.PRIMARY],
             },
             {"hasKeyword": PINNED_KEYWORD},
+            {"hasKeyword": RETURNED_KEYWORD},
         ],
     }

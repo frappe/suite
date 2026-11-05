@@ -15,22 +15,27 @@ here, so the lists, All Inboxes and the open thread can't each grow their own.
 | junk        | leaves every folder for Junk, marked     | stays in Sent         | untouched |
 | not_junk    | Junk → Inbox, mark cleared               | untouched             | untouched |
 | trash       | Trash                                    | Trash                 | untouched |
+| snooze      | Inbox, Archive → Snoozed, others kept*** | out of the Inbox      | untouched |
+| wake        | Snoozed → Inbox                          | out of Snoozed        | untouched |
 
 * Archived from Junk or Trash, it leaves those too, and loses the junk mark.
 ** Not into the Inbox, which holds only mail you received: moved there, your sent mail keeps just Sent.
+*** Mail that is in neither stays as it is: Junk and Trash keep what was thrown out, and a folder of
+yours keeps what was filed there, so waking the conversation doesn't drag it all to the Inbox.
 """
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import chunked_get, chunked_set, get_account_client, get_mailbox_id_by_role
+from suite.mail.pins import RETURNED_KEYWORD
 from suite.mail.utils import log_mail_error
 
-Action = Literal["archive", "unarchive", "move", "junk", "not_junk", "trash"]
-ACTIONS: tuple[Action, ...] = ("archive", "unarchive", "move", "junk", "not_junk", "trash")
+Action = Literal["archive", "unarchive", "move", "junk", "not_junk", "trash", "snooze", "wake"]
+ACTIONS: tuple[Action, ...] = ("archive", "unarchive", "move", "junk", "not_junk", "trash", "snooze", "wake")
 
 
 class Roles(TypedDict):
@@ -40,6 +45,8 @@ class Roles(TypedDict):
     drafts: str | None
     junk: str
     trash: str
+    # Made on the first snooze, so most accounts have none.
+    snoozed: NotRequired[str | None]
 
 
 class Filed(TypedDict):
@@ -88,6 +95,9 @@ def plan(action: Action, emails: list[dict], roles: Roles, target: str | None = 
             # Out of the Inbox; and out of Junk or Trash too, mark and all, or it would gain Archive
             # and still be shown only where it was.
             leaving = [roles[box] for box in ("inbox", "junk", "trash") if roles[box] in boxes]
+            # Snoozed mail is waiting to come back; archived, it has been dealt with.
+            if roles.get("snoozed") in boxes:
+                leaving.append(roles["snoozed"])
             if not leaving and roles["archive"] in boxes:
                 continue
             update = {f"mailboxIds/{roles['archive']}": True}
@@ -100,6 +110,29 @@ def plan(action: Action, emails: list[dict], roles: Roles, target: str | None = 
             if roles["archive"] not in boxes:
                 continue
             update = {f"mailboxIds/{roles['archive']}": None}
+            if not own:
+                update[f"mailboxIds/{roles['inbox']}"] = True
+        elif action == "snooze":
+            if not roles.get("snoozed"):
+                raise ValueError("Mail can't be snoozed without a Snoozed folder.")
+            if own:
+                # Yours stays in Sent, but out of the Inbox an earlier move could have filed it in.
+                if roles["inbox"] not in boxes:
+                    continue
+                updates[email["id"]] = {f"mailboxIds/{roles['inbox']}": None}
+                continue
+            leaving = [roles[box] for box in ("inbox", "archive") if roles[box] in boxes]
+            if not leaving or roles["junk"] in boxes or roles["trash"] in boxes:
+                continue
+            update = {f"mailboxIds/{roles['snoozed']}": True}
+            update |= {f"mailboxIds/{box}": None for box in leaving}
+            # It comes back marked anew, or not at all if a reply wakes it first.
+            if keywords.get(RETURNED_KEYWORD):
+                update[f"keywords/{RETURNED_KEYWORD}"] = None
+        elif action == "wake":
+            if roles.get("snoozed") not in boxes:
+                continue
+            update = {f"mailboxIds/{roles['snoozed']}": None}
             if not own:
                 update[f"mailboxIds/{roles['inbox']}"] = True
         elif action == "move":
@@ -150,7 +183,7 @@ def left_inbox(updates: dict[str, dict], emails: list[dict], roles: Roles) -> bo
     return False
 
 
-def account_roles(account: str) -> Roles:
+def account_roles(account: str, snoozing: bool = False) -> Roles:
     """The account's folders the rules name, the ones filing into created if missing."""
 
     def role(name: str, create: bool = False) -> str | None:
@@ -163,6 +196,7 @@ def account_roles(account: str) -> Roles:
         "drafts": role("drafts"),
         "junk": role("junk", create=True),
         "trash": role("trash", create=True),
+        "snoozed": role("snoozed", create=snoozing),
     }
 
 
@@ -187,7 +221,7 @@ def file_messages(account: str, ids: list[str], action: Action, target: str | No
             list(dict.fromkeys(ids)),
         )
     ]
-    roles = account_roles(account)
+    roles = account_roles(account, snoozing=action == "snooze")
     try:
         updates = plan(action, emails, roles, target)
     except ValueError as error:

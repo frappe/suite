@@ -41,6 +41,31 @@
             <component :is="pinned ? PinOff : Pin" class="icon" />
           </template>
         </Button>
+        <!-- On a phone it opens from the More sheet, with no button of its own. -->
+        <SnoozeMenu
+          v-if="snoozable || inSnoozed"
+          v-model:open="snoozeOpen"
+          :changing="inSnoozed"
+          @pick="(until: string) => emit('snooze', until)"
+        >
+          <template v-if="!isMobile" #default>
+            <Button variant="ghost" :tooltip="inSnoozed ? __('Change snooze time') : __('Snooze')">
+              <template #icon>
+                <Clock class="icon" />
+              </template>
+            </Button>
+          </template>
+        </SnoozeMenu>
+        <Button
+          v-if="inSnoozed && !isMobile"
+          variant="ghost"
+          :tooltip="__('Unsnooze')"
+          @click="emit('unsnooze')"
+        >
+          <template #icon>
+            <AlarmClockOff class="icon" />
+          </template>
+        </Button>
         <AdaptiveDropdown v-if="!inDrafts" :options="moveToOptions" :title="__('Move To')">
           <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
             <template #icon>
@@ -106,6 +131,7 @@
 import { Button, Checkbox } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
 import {
+  AlarmClockOff,
   Archive,
   ArchiveRestore,
   ArrowLeft,
@@ -113,6 +139,7 @@ import {
   ChevronLeft,
   CircleAlert,
   CircleCheck,
+  Clock,
   Ellipsis,
   FolderInput,
   Folders,
@@ -121,9 +148,10 @@ import {
   PinOff,
   Trash2,
 } from 'lucide-vue-next'
-import { computed, h, type Component } from 'vue'
+import { computed, h, ref, type Component } from 'vue'
 import { useRoute } from 'vue-router'
 
+import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import type { Mail, MailboxData } from '@/apps/mail/types'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
@@ -148,6 +176,8 @@ const { thread, threads, canGoNext } = defineProps<{
 const emit = defineEmits([
   'setSeen',
   'setPinned',
+  'snooze',
+  'unsnooze',
   'archiveThread',
   'unarchiveThread',
   'moveThread',
@@ -213,8 +243,28 @@ const inInbox = computed(() =>
 const pinnable = computed(() => !inDrafts.value && inInbox.value.length > 0)
 const pinned = computed(() => inInbox.value.some((mail: Mail) => mail.pinned))
 
-const laterOptions = computed(() =>
-  pinnable.value
+// Snoozing takes what it finds in the Inbox or Archive (see suite/mail/filing.py), and is not offered
+// from Sent, your own mail.
+const viewingSent = computed(() => mailbox.value === mailboxIds.value.sent)
+const received = computed(() => (thread ?? []).filter((mail: Mail) => mail.id && !mail.draft))
+const isIn = (mail: Mail, box: string) => mail.mailboxes.some((m) => m.mailbox_id === box)
+const inSnoozed = computed(
+  () =>
+    !viewingSent.value && received.value.some((mail: Mail) => isIn(mail, mailboxIds.value.snoozed)),
+)
+const snoozable = computed(
+  () =>
+    !viewingSent.value &&
+    !inSnoozed.value &&
+    received.value.some(
+      (mail: Mail) => isIn(mail, mailboxIds.value.inbox) || isIn(mail, mailboxIds.value.archive),
+    ),
+)
+
+const snoozeOpen = ref(false)
+
+const laterOptions = computed(() => [
+  ...(pinnable.value
     ? [
         {
           label: pinned.value ? __('Unpin') : __('Pin to Top'),
@@ -222,8 +272,20 @@ const laterOptions = computed(() =>
           onClick: () => emit('setPinned', !pinned.value),
         },
       ]
-    : [],
-)
+    : []),
+  ...(snoozable.value || inSnoozed.value
+    ? [
+        {
+          label: inSnoozed.value ? __('Change snooze time') : __('Snooze'),
+          icon: Clock,
+          onClick: () => (snoozeOpen.value = true),
+        },
+      ]
+    : []),
+  ...(inSnoozed.value
+    ? [{ label: __('Unsnooze'), icon: AlarmClockOff, onClick: () => emit('unsnooze') }]
+    : []),
+])
 
 const moreActions = computed((): Action[] => [
   {
