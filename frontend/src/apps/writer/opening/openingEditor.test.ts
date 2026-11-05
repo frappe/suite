@@ -20,10 +20,13 @@ vi.mock('@/apps/writer/drive', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/apps/writer/drive')>()),
   searchUsers: vi.fn(async () => []),
 }))
-vi.mock('@/platform/session', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/platform/session')>()),
-  useSession: () => ({ user: { value: 'me@x.test' } }),
-}))
+vi.mock('@/platform/session', async (importOriginal) => {
+  const session = await importOriginal<typeof import('@/platform/session')>()
+  return {
+    ...session,
+    useSession: () => ({ ...session.useSession(), user: { value: 'me@x.test' } }),
+  }
+})
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 
