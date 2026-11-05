@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, PropertyMock, patch
@@ -10,11 +11,25 @@ from frappe.tests import IntegrationTestCase
 from suite.drive.overrides.file import File
 from suite.drive.utils import WRITER_CONTENT_DOCTYPE
 from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_key, get_s3_url, storage_key
-from suite.slides.tests.utils import PNG_1PX, make_presentation, make_private_image, unique_bytes
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-blob-owner@example.com"
 OTHER_USER = "drive-blob-other@example.com"
+
+
+@contextmanager
+def after_commit_replayed():
+    """Run the callbacks queued for after commit once the block ends, as a commit would."""
+    with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+        yield
+    for call in after_commit.add.call_args_list:
+        call.args[0]()
+
+
+def make_stored_file(content):
+    return frappe.get_doc(
+        {"doctype": "File", "file_name": "stored.txt", "content": content, "is_private": 1}
+    ).insert()
 
 
 class TestStorageHelpers(unittest.TestCase):
@@ -23,9 +38,8 @@ class TestStorageHelpers(unittest.TestCase):
             with self.subTest(blob_is_trashed=blob_is_trashed):
                 manager = Mock()
                 entity = frappe._dict(name="file-id", file_url="private/files/file-id", manager=manager)
-                with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+                with after_commit_replayed():
                     File._delete_blob_after_commit(entity, blob_is_trashed)
-                after_commit.add.call_args.args[0]()
 
                 if blob_is_trashed:
                     manager.delete_from_trash.assert_called_once()
@@ -245,27 +259,20 @@ class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
 
     def make_twins(self):
         """Two users' rows holding one stored file: frappe stores identical uploads once."""
-        content = unique_bytes(PNG_1PX)
+        content = frappe.generate_hash().encode()
         with self.set_user(OWNER):
-            kept = make_private_image(make_presentation("Kept").name, content=content)
+            kept = make_stored_file(content)
         with self.set_user(OTHER_USER):
-            deleted = make_private_image(make_presentation("Deleted").name, content=content)
+            deleted = make_stored_file(content)
         self.assertEqual(deleted.file_url, kept.file_url)
         return kept, deleted
 
     def permanently_delete(self, name, user):
-        with self.set_user(user), patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+        with self.set_user(user), after_commit_replayed():
             frappe.get_doc("File", name).permanent_delete()
-        for call in after_commit.add.call_args_list:
-            call.args[0]()
 
     def stored_file(self, file):
         return Path(frappe.get_doc("File", file.name).get_full_path())
-
-    def test_deleting_a_file_keeps_a_blob_another_file_still_uses(self):
-        kept, deleted = self.make_twins()
-        self.permanently_delete(deleted.name, OTHER_USER)
-        self.assertTrue(self.stored_file(kept).exists())
 
     def test_deleting_the_last_file_removes_the_blob(self):
         kept, deleted = self.make_twins()
@@ -294,10 +301,8 @@ class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
         self.permanently_delete(deleted.name, OTHER_USER)
 
         # the nightly sweep of removed rows, as `clear_deleted_files` runs it
-        with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+        with after_commit_replayed():
             frappe.get_doc("File", deleted.name).delete(ignore_permissions=True)
-        for call in after_commit.add.call_args_list:
-            call.args[0]()
 
         self.assertTrue(stored.exists())
 
