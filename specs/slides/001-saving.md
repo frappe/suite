@@ -1,7 +1,7 @@
 # Slides: when a deck is saved
 
-Status: proposed
-Review: Gursheen (pending)
+Status: reviewed; records today's behaviour until Slides moves to live editing in PR 881
+Review: Gursheen (2026-11-05)
 
 Scope: how the Slides editor saves a presentation, what happens to edits that have not been saved, and what other people see while a deck is being edited. This spec records today's behaviour. Faris decided to keep it and have it reviewed ("keep slides behaviour and document it"). The T3-1 fix (October 2026) removed the slide-focus block, added tab-close protection and wrote the local copy on every tick; the sections below describe the behaviour after that fix.
 
@@ -61,15 +61,7 @@ Other people see changes only after a save, and only after they reload the deck.
 
 ### Compared with Writer and Sheets
 
-| | Slides | Writer | Sheets |
-| --- | --- | --- | --- |
-| Save trigger | 1 second poll, blocked while a drag is running | 5 second debounce after an edit | 2 second debounce after an edit |
-| Save on unmount | Yes, not awaited | Yes | Yes, with `keepalive` so it survives |
-| Live collaboration | None | Yes (Yjs over WebRTC) | None |
-| Concurrent editors | Second saver is refused | Edits merge | Not covered here |
-| Content sent | Whole slide list | Yjs state and HTML | Whole sheet |
-
-The Writer and Sheets rows come from `writer/composables/useYjs.ts` and `sheets/components/SheetEditor/index.vue`. Check them when this spec is reviewed.
+Writer and Sheets now edit live through the content layer (`suite/content/`). Slides joins them in PR 881.
 
 ## Why it works this way
 
@@ -87,9 +79,9 @@ Risks 1 to 4 of the first review (no save while a slide was focused, the "Unsave
 
 5. **Collaborator view.** A collaborator sees nothing until the editor saves and the collaborator reloads. If two people edit, the second to save loses their session's edits to a read only deck. Their edits are only in the local copy.
 
-## Open questions for the reviewer
+## Review answers
 
-Proposed answers to questions 1 to 4 of the first review, from T3-1, for the reviewer to confirm: no slide blocks a save, the local copy is written on every tick, and the tab asks before it closes with unsaved edits.
+Questions 1 to 4 are confirmed: no slide blocks a save, the local copy is written on every tick, and the tab asks before it closes with unsaved edits.
 
-5. Should a save while typing be allowed? Today it can run mid-edit. Is that safe for the text editor?
-6. Is "second editor is refused and becomes read only" acceptable, or should Slides merge by slide, or show who else is editing?
+5. Should a save while typing be allowed? This stops mattering in PR 881. Live editing replaces this save and `save_slides` is removed. A deck that isn't converted stays read only.
+6. Is "second editor is refused and becomes read only" acceptable? Not as the final behaviour. In PR 881 edits on a converted deck merge, and presence shows who is on each slide.
