@@ -207,13 +207,15 @@ class FileManager:
 
     def get_local_path(self, file_url):
         path = (self.site_folder / storage_key(file_url)).resolve()
-        roots = [
+        if not any(path.is_relative_to(root) for root in self._local_roots()):
+            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
+        return path
+
+    def _local_roots(self):
+        return [
             (self.site_folder / "private" / "files").resolve(),
             (self.site_folder / "public" / "files").resolve(),
         ]
-        if not any(path.is_relative_to(root) for root in roots):
-            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
-        return path
 
     def presigned_url(self, key, download_name, mime_type=None, expires=3600):
         """Short-lived S3 GET URL, range-capable, served straight to the client."""
@@ -516,10 +518,11 @@ class FileManager:
         else:
             try:
                 path = self.get_local_path(entity.file_url)
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
+                if not path.is_dir():
                     path.unlink()
+                # A directory belongs to its folder row, and a storage root to no row.
+                elif entity.get("is_folder") and path not in self._local_roots():
+                    shutil.rmtree(path)
             except FileNotFoundError:
                 pass
         self.delete_thumbnail(entity.name)

@@ -200,6 +200,40 @@ class TestStorageHelpers(unittest.TestCase):
                 Bucket="bucket", Key="prefix/.thumbnails/file-id.thumbnail"
             )
 
+    def test_a_file_row_never_removes_a_directory(self):
+        for s3_enabled in (False, True):
+            with self.subTest(s3_enabled=s3_enabled), TemporaryDirectory() as site_folder:
+                manager = object.__new__(FileManager)
+                manager.s3_enabled = s3_enabled
+                manager.flat = True
+                manager.bucket = "bucket"
+                manager.conn = Mock()
+                manager.site_folder = Path(site_folder)
+                manager.settings = frappe._dict(thumbnail_prefix=".thumbnails")
+                folder = manager.site_folder / "private/files/folder"
+                folder.mkdir(parents=True)
+                (manager.site_folder / "public/files").mkdir(parents=True)
+
+                def delete(file_url, is_folder=0):
+                    entity = frappe._dict(name="file-id", file_url=file_url, is_folder=is_folder)
+                    manager.delete_file(entity)
+
+                with patch(
+                    "suite.drive.utils.files.get_root_folder",
+                    return_value={"file_url": "/private/files/prefix"},
+                ):
+                    delete(S3_URL_PREFIX + "private/files/")
+                    delete(S3_URL_PREFIX + "private/files/.")
+                    delete(S3_URL_PREFIX + "private/files/folder")
+                    delete("/private/files/folder/")
+                    delete("/private/files/", is_folder=1)
+                    delete("public/files/")
+                    self.assertTrue(folder.is_dir())
+                    self.assertTrue((manager.site_folder / "public/files").is_dir())
+
+                    delete("/private/files/folder/", is_folder=1)
+                    self.assertFalse(folder.exists())
+
 
 class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
     @classmethod

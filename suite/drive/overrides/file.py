@@ -459,7 +459,7 @@ class File(FrappeFile):
         # frappe stores identical uploads once, so other rows can hold this blob; a
         # trashed blob sits at a trash path named after this row alone
         in_use = not blob_is_trashed and stored_file_in_use(self.file_url, other_than=self.name)
-        entity = frappe._dict(name=self.name, file_url=self.file_url)
+        entity = frappe._dict(name=self.name, file_url=self.file_url, is_folder=self.is_folder)
 
         def delete_blob():
             try:
