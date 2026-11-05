@@ -60,6 +60,14 @@ class File(FrappeFile):
             and not (self.flags.file_created or self.flags.drive_disk_rename)
         ):
             frappe.throw("Only Drive can change the URL of a file.", frappe.ValidationError)
+        # A Link row's url is a web address that no storage check has seen. Served as a
+        # file, it would read whatever that address resolves to on the site.
+        if (
+            not self.is_new()
+            and self._link_type_changed()
+            and not (self.flags.file_created or self.flags.drive_disk_rename)
+        ):
+            frappe.throw("A file cannot become a link, or a link a file.", frappe.ValidationError)
         if (
             not self.is_new()
             and not self.flags.file_created
@@ -93,6 +101,10 @@ class File(FrappeFile):
         holders = files_using_stored_file(self.file_url, is_private=1)
         if holders and not any(user_has_permission(name, "read") for name in holders):
             frappe.throw("You do not have permission to access this file", frappe.PermissionError)
+
+    def _link_type_changed(self) -> bool:
+        before = self.get_doc_before_save()
+        return bool(before) and (before.file_type == "Link") != (self.file_type == "Link")
 
     def _validate_content_link(self):
         """`content_doctype`/`content_docname` are the sole permission delegation

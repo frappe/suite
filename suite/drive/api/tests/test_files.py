@@ -19,6 +19,7 @@ from suite.drive.api.files import (
     _build_zip,
     _collect_download_files,
     create_auth_token,
+    create_link,
     does_entity_exist,
     get_file_content,
     get_new_title,
@@ -633,6 +634,41 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertEqual(storage_key(added.file_url), f"{self.folder.name}/shared file.txt")
         with self.set_user(OTHER_USER), self.assertRaises(frappe.PermissionError):
             self.new_file_with_url(fetch_url)
+
+    def test_link_must_be_a_web_address(self):
+        with self.set_user(OWNER):
+            secret = self.upload(b"linked secret", "linked.txt")
+            create_link(frappe.generate_hash(8), "https://frappe.io/x", self.folder.name)
+        url = "/" + secret.file_url.lstrip("/")
+
+        with self.set_user(OTHER_USER):
+            parent = get_user_folder(OTHER_USER).name
+            refused = [url, secret.file_url, "example.com", "javascript:alert(1)", "ftp://example.com/x"]
+            for link in refused:
+                with self.subTest(link=link), self.assertRaises(frappe.ValidationError):
+                    create_link(frappe.generate_hash(8), link, parent)
+
+            with self.assertRaises(frappe.PermissionError):
+                create_link(frappe.generate_hash(8), get_url() + url, parent)
+
+            link = create_link(frappe.generate_hash(8), "https://frappe.io/x", parent)
+            self.assertEqual(frappe.db.get_value("File", link.name, "file_url"), "https://frappe.io/x")
+            self.assertEqual(frappe.db.get_value("File", link.name, "file_type"), "Link")
+
+    def test_a_row_cannot_become_or_stop_being_a_link(self):
+        with self.set_user(OWNER):
+            link = create_link(frappe.generate_hash(8), "https://frappe.io/x", self.folder.name)
+            for name, file_type in ((link.name, "Text"), (self.file.name, "Link")):
+                with self.subTest(file_type=file_type):
+                    file = frappe.get_doc("File", name)
+                    file.file_type = file_type
+                    with self.assertRaises(frappe.ValidationError):
+                        file.save()
+
+            file = frappe.get_doc("File", self.file.name)
+            file.file_type = "Document"
+            file.save()
+            self.assertEqual(frappe.db.get_value("File", file.name, "file_type"), "Document")
 
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = "123e4567-e89b-42d3-a456-426614174000"

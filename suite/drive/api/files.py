@@ -12,6 +12,7 @@ from urllib.parse import quote
 import frappe
 import mimemapper
 from frappe.rate_limiter import rate_limit
+from frappe.utils import validate_url
 from pypika import Order
 from werkzeug.utils import secure_filename, send_file
 from werkzeug.wrappers import Response
@@ -254,6 +255,7 @@ def create_link(file_name: str, link: str, parent: str | None = None):
         )
 
     validate_filename(file_name, parent, "Link", error=f"Link '{file_name}' already exists.")
+    validate_url(link, throw=True, valid_schemes=("http", "https"))
 
     drive_file = frappe.get_doc(
         {
@@ -266,6 +268,8 @@ def create_link(file_name: str, link: str, parent: str | None = None):
             "folder": parent,
         }
     )
+    # file_created skips the framework's checks, and a link to this site can name a private file
+    drive_file.validate_private_file_access()
     drive_file.flags.file_created = True
     drive_file.insert()
 

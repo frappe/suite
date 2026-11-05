@@ -7,10 +7,12 @@ from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import get_url
 from werkzeug.exceptions import Forbidden, NotFound, RequestedRangeNotSatisfiable
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
+from suite.drive.api.files import create_link
 from suite.drive.overrides.file import File as DriveFile
 from suite.slides.api.file import get_media_response, get_reference_presentations, validate_media_file
 from suite.slides.tests.utils import (
@@ -224,6 +226,25 @@ class TestMediaFileAccess(IntegrationTestCase):
                 validate_media_file(self.file.file_url, template.name)
 
         self.assertTrue(os.path.exists(frappe.get_doc("File", self.file.name).get_full_path()))
+
+    def test_a_link_cannot_expose_another_users_file_through_a_template(self):
+        with self.set_user(OTHER_USER):
+            template = frappe.get_doc(
+                {
+                    "doctype": "Presentation",
+                    "title": "Linked Template",
+                    "is_template": 1,
+                    "slides": [{"elements": "[]"}],
+                }
+            ).insert()
+            for link in (self.file.file_url, get_url() + self.file.file_url):
+                with self.subTest(link=link), self.assertRaises(
+                    (frappe.ValidationError, frappe.PermissionError)
+                ):
+                    create_link(frappe.generate_hash(8), link)
+
+        with self.set_user("Guest"), self.assertRaises(Forbidden):
+            validate_media_file(self.file.file_url, template.name)
 
     def test_deleting_a_file_keeps_a_blob_another_file_still_uses(self):
         content = unique_bytes(PNG_1PX)
