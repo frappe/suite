@@ -16,6 +16,7 @@
 
 import { autoCloseKey } from '../../utils/formula-autoclose.js'
 import type { Cell } from '../selection.js'
+import type { CellFormat } from '../types.js'
 import type { Autocomplete } from './autocomplete.js'
 import { canInsertRef, isPickToggle, type RangePicker } from './range-picker.js'
 
@@ -25,25 +26,13 @@ export type EditMode = 'enter' | 'edit'
 export type LeaveMove =
   { kind: 'arrow'; dr: number; dc: number } | { kind: 'enter' } | { kind: 'tab'; back: boolean }
 
-/** The cell format fields the overlay copies onto the textarea. */
-export interface EditorFormat {
-  bold?: boolean
-  italic?: boolean
-  underline?: boolean
-  strikethrough?: boolean
-  fontSize?: number
-  fontFamily?: string
+/** The cell format the overlay lays the textarea out with. */
+export interface EditorFormat extends CellFormat {
   /** The cell's own horizontal alignment. */
   align?: string
   /** The alignment the grid draws the value with when `align` is unset
    *  (numbers right, text left). */
   autoAlign?: string
-  valign?: string
-  textWrap?: string
-  wrapText?: boolean
-  color?: string
-  backgroundColor?: string
-  bg?: string
   /** Logical px the drawn text keeps clear of the cell's left edge on top
    *  of the 4px padding (a conditional-format icon). */
   insetLeft?: number

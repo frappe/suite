@@ -4,11 +4,11 @@
 // the same cell, and compares font, text edge, baseline and line pitch.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { COLORS } from './constants.js'
 import type { EditorFormat } from './input/editor.js'
 import { createOverlay } from './overlay.js'
 import { createCellPainter } from './painters/cell-painter.js'
 import { cellBox, cellText } from './painters/cell-text-box.js'
-import { inkFor } from './painters/cell-text-style.js'
 import { createMockCtx, createMockGeo } from './painters/test-utils.js'
 import type { CellFormat, CondFormat, MergeInfo } from './types.js'
 
@@ -73,6 +73,7 @@ interface Draw {
   baseline: number // alphabetic, in logical px
   align: string
   font: string
+  ink: string
 }
 
 interface Case {
@@ -114,7 +115,14 @@ function paint(c: Case): Draw[] {
         : ctx.textBaseline === 'bottom'
           ? -EM_DESC * size
           : 0
-    draws.push({ text, x, baseline: y + shift, align: ctx.textAlign, font: ctx.font })
+    draws.push({
+      text,
+      x,
+      baseline: y + shift,
+      align: ctx.textAlign,
+      font: ctx.font,
+      ink: ctx.fillStyle,
+    })
   }
   const painter = createCellPainter(ctx as never, geo as never)
   painter.drawRegionCells(0, 0, 0, 0, () => c.value, cells, null)
@@ -228,15 +236,26 @@ describe('the in-cell editor draws text where the grid does', () => {
     expect(s.getPropertyValue('font-variation-settings')).toBe('"opsz" 20')
   })
 
-  it('writes in the ink the grid draws over a fill', () => {
-    // A dark fill (from the fill picker or a colour scale) gets light ink on
-    // the canvas; the editor must not switch to the theme's dark ink.
-    const fmt = { backgroundColor: '#1e3a8a' }
-    const { s } = edit({ value: 'x', fmt })
-    const probe = document.createElement('i')
-    probe.style.color = inkFor(fmt)
-    expect(s.color).toBe(probe.style.color)
-    expect(s.backgroundColor).toBe('rgb(30, 58, 138)')
+  it('writes in the ink and on the fill the grid draws', () => {
+    // A dark fill (from the fill picker or a colour scale) gets light ink,
+    // and a link is blue. The grid doesn't paint the legacy `bg`, so the
+    // editor neither fills with it nor reads its ink off it.
+    const colour = (c: string) => {
+      const probe = document.createElement('i')
+      probe.style.color = c
+      return probe.style.color
+    }
+    const cases: [CellFormat, string][] = [
+      [{ backgroundColor: '#1e3a8a' }, '#1e3a8a'],
+      [{ hyperlink: 'https://frappe.io' }, COLORS.white],
+      [{ bg: '#1e3a8a' }, COLORS.white],
+    ]
+    for (const [fmt, fill] of cases) {
+      const draw = paint({ value: 'x', fmt })[0]
+      const { s } = edit({ value: 'x', fmt })
+      expect(s.color).toBe(colour(draw.ink))
+      expect(s.backgroundColor).toBe(colour(fill))
+    }
   })
 
   it('keeps the first line put while typing more lines', () => {
