@@ -13,14 +13,16 @@ from frappe.model.document import Document
 from frappe.query_builder.functions import Count
 from frappe.utils import cstr, flt
 
-from suite import drive
+from suite import content, drive
 from suite.slides import drive as slides_drive
+from suite.slides.content import APP
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 SYSTEM_TEMPLATE_FIRST_LAYOUT = 2
 MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 NODE_FIELD = slides_drive.NODE_FIELD
+LOGGED_FIELDS = ("content",)
 
 
 class Presentation(drive.DriveContent, Document):
@@ -34,6 +36,13 @@ class Presentation(drive.DriveContent, Document):
     """
 
     def validate(self):
+        if (
+            not self.is_new()
+            and any(self.has_value_changed(field) for field in LOGGED_FIELDS)
+            and content.find(APP, self.node, for_update=True)
+        ):
+            raise drive.DriveConflict(_("This document saves as you edit; reload it to keep editing"))
+
         self.validate_advance_after()
 
         if not self.is_composite:

@@ -64,6 +64,7 @@ none of them commits. `content.call_app` and `content.call_app_stream` enforce
 that last part.
 """
 
+import dataclasses
 import io
 import json
 import re
@@ -72,6 +73,7 @@ import frappe
 from frappe import _
 
 from suite import drive
+from suite.content import with_content
 
 DOCTYPE = "Presentation"
 MIME = "frappe/slides"
@@ -268,7 +270,12 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
             frappe.db.set_value(SATELLITE_DOCTYPE, row["name"], values, update_modified=False)
 
 
-SPEC = drive.ContentTypeSpec(
+def never_called(*_args: object) -> None:
+    """Stand in for a callback `with_content` requires and Slides doesn't have; SPEC drops it again."""
+    raise NotImplementedError("Slides has no export")
+
+
+_ROW_SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
@@ -279,7 +286,7 @@ SPEC = drive.ContentTypeSpec(
     export_formats=(),
     create_empty=create_empty,
     duplicate=duplicate,
-    export=None,
+    export=never_called,
     version_bytes=version_bytes,
     restore_version=restore_version,
     # The browser captures the deck preview and pushes it through Drive (§9.2,
@@ -291,6 +298,7 @@ SPEC = drive.ContentTypeSpec(
     used_nodes=used_nodes,
     remap_media=remap_media,
 )
+SPEC = dataclasses.replace(with_content(_ROW_SPEC), export=None)
 
 
 # ---------------------------------------------------------------------------

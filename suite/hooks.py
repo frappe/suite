@@ -151,7 +151,11 @@ drive_content_types = [
 ]
 
 # Dotted paths to `suite.content.EditorSpec` objects, one per app whose documents the content layer keeps
-suite_content_editors = ["suite.writer.content.EDITOR", "suite.sheets.content.EDITOR"]
+suite_content_editors = [
+    "suite.writer.content.EDITOR",
+    "suite.sheets.content.EDITOR",
+    "suite.slides.content.EDITOR",
+]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
