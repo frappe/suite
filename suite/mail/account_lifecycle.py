@@ -15,6 +15,7 @@ from suite.mail.directory import get_active_domain_names, provision_account, set
 from suite.mail.jmap import clear_jmap_session, provisioning
 from suite.mail.storage import queue_refresh
 from suite.mail.suite_cloud import get_client
+from suite.mail.utils import log_mail_error
 from suite.suite_core.account_state import read, write
 from suite.suite_core.administration import require_admin
 from suite.suite_core.storage import state
@@ -61,6 +62,11 @@ def provision(user: str, address: str, *, password: str, operation: str, **optio
         # disabled while an Admin recreates their Mail account (§4.3).
         with provisioning(user):
             settings.save(ignore_permissions=True)
+    except Exception:
+        # Error Log rows outlive a rollback, which accepting an invitation does on failure. Recreation
+        # shows the admin only a fixed message, so this may be the one trace left.
+        log_mail_error(f"Account setup failed for {address}", frappe.get_traceback())
+        raise
     finally:
         client.call("mail.accounts.set_account_enabled", email=address, enabled=False)
     clear_jmap_session(user)

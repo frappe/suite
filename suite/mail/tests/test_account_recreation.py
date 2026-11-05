@@ -264,6 +264,21 @@ class TestAccountRecreation(IntegrationTestCase):
         self.retry()
         self.assert_set_up(account)
 
+    def test_a_refused_filter_script_leaves_an_error_log_entry_even_if_the_request_rolls_back(self):
+        self.server.open_account()
+        self.server.fail("SieveScript/set", "serverFail")
+
+        self.assert_setup_failed()
+        frappe.db.rollback()  # accepting an invitation fails this way
+
+        logged = frappe.get_all(
+            "Error Log", filters={"method": ["like", f"%{self.address}%"]}, fields=["name", "error"]
+        )
+        for row in logged:
+            self.addCleanup(frappe.delete_doc, "Error Log", row.name, ignore_permissions=True)
+        self.assertEqual(len(logged), 1)
+        self.assertIn("serverFail", logged[0].error)
+
     def test_a_new_member_whose_filter_script_was_refused_can_be_retried(self):
         account = self.server.open_account()
         self.server.fail("SieveScript/set", "serverFail")
