@@ -238,6 +238,25 @@ describe('the first tab', () => {
 
     expect(viewer.editor.storage.tab.activeTabId).toBe('tab-a')
   })
+
+  it('opens the tab the address names once a tabbed document loads, as after a remount', async () => {
+    const stored = new yjs.Doc()
+    const author = openPeer(stored).editor
+    author.commands.setContent('<p>first</p>')
+    author.commands.createTab({ id: 'tab-b', label: 'b' })
+    window.history.replaceState(null, '', '#tab-b')
+    try {
+      const viewer = openPeer()
+      await waitForUpdates()
+      syncDocs(stored, viewer.ydoc)
+      await waitForUpdates()
+
+      expect(viewer.editor.storage.tab.activeTabId).toBe('tab-b')
+      expect(window.location.hash).toBe('#tab-b')
+    } finally {
+      window.history.replaceState(null, '', '#')
+    }
+  })
 })
 
 describe('tab names', () => {

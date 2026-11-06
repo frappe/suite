@@ -252,18 +252,15 @@ export const TabsExtension = TabNode.extend({
       this.storage.stopAnnouncing = () => meta.unobserve(announceRename)
     }
 
-    // Also runs when the active tab disappears, such as the first tab of an
-    // empty editor once a tabbed document loads into it
+    // The tab the URL names wins: a picked tab writes its id there, so they differ only when the
+    // editor chose a default, such as the first tab of an empty editor before its document loads
     const selectFirstTab = () => {
       const tabs = listTabs(this.editor).map((tab) => tab.id)
-      if (tabs.includes(this.storage.activeTabId)) return
-
-      let tabToChange = window.location.hash.slice(1)
-      if (!tabs.includes(tabToChange)) {
-        tabToChange = tabs[0]
-      }
-      if (tabToChange) {
-        this.editor.commands.changeTab(tabToChange, false)
+      const linked = window.location.hash.slice(1)
+      const active = this.storage.activeTabId
+      const wanted = tabs.includes(linked) ? linked : tabs.includes(active) ? active : tabs[0]
+      if (wanted && wanted !== active) {
+        this.editor.commands.changeTab(wanted, false)
       }
     }
 

@@ -1,6 +1,7 @@
 <template>
+  <!-- Waits for the editor's own choice of tab: Tabs would pick the first one and lose the linked tab -->
   <div
-    v-if="tabs.length"
+    v-if="tabs.length && activeTabId"
     class="hidden h-11 shrink-0 items-center px-3 md:flex"
     @drop.prevent="onDrop"
     @dragover.prevent
