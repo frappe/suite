@@ -690,6 +690,7 @@ class TestArchitecture(unittest.TestCase):
                 "DriveLocked",
                 "DriveNotFound",
                 "DriveOverQuota",
+                "DriveStorageUnmeasured",
                 "Satellite",
                 "administration_usage",
                 "adopt_media",

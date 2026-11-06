@@ -71,6 +71,10 @@ class ConversionRefused(Exception):
         self.reason = reason
 
 
+class ConversionPostponed(Exception):
+    """Not now: nothing is recorded, and the next run tries again."""
+
+
 def conversion_of(app: str) -> Conversion:
     """Return the app's conversion; only an app with old documents to convert gets here."""
     conversion = spec_of(app).conversion
@@ -234,10 +238,14 @@ def run_converter(
 
 def install_conversion(
     app: str, node: str, old: OldBody, converted: convert.Converted, started: datetime
-) -> str:
-    """Install `converted` whole or not at all: converted, a refusal, logged, or changed; the last two let the attempt go."""
+) -> str | None:
+    """Install `converted` whole or not at all: converted, a refusal, logged, changed, or None for not now; all but the first two let the attempt go."""
     try:
         dropped = write_conversion(app, node, old, converted)
+    except ConversionPostponed:
+        frappe.db.rollback()
+        drop_attempt(app, node, old.fingerprint)
+        return None
     except ConversionRefused as refused:
         frappe.db.rollback()
         record(app, node, old.fingerprint, started, refused.outcome, refused.reason)
@@ -289,6 +297,8 @@ def keep_old_version(node: str) -> None:
     """Keep the old body as a version before anything writes it."""
     try:
         drive.take_version(node, kind="milestone", label=_("Before collaboration"))
+    except drive.DriveStorageUnmeasured:
+        raise ConversionPostponed from None
     except drive.DriveOverQuota:
         raise ConversionRefused("over_quota") from None
 

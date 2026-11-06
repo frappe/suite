@@ -61,6 +61,7 @@ right status.
 |---|---|
 | `DriveNotFound` | the root, root pair, reservation key, or node does not exist |
 | `DriveOverQuota` | the admission UPDATE would push `used_bytes` past the effective quota |
+| `DriveStorageUnmeasured` | a combined Mail and Drive check can't run yet: Mail usage or the site allowance isn't measured; a `DriveOverQuota` |
 | `DriveForbidden` | the caller's role at the node is below the one the workflow needs |
 | `DriveConflict` | a reservation exists with different values, names another root, or a resize runs in the wrong direction; a content type is unregistered, invalid, or already linked to another node |
 | `DriveLinkExpired` | the share link a caller presents has expired or been revoked |
@@ -239,6 +240,7 @@ from suite.drive._core.errors import (
     DriveLocked,
     DriveNotFound,
     DriveOverQuota,
+    DriveStorageUnmeasured,
     rollback_savepoint,
 )
 from suite.drive._core.quota import (
@@ -571,6 +573,7 @@ __all__ = (
     "DriveLocked",
     "DriveNotFound",
     "DriveOverQuota",
+    "DriveStorageUnmeasured",
     "Satellite",
     "administration_usage",
     "adopt_media",
