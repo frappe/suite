@@ -74,7 +74,7 @@ async function openCollab(retainRecovery = () => false, mayEdit = () => true) {
     session,
     retainRecovery,
     mayEdit,
-    () => {},
+    { threadsChanged: () => {}, versionRestored: () => {} },
     () => false,
   )
   await collab.open()
@@ -88,7 +88,7 @@ async function newerSchemaBanner(load: typeof useWriterCollab, session: Document
     session,
     () => false,
     () => true,
-    () => {},
+    { threadsChanged: () => {}, versionRestored: () => {} },
     () => false,
   )
   await collab.open()
@@ -543,7 +543,7 @@ describe('writer collab rebuild', () => {
       session,
       () => false,
       () => true,
-      () => {},
+      { threadsChanged: () => {}, versionRestored: () => {} },
       () => false,
     )
 

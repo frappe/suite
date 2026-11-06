@@ -9,8 +9,6 @@ import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 export function tabEditor(doc: Doc) {
   const extensions = writerEditorExtensions({
     isCollaborative: true,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,

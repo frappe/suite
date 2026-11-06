@@ -1,7 +1,7 @@
 import * as yjs from 'yjs'
 
 import { block } from './access'
-import { HTTP_OK, readReply } from './answers'
+import { HTTP_OK, readReply, readRestored } from './answers'
 import { Copier } from './copier'
 import { Device } from './device'
 import { RestoreFence } from './fence'
@@ -51,6 +51,10 @@ export class Room implements CollabRoom {
   restoreRev = 0
   // The fence's token while this tab's own restore is on its way
   private restoreToken: string | null = null
+  // This tab's last restore, so its own notice isn't told as another tab's
+  private ownRestoreRev = 0
+  // Another tab's restore whose notice, if this reader may see it, comes with a pull
+  private noticeAwaited: number | null = null
   limits: Limits | null = null
   needsRebuild = false
   readonly lineage: string
@@ -134,6 +138,7 @@ export class Room implements CollabRoom {
       heardRows: this.puller.heardRows,
       pull: () => void this.pull(),
       changed: () => this.notifyListeners(),
+      isGuest: () => this.options.signedIn() === 'Guest',
       appliedThrough: () => this.appliedThrough,
       showsCaret: () => this.canWrite && this.bound && !this.closed,
       position: this.options.adapter.toPeerPosition,
@@ -455,12 +460,24 @@ export class Room implements CollabRoom {
     if (heard.kind === 'restoring') {
       this.fence.follow(heard.fence_ms)
     } else if (heard.kind === 'restored') {
+      const isOwn = !!this.restoreToken || heard.restore_rev === this.ownRestoreRev
       this.followRestore(heard.restore_rev)
       this.fence.lift()
+      if (!isOwn && typeof heard.restore_rev === 'number') {
+        this.noticeAwaited = heard.restore_rev
+      }
     } else if (heard.kind === 'restore_ended') {
       this.fence.lift()
     } else if (heard.kind === 'threads') {
       this.options.threadsChanged?.()
+    }
+  }
+
+  // The control message names no one, as public readers hear it; the pull it sets off does, to those allowed
+  noticeHeard(notice: Record<string, unknown> | undefined) {
+    if (notice && notice.restore_rev === this.noticeAwaited) {
+      this.noticeAwaited = null
+      this.options.versionRestored?.(readRestored(notice))
     }
   }
 
@@ -545,6 +562,7 @@ export class Room implements CollabRoom {
   // This tab held every row before its restore, so the restore's row is the next it applies;
   // the fence went with it, whether or not the notice comes
   restoreLanded(rev: number, bytes: Uint8Array) {
+    this.ownRestoreRev = rev
     this.restoreRev = Math.max(this.restoreRev, rev)
     this.puller.applyRows([{ rev, bytes }])
     this.fence.lift()

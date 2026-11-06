@@ -15,9 +15,9 @@
 </template>
 <script setup>
 import { TabButtons } from 'frappe-ui'
-import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, ref, watchEffect } from 'vue'
 
-import { listTabs } from '@/apps/writer/extensions/tabs'
+import { useDocumentTabs } from './useDocumentTabs'
 
 const props = defineProps({
   editor: Object,
@@ -30,7 +30,6 @@ const setBarHeight = (height) =>
   document.documentElement.style.setProperty('--writer-tab-bar-height', `${height}px`)
 
 let observer
-let editorDom
 
 watchEffect(() => {
   observer?.disconnect()
@@ -39,39 +38,12 @@ watchEffect(() => {
   observer.observe(bar.value)
 })
 
-// doc isn't reactive, so re-derive on every update
-const tabs = ref([])
+const { tabs, activeTabId, selectTab } = useDocumentTabs(props.editor)
 
-const updateTabs = () => {
-  tabs.value = listTabs(props.editor)
-}
-
-const activeTabId = ref(props.editor.storage.tab?.activeTabId ?? null)
-
-const isBarShown = computed(() => !!props.editor && tabs.value.length > 1 && !!activeTabId.value)
-
-const handleTabChange = (e) => {
-  activeTabId.value = e.detail.tabId
-}
-
-const selectTab = (id) => {
-  if (id && id !== activeTabId.value) props.editor.commands.changeTab(id)
-}
-
-onMounted(() => {
-  updateTabs()
-  activeTabId.value = props.editor.storage.tab?.activeTabId ?? activeTabId.value
-  props.editor.on('update', updateTabs)
-  editorDom = props.editor.view.dom
-  editorDom.addEventListener('tab-changed', handleTabChange)
-  editorDom.addEventListener('tab-renamed', updateTabs)
-})
+const isBarShown = computed(() => tabs.value.length > 1 && !!activeTabId.value)
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   setBarHeight(0)
-  props.editor.off('update', updateTabs)
-  editorDom?.removeEventListener('tab-changed', handleTabChange)
-  editorDom?.removeEventListener('tab-renamed', updateTabs)
 })
 </script>

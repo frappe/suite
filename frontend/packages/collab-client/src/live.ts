@@ -21,12 +21,16 @@ const MS_PER_S = 1000
 const REFRESH_SHARE_OF_EPOCH = 0.8
 const MAX_REPAIR_SPREAD_MS = 30_000
 const REPAIR_MS_PER_MEMBER = 50
+// The server tells a signed-out tab no room count, so it spreads as a room of a hundred does
+const GUEST_REPAIR_SPREAD_MS = 5000
 
 export interface LiveHooks {
   // Rows heard over the socket, with the schema of the editor that wrote them
   heardRows(rows: Row[], schema?: number): void
   pull(): void
   changed(): void
+  // Whether the browser is signed out
+  isGuest(): boolean
   // This tab's applied_through, and whether it shows its caret
   appliedThrough(): number
   showsCaret(): boolean
@@ -196,11 +200,13 @@ export class Live implements HubMember {
     this.holeTimer.set(repairIfStillMissing, HOLE_MS)
   }
 
-  // One pull, after a random share of a delay that grows with the room
+  // One pull, after a random share of a delay that grows with the room, or of a fixed one for a guest
   repair() {
     if (this.repairTimer.isSet || this.closed) return
 
-    const spread = Math.min(MAX_REPAIR_SPREAD_MS, REPAIR_MS_PER_MEMBER * this.memberCount)
+    const spread = this.hooks.isGuest()
+      ? GUEST_REPAIR_SPREAD_MS
+      : Math.min(MAX_REPAIR_SPREAD_MS, REPAIR_MS_PER_MEMBER * this.memberCount)
     this.repairTimer.set(() => this.hooks.pull(), Math.random() * spread)
   }
 

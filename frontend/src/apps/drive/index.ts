@@ -24,7 +24,7 @@ import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import type { AreaDefinition } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
-import { openingTitleState } from '@/platform/page-meta'
+import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { buildUrl } from '@/platform/transport'
@@ -40,6 +40,7 @@ export type {
   SessionState,
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
+export { documentCredentials } from '@/apps/drive/client/session'
 export { hasDefaultDocumentTitle, nodeContentUrl } from '@/apps/drive/client/nodes'
 
 /** Remembers the share link a `#link=` fragment carried, for the node it opened. */
@@ -194,6 +195,13 @@ export function driveNodeRoute(
   // The history entry carries the title, so the tab names the node before
   // its page loads.
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
+}
+
+/** Opens a document this tab has just created. Its page takes typing before the document loads. */
+export function newDocumentRoute(node: DriveNodeSummary): RouteLocationPathRaw {
+  const route = driveNodeRoute(node)
+  const marked = node.content_doctype ? newDocumentState(node.content_doctype) : {}
+  return { ...route, query: { new: '1' }, state: { ...route.state, ...marked } }
 }
 
 /** A document menu item, in frappe-ui Dropdown's shape. */
@@ -369,7 +377,9 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 /** The document header's shape while a document opens. Shows `title` when one is known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
 
-export type { DocumentPanel, DocumentSaveState } from '@/apps/drive/files/features/document/header'
+export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
+export type { DocumentPanel } from '@/apps/drive/client/types'
+export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
@@ -382,6 +392,8 @@ export interface DriveDialogs {
   showDetails(node: string): Promise<void>
   /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
   share(node: string): Promise<boolean>
+  /** Opens the file picker. Resolves with the picked file or document, or `undefined` when cancelled. */
+  pickFile(options?: { title?: string; action?: string }): Promise<DriveNodeSummary | undefined>
 }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
@@ -404,6 +416,13 @@ export function useDriveDialogs(): DriveDialogs {
     share: (node) =>
       import('@/apps/drive/files/features/share/present').then((share) =>
         share.presentShareDialog(node, context),
+      ),
+    pickFile: (options = {}) =>
+      presentDialog<DriveNodeSummary>(
+        context,
+        () => import('@/apps/drive/files/features/FilePicker.vue'),
+        options,
+        'choose',
       ),
   }
 }

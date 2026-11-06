@@ -7,6 +7,7 @@ import type { Editor } from '@tiptap/core'
 import type TurndownService from 'turndown'
 
 import type { DocumentSession } from '@/apps/drive'
+import { embedUrl } from '@/apps/writer/drive'
 import { mediaNodeId } from '@/apps/writer/extensions/drive-media'
 import { currentTabHTML } from '@/apps/writer/extensions/tabs'
 import type { PictureFetch } from '@/apps/writer/utils/docxexporter'
@@ -58,7 +59,7 @@ function pictureFetch(fetchMedia: MediaFetch): PictureFetch {
     const src = image.getAttribute('src') ?? ''
     const id = mediaNodeId(src, image.getAttribute('data-node'))
     if (!id) return fetch(src)
-    return fetchMedia(`/api/method/suite.writer.api.embed.get?id=${encodeURIComponent(id)}`)
+    return fetchMedia(embedUrl(id))
   }
 }
 

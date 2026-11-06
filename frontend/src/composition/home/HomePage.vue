@@ -227,6 +227,7 @@ import {
   DriveFileCard,
   driveNodeRoute,
   formatDriveListingDate,
+  newDocumentRoute,
   useDriveDocumentCreation,
   useDrivePreviewRefresh,
   type DriveNodeSummary,
@@ -331,11 +332,13 @@ const scheduleMenuItems = [
   },
 ]
 async function createDocument(contentDoctype: string) {
+  // Loaded alongside the request, so the new document takes typing as soon as it opens.
+  void documentTypes.find((type) => type.contentDoctype === contentDoctype)?.loadOpeningEditor?.()
   const node = await createDocumentMutation.run({
     content_doctype: contentDoctype,
   })
   if (node) {
-    await router.push({ ...driveNodeRoute(node), query: { new: '1' } })
+    await router.push(newDocumentRoute(node))
   }
 }
 async function startMeeting(type: 'open' | 'restricted') {

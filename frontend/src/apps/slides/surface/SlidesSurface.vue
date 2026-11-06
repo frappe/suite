@@ -9,6 +9,7 @@ import {
   onMounted,
   provide,
   ref,
+  useTemplateRef,
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -34,7 +35,8 @@ import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
-import { resetFocus } from '@/apps/slides/stores/element'
+import { acquireEditLock, lockedElsewhere, releaseEditLock } from '@/apps/slides/stores/editLock'
+import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import {
   actionOrder as historyMetaActionOrder,
   actions as historyMetaActions,
@@ -58,10 +60,12 @@ import {
   slidesLength,
   startLoad,
   viewOnly,
+  writesBlocked,
 } from '@/apps/slides/stores/presentation'
 import {
   dirty,
   isSaving,
+  keepDraftAsClean,
   resumeWrites,
   saveChanges,
   saveFailed,
@@ -99,7 +103,9 @@ import {
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
+import PreviewCapture from './PreviewCapture.vue'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
+import SurfaceNotice from './SurfaceNotice.vue'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
 
 type Panel = DocumentPanel
@@ -151,7 +157,7 @@ const {
   downloadChanges,
   discardChanges,
   settleCopies,
-  dismissToasts,
+  heldNotice,
 } = useUnsavedRecovery(props.session, {
   isWritable: () => access.writable.value,
   isEditable: () => editable.value,
@@ -159,22 +165,27 @@ const {
   cancelRunningLoad,
 })
 const isSlideInteractionActive = ref(false)
+const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
 const editable = computed(
   () => access.writable.value && !composite.value && !restoring.value && !isOnlyCopy.value,
 )
+// A composite can restore a version of itself, so this is not `inReadonlyMode`.
 const canRestoreVersions = computed(
-  () => access.writable.value && !restoring.value && !isOnlyCopy.value,
+  () => access.writable.value && !restoring.value && !isOnlyCopy.value && !writesBlocked.value,
 )
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
-const editing = computed(() => editable.value && !phone.value)
+// What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
+// stores keep their own `inReadonlyMode`, which follows access, the edit lock and a refused save.
+const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
+const editing = computed(() => !canvasReadonly.value)
 const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
   props.session.contentDocname,
-  editable,
+  computed(() => !inReadonlyMode.value),
 )
 useHideRail()
 
@@ -193,9 +204,6 @@ const history = useCommandHistory(slides, {
   actionOrder: historyMetaActionOrder,
 })
 setCommandHistory(history)
-// What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
-// stores keep their own `inReadonlyMode`, which follows access and edit locks only.
-const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
 useShortcuts(canvasReadonly, inSlideShowMode)
 provide('inReadonlyMode', canvasReadonly)
 provide('inSlideShowMode', inSlideShowMode)
@@ -219,8 +227,8 @@ async function writeTheme(
 ) {
   showThemeDialog.value = false
   showThemeChange.value = false
-  // a dialog stays open through a change of access
-  if (!editable.value) {
+  // a dialog stays open through a change of access, or of the edit lock
+  if (inReadonlyMode.value) {
     return
   }
 
@@ -251,7 +259,7 @@ const presentationMenu = computed(() => [
       {
         label: 'Change theme',
         icon: 'lucide-swatch-book',
-        condition: () => editable.value,
+        condition: () => !inReadonlyMode.value,
         onClick: () => {
           showThemeChange.value = true
         },
@@ -300,6 +308,26 @@ watch(
 watch(phone, (isPhone) => {
   if (isPhone) resetFocus()
 })
+// An open text box would keep taking keystrokes that no save carries. Not on every
+// entry to read-only: closing a box marks the deck dirty, which a tab that has just
+// lost access could never clear, and a restore that fails should keep the selection.
+watch(writesBlocked, (blocked) => {
+  if (!blocked) return
+  flushPendingBlur()
+  resetFocus()
+})
+// The lock has already gone: this runs when the steal rejects this tab's request, and
+// nothing waits for the write, so the tab that took over can read the draft before it lands.
+function keepDraftForTakeover() {
+  flushPendingBlur()
+  void keepDraftAsClean()
+}
+async function editHere() {
+  await acquireEditLock(props.session.contentDocname, keepDraftForTakeover, { steal: true })
+  await load()
+  // The loaded deck can hold another tab's edits, which this tab's undo steps know nothing about.
+  history.clearHistory()
+}
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
@@ -342,6 +370,8 @@ async function restoreVersion(seq: string) {
   try {
     await props.session.versions.restore(seq)
     await load()
+    // A reload that failed leaves the old slides in place, and they are not the restored version.
+    if (!loadError.value) previewCapture.value?.captureAfterPause()
   } finally {
     restoring.value = false
   }
@@ -434,10 +464,13 @@ async function load() {
   loadError.value = ''
   try {
     // Not `editable`: a restore pauses editing, and its reload is still an editor load.
-    const doc = await initPresentationDoc(
-      props.session.contentDocname,
-      !access.writable.value || composite.value,
-    )
+    const readonly = !access.writable.value || composite.value
+    // Refused while another tab holds the deck, which this one then shows read-only.
+    // Refused with no holder: the surface closed while the request waited.
+    const held =
+      readonly || (await acquireEditLock(props.session.contentDocname, keepDraftForTakeover))
+    if (run !== latestLoad || (!held && !lockedElsewhere.value)) return
+    const doc = await initPresentationDoc(props.session.contentDocname, readonly)
     if (run !== latestLoad) return
 
     clearOnlyCopy()
@@ -463,6 +496,8 @@ async function load() {
   } catch (error) {
     if (run !== latestLoad) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
+    // The server may have rewritten the deck, so an earlier save's capture would send old slides.
+    previewCapture.value?.cancelCapture()
   } finally {
     if (run === latestLoad) {
       loading.value = false
@@ -625,7 +660,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
-  dismissToasts()
   resetFocus()
   // A deck whose writes stopped sends nothing here; the next open starts afresh.
   void saveChanges().finally(() => {
@@ -633,6 +667,7 @@ onBeforeUnmount(() => {
     releaseMedia()
     resumeWrites(props.session.contentDocname)
   })
+  releaseEditLock()
   resetEditorState()
 })
 </script>
@@ -648,7 +683,7 @@ onBeforeUnmount(() => {
       :save-state="saveState"
       :view-only="!editable"
       :recoverable="canDownloadChanges"
-      :panels="['comments', 'versions']"
+      :panels="session.panels.value"
       layout="centered"
       :panel="panel"
       @update:panel="showPanel"
@@ -761,7 +796,29 @@ onBeforeUnmount(() => {
       <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
       <Toolbar v-if="editing && presentationDoc" />
       <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
+      <SurfaceNotice
+        v-if="editable && lockedElsewhere && !heldNotice"
+        icon="lucide-lock"
+        :message="__('This presentation is open for editing in another tab.')"
+      >
+        <Button variant="ghost" :label="__('Edit here')" @click="editHere" />
+      </SurfaceNotice>
     </div>
+
+    <SurfaceNotice
+      v-if="heldNotice && !loading"
+      icon="lucide-triangle-alert"
+      icon-class="text-ink-amber-6"
+      :message="heldNotice.message"
+    >
+      <Button variant="ghost" :label="__('Download')" @click="downloadChanges" />
+      <Button
+        v-if="heldNotice.reload"
+        variant="ghost"
+        :label="__('Reload')"
+        @click="heldNotice.reload"
+      />
+    </SurfaceNotice>
 
     <div
       v-if="compositeItems.length && access.readable.value"
@@ -873,6 +930,9 @@ onBeforeUnmount(() => {
 
     <teleport to="body">
       <ExportView v-if="exporting" :slides="slides" />
+      <!-- `restoring` keeps it mounted while a restore pauses editing: it holds what it last sent,
+           and it must be there to take the capture the restore asks for. -->
+      <PreviewCapture v-if="editing || restoring" ref="previewCapture" :session="session" />
       <Slideshow v-if="presenting" :active-slide-id="presentedSlide" />
     </teleport>
   </div>

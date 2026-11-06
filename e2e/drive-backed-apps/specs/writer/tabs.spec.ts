@@ -7,18 +7,19 @@ import {
 } from "../../helpers/writer";
 import type { Page } from "@playwright/test";
 
-// Tab buttons in the desktop ToC are the only draggable elements on the page.
+// Tabs in the desktop tab row are the only draggable elements on the page.
 function tocTabs(page: Page) {
 	return page.locator('[draggable="true"]');
 }
 
-function tabPanel(page: Page, label: string) {
-	return page.locator(`[data-tab-label="${label}"]`);
+function tabPanel(page: Page, text: string) {
+	return page.locator("[data-tab-id]").filter({ hasText: text });
 }
 
-// Typing a first line and pressing Enter renames an "Untitled" tab to that line.
+// A tab nobody has named shows its first line of text.
 async function addTab(page: Page, text: string) {
-	await page.getByRole("button", { name: "Add tab" }).click();
+	await page.getByRole("button", { name: "Insert" }).click();
+	await page.getByRole("menuitem", { name: "Tab", exact: true }).click();
 	await writerEditor(page).click();
 	await page.keyboard.type(text);
 	await page.keyboard.press("Enter");
@@ -33,7 +34,6 @@ test("a document without tabs lists its headings, not a tab", async ({ owner, ru
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-headings"),
 	);
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 
 	await writerEditor(page).click();
@@ -47,7 +47,7 @@ test("a document without tabs lists its headings, not a tab", async ({ owner, ru
 	await expect(tocTabs(page)).toHaveCount(0);
 
 	await addTab(page, "notes");
-	await expect(tocTabs(page)).toHaveText(["Untitled", "notes"]);
+	await expect(tocTabs(page)).toHaveText(["Alpha", "notes"]);
 	await tocTabs(page).first().click();
 	await expect(writerEditor(page)).toContainText("Alpha", { useInnerText: true });
 	await expect(writerEditor(page)).not.toContainText("notes", { useInnerText: true });
@@ -66,9 +66,6 @@ test("mobile tab bar reflects added tabs and switches the active tab", async ({
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-mobile"),
 	);
-	// Open the Table of Contents expanded so its tab controls are reachable
-	// (the collapsed toggle is an icon-only button with no accessible name).
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 	await writerEditor(page).click();
 	await page.keyboard.type("first");
@@ -86,7 +83,7 @@ test("mobile tab bar reflects added tabs and switches the active tab", async ({
 
 	// Bug 1: the third tab (added after the bar mounted) shows up in the bar
 	const barButtons = page.locator('[data-slot="tab-button"]');
-	await expect(barButtons).toHaveText(["Untitled", "second", "third"]);
+	await expect(barButtons).toHaveText(["first", "second", "third"]);
 
 	// Only the active tab is shown; the freshly-added one stays active
 	await expect(editor).toContainText("third", { useInnerText: true });
@@ -98,25 +95,17 @@ test("mobile tab bar reflects added tabs and switches the active tab", async ({
 	await expect(editor).not.toContainText("third", { useInnerText: true });
 });
 
-// The tab menu is reachable by right-click, but also from an explicit "..."
-// button on the active tab — the only affordance touch users and anyone who
-// doesn't think to right-click will find.
-test("the tab menu button renames the active tab", async ({ owner, run }) => {
+test("the tab's right-click menu renames it", async ({ owner, run }) => {
 	const { page } = owner;
 	const file = await createWriterDocument(
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-menu"),
 	);
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 
 	await addTab(page, "alpha");
 	await addTab(page, "bravo");
-	// The menu button only exists on the active tab, which is the one just added.
-	const menuButton = page.getByRole("button", { name: "Tab options" });
-	await expect(menuButton).toHaveCount(1);
-
-	await menuButton.click();
+	await tocTabs(page).filter({ hasText: "bravo" }).click({ button: "right" });
 	await page.getByRole("menuitem", { name: "Rename" }).click();
 
 	const input = page.getByRole("textbox", { name: "Tab name" });
@@ -127,7 +116,7 @@ test("the tab menu button renames the active tab", async ({ owner, run }) => {
 	await expect(input).toBeHidden();
 	await expect(tocTabs(page)).toHaveText(["Untitled", "alpha", "renamed"]);
 	// The panel keeps its content and follows the new label.
-	await expect(tabPanel(page, "renamed")).toContainText("bravo");
+	await expect(page.locator('[data-tab-label="renamed"]')).toContainText("bravo");
 
 	// Persisted in the stored document.
 	await page.reload();
@@ -151,7 +140,6 @@ test("reordering tabs preserves every tab's content", async ({ owner, run }) => 
 		page.request,
 		uniqueWriterTitle(run.run_id, "tabs-reorder"),
 	);
-	await page.addInitScript(() => window.localStorage.setItem("showToc", "true"));
 	await openWriterDocument(page, file.name);
 
 	await addTab(page, "alpha");

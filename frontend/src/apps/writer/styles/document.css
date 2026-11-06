@@ -1,0 +1,179 @@
+/* The document's type scale and blocks. Sizes are in em, so they follow the document's font size;
+   at the default 15px they land on 28, 24, 20 and 18px. */
+
+.prose-v3.ProseMirror h1 {
+  font-size: 1.867em;
+  line-height: 1.3;
+  margin-bottom: 12px;
+}
+
+.prose-v3.ProseMirror h2 {
+  font-size: 1.6em;
+  line-height: 1.3;
+}
+
+.prose-v3.ProseMirror h3 {
+  font-size: 1.333em;
+  line-height: 1.35;
+}
+
+.prose-v3.ProseMirror h4 {
+  font-size: 1.2em;
+  line-height: 1.35;
+}
+
+.prose-v3.ProseMirror > h1:first-child {
+  margin-top: 0;
+}
+
+.prose-v3.ProseMirror hr {
+  border-color: var(--outline-gray-1);
+  margin: 24px 0;
+  width: 100%;
+}
+
+.prose-v3.ProseMirror a:not([data-type]) {
+  color: var(--ink-gray-7);
+  font-weight: 500;
+}
+
+.prose-v3.ProseMirror a:not([data-type]):hover {
+  color: var(--ink-gray-8);
+  cursor: pointer;
+}
+
+/* Inline chips: a mention, inline code and a highlight share one height and corner */
+.prose-v3.ProseMirror .mention {
+  background-color: var(--surface-gray-2);
+  border-radius: 4px;
+  color: var(--ink-gray-6);
+  display: inline;
+  font-weight: 500;
+  padding: 0 4px;
+  /* A name moves to the next line whole, so it never reads as two chips */
+  white-space: nowrap;
+}
+
+.prose-v3.ProseMirror .mention:hover,
+.prose-v3.ProseMirror .mention.ProseMirror-selectednode {
+  color: var(--ink-gray-7);
+}
+
+.prose-v3.ProseMirror :not(pre) > code {
+  padding-block: 2px;
+}
+
+.prose-v3.ProseMirror mark {
+  border-radius: 4px;
+}
+
+/* Dark highlights are deep tints, so the text on them is the brightest ink */
+:root[data-theme='dark'] .prose-v3.ProseMirror mark {
+  color: var(--ink-gray-9);
+}
+
+/* A selected block, such as a divider */
+.ProseMirror .ProseMirror-selectednode:not(img, video, [data-node-view-wrapper], .mention) {
+  background-color: var(--surface-gray-2);
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px var(--surface-gray-2);
+}
+
+/* The hint shows in a new document even while the cursor is in it */
+.prose-v3.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--ink-gray-4);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Bullets as strong as numbers, and every kind of list starts its text at the same edge. The
+   indent is the numbered list's, which a two-digit number needs. */
+.prose-v3.ProseMirror {
+  --list-indent: 1.7em;
+  --tw-prose-bullets: var(--ink-gray-4);
+}
+
+.prose-v3.ProseMirror :is(ul, ol):not([data-type='taskList']) {
+  padding-inline-start: var(--list-indent);
+}
+
+.prose-v3.ProseMirror ul[data-type='taskList'] li > label {
+  margin-right: calc(var(--list-indent) - 14px);
+}
+
+/* The forms plugin paints an unchecked box white, so it glares in dark mode. Same tokens as
+   frappe-ui's Checkbox. */
+.prose-v3.ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  color: var(--surface-gray-10);
+}
+
+.prose-v3.ProseMirror ul[data-type='taskList'] input[type='checkbox']:not(:checked) {
+  background-color: var(--surface-base);
+  border-color: var(--outline-gray-4);
+}
+
+.prose-v3.ProseMirror blockquote {
+  font-weight: inherit;
+}
+
+/* An image sits 16px from the blocks around it, like a table or a code block. The empty line
+   ProseMirror keeps after it in its paragraph is hidden. */
+.prose-v3.ProseMirror p > [data-node-view-wrapper] {
+  margin-block: 16px;
+}
+
+.prose-v3.ProseMirror p:has(> [data-node-view-wrapper]) > br.ProseMirror-trailingBreak {
+  display: none;
+}
+
+/* ProseMirror forces the separator to display inline, so take it out of the flow instead */
+.prose-v3.ProseMirror p:has(> [data-node-view-wrapper]) > img.ProseMirror-separator {
+  position: absolute;
+}
+
+.prose-v3.ProseMirror div[data-page-break='true'] {
+  border: 0;
+  border-top: 1px dashed var(--outline-gray-3);
+  break-after: page;
+  margin: 32px 0;
+  position: relative;
+}
+
+/* The label tells a page break from a divider on screen */
+@media screen {
+  .prose-v3.ProseMirror div[data-page-break='true']::after {
+    background-color: var(--surface-base);
+    color: var(--ink-gray-5);
+    content: attr(data-label);
+    font-size: 12px;
+    left: 50%;
+    line-height: 16px;
+    padding: 0 8px;
+    position: absolute;
+    top: 0;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+  }
+
+  .prose-v3.ProseMirror div[data-page-break='true'].ProseMirror-selectednode::after {
+    background-color: var(--surface-gray-2);
+  }
+}
+
+/* Code blocks on the document's neutral grays instead of GitHub's blue-tinted theme */
+.prose-v3.ProseMirror pre {
+  background-color: var(--surface-gray-1);
+  caret-color: var(--ink-gray-8);
+  color: var(--ink-gray-8);
+}
+
+.prose-v3.ProseMirror .ProseMirror-selectednode > .code-block-container pre {
+  box-shadow: 0 0 0 2px var(--outline-gray-3);
+}
+
+/* GitHub Dark's section blue is too dark for the code block */
+:root[data-theme='dark'] .prose-v3.ProseMirror pre .hljs-section {
+  color: #79c0ff;
+}
