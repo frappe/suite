@@ -98,12 +98,15 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row.getByRole("button", { name: "Send reply" })).toHaveCount(0);
 		await expect(threadHeader(row)).toHaveAttribute("aria-expanded", "true");
 		await row.getByText("A reply", { exact: true }).hover();
-		// The thread's own actions come first, then the reply's
+		// The thread's own actions come first, then the reply's, which shows once Drive has the reply
+		await expect(row.getByRole("button", { name: "More comment actions" })).toHaveCount(2);
 		await row.getByRole("button", { name: "More comment actions" }).last().click();
 		await page.getByRole("menuitem", { name: "Edit" }).click();
 		await row.getByLabel("Edit comment").fill("A reply, edited");
 		await row.getByRole("button", { name: "Save" }).click();
 		await expect(row.getByText("A reply, edited", { exact: true })).toBeVisible();
+		// The thread's actions show while the pointer is on its row
+		await row.hover();
 		await row.getByRole("button", { name: "Resolve" }).click();
 		await expect(row).toHaveCount(0);
 		// The toast's Undo; the toolbar has one of its own
@@ -338,14 +341,14 @@ test.describe("Writer collaboration comments", () => {
 		await row.getByLabel("Reply", { exact: true }).fill("Sent twice");
 		await page.keyboard.press("Enter");
 		await answerLost;
-		// The box ignores Enter until the first send has finished; its failure shows then
-		await expect(page.locator('[data-sonner-toast][data-type="error"]')).toBeVisible();
-		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("Sent twice");
+		// The reply shows at once; a lost answer leaves it in the thread as not sent
+		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("");
+		await expect(row.getByText("Not sent")).toBeVisible();
 
 		await page.unroute("**/api/suite/drive/threads/*/comments", loseAnswer);
-		await row.getByLabel("Reply", { exact: true }).press("Enter");
+		await row.getByRole("button", { name: "Retry" }).click();
 
-		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("");
+		await expect(row.getByText("Not sent")).toHaveCount(0);
 		await expect(row.getByText("Sent twice", { exact: true })).toHaveCount(1);
 	});
 });

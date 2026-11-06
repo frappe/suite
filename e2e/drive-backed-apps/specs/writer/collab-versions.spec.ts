@@ -391,10 +391,7 @@ test.describe("Writer collaboration", () => {
 				}),
 		).toBe(headingBox.x);
 
-		await page
-			.getByRole("button", { name: /comments/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Comments");
 		const comments = page.getByRole("complementary", { name: "Comments" });
 		const commentsHeading = (await comments
 			.getByRole("heading", { name: "Comments" })

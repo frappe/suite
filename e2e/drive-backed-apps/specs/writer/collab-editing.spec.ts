@@ -458,8 +458,9 @@ function editorKind() {
 	return names.includes("collaboration") ? "collab" : "plain";
 }
 
+// Edits not saved yet: one being sent, or ones waiting to be sent again
 async function expectSaving(page: Page): Promise<void> {
-	await expect(page.locator('[data-save-state="saving"]')).toBeVisible();
+	await expect(page.locator('[data-save-state="saving"], [data-save-state="unsaved"]')).toBeVisible();
 }
 
 function boldMention(page: Page) {

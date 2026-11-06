@@ -62,17 +62,17 @@ test("imports a .docx into a new tab, leaving existing content untouched", async
 
 	await importDocx(owner.page);
 
-	// The existing content stays as the first ("Untitled") tab and the imported
-	// content opens in a new tab named after the file. Inactive tabs stay in the
-	// DOM hidden, so assertions read the rendered text only
+	// The existing content stays as the first tab, which an unnamed tab names from
+	// its text, and the imported content opens in a new tab named after the file.
+	// Inactive tabs stay in the DOM hidden, so assertions read the rendered text only
 	const tocTabs = owner.page.locator('[draggable="true"]');
-	await expect(tocTabs).toHaveText(["Untitled", "import-sample"]);
+	await expect(tocTabs).toHaveText(["Existing content before import", "import-sample"]);
 	await expect(editor).toContainText("E2E DOCX Import Fixture", { useInnerText: true });
 	await expect(editor).not.toContainText("Existing content before import", {
 		useInnerText: true,
 	});
 
-	await tocTabs.filter({ hasText: "Untitled" }).click();
+	await tocTabs.filter({ hasText: "Existing content before import" }).click();
 	await expect(editor).toContainText("Existing content before import", { useInnerText: true });
 	await expect(editor).not.toContainText("E2E DOCX Import Fixture", { useInnerText: true });
 
