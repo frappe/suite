@@ -81,7 +81,7 @@
           :label="__(mark.label)"
           :shortcut="mark.shortcut"
           :pressed="isActive(mark.name)"
-          @click="mark.toggle(chain()).run()"
+          @click="chain().toggleMark(mark.name).run()"
         />
 
         <Popover side="bottom" align="start" :offset="6" bare>

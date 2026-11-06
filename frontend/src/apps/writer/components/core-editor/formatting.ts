@@ -69,45 +69,13 @@ export function activeBlockStyle(editor: Editor): BlockStyle {
   return BLOCK_STYLES[0]
 }
 
-export interface MarkToggle {
-  name: string
-  label: string
-  icon: string
-  shortcut: string
-  toggle: (chain: ChainedCommands) => ChainedCommands
-}
-
-/** The inline marks the toolbar and bubble menu toggle, in order. */
-export const MARKS: readonly MarkToggle[] = [
-  {
-    name: 'bold',
-    label: 'Bold',
-    icon: 'lucide-bold',
-    shortcut: 'Mod-b',
-    toggle: (chain) => chain.toggleBold(),
-  },
-  {
-    name: 'italic',
-    label: 'Italic',
-    icon: 'lucide-italic',
-    shortcut: 'Mod-i',
-    toggle: (chain) => chain.toggleItalic(),
-  },
-  {
-    name: 'underline',
-    label: 'Underline',
-    icon: 'lucide-underline',
-    shortcut: 'Mod-u',
-    toggle: (chain) => chain.toggleUnderline(),
-  },
-  {
-    name: 'strike',
-    label: 'Strikethrough',
-    icon: 'lucide-strikethrough',
-    shortcut: 'Mod-Shift-s',
-    toggle: (chain) => chain.toggleStrike(),
-  },
-]
+/** The inline marks the toolbar and bubble menu toggle with `toggleMark(name)`, in order. */
+export const MARKS = [
+  { name: 'bold', label: 'Bold', icon: 'lucide-bold', shortcut: 'Mod-b' },
+  { name: 'italic', label: 'Italic', icon: 'lucide-italic', shortcut: 'Mod-i' },
+  { name: 'underline', label: 'Underline', icon: 'lucide-underline', shortcut: 'Mod-u' },
+  { name: 'strike', label: 'Strikethrough', icon: 'lucide-strikethrough', shortcut: 'Mod-Shift-s' },
+] as const
 
 const APPLE_KEYS: Record<string, string> = { Mod: '⌘', Shift: '⇧', Alt: '⌥', Ctrl: '⌃' }
 
