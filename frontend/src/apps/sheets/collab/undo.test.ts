@@ -26,6 +26,21 @@ async function expectConverged(a: Tab, b: Tab) {
   expect(storeState(b)).toEqual(storeState(a))
 }
 
+// What the toolbar shows: the flags as last told through onChange.
+function toolbar(u: Undo) {
+  const shown = { undo: u.canUndo(), redo: u.canRedo() }
+  u.onChange(() => Object.assign(shown, { undo: u.canUndo(), redo: u.canRedo() }))
+  return shown
+}
+
+// Three format steps on one cell, A1.
+async function boldItalicStrike(t: Tab) {
+  for (const key of ['bold', 'italic', 'strikethrough'] as const) {
+    t.stores.formats.toggleRange(['A1'], key, 'Sheet1')
+    await t.glue.commit()
+  }
+}
+
 async function insertRow(t: Tab, row: number) {
   t.glue.dispatch(cmd('insertRows', { sheet: 'Sheet1', row, count: 1 }))
   await t.glue.commit()
@@ -219,6 +234,38 @@ describe('undo: the old undo bugs (ISSUES #11 #13 #15 #16)', () => {
     await ua.undo()
     expect(a.stores.formats.snapshot().Sheet1?.cells?.A1).toBeUndefined()
     expect(ua.canUndo()).toBe(false)
+  })
+
+  it('#119: the editor is told Undo stays enabled while older steps are left', async () => {
+    const [a, b, ua] = await undoTabs()
+    const shown = toolbar(ua)
+    const a1 = () => a.stores.formats.snapshot().Sheet1?.cells?.A1
+    await boldItalicStrike(a)
+    for (const look of [{ bold: true, italic: true }, { bold: true }, undefined]) {
+      expect(shown.undo).toBe(true)
+      await ua.undo()
+      expect(a1()).toEqual(look)
+      expect(shown.redo).toBe(true)
+    }
+    expect(shown.undo).toBe(false)
+    await expectConverged(a, b)
+  })
+
+  it('#119: a value, its bold and its fill come off in three undos', async () => {
+    const [a, , ua] = await undoTabs()
+    const shown = toolbar(ua)
+    await type(a, 'Sheet1', 'B2', 'x')
+    a.stores.formats.toggleRange(['B2'], 'bold', 'Sheet1')
+    await a.glue.commit()
+    a.stores.formats.applyToRange(['B2'], { backgroundColor: '#ffff00' }, 'Sheet1')
+    await a.glue.commit()
+    for (let i = 0; i < 3; i++) {
+      expect(shown.undo).toBe(true)
+      await ua.undo()
+    }
+    expect(shown.undo).toBe(false)
+    expect(await inputs(a)).toEqual({})
+    expect(a.stores.formats.snapshot().Sheet1?.cells?.B2).toBeUndefined()
   })
 
   it('#16: undo and redo hand back the selection the step was made with', async () => {
