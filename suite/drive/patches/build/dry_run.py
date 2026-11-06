@@ -205,7 +205,7 @@ def dry_run(
     disk: DiskSettings | None = None,
     batch_size: int = BUILD_BATCH_SIZE,
     accepted_defects: Path | None = None,
-    server: ServerFacts | None = None,
+    server: ServerFacts,
 ) -> DryRun:
     """Preflight, census, one JSON file."""
     disk = disk or DiskSettings()

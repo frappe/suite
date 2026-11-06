@@ -29,8 +29,7 @@ So this module answers four questions, in this order:
 4. Does the server have what the migration needs? MariaDB's
    `max_allowed_packet` at 64 MiB or more, for the large rows Build writes,
    and Node 22.13 or newer, for the document converter that runs after the
-   migration. `check()` reads both (`ServerFacts`); a caller that passes no
-   `ServerFacts` gets no server checks.
+   migration. `check()` reads both (`ServerFacts`).
 
 ## Which defects block
 
@@ -432,18 +431,19 @@ def preflight(
     sample_size: int | None = SAMPLE_PER_SHAPE,
     batch_size: int = BUILD_BATCH_SIZE,
     accepted_defects: Path | None = None,
-    server: ServerFacts | None = None,
+    server: ServerFacts,
 ) -> PreflightReport:
     """Run every check against `env` and answer the report. Reads only.
 
     `sample_size=None` heads every legacy object instead of a sample.
     `accepted_defects` is the operator's list (see the module docstring).
-    `server` adds the packet limit and Node checks.
     """
     disk = disk or DiskSettings()
-    checks = [_gate_check(env)]
-    if server is not None:
-        checks += [_packet_check(server.max_allowed_packet), _node_check(server.node_version)]
+    checks = [
+        _gate_check(env),
+        _packet_check(server.max_allowed_packet),
+        _node_check(server.node_version),
+    ]
     accepted = _accepted_entries(accepted_defects, checks)
     blobless, by_shape, empty_paths = _classify_blobless_rows(env, disk.root_folder, batch_size)
     listed = {entry.file for entry in accepted.values()}
