@@ -28,16 +28,13 @@
         />
         <span class="writer-divider" aria-hidden="true" />
         <Dropdown :options="insertOptions">
-          <ToolbarButton :label="__('Insert')">
-            <span class="lucide-plus size-4" aria-hidden="true" />
-            <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
-          </ToolbarButton>
+          <ToolbarButton menu icon="lucide-plus" :label="__('Insert')" />
         </Dropdown>
       </div>
 
       <div class="writer-toolbar-group">
         <Dropdown :options="blockOptions">
-          <ToolbarButton :label="__('Text style')">
+          <ToolbarButton menu :label="__('Text style')">
             <!-- Every name in one cell, so the select keeps the width of the longest. The whole-pixel
                minimum keeps the controls after it on whole pixels, so their icons stay sharp -->
             <span class="grid min-w-[96px] justify-items-start text-base leading-4">
@@ -50,14 +47,13 @@
                 >{{ __(style.label) }}</span
               >
             </span>
-            <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
           </ToolbarButton>
         </Dropdown>
       </div>
 
       <div class="writer-toolbar-group">
         <Dropdown :options="fontOptions">
-          <ToolbarButton :label="__('Font')">
+          <ToolbarButton menu :label="__('Font')">
             <span class="grid min-w-[108px] justify-items-start text-base leading-4">
               <span
                 v-for="font in FONT_FAMILIES"
@@ -68,7 +64,6 @@
                 >{{ font.label }}</span
               >
             </span>
-            <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
           </ToolbarButton>
         </Dropdown>
       </div>
@@ -86,10 +81,7 @@
 
         <Popover side="bottom" align="start" :offset="6" bare>
           <template #trigger>
-            <ToolbarButton :label="__('Color')">
-              <span class="lucide-baseline size-4" aria-hidden="true" />
-              <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
-            </ToolbarButton>
+            <ToolbarButton menu icon="lucide-baseline" :label="__('Color')" />
           </template>
           <template #default="{ close }">
             <ColorPanel :editor @pick="close" />
@@ -123,16 +115,10 @@
       <div class="writer-toolbar-group">
         <span class="writer-divider" aria-hidden="true" />
         <Dropdown :options="listOptions">
-          <ToolbarButton :label="__('Lists')">
-            <span :class="activeList.icon" class="size-4" aria-hidden="true" />
-            <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
-          </ToolbarButton>
+          <ToolbarButton menu :icon="activeList.icon" :label="__('Lists')" />
         </Dropdown>
         <Dropdown :options="alignOptions">
-          <ToolbarButton :label="__('Alignment')">
-            <span :class="activeAlign.icon" class="size-4" aria-hidden="true" />
-            <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
-          </ToolbarButton>
+          <ToolbarButton menu :icon="activeAlign.icon" :label="__('Alignment')" />
         </Dropdown>
         <ToolbarButton
           icon="lucide-indent-decrease"

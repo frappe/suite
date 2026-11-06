@@ -15,9 +15,8 @@
       @focusin="returnFocus"
     >
       <Dropdown :options="blockOptions" :offset="8" :portal-to="bar ?? undefined">
-        <ToolbarButton compact :label="__('Text style')">
+        <ToolbarButton compact menu :label="__('Text style')">
           <span class="whitespace-nowrap text-sm leading-[15px]">{{ __(activeBlock.label) }}</span>
-          <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
         </ToolbarButton>
       </Dropdown>
 

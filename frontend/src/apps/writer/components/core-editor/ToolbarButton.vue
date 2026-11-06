@@ -6,7 +6,9 @@
     </template>
     <button
       type="button"
-      :class="$slots.default ? ['writer-select', compact && 'writer-select-compact'] : toolClass"
+      :class="
+        $slots.default || menu ? ['writer-select', compact && 'writer-select-compact'] : toolClass
+      "
       :aria-label="label"
       :aria-keyshortcuts="shortcut && formatShortcut(shortcut, false).replace('Ctrl', 'Control')"
       :aria-pressed="pressed"
@@ -16,6 +18,7 @@
       <slot>
         <span :class="[icon, compact ? 'size-3.5' : 'size-4']" aria-hidden="true" />
       </slot>
+      <span v-if="menu" class="lucide-chevron-down size-3.5" aria-hidden="true" />
     </button>
   </Tooltip>
 </template>
@@ -43,6 +46,8 @@ const props = withDefaults(
     disabled?: boolean
     /** The bubble menu's 24px size */
     compact?: boolean
+    /** A select-style trigger for a menu, with a chevron after its content */
+    menu?: boolean
     side?: 'top' | 'bottom'
   }>(),
   { description: undefined, icon: undefined, shortcut: undefined, pressed: undefined, side: 'top' },
