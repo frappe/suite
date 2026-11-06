@@ -255,6 +255,7 @@
               :node="row"
               :meta="cardMeta(row)"
               :selected="isHighlighted(row)"
+              :icon-class="cardIconClass"
               :class="drag ? [flashClasses(row), dragClasses(row, DROP_CARD)] : flashClasses(row)"
               :data-drag-handle="drag ? '' : undefined"
               :data-node="focus.roving.value ? row.name : undefined"
@@ -282,18 +283,20 @@
                 class="pointer-events-none absolute end-3 top-3"
               />
               <template #actions="{ onImage }">
-                <!-- A control of its own, over the type icon. Its backdrop hides the icon and keeps it visible on a thumbnail. -->
+                <!-- A control of its own, in the type icon's place, with a wider hit area.
+                     A soft shadow keeps it readable on a thumbnail. -->
                 <span
                   v-if="hoverCheckbox && (selectionMode || checkboxOnHover)"
                   role="checkbox"
                   :aria-checked="isSelected(row)"
                   :aria-label="`Select ${row.title}`"
                   tabindex="-1"
-                  class="absolute start-2 top-2 flex size-6 cursor-pointer items-center justify-center rounded-2 bg-surface-elevation-3 shadow-sm"
-                  :class="
+                  class="absolute start-3 top-3 flex size-5 cursor-pointer items-center justify-center before:absolute before:-inset-2"
+                  :class="[
                     !selectionMode &&
-                    'opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100'
-                  "
+                      'opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100',
+                    onImage && 'drop-shadow-[0_1px_2px_rgb(0_0_0/0.4)]',
+                  ]"
                   @click="onCheckboxClick($event, row)"
                 >
                   <Checkbox
@@ -510,6 +513,14 @@ const hoverCheckbox = useTweak('t18-hover-checkbox')
 const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
 /** Where a mouse can hover, an item's checkbox shows on hover and the header's always. */
 const checkboxOnHover = computed(() => hoverCheckbox.value && finePointer.value)
+/** A card's type icon steps aside while its checkbox shows in the icon's place. */
+const cardIconClass = computed(() => {
+  if (!hoverCheckbox.value) return undefined
+  if (props.selectionMode) return 'invisible'
+  return checkboxOnHover.value
+    ? 'group-hover/card:invisible group-focus-within/card:invisible'
+    : undefined
+})
 /** A click on the checkbox selects without opening. With the tweak off it falls through to the item. */
 function onCheckboxClick(event: MouseEvent, row: DriveNode) {
   if (!hoverCheckbox.value) return

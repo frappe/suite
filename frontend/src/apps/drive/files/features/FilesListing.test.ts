@@ -270,6 +270,15 @@ describe('FilesListing checkboxes with a mouse', () => {
     expect(checkbox(root, 'Alpha.png')?.getAttribute('aria-checked')).toBe('true')
   })
 
+  it('puts a card’s checkbox in its type icon’s place, with no tile behind it', async () => {
+    const { root } = mount({ rows, view: 'grid', selection: ['a'] })
+    await nextTick()
+    const typeIcon = root.querySelector('[data-listing-item="b"] button > span > span')!
+
+    expect(typeIcon.classList).toContain('invisible')
+    expect(checkbox(root, 'Beta.png')!.className).not.toMatch(/\bbg-|shadow/)
+  })
+
   it('shows no checkbox until selection starts, with the tweak off', async () => {
     setTweaks(['t18-hover-checkbox'], false)
     const { root } = mount({ rows })

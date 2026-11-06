@@ -30,7 +30,7 @@
         />
         <span
           class="relative block size-4.5"
-          :class="[nodeIcon(node), nodeIconTint(node), onImage && 'invisible']"
+          :class="[nodeIcon(node), nodeIconTint(node), onImage && 'invisible', iconClass]"
           aria-hidden="true"
         />
       </span>
@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type Component } from 'vue'
+import { computed, type Component, type HTMLAttributes } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { nodeIcon, nodeIconTint } from '@/apps/drive/files/internal/icons'
@@ -77,6 +77,8 @@ const props = defineProps<{
   >
   meta?: string
   selected?: boolean
+  /** Classes for the type icon, such as hiding it while a checkbox takes its place. */
+  iconClass?: HTMLAttributes['class']
 }>()
 const emit = defineEmits<{
   /** A thumbnail failed to load. Refetch the node for a fresh signed URL. Emitted once per file. */
