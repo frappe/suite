@@ -138,49 +138,48 @@
             @pointercancel="cancelLongPress"
           >
             <ListCell>
-              <!-- Without the hover checkbox, clicks fall through to the row, which toggles in selection mode.
-                   With it, the checkbox takes the icon's place while the row is hovered or focused. -->
-              <span
-                v-if="selectionMode || checkboxOnHover"
-                role="checkbox"
-                :aria-checked="isSelected(row)"
-                :aria-label="`Select ${row.title}`"
-                :tabindex="focus.roving.value || !selectionMode ? -1 : 0"
-                class="mr-2 size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
-                :class="
-                  selectionMode
-                    ? 'flex'
-                    : 'relative hidden before:absolute before:-inset-2 group-hover/row:flex group-focus-visible/row:flex'
-                "
-                @click="onCheckboxClick($event, row)"
-                @keydown.enter.prevent.stop="$emit('select', row, $event.shiftKey)"
-                @keydown.space.prevent.stop="$emit('select', row, $event.shiftKey)"
-              >
-                <Checkbox
-                  :model-value="isSelected(row)"
-                  tabindex="-1"
+              <!-- Hovering the icon or the name, not the whole row, shows the checkbox (t37). -->
+              <span class="group/name flex min-w-0 items-center">
+                <!-- Without the hover checkbox, clicks fall through to the row, which toggles in selection mode.
+                     With it, the checkbox takes the icon's place while the row is hovered or focused. -->
+                <span
+                  v-if="selectionMode || checkboxOnHover"
+                  role="checkbox"
+                  :aria-checked="isSelected(row)"
+                  :aria-label="`Select ${row.title}`"
+                  :tabindex="focus.roving.value || !selectionMode ? -1 : 0"
+                  class="mr-2 size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
+                  :class="
+                    selectionMode
+                      ? 'flex'
+                      : ['relative hidden before:absolute before:-inset-2', rowCheckboxShows]
+                  "
+                  @click="onCheckboxClick($event, row)"
+                  @keydown.enter.prevent.stop="$emit('select', row, $event.shiftKey)"
+                  @keydown.space.prevent.stop="$emit('select', row, $event.shiftKey)"
+                >
+                  <Checkbox
+                    :model-value="isSelected(row)"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none"
+                  />
+                </span>
+                <span
+                  v-if="!selectionMode"
+                  class="mr-2 size-4 shrink-0"
+                  :class="[nodeIcon(row), nodeIconTint(row), checkboxOnHover && rowIconHides]"
+                  :data-drag-handle="drag ? '' : undefined"
                   aria-hidden="true"
-                  class="pointer-events-none"
                 />
+                <!-- With drag to move, the icon and name are the row's drag handle; the rest of the row draws the marquee. -->
+                <span
+                  class="min-w-0 truncate text-base text-ink-gray-8"
+                  :title="row.title"
+                  :data-drag-handle="drag ? '' : undefined"
+                  >{{ row.title }}</span
+                >
               </span>
-              <span
-                v-if="!selectionMode"
-                class="mr-2 size-4 shrink-0"
-                :class="[
-                  nodeIcon(row),
-                  nodeIconTint(row),
-                  checkboxOnHover && 'group-hover/row:hidden group-focus-visible/row:hidden',
-                ]"
-                :data-drag-handle="drag ? '' : undefined"
-                aria-hidden="true"
-              />
-              <!-- With drag to move, the icon and name are the row's drag handle; the rest of the row draws the marquee. -->
-              <span
-                class="min-w-0 truncate text-base text-ink-gray-8"
-                :title="row.title"
-                :data-drag-handle="drag ? '' : undefined"
-                >{{ row.title }}</span
-              >
               <StarredIcon v-if="row.favourite" class="ml-1.5 size-3.5 shrink-0" />
               <span v-if="showBreadcrumbs" class="ml-2 truncate text-p-sm text-ink-gray-5">{{
                 breadcrumbText(row)
@@ -313,10 +312,10 @@
                   :aria-checked="isSelected(row)"
                   :aria-label="`Select ${row.title}`"
                   tabindex="-1"
+                  data-card-checkbox
                   class="absolute start-3 top-3 flex size-5 cursor-pointer items-center justify-center before:absolute before:-inset-2"
                   :class="[
-                    !selectionMode &&
-                      'opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100',
+                    !selectionMode && cardCheckboxShows,
                     onImage && 'drop-shadow-[0_1px_2px_rgb(0_0_0/0.4)]',
                   ]"
                   @click="onCheckboxClick($event, row)"
@@ -539,13 +538,36 @@ const hoverCheckbox = useTweak('t18-hover-checkbox')
 const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
 /** Where a mouse can hover, an item's checkbox shows on hover and the header's always. */
 const checkboxOnHover = computed(() => hoverCheckbox.value && finePointer.value)
+const checkboxNear = useTweak('t37-checkbox-near')
+/**
+ * Where a checkbox shows outside selection mode. With t37 that is while the
+ * pointer is over the icon and name (a card's corner and title), or keyboard
+ * focus is on the item; without it, while anywhere on the item is hovered.
+ * The icon hides with the same rule, so the two never show together.
+ */
+const rowCheckboxShows = computed(() =>
+  checkboxNear.value
+    ? 'group-hover/name:flex group-focus-visible/row:flex'
+    : 'group-hover/row:flex group-focus-visible/row:flex',
+)
+const rowIconHides = computed(() =>
+  checkboxNear.value
+    ? 'group-hover/name:hidden group-focus-visible/row:hidden'
+    : 'group-hover/row:hidden group-focus-visible/row:hidden',
+)
+const cardCheckboxShows = computed(() =>
+  checkboxNear.value
+    ? 'opacity-0 hover:opacity-100 group-has-[[data-card-title]:hover]/card:opacity-100 group-has-[:focus-visible]/card:opacity-100'
+    : 'opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100',
+)
 /** A card's type icon steps aside while its checkbox shows in the icon's place. */
 const cardIconClass = computed(() => {
   if (!hoverCheckbox.value) return undefined
   if (props.selectionMode) return 'invisible'
-  return checkboxOnHover.value
-    ? 'group-hover/card:invisible group-focus-within/card:invisible'
-    : undefined
+  if (!checkboxOnHover.value) return undefined
+  return checkboxNear.value
+    ? 'group-has-[[data-card-checkbox]:hover]/card:invisible group-has-[[data-card-title]:hover]/card:invisible group-has-[:focus-visible]/card:invisible'
+    : 'group-hover/card:invisible group-focus-within/card:invisible'
 })
 /** A click on the checkbox selects without opening. With the tweak off it falls through to the item. */
 function onCheckboxClick(event: MouseEvent, row: DriveNode) {

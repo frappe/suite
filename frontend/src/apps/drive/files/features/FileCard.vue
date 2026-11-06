@@ -36,9 +36,12 @@
       </span>
       <span class="relative flex w-full min-w-0 flex-col gap-0.5">
         <span class="flex w-full min-w-0 items-center">
-          <span class="truncate text-base font-medium text-ink-gray-8" :title="node.title">{{
-            node.title
-          }}</span>
+          <span
+            class="truncate text-base font-medium text-ink-gray-8"
+            :title="node.title"
+            data-card-title
+            >{{ node.title }}</span
+          >
           <StarredIcon v-if="node.favourite" class="ml-1.5 size-3.5 shrink-0" />
         </span>
         <span class="flex min-w-0 items-center gap-1 text-xs text-ink-gray-5">
