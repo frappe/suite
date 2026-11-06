@@ -21,6 +21,8 @@
           v-if="previewUrl"
           :src="previewUrl"
           alt=""
+          loading="lazy"
+          decoding="async"
           class="absolute inset-0 size-full border-b border-outline-gray-1 object-cover transition-opacity"
           :class="[onImage ? 'opacity-100' : 'opacity-0', isDocument && 'object-top']"
           @load="previewLoaded"
