@@ -54,14 +54,14 @@ describe('tweaks', () => {
   })
 
   it('ignores unknown ids and stored values it cannot read', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['t9', 'no-such-tweak', 42, null]))
+    localStorage.setItem(KEY, JSON.stringify(['t7', 'no-such-tweak', 42, null]))
     const { isTweakOn } = await load()
-    expect(isTweakOn('t9')).toBe(false)
+    expect(isTweakOn('t7')).toBe(false)
     expect(isTweakOn('t10')).toBe(true)
 
-    for (const raw of ['not json', '{"t9": false}', '"t9"']) {
+    for (const raw of ['not json', '{"t7": false}', '"t7"']) {
       localStorage.setItem(KEY, raw)
-      expect((await load()).isTweakOn('t9')).toBe(true)
+      expect((await load()).isTweakOn('t7')).toBe(true)
     }
   })
 

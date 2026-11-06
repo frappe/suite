@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, type PropType, type VNode } from 'vue'
 
 import type { DriveGrant, GrantList } from '@/apps/drive/client/grants'
 import { testClient } from '@/apps/drive/client/testClient'
-import { confirm, toast } from '@/platform/feedback'
+import { confirm } from '@/platform/feedback'
 import type { Transport } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
@@ -208,23 +208,6 @@ it('changes the org access from one role menu, with a check on the current role 
   choose(org, 'Remove')
   await vi.waitFor(() => expect(row(org).textContent).toContain('Not shared'))
   expect(local.has('$GENERAL')).toBe(false)
-})
-
-it('makes a View link with no expiry from "New link", copies it and says so', async () => {
-  const writeText = vi.fn(async () => {})
-  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-  const { writes, transport } = server()
-  const { root, row } = await mount(transport)
-  const button = [...root.querySelectorAll('button')].find(
-    (item) => item.textContent?.trim() === 'New link',
-  )!
-
-  button.click()
-
-  await vi.waitFor(() => expect(toast.success).toHaveBeenCalledWith('Link copied'))
-  expect(writeText).toHaveBeenCalledWith(new URL('/l/new', window.location.origin).href)
-  expect(writes).toEqual([{ id: 'node_put_grant', principal: '$LINK', role: 10 }])
-  await vi.waitFor(() => expect(row('Anyone with this link').textContent).toContain('No expiry'))
 })
 
 it('with the access tweaks off, a switch off over a public folder blocks here and on again restores it', async () => {

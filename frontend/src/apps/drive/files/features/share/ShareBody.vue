@@ -49,15 +49,8 @@
       <section v-if="!picked" :aria-label="__('Who has access')">
         <div class="mb-1 flex h-7 items-center justify-between gap-3">
           <h3 class="text-base-medium">{{ __('Who has access') }}</h3>
-          <Button
-            v-if="sections.links && newLinkButton"
-            icon-left="lucide-link"
-            :label="__('New link')"
-            :loading="state.isPending(NEW_LINK_ROW)"
-            @click="createLink"
-          />
           <Dropdown
-            v-else-if="sections.links"
+            v-if="sections.links"
             :options="[
               {
                 label: __('Create share link'),
@@ -75,11 +68,6 @@
             />
           </Dropdown>
         </div>
-        <ErrorMessage
-          v-if="newLinkButton && state.errors.get(NEW_LINK_ROW)"
-          class="mb-2"
-          :message="state.errors.get(NEW_LINK_ROW)"
-        />
         <ul>
           <li
             v-for="row in rows"
@@ -242,7 +230,7 @@ import { confirm } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 import { useTweak } from '@/platform/tweaks'
 
-import { copyLink, copyNewLink, formatDay, stampDay } from './shareFormat'
+import { copyLink, formatDay, stampDay } from './shareFormat'
 import ShareLinkDialog from './ShareLinkDialog.vue'
 import { roleMenu } from './shareMenu'
 import {
@@ -254,7 +242,7 @@ import {
   type PickedPerson,
 } from './shareModel'
 import SharePicker from './SharePicker.vue'
-import { NEW_LINK_ROW, PICKER, UNDO_ROW, type ShareState } from './useShare'
+import { PICKER, UNDO_ROW, type ShareState } from './useShare'
 
 /** One ordered list of principals, with inherited grants in place by reach. */
 const props = defineProps<{ state: ShareState; autofocusPicker?: boolean }>()
@@ -265,7 +253,6 @@ const creatingLink = ref(false)
 const accessWords = useTweak('t4-access-words')
 const publicRemoves = useTweak('t4-public-off')
 const oneRoleMenu = useTweak('t5')
-const newLinkButton = useTweak('t9')
 const confirmIrreversible = useTweak('t33-confirm-irreversible')
 const folderWording = useTweak('t33-public-folder-wording')
 const publicFromAncestor = computed(() => !!sections.value && isPublicFromAncestor(sections.value))
@@ -721,12 +708,6 @@ async function removeInside(row: Extract<UnifiedRow, { type: 'local' }>) {
   )
     return
   await props.state.remove(row.grantRow, true)
-}
-
-/** "New link": a View link with no expiry and no password, copied at once (§7.7). */
-function createLink() {
-  if (props.state.isPending(NEW_LINK_ROW)) return
-  void copyNewLink(props.state.newLink())
 }
 
 function edit(row: UnifiedRow, mode: 'expiry' | 'password') {

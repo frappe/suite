@@ -225,12 +225,16 @@ test("a document surface places Share; a new share link is created from the dial
 	const deck = await createDocument(api, home.name, runTag("uf9-deck"), "Presentation");
 	const dialog = await openShare(page, deck.name);
 
-	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-	await dialog.getByRole("button", { name: "New link" }).click();
-	await expect(page.getByText("Link copied")).toBeVisible();
+	await dialog.getByRole("button", { name: "Sharing options" }).click();
+	await page.getByRole("menuitem", { name: "Create share link" }).click();
+	const create = page.getByRole("dialog", { name: "Create share link" });
+	await create.getByRole("button", { name: "Create link" }).click();
+	await expect(create.getByRole("status")).toHaveText("Your share link is ready.");
 	const links = (await grants(deck.name)).filter((grant) => grant.principal.startsWith("$LINK:"));
 	expect(links).toHaveLength(1);
-	expect(links[0]).toMatchObject({ role: 10, expires_on: null, has_password: false });
+	expect(links[0]!.role).toBe(10);
+	await create.getByRole("button", { name: "Done" }).click();
+	await expect(create).toBeHidden();
 
 	await expect(accessButton(rowFor(dialog, "Anyone with this link"))).toHaveAccessibleName(/: View$/);
 	// The footer copies the item's own address, and Done closes the dialog.
