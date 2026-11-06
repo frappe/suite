@@ -325,7 +325,7 @@ import {
   ListHeaderCellSort,
   ListRow,
 } from 'frappe-ui/list'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
@@ -410,7 +410,17 @@ const focus = useListingFocus({
   grid: () => props.presentation.view === 'grid',
   extend: (from, to) => emit('extend', from, to),
 })
-defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow })
+/** Loads windows until the item is in the listing, ten at most, then focuses it. Answers whether it could. */
+async function reveal(id: string): Promise<boolean> {
+  const has = () => props.query.rows.some((row) => row.name === id)
+  for (let windows = 0; !has() && props.query.hasNext && windows < 10; windows++) {
+    await props.query.fetchNext()
+    if (props.query.error) break
+  }
+  await nextTick()
+  return focus.focusRow(id, { reveal: true })
+}
+defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow, reveal })
 /** A grid lets screen readers hand the arrow keys to the page; a table keeps them for reading. */
 const gridRoles = computed(() =>
   focus.roving.value ? { role: 'grid', 'aria-multiselectable': 'true' } : {},

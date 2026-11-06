@@ -63,6 +63,11 @@ vi.mock('@/platform/transport', async (original) => {
             if (trashed) trashed.state = 'Trashed'
             return trashed
           }
+          case 'node_batch': {
+            const { nodes, patch } = input as { nodes: string[]; patch: { state: 'Active' } }
+            for (const name of nodes) server.nodes.get(name)!.state = patch.state
+            return { ok: nodes, failed: [] }
+          }
           case 'node_children':
             return {
               rows: [...server.nodes.values()].filter((row) => row.parent_node === input.node),
@@ -157,6 +162,9 @@ vi.mock('@/platform/feedback', async () => {
 const listing = vi.hoisted(() => ({
   rows: fromPartial<DriveNode[]>([]),
   menu: fromPartial<null | ((row: DriveNode) => MenuGroup[])>(null),
+  /** The row that shows keyboard focus. */
+  focused: fromPartial<DriveNode | null>(null),
+  revealed: fromPartial<string[]>([]),
 }))
 interface MenuGroup {
   group: string
@@ -170,7 +178,11 @@ vi.mock('../features/FilesListing.vue', async () => {
         query: { type: fromPartial<PropType<{ rows: DriveNode[] }>>(Object), required: true },
         menuOptions: { type: fromPartial<PropType<(row: DriveNode) => MenuGroup[]>>(Function) },
       },
-      setup(props) {
+      setup(props, { expose }) {
+        expose({
+          focusedRow: () => listing.focused,
+          reveal: async (id: string) => listing.revealed.push(id) > 0,
+        })
         return () => {
           listing.rows = props.query.rows
           listing.menu = props.menuOptions ?? null
@@ -203,13 +215,22 @@ vi.mock('@/apps/drive', async (original) => ({
   ...(await original<typeof import('@/apps/drive')>()),
   useDriveDialogs: () => ({ ...dialogs, move: vi.fn() }),
 }))
-// The page's keyboard shortcuts, as it registers them.
-const keys = vi.hoisted(() => ({
-  shortcuts: fromPartial<Array<{ description: string; handler: (event: KeyboardEvent) => void }>>(
-    [],
-  ),
-}))
 
+interface ShortcutConfig {
+  combo: string
+  description: string
+  enabled?: () => boolean
+  handler: (event: KeyboardEvent) => void
+}
+/** The shortcuts the page registered. */
+const shortcuts = vi.hoisted(() => [] as ShortcutConfig[])
+/** Presses `combo` as frappe-ui would: the live registration for it runs. */
+function press(combo: string): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { cancelable: true })
+  const live = shortcuts.find((each) => each.combo === combo && (each.enabled?.() ?? true))
+  live?.handler(event)
+  return event
+}
 const quiet = () =>
   defineComponent({
     setup:
@@ -227,7 +248,7 @@ vi.mock('frappe-ui', () => ({
   PageHeaderMobile: quiet(),
   TabButtons: quiet(),
   TextInput: quiet(),
-  useKeyboardShortcut: (shortcuts: typeof keys.shortcuts) => keys.shortcuts.push(...shortcuts),
+  useKeyboardShortcut: (configs: ShortcutConfig[]) => shortcuts.push(...configs),
 }))
 for (const part of [
   '../features/ViewSettings.vue',
@@ -307,10 +328,12 @@ afterEach(() => {
   feedback.toasts.length = 0
   listing.rows = []
   listing.menu = null
+  listing.focused = null
+  listing.revealed = []
+  shortcuts.length = 0
   uploads.upload.mockReset()
   dialogs.showDetails.mockClear()
   dialogs.share.mockClear()
-  keys.shortcuts = []
   vi.unstubAllGlobals()
   setTweaks(['t3-folder-menu', 't3-selection-menu', 't8', 't19-owner-sort'], true)
   document.body.innerHTML = ''
@@ -773,8 +796,8 @@ describe('A selection', () => {
 })
 
 describe('Keyboard shortcuts', () => {
-  function press(description: string) {
-    const shortcut = keys.shortcuts.find((candidate) => candidate.description === description)
+  function pressNamed(description: string) {
+    const shortcut = shortcuts.find((candidate) => candidate.description === description)
     shortcut?.handler(new KeyboardEvent('keydown', { cancelable: true }))
   }
   /** Letter keys go through Suite's own listener, not frappe-ui's registry. */
@@ -800,11 +823,11 @@ describe('Keyboard shortcuts', () => {
     type('s')
     expect(dialogs.share).toHaveBeenCalledWith('x')
 
-    press('Select all')
+    pressNamed('Select all')
     await nextTick()
     expect(root.textContent).toContain('3 selected')
 
-    press('Delete selected items')
+    pressNamed('Delete selected items')
     await vi.waitFor(() =>
       expect(server.calls.find((call) => call.id === 'node_batch')?.input).toEqual({
         nodes: ['x', 'y', 'z'],
@@ -819,5 +842,44 @@ describe('Keyboard shortcuts', () => {
     type('g', 'r')
 
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/recent'))
+  })
+})
+
+describe('Keys', () => {
+  afterEach(() => setTweaks(['t14-focused-row'], true))
+
+  it('moves the focused row to Trash with Delete, and Mod+Z brings it back', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    listing.focused = listing.rows.find((row) => row.name === 'b')!
+
+    press('Delete')
+    await vi.waitFor(() => expect(server.nodes.get('b')?.state).toBe('Trashed'))
+    expect(feedback.toasts.at(-1)?.message).toBe('Moved “b.png” to Trash')
+
+    expect(press('Mod+Z').defaultPrevented).toBe(true)
+    await vi.waitFor(() => expect(server.nodes.get('b')?.state).toBe('Active'))
+  })
+
+  it('opens the parent folder with Alt+Up and asks it to show the folder the user left', async () => {
+    const { router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    press('Alt+ArrowUp')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
+    expect(router.options.history.state.reveal).toBe('folder-1')
+  })
+
+  it('acts only on selected rows with the focused-row tweak off', async () => {
+    setTweaks(['t14-focused-row'], false)
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    listing.focused = listing.rows.find((row) => row.name === 'b')!
+
+    press('Delete')
+    await nextTick()
+
+    expect(server.calls.some((call) => call.id === 'node_patch.trash')).toBe(false)
   })
 })

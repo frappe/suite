@@ -39,6 +39,18 @@ const UNDO_DURATION = 10_000
  */
 const changes = new Map<string, symbol[]>()
 
+/** The Undo of each change toast still on screen, newest last. */
+const pendingUndos: { toast: string | number; run: () => void }[] = []
+
+/** Runs the Undo of the newest change toast still on screen, and closes it. Answers whether one ran. */
+export function undoLatest(): boolean {
+  const latest = pendingUndos.at(-1)
+  if (!latest) return false
+  latest.run()
+  toast.dismiss(latest.toast)
+  return true
+}
+
 /** A change the user can take back from its toast. Messages are limited HTML. */
 interface Undoable<Item extends ChangedItem> {
   /** What the toast says the change did. */
@@ -61,17 +73,23 @@ function announce<Item extends ChangedItem>(items: readonly Item[], change: Undo
   const id = Symbol('change')
   for (const item of items) changes.set(item.node, [...(changes.get(item.node) ?? []), id])
   let undone = false
-  toast.success(change.done, {
+  const forget = () => {
+    const index = pendingUndos.findIndex((pending) => pending.run === run)
+    if (index >= 0) pendingUndos.splice(index, 1)
+  }
+  const run = () => {
+    if (undone) return
+    undone = true
+    forget()
+    void takeBack(id, items, change)
+  }
+  const shown = toast.success(change.done, {
     duration: UNDO_DURATION,
-    action: {
-      label: 'Undo',
-      onClick: () => {
-        if (undone) return
-        undone = true
-        void takeBack(id, items, change)
-      },
-    },
+    onDismiss: forget,
+    onAutoClose: forget,
+    action: { label: 'Undo', onClick: run },
   })
+  pendingUndos.push({ toast: shown, run })
 }
 
 async function takeBack<Item extends ChangedItem>(

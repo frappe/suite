@@ -9,6 +9,7 @@ import { getCurrentInstance } from 'vue'
 
 import { useKeySequences, type KeySequenceShortcut, type Letter } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 
 /** What a shortcut runs: the menu option that offers the same action, so the menu's rules apply. */
 export type ListingCommand = Pick<DropdownActionOption, 'onClick' | 'disabled'>
@@ -23,6 +24,17 @@ export interface ListingCommands {
   share?: ListingCommand
   upload?: ListingCommand
   newFolder?: ListingCommand
+  rename?: ListingCommand
+  /** Opens the folder above the open one. */
+  parent?: ListingCommand
+  /** Runs the newest Undo still on screen. Answers whether one ran. */
+  undo?: () => boolean
+}
+
+/** Where the listing is, for the keys that mean something else there. */
+export interface ListingPlace {
+  /** In Trash, the delete keys delete forever. */
+  inTrash: () => boolean
 }
 
 export type ListingView = 'personal' | 'organization' | 'shared' | 'recent' | 'starred'
@@ -46,6 +58,7 @@ export type MenuKey =
   | 'open'
   | 'open-in-new-tab'
   | 'share'
+  | 'rename'
   | 'select'
   | 'remove-from-recent'
   | 'create-folder'
@@ -72,8 +85,16 @@ type Choose = (offered: ListingCommands) => ListingCommand | undefined
  * with the browser's or the system's own; none of them fire in a text field.
  * Call it in a component's setup.
  */
-export function useListingShortcuts(commands: () => ListingCommands, views: ListingViews): void {
+export function useListingShortcuts(
+  commands: () => ListingCommands,
+  views: ListingViews,
+  place: ListingPlace = { inTrash: () => false },
+): void {
   const instance = getCurrentInstance()
+  const deleteKey = useTweak('t14-delete-key')
+  const renameKey = useTweak('t14-rename-key')
+  const parentKey = useTweak('t14-parent-key')
+  const undoKey = useTweak('t14-undo-key')
   /** Menus report a rejected action through the app, so a shortcut does too. */
   async function run(command: ListingCommand, event: KeyboardEvent) {
     try {
@@ -94,13 +115,18 @@ export function useListingShortcuts(commands: () => ListingCommands, views: List
     combo: KeyboardShortcutCombo,
     description: string,
     pick: Choose,
+    { enabled, guarded = false }: { enabled?: () => boolean; guarded?: boolean } = {},
   ): KeyboardShortcutConfig => ({
     combo,
     description,
     group: __('Files'),
+    ...(enabled ? { enabled } : {}),
     // A key the listing does not use now keeps its usual meaning, such as Escape closing a menu.
     preventDefault: false,
-    handler: handle(pick),
+    handler: (event) => {
+      if (guarded && isStray(event)) return
+      handle(pick)(event)
+    },
   })
   const letter = (key: Letter, description: string, pick: Choose): KeySequenceShortcut => ({
     keys: [key],
@@ -115,11 +141,41 @@ export function useListingShortcuts(commands: () => ListingCommands, views: List
     enabled: views.enabled,
     handler: () => void views.open(target),
   })
+  // Delete and Mod+Backspace say what they do here: in Trash they delete forever.
+  const removeKeys = (description: string, enabled: () => boolean) =>
+    (['Mod+Backspace', 'Delete'] as const).map((combo) =>
+      command(combo, description, (offered) => offered.remove, { enabled, guarded: true }),
+    )
   useKeyboardShortcut([
     command('Mod+A', __('Select all'), (offered) => offered.selectAll),
     command('Escape', __('Clear selection'), (offered) => offered.clearSelection),
     command('Ctrl+M', __('Move selected items'), (offered) => offered.move),
-    command('Mod+Backspace', __('Delete selected items'), (offered) => offered.remove),
+    command('Mod+Backspace', __('Delete selected items'), (offered) => offered.remove, {
+      enabled: () => !deleteKey.value,
+    }),
+    ...removeKeys(__('Move selected items to Trash'), () => deleteKey.value && !place.inTrash()),
+    ...removeKeys(__('Delete selected items forever'), () => deleteKey.value && place.inTrash()),
+    command('F2', __('Rename'), (offered) => offered.rename, {
+      enabled: () => renameKey.value,
+      guarded: true,
+    }),
+    command(
+      isApple() ? 'Mod+ArrowUp' : 'Alt+ArrowUp',
+      __('Open parent folder'),
+      (offered) => offered.parent,
+      { enabled: () => parentKey.value, guarded: true },
+    ),
+    {
+      combo: 'Mod+Z',
+      description: __('Undo'),
+      group: __('Files'),
+      enabled: () => undoKey.value,
+      // With nothing to undo, the browser keeps the key, such as Safari reopening a closed tab.
+      preventDefault: false,
+      handler: (event) => {
+        if (!isStray(event) && commands().undo?.()) event.preventDefault()
+      },
+    },
     command('Mod+Enter', __('Open selected item in a new tab'), (offered) => offered.openInNewTab),
   ])
   useKeySequences([
@@ -132,4 +188,20 @@ export function useListingShortcuts(commands: () => ListingCommands, views: List
     view('R', __('Recent'), 'recent'),
     view('F', __('Starred'), 'starred'),
   ])
+}
+
+function isApple(): boolean {
+  return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+}
+
+/**
+ * A key the listing leaves alone: a held key repeating, which would trash one
+ * row after another, or a key pressed in an open menu, which belongs to the menu.
+ */
+function isStray(event: KeyboardEvent): boolean {
+  const target = event.target
+  return (
+    event.repeat ||
+    (target instanceof Element && !!target.closest('[role="menu"], [role="listbox"]'))
+  )
 }

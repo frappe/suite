@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 
+import { setTweaks } from '@/platform/tweaks'
+
+import { getShortcutGroups } from '../../../../../../../node_modules/frappe-ui/src/composables/useKeyboardShortcut'
 import {
   menuCommand,
   useListingShortcuts,
@@ -20,21 +23,23 @@ afterEach(() => {
 })
 
 /** Mounts a listing whose commands are `offered`, and returns the views it opened. */
-function listing(offered: ListingCommands, signedIn = true) {
+function listing(offered: ListingCommands, signedIn = true, inTrash = false) {
   const opened: ListingView[] = []
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp(
     defineComponent({
       setup() {
-        useListingShortcuts(() => offered, {
-          enabled: () => signedIn,
-          open: (view) => opened.push(view),
-        })
+        useListingShortcuts(
+          () => offered,
+          { enabled: () => signedIn, open: (view) => opened.push(view) },
+          { inTrash: () => inTrash },
+        )
         return () =>
           h('div', [
             h('input', { 'aria-label': 'Search' }),
             h('div', { role: 'dialog' }, [h('button', 'Inside a dialog')]),
+            h('div', { role: 'menu' }, [h('button', { role: 'menuitem' }, 'Rename')]),
           ])
       },
     }),
@@ -165,6 +170,86 @@ describe('listing shortcuts', () => {
     expect(share.onClick).not.toHaveBeenCalled()
   })
 })
+
+describe('Delete, F2, parent folder and Undo keys', () => {
+  afterEach(() =>
+    setTweaks(['t14-delete-key', 't14-rename-key', 't14-parent-key', 't14-undo-key'], true),
+  )
+
+  it('removes with Delete and Mod+Backspace, renames with F2 and opens the parent with Alt+Up', () => {
+    const remove = { onClick: vi.fn() }
+    const rename = { onClick: vi.fn() }
+    const parent = { onClick: vi.fn() }
+    listing({ remove, rename, parent })
+
+    press('Delete')
+    press('Backspace', { ctrlKey: true })
+    press('F2')
+    const up = press('ArrowUp', { altKey: true })
+
+    expect(remove.onClick).toHaveBeenCalledTimes(2)
+    expect(rename.onClick).toHaveBeenCalledOnce()
+    expect(parent.onClick).toHaveBeenCalledOnce()
+    expect(up.defaultPrevented).toBe(true)
+  })
+
+  it('ignores a held key and a key pressed in an open menu', () => {
+    const remove = { onClick: vi.fn() }
+    const rename = { onClick: vi.fn() }
+    listing({ remove, rename })
+
+    press('Delete', { repeat: true })
+    press('Delete', {}, document.querySelector('[role="menuitem"]')!)
+    press('F2', {}, document.querySelector('[role="menuitem"]')!)
+
+    expect(remove.onClick).not.toHaveBeenCalled()
+    expect(rename.onClick).not.toHaveBeenCalled()
+  })
+
+  it('keeps Mod+Z for the browser when there is nothing to undo', () => {
+    let undoable = true
+    const undo = vi.fn(() => undoable)
+    listing({ undo })
+
+    expect(press('z', { ctrlKey: true }).defaultPrevented).toBe(true)
+    undoable = false
+    expect(press('z', { ctrlKey: true }).defaultPrevented).toBe(false)
+    expect(undo).toHaveBeenCalledTimes(2)
+  })
+
+  it('names the delete keys by what they do, in Trash and elsewhere', () => {
+    listing({})
+    expect(listed()).toContain('Move selected items to Trash')
+    cleanup?.()
+    listing({}, true, true)
+    expect(listed()).toContain('Delete selected items forever')
+    expect(listed()).not.toContain('Move selected items to Trash')
+  })
+
+  it('switched off, Delete, F2 and Mod+Z do nothing and Mod+Backspace keeps its old name', () => {
+    setTweaks(['t14-delete-key', 't14-rename-key', 't14-parent-key', 't14-undo-key'], false)
+    const remove = { onClick: vi.fn() }
+    const rename = { onClick: vi.fn() }
+    const undo = vi.fn(() => true)
+    listing({ remove, rename, undo })
+
+    press('Delete')
+    press('F2')
+    press('z', { ctrlKey: true })
+    press('Backspace', { ctrlKey: true })
+
+    expect(rename.onClick).not.toHaveBeenCalled()
+    expect(undo).not.toHaveBeenCalled()
+    expect(remove.onClick).toHaveBeenCalledOnce()
+    expect(listed()).toContain('Delete selected items')
+    expect(listed()).not.toContain('Rename')
+  })
+})
+
+/** The descriptions the shortcuts dialog lists. */
+function listed() {
+  return getShortcutGroups().flatMap((group) => group.shortcuts.map((entry) => entry.description))
+}
 
 describe('menu commands', () => {
   const run = () => {}

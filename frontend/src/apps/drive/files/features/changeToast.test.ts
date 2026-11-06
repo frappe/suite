@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { announceCopy, announceMove, announceRestore, announceTrash } from './changeToast'
+import {
+  announceCopy,
+  announceMove,
+  announceRestore,
+  announceTrash,
+  undoLatest,
+} from './changeToast'
 
 // A Drive server that records each move and keeps every node's parent.
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -133,18 +139,28 @@ interface ShownToast {
   message: string
   description?: string
   action?: { label: string; onClick: () => void }
+  onDismiss?: () => void
+  onAutoClose?: () => void
+  closed?: boolean
 }
+// A toast's id is its place in the list; closing one calls its onDismiss, as vue-sonner does.
 const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
 vi.mock('@/platform/feedback', () => ({
   toast: {
     success: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>
-      feedback.toasts.push({ kind: 'success', message, ...options }),
+      feedback.toasts.push({ kind: 'success', message, ...options }) - 1,
     error: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>
-      feedback.toasts.push({ kind: 'error', message, ...options }),
+      feedback.toasts.push({ kind: 'error', message, ...options }) - 1,
+    dismiss: (id: number) => {
+      const shown = feedback.toasts[id]!
+      shown.closed = true
+      shown.onDismiss?.()
+    },
   },
 }))
 
 afterEach(() => {
+  for (const shown of feedback.toasts) shown.onDismiss?.()
   feedback.toasts.length = 0
   net.requests.length = 0
   net.parents.clear()
@@ -329,5 +345,31 @@ describe('Trash and restore toasts with Undo', () => {
       message: 'Could not restore “b”',
       description: 'The folder “b” was in is in Trash.',
     })
+  })
+})
+
+describe('Undo from the keyboard', () => {
+  it('takes back the newest change still on screen, then the one before it', async () => {
+    net.states.set('a', 'Trashed')
+    announceTrash([{ node: 'a', title: 'a' }])
+    announceMove(moved({ b: 'projects' }), 'Marketing')
+
+    expect(undoLatest()).toBe(true)
+    await vi.waitFor(() => expect(net.parents.get('b')).toBe('projects'))
+    expect(feedback.toasts[1]!.closed).toBe(true)
+    expect(net.states.get('a')).toBe('Trashed')
+
+    expect(undoLatest()).toBe(true)
+    await vi.waitFor(() => expect(net.states.get('a')).toBe('Active'))
+    expect(undoLatest()).toBe(false)
+  })
+
+  it('has nothing to undo once the toast closed or its Undo was clicked', () => {
+    announceTrash([{ node: 'a', title: 'a' }])
+    announceTrash([{ node: 'b', title: 'b' }])
+    feedback.toasts[0]!.onAutoClose!()
+    undo(1)
+
+    expect(undoLatest()).toBe(false)
   })
 })

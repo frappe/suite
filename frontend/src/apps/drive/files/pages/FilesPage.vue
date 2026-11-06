@@ -196,6 +196,7 @@
             @dismiss="dismissOutcome"
           />
           <FilesListing
+            ref="listingView"
             class="flex-1"
             :query="listing"
             :presentation="presentation"
@@ -277,7 +278,7 @@ import {
   type DropdownActionOption,
   type DropdownItem,
 } from 'frappe-ui'
-import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, inject, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import {
@@ -303,7 +304,13 @@ import { TransportError } from '@/platform/transport'
 import { useTweak } from '@/platform/tweaks'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
-import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
+import {
+  announceCopy,
+  announceMove,
+  announceTrash,
+  undoLatest,
+  type MovedItem,
+} from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
 import { downloadItems } from '../features/downloads'
 import { emptyState, emptyStateWithActions, type FilesDestination } from '../features/emptyState'
@@ -1024,7 +1031,7 @@ const bulkActions = computed(() => {
           label: __('Download'),
           icon: 'lucide-download',
           disabled: !allow('download'),
-          onClick: () => downloadRows(selectedRows.value),
+          onClick: () => downloadItems(selectedRows.value),
         },
         // A star is personal, so it needs a session.
         ...(signedIn.value
@@ -1149,26 +1156,61 @@ const newOptions = computed<DropdownItem[]>(() => {
   ]
 })
 
+const listingView = useTemplateRef<InstanceType<typeof FilesListing>>('listingView')
+const keysOnFocusedRow = useTweak('t14-focused-row')
+/** The row a key acts on when nothing is selected: the one that shows keyboard focus. */
+function focusedTarget(): DriveNode | null {
+  if (!keysOnFocusedRow.value || selectionMode.value) return null
+  return listingView.value?.focusedRow() ?? null
+}
 // A shortcut runs the option a menu shows for it, so it is refused where the menu is.
 useListingShortcuts(
   () => {
-    const [only, ...others] = selectedRows.value
+    const focused = focusedTarget()
+    const [only, ...others] = focused ? [focused] : selectedRows.value
     const rowMenu = only && !others.length ? rowMenuOptions(only) : []
     const selected = selectionMode.value ? bulkActions.value : []
     const createMenu = canCreate.value ? newOptions.value : []
+    const removeKey = trashActions.value ? 'delete-forever' : 'trash'
     return {
       selectAll: menuCommand(moreOptions.value, 'select-all'),
       clearSelection: selectionMode.value ? { onClick: clearSelected } : undefined,
       move: menuCommand(selected, 'move'),
-      remove: menuCommand(selected, trashActions.value ? 'delete-forever' : 'trash'),
+      remove: menuCommand(focused ? rowMenu : selected, removeKey),
       openInNewTab: menuCommand(rowMenu, 'open-in-new-tab'),
       share: menuCommand(rowMenu, 'share'),
       upload: menuCommand(createMenu, 'upload-files'),
       newFolder: menuCommand(createMenu, 'create-folder'),
+      rename: menuCommand(rowMenu, 'rename'),
+      parent: folderParent.value ? { onClick: openParent } : undefined,
+      undo: undoLatest,
     }
   },
   { enabled: () => signedIn.value, open: openView },
+  { inTrash: () => trashActions.value },
 )
+/** Opens the folder above, with the folder the user came from focused. */
+function openParent() {
+  const parent = folderParent.value
+  if (!parent) return
+  const state = { reveal: parentId.value }
+  void router.push(typeof parent === 'string' ? { path: parent, state } : { ...parent, state })
+}
+// A navigation that should land on an item names it in the history entry.
+const revealing = ref<string | null>(null)
+watch(
+  () => route.fullPath,
+  () => {
+    const id = router.options.history.state.reveal
+    revealing.value = typeof id === 'string' ? id : null
+  },
+  { immediate: true },
+)
+watch([revealing, () => listing.status, listingView], ([id, status, view]) => {
+  if (!id || status === 'pending' || !view) return
+  revealing.value = null
+  void view.reveal(id)
+})
 function openView(view: ListingView) {
   const name = {
     personal: 'files',
@@ -1451,7 +1493,14 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       hideLabel: true,
       options: [
         ...(can.rename
-          ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => beginRename(row) }]
+          ? [
+              {
+                key: 'rename',
+                label: 'Rename',
+                icon: 'lucide-pencil',
+                onClick: () => beginRename(row),
+              },
+            ]
           : []),
         ...(can.move
           ? [
