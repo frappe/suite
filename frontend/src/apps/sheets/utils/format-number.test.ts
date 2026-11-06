@@ -4,6 +4,7 @@ import {
   applyNumberFmt,
   buildNumberFmt,
   dateSerialFromShown,
+  dateShownFromSerial,
   parseNumberFmt,
 } from './format-number.js'
 
@@ -437,6 +438,15 @@ describe('dateSerialFromShown', () => {
   it('adds the time of day', () => {
     expect(dateSerialFromShown('12/9/2025 6:00 PM', 'm/d/yyyy h:mm AM/PM')).toBe(46000.75)
     expect(dateSerialFromShown('12/9/2025 12:00 AM', 'm/d/yyyy h:mm AM/PM')).toBe(46000)
+  })
+  it('round-trips with dateShownFromSerial', () => {
+    for (const [shown, code] of [
+      ['12/9/2025', 'm/d/yyyy'],
+      ['09/12/2025', 'dd/mm/yyyy'],
+      ['2025-12-09', 'yyyy-mm-dd'],
+      ['1/2/2026', 'm/d/yyyy'],
+    ])
+      expect(dateShownFromSerial(dateSerialFromShown(shown, code), code)).toBe(shown)
   })
   it('is NaN for text or a non-date code', () => {
     expect(dateSerialFromShown('hello', 'm/d/yyyy')).toBeNaN()

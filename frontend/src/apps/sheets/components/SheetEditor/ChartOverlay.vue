@@ -21,7 +21,8 @@
     >
       <ChartView
         :config="chart"
-        :matrix="_matrixFor(chart)"
+        :matrix="_sourceFor(chart).matrix"
+        :num-fmts="_sourceFor(chart).numFmts"
         :width="chart.position?.width || 480"
         :height="chart.position?.height || 320"
       />
@@ -67,9 +68,10 @@ const props = defineProps({
   // to the active sub-sheet itself.
   charts: { type: Array, default: () => [] },
   currentSheet: { type: String, required: true },
-  // (sourceSheet, sourceRange) → 2D matrix. Caller-owned so it can pull from
-  // the sheet engine and re-derive on cell edits.
-  getMatrix: { type: Function, required: true },
+  // (sourceSheet, sourceRange, { numFmts }) → { matrix, numFmts }: the 2D
+  // shown values, and their number formats when asked. Caller-owned so it
+  // can pull from the sheet engine and re-derive on cell edits.
+  getSource: { type: Function, required: true },
   // Bumps when the source data should be re-pulled — on refresh and on any
   // sheet cell edit, but NOT on drag/resize/scroll. Part of the matrix cache
   // key so position-only re-renders (drag/resize) reuse the cached matrix
@@ -101,14 +103,17 @@ function _hostStyle(chart) {
 // chartVersion bumps that move/resize trigger on each drag frame. Without the
 // cache, dragging a chart over a 100k-row source re-pulled the whole range
 // (and made ChartView rebuild the ECharts option) every mouse move.
-const _matrixCache = new Map()
-function _matrixFor(chart) {
-  const key = `${chart.sourceSheet}\x00${chart.sourceRange}\x00${props.dataVersion}`
-  const hit = _matrixCache.get(chart.id)
-  if (hit && hit.key === key) return hit.matrix
-  const matrix = props.getMatrix(chart.sourceSheet, chart.sourceRange) || []
-  _matrixCache.set(chart.id, { key, matrix })
-  return matrix
+// Only a scatter chart reads the number formats (for dates in its X column),
+// so big bar and line sources skip the per-cell style read.
+const _sourceCache = new Map()
+function _sourceFor(chart) {
+  const numFmts = chart.chartType === 'scatter'
+  const key = `${chart.sourceSheet}\x00${chart.sourceRange}\x00${numFmts}\x00${props.dataVersion}`
+  const hit = _sourceCache.get(chart.id)
+  if (hit && hit.key === key) return hit.source
+  const source = props.getSource(chart.sourceSheet, chart.sourceRange, { numFmts })
+  _sourceCache.set(chart.id, { key, source })
+  return source
 }
 
 // ── Drag (move) ──────────────────────────────────────────────────────────────

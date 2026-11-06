@@ -238,7 +238,7 @@
         <ChartOverlay
           :charts="chartList"
           :current-sheet="currentSheet"
-          :get-matrix="getChartMatrix"
+          :get-source="getChartSource"
           :data-version="chartMatrixVersion"
           :selected-id="selectedChartId"
           :suppressed="chartDialogOpen"
@@ -504,7 +504,7 @@
       <!-- Chart dialog -->
       <ChartDialog
         v-model="chartDialogOpen"
-        :read-range="_readDisplays"
+        :read-range="_readChartDialogRange"
         :used-extent="_usedExtent"
         :current-sheet="currentSheet"
         :initial-range="chartInitialRange"
@@ -950,7 +950,6 @@ const {
   readWholeSheet: _readWholeSheet,
   sheetExtent: _sheetExtent,
   usedCells: _usedCells,
-  readDisplays: _readDisplays,
   readSourceRange: _readSourceRange,
   clearRect: _clearRect,
   clearSheet: _clearSheet,
@@ -2275,16 +2274,19 @@ const {
   onChartResize,
   onChartRefresh,
   selectChart,
-  getMatrix: getChartMatrix,
+  getSource: getChartSource,
 } = useChartIntegration({
   chart: charts,
-  readRange: (sn, rect) => _readDisplays(sn, rect),
+  readRange: (sn, rect, opts) => _readRect(sn, rect, opts),
   currentSheet,
   contextMenu,
   history,
   isDirty,
   getGrid: () => grid,
 })
+// The chart dialog's preview: shown values and their number formats (a
+// scatter chart reads dates with them; the type can change after the read).
+const _readChartDialogRange = (sn, rect) => _readRect(sn, rect, { numFmts: true })
 
 // Who else is here and what they have selected (collab/presence.ts).
 const presentUsers = collab.users
