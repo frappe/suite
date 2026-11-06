@@ -20,7 +20,12 @@
           <div v-if="column.key !== 'delete'" class="text-base">{{ item }}</div>
 
           <div v-else class="flex">
-            <Button variant="ghost" class="ml-auto" @click="emit('delete', index)">
+            <Button
+              variant="ghost"
+              class="ml-auto"
+              :aria-label="__('Delete')"
+              @click="emit('delete', index)"
+            >
               <template #icon>
                 <Trash2 class="text-ink-gray-5 h-4 w-4" />
               </template>

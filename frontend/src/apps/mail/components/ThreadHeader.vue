@@ -6,7 +6,8 @@
   >
     <Button
       variant="ghost"
-      class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8"
+      class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
+      :aria-label="__('Back')"
       @click="$router.push(backRoute)"
     >
       <template #icon>
@@ -23,8 +24,9 @@
           v-for="action in visibleActions"
           :key="action.label"
           variant="ghost"
-          class="max-sm:!h-8 max-sm:!w-8"
+          class="max-sm:!h-8 max-sm:!w-8 touch-target"
           :tooltip="action.label"
+          :aria-label="action.label"
           @click="action.onClick"
         >
           <template #icon>
@@ -32,7 +34,12 @@
           </template>
         </Button>
         <AdaptiveDropdown v-if="!inDrafts" :options="moveToOptions" :title="__('Move To')">
-          <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
+          <Button
+            variant="ghost"
+            class="max-sm:!h-8 max-sm:!w-8 touch-target"
+            :tooltip="__('Move To')"
+            :aria-label="__('Move To')"
+          >
             <template #icon>
               <FolderInput class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
             </template>
@@ -45,7 +52,12 @@
           :options="folderOptions"
           :title="__('Folders')"
         >
-          <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Folders')">
+          <Button
+            variant="ghost"
+            class="max-sm:!h-8 max-sm:!w-8 touch-target"
+            :tooltip="__('Folders')"
+            :aria-label="__('Folders')"
+          >
             <template #icon>
               <Folders class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
             </template>
@@ -56,6 +68,8 @@
           <Button
             variant="ghost"
             :tooltip="__('Previous Thread (↑/K)')"
+            :aria-label="__('Previous Thread')"
+            aria-keyshortcuts="ArrowUp K"
             :disabled="threadID === threads[0]"
             @click="emit('prevThread')"
           >
@@ -67,6 +81,8 @@
           <Button
             variant="ghost"
             :tooltip="__('Next Thread (↓/J)')"
+            :aria-label="__('Next Thread')"
+            aria-keyshortcuts="ArrowDown J"
             :disabled="threadID === threads.at(-1) && !canGoNext"
             @click="emit('nextThread')"
           >

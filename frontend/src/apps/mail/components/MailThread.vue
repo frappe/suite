@@ -69,6 +69,7 @@
                   variant="ghost"
                   class="shrink-0"
                   :tooltip="isThreadFlagged ? __('Unstar') : __('Star')"
+                  :aria-label="isThreadFlagged ? __('Unstar') : __('Star')"
                   @click="
                     onSetFlagged(
                       thread.map((m) => m.id),
@@ -468,6 +469,7 @@
                               <Button
                                 variant="ghost"
                                 :tooltip="mail.flagged ? __('Unstar') : __('Star')"
+                                :aria-label="mail.flagged ? __('Unstar') : __('Star')"
                                 @click.stop="onSetFlagged(mailCopyIds(mail), !mail.flagged)"
                               >
                                 <template #icon>
@@ -602,6 +604,7 @@
                               class="hover:text-ink-gray-8 disabled:opacity-70"
                               :disabled="downloadingZipMail === mail.name"
                               :title="__('Download all')"
+                              :aria-label="__('Download all')"
                               @click.stop.prevent="downloadAttachmentsAsZip(mail)"
                             >
                               <LoaderCircle

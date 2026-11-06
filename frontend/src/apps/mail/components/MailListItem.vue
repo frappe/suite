@@ -70,7 +70,7 @@
           ['starred', 'search'].includes(mailbox) ||
           (isFullWidth && mailboxesToShow.length)
         "
-        class="flex items-center"
+        class="flex items-center overflow-hidden"
         :class="{ 'min-w-fit': isFullWidth }"
       >
         <Tooltip
@@ -117,6 +117,7 @@
                       />
                       <button
                         class="hidden sm:group-hover/capsule:block"
+                        :aria-label="__('Download {0}', [attachment.filename])"
                         @click.stop.prevent="downloadAttachment(attachment)"
                       >
                         <Download class="hover:text-ink-gray-8 h-4 w-4 shrink-0" />

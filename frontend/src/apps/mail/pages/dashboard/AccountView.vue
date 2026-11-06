@@ -173,6 +173,7 @@
                         variant="ghost"
                         theme="red"
                         class="invisible group-hover:visible"
+                        :aria-label="__('Remove {0}', [entry.email])"
                         @click="removeEmail(entry.email)"
                       >
                         <template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
@@ -210,6 +211,7 @@
                   variant="ghost"
                   theme="red"
                   class="invisible group-hover:visible"
+                  :aria-label="__('Remove {0}', [group.email || group.name])"
                   @click.stop="removeGroup(group.id)"
                 >
                   <template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
@@ -244,6 +246,7 @@
                   variant="ghost"
                   theme="red"
                   class="invisible group-hover:visible"
+                  :aria-label="__('Remove {0}', [list.email || list.name])"
                   @click.stop="removeList(list.id)"
                 >
                   <template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
