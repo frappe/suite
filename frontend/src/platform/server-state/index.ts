@@ -3,11 +3,13 @@ import type { Realtime } from '@/platform/realtime'
 import {
   transport as defaultTransport,
   type MutationRef,
+  type Operation,
   type PageRef,
   type QueryRef,
   type TransferRef,
   type Transport,
 } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
 import { deleteRetiredEntityStore, Entities } from './entities'
 import { recordMutationFailure } from './errors'
@@ -179,11 +181,7 @@ export function createApiClient(
         ),
       )
     }
-    cleanup.push(
-      realtime.subscribe('drive:changed', () =>
-        reads.invalidate((reference) => reference.owner === 'drive'),
-      ),
-    )
+    cleanup.push(...subscribeDriveChanges(realtime, reads))
   }
   return {
     client,
@@ -202,6 +200,37 @@ export function createApiClient(
       reads.dispose()
     },
   }
+}
+
+/**
+ * Drive's change events come in bursts: an upload of N files sends N. One refresh per window
+ * covers a burst. The window starts at the first event and later events do not extend it, so a
+ * long burst still refreshes every window (unified frontend §5.9).
+ */
+const DRIVE_CHANGE_WINDOW_MS = 400
+
+function subscribeDriveChanges(realtime: Realtime, reads: Reads): Array<() => void> {
+  const isDriveRead = (reference: Operation) => reference.owner === 'drive'
+  // `drive:recent` says only the user's Recent list changed. It is one of the views.
+  const isDriveView = (reference: Operation) =>
+    isDriveRead(reference) && reference.id === 'view_list'
+  let pending: ReturnType<typeof setTimeout> | undefined
+  let everything = false
+  const changed = (all: boolean) => {
+    if (!isTweakOn('t22-coalesce')) return reads.invalidate(all ? isDriveRead : isDriveView)
+    everything ||= all
+    pending ??= setTimeout(() => {
+      const predicate = everything ? isDriveRead : isDriveView
+      pending = undefined
+      everything = false
+      reads.invalidate(predicate)
+    }, DRIVE_CHANGE_WINDOW_MS)
+  }
+  return [
+    realtime.subscribe('drive:changed', () => changed(true)),
+    realtime.subscribe('drive:recent', () => changed(!isTweakOn('t22-recent-only'))),
+    () => clearTimeout(pending),
+  ]
 }
 
 function reportError(error: Error): void {

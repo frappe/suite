@@ -2686,6 +2686,10 @@ changed tree. Grant replacement also includes the displaced direct holder.
 Frappe deduplicates identical user/event publications in one transaction.
 Rollback publishes nothing. The event carries no node or root id.
 
+A visit is the exception. It changes only the visitor's Recent list, so it
+publishes the payload-free `drive:recent` to the visitor's room instead, and
+an open page refreshes only its Recent reads.
+
 ---
 
 ## 10. Content app contract

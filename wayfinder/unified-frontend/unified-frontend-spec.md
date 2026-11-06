@@ -932,7 +932,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - After commit, Drive emits one payload-free `drive:changed` event to each
   affected user [T006, Drive §9.5].
 - Observed Drive listing queries debounce the event and refetch their visible
-  listing. The event carries no node or root id [T006].
+  listing. The event carries no node or root id [T006]. The client refreshes
+  once per 400 ms window that starts at the first event, so a long burst still
+  refreshes. A visit sends `drive:recent`, which refreshes only the views
+  [Drive §9.5].
 - Without the event, focus refetch, reconnect refetch, own-write
   normalization and manual refresh stay correct. Remote edits are then not
   live [T006].

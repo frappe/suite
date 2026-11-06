@@ -3,7 +3,9 @@ import { effectScope, nextTick, ref } from 'vue'
 
 import { api } from '@/api'
 import { driveLinks } from '@/apps/drive/client/links'
+import { createRealtime, type SocketLike } from '@/platform/realtime'
 import { createTransport, TransportError } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 import { createApiClient } from './index'
 
@@ -732,5 +734,95 @@ describe('Mail settings through the shared client', () => {
     })
     expect(bytes).toBeInstanceOf(Blob)
     expect(await bytes.text()).toBe('mail attachment')
+  })
+})
+
+describe('Drive change events', () => {
+  class FakeSocket implements SocketLike {
+    private readonly handlers = new Map<string, Set<(payload?: unknown) => void>>()
+    on(event: string, handler: (payload?: unknown) => void) {
+      this.handlers.set(event, (this.handlers.get(event) ?? new Set()).add(handler))
+      return this
+    }
+    off(event: string, handler?: (payload?: unknown) => void) {
+      if (handler) this.handlers.get(event)?.delete(handler)
+      return this
+    }
+    emit() {
+      return this
+    }
+    send(event: string) {
+      for (const handler of this.handlers.get(event) ?? []) handler({})
+    }
+  }
+  let socket: FakeSocket
+  let live: ReturnType<typeof createApiClient>
+  const requested = { children: 0, recents: 0 }
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  beforeEach(() => {
+    socket = new FakeSocket()
+    requested.children = requested.recents = 0
+    fetcher.mockImplementation(async (url) => {
+      if (String(url).includes('/views/recents')) requested.recents += 1
+      else requested.children += 1
+      return answer({ rows: [node()], next_cursor: null })
+    })
+    live = createApiClient(
+      { drive: () => import('@/apps/drive/client/policy').then((module) => module.registration) },
+      {
+        transport: createTransport({ fetch: fetcher, retryBaseMs: 0 }),
+        realtime: createRealtime({ io: () => socket, siteName: 'site', window }),
+        feedback,
+      },
+    )
+  })
+  afterEach(() => {
+    live.dispose()
+    setTweaks(['t22-coalesce', 't22-recent-only'], true)
+  })
+
+  async function observeListings() {
+    const list = observe(() => live.useInfiniteQuery(api.drive.nodes.children, { node: 'root' }))
+    const recent = observe(() => live.useQuery(api.drive.views.list, { view: 'recents' }))
+    await vi.waitFor(() => expect([list.rows.length, recent.data?.rows.length]).toEqual([1, 1]))
+    requested.children = requested.recents = 0
+  }
+
+  it('refreshes each observed Drive read once for a burst of changes within 400 ms', async () => {
+    await observeListings()
+
+    socket.send('drive:changed')
+    await wait(150)
+    socket.send('drive:changed')
+    socket.send('drive:changed')
+    expect(requested).toEqual({ children: 0, recents: 0 })
+
+    await vi.waitFor(() => expect(requested).toEqual({ children: 1, recents: 1 }))
+    await wait(500)
+    expect(requested).toEqual({ children: 1, recents: 1 })
+  })
+
+  it('refreshes at once for every change with t22-coalesce off', async () => {
+    setTweaks(['t22-coalesce'], false)
+    await observeListings()
+
+    socket.send('drive:changed')
+    await vi.waitFor(() => expect(requested).toEqual({ children: 1, recents: 1 }))
+    socket.send('drive:changed')
+    await vi.waitFor(() => expect(requested).toEqual({ children: 2, recents: 2 }))
+  })
+
+  it('refreshes only Recent when a visit is announced, and everything with t22-recent-only off', async () => {
+    await observeListings()
+
+    socket.send('drive:recent')
+    await vi.waitFor(() => expect(requested.recents).toBe(1))
+    await wait(500)
+    expect(requested).toEqual({ children: 0, recents: 1 })
+
+    setTweaks(['t22-recent-only'], false)
+    socket.send('drive:recent')
+    await vi.waitFor(() => expect(requested).toEqual({ children: 1, recents: 2 }))
   })
 })
