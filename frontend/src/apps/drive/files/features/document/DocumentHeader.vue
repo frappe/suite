@@ -99,27 +99,13 @@
         />
       </template>
       <!-- A compact header says it beside the title, before its menus. -->
-      <DocumentEditedNote
-        v-if="isCompact && shownNote"
-        class="ms-1 me-2 whitespace-nowrap text-sm text-ink-gray-5"
-        :class="saveNote ? '' : 'max-md:hidden'"
-        :aria-live="saveNote ? 'polite' : 'off'"
-        :text="shownNote"
-        :details="noteDetails"
-      />
+      <DocumentEditedNote v-if="isCompact && shownNote" class="ms-1 me-2" v-bind="note" />
       <slot name="status" />
       <slot name="menus" />
     </div>
 
     <div class="flex shrink-0 items-center gap-1" :class="centering.end">
-      <DocumentEditedNote
-        v-if="!isCompact && shownNote"
-        class="mr-1 whitespace-nowrap text-sm text-ink-gray-5"
-        :class="saveNote ? '' : 'max-md:hidden'"
-        :aria-live="saveNote ? 'polite' : 'off'"
-        :text="shownNote"
-        :details="noteDetails"
-      />
+      <DocumentEditedNote v-if="!isCompact && shownNote" class="mr-1" v-bind="note" />
       <slot name="actions" />
       <Button
         v-for="name in panels"
@@ -283,6 +269,13 @@ const noteDetails = computed(() => {
   const { createdAt, createdBy } = props.session
   return editedDetails(edited.value, createdAt ? new Date(createdAt) : null, createdBy)
 })
+// A note about saving shows on every width and is announced; the time edited shows on wide screens only
+const note = computed(() => ({
+  class: ['whitespace-nowrap text-sm text-ink-gray-5', props.saveNote ? '' : 'max-md:hidden'],
+  'aria-live': props.saveNote ? 'polite' : 'off',
+  text: shownNote.value,
+  details: noteDetails.value,
+}))
 const centering = computed(() => (props.layout === 'centered' ? CENTERED : UNCENTERED))
 const trashed = computed(() => props.session.state.value === 'Trashed')
 const renamable = computed(() =>
