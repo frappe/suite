@@ -55,7 +55,15 @@
           @contextmenu="onPaneContextMenu"
         >
           <div class="flex h-7 items-center justify-between gap-2">
-            <template v-if="selectionMode">
+            <SelectionBar
+              v-if="selectionMode && countFirstSelectionBar"
+              :count="selection.length"
+              :actions="bulkActions"
+              :menu="onlySelected ? selectionMenu(rowMenuOptions(onlySelected)) : []"
+              :compact="narrow"
+              @done="clearSelected"
+            />
+            <template v-else-if="selectionMode">
               <div class="flex min-w-0 items-center gap-2">
                 <Button
                   v-for="action in bulkActions"
@@ -303,7 +311,9 @@ import { observePreviewRefresh } from '../features/previewRefresh'
 import { recentFiles } from '../features/recent'
 import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
+import { folderMenu, selectionMenu } from '../features/rowMenus'
 import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
+import SelectionBar from '../features/SelectionBar.vue'
 import { copyLink } from '../features/share/shareFormat'
 import {
   menuCommand,
@@ -699,6 +709,11 @@ const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value
 const selectedRows = computed(() =>
   listing.rows.filter((row) => selection.value.includes(row.name)),
 )
+const countFirstSelectionBar = useTweak('t3-selection-menu')
+/** The selected item, when it is the only one. */
+const onlySelected = computed(() =>
+  selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
+)
 const empty = computed(() =>
   emptyState({
     destination: props.destination,
@@ -839,11 +854,17 @@ const dateColumn = computed<FilesDateColumn>(() =>
 const offeredColumns = computed(() =>
   inOwnSpace.value ? FILES_COLUMNS.filter((column) => column !== 'owner') : FILES_COLUMNS,
 )
-/** The open folder's own actions. A root is named by the sidebar and offers none. */
-const folderActions = computed<DropdownActionOption[]>(() => {
+/** The open folder, when the page shows it. A root is named by the sidebar and offers no actions. */
+const openFolder = computed(() => {
   const folder = detail.data
-  if (props.destination !== 'folder' || isSearching.value || !folder || folder.kind !== 'folder')
-    return []
+  return props.destination === 'folder' && !isSearching.value && folder?.kind === 'folder'
+    ? folder
+    : null
+})
+/** The open folder's own actions. */
+const folderActions = computed<DropdownActionOption[]>(() => {
+  const folder = openFolder.value
+  if (!folder) return []
   const can = nodeActions(folder, signedIn.value)
   return [
     ...(can.share
@@ -902,8 +923,18 @@ const trashedNotice = computed<{
     secondary: restore && remove,
   }
 })
+const wholeFolderMenu = useTweak('t3-folder-menu')
+/** The open folder's part of the "…" menu: the actions of its own row menu. */
+const folderGroups = computed<DropdownItem[]>(() => {
+  if (!wholeFolderMenu.value)
+    return folderActions.value.length
+      ? [{ group: 'This folder', options: folderActions.value }]
+      : []
+  const folder = openFolder.value
+  return folder ? folderMenu(rowMenuOptions(folder), () => trashOpenFolder(folder)) : []
+})
 const moreOptions = computed<DropdownItem[]>(() => [
-  ...(folderActions.value.length ? [{ group: 'This folder', options: folderActions.value }] : []),
+  ...folderGroups.value,
   ...(hasRows.value
     ? [
         {
@@ -1357,7 +1388,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       group: 'Open',
       hideLabel: true,
       options: [
-        { label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
+        { key: 'open', label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
         ...(can.openInNewTab
           ? [
               {
@@ -1423,10 +1454,16 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       group: 'Select',
       hideLabel: true,
       options: [
-        { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
+        {
+          key: 'select',
+          label: 'Select',
+          icon: 'lucide-square-check',
+          onClick: () => selectNode(row, false),
+        },
         ...(recentActions.value
           ? [
               {
+                key: 'remove-from-recent',
                 label: 'Remove from Recent',
                 icon: 'lucide-list-x',
                 onClick: () => removeFromRecent([row]),
@@ -1442,6 +1479,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.trash
           ? [
               {
+                key: 'trash',
                 label: 'Move to trash',
                 icon: 'lucide-trash-2',
                 theme: 'red' as const,
@@ -1452,6 +1490,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.restore
           ? [
               {
+                key: 'restore',
                 label: 'Restore',
                 icon: 'lucide-undo-2',
                 onClick: () => trash.restore([itemOf(row)]),
@@ -1461,6 +1500,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.deleteForever
           ? [
               {
+                key: 'delete-forever',
                 label: 'Delete forever',
                 icon: 'lucide-trash-2',
                 theme: 'red' as const,
@@ -1518,6 +1558,13 @@ async function runPurge() {
 async function trashRow(row: DriveNode) {
   const item = itemOf(row)
   if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
+}
+/** A trashed folder opens read-only, so the page goes up to its parent first. */
+async function trashOpenFolder(folder: DriveNode) {
+  const parent = folderParent.value
+  if (!(await trashMutation.run({ node: folder.name, state: 'Trashed' }))) return
+  if (parent) await router.replace(parent)
+  announceTrash([itemOf(folder)])
 }
 /** A folder deleted forever is gone, so the page goes back to the Trash it was in. */
 async function purgeOpenFolder(item: { node: string; title: string }, folder: DriveNode) {

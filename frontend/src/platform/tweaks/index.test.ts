@@ -23,21 +23,21 @@ describe('tweaks', () => {
 
   it('updates a component at once, and a switch survives a reload', async () => {
     const { setTweaks, useTweak } = await load()
-    const folderMenu = useTweak('t3')
-    const label = computed(() => (folderMenu.value ? 'new' : 'old'))
+    const opensAtOnce = useTweak('t8')
+    const label = computed(() => (opensAtOnce.value ? 'new' : 'old'))
     expect(label.value).toBe('new')
 
-    setTweaks(['t3', 't7'], false)
+    setTweaks(['t8', 't7'], false)
     await nextTick()
     expect(label.value).toBe('old')
 
     const reloaded = await load()
-    expect(reloaded.isTweakOn('t3')).toBe(false)
+    expect(reloaded.isTweakOn('t8')).toBe(false)
     expect(reloaded.isTweakOn('t7')).toBe(false)
-    expect(reloaded.isTweakOn('t4')).toBe(true)
+    expect(reloaded.isTweakOn('t6')).toBe(true)
 
-    reloaded.setTweaks(['t3'], true)
-    expect((await load()).isTweakOn('t3')).toBe(true)
+    reloaded.setTweaks(['t8'], true)
+    expect((await load()).isTweakOn('t8')).toBe(true)
   })
 
   it('keeps working when browser storage throws', async () => {

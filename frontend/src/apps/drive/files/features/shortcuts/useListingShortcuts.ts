@@ -34,16 +34,20 @@ export interface ListingViews {
 }
 
 /**
- * The fixed keys of the menu options a shortcut runs. A key stays the same
- * when the visible label is translated or reworded.
+ * The fixed keys of the menu options that shortcuts run or menus leave out. A
+ * key stays the same when the visible label is translated or reworded.
  */
 export type MenuKey =
   | 'select-all'
   | 'move'
   | 'trash'
   | 'delete-forever'
+  | 'restore'
+  | 'open'
   | 'open-in-new-tab'
   | 'share'
+  | 'select'
+  | 'remove-from-recent'
   | 'create-folder'
   | 'upload-files'
   | 'upload-folder'

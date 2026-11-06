@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { TransportError, type Operation } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 // A Drive server that keeps the caller's Recent, stars and one folder's children.
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -42,7 +43,13 @@ vi.mock('@/platform/transport', async (original) => {
                 state: 'Active',
               }),
               access: { role: server.folderRole },
+              breadcrumbs: [{ name: 'root', title: 'My files' }],
             }
+          case 'node_patch.trash': {
+            const trashed = node(input.node)
+            if (trashed) trashed.state = 'Trashed'
+            return trashed
+          }
           case 'node_children':
             return {
               rows: [...server.nodes.values()].filter((row) => row.parent_node === input.node),
@@ -101,9 +108,25 @@ vi.mock('@/platform/feedback', async () => {
     feedback.toasts.push({ kind, message, options })
     return feedback.toasts.length
   }
+  // A menu lists its options beside its trigger, so a test can choose one.
+  type Option = { label?: string; onClick?: () => unknown; options?: Option[] }
+  const menu = defineComponent({
+    props: { options: { type: Array as PropType<Option[]>, default: () => [] } },
+    setup:
+      (props, { slots }) =>
+      () =>
+        h('div', { 'data-menu': '' }, [
+          slots.default?.(),
+          ...props.options
+            .flatMap((item) => item.options ?? [item])
+            .map((option) =>
+              h('button', { role: 'menuitem', onClick: () => option.onClick?.() }, option.label),
+            ),
+        ]),
+  })
   return {
     ContextMenu: slotOnly,
-    Dropdown: slotOnly,
+    Dropdown: menu,
     confirm: async () => true,
     reportMutationError: (error: Error) => show('error')(error.message),
     toast: {
@@ -268,6 +291,7 @@ afterEach(() => {
   dialogs.share.mockClear()
   keys.shortcuts = []
   vi.unstubAllGlobals()
+  setTweaks(['t3-folder-menu', 't3-selection-menu'], true)
   document.body.innerHTML = ''
 })
 
@@ -275,6 +299,7 @@ async function mount(path: string): Promise<{ root: HTMLElement; router: Router 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/drive', component: { render: () => null } },
       {
         path: '/drive/recent',
         name: 'files-recent',
@@ -304,6 +329,57 @@ function menuItem(row: string, label: string) {
     .flatMap((group) => group.options)
     .find((item) => item.label === label)
 }
+
+/** The options of the menu whose trigger is named `trigger`, or none when it is not shown. */
+function menuOf(root: HTMLElement, trigger: string): string[] {
+  const menu = root.querySelector(`[aria-label="${trigger}"]`)?.closest('[data-menu]')
+  return [...(menu?.querySelectorAll(':scope > [role="menuitem"]') ?? [])].map(
+    (item) => item.textContent ?? '',
+  )
+}
+function choose(root: HTMLElement, trigger: string, option: string) {
+  const menu = root.querySelector(`[aria-label="${trigger}"]`)?.closest('[data-menu]')
+  const items = [...(menu?.querySelectorAll<HTMLElement>(':scope > [role="menuitem"]') ?? [])]
+  items.find((item) => item.textContent === option)?.click()
+}
+
+describe("The open folder's menu", () => {
+  it('offers its row actions, and leaves the folder it moves to Trash', async () => {
+    server.folderRole = 40
+    server.nodes.set(
+      'folder-7',
+      node('folder-7', 'Archive', { kind: 'folder', parent_node: 'root', mime: null }),
+    )
+    const { root, router } = await mount('/drive/f/folder-7/archive')
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Rename'))
+
+    const offered = menuOf(root, 'More file actions')
+    expect(offered).toEqual(
+      expect.arrayContaining(['Details', 'Rename', 'Move', 'Star', 'Move to trash']),
+    )
+    expect(offered).not.toContain('Open')
+    expect(offered).not.toContain('Select')
+
+    choose(root, 'More file actions', 'Move to trash')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
+    expect(server.nodes.get('folder-7')?.state).toBe('Trashed')
+    expect(feedback.toasts.at(-1)?.message).toMatch(/^Moved .*Archive.* to Trash$/)
+  })
+
+  it('offers Share, Copy link and Rename folder with the tweak off', async () => {
+    setTweaks(['t3-folder-menu'], false)
+    server.folderRole = 40
+    const { root } = await mount('/drive/f/folder-8/drafts')
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Rename folder'))
+
+    expect(menuOf(root, 'More file actions')).toEqual([
+      'Copy link',
+      'Rename folder',
+      'Keyboard shortcuts',
+    ])
+  })
+})
 
 describe('Recent', () => {
   it('removes an item from Recent from its row menu', async () => {
@@ -562,6 +638,40 @@ describe('A selection', () => {
       kind: 'loading',
       message: 'Preparing 2 items for download',
     })
+  })
+
+  it('leads with the count, and gives one item its row menu without Select', async () => {
+    server.folderRole = 40
+    const root = await select('a')
+
+    const count = [...root.querySelectorAll('span')].find(
+      (span) => span.textContent === '1 selected',
+    )
+    const move = bulkButton(root, 'Move')
+    expect(count && move && count.compareDocumentPosition(move)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    const offered = menuOf(root, 'More actions')
+    expect(offered).toEqual(expect.arrayContaining(['Rename', 'Details', 'Move to trash']))
+    expect(offered).not.toContain('Select')
+
+    menuItem('c', 'Select')?.onClick()
+    await nextTick()
+    expect(menuOf(root, 'More actions')).toEqual([])
+  })
+
+  it('keeps the count after the actions, with no "…", with the tweak off', async () => {
+    setTweaks(['t3-selection-menu'], false)
+    const root = await select('a')
+
+    const count = [...root.querySelectorAll('span')].find(
+      (span) => span.textContent === '1 selected',
+    )
+    const move = bulkButton(root, 'Move')
+    expect(count && move && count.compareDocumentPosition(move)).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING,
+    )
+    expect(root.querySelector('[aria-label="More actions"]')).toBeNull()
   })
 
   it('stars every item, then offers to unstar them all', async () => {

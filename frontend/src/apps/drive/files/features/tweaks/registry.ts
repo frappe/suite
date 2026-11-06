@@ -27,7 +27,8 @@ export interface Tweak {
 export const tweaks = [
   { id: 't1', item: 1, group: 'Bugs', label: 'No false "Change your own access?" warning', description: 'Changing the workspace access as the owner no longer asks whether you want to change your own access.', ready: false },
   { id: 't2', item: 2, group: 'Bugs', label: 'Page stays still behind the share dialog', description: 'Changing access no longer redraws the sidebar, breadcrumb and listing behind the share dialog.', ready: true },
-  { id: 't3', item: 3, group: 'Merge similar concepts', label: 'One action list per item', description: 'The folder menu, the one-item selection bar and the row menu offer the same actions, including Upload new version.', ready: false },
+  { id: 't3-folder-menu', item: 3, group: 'Merge similar concepts', label: 'Folder menu has the row actions', description: 'The open folder\'s "…" menu offers the same actions as its row menu, and Move to trash goes up to the parent folder.', ready: true },
+  { id: 't3-selection-menu', item: 3, group: 'Merge similar concepts', label: 'Selection bar with "…"', description: 'The selection bar shows the count first, and one selected item gets a "…" button with its row menu.', ready: true },
   { id: 't4', item: 4, group: 'Merge similar concepts', label: 'One name per thing', description: 'Types, locations, access levels and storage use the same words everywhere.', ready: false },
   { id: 't5', item: 5, group: 'Merge similar concepts', label: 'One way to change a role', description: 'Every role menu in the share dialog lists the roles at the top with a check, in one control style.', ready: false },
   { id: 't6', item: 6, group: 'Merge similar concepts', label: 'One byte format', description: 'The listing and the upload tracker show sizes with the same units.', ready: false },
