@@ -164,7 +164,6 @@
 /* The cell menu's button sits inside the selected cell's corner, a chevron rather than dots */
 .writer-table-grip.is-cell {
   border-radius: 6px;
-  cursor: pointer;
 }
 
 .writer-table-grip:is(:hover, .is-open) {
