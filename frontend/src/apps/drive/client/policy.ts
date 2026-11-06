@@ -38,6 +38,25 @@ function scopedNodes(input: unknown): string[] {
     (id): id is string => typeof id === 'string' && id !== '',
   )
 }
+/** What a batch changes on each node it names, while it is on its way (t26). */
+function batchPatch(input: unknown): Record<string, unknown> | undefined {
+  if (!isTweakOn('t26-optimistic-remove')) return undefined
+  const { state, parent_node } = record(record(input).patch)
+  const patch = {
+    ...(typeof state === 'string' ? { state } : {}),
+    ...(typeof parent_node === 'string' ? { parent_node } : {}),
+  }
+  return Object.keys(patch).length ? patch : undefined
+}
+/** The nodes a batch answered as failed. */
+function failedNodes(_input: unknown, output: unknown): readonly string[] {
+  const failed = record(output).failed
+  return Array.isArray(failed)
+    ? failed
+        .map((failure) => record(failure).node)
+        .filter((id): id is string => typeof id === 'string')
+    : []
+}
 const access: Effects = {
   touches: node,
   invalidates: ACCESS,
@@ -54,7 +73,13 @@ export const mutationEffects = new Map<string, Effects | 'none'>(
     'node_create.create_file': { invalidates: STORAGE },
     'node_create.create_link': { invalidates: LISTS },
     'node_create.create_document': { invalidates: LISTS },
-    node_batch: { touches: nodes, invalidates: STORAGE },
+    node_batch: {
+      touches: nodes,
+      invalidates: STORAGE,
+      entityTag: 'DriveNode',
+      optimistic: batchPatch,
+      failed: failedNodes,
+    },
     node_batch_purge: { touches: nodes, invalidates: STORAGE },
     'node_patch.rename': {
       touches: node,
@@ -177,8 +202,13 @@ export const registration: OwnerRegistration = {
     }
     if (reference.id === 'roots_discover') policy.staleTime = 5 * 60_000
     if (reference.id === 'node_children') {
+      // A trashed folder lists what was trashed with it: rows whose trash root is above them.
       policy.member = (row, input) =>
-        row.parent_node === record(input).node && row.state === 'Active'
+        row.parent_node === record(input).node &&
+        (row.state === 'Active' ||
+          (row.state === 'Trashed' &&
+            typeof row.trash_root === 'string' &&
+            row.trash_root !== row.name))
     }
     if (reference.id === 'view_list') {
       policy.member = (row, input) => {

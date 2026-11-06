@@ -76,8 +76,8 @@ export class Entities {
     input: I,
     ids: readonly string[],
     update?: (input: I, entity: Record<string, unknown>) => Record<string, unknown> | void,
-  ): () => void {
-    const snapshots: Array<{ key: string; before: Entity; attempt: Entity }> = []
+  ): (only?: readonly string[]) => void {
+    const snapshots: Array<{ id: string; key: string; before: Entity; attempt: Entity }> = []
     if (tag && update) {
       for (const id of ids) {
         const key = this.key(partition, tag, id)
@@ -88,11 +88,13 @@ export class Entities {
         const attempt = { ...before, data: { ...before.data, ...patch } }
         this.records.set(key, attempt)
         const stored = this.records.get(key)
-        if (stored) snapshots.push({ key, before, attempt: stored })
+        if (stored) snapshots.push({ id, key, before, attempt: stored })
       }
     }
-    return () => {
-      for (const { key, before, attempt } of snapshots) {
+    // Undoes every patch, or only those of the ids in `only`.
+    return (only) => {
+      for (const { id, key, before, attempt } of snapshots) {
+        if (only && !only.includes(id)) continue
         if (this.records.get(key) === attempt) this.records.set(key, before)
       }
     }

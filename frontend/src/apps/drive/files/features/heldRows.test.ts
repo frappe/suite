@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, ref } from 'vue'
 
+import type { DriveNode } from '@/apps/drive/client/types'
 import type { InfiniteQueryState } from '@/platform/server-state'
 
-import { heldWhileRearranging } from './heldRows'
+import { heldWhileRearranging, withCreatedRows, type ListingOrder } from './heldRows'
 
 interface ListingState extends Omit<InfiniteQueryState<string>, 'status' | 'rows'> {
   status: InfiniteQueryState<string>['status']
@@ -64,5 +65,93 @@ describe('rows held while a listing is rearranged', () => {
     await view.read()
     await view.settle([])
     expect(view.shown.rows).toEqual([])
+  })
+  it('says new rows are coming once the old ones have shown for a moment', async () => {
+    vi.useFakeTimers()
+    const view = listing()
+    await view.settle(['a', 'b'])
+    await view.read()
+    expect(view.shown.isHeld).toBe(false)
+    await vi.advanceTimersByTimeAsync(150)
+    expect(view.shown.isHeld).toBe(true)
+    await view.settle(['b', 'a'])
+    expect(view.shown.isHeld).toBe(false)
+    vi.useRealTimers()
+  })
+})
+
+describe('rows this tab created', () => {
+  const owner = { id: 'me@example.com', full_name: 'Me', user_image: null }
+  function row(name: string, title: string, extra: Partial<DriveNode> = {}): DriveNode {
+    return {
+      name,
+      title,
+      kind: 'folder',
+      parent_node: 'folder-a',
+      root: 'root',
+      state: 'Active',
+      trash_root: null,
+      size: 0,
+      mime: null,
+      url: null,
+      content_doctype: null,
+      content_docname: null,
+      is_template: 0,
+      owner,
+      creation: null,
+      modified: '2026-01-01 10:00:00',
+      content_modified: null,
+      ...extra,
+    }
+  }
+  function listing(rows: DriveNode[], hasNext = false) {
+    const state = reactive({ status: 'success' as const, rows, hasNext })
+    const order = ref<ListingOrder | null>({ place: 'folder-a', sort: 'title', ascending: true })
+    const created = withCreatedRows(
+      state as unknown as InfiniteQueryState<DriveNode>,
+      () => order.value,
+    )
+    const titles = () => created.listing.rows.map((each) => each.title)
+    return { state, order, created, titles }
+  }
+  const loaded = () => [
+    row('f1', 'Archive'),
+    row('f2', 'drafts'),
+    row('x1', 'notes.txt', { kind: 'file', mime: 'text/plain' }),
+  ]
+
+  it('shows a new folder where the server sorts it: folders first, by name without case', () => {
+    const view = listing(loaded())
+    view.created.add(row('new', 'Budget'))
+    expect(view.titles()).toEqual(['Archive', 'Budget', 'drafts', 'notes.txt'])
+  })
+
+  it('follows the direction and the sort, and a link sorts among files', () => {
+    const view = listing(loaded())
+    view.order.value = { place: 'folder-a', sort: 'modified', ascending: false }
+    view.created.add(row('new', 'Zebra', { modified: '2026-06-01 09:00:00' }))
+    view.created.add(row('link', 'Aardvark', { kind: 'link', modified: '2026-06-01 09:00:00' }))
+    expect(view.titles()).toEqual(['Zebra', 'Archive', 'drafts', 'Aardvark', 'notes.txt'])
+  })
+
+  it('waits for its page when it sorts after the last loaded row', () => {
+    const view = listing(loaded(), true)
+    view.created.add(row('new', 'Zulu', { kind: 'link' }))
+    expect(view.titles()).toEqual(['Archive', 'drafts', 'notes.txt'])
+  })
+
+  it('shows the read’s copy once a read has it, and nothing in another place', async () => {
+    const view = listing(loaded())
+    view.created.add(row('new', 'Budget'))
+    view.state.rows = [...loaded(), row('new', 'Budget (renamed)')]
+    await nextTick()
+    expect(view.titles()).toEqual(['Archive', 'drafts', 'notes.txt', 'Budget (renamed)'])
+    view.state.rows = loaded()
+    await nextTick()
+    expect(view.titles()).toEqual(['Archive', 'drafts', 'notes.txt'])
+
+    view.created.add(row('other', 'Budget'))
+    view.order.value = { place: 'folder-b', sort: 'title', ascending: true }
+    expect(view.titles()).toEqual(['Archive', 'drafts', 'notes.txt'])
   })
 })

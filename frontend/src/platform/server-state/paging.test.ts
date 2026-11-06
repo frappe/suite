@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
 
 import { createTransport, type MutationRef, type PageRef } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 import { createApiClient } from './index'
 
@@ -196,6 +197,158 @@ describe('shared paging and access contexts', () => {
     expect(new Headers(fetch.mock.calls[2][1]?.headers).get('X-Link')).toBe('secret-B')
     held[2](json(null))
     await write
+  })
+})
+
+describe('a write that takes rows out of a paged listing (t26-optimistic-remove)', () => {
+  type Item = { id: string; gone?: boolean }
+  const items: PageRef<{ start?: number }, Item, string, { rows: Item[]; more: boolean }> = {
+    kind: 'query',
+    owner: 'fixture',
+    id: 'items',
+    method: 'GET',
+    path: '/items',
+    page: { offset: 'start', rows: 'rows', more: 'more' },
+    entity: { tag: 'Item', id: 'id' },
+  }
+  const remove: MutationRef<{ ids: string[] }, { failed: string[] }> = {
+    kind: 'mutation',
+    owner: 'fixture',
+    id: 'remove',
+    method: 'POST',
+    path: '/remove',
+  }
+  const field = (value: unknown, key: string): unknown =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined
+  const strings = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((id) => typeof id === 'string') : []
+
+  let stored: string[]
+  let posted: string[] | null
+  let respond: (response: Response) => void
+  /** The server removes the posted ids except `failed`, and says which failed. */
+  function accept(failed: string[] = []) {
+    stored = stored.filter((id) => !posted?.includes(id) || failed.includes(id))
+    respond(json({ failed }))
+  }
+  const refuse = () => respond(json({ type: 'PermissionError', message: 'Read only' }, 403))
+  const requested: number[] = []
+  function engine() {
+    stored = ['a', 'b', 'c', 'd', 'e', 'f']
+    posted = null
+    requested.length = 0
+    const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posted = strings(field(JSON.parse(String(init.body)), 'ids'))
+        return new Promise<Response>((resolve) => (respond = resolve))
+      }
+      const start = Number(new URL(String(url), 'http://test').searchParams.get('start') || 0)
+      requested.push(start)
+      return json({
+        rows: stored.slice(start, start + 2).map((id) => ({ id })),
+        more: start + 2 < stored.length,
+      })
+    })
+    const api = createApiClient(
+      {
+        fixture: async () => ({
+          policy: (reference) =>
+            reference.kind === 'query'
+              ? { member: (row) => row.gone !== true }
+              : {
+                  effects: {
+                    touches: (input) => strings(field(input, 'ids')),
+                    entityTag: 'Item',
+                    invalidates: ['items'],
+                    optimistic: () => ({ gone: true }),
+                    failed: (_input, output) => strings(field(output, 'failed')),
+                  },
+                },
+        }),
+      },
+      { transport: createTransport({ fetch, retryBaseMs: 0 }) },
+    )
+    clients.push(api)
+    return api
+  }
+  async function twoPages(api: ReturnType<typeof engine>) {
+    const list = observer(() => api.useInfiniteQuery(items, {}))
+    await vi.waitFor(() => expect(list.rows).toHaveLength(2))
+    await list.fetchNext()
+    expect(ids(list)).toEqual(['a', 'b', 'c', 'd'])
+    return list
+  }
+  const ids = (list: { rows: readonly Item[] }) => list.rows.map((row) => row.id)
+  afterEach(() => setTweaks(['t26-optimistic-remove'], true))
+
+  it('hides the row before the answer, and a refusal puts it back in its place', async () => {
+    const api = engine()
+    const list = await twoPages(api)
+
+    const write = api.client.mutation(remove, { ids: ['b'] }, { silent: true })
+    const rejection = expect(write).rejects.toMatchObject({ type: 'PermissionError' })
+    await vi.waitFor(() => expect(ids(list)).toEqual(['a', 'c', 'd']))
+    refuse()
+    await rejection
+
+    expect(ids(list)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('reads the next page after the hidden row, so paging neither skips nor repeats a row', async () => {
+    const api = engine()
+    const list = await twoPages(api)
+
+    const write = api.client.mutation(remove, { ids: ['b'] }, { silent: true })
+    await vi.waitFor(() => expect(ids(list)).toEqual(['a', 'c', 'd']))
+    await list.fetchNext()
+    expect(requested.at(-1)).toBe(4)
+    expect(ids(list)).toEqual(['a', 'c', 'd', 'e', 'f'])
+
+    accept()
+    await write
+    await vi.waitFor(() => expect(list.isFetching).toBe(false))
+    expect(ids(list)).toEqual(['a', 'c', 'd', 'e', 'f'])
+    expect(list.hasNext).toBe(false)
+  })
+
+  it('brings back only the rows a batch answers as failed', async () => {
+    const api = engine()
+    const list = await twoPages(api)
+
+    const write = api.client.mutation(remove, { ids: ['a', 'b', 'c', 'd'] }, { silent: true })
+    await vi.waitFor(() => expect(ids(list)).toEqual([]))
+    accept(['b', 'd'])
+    await write
+
+    expect(ids(list)).toEqual(['b', 'd'])
+    await vi.waitFor(() => expect(list.isFetching).toBe(false))
+    expect(ids(list)).toEqual(['b', 'd', 'e', 'f'])
+  })
+
+  it('brings back every row when the batch fails as a whole', async () => {
+    const api = engine()
+    const list = await twoPages(api)
+
+    const write = api.client.mutation(remove, { ids: ['a', 'c'] }, { silent: true })
+    const rejection = expect(write).rejects.toMatchObject({ type: 'PermissionError' })
+    await vi.waitFor(() => expect(ids(list)).toEqual(['b', 'd']))
+    refuse()
+    await rejection
+
+    expect(ids(list)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('keeps the row until the answer with the tweak off', async () => {
+    setTweaks(['t26-optimistic-remove'], false)
+    const api = engine()
+    const list = await twoPages(api)
+
+    const write = api.client.mutation(remove, { ids: ['b'] }, { silent: true })
+    await vi.waitFor(() => expect(posted).toEqual(['b']))
+    expect(ids(list)).toEqual(['a', 'b', 'c', 'd'])
+    accept()
+    await write
+    expect(ids(list)).toEqual(['a', 'c', 'd'])
   })
 })
 
