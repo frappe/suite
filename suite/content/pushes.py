@@ -26,7 +26,7 @@ from frappe.utils import now_datetime
 from frappe.utils.background_jobs import get_redis_conn
 from redis.exceptions import RedisError
 
-from suite.content import admission, capacity, ingest, live, restores, stage, updates
+from suite.content import admission, capacity, ingest, live, restore_notice, restores, stage, updates
 from suite.content.db import Unhex, insert_into
 from suite.content.editors import EditorSpec, spec_of
 from suite.content.log import Refusal, chain_next
@@ -385,9 +385,12 @@ def push_locked(app: str, doc_id: str, doc: frappe._dict, incoming: Incoming, us
         frappe.db.rollback()
         raise
 
-    is_restore = unsent.header.restore is not None
-    live.publish_row(app, doc_id, doc.lineage, rev, unsent.header.schema, unsent.payload, restore=is_restore)
-    if is_restore:
+    token = unsent.header.restore
+    live.publish_row(
+        app, doc_id, doc.lineage, rev, unsent.header.schema, unsent.payload, restore=token is not None
+    )
+    if token is not None:
+        restore_notice.landed(app, doc_id, token, rev)
         live.publish_control(app, doc_id, doc.lineage, kind="restored", restore_rev=rev)
 
     return {"rev": rev, "head": rev, "chain": chain.hex(), "acked": unsent.header.seq_to, "pace_ms": PACE_MS}

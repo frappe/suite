@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Literal, NotRequired, TypedDict
 
 import frappe
@@ -11,6 +12,7 @@ from frappe.core.doctype.user.user import get_timezones, switch_theme, update_pa
 from frappe.handler import logout
 from frappe.translate import get_boot_translations
 
+from suite import drive
 from suite.api import account, people
 from suite.api.admin_lifecycle import ROUTES as LIFECYCLE_ROUTES
 from suite.api.admin_lifecycle import (
@@ -123,6 +125,12 @@ class InvitationResult(TypedDict):
 class PeopleQuery(TypedDict, total=False):
     q: str
     cursor: str
+    node: str
+
+
+class PeopleLookupQuery(TypedDict):
+    node: str
+    users: list[str]
 
 
 class UserKeysInput(TypedDict):
@@ -276,6 +284,7 @@ CONTRACT_ROUTES = (
     ),
 )
 
+_ON_NODE_ERRORS = (frappe.PermissionError, drive.DriveForbidden, drive.DriveNotFound)
 
 ROUTES = (
     *LIFECYCLE_ROUTES,
@@ -367,12 +376,22 @@ ROUTES = (
         "GET",
         "people",
         "people_get",
-        errors=(BadRequest, people.BadCursor, frappe.PermissionError),
+        errors=(BadRequest, people.BadCursor, *_ON_NODE_ERRORS),
         query=PeopleQuery,
         output=people.PeoplePage,
         kind="query",
         public_name="people.list",
         page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},
+    ),
+    Route(
+        "GET",
+        "people/lookup",
+        "people_lookup",
+        errors=(BadRequest, people.BadLookup, *_ON_NODE_ERRORS),
+        query=PeopleLookupQuery,
+        output=list[people.PersonUser],
+        kind="query",
+        public_name="people.lookup",
     ),
 )
 
@@ -470,8 +489,17 @@ def invitations_post(emails: Given = None) -> InvitationResult:
 
 
 @frappe.whitelist(methods=["GET"])
-def people_get(q: Given = None, cursor: Given = None) -> people.PeoplePage:
-    return people.search(_optional_text(q, "q"), _optional_text(cursor, "cursor"))
+def people_get(q: Given = None, cursor: Given = None, node: Given = None) -> people.PeoplePage:
+    return people.search(
+        _optional_text(q, "q"),
+        _optional_text(cursor, "cursor"),
+        _optional_text(node, "node"),
+    )
+
+
+@frappe.whitelist(methods=["GET"])
+def people_lookup(node: Given = None, users: Given = None) -> list[people.PersonUser]:
+    return people.look_up(_required_text(node, "node"), _required_text_list(users, "users"))
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -485,6 +513,19 @@ def _optional_text(value: Given, name: str) -> str | None:
     if not isinstance(value, str):
         frappe.throw(_("Suite argument {0} is invalid").format(name), BadRequest)
     return value
+
+
+def _required_text_list(value: Given, name: str) -> list[str]:
+    """A list sent in a query string, which the client writes as JSON."""
+    if value is None:
+        frappe.throw(_("Suite argument {0} is required").format(name), BadRequest)
+    try:
+        answer = json.loads(value) if isinstance(value, str) else value
+    except ValueError:
+        answer = None
+    if not isinstance(answer, list) or not all(isinstance(item, str) for item in answer):
+        frappe.throw(_("Suite argument {0} is invalid").format(name), BadRequest)
+    return answer
 
 
 def _required_text(value: Given, name: str) -> str:

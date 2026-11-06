@@ -253,6 +253,7 @@ export type NodeCreateCreateDocumentInput = {
   content_doctype: string
   from_node?: string
   is_template?: boolean
+  deduplicate_title?: boolean
 }
 
 export type NodeCreateCreateDocumentOutput = {

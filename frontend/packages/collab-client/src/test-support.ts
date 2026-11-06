@@ -218,6 +218,7 @@ export function fakeServer(state = 'live', lineage = 'L') {
             rooms: roomKeys(),
             restoring_ms: restoringMs(),
             restore_rev: restore.rev,
+            restored: restore.notice,
           },
           rows.filter((row) => row.rev > since),
         )
@@ -381,6 +382,7 @@ export function fakeServer(state = 'live', lineage = 'L') {
 
         publish('suite_collab_row', row)
         if (isRestore) {
+          restore.notice = { restore_rev: restore.rev }
           publish('suite_collab_ctl', { kind: 'restored', restore_rev: restore.rev })
         }
 
@@ -458,7 +460,12 @@ export function fakeServer(state = 'live', lineage = 'L') {
   }
 
   // A restore under way holds the document until `until`; 0 when none is
-  const restore = { until: 0, rev: 0, token: '' }
+  const restore = {
+    until: 0,
+    rev: 0,
+    token: '',
+    notice: undefined as Record<string, unknown> | undefined,
+  }
   function restoringMs() {
     return Math.max(0, restore.until - Date.now()) || undefined
   }
@@ -480,7 +487,11 @@ export function fakeServer(state = 'live', lineage = 'L') {
 
   // Another tab's restore lands as the next row, `bytes` making the document the version;
   // `lost` drops the row's broadcast or the notice that follows it
-  function landRestore(bytes: Uint8Array, lost?: 'row' | 'notice') {
+  function landRestore(
+    bytes: Uint8Array,
+    lost?: 'row' | 'notice',
+    notice?: Record<string, unknown>,
+  ) {
     rows.push({ rev: rows.length + 1, bytes })
     restore.rev = rows.length
     restore.until = 0
@@ -488,6 +499,7 @@ export function fakeServer(state = 'live', lineage = 'L') {
       publish('suite_collab_row', { rev: rows.length, schema: 0, u: base64(bytes), restore: true })
     }
 
+    restore.notice = notice && { ...notice, restore_rev: restore.rev }
     if (lost !== 'notice') {
       publish('suite_collab_ctl', { kind: 'restored', restore_rev: restore.rev })
     }

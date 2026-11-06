@@ -143,7 +143,7 @@ test.describe("Writer collaboration", () => {
 				proxy.liftLimit();
 
 				// The tab retries on its own backoff, up to half a minute
-				await expect(owner.page.getByText("Saved", { exact: true })).toBeVisible({
+				await expect(owner.page.locator('[data-save-state="clean"]')).toBeVisible({
 					timeout: 45_000,
 				});
 				await expect(refusalBanner).toBeHidden();
@@ -176,6 +176,8 @@ test.describe("Writer collaboration", () => {
 			.toContain(length);
 		const openMs = Date.now() - started;
 
+		// In the CI log on passing runs too, so a slow drift shows before the budget fails
+		console.log(`A document at the cap opened in ${openMs}ms`);
 		expect(openMs).toBeLessThan(3000);
 	});
 

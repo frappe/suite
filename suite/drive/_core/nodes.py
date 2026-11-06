@@ -26,6 +26,7 @@ from suite.drive._core.access import (
     _describe_rows,
     _system_description,
     add_creator_grant,
+    announce_access,
     chain_ids,
     chain_roles,
     check,
@@ -442,6 +443,7 @@ def create(
     content_doctype: str | None = None,
     from_node: str | None = None,
     is_template: bool = False,
+    deduplicate_title: bool = False,
 ) -> str:
     """Create one node of every kind a client may create, and return its id.
 
@@ -461,12 +463,17 @@ def create(
     `create_file` makes the caller prove READ on a node or version that
     already holds those bytes - the bar `POST /nodes/<id>/copy` already clears
     for the same outcome (§8.2).
+
+    `deduplicate_title` is for a document whose title nobody typed, such as
+    "Untitled document": it takes §8.6's free title instead of being refused.
     """
     if kind not in CLIENT_CREATE_KINDS:
         frappe.throw(_("Drive node kind {0} cannot be created").format(kind), frappe.ValidationError)
 
     if kind != "file":
         _refuse_create_extras(blob=blob, size=size, mime=mime, content_modified=content_modified)
+    if kind != "document":
+        _refuse_create_extras(deduplicate_title=deduplicate_title or None)
     if kind == "folder":
         _refuse_create_extras(url=url, content_doctype=content_doctype, from_node=from_node)
         return create_folder(principals, parent, title)
@@ -505,6 +512,7 @@ def create(
             title,
             content_doctype=content_doctype,
             from_node=from_node,
+            deduplicate_title=deduplicate_title,
         )
     return create_document(
         principals,
@@ -513,6 +521,7 @@ def create(
         content_doctype=content_doctype,
         from_node=from_node,
         is_template=is_template,
+        deduplicate_title=deduplicate_title,
     )
 
 
@@ -937,6 +946,7 @@ def create_document(
     content_doctype: str,
     from_node: str | None = None,
     is_template: bool = False,
+    deduplicate_title: bool = False,
 ) -> str:
     """Create one content node and its document in a single transaction (§8.3).
 
@@ -966,7 +976,7 @@ def create_document(
             source = _copyable_document_source(principals, source_row, content_doctype)
         via_link = require(parent_row, UPLOAD, principals)
         _validate_parent(parent_row, for_update=True, allow_document=False)
-        _refuse_sibling_collision(parent_row.name, title)
+        title = _sibling_title(parent_row.name, title, deduplicate=deduplicate_title)
         node = _insert_node(
             principals,
             parent_row,
@@ -1007,6 +1017,7 @@ def import_document(
     *,
     content_doctype: str,
     from_node: str,
+    deduplicate_title: bool = False,
 ) -> str:
     """Create one content document from an ordinary file's bytes (§10.1).
 
@@ -1035,7 +1046,7 @@ def import_document(
         _importable_file_source(principals, source_row)
         via_link = require(parent_row, UPLOAD, principals)
         _validate_parent(parent_row, for_update=True, allow_document=False)
-        _refuse_sibling_collision(parent_row.name, title)
+        title = _sibling_title(parent_row.name, title, deduplicate=deduplicate_title)
         node = _insert_node(
             principals,
             parent_row,
@@ -1641,6 +1652,7 @@ def _move(
         moved = _node(current.name)
         activity_link = source_link or destination_link
         _add_mover_grant(moved, principals, role_before=role_before, destination_link=destination_link)
+        announce_access(moved)
         _record_activity(
             moved.name,
             "move",
@@ -2342,6 +2354,14 @@ def _require_restore_actor(node: dict, principals: Principals) -> str | None:
 
 def _deduplicated_title(parent: str, title: str, *, exclude: str | None = None) -> str:
     return _free_title(parent, title, exclude=exclude, for_update=True)
+
+
+def _sibling_title(parent: str, title: str, *, deduplicate: bool) -> str:
+    """The title a create writes below `parent`: §8.6's free one, or `title` once no sibling holds it."""
+    if deduplicate:
+        return _deduplicated_title(parent, title)
+    _refuse_sibling_collision(parent, title)
+    return title
 
 
 def _free_title(parent: str, title: str, *, exclude: str | None = None, for_update: bool) -> str:

@@ -11,9 +11,10 @@ import type {
   CondFormat,
   MergeInfo,
 } from '../types.js'
-import { createCellDecorations, ICON_INSET } from './cell-decorations.js'
+import { createCellDecorations } from './cell-decorations.js'
+import { cellBox, cellText } from './cell-text-box.js'
 import { inkFor, setCellFont } from './cell-text-style.js'
-import { cellMidY, centredBaseline, createCapHeight } from './text-anchor.js'
+import { cellMidY, centredBaseline, createCapHeight, firstLineMid } from './text-anchor.js'
 
 export interface CellPainter {
   drawRegionCells(
@@ -42,10 +43,8 @@ interface CellGeom {
 
 type PaintGeometry = Pick<Geometry, 'cw' | 'rh' | 'colX' | 'rowY' | 'totalCols'>
 
-export function createCellPainter(
-  ctx: CanvasRenderingContext2D,
-  { cw, rh, colX, rowY, totalCols }: PaintGeometry,
-): CellPainter {
+export function createCellPainter(ctx: CanvasRenderingContext2D, geo: PaintGeometry): CellPainter {
+  const { cw, rh, colX, rowY, totalCols } = geo
   const deco = createCellDecorations(ctx)
   const capHeight = createCapHeight(ctx)
 
@@ -108,16 +107,9 @@ export function createCellPainter(
     const id = cellId(r, c)
     if (cells.isSlave?.(id)) return null
     const merge = cells.getMergeInfo?.(id)
-    const spanC = merge ? merge.colSpan : 1
-    const spanR = merge ? merge.rowSpan : 1
     const val = getVal(id)
     const fmt = cells.getStyle?.(id) || {}
-    const x = colX(c),
-      y = rowY(r)
-    let w = 0,
-      h = 0
-    for (let sc = 0; sc < spanC; sc++) w += cw(c + sc)
-    for (let sr = 0; sr < spanR; sr++) h += rh(r + sr)
+    const { x, y, w, h } = cellBox(r, c, merge, geo)
     const condFmt = cells.getCondFormat?.(id, val ?? '')
     return { id, val, fmt, condFmt, merge, x, y, w, h }
   }
@@ -186,14 +178,9 @@ export function createCellPainter(
     const vtype = cells.getValidation?.(id)?.type
     if (vtype === 'list' || vtype === 'checkbox') return
     let s = String(val)
-    const baseFmt: CellFormat = condFmt ? { ...fmt, ...condFmt } : fmt
-    const isNumber = cells.isNumber?.(id)
-    const efmt: CellFormat = {
-      ...baseFmt,
-      align: baseFmt.align || _autoAlign(s, isNumber),
-    }
-    const rightInset = cells.getRightInset?.(id) || 0
-    const iconInset = condFmt?.icon ? ICON_INSET : 0
+    const text = cellText(id, s, fmt, condFmt, cells)
+    const efmt: CellFormat = { ...text.fmt, align: text.align }
+    const { isNumber, iconInset, rightInset } = text
     setCellFont(ctx, efmt)
     const mode = getTextWrap(efmt)
     // A number never spills into its neighbours or loses digits off an edge:
@@ -356,13 +343,6 @@ export function createCellPainter(
     return '#'.repeat(Math.max(1, Math.floor(room / hash)))
   }
 
-  // Numbers right, text left, as in Google Sheets. The cell's type decides
-  // (`1,000` and `50%` are numbers); until it is known, guess from the text.
-  function _autoAlign(s: string, isNumber: boolean | undefined): string {
-    if (isNumber !== undefined) return isNumber ? 'right' : 'left'
-    return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
-  }
-
   // ── Single-line text ─────────────────────────────────────────────────────────
 
   function _drawCellText(
@@ -453,15 +433,9 @@ export function createCellPainter(
       : String(val).split('\n')
     if (!lines.length) return
     const lineH = lineHeightFor(fmt)
-    const totalH = lines.length * lineH
     // Centre of the first line; a middle-aligned block centres on the white
     // area below the gridline, like single-line text.
-    const startY =
-      fmt.valign === 'top'
-        ? y + lineH / 2 + 2
-        : fmt.valign === 'bottom'
-          ? y + h - totalH + lineH / 2 - 2
-          : y + 1 + Math.max(lineH / 2, (h - 1 - totalH) / 2 + lineH / 2)
+    const startY = firstLineMid(y, h, fmt.valign, lines.length, lineH)
     const textX =
       fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4
     const capH = capHeight()

@@ -341,7 +341,7 @@ export function useWorkbook({
     return readRect(sn, { r0: 0, c0: 0, r1: ext.maxRow, c1: ext.maxCol }, opts)
   }
 
-  // A rect's shown values (charts read these).
+  // A rect's shown values.
   async function readDisplays(sn, rect) {
     return (await readRect(sn, rect)).displays
   }

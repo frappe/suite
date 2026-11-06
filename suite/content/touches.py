@@ -21,11 +21,19 @@ TOUCH_BATCH = 100
 
 
 @dataclass(frozen=True)
+class Claim:
+    node: str
+    at: datetime
+    rev: int
+    previous_rev: int
+
+
+@dataclass(frozen=True)
 class Follower:
     """What the app is told after edits: `column` names its `_at` and `_rev` columns, `hook` tells Drive."""
 
     column: str
-    hook: Callable[[str], None]
+    hook: Callable[[str, str, Claim], None]
     failure: str
 
 
@@ -47,12 +55,17 @@ def version_body(node: str, kind: str, label: str | None) -> None:
         raise Refusal(409, "milestone_failed", message=str(error)) from None
 
 
-TOUCH = Follower(column="touched", hook=touch_body, failure="Collab: Drive touch failed")
-VERSION = Follower(
-    column="versioned",
-    hook=lambda node: version_body(node, "auto", None),
-    failure="Collab: automatic version failed",
+def version_edits(app: str, doc_id: str, claim: Claim) -> None:
+    """Store the edits `claim` follows as an automatic version, credited to who made most of them."""
+    drive.take_version(claim.node, kind="auto", actor=main_author(app, doc_id, claim))
+
+
+TOUCH = Follower(
+    column="touched",
+    hook=lambda _app, _doc_id, claim: touch_body(claim.node),
+    failure="Collab: Drive touch failed",
 )
+VERSION = Follower(column="versioned", hook=version_edits, failure="Collab: automatic version failed")
 
 
 def due(doc: frappe._dict, follower: Follower) -> bool:
@@ -70,7 +83,7 @@ def follow(app: str, doc_id: str, follower: Follower) -> None:
         return
 
     try:
-        follower.hook(claim.node)
+        follower.hook(app, doc_id, claim)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
     except Exception:
         frappe.db.rollback()
@@ -85,14 +98,6 @@ def follow(app: str, doc_id: str, follower: Follower) -> None:
                 message=f"{app} document {doc_id}\n{traceback}",
                 reference_doctype="Suite Collab Settings",
             )
-
-
-@dataclass(frozen=True)
-class Claim:
-    node: str
-    at: datetime
-    rev: int
-    previous_rev: int
 
 
 def claimed(app: str, doc_id: str, follower: Follower) -> Claim | None:
@@ -124,6 +129,23 @@ def claimed(app: str, doc_id: str, follower: Follower) -> Claim | None:
 
     ((previous_rev,),) = previous
     return Claim(node=node, at=now, rev=claimed_rev, previous_rev=previous_rev)
+
+
+def main_author(app: str, doc_id: str, claim: Claim) -> str:
+    """The person whose tabs sent the most of the rows `claim` follows, the latest on a tie.
+
+    A sweep runs as the system user and a push as whoever sent it, so neither is who made the
+    changes. The document's owner when no row names a person, as for a copy's start.
+    """
+    authors = frappe.db.sql(
+        f"""SELECT `session`.`user` FROM `{table(app, "update")}` AS `row`
+        JOIN `{table(app, "session")}` AS `session`
+            ON `session`.`doc_id` = `row`.`doc_id` AND `session`.`client_id` = `row`.`client_id`
+        WHERE `row`.`doc_id` = %s AND `row`.`rev` > %s AND `row`.`rev` <= %s
+        GROUP BY `session`.`user` ORDER BY COUNT(*) DESC, MAX(`row`.`rev`) DESC LIMIT 1""",
+        (doc_id, claim.previous_rev, claim.rev),
+    )
+    return authors[0][0] if authors else frappe.db.get_value("Drive Node", claim.node, "owner")
 
 
 def give_back(app: str, doc_id: str, follower: Follower, claim: Claim) -> None:

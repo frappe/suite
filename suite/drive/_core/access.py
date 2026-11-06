@@ -4,7 +4,7 @@ import dataclasses
 import secrets
 import string
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from enum import Enum
 from typing import Literal
@@ -23,8 +23,9 @@ from suite.drive._core.errors import (
     DriveNotFound,
     rollback_savepoint,
 )
+from suite.drive._core.people import PersonOnNode, enabled_people
 from suite.drive._core.principals import TICKET_TTL, Principals, make_ticket, ticket_ok
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, ROLES
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, ROLES
 from suite.drive._core.roots import lock_trees
 from suite.drive._core.times import publish
 
@@ -110,13 +111,16 @@ def chain_ids(node: Mapping) -> list[str]:
     return ids
 
 
+SITE_TIER = 2
+
+
 def own_tier(principal: str, user: str) -> int:
     """Order own principals: the user, then groups, then the site principal."""
     if principal == user:
         return 0
     if principal.startswith("$GROUP:"):
         return 1
-    return 2
+    return SITE_TIER
 
 
 @dataclasses.dataclass
@@ -614,6 +618,66 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
     return {"role": answer, "source": "grant" if answer else "none", "rows": out}
 
 
+def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dict[str, PersonOnNode]:
+    """Answer who can read a node, for a picker there: the users it names, and `users`.
+
+    A named user who can't read is left out, so a deny or an expiry looks like never having been
+    named. Needs COMMENT, the right to mention anyone here. Never answers a role or its source: that
+    stays with MANAGE and the share dialog (§7.2). Only a manager learns who is blocked.
+    """
+    from suite.drive.framework import principals_for
+
+    node = _node_or_not_found(node_id)
+    require(node, COMMENT, principals)
+    access = {user: check(node, READ, principals_for(user)) for user in dict.fromkeys(users)}
+    for user in named_on(node):
+        if user not in access and check(node, READ, principals_for(user)):
+            access[user] = True
+    if not check(node, MANAGE, principals):
+        return {user: {"has_access": has_access} for user, has_access in access.items()}
+    return {
+        user: {
+            "has_access": has_access,
+            "is_blocked": not has_access and is_blocked(node, principals_for(user)),
+        }
+        for user, has_access in access.items()
+    }
+
+
+def named_on(node: Mapping) -> list[str]:
+    """The users a node names: its creator and those its live grants and its ancestors' give Read or more."""
+    rows = frappe.db.sql(EXPLAIN_SQL, {"chain": chain_ids(node), "now": now()}, as_dict=True)
+    named = [row.principal for row in rows if row.role >= READ and not row.principal.startswith("$")]
+    return list(dict.fromkeys([node.owner, *named]))
+
+
+def mentionable_on(node: Mapping, ids: Iterable[str]) -> list[str]:
+    """The people among `ids` a picker on this node offers: the directory, and the named who can read it."""
+    from suite.drive.framework import principals_for
+
+    found = enabled_people(ids)
+    named = () if all(found.values()) else named_on(node)
+    return [
+        user
+        for user, in_directory in found.items()
+        if in_directory or (user in named and check(node, READ, principals_for(user)))
+    ]
+
+
+def is_blocked(node: Mapping, principals: Principals) -> bool:
+    """Whether a deny naming this person or one of their groups keeps them out.
+
+    A deny on `$GENERAL` only restricts the node, so it is ordinary lack of access. Leaving it
+    out also finds a person's own deny on a folder above a node that `$GENERAL` denies nearer.
+    """
+    role, rows, depth, _tickets = _point_state(node, principals)
+    acc = Acc()
+    for row in rows:
+        if own_tier(row.principal, principals.user) < SITE_TIER:
+            acc.offer(row.principal, row.role, depth[row.node], principals)
+    return role == NONE and acc.own == NONE
+
+
 def grants_for(
     node_id: str,
     principals: Principals,
@@ -781,6 +845,7 @@ def grant(
     password: str | None | Keep = KEEP,
     send_to: str | None = None,
     notify: bool = False,
+    tell_target: bool = True,
 ) -> dict:
     """Create or update one local grant after the ordered refusal checks.
 
@@ -790,7 +855,8 @@ def grant(
 
     `send_to` mails a new link to one address and stores the address on the
     row. `notify` mails a user principal. Both mails are queued after commit
-    and never fail the grant (§9.5).
+    and never fail the grant (§9.5). `tell_target=False` leaves the person's
+    bell to whatever else tells them, as the comment that mentions them does.
     """
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
@@ -881,12 +947,14 @@ def grant(
                 "expires_on": _json_datetime(normalized_expiry),
                 "has_password": bool(password_hash),
             },
+            tell_target=tell_target,
         )
     except Exception as exc:
         rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
 
     written = _grant_result(
         frappe._dict(
@@ -970,6 +1038,7 @@ def revoke(node_id: str, principal: str, principals: Principals) -> int:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
     return 1
 
 
@@ -1010,9 +1079,6 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
     _refuse_owner_loss(node, principal)
-    is_root = node.kind == "root"
-    root = node.name if is_root else node.root
-    prefix = "" if is_root else f"{node.path or '/'}{node.name}/%"
 
     savepoint = f"drive_revoke_below_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -1028,13 +1094,7 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
                 OR (n.root = %(root)s AND (%(is_root)s OR n.path LIKE %(prefix)s))
               )
             """,
-            {
-                "principal": principal,
-                "node": node.name,
-                "root": root,
-                "is_root": is_root,
-                "prefix": prefix,
-            },
+            {"principal": principal, **subtree_values(node)},
         )
         deleted = frappe.db._cursor.rowcount
         _write_activity(
@@ -1048,6 +1108,7 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
     return deleted
 
 
@@ -1100,6 +1161,7 @@ def rotate_link(grant_id: str, principals: Principals) -> dict:
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    announce_access(node)
 
     return _grant_result(frappe._dict(locked, principal=new_principal))
 
@@ -1263,6 +1325,13 @@ def _tree(node: Mapping) -> str:
     return node.get("name") if node.get("kind") == "root" else node.get("root")
 
 
+def subtree_values(node: Mapping) -> dict[str, object]:
+    """The SQL values that match `node` and everything below it in its tree."""
+    is_root = node.get("kind") == "root"
+    prefix = "" if is_root else f"{node.get('path') or '/'}{node.get('name')}/%"
+    return {"node": node.get("name"), "root": _tree(node), "is_root": is_root, "prefix": prefix}
+
+
 def _require_manage(node: Mapping, principals: Principals) -> None:
     if not check(node, MANAGE, principals):
         raise DriveForbidden(
@@ -1389,6 +1458,8 @@ def _write_activity(
     action: str,
     principals: Principals,
     detail: dict,
+    *,
+    tell_target: bool = True,
 ) -> None:
     from suite.drive._core.activity import notify_users, record
 
@@ -1402,8 +1473,27 @@ def _write_activity(
 
     emit_for_principals(targets)
     target = detail.get("principal")
-    if isinstance(target, str) and target and not target.startswith("$"):
+    if tell_target and isinstance(target, str) and target and not target.startswith("$"):
         notify_users(activity, (target,))
+
+
+def announce_access(node: Mapping) -> None:
+    """Call `access_changed` for each document at or below `node` once this write commits."""
+    from suite.drive._core.content import call_app_after_commit, registry
+
+    callbacks = {doctype: spec.access_changed for doctype, spec in registry().items() if spec.access_changed}
+    if not callbacks:
+        return
+    documents = frappe.db.sql(
+        """
+        SELECT name, content_doctype FROM `tabDrive Node`
+        WHERE content_doctype IN %(doctypes)s
+          AND (name = %(node)s OR (root = %(root)s AND (%(is_root)s OR path LIKE %(prefix)s)))
+        """,
+        {"doctypes": tuple(callbacks), **subtree_values(node)},
+    )
+    for name, doctype in documents:
+        call_app_after_commit(callbacks[doctype], name, "access")
 
 
 def _single_address(value) -> bool:

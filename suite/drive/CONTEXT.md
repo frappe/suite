@@ -119,11 +119,15 @@ _Avoid_: Public file, Shared to web, Open
 
 **Deny**:
 A grant that explicitly refuses a principal access at a node.
-_Avoid_: Block, Revoke, Remove access
+_Avoid_: Revoke, Remove access
+
+**Blocked**:
+A person kept out by a **Deny** that names them or one of their groups. A **Deny** on `$GENERAL` restricts a node and blocks no one.
+_Avoid_: Denied, for this person-level meaning
 
 **Revoke**:
 Removal of a grant at a node. Access inherited from another grant may remain.
-_Avoid_: Deny, Block, Remove all access
+_Avoid_: Deny, Blocked, Remove all access
 
 **Grant Root**:
 The nearest node at which a grant names one of a person's principals. The
