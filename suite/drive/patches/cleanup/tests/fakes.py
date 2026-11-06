@@ -41,9 +41,10 @@ class FileSpec:
 class FakeFileTable:
     """The legacy `tabFile`/`tabDrive Node` pair, as one in-memory double.
 
-    Serves three ports at once: `ReachabilityTree` (`tree=`), `NodeLookup`
+    Serves four ports at once: `ReachabilityTree` (`tree=`), `NodeLookup`
     (`drive=`), and `LegacyFileRows` (`files=`) all read and write the same
-    dictionary, exactly as the real tables would.
+    dictionary, exactly as the real tables would, and `DatabaseMarkers`
+    (`markers=`) lives in the same database.
     """
 
     def __init__(self, specs: tuple[FileSpec, ...] = ()):
@@ -52,6 +53,7 @@ class FakeFileTable:
         self.deleted: list[str] = []
         self.delete_calls: list[tuple[str, ...]] = []
         self.chain_calls: list[tuple[str, ...]] = []
+        self.markers: dict[str, str] = {}
         for spec in specs:
             self.add(spec.name, spec.folder, spec.status, has_node=spec.has_node)
 
@@ -64,6 +66,13 @@ class FakeFileTable:
     def drop_node(self, name: str) -> None:
         """Simulate a row Build never reached: no `Drive Node` for it."""
         self._nodes.discard(name)
+
+    # --- DatabaseMarkers ---
+    def read_marker(self, key: str) -> str | None:
+        return self.markers.get(key)
+
+    def write_marker(self, key: str, marker: str) -> None:
+        self.markers[key] = marker
 
     # --- ReachabilityTree ---
     def unreached(self, after: str, limit: int) -> list[ChainRow]:
@@ -371,6 +380,7 @@ def cleanup_environment(
     disk_settings: FakeDiskSettingsSnapshot | None = None,
     transaction: FakeTransaction | None = None,
     backup: str | None = None,
+    accept_skips: bool = False,
 ) -> CleanupEnvironment:
     """A `CleanupEnvironment` wired to fakes, with its state file in `tmp_path`."""
     table = files if files is not None else FakeFileTable()
@@ -394,7 +404,9 @@ def cleanup_environment(
         disk_settings=disk_settings if disk_settings is not None else FakeDiskSettingsSnapshot(),
         transaction=transaction if transaction is not None else FakeTransaction(),
         state=CleanupState(Path(tmp_path) / "drive-cleanup-state.json"),
+        markers=table,
         backup=backup,
+        accept_skips=accept_skips,
     )
 
 

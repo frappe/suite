@@ -13,6 +13,12 @@ until somebody has looked. So after the report, Build:
 4. refuses to call Build finished while any *refusing* skip is present and
    site config does not carry `drive_build_accept_skips`.
 
+Accepting is a decision about the rows, not about Build: Cleanup reads the
+same key (`cleanup.gate.check_gate_reachable_nodes`), lets the same rows
+through its own reachability gate, and deletes their `File` rows with the
+rest of the legacy Drive rows. After the migrate, the backup named in
+`drive_cleanup_backup` is the only copy of them.
+
 Two kinds of skip. A refusing skip is a reachable, not Removed row that
 ended with no node: a subtree past the depth or path cap, a row under a
 file, a link node the engine would refuse to save, a root pair Build could
@@ -112,6 +118,7 @@ def report_skips(env) -> dict:
         raise UnacceptedSkipsError(
             f"Drive Build left {skips['refusing_total']} reachable rows without a node. Each row and "
             f"its reason is listed in {path}. Fix the rows and migrate again, or accept the loss "
-            f"with `bench --site <site> set-config {ACCEPT_SKIPS_CONFIG_KEY} 1` and migrate again."
+            f"with `bench --site <site> set-config {ACCEPT_SKIPS_CONFIG_KEY} 1` and migrate again: "
+            "Build then finishes without them, and Cleanup deletes their File rows."
         )
     return skips

@@ -4351,9 +4351,20 @@ Drive patch at all is a fresh install and passes.
 
 Two read-only checks run before the migrate, by hand:
 `bench --site X execute suite.drive.patches.build.preflight.check` (GO /
-NO-GO on storage config, bucket reach, the floor and the legacy objects)
-and `bench --site X execute suite.drive.patches.build.dry_run.run` (the
-census of rows Build would write and skip). Neither writes.
+NO-GO on storage config, bucket reach, the floor, the legacy objects and
+the server) and `bench --site X execute suite.drive.patches.build.dry_run.run`
+(the census of rows Build would write and skip). Neither writes.
+
+The storage check compares the two bucket names exactly. It compares the two
+endpoints after it removes a trailing slash and puts the scheme and host in
+lower case, so a different host, port or path is still a different bucket.
+
+**Preflight: the server.** MariaDB's global `max_allowed_packet` must be at
+least 64 MiB: Build inserts rows larger than the default limit, Writer
+bodies among them. Node 22.13 or newer must be on the bench user's `PATH`:
+after the migration, the converter that makes legacy documents
+collaborative runs on it. Either one missing is NO-GO, with the fix in the
+message.
 
 **Preflight: legacy objects.** The preflight groups every blobless S3
 `File` row by key layout and heads 25 objects per layout, chosen the same
@@ -4754,14 +4765,28 @@ convert, with its id and reason, plus every file whose bytes were missing
 `roots_skipped`, `unmigrated_reachable`). While any is present Build raises
 after writing the file, so the migrate stops with the converted rows
 committed and the operator either fixes the rows and migrates again or sets
-site config `drive_build_accept_skips` to accept the loss. Removed rows,
-broken chains, missing bytes and dropped grants and shares are reported but
-do not refuse.
+site config `drive_build_accept_skips` to accept the loss. Cleanup reads the
+same key: its reachable-node check (§14.10) prints the rows and lets them
+through, and its first step deletes their `File` rows with the rest of
+Drive's legacy rows. After the migrate, the backup named in
+`drive_cleanup_backup` is the only copy of them. Removed rows, broken
+chains, missing bytes and dropped grants and shares are reported but do not
+refuse.
 
 **Restored database.** The record lives in `private/`, not the database. A
-database restored without its `private/` directory would meet a record that
-says the tree is done and a `Drive Root` table that is empty; Build refuses
-that pair instead of reporting a finished migration over nothing.
+database restored without its `private/` directory (Frappe Cloud restores
+only the database after a failed migrate) would meet a record that claims
+steps the database never saw, and a rerun would skip them. So Build and
+Cleanup each stamp their record with a random marker, and keep the same
+marker in the database (`tabDefaultValue`, keyed by the record's file name)
+before the record claims any work. A record that claims work under a marker
+the database does not hold, or under no marker, is refused before any step
+reads it, and the refusal names the file. The fix is to move every
+`drive-build-*` and `drive-cleanup-*` file and folder in `private/` aside
+and migrate again, or to restore the database and `private/` from the same
+backup. A record that matches is resumed, and the migration log says so.
+Build also still refuses a record that says the tree is done over a
+`Drive Root` table that is empty.
 
 **Copied objects.** Every legacy S3 object the copy step placed is appended
 to `private/drive-build-copied-objects.jsonl` by key, before the `File.blob`
@@ -4789,7 +4814,8 @@ hold:
    `<backup>` is free text naming the backup (a path, an S3 URL, an id). The
    value is written into Cleanup's state record.
 2. Every reachable Drive `File` row has a node, checked live against the
-   site, not against Build's state.
+   site, not against Build's state. With `drive_build_accept_skips` set,
+   the rows without a node are printed and do not refuse (§14.9).
 3. `frappe.storage.gc.blob_reference_columns()` exists and names all four of
    Drive's blob columns, so deleting File rows does not orphan every blob
    under the framework GC [003].
