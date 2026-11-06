@@ -1,6 +1,12 @@
 <template>
   <div class="flex flex-col gap-4">
-    <TabButtons v-if="rootOptions.length > 1" v-model="rootKind" :options="rootOptions" fluid />
+    <TabButtons
+      v-if="rootOptions.length > 1"
+      :key="tabsKey"
+      v-model="rootKind"
+      :options="rootOptions"
+      fluid
+    />
     <div class="overflow-hidden rounded-6 border border-outline-gray-1">
       <div
         class="flex h-11 items-center gap-1 border-b border-outline-gray-1 ps-1.5"
@@ -107,6 +113,7 @@ import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { locationTitle } from '../internal/locations'
+import { useOpenedKey } from '../internal/openedKey'
 import { SKELETON_BAR } from './listSkeleton'
 
 /** The folder a Drive picker shows. `label` is its name as the breadcrumbs show it. */
@@ -153,6 +160,7 @@ const SKELETON_WIDTHS = ['w-40', 'w-28', 'w-48', 'w-32']
 const FOLDER = { kind: 'folder', title: '', mime: null, content_doctype: null } as const
 const NEW_FOLDER_ICON = [nodeIcon(FOLDER), nodeIconTint(FOLDER)]
 const listElement = useTemplateRef<HTMLElement>('listElement')
+const tabsKey = useOpenedKey(listElement)
 const discovered = useQuery(api.drive.roots.list, {})
 const rootKind = ref<'personal' | 'organization'>('personal')
 const trail = ref<Array<{ node: string; title: string; access?: DriveAccess }>>([])

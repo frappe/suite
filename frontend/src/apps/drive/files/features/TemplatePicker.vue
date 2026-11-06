@@ -1,7 +1,12 @@
 <template>
   <Dialog v-model:open="open" title="New from template" size="2xl">
-    <form class="space-y-4" @submit.prevent="create">
-      <TabButtons v-if="typeOptions.length > 1" v-model="typeKey" :options="typeOptions" />
+    <form ref="form" class="space-y-4" @submit.prevent="create">
+      <TabButtons
+        v-if="typeOptions.length > 1"
+        :key="tabsKey"
+        v-model="typeKey"
+        :options="typeOptions"
+      />
       <div class="h-72 overflow-y-auto rounded-5 border border-outline-gray-1 p-3">
         <div
           v-if="templates.status === 'pending' && !templateRows.length"
@@ -90,13 +95,14 @@
 
 <script setup lang="ts">
 import { Button, Dialog, ErrorMessage, FormControl, Skeleton, TabButtons } from 'frappe-ui'
-import { computed, inject, reactive, ref, watch } from 'vue'
+import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useInfiniteQuery, useMutation } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
+import { useOpenedKey } from '../internal/openedKey'
 
 /**
  * New from template (spec §5.12): one tab per registered document type, the
@@ -113,6 +119,7 @@ const emit = defineEmits<{
   created: [node: DriveNode]
 }>()
 const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+const tabsKey = useOpenedKey(useTemplateRef<HTMLFormElement>('form'))
 const typeOptions = computed(() =>
   documentTypes.map((definition) => ({
     value: definition.key,
