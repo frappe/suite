@@ -811,7 +811,7 @@ describe('Downloading a folder', () => {
         options: {
           id: 'download-1',
           description:
-            'The download starts here when the zip is ready. A notification will bring it too.',
+            'The download starts here when the zip is ready. You will also get a notification.',
         },
       },
     ])

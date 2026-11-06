@@ -71,7 +71,7 @@ export async function downloadItems(
     )
     const description =
       asked.delivery === 'Inbox'
-        ? __('The download starts here when the zip is ready. A notification will bring it too.')
+        ? __('The download starts here when the zip is ready. You will also get a notification.')
         : __('The download starts here when the zip is ready.')
     // Keyed by the download, so asking again for the same selection updates
     // this toast instead of adding one. vue-sonner reads `duration` once, when
