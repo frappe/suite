@@ -293,3 +293,38 @@ it('says a public folder shows everything in it, and with t33 off offers no Undo
     setTweaks(['t33-undo-remove'], true)
   }
 })
+
+it('with t40-share-open, shows the people field and the access list in place while who has access loads', async () => {
+  const known = { kind: 'file', name: 'doc', title: 'Plan', access: { role: 50 } } as never
+  let release: (() => void) | undefined
+  const { transport } = server()
+  const held: Transport = {
+    request: (operation, input) =>
+      operation.id === 'node_grants'
+        ? new Promise((resolve) => {
+            release = () => resolve(transport.request(operation, input))
+          })
+        : transport.request(operation, input),
+  }
+  const state = useShare('doc', { client: testClient(held), known })
+  const root = document.createElement('div')
+  document.body.append(root)
+  const app = createApp({ setup: () => () => h(ShareBody, { state }) })
+  app.mount(root)
+  cleanup = () => {
+    app.unmount()
+    root.remove()
+  }
+  const loading = state.load()
+  await vi.waitFor(() => expect(release).toBeDefined())
+  expect(root.querySelector('[aria-label="Add people, groups or emails"]')).not.toBeNull()
+  expect(root.textContent).toContain('Who has access')
+  expect(root.querySelector('ul[aria-label="Loading who has access"]')).not.toBeNull()
+
+  release!()
+  await loading
+  await vi.waitFor(() =>
+    expect(root.querySelector('ul[aria-label="Loading who has access"]')).toBeNull(),
+  )
+  expect(root.textContent).toContain('Public on the web')
+})

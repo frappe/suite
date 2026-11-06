@@ -1924,7 +1924,7 @@ async function setStar(row: DriveNode, starred: boolean) {
 }
 /** A share write can change the caller's own access, so the listing is read again. */
 async function shareRow(row: DriveNode) {
-  if (await dialogs.share(row.name)) void listing.refetch()
+  if (await dialogs.share(row.name, row)) void listing.refetch()
 }
 const documentOpensAtOnce = useTweak('t8')
 let creatingDocument = false

@@ -21,6 +21,7 @@ import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
+import { preloadShareDialog, startShareReads } from '@/apps/drive/files/features/share/opening'
 import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
@@ -34,6 +35,7 @@ import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { buildUrl } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
 export type {
   CredentialGroup,
@@ -420,8 +422,12 @@ export interface DriveDialogs {
   copy(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
-  /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
-  share(node: string): Promise<boolean>
+  /**
+   * Opens the share dialog for `node`. Resolves when it closes: `true` when a
+   * write in it went through. `known` is the node as the caller last read it,
+   * which the dialog shows until its own read lands.
+   */
+  share(node: string, known?: DriveNode): Promise<boolean>
   /** Opens the file picker. Resolves with the picked file or document, or `undefined` when cancelled. */
   pickFile(options?: { title?: string; action?: string }): Promise<DriveNodeSummary | undefined>
 }
@@ -432,6 +438,7 @@ export function useDriveDialogs(): DriveDialogs {
   if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
   // App.vue provides these to its components, not to the app, so dialogs mounted with the app context get them here.
   const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+  if (isTweakOn('t40-share-open')) preloadShareDialog()
   return {
     move: (node) =>
       presentDialog<DriveNodeSummary>(
@@ -453,10 +460,13 @@ export function useDriveDialogs(): DriveDialogs {
         documentTypes,
       })
     },
-    share: (node) =>
-      import('@/apps/drive/files/features/share/present').then((share) =>
-        share.presentShareDialog(node, context),
-      ),
+    share: (node, known) => {
+      // The reads start now, so they overlap loading the dialog's code.
+      if (isTweakOn('t40-share-open')) startShareReads(node, known ?? null)
+      return import('@/apps/drive/files/features/share/present').then((share) =>
+        share.presentShareDialog(node, context, known),
+      )
+    },
     pickFile: (options = {}) =>
       presentDialog<DriveNodeSummary>(
         context,

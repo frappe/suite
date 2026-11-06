@@ -804,6 +804,64 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   })
 })
 
+describe('opening the share dialog fast (t40-share-open)', () => {
+  /** A server whose answers wait until the test releases them, to see what is asked in parallel. */
+  function heldServer() {
+    const asked: string[] = []
+    const release = new Map<string, () => void>()
+    const transport: Transport = {
+      request: (operation) => {
+        asked.push(operation.id)
+        const value = operation.id === 'node_get' ? node('folder') : { grants: [], inherited: [] }
+        return new Promise((resolve) => {
+          release.set(operation.id, () => resolve(value as never))
+        })
+      },
+    }
+    return { asked, release, client: testClient(transport) }
+  }
+
+  it('shows the item the opener knows at once, and asks who has access without waiting for the item', async () => {
+    const server = heldServer()
+    const share = useShare('doc', { client: server.client, known: node('folder') })
+    expect(share.node.value?.title).toBe('Plan')
+    expect(share.canManage.value).toBe(true)
+    const loading = share.load()
+    await vi.waitFor(() => expect(server.asked).toEqual(['node_get', 'node_grants']))
+    server.release.get('node_get')!()
+    server.release.get('node_grants')!()
+    await loading
+    expect(share.sections.value).not.toBeNull()
+  })
+
+  it('with the switch off, shows nothing until the item answers, then asks who has access', async () => {
+    setTweaks(['t40-share-open'], false)
+    try {
+      const server = heldServer()
+      const share = useShare('doc', { client: server.client, known: node('folder') })
+      expect(share.node.value).toBeNull()
+      const loading = share.load()
+      await vi.waitFor(() => expect(server.asked).toEqual(['node_get']))
+      server.release.get('node_get')!()
+      await vi.waitFor(() => expect(server.asked).toEqual(['node_get', 'node_grants']))
+      server.release.get('node_grants')!()
+      await loading
+      expect(share.sections.value).not.toBeNull()
+    } finally {
+      setTweaks(['t40-share-open'], true)
+    }
+  })
+
+  it('does not read who has access when the fresh item says the caller can no longer manage it', async () => {
+    const server = fakeServer((call) => (call.id === 'node_get' ? node('folder', 30) : undefined))
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+    expect(server.calls.map((call) => call.id)).toEqual(['node_get'])
+    expect(share.canManage.value).toBe(false)
+    expect(share.loadError.value).toBe('')
+  })
+})
+
 describe('document session share (spec §8.6, §8.8)', () => {
   it('reads access again after each write in the dialog, before it closes; Share is offered only with Manage', async () => {
     let role = 50

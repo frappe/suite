@@ -21,11 +21,19 @@
           {{ state.node.value.title }}
         </p>
       </div>
+      <div v-else-if="placeholders" class="mb-6 flex items-center gap-2.5" aria-hidden="true">
+        <Skeleton class="size-5 shrink-0" />
+        <p class="text-p-base-medium"><Skeleton class="inline-block h-4 w-48 align-middle" /></p>
+      </div>
       <ShareBody v-model:picked="picked" :state="state" />
       <div v-if="!picked" class="mt-5 flex items-center gap-2 border-t border-outline-gray-1 pt-4">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
           <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ caption }}</p>
+        </div>
+        <div v-else-if="placeholders" class="min-w-0" aria-hidden="true">
+          <Skeleton class="h-7 w-28" />
+          <p class="mt-1.5 text-p-xs"><Skeleton class="inline-block h-3 w-32 align-middle" /></p>
         </div>
         <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="open = false" />
       </div>
@@ -52,6 +60,10 @@
           {{ state.node.value.title }}
         </p>
       </div>
+      <div v-else-if="placeholders" class="mb-6 flex items-center gap-2.5" aria-hidden="true">
+        <Skeleton class="size-5 shrink-0" />
+        <p class="text-p-base-medium"><Skeleton class="inline-block h-4 w-48 align-middle" /></p>
+      </div>
       <ShareBody v-model:picked="picked" :state="state" autofocus-picker />
     </div>
     <template v-if="!picked" #actions>
@@ -59,6 +71,10 @@
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
           <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ caption }}</p>
+        </div>
+        <div v-else-if="placeholders" class="min-w-0" aria-hidden="true">
+          <Skeleton class="h-7 w-28" />
+          <p class="mt-1.5 text-p-xs"><Skeleton class="inline-block h-3 w-32 align-middle" /></p>
         </div>
         <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="open = false" />
       </div>
@@ -73,12 +89,12 @@
 
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { BottomSheet, Button, Dialog } from 'frappe-ui'
+import { BottomSheet, Button, Dialog, Skeleton } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import { driveNodeRoute } from '@/apps/drive'
-import { DRIVE_ROLES } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -91,7 +107,11 @@ import { accessLossMessage, copyLink } from './shareFormat'
 import { isOpen } from './shareModel'
 import { useShare } from './useShare'
 
-const props = defineProps<{ node: string }>()
+const props = defineProps<{
+  node: string
+  /** The node as the opener last read it, shown at once with `t40-share-open`. */
+  known?: DriveNode
+}>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ 'after-leave': []; changed: [value: boolean] }>()
 
@@ -127,7 +147,11 @@ const state = useShare(props.node, {
   },
   workspace: () => window.suite_workspace_name ?? site.data?.workspace_name,
   placeTitle: useLocationTitle(),
+  known: props.known,
 })
+// While the node is unknown, its header and Copy link hold their place (`t40-share-open`).
+const fastOpen = useTweak('t40-share-open')
+const placeholders = computed(() => fastOpen.value && !state.loadError.value)
 
 // People picked but not yet shared are lost on closing, so closing asks first
 async function setOpen(next: boolean) {

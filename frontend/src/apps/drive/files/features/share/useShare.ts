@@ -20,6 +20,7 @@ import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 import { isTweakOn } from '@/platform/tweaks'
 
+import { readShare, takeShareReads } from './opening'
 import {
   organizationLabel,
   principalLabel,
@@ -53,6 +54,8 @@ export interface ShareOptions {
   workspace?: MaybeRefOrGetter<string | undefined>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
   placeTitle?: (node: { name: string; title: string }) => string
+  /** The node as the opener last read it, such as a listing row, shown until the fresh read lands (`t40-share-open`). */
+  known?: DriveNode
 }
 
 /**
@@ -66,7 +69,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const placeTitle = options.placeTitle ?? ((node: { title: string }) => node.title)
   const requester = options.client ?? client
   const grants = nodeGrants(nodeId, requester)
-  const node = shallowRef<DriveNode | null>(null)
+  const fastOpen = isTweakOn('t40-share-open')
+  const node = shallowRef<DriveNode | null>((fastOpen && options.known) || null)
   const list = shallowRef<GrantList | null>(null)
   const loadError = ref('')
   const errors = reactive(new Map<RowKey, string>())
@@ -101,13 +105,29 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       ),
   )
 
+  /** Both reads, at once where the node already says the caller manages it. */
+  async function readBoth(read: number): Promise<[DriveNode, GrantList | null]> {
+    if (fastOpen) {
+      const started = read === 1 && requester === client ? takeShareReads(nodeId) : null
+      const reads = started ?? readShare(nodeId, node.value, requester)
+      return [await reads.node, await reads.list]
+    }
+    const fresh = await requester.query(api.drive.nodes.get, { node: nodeId, expand: 'access' })
+    // Reading grants needs MANAGE (spec §7.2). A caller who gave it away sees why.
+    return [fresh, managesNode(fresh) ? await grants.list() : null]
+  }
+
   let reads = 0
-  async function load() {
+  /** The newest read, which a write that keeps a row's expiry waits for. */
+  let reading: Promise<void> = Promise.resolve()
+  function load(): Promise<void> {
+    reading = run()
+    return reading
+  }
+  async function run() {
     const read = ++reads
     try {
-      const fresh = await requester.query(api.drive.nodes.get, { node: nodeId, expand: 'access' })
-      // Reading grants needs MANAGE (spec §7.2). A caller who gave it away sees why.
-      const freshList = managesNode(fresh) ? await grants.list() : null
+      const [fresh, freshList] = await readBoth(read)
       if (read !== reads) return
       node.value = fresh
       list.value = freshList
@@ -312,6 +332,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
      * declined confirm. The picker's message keeps a line for every failure.
      */
     async add(principals: readonly string[], role: number, notify: boolean): Promise<string[]> {
+      // The picker shows before who has access arrives; an existing row's expiry comes from it.
+      if (fastOpen) await reading
       errors.delete(PICKER)
       const lines: string[] = []
       const fail = (principal: string) => (message: string) => {

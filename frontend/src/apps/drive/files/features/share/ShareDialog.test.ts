@@ -53,7 +53,12 @@ vi.mock('@/platform/feedback', () => ({
 vi.mock('../../internal/icons', () => ({ nodeIcon: () => '', nodeIconTint: () => '' }))
 vi.mock('../../internal/locations', () => ({ useLocationTitle: () => () => '' }))
 vi.mock('./useShare', () => ({
-  useShare: () => ({ node: { value: null }, load: () => {}, changed: { value: false } }),
+  useShare: () => ({
+    node: { value: null },
+    loadError: { value: null },
+    load: () => {},
+    changed: { value: false },
+  }),
 }))
 // The people picked, as SharePicker reports them
 const picks = ref(0)

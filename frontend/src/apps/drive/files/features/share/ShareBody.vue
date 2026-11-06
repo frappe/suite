@@ -1,20 +1,22 @@
 <template>
   <div class="space-y-5 text-base text-ink-gray-8">
     <div
-      v-if="!state.node.value && !state.loadError.value"
+      v-if="!fastOpen && !state.node.value && !state.loadError.value"
       class="space-y-3"
       :aria-label="__('Loading who has access')"
     >
       <Skeleton v-for="index in 4" :key="index" class="h-8 w-full" />
     </div>
     <ErrorMessage v-else-if="state.loadError.value" :message="state.loadError.value" />
-    <p v-else-if="!state.canManage.value" class="text-p-sm text-ink-gray-6">
+    <p v-else-if="node && !state.canManage.value" class="text-p-sm text-ink-gray-6">
       {{
         __('You can no longer share this item. Only people who can manage it see who has access.')
       }}
     </p>
-    <template v-else-if="sections && node">
+    <!-- With t40-share-open the loaded layout shows at once, with placeholders for what is still to come. -->
+    <template v-else-if="sections || fastOpen">
       <SharePicker
+        v-if="node"
         v-model:picked="picked"
         :node-kind="node.kind"
         :disabled="state.isPending(PICKER)"
@@ -22,6 +24,7 @@
         :share="share"
         @send-link="(email, role) => state.sendLink(email, role)"
       />
+      <Skeleton v-else class="h-7 w-full" aria-hidden="true" />
       <ErrorMessage v-if="state.errors.get(PICKER)" :message="state.errors.get(PICKER)" />
       <div
         v-if="state.notice.value && state.canUndo.value"
@@ -50,7 +53,7 @@
         <div class="mb-1 flex h-7 items-center justify-between gap-3">
           <h3 class="text-base-medium">{{ __('Who has access') }}</h3>
           <Dropdown
-            v-if="sections.links"
+            v-if="sections?.links"
             :options="[
               {
                 label: __('Create share link'),
@@ -68,12 +71,24 @@
             />
           </Dropdown>
         </div>
-        <ul>
+        <ul v-if="!sections" :aria-label="__('Loading who has access')">
+          <!-- Most items list at least the owner, the workspace and the public. -->
+          <li v-for="index in 3" :key="index" :class="ROW_CLASS">
+            <div class="flex h-[60px] items-center gap-3">
+              <Skeleton class="size-8 shrink-0 rounded-full" />
+              <div class="min-w-0 flex-1">
+                <p class="text-p-base-medium"><Skeleton class="inline-block h-3.5 w-36" /></p>
+                <p class="mt-0.5 text-sm"><Skeleton class="inline-block h-3 w-52" /></p>
+              </div>
+              <Skeleton class="h-7 w-20 shrink-0" />
+            </div>
+          </li>
+        </ul>
+        <ul v-else>
           <li
             v-for="row in rows"
             :key="row.key"
-            class="relative before:absolute before:left-11 before:right-0 before:top-0 before:border-t before:border-outline-gray-1 first:before:border-0"
-            :class="{ 'opacity-60': isMuted(row) }"
+            :class="[ROW_CLASS, { 'opacity-60': isMuted(row) }]"
           >
             <div class="flex h-[60px] items-center gap-3">
               <Avatar
@@ -193,7 +208,7 @@
         </p>
       </section>
       <ShareLinkDialog
-        v-if="creatingLink"
+        v-if="creatingLink && node"
         v-model:open="creatingLink"
         :state="state"
         :node-kind="node.kind"
@@ -255,12 +270,16 @@ const publicRemoves = useTweak('t4-public-off')
 const oneRoleMenu = useTweak('t5')
 const confirmIrreversible = useTweak('t33-confirm-irreversible')
 const folderWording = useTweak('t33-public-folder-wording')
+const fastOpen = useTweak('t40-share-open')
+/** A row of the access list, with the divider that starts after its avatar. */
+const ROW_CLASS =
+  'relative before:absolute before:left-11 before:right-0 before:top-0 before:border-t before:border-outline-gray-1 first:before:border-0'
 const publicFromAncestor = computed(() => !!sections.value && isPublicFromAncestor(sections.value))
 // Who put the node here (`node.owner`), when the Owner row does not already
 // name them: always in the Shared root, where no one is Owner.
 const addedBy = computed(() => {
   const owner = node.value?.owner
-  return owner && owner.id !== sections.value?.owner?.id ? owner : null
+  return owner && sections.value && owner.id !== sections.value.owner?.id ? owner : null
 })
 const workspaceRoles = computed(() => [
   { label: __('No access'), value: 0 },
