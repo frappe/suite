@@ -107,8 +107,11 @@
               <Button variant="ghost" label="Done" @click="clearSelected" />
             </template>
             <template v-else>
+              <!-- Each place gets its own field. Pressing a link elsewhere fires the field's
+                   change event, whose debounced search would otherwise land on the new place. -->
               <TextInput
                 v-if="signedIn"
+                :key="route.path"
                 v-model="searchText"
                 type="search"
                 :debounce="250"

@@ -905,19 +905,24 @@ async function loadMore() {
   // cursor forever and the inline retry control never appears. The flag is
   // local, so pressing Retry starts a fresh walk.
   let failed = false
-  await loadUntilVisible({
-    get rows() {
-      return props.query.rows
-    },
-    get hasNext() {
-      return props.query.hasNext && !props.query.isFetching && !failed
-    },
-    async fetchNext() {
-      await props.query.fetchNext()
-      failed = Boolean(props.query.error)
-      return this
-    },
-  })
+  try {
+    await loadUntilVisible({
+      get rows() {
+        return props.query.rows
+      },
+      get hasNext() {
+        return props.query.hasNext && !props.query.isFetching && !failed
+      },
+      async fetchNext() {
+        await props.query.fetchNext()
+        failed = Boolean(props.query.error)
+        return this
+      },
+    })
+  } catch (error) {
+    // A new search or place cancels the window being loaded, which ends the walk.
+    if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+  }
 }
 function startLongPress(event: PointerEvent, row: DriveNode) {
   const checkedEventTarget = event.target

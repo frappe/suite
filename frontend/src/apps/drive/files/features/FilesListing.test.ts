@@ -194,6 +194,21 @@ describe('FilesListing paging', () => {
     expect(fetchNext).toHaveBeenCalledOnce()
   })
 
+  it('ends the walk quietly when a new search or place cancels the window it loads', async () => {
+    const { query } = mount({ rows })
+    const fetchNext = vi.spyOn(query, 'fetchNext').mockImplementation(async () => {
+      query.hasNext = false
+      throw new DOMException('Aborted', 'AbortError')
+    })
+    query.hasNext = true
+    await nextTick()
+
+    // An uncaught rejection here fails the run.
+    intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await vi.waitFor(() => expect(fetchNext).toHaveBeenCalledOnce())
+    await new Promise((resolve) => setTimeout(resolve))
+  })
+
   it('waits for an explicit retry after a next window fails', async () => {
     const { root, query } = mount({ rows })
     Object.assign(query, { hasNext: true, error: new Error('Window failed') })
