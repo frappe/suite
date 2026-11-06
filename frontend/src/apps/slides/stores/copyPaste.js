@@ -15,7 +15,7 @@ import {
   resetFocus,
 } from '@/apps/slides/stores/element'
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
-import { contextFor, presentationId } from '@/apps/slides/stores/presentation'
+import { contextFor, presentationDoc, presentationId } from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
 import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
@@ -235,6 +235,9 @@ const handleClipboardTextHTML = (imgSrc) => {
 }
 
 const handlePaste = (e) => {
+  // a converted presentation is read-only until live editing
+  if (presentationDoc.value?.is_converted) return
+
   // do not override paste event if current element is input or content editable
   if (isInputElement()) return
 
