@@ -186,11 +186,14 @@ def _convert_anonymous(env, grants: GrantConversion, nodes, batch, node, role: i
         # namespace, and no legacy UI could have asked for it.
         grants.drop(ROOT_GUARDRAIL)
         return
-    if role == READ and nodes.is_composite(node["name"]):
+
+    if role == READ and nodes.is_composite(node["name"]) and not env.tree.is_public_deck(node["name"]):
         # [011 amendment]: `presentation.py:98-113` writes a forced-public
         # row whenever a deck is composite. It records a property of the
-        # deck, not a decision somebody made, so mapping it would publish
-        # decks nobody chose to publish.
+        # deck, not a decision somebody made, so on a deck whose own
+        # `is_public` is 0 mapping it would publish a deck nobody chose to
+        # publish. A deck whose `is_public` is 1 was published, so its row is
+        # mapped like any other
         #
         # It writes exactly one shape: it looks the row up with `deny = 0`
         # and sets `read = 1`. So only a plain read grant can be the forced

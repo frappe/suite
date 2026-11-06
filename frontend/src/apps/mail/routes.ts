@@ -157,6 +157,13 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/apps/mail/pages/MailboxView.vue'),
         props: mailboxProps,
       },
+      // Where /mail lands while the account has no folder to open (see ./router.ts).
+      {
+        path: 'not-ready',
+        name: 'mail-not-ready',
+        component: () => import('@/apps/mail/pages/MailNotReadyView.vue'),
+        meta: { noLayout: true },
+      },
       // Compose as a page of its own rather than an overlay over the list. `noLayout` keeps
       // the app chrome — and the full-height scroll frame it brings — out of the way, so the
       // composer can own the visible area and decide for itself what scrolls inside it.

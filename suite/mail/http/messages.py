@@ -227,6 +227,11 @@ class UpdateInput(ComposeInput):
     submit: NotRequired[bool]
 
 
+class ReactInput(AccountInput):
+    id: str
+    emoji: str
+
+
 class SubmissionsInput(AccountInput):
     undo_status: NotRequired[str | None]
     identity_id: NotRequired[str | None]
@@ -356,6 +361,7 @@ _OPERATIONS: tuple[
     ),
     (mail.get_delivery_status, "query", "messages.deliveryStatus", IdInput, DeliveryReport, None),
     (mail.create_mail, "mutation", "messages.create", CreateInput, DraftResult, None),
+    (mail.react, "mutation", "messages.react", ReactInput, SendResult, None),
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),
     (mail.set_flagged, "mutation", "messages.flag", FlagInput, FlagResult, None),

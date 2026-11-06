@@ -16,8 +16,15 @@ import { translationPlugin } from '@/platform/translation'
 
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 export const saves: unknown[] = []
+export const previews: unknown[] = []
+// what Drive's restore route does; a test swaps it to change the deck or to fail
+export const versionRestore = { run: async (_seq: string) => {} }
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
-const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
+const versionsPanel = vi.hoisted(() => ({
+  flush: async () => {},
+  restore: async (_seq: string) => {},
+  writable: false,
+}))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
 const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
@@ -49,8 +56,13 @@ vi.mock('@/api', async () => {
   const { createTransport } = await import('@/platform/transport')
   const { api: slides } = await import('../client/api')
   const { registration } = await import('../client/policy')
+  const { api: real } = await vi.importActual<typeof import('@/api')>('@/api')
   const engine = createApiClient(
-    { slides: async () => registration },
+    // Drive's own policy imports `@/api`, which is this module still loading.
+    {
+      slides: async () => registration,
+      drive: async () => ({ policy: () => ({ effects: 'none' }) }),
+    },
     { persistence: false, transport: createTransport({ fetch: server.fetch }) },
   )
 
@@ -58,8 +70,11 @@ vi.mock('@/api', async () => {
     engine.invalidate((reference) => reference.id === 'get_templates')
   }
 
-  return { api: { slides }, ...engine }
+  return { api: { slides, drive: real.drive }, ...engine }
 })
+vi.mock('modern-screenshot', () => ({
+  domToWebp: async () => 'data:image/webp;base64,UklGRg==',
+}))
 vi.mock('frappe-ui', () => {
   const passthrough = {
     setup:
@@ -154,12 +169,13 @@ vi.mock('@/apps/drive', () => ({
   documentSessionUrls: () => [],
   GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
-    props: { recoverable: Boolean },
+    props: { recoverable: Boolean, panels: { type: Array, default: () => [] } },
     emits: ['download-changes', 'update:panel'],
     setup:
-      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
+      (props: { recoverable: boolean; panels: string[] }, { slots, emit }: SetupContext) =>
       () =>
         h('header', [
+          h('output', { 'data-panels': '' }, props.panels.join()),
           slots.actions?.(),
           slots.primary?.(),
           slots.icon?.({ icon: '' }),
@@ -201,12 +217,15 @@ vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
 })
 for (const path of [
   '@/apps/slides/components/SlideContainer.vue',
-  '@/apps/slides/components/Toolbar.vue',
   '@/apps/slides/components/LayoutDialog.vue',
   './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
+  default: { render: () => h('div', { 'data-toolbar': '' }) },
+}))
 
 vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
   default: { render: () => propertiesPanel.real && h(propertiesPanel.real) },
@@ -224,10 +243,22 @@ vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
 
 vi.doMock('./SlidesVersionsPanel.vue', () => ({
   default: {
-    props: { flush: { type: Function, default: null } },
-    setup(props: { flush: () => Promise<void> }) {
+    props: {
+      flush: { type: Function, default: null },
+      restore: { type: Function, default: null },
+      writable: Boolean,
+    },
+    setup(props: {
+      flush: () => Promise<void>
+      restore: (seq: string) => Promise<void>
+      writable: boolean
+    }) {
       versionsPanel.flush = props.flush
-      return () => null
+      versionsPanel.restore = props.restore
+      return () => {
+        versionsPanel.writable = props.writable
+        return null
+      }
     },
   },
 }))
@@ -242,7 +273,6 @@ vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
 }))
 
 const { default: SlidesSurface } = await import('./SlidesSurface.vue')
-const { toast } = await import('frappe-ui')
 
 function answer(message: unknown) {
   return new Response(JSON.stringify({ message }), { status: 200 })
@@ -252,6 +282,7 @@ function session(
   docname: string,
   access: Ref<{ role: number }>,
   media: DocumentSession['media'],
+  panels: string[],
 ): DocumentSession {
   return {
     nodeId: 'node-1',
@@ -260,8 +291,10 @@ function session(
     title: ref('Quarterly plan'),
     state: ref('Active'),
     access,
+    panels: ref(panels),
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
+    versions: { restore: (seq: string) => versionRestore.run(seq) },
     media,
   } as unknown as DocumentSession
 }
@@ -273,6 +306,7 @@ export async function openedSurface({
   firstLoad,
   media = (() => undefined) as unknown as DocumentSession['media'],
   composite,
+  panels = ['comments', 'versions'],
 }: {
   path?: string
   role?: number
@@ -280,6 +314,7 @@ export async function openedSurface({
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
   composite?: Record<string, unknown[] | Error>
+  panels?: string[]
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -288,6 +323,11 @@ export async function openedSurface({
   }
 
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.includes('/preview')) {
+      previews.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ preview: null }), { status: 200 })
+    }
+
     if (url.includes('save_slides')) {
       if (fakeServer.isRefusing) {
         return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })
@@ -367,7 +407,7 @@ export async function openedSurface({
     })
   })
   const access = ref({ role })
-  const opened = session(docname, access, media)
+  const opened = session(docname, access, media, panels)
   const view = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
@@ -408,7 +448,6 @@ export function thumbnails(root: Element) {
 export function startsFromEmptyStore() {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(toast.warning).mockReturnValue('refusal')
     localStorage.clear()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)

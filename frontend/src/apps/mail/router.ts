@@ -28,6 +28,11 @@ const handleSetupWizardEscape = () => {
   if (document.referrer.includes('/desk/setup-wizard')) window.location.replace('/desk')
 }
 
+// With no folder to open — the account's mailboxes are not set up yet, or the list did not load —
+// Mail says so on a page of its own. It never names another area's route: those load only when
+// that area is first opened.
+const NOT_READY_ROUTE = 'mail-not-ready'
+
 const buildDefaultRoute = (
   accountId: string,
   mailboxes: { data?: { id: string }[] },
@@ -35,7 +40,7 @@ const buildDefaultRoute = (
   const firstMailbox = mailboxes.data?.[0]?.id
   if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
 
-  return { name: 'people-address-books', params: { accountId } }
+  return { name: NOT_READY_ROUTE, params: {} }
 }
 
 const resolveShortcut = (
@@ -119,6 +124,9 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   const defaultRoute = buildDefaultRoute(accountId, mailboxes)
 
   if (to.meta.isDashboard && !canAdminister) return defaultRoute
+
+  // A mailbox that is ready leaves the not-ready page for it.
+  if (to.name === NOT_READY_ROUTE && defaultRoute.name !== NOT_READY_ROUTE) return defaultRoute
 
   // Validate mailbox param for mailbox routes. The param is the folder's slug (see
   // utils/unifiedFolders), though an id still opens it — links made before folders were named,

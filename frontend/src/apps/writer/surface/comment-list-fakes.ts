@@ -13,6 +13,25 @@ export const warnings: string[] = []
 export const errors: string[] = []
 export const me = { id: 'Asha Rao' }
 
+// Who can't open the document, and who of them are blocked from it
+export const access = {
+  locked: [] as string[],
+  blocked: [] as string[],
+}
+
+export function fakeWriterDrive() {
+  return {
+    peopleWithoutAccess: async (_node: string, users: string[]) =>
+      users
+        .filter((user) => access.locked.includes(user))
+        .map((user) => ({
+          name: user,
+          label: user.split('@')[0],
+          is_blocked: access.blocked.includes(user),
+        })),
+  }
+}
+
 export async function fakeSession() {
   const { computed: derive } = await import('vue')
   const { vi } = await import('vitest')
@@ -71,6 +90,7 @@ export async function fakeFrappeUi() {
   }
 
   return {
+    toast: { error: (message: string) => errors.push(message) },
     Avatar: define({
       props: { image: String, label: String },
       setup: (props) => () =>

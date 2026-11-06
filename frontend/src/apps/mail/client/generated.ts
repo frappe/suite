@@ -5351,6 +5351,11 @@ export type GetThreadsOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<GetThreadsOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5361,6 +5366,12 @@ export type GetThreadsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetThreadsOutputCopy>
   user_image?: string | null
+}
+
+export type GetThreadsOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type GetThreadsOutputRecipient = {
@@ -5391,6 +5402,7 @@ export type GetThreadsOutputThread = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
+  reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
   subject: string | null
   preview: string
@@ -5488,6 +5500,11 @@ export type GetUnifiedThreadsOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<GetUnifiedThreadsOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5498,6 +5515,12 @@ export type GetUnifiedThreadsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetUnifiedThreadsOutputCopy>
   user_image?: string | null
+}
+
+export type GetUnifiedThreadsOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type GetUnifiedThreadsOutputRecipient = {
@@ -5528,6 +5551,7 @@ export type GetUnifiedThreadsOutputThread = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
+  reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
   subject: string | null
   preview: string
@@ -5718,6 +5742,11 @@ export type GetThreadOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<GetThreadOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5728,6 +5757,12 @@ export type GetThreadOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetThreadOutputCopy>
   user_image?: string | null
+}
+
+export type GetThreadOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type GetThreadOutputRecipient = {
@@ -5834,6 +5869,11 @@ export type SearchMailsOutputMessage = {
   draft: 0 | 1
   unscreened?: 0 | 1
   message_id: string | null
+  in_reply_to: string | null
+  reacts_with: Array<string>
+  reactions?: Array<SearchMailsOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
   subject: string | null
   html_body: string | null
   text_body: string | null
@@ -5844,6 +5884,12 @@ export type SearchMailsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<SearchMailsOutputCopy>
   user_image?: string | null
+}
+
+export type SearchMailsOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
 }
 
 export type SearchMailsOutputRecipient = {
@@ -5874,6 +5920,7 @@ export type SearchMailsOutputSearchRow = {
   sent?: string | null
   archive?: string | null
   trash?: string | null
+  reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
   subject: string | null
   preview: string
@@ -6123,6 +6170,28 @@ const operationCreateMail: MutationRef<CreateMailInput, CreateMailOutput, Create
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationCreateMail,
+}
+
+export type ReactInput = { account: string; id: string; emoji: string }
+
+export type ReactOutput = { id: string | null; thread_id: string | null }
+
+export type ReactError = 'PermissionError' | 'ValidationError'
+
+const operationReact: MutationRef<ReactInput, ReactOutput, ReactError> = {
+  id: 'react',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.react',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.react',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationReact,
 }
 
 export type UpdateDraftMailInputDraftAttachment = {
@@ -7285,6 +7354,7 @@ export const api = {
     unsubscribe: operationUnsubscribeMail,
     deliveryStatus: operationGetDeliveryStatus,
     create: operationCreateMail,
+    react: operationReact,
     updateDraft: operationUpdateDraftMail,
     deleteDraft: operationDeleteMail,
     flag: operationSetFlagged,

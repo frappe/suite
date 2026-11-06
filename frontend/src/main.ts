@@ -4,6 +4,7 @@ import { createPinia } from 'pinia'
 import { createApp, type App as VueApp } from 'vue'
 
 import App from '@/App.vue'
+import { installEventReminders } from '@/apps/calendar'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
 import { watchBuild } from '@/platform/build'
@@ -19,6 +20,7 @@ import router from '@/router'
 initializeCursor()
 installUserTimeZone()
 watchBuild()
+installEventReminders({ open: (path) => void router.push(path) })
 
 const app = createApp(App)
 
@@ -40,7 +42,9 @@ app.use(createPinia())
 app.use(router)
 app.use(translationPlugin)
 
-Promise.all([router.isReady(), installLegacySprite(app)]).then(() => {
+// A first navigation that fails still mounts the app: the router has sent it
+// on to the page that says so (`@/platform/load-failure`).
+Promise.all([router.isReady().catch(() => {}), installLegacySprite(app)]).then(() => {
   app.mount('#app')
 })
 

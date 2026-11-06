@@ -12,7 +12,8 @@ from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, cint, now, random_string
-from jmap import MethodError
+from jmap import MethodError, RequestError, TransportError
+from jmap.core.errors import CapabilityNotSupportedError
 from werkzeug.wrappers import Response
 
 from suite.mail import classification, unsubscribe
@@ -72,13 +73,25 @@ from suite.mail.doctype.user_account.user_account import (
 from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
 from suite.mail.jmap import (
+    SuiteJMAPClient,
     get_account_client,
+    get_cached_identities,
     get_cached_mailboxes,
+    get_identities,
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
+from suite.mail.utils.reaction import (
+    MAILING_LIST_PROPERTIES,
+    emoji_key,
+    from_mailing_list,
+    is_emoji,
+    reaction_bodies,
+    reaction_refusal,
+    read_reactions,
+)
 from suite.mail.utils.user import can_use_mail, get_account_emails, get_undo_send_period, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils.rate_limiter import dynamic_rate_limit
@@ -340,34 +353,70 @@ def get_threads(
     outgoing_mailboxes = {ids_by_role[role] for role in ("sent", "drafts") if role in ids_by_role}
 
     threads = []
+    unread_reactions: list[str] = []
     for conversation in conversations.values():
         if not conversation:
             continue
 
         visible = visible_in_mailbox(conversation, mailbox, trash_mailbox, junk_mailbox)
 
+        # The row describes what was written: reacting to a thread must not redate it, rename its
+        # sender or replace its preview with an emoji the pane then folds away. The reactions stay
+        # in `visible`, which is what the pane is built from (see collapse_reactions).
+        # Judged against the whole conversation, not what this view shows: a reaction to a message
+        # now in Trash or Junk is still a reaction, and must not stand in for the mail thrown away.
+        folded = {m["id"] for m in conversation} - {m["id"] for m in written_messages(conversation)}
+        written = [m for m in visible if m["id"] not in folded]
+
+        # A reaction is delivered to the Inbox like any mail, but it doesn't bring back a thread
+        # you archived or trashed, or show mail you only sent there as if it had come in. The row
+        # stays on the page, marked for the client to leave out: the next page starts at this page's
+        # row count. Nothing here can be opened to read it, so a reaction that missed `fetch_changes`
+        # is read here, or the mailbox would count it unread with no row to clear it.
+        reaction_only = not any(in_mailbox_view(m, mailbox) for m in written) and any(
+            in_mailbox_view(m, mailbox) for m in visible
+        )
+        if reaction_only:
+            unread_reactions += [
+                m["id"] for m in visible if in_mailbox_view(m, mailbox) and not m.get("seen")
+            ]
+
         # The summary row is derived from the thread's messages in the current mailbox (falling back
         # to the whole conversation for cross-mailbox views like "starred").
-        in_mailbox = [
-            m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
-        ] or visible
+        written = written or visible
+        in_mailbox = [m for m in written if in_mailbox_view(m, mailbox)] or written
 
         # The preview and sender reflect the latest message in the conversation (the most recent
         # activity) everywhere except Sent and Drafts, which show the latest message in the folder
         # itself: a draft reply must keep its own recipients and its "Draft" badge when the thread it
         # answers receives a newer mail. The row's date is not read off this message.
-        latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
+        latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else written[-1]
         threads.append(
-            serialize_thread(
-                in_mailbox, visible, latest, first=conversation[0], sent_mailbox=ids_by_role.get("sent")
-            )
+            {
+                **serialize_thread(
+                    in_mailbox,
+                    visible,
+                    latest,
+                    first=written_messages(conversation)[0],
+                    sent_mailbox=ids_by_role.get("sent"),
+                ),
+                "reaction_only": cint(reaction_only),
+            }
         )
+
+    if unread_reactions:
+        try_set_seen(account, unread_reactions, True)
 
     # Avatars for the list-view summary rows, and for each message in the nested threads.
     add_user_images_to_emails(account, threads, is_thread=False)
     add_user_images_to_emails(account, [m for thread in threads for m in thread["messages"]], is_thread=True)
+    add_reaction_refusals(account, [m for thread in threads for m in thread["messages"]])
 
     return {"rows": threads, "mailbox": mailbox, "has_more": len(threads) == limit}
+
+
+def in_mailbox_view(message: dict, mailbox: str) -> bool:
+    return any(mb["mailbox_id"] == mailbox for mb in message["mailboxes"])
 
 
 def visible_in_mailbox(
@@ -465,6 +514,79 @@ def collapse_duplicate_copies(mails: list[dict], sent_mailbox: str | None) -> li
     return [merged.get(mail["id"], mail) for mail in mails if mail["id"] not in absorbed]
 
 
+def written_messages(messages: list[dict]) -> list[dict]:
+    """The conversation without the reactions that fold onto a message in it (see collapse_reactions).
+
+    A reaction whose target isn't in the list is left in, to be read as the message it then is. So
+    the result is never empty for a conversation that isn't.
+    """
+
+    targets = {m.get("message_id") for m in messages if not read_reactions(m)}
+    return [m for m in messages if not (read_reactions(m) and m.get("in_reply_to") in targets)]
+
+
+def collapse_reactions(mails: list[dict]) -> list[dict]:
+    """Fold each reaction onto the message it reacts to, and out of the thread.
+
+    A reaction is a real mail, so a thread that leaves it in place reads as a run of near-empty
+    replies between the messages people wrote. What the sender meant was a mark on one message, so
+    that is where it goes: onto the target its `in_reply_to` names, under `reactions`, one entry for
+    each person and emoji. Reactions add up rather than replace each other (see utils/reaction).
+
+    What is folded away is not dropped, for the reason collapse_duplicate_copies gives: an action on
+    the conversation has to reach it, or archiving a thread would leave a reaction behind in the
+    Inbox. So it rides along under the target's `duplicates` as well.
+
+    A reaction whose target is not in the list is left alone to render as an ordinary message: the
+    pane hides junked and trashed mail, and a chip with nothing to sit on would lose it.
+    """
+
+    targets = {
+        mail["message_id"]: mail for mail in mails if mail.get("message_id") and not mail["reacts_with"]
+    }
+
+    reactions: dict[str, dict[tuple[str, str], dict]] = {}
+    copies: dict[str, list[dict]] = {}
+    folded: set[str] = set()
+    for mail in sorted(mails, key=lambda m: (str(m["received_at"] or ""), m["id"])):
+        target = targets.get(mail.get("in_reply_to"))
+        if not mail["reacts_with"] or not target:
+            continue
+
+        folded.add(mail["id"])
+        copies.setdefault(target["id"], []).extend(
+            [
+                {field: mail[field] for field in DUPLICATE_COPY_FIELDS},
+                *mail.get("duplicates", []),
+            ]
+        )
+        sender = (mail.get("from_email") or "").lower()
+        for emoji in mail["reacts_with"]:
+            reactions.setdefault(target["id"], {}).setdefault(
+                (sender, emoji_key(emoji)),
+                {
+                    "emoji": emoji,
+                    "from_name": mail.get("from_name"),
+                    "from_email": mail.get("from_email"),
+                },
+            )
+
+    if not folded:
+        return mails
+
+    return [
+        {
+            **mail,
+            "reactions": list(reactions[mail["id"]].values()),
+            "duplicates": [*mail.get("duplicates", []), *copies[mail["id"]]],
+        }
+        if mail["id"] in reactions
+        else mail
+        for mail in mails
+        if mail["id"] not in folded
+    ]
+
+
 def get_user_jmap_accounts() -> list[dict]:
     """Return the current user's JMAP accounts (id + display name), personal first.
 
@@ -552,7 +674,8 @@ def get_unified_threads(
         for view_mailbox in view_mailboxes:
             threads = get_threads(account_id, view_mailbox, per_account_limit, 0, filter_by, category)["rows"]
             for thread in threads:
-                if thread["thread_id"] in seen:
+                # This list is cut to its window here, so what it leaves out doesn't disturb paging.
+                if thread["thread_id"] in seen or thread["reaction_only"]:
                     continue
                 seen.add(thread["thread_id"])
                 thread["account"] = account_id
@@ -869,10 +992,13 @@ def get_thread(account: str, thread_id: str) -> list[dict]:
     """Returns the full list of messages in a thread, for threads not present in the mailbox list
     (e.g. search results or a thread on another page)."""
 
-    mails = collapse_duplicate_copies(
-        [serialize_mail(m) for m in fetch_thread(account, thread_id)],
-        get_mailbox_id_by_role(account, "sent"),
+    mails = collapse_reactions(
+        collapse_duplicate_copies(
+            [serialize_mail(m) for m in fetch_thread(account, thread_id)],
+            get_mailbox_id_by_role(account, "sent"),
+        )
     )
+    add_reaction_refusals(account, mails)
     return add_user_images_to_emails(account, mails, is_thread=True)
 
 
@@ -955,8 +1081,8 @@ def serialize_thread(
         ),
         "subject": first["subject"],
         "attachments": serialize_attachments(latest.get("attachments", [])),
-        "messages": collapse_duplicate_copies(
-            [serialize_mail(message) for message in thread_messages], sent_mailbox
+        "messages": collapse_reactions(
+            collapse_duplicate_copies([serialize_mail(message) for message in thread_messages], sent_mailbox)
         ),
     }
 
@@ -990,6 +1116,9 @@ def serialize_mail(mail: dict) -> dict:
     return {
         **{field: mail[field] for field in mail_fields},
         "text_body": "" if html else mail.get("text_body", ""),
+        "in_reply_to": mail.get("in_reply_to"),
+        "reacts_with": read_reactions(mail),
+        "mailing_list": cint(mail.get("mailing_list")),
         "unscreened": cint(is_unscreened_message(mail)),
         "attachments": serialize_attachments(mail.get("attachments", [])),
         # The part has no filename, so it never survives `serialize_attachments`: the UI asks for
@@ -1103,6 +1232,170 @@ def attachment_rows(attachments: list[dict] | None, held: dict | None = None) ->
                 "cid": d.get("cid") or random_string(10),
             }
         )
+    return rows
+
+
+@frappe.whitelist()
+def react(account: str, id: str, emoji: str) -> dict:
+    """React to a message with an emoji.
+
+    The client names the message and the emoji; everything else is read off the message. A reaction
+    goes where a reply-all would, as Gmail's does, and goes now: Undo, the only way to take one back
+    (see utils/reaction), is the client holding this call until its window closes. A hold on the
+    server would make it a pending send, and bring the Outbox out to show it.
+    """
+
+    emoji = (emoji or "").strip()
+    if not is_emoji(emoji):
+        frappe.throw(_("A reaction has to be a single emoji."))
+
+    target = next(iter(get_messages(account, [id])), None)
+    if not target or target.get("draft") or not target.get("message_id"):
+        frappe.throw(_("This message can't be reacted to."))
+
+    identities = get_identities(account)
+    if not identities:
+        frappe.throw(_("This account has no address to send from."))
+
+    # Asked of the server, not the cache: a message cached before this was read doesn't say.
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.mail.email.get(ids=[id], properties=MAILING_LIST_PROPERTIES)
+    email = next(iter(h.result.items), None)
+    own = {i["email"].lower() for i in identities}
+    refusal = reaction_refusal(
+        {**target, "mailing_list": bool(email and from_mailing_list(email.to_wire()))},
+        own,
+        _own_reactions_to(account, target, own),
+    )
+    if refusal:
+        frappe.throw(refusal)
+
+    from_email, from_name = reaction_identity(identities, account, target)
+    recipients = reaction_recipients(identities, target, from_email)
+
+    subject = target.get("subject") or ""
+    text_body, html_body = reaction_bodies(
+        emoji, _("{0} reacted via Frappe Mail").format(from_name or from_email)
+    )
+
+    doc = MailQueue._create(
+        user=get_user_for_jmap_account(account, raise_exception=True),
+        account=account,
+        from_email=from_email,
+        from_name=from_name,
+        subject=subject if subject.lower().startswith("re:") else f"Re: {subject}",
+        text_body=text_body,
+        html_body=html_body,
+        reaction=emoji,
+        in_reply_to=target["message_id"],
+        recipients=recipients,
+    )
+    if doc.status != "Submitted":
+        frappe.throw(doc.error_message or _("Could not react to this message."))
+
+    forget_submission(client, doc.submission_id)
+
+    return {"id": doc.id, "thread_id": doc.thread_id}
+
+
+def forget_submission(client: SuiteJMAPClient, submission_id: str | None) -> None:
+    """Keep a reaction out of the Outbox's history, which lists what you sent, not what you marked.
+
+    This removes the record and leaves the delivery alone (RFC 8621 7.5). The reaction has gone out
+    by now, so failing here only leaves a row in the history, and must not report the reaction failed.
+    """
+
+    if not submission_id:
+        return
+
+    try:
+        with client.batch() as b:
+            b.submission.email_submission.set(destroy=[submission_id])
+    except (MethodError, RequestError, TransportError):
+        log_mail_error(
+            _("Failed to remove a reaction from the Outbox"), frappe.get_traceback(with_context=True)
+        )
+
+
+def _own_reactions_to(account: str, target: dict, own: set[str]) -> int:
+    """How many reactions the account has on this message already."""
+
+    return sum(
+        len(read_reactions(message))
+        for message in fetch_thread(account, target["thread_id"])
+        if message.get("in_reply_to") == target["message_id"]
+        and (message.get("from_email") or "").lower() in own
+    )
+
+
+def add_reaction_refusals(account: str, mails: list[dict]) -> None:
+    """Say on each message why it can't be reacted to, for the button to show. `react` asks again.
+
+    The list has its mail by now and this only annotates it, so identities that can't be read, as
+    on an account shared without sending, leave the reader's own addresses unknown rather than
+    failing the list.
+    """
+
+    try:
+        own = {i["email"].lower() for i in get_cached_identities(account)}
+    except (MethodError, RequestError, TransportError, CapabilityNotSupportedError, frappe.ValidationError):
+        own = set()
+
+    for mail in mails:
+        own_reactions = sum(
+            (reaction.get("from_email") or "").lower() in own for reaction in mail.get("reactions", [])
+        )
+        mail["cannot_react"] = reaction_refusal(mail, own, own_reactions)
+
+
+def reaction_identity(identities: list[dict], account: str, target: dict) -> tuple[str, str]:
+    """The address a reaction to this message is sent from, and its display name.
+
+    The address the message reached is preferred, so the reaction goes out as the person the thread
+    already knows; the account's default and then its first identity stand in otherwise.
+    """
+
+    by_email = {i["email"]: i for i in identities}
+    addressed_to = [(r.get("email") or "").lower() for r in target.get("recipients") or []]
+    default = (frappe.db.get_value("JMAP Account", account, "default_outgoing_email") or "").lower()
+
+    identity = next(
+        (by_email[email] for email in [*addressed_to, default] if email in by_email),
+        identities[0],
+    )
+    return identity["email"], identity["_name"] or ""
+
+
+def reaction_recipients(identities: list[dict], target: dict, from_email: str) -> list[dict]:
+    """Everyone a reply-all to this message would reach, less the account itself.
+
+    The author is addressed directly and the rest of the thread copied. Bcc recipients are not
+    carried over: they were never visible to the thread. Mail you sent yourself has no other author,
+    so the first of its recipients is addressed instead, and mail only to yourself goes back to you.
+    """
+
+    own = {i["email"].lower() for i in identities} | {from_email.lower()}
+    author = target.get("reply_to") or [
+        {"email": target.get("from_email"), "display_name": target.get("from_name")}
+    ]
+    others = [r for r in target.get("recipients") or [] if r.get("type") in ("To", "Cc")]
+
+    recipients: dict[str, dict] = {}
+    for type, candidates in (("To", author), ("Cc", others)):
+        for candidate in candidates:
+            email = (candidate.get("email") or "").lower()
+            if email and email not in own and email not in recipients:
+                recipients[email] = {
+                    "type": type,
+                    "email": email,
+                    "display_name": candidate.get("display_name"),
+                }
+
+    rows = list(recipients.values())
+    if not rows:
+        return [{"type": "To", "email": from_email, "display_name": None}]
+    rows[0]["type"] = "To"
     return rows
 
 
@@ -1471,6 +1764,10 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
         match = next((m for m in conversation if m["id"] == matches.get(thread_id)), None)
         if not match:
             continue
+        # A reaction has no words to have matched but its fallback's, and the pane folds it away.
+        written = written_messages(conversation)
+        if match not in written:
+            match = written[-1]
         # Found in Trash or Junk, the conversation is shown as those folders show it; anywhere else,
         # as every other list does.
         if trash and any(mb["mailbox_id"] == trash for mb in match["mailboxes"]):
@@ -1481,7 +1778,11 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
             where = None
         visible = visible_in_mailbox(conversation, where, trash, junk)
         row = serialize_thread(
-            visible, visible, match, first=conversation[0], sent_mailbox=ids_by_role.get("sent")
+            written_messages(visible),
+            visible,
+            match,
+            first=written[0],
+            sent_mailbox=ids_by_role.get("sent"),
         )
         row["received_at"] = match["received_at"]
         row["match_id"] = match["id"]
@@ -1489,6 +1790,7 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
 
     add_user_images_to_emails(account, rows, is_thread=False)
     add_user_images_to_emails(account, [m for row in rows for m in row["messages"]], is_thread=True)
+    add_reaction_refusals(account, [m for row in rows for m in row["messages"]])
     return rows, total
 
 

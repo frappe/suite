@@ -198,7 +198,7 @@ function blockTexts(editor: Element): string[] {
 }
 
 export async function expectSaved(page: Page): Promise<void> {
-	await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
 }
 
 /** Type at the end of the document, in a paragraph of its own. */

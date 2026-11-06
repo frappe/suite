@@ -15,7 +15,6 @@ vi.mock('frappe-ui', async () => {
     Button: passthrough,
     Dropdown: passthrough,
     toast: { info: () => {}, success: () => {}, warning: () => {}, error: () => {} },
-    useFileUpload: () => ({ upload: async () => ({}) }),
   }
 })
 vi.mock('frappe-ui/editor', async (importOriginal) => {
@@ -37,22 +36,22 @@ vi.mock('frappe-ui/editor', async (importOriginal) => {
     }),
     EditorContent: empty,
     EditorDropZone: empty,
-    EditorTableMenu: empty,
-    EditorFixedMenu: empty,
   }
 })
-vi.mock('./core-editor/menu-buttons', () => ({ buildMenuButtons: () => [] }))
-vi.mock('./ToC.vue', () => ({ default: { render: () => h('nav', { 'data-toc': '' }) } }))
+vi.mock('./core-editor/WriterToolbar.vue', () => ({ default: { render: () => null } }))
+vi.mock('./DocumentTabs.vue', () => ({ default: { render: () => h('nav', { 'data-tabs': '' }) } }))
+vi.mock('./DocumentOutline.vue', () => ({ default: { render: () => null } }))
 vi.mock('./ToCMobile.vue', () => ({
   default: { render: () => h('nav', { 'data-toc-mobile': '' }) },
 }))
-vi.mock('@/apps/drive', () => ({ hasDefaultDocumentTitle: () => false }))
+vi.mock('@/apps/drive', () => ({
+  hasDefaultDocumentTitle: () => false,
+  useDriveDialogs: () => ({ pickFile: async () => undefined }),
+}))
 vi.mock('@/apps/writer/composables/useUsers', () => ({
   useUsers: () => ({ users: ref([]) }),
   searchMentions: () => [],
 }))
-const rootStore = vi.hoisted(() => ({ paletteOpen: false }))
-vi.mock('@/stores/root', () => ({ useRootStore: () => rootStore }))
 
 const mounted: App[] = []
 
@@ -104,7 +103,7 @@ function shown(root: Element) {
   const scroller = root.querySelector<HTMLElement>('#editor-scroll-container')!
   return {
     isEditorShown: scroller.style.display !== 'none',
-    isTocInvisible: root.querySelector('[data-toc]')!.classList.contains('invisible'),
+    hasTabs: root.querySelector('[data-tabs]') !== null,
     hasMobileToc: root.querySelector('[data-toc-mobile]') !== null,
   }
 }
@@ -117,7 +116,7 @@ describe('CoreEditor cover', () => {
       await nextTick()
       expect(shown(root)).toEqual({
         isEditorShown: true,
-        isTocInvisible: false,
+        hasTabs: true,
         hasMobileToc: true,
       })
 
@@ -126,7 +125,7 @@ describe('CoreEditor cover', () => {
       expect(root.textContent).toContain(COVERS[kind])
       expect(shown(root)).toEqual({
         isEditorShown: false,
-        isTocInvisible: true,
+        hasTabs: false,
         hasMobileToc: false,
       })
 
@@ -134,26 +133,9 @@ describe('CoreEditor cover', () => {
       await nextTick()
       expect(shown(root)).toEqual({
         isEditorShown: true,
-        isTocInvisible: false,
+        hasTabs: true,
         hasMobileToc: true,
       })
     },
   )
-})
-
-describe('CoreEditor Cmd+K', () => {
-  it('opens the suite palette from inside the editor, since Writer binds no Cmd+K of its own', async () => {
-    rootStore.paletteOpen = false
-    const { root } = mountWithCover()
-    await nextTick()
-    const event = new KeyboardEvent('keydown', {
-      key: 'k',
-      ctrlKey: true,
-      bubbles: true,
-      cancelable: true,
-    })
-    root.querySelector('[data-editor]')!.dispatchEvent(event)
-    expect(rootStore.paletteOpen).toBe(true)
-    expect(event.defaultPrevented).toBe(true)
-  })
 })

@@ -34,6 +34,7 @@
   "body_section",
   "html_body",
   "text_body",
+  "reaction",
   "attachments_section",
   "attachments",
   "more_info_tab",
@@ -185,6 +186,13 @@
    "fieldname": "text_body",
    "fieldtype": "Code",
    "label": "Text",
+   "set_only_once": 1
+  },
+  {
+   "description": "The emoji this mail reacts with, when it is a reaction rather than an ordinary mail.",
+   "fieldname": "reaction",
+   "fieldtype": "Data",
+   "label": "Reaction",
    "set_only_once": 1
   },
   {
@@ -652,7 +660,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-05 13:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Queue",

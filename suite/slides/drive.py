@@ -86,8 +86,6 @@ SATELLITE_PARENT_FIELD = "slides"
 VERSION_SCHEMA = "presentation/1"
 VERSION_MIME = "application/json"
 
-PREVIEW_MIME = "image/webp"
-
 # A media reference is one whole node id. Node names are opaque hashes, so a
 # colour and a `/files/` URL both fail this and a body value is never mistaken
 # for a picture.
@@ -242,7 +240,17 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
     """Repoint this deck at the media nodes Drive copied for it (§8.9)."""
     if not mapping:
         return
-    for row in _slide_rows(docname):
+
+    # a locking read sees a save that landed since this transaction began
+    rows = frappe.db.get_values(
+        SATELLITE_DOCTYPE,
+        {"parent": docname, "parenttype": DOCTYPE, "parentfield": SATELLITE_PARENT_FIELD},
+        ["name", "idx", *SLIDE_BODY_FIELDS],
+        as_dict=True,
+        for_update=True,
+        order_by="idx asc",
+    )
+    for row in rows:
         values = {}
         background = mapping.get(row.get("background"))
         if background is not None:
@@ -272,8 +280,9 @@ SPEC = drive.ContentTypeSpec(
     export=None,
     version_bytes=version_bytes,
     restore_version=restore_version,
-    # The browser captures the deck preview and pushes it through Drive (§9.2,
-    # [012 §8]). Drive never renders a deck and gives it no gap sweep.
+    # The editor captures the first slide and pushes it to Drive's
+    # `POST /nodes/{node}/preview` (§9.2, [012 §8]). Drive never renders a deck
+    # and gives it no gap sweep.
     pushes_preview=True,
     on_purge=on_purge,
     satellites=(drive.Satellite(doctype=SATELLITE_DOCTYPE, link_field=SATELLITE_LINK_FIELD),),
@@ -357,16 +366,6 @@ def adopt_element_media(docname: str, elements: list[dict]) -> list[dict]:
     for element in elements:
         _remap_element(element, mapping)
     return elements
-
-
-def push_deck_preview(docname: str, image_bytes: bytes) -> None:
-    """Push one browser-captured deck preview through Drive (§9.2, [012 §8]).
-
-    Conversion to webp happens in the browser, before the node is asked for
-    anything [012 §9]. Drive checks EDIT at the node and replaces the preview
-    without stamping the deck.
-    """
-    drive.push_preview(node_of(docname), image_bytes, PREVIEW_MIME)
 
 
 def refuse_unreadable_references(deck) -> None:

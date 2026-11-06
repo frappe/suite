@@ -19,6 +19,9 @@ export const DRIVE_ROLES = {
   manage: 50,
 } as const
 
+/** A side panel a document's header toggles. Each editor renders the panel itself. */
+export type DocumentPanel = 'comments' | 'versions'
+
 export interface DriveAccess {
   role?: number
   via_link?: string | null
@@ -105,4 +108,16 @@ export function hasRole(node: Pick<DriveNode, 'access'> | null | undefined, role
 /** Whether the caller may share, restore what others trashed, and delete for good. Not a content right. */
 export function canManage(node: Pick<DriveNode, 'access'> | null | undefined): boolean {
   return node?.access?.can_manage ?? hasRole(node, DRIVE_ROLES.manage)
+}
+
+/**
+ * The side panels this person can open. As on the server, a Guest needs a comment link to see the
+ * discussion and an edit link to see the version history: a public reader sees the document only.
+ */
+export function documentPanels(access: DriveAccess, isSignedIn: boolean): DocumentPanel[] {
+  const role = access.role ?? 0
+  const panels: DocumentPanel[] = []
+  if (isSignedIn || role >= DRIVE_ROLES.comment) panels.push('comments')
+  if (isSignedIn || role >= DRIVE_ROLES.edit) panels.push('versions')
+  return panels
 }

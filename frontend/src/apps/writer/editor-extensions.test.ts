@@ -1,7 +1,7 @@
 import { Editor } from '@tiptap/core'
 import { describe, expect, it, vi } from 'vitest'
 
-import { bubbleMenuOptions } from './components/core-editor/bubble-menu'
+import { bubbleMenuShouldShow } from './components/core-editor/bubble-menu'
 import { writerEditorExtensions, type WriterEditorOptions } from './editor-extensions'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
@@ -10,8 +10,6 @@ vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 function writerEditor(content: string, changes: Partial<WriterEditorOptions> = {}) {
   const options: WriterEditorOptions = {
     isCollaborative: false,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => null,
@@ -46,7 +44,7 @@ describe('collab editor without a comments map', () => {
     const names = editor.extensionManager.extensions.map((extension) => extension.name)
 
     expect(names).not.toContain('commentExtension')
-    expect(bubbleMenuOptions().shouldShow({ state, from, to })).toBe(true)
+    expect(bubbleMenuShouldShow()({ state, from, to })).toBe(true)
     editor.destroy()
   })
 })

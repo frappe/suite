@@ -7,6 +7,7 @@ import { docSheets, storeEntries } from './stores'
 import {
   cmd,
   displays,
+  docInputs,
   inputs,
   makeStores,
   newClient,
@@ -181,6 +182,25 @@ describe('glue: rows, columns and sheets', { timeout: GLUE_TIMEOUT }, () => {
     expect(got['Sheet1!B6']).toBe('five')
     expect(got['Sheet1!C1']).toBe('=SUM(A1:A6)')
     await expectConverged(a, b)
+  })
+
+  it('an insert rewrites every formula in the doc, however many the sheet holds', async () => {
+    // More formulas than Find & Replace lists (MAX_FIND_RESULTS, 10,000).
+    const rows = 12_000
+    const a = await openTab('A')
+    const formulas = []
+    for (let r = 1; r <= rows; r++)
+      formulas.push(cmd('setInput', { sheet: 'Sheet1', row: r, col: 2, input: `=A${r}+${r}` }))
+    a.glue.dispatch(cmd('batch', { commands: formulas }))
+    await a.glue.commit()
+    a.glue.dispatch(cmd('insertRows', { sheet: 'Sheet1', row: 1, count: 1 }))
+    await a.glue.commit()
+    const wrong = Object.entries(docInputs(a)).filter(([cell, input]) => {
+      const row = Number(cell.slice('Sheet1!B'.length))
+      return input !== `=A${row}+${row - 1}`
+    })
+    expect(Object.keys(docInputs(a))).toHaveLength(rows)
+    expect(wrong).toEqual([])
   })
 
   it('delete wins over an edit in the deleted row', async () => {

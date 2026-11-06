@@ -13,8 +13,8 @@ from suite.drive.patches.build.content_mapping import (
     rerun_node_fields,
     standard_fields,
 )
-from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
-from suite.drive.patches.build.mapping import GENERAL
+from suite.drive.patches.build.environment import BUILD_BATCH_SIZE, BuildEnvironment
+from suite.drive.patches.build.mapping import GENERAL, PUBLIC
 from suite.drive.patches.build.ports import ACTIVE, WriterBody
 from suite.drive.patches.build.titles import SiblingTitles
 from suite.drive.patches.build.writer_bodies import convert_template_body
@@ -295,7 +295,10 @@ def _presentation_template(env, place, row, title) -> int:
 
     if row.node and row.node != row.name:
         raise InvalidLegacyContent(f"Presentation template {row.name} links another node")
-    grants = _missing_template_grants(env, row.name, row.owner)
+
+    # The old hook read every template deck to Guest, and without a `File` row
+    # this deck has no guest row of its own to carry that across
+    grants = _missing_template_grants(env, row.name, row.owner) + missing_public_grant(env, row.name)
     target.write_presentation_template(row.name, None if found else node, grants)
     return 1
 
@@ -362,6 +365,18 @@ def _missing_template_grants(env, node, owner) -> list[dict]:
         else:
             rows.append(_grant_row(env, node, principal, role))
     return rows
+
+
+def missing_public_grant(env: BuildEnvironment, node: str) -> list[dict]:
+    """Answer the `$PUBLIC` read row a template deck with no `File` still needs."""
+    stored = env.content_target.grant_roles(node, (PUBLIC,))
+    if PUBLIC not in stored:
+        return [_grant_row(env, node, PUBLIC, READ)]
+
+    if stored[PUBLIC] != READ:
+        raise InvalidLegacyContent(f"template {node} has a conflicting {PUBLIC} grant")
+
+    return []
 
 
 def _valid_owner(env, owner):

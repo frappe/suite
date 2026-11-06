@@ -401,10 +401,11 @@ after this ticket closed. These rows are part of the same patch set.
 - `Writer Template` rows become `Writer Document` rows with nodes and
   `is_template`, granted the same way. The doctype is then dropped.
 - The forced-public `Drive Permission` rows on composite decks
-  (`user = ""`, written by `presentation.py:47`) are dropped, not mapped:
-  ticket 007 removed the invariant and ticket 012 checks each reference per
-  viewer. This is narrower than the general `user = ""` rule above, which
-  still applies to rows a person created.
+  (`user = ""`, written by `presentation.py:47`) are dropped, not mapped,
+  when the deck's own `is_public` is 0: ticket 007 removed the invariant and
+  ticket 012 checks each reference per viewer. This is narrower than the
+  general `user = ""` rule above, which still applies to rows a person
+  created and to the read row of a deck whose `is_public` is 1.
 - Media nodes get no `Drive Node Preview` rows at migration; the daily sweep
   fills them (ticket 006). Deck previews come from the thumbnail Files
   above.

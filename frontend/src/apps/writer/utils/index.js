@@ -101,7 +101,7 @@ export function printDoc(html, settings = {}) {
               </style>
               </head>
               <body>
-                <div class="ProseMirror prose prose-sm prose-v3" style='max-width: ${settings?.wide ? '100ch' : '48rem'}; margin: 0 auto; padding-top: 20px; padding-bottom: 20px; ${editorVars}'>
+                <div class="ProseMirror prose prose-sm prose-v3" style='max-width: 48rem; margin: 0 auto; padding-top: 20px; padding-bottom: 20px; ${editorVars}'>
                   ${highlightedHtml}
                 </div>
               </body>

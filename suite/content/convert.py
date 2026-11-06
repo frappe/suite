@@ -21,8 +21,9 @@ record, never to a log or report.
 that have no log, newest first, past any this converter refused unless the row changed after the refused
 attempt began or since the `modified` a later run last found its body unchanged at.
 
-Without Node, or with the scheduler off, nothing converts. `check_before_migrate` prints each cause on
-every migrate, and System Managers get one notification per cause until it is fixed.
+Without Node nothing converts; with the scheduler off, only a document someone opens does. While any
+document waits, paused or not, `check_before_migrate` prints each cause on every migrate, and System
+Managers get one notification per cause until it is fixed.
 """
 
 import base64
@@ -77,17 +78,23 @@ class Refused:
     reason: str
 
 
-def may_convert(app: str, *, lock: bool = False) -> bool:
-    """Whether the app is on and unpaused; lock=True takes a current read that locks its row until the next commit."""
+def may_convert(app: str, *, lock: bool = False, opened: bool = False) -> bool:
+    """Whether the app is on and unpaused; lock=True takes a current read that locks its row until the next commit.
+
+    The pause holds back only the background run: with opened=True, for a document someone opened, a paused
+    app still converts.
+    """
     row = {"parent": "Suite Collab Settings", "parentfield": "apps", "app": app}
     if not lock:
-        return log.enabled(app) and not frappe.db.get_value("Suite Collab App", row, "conversion_paused")
+        return log.enabled(app) and (
+            opened or not frappe.db.get_value("Suite Collab App", row, "conversion_paused")
+        )
 
     # A lock by filter would hold every app's row and the gaps between them
     name = frappe.db.get_value("Suite Collab App", row)
     fields = ["mode", "conversion_paused"]
     switch = name and frappe.db.get_value("Suite Collab App", name, fields, as_dict=True, for_update=True)
-    return bool(switch) and switch.mode == "on" and not switch.conversion_paused
+    return bool(switch) and switch.mode == "on" and (opened or not switch.conversion_paused)
 
 
 def converter_ready(app: str, conversion: Conversion) -> bool:
@@ -221,9 +228,13 @@ def tell_blocks() -> None:
 
 
 def any_waiting() -> bool:
-    """Whether an app with collaboration on has a document waiting to convert."""
+    """Whether an app with collaboration on has a document waiting to convert; a paused one converts when opened."""
     for app, spec in editors().items():
-        if spec.conversion and may_convert(app) and pending_page(app, spec.conversion.version, None):
+        if (
+            spec.conversion
+            and may_convert(app, opened=True)
+            and pending_page(app, spec.conversion.version, None)
+        ):
             return True
 
     return False

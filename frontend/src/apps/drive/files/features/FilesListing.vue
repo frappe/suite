@@ -143,11 +143,7 @@
               <span class="min-w-0 truncate text-base text-ink-gray-8" :title="row.title">{{
                 row.title
               }}</span>
-              <span
-                v-if="row.favourite"
-                class="lucide-star ml-1.5 size-3.5 shrink-0 text-ink-amber-6"
-                aria-hidden="true"
-              />
+              <StarredIcon v-if="row.favourite" class="ml-1.5 size-3.5 shrink-0" />
               <span v-if="showBreadcrumbs" class="ml-2 truncate text-p-sm text-ink-gray-5">{{
                 breadcrumbText(row)
               }}</span>
@@ -321,6 +317,7 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
 import { nodeIcon, nodeIconTint, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
+import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 

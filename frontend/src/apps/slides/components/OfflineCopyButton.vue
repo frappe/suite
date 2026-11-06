@@ -32,6 +32,7 @@ import { computed, ref } from 'vue'
 
 import {
   cancelOfflineCopy,
+  hasRefusedMedia,
   offlineCopyProgress as progress,
   refreshOfflineStatus,
   removeOfflineCopy,
@@ -39,24 +40,28 @@ import {
   offlineCopyStatus as status,
 } from '@/apps/slides/stores/offlineCopy'
 import { presentationId } from '@/apps/slides/stores/presentation'
+import { translate } from '@/platform/translation'
 
 const showDialog = ref(false)
 
 const icon = computed(() => {
   if (progress.value.running) return CloudDownload
   if (status.value === 'available') return CloudCheck
-  if (status.value === 'outdated') return CloudAlert
+  if (status.value === 'outdated' || status.value === 'unusable') return CloudAlert
   return CloudDownload
 })
 
 const iconClass = computed(() =>
-  status.value === 'outdated' ? 'text-ink-amber-6' : 'text-ink-gray-6',
+  status.value === 'outdated' || status.value === 'unusable'
+    ? 'text-ink-amber-6'
+    : 'text-ink-gray-6',
 )
 
 const statusText = computed(() => {
   if (progress.value.running) return 'Saving offline copy'
   if (status.value === 'available') return 'Available offline'
   if (status.value === 'outdated') return 'Offline copy out of date'
+  if (status.value === 'unusable') return "Offline copy can't open"
   return 'Save offline copy'
 })
 
@@ -80,7 +85,9 @@ const reportSave = (result: SaveResult) => {
     })
   } else if (result.failed?.length) {
     toast.warning(`${result.failed.length} of ${result.count} images not saved`, {
-      description: 'Check your connection and try again.',
+      description: result.failed.every((failure) => failure.status === 'refused')
+        ? 'You may not have access to them.'
+        : 'Check your connection and try again.',
     })
   } else {
     toast.success('Available offline', {
@@ -124,6 +131,16 @@ const cancel = ({ close }: DialogActionContext) => {
 const cancelAction: DialogAction = { label: 'Cancel', variant: 'outline' }
 const removeAction: DialogAction = { label: 'Remove copy', variant: 'subtle', onClick: remove }
 
+function availableMessage() {
+  if (hasRefusedMedia()) {
+    return translate(
+      'Saved in this browser. Opens and presents without internet, but some images may be missing.',
+    )
+  }
+
+  return 'Saved in this browser. Opens and presents without internet.'
+}
+
 const dialog = computed((): DialogProps => {
   if (progress.value.running) {
     return {
@@ -138,7 +155,7 @@ const dialog = computed((): DialogProps => {
       title: 'Available offline',
       icon: 'lucide-cloud-check',
       theme: 'blue',
-      message: 'Saved in this browser. Opens and presents without internet.',
+      message: availableMessage(),
       actions: [cancelAction, { ...removeAction, variant: 'solid' }],
     }
   }
@@ -149,6 +166,15 @@ const dialog = computed((): DialogProps => {
       theme: 'amber',
       message: 'New images are not saved offline yet.',
       actions: [removeAction, { label: 'Update copy', variant: 'solid', onClick: save }],
+    }
+  }
+  if (status.value === 'unusable') {
+    return {
+      title: "Offline copy can't open",
+      icon: 'lucide-cloud-alert',
+      theme: 'amber',
+      message: 'This presentation shows slides from other presentations, which need internet.',
+      actions: [cancelAction, { ...removeAction, variant: 'solid' }],
     }
   }
   return {

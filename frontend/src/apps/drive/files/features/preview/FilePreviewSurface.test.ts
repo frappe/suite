@@ -64,6 +64,7 @@ vi.mock('../document/DocumentHeader.vue', () => ({
             : null,
           slots.status?.(),
           slots.actions?.(),
+          slots.menu?.(),
         ]),
   }),
 }))
@@ -153,7 +154,10 @@ function session(
       trashRoot ? { name: 'folder-2', title: 'Old talks' } : { name: 'folder-1', title: 'Talks' },
     ),
     preview: ref(null),
-    favourite: ref(false),
+    editedAt: null,
+    isStarred: ref(false),
+    canStar: ref(true),
+    setStarred: vi.fn(),
     refreshPreview: async () => {},
   }
   return fields as unknown as FilePreviewSession

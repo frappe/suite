@@ -439,6 +439,7 @@ import {
 import { computed, h, nextTick, ref, watch } from 'vue'
 
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
+import { requestAlertPermission } from '@/apps/calendar/reminders'
 import { eventColor } from '@/apps/calendar/utils/color'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import {
@@ -452,7 +453,6 @@ import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/forma
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import { meetLogo } from '@/platform/brand'
-import { requestAlertPermission } from '@/utils/calendarAlert'
 
 const { event, participants, calendarChoices } = defineProps<{
   /** The form state EventModal owns; the rows edit it in place. */

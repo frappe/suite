@@ -47,6 +47,13 @@ const CONTENT_TYPES: Record<string, FileType> = {
   Drawing: 'draw',
 }
 
+/** People's names for Drive's own document types, not their DocType names */
+const DOCUMENT_LABELS: Partial<Record<FileType, string>> = {
+  doc: 'Document',
+  sheet: 'Spreadsheet',
+  slides: 'Presentation',
+}
+
 /** Drive's own documents, PDFs and media each have a colour; everything else is gray. */
 const TINTS: Record<FileType, string> = {
   folder: 'text-ink-gray-6',
@@ -144,6 +151,6 @@ export function documentIcon(contentDoctype: string) {
 export function nodeTypeLabel(node: TypedNode): string {
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'link') return 'Link'
-  if (node.kind === 'document') return node.content_doctype ?? 'Document'
+  if (node.kind === 'document') return DOCUMENT_LABELS[fileType(node)] ?? 'Document'
   return storedFile(node).label
 }

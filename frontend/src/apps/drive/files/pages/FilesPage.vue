@@ -255,7 +255,7 @@ import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
-import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
+import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
@@ -1629,20 +1629,21 @@ async function downloadRows(rows: readonly DriveNode[]): Promise<void> {
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return
+  const definition = documentTypes.find((type) => type.contentDoctype === contentDoctype)
   createRequest.value = {
     parent: parentId.value,
     kind,
     contentDoctype,
-    typeLabel: documentTypes
-      .find((definition) => definition.contentDoctype === contentDoctype)
-      ?.newLabel(),
+    typeLabel: definition?.newLabel(),
   }
   createOpen.value = true
+  // Loaded while the name is typed, so the new document takes typing as soon as it opens.
+  void definition?.loadOpeningEditor?.()
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {
     // the document's surface may ask what a new one should start as
-    await router.push({ ...driveNodeRoute(created), query: { new: '1' } })
+    await router.push(newDocumentRoute(created))
     return
   }
   // A search hides what was just added, so the folder shows again.

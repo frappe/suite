@@ -196,10 +196,13 @@ const ticksAtGate = new Map()
 // the generation each draft holds, so a blocked push does not rewrite it every tick
 const draftGenerations = new Map()
 
+// answers whether the draft holds the snapshot's edits
 const writeSnapshot = async (snapshot, epoch) => {
   const generation = generationFor(snapshot.id)
-  if (draftGenerations.get(snapshot.id) === generation) return
-  if (await writeDraft(snapshot, epoch)) draftGenerations.set(snapshot.id, generation)
+  if (draftGenerations.get(snapshot.id) === generation) return true
+  const written = await writeDraft(snapshot, epoch)
+  if (written) draftGenerations.set(snapshot.id, generation)
+  return written
 }
 
 // true when an online save to the server failed; drives the "Not saved" indicator
@@ -320,6 +323,17 @@ const saveDraft = async () => {
   if (snapshot) await writeSnapshot(snapshot)
 }
 
+// Another tab takes over from the draft, so the edits it holds are no longer this tab's to
+// keep and it has nothing left to warn about. If the write fails the deck stays dirty. The
+// snapshot is taken before the first await, while the tab may still write. A deck with no
+// edits leaves no draft to restore.
+const keepDraftAsClean = async () => {
+  const snapshot = dirty.value && takeSnapshot()
+  if (!snapshot || !(await writeSnapshot(snapshot))) return
+  markClean()
+  clearSaveFailure()
+}
+
 async function holdRefused(snapshot, epoch) {
   // the hold turns the editor read-only, so the edits made during the push go in first
   const latest = takeSnapshot()
@@ -404,18 +418,27 @@ async function retireDraft(id, keepContent) {
     return
   }
 
-  // if that write fails the record goes, so it can't replay either way
-  await savePresentationToLocalDB({ ...local, dirty: false, retired: true, updatedAt: Date.now() })
+  // if that write fails the record goes, so it can't replay; if that fails too, it stays as it was
+  await savePresentationToLocalDB({
+    ...local,
+    dirty: false,
+    retired: true,
+    updatedAt: Date.now(),
+  })
     .catch(() => deletePresentationFromLocalDB(id))
-    .catch(() => {})
+    .catch(() => null)
 }
 
 // Edit access is gone. No save starts, the one under way is aborted and lands
 // nothing, and the draft is retired so it never replays: the edits live on only
 // in the explicit recovery copy the surface keeps. The exception is a draft
-// `keepContent` found no room for: it stays, and a later load treats it as any other
+// `keepContent` found no room for, or one that can be neither rewritten nor removed:
+// it stays, and a later load treats it as any other, so it can replay once access widens
 async function stopWrites(id, keepContent) {
-  if (!id) return
+  if (!id) {
+    return
+  }
+
   stopped.add(id)
   epochs.set(id, epochFor(id) + 1)
   queuedSnapshots.delete(id)
@@ -447,6 +470,7 @@ export {
   saveChanges,
   saveWithoutDelay,
   saveDraft,
+  keepDraftAsClean,
   stopWrites,
   retireDraft,
   resumeWrites,

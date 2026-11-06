@@ -1,28 +1,35 @@
 <template>
-  <Popover bare>
+  <Popover v-model:open="isOpen" bare :auto-focus="!openOnHover">
     <template #trigger="{ setOpen, open }">
-      <slot v-bind="{ open, toggle: () => setOpen(!open) }">
+      <slot
+        v-bind="{
+          open,
+          toggle: () => setOpen(!open),
+          press,
+          hover: { onPointerenter: scheduleOpen, onPointerleave: scheduleClose },
+        }"
+      >
         <span class="text-base"> {{ modelValue || '' }} </span>
       </slot>
     </template>
     <template #default="{ close }">
       <div
         v-if="reaction"
-        class="bg-surface-base flex items-center justify-center gap-2 rounded-full px-2 py-1 shadow-sm"
+        class="bg-surface-base flex items-center justify-center gap-0.5 rounded-full p-1 shadow-sm"
+        @pointerenter="cancelClose"
+        @pointerleave="scheduleClose"
       >
-        <div
+        <button
           v-for="r in reactionEmojis"
           :key="r"
-          class="bg-surface-base size-5 cursor-pointer rounded-full text-2xl"
+          class="hover:bg-surface-gray-2 focus-visible:bg-surface-gray-2 flex size-7 items-center justify-center rounded-full text-xl leading-none focus:outline-none"
           @click="() => (emoji = r) && close()"
         >
-          <button>
-            {{ r }}
-          </button>
-        </div>
+          {{ r }}
+        </button>
         <Button class="rounded-full" icon="lucide-plus" @click.stop="() => (reaction = false)" />
       </div>
-      <div v-else class="bg-surface-base my-3 max-w-max transform rounded-6 px-4 sm:px-0">
+      <div v-else class="bg-surface-base max-w-max transform rounded-6 px-4 sm:px-0">
         <div
           class="relative max-h-96 overflow-y-auto rounded-6 pb-3 shadow-2xl ring-1 ring-black ring-opacity-5"
         >
@@ -36,12 +43,12 @@
             </div>
             <Button @click="setRandom">Random</Button>
           </div>
-          <div class="w-96"></div>
+          <div class="w-[calc(100vw-2rem)] sm:w-96"></div>
           <div v-for="(emojis, group) in emojiGroups" :key="group" class="px-3">
             <div class="bg-surface-base text-ink-gray-6 sticky top-0 pb-2 pt-3 text-sm">
               {{ group }}
             </div>
-            <div class="grid w-96 grid-cols-12 place-items-center">
+            <div class="grid w-full grid-cols-8 place-items-center sm:w-96 sm:grid-cols-12">
               <button
                 v-for="_emoji in emojis"
                 :key="_emoji.description"
@@ -61,11 +68,50 @@
 <script setup lang="ts">
 import { Button, FormControl, Popover } from 'frappe-ui'
 import { gemoji } from 'gemoji'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+
+const { openOnHover = false } = defineProps<{ openOnHover?: boolean }>()
 
 const search = ref('')
 const emoji = defineModel()
 const reaction = defineModel('reaction')
+
+const OPEN_DELAY_MS = 150
+const CLOSE_DELAY_MS = 300
+
+// Opening on hover is for a mouse. A touch has no hover to end, so it still goes by tapping.
+const isMouse = (event: PointerEvent) => event.pointerType === 'mouse'
+
+const isOpen = ref(false)
+let hoverTimer: ReturnType<typeof setTimeout> | undefined
+const cancelClose = () => clearTimeout(hoverTimer)
+onBeforeUnmount(cancelClose)
+
+const scheduleOpen = (event: PointerEvent) => {
+  if (!openOnHover || !isMouse(event)) return
+  clearTimeout(hoverTimer)
+  hoverTimer = setTimeout(() => (isOpen.value = true), OPEN_DELAY_MS)
+}
+
+// Crossing the gap from the button to the palette is what the delay is for. The full list stays
+// open: it has a search box to type in, and is dismissed by clicking away.
+const scheduleClose = (event: PointerEvent) => {
+  if (!openOnHover || !isMouse(event)) return
+  clearTimeout(hoverTimer)
+  if (reaction.value) hoverTimer = setTimeout(() => (isOpen.value = false), CLOSE_DELAY_MS)
+}
+
+// The popover's own trigger toggles on a press, which is right for a tap or a key. A mouse that
+// hovered and then clicks wants what it already sees, so it is held open against that toggle.
+const press = (event: PointerEvent) => {
+  clearTimeout(hoverTimer)
+  if (openOnHover && isMouse(event)) isOpen.value = true
+}
+
+// It opens on the short palette each time, whichever view it was left on.
+watch(isOpen, (open) => {
+  if (open && openOnHover) reaction.value = true
+})
 
 const reactionEmojis = ref(['👍', '❤️', '😂', '😮', '😢', '🙏'])
 

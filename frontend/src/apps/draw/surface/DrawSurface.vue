@@ -4,6 +4,7 @@ import { onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 
 import { driveNodeRoute, useDriveDocumentCreation, type DocumentSession } from '@/apps/drive'
+import { useHideRail } from '@/platform/rail'
 import { translate as __ } from '@/platform/translation'
 
 import DrawEditor from '../App.vue'
@@ -28,6 +29,7 @@ const {
   drawingLoading,
   readable,
 } = persistence
+useHideRail(() => readable.value && !loadError.value)
 
 function reload() {
   location.reload()

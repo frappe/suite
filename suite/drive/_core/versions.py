@@ -73,8 +73,9 @@ def take_version(
     *,
     kind: str = "auto",
     label: str | None = None,
+    actor: str | None = None,
 ) -> int:
-    """Capture one file head or content document body as immutable bytes."""
+    """Capture one file head or content document body as immutable bytes, credited to `actor` or the caller."""
     _validate_kind_and_label(kind, label)
     current = _lock_node(node)
     via_link = require(current, EDIT, principals)
@@ -92,6 +93,7 @@ def take_version(
             size=size,
             kind=kind,
             label=label,
+            actor=actor,
         )
         _record_activity(
             current.name,
@@ -111,6 +113,11 @@ def take_version(
     return seq
 
 
+def require_history_reader(node: Mapping, principals: Principals) -> None:
+    """History needs READ, and EDIT from a Guest: a public reader sees the document, not its past."""
+    require(node, EDIT if principals.user == "Guest" else READ, principals)
+
+
 def list_versions(
     principals: Principals,
     node: str,
@@ -120,7 +127,7 @@ def list_versions(
 ) -> dict:
     """Page one readable node's versions, newest sequence first (§11.4)."""
     current = _node(node)
-    require(current, READ, principals)
+    require_history_reader(current, principals)
     _require_version_node(current)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
@@ -147,7 +154,7 @@ def read_version(principals: Principals, node: str, seq: int):
     """
     _validate_seq(seq)
     current = _node(node)
-    require(current, READ, principals)
+    require_history_reader(current, principals)
     _require_version_node(current)
     version = _version(current.name, seq)
     blob = _validated_version_blob(version)
@@ -176,7 +183,7 @@ def version_content_url(
     """
     _validate_seq(seq)
     current = _node(node)
-    require(current, READ, principals)
+    require_history_reader(current, principals)
     _require_version_node(current)
     version = _version(current.name, seq)
     _validated_version_blob(version)
@@ -257,7 +264,7 @@ def get_version(principals: Principals, node: str, seq: int) -> frappe._dict:
     """Answer one readable node's version row, as `list_versions` lists it."""
     _validate_seq(seq)
     current = _node(node)
-    require(current, READ, principals)
+    require_history_reader(current, principals)
     _require_version_node(current)
     return _version(current.name, seq)
 
@@ -536,6 +543,7 @@ def _insert_version(
     size: int,
     kind: str,
     label: str | None,
+    actor: str | None = None,
 ) -> int:
     # Every compliant writer holds the node row lock before allocating. That
     # one stable lock serializes MAX(seq)+1 without a separate counter field.
@@ -555,7 +563,7 @@ def _insert_version(
             "seq": seq,
             "kind": kind,
             "label": label,
-            "actor": principals.user,
+            "actor": actor or principals.user,
             "size": size,
             "blob": blob,
         }

@@ -100,13 +100,15 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	expect(order.at(-1)).toContain("/versions");
 
 	// The room keeps the state a restore replaces as a version of its own.
-	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring version" });
+	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring “Journey version”" });
 	await expect(before).toHaveCount(0);
-	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "Restore" }).click();
+	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
+	await page.getByRole("menuitem", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 	await expect(before).toHaveCount(1);
-	await expect(versions.getByRole("listitem").first()).toContainText("Before restoring version");
+	// The first row is the current version; the newest saved version comes next.
+	await expect(versions.getByRole("listitem").nth(1)).toContainText("Before restoring “Journey version”");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).
@@ -256,6 +258,14 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 	expect(seen.errors).toEqual([]);
 	await visitor.close();
+});
+
+test("a sheet whose room can't open keeps the rail", async ({ page }) => {
+	await page.route(/\/content\/[^/]+\/sessions$/, (route) => route.fulfill({ status: 500 }));
+	await page.goto(`/d/${sheet.name}`);
+
+	await expect(page.getByText("Couldn't open this sheet")).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByRole("navigation", { name: "Areas" })).toBeVisible();
 });
 
 test("the document actions fit on one row of a 320 px screen", async ({ page }) => {

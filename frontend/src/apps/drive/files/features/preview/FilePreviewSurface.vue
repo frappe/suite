@@ -96,8 +96,6 @@ const inTrashedFolder = computed(
 )
 const trash = useTrashActions(() => (trashed.value ? file.value.root : null))
 const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
-const starMutation = useMutation(api.drive.nodes.star)
-const unstarMutation = useMutation(api.drive.nodes.unstar)
 const trashMutation = useMutation(api.drive.nodes.trash)
 
 const header = ref<{ focusTitle(): void } | null>(null)
@@ -189,15 +187,6 @@ const menu = computed(() => [
   ...(canReplace.value
     ? [{ label: 'Upload new version', icon: 'lucide-upload', onClick: () => upload.value?.pick() }]
     : []),
-  ...(can.value.star
-    ? [
-        {
-          label: file.value.favourite.value ? 'Unstar' : 'Star',
-          icon: 'lucide-star',
-          onClick: toggleStar,
-        },
-      ]
-    : []),
   {
     label: 'Details',
     icon: 'lucide-info',
@@ -252,18 +241,6 @@ async function deleteForever() {
   const result = await trash.purge([item.value])
   if (!result?.ok.length) return
   await router.replace(trashLocation(file.value, discovered.data))
-}
-
-/** The menu shows the new state at once, and the old one again if the server refuses. */
-async function toggleStar() {
-  const favourite = file.value.favourite
-  const starred = !favourite.value
-  try {
-    favourite.value = starred
-    await (starred ? starMutation : unstarMutation).run({ node: props.session.nodeId })
-  } catch {
-    favourite.value = !starred
-  }
 }
 
 async function move() {
@@ -403,6 +380,8 @@ const source = computed(() =>
           :aria-label="__('Fullscreen')"
           @click="enterFullscreen"
         />
+      </template>
+      <template #menu>
         <Dropdown :options="menu" align="end">
           <Button
             variant="ghost"

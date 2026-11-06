@@ -2,13 +2,13 @@
 import { Button, FormControl } from 'frappe-ui'
 import { watch } from 'vue'
 
+import { requestAlertPermission } from '@/apps/calendar/reminders'
 import {
   ALERT_ACTION_OPTIONS,
   DIRECTION_OPTIONS,
   RELATIVE_TO_OPTIONS,
   UNIT_OPTIONS,
 } from '@/apps/calendar/utils/eventOptions'
-import { requestAlertPermission } from '@/utils/calendarAlert'
 
 const { alerts } = defineProps<{ alerts: any[] }>()
 

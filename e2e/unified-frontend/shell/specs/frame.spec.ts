@@ -1,6 +1,6 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
 
-import { adminApi, createDocument, purge, roots, runTag } from "../../helpers/drive";
+import { adminApi, createDocument, purge, roots, runTag, uploadFile } from "../../helpers/drive";
 
 /**
  * Ticket 010: the shell draws a rail and one box. A page may draw its own
@@ -67,17 +67,32 @@ test("a root id in /drive/f/ replaces itself with the root's own route", async (
 	}
 });
 
-test("a /d/ document keeps the rail and draws no area sidebar", async ({ page, baseURL }) => {
+test("an open /d/ document hides the rail and draws no area sidebar", async ({ page, baseURL }) => {
 	const api = await adminApi(baseURL!);
 	const discovered = await roots(api);
 	const doc = await createDocument(api, discovered.personal.node, runTag("uf1-doc"), "Writer Document");
 	try {
 		await page.goto(`/d/${doc.name}`);
 		await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 20_000 });
-		await expect(rail(page)).toBeVisible();
+		await expect(rail(page)).toHaveCount(0);
 		await expect(sidebar(page)).toHaveCount(0);
 	} finally {
 		await purge(api, doc.name);
+		await api.dispose();
+	}
+});
+
+test("a /d/ file preview keeps the rail and draws no area sidebar", async ({ page, baseURL }) => {
+	const api = await adminApi(baseURL!);
+	const discovered = await roots(api);
+	const file = await uploadFile(api, discovered.personal.node, runTag("uf1-file"), Buffer.from("uf1-not-previewable"));
+	try {
+		await page.goto(`/d/${file.name}`);
+		await expect(page.getByRole("heading", { name: "No preview" })).toBeVisible();
+		await expect(rail(page)).toBeVisible();
+		await expect(sidebar(page)).toHaveCount(0);
+	} finally {
+		await purge(api, file.name);
 		await api.dispose();
 	}
 });

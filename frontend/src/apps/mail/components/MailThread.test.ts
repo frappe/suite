@@ -47,6 +47,9 @@ vi.mock('@/apps/mail/composables/useScreener', () => ({
   useScreener: () => ({ version: ref(0) }),
 }))
 vi.mock('@/apps/mail/composables/useUnsubscribe', () => ({ useUnsubscribe: () => ({}) }))
+vi.mock('@/apps/mail/composables/useMessageReactions', () => ({
+  useMessageReactions: () => ({ reactionsOn: () => [], react: () => {} }),
+}))
 
 let app: App | undefined
 const root = document.createElement('div')
