@@ -31,7 +31,7 @@ export const tweaks = [
   { id: 't4', item: 4, group: 'Merge similar concepts', label: 'One name per thing', description: 'Types, locations, access levels and storage use the same words everywhere.', ready: false },
   { id: 't5', item: 5, group: 'Merge similar concepts', label: 'One way to change a role', description: 'Every role menu in the share dialog lists the roles at the top with a check, in one control style.', ready: false },
   { id: 't6', item: 6, group: 'Merge similar concepts', label: 'One byte format', description: 'The listing and the upload tracker show sizes with the same units.', ready: false },
-  { id: 't7', item: 7, group: 'Merge similar concepts', label: 'One "Folder" in the New menu', description: 'The New menu says "New folder", "Upload files" and "Upload folder".', ready: false },
+  { id: 't7', item: 7, group: 'Merge similar concepts', label: 'One "Folder" in the New menu', description: 'The New menu\'s upload items say "Upload files" and "Upload folder", so only Create has "Folder".', ready: true },
   { id: 't8', item: 8, group: 'Fewer steps', label: 'New document opens at once', description: 'A new document, spreadsheet, presentation or drawing opens with the default title instead of asking for a name.', ready: false },
   { id: 't9', item: 9, group: 'Fewer steps', label: 'Share link in one click', description: 'A visible "New link" button creates a view link and copies it.', ready: false },
   { id: 't10', item: 10, group: 'Fewer steps', label: 'Desktop share footer', description: 'The desktop share dialog footer has a captioned Copy link and a Done button, like the phone layout.', ready: false },

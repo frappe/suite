@@ -168,22 +168,22 @@ describe('listing shortcuts', () => {
 
 describe('menu commands', () => {
   const run = () => {}
-  const newFolder = { label: 'Folder', onClick: run }
-  const uploadFolder = { label: 'Folder', onClick: run }
+  const newFolder = { key: 'create-folder', label: 'Folder', onClick: run }
+  const uploadFolder = { key: 'upload-folder', label: 'Folder', onClick: run }
+  const selectAll = { key: 'select-all', label: 'Tout sélectionner', onClick: run, disabled: true }
   const menu = [
     { group: 'Create', options: [newFolder] },
-    { group: 'Upload', options: [{ label: 'Files', onClick: run }, uploadFolder] },
-    { label: 'Select all', onClick: run, disabled: true },
+    {
+      group: 'Upload',
+      options: [{ key: 'upload-files', label: 'Files', onClick: run }, uploadFolder],
+    },
+    selectAll,
   ]
 
-  it('finds an option by its label, inside the named group', () => {
-    expect(menuCommand(menu, 'Folder', 'Create')).toBe(newFolder)
-    expect(menuCommand(menu, 'Folder', 'Upload')).toBe(uploadFolder)
-    expect(menuCommand(menu, 'Select all')).toEqual({
-      label: 'Select all',
-      onClick: run,
-      disabled: true,
-    })
-    expect(menuCommand(menu, 'Share')).toBeUndefined()
+  it('finds an option by its key, whatever its label says', () => {
+    expect(menuCommand(menu, 'create-folder')).toBe(newFolder)
+    expect(menuCommand(menu, 'upload-folder')).toBe(uploadFolder)
+    expect(menuCommand(menu, 'select-all')).toBe(selectAll)
+    expect(menuCommand(menu, 'share')).toBeUndefined()
   })
 })

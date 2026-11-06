@@ -34,20 +34,28 @@ export interface ListingViews {
 }
 
 /**
- * The action option labelled `label`, inside the group named `group` when
- * given. Menu labels are unique within a group.
+ * The fixed keys of the menu options a shortcut runs. A key stays the same
+ * when the visible label is translated or reworded.
  */
+export type MenuKey =
+  | 'select-all'
+  | 'move'
+  | 'trash'
+  | 'delete-forever'
+  | 'open-in-new-tab'
+  | 'share'
+  | 'create-folder'
+  | 'upload-files'
+  | 'upload-folder'
+
+/** The action option with `key`, in any group. A key is unique within a menu. */
 export function menuCommand(
   items: readonly DropdownItem[],
-  label: string,
-  group?: string,
+  key: MenuKey,
 ): ListingCommand | undefined {
-  const options = items.flatMap((item) => {
-    if ('group' in item) return group === undefined || item.group === group ? item.options : []
-    return group === undefined ? [item] : []
-  })
+  const options = items.flatMap((item) => ('group' in item ? item.options : [item]))
   return options.find(
-    (option): option is DropdownActionOption => 'label' in option && option.label === label,
+    (option): option is DropdownActionOption => 'label' in option && option.key === key,
   )
 }
 
