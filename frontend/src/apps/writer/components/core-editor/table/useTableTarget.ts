@@ -1,6 +1,6 @@
-import type { Editor } from '@tiptap/core'
+import type { Editor, EditorEvents } from '@tiptap/core'
 import type { ResolvedPos } from '@tiptap/pm/model'
-import { cellAround, CellSelection } from '@tiptap/pm/tables'
+import { cellAround, CellSelection, pointsAtCell } from '@tiptap/pm/tables'
 import { useEventListener } from '@vueuse/core'
 import { ref, shallowRef, watch, type Ref } from 'vue'
 
@@ -164,11 +164,7 @@ export function useTableTarget(
     editor,
     (instance, _previous, onCleanup) => {
       if (!instance) return
-      const onTransaction = ({
-        transaction,
-      }: {
-        transaction: { mapping: { map(pos: number): number } }
-      }) => {
+      const onTransaction = ({ transaction }: EditorEvents['transaction']) => {
         if (hovered !== null) hovered = transaction.mapping.map(hovered)
         schedule()
       }
@@ -199,19 +195,14 @@ function targetFrom(editor: Editor, hovered: number | null): TableTarget | null 
   const { doc } = editor.state
   const selected = selectionTarget(editor)
   if (selected && selected.cellCount > 1) return selected
-  const $hovered =
-    hovered === null ? null : cellAt(doc.resolve(Math.min(hovered, doc.content.size)))
-  if (!$hovered) return selected
-  const shape = TableShape.around($hovered)
-  if (!shape) return selected
-  const isCaretHere = selected?.cell === $hovered.pos
+  const $hovered = hovered === null ? null : doc.resolve(Math.min(hovered, doc.content.size))
+  const base = $hovered && pointsAtCell($hovered) && cellBase($hovered)
+  if (!base) return selected
+  const isCaretHere = selected?.cell === base.cell
   return {
-    cell: $hovered.pos,
-    ...shape.cellIndex($hovered.pos),
+    ...base,
     kind: isCaretHere ? selected.kind : null,
     cellCount: isCaretHere ? selected.cellCount : 0,
-    isMerged: isMerged($hovered),
-    hasHeaderRow: shape.headerRows > 0,
   }
 }
 
@@ -221,34 +212,28 @@ export function selectionTarget(editor: Editor): TableTarget | null {
   // A run of cells counts from where it started
   const $cell =
     selection instanceof CellSelection ? selection.$anchorCell : cellAround(selection.$from)
-  const shape = $cell && TableShape.around($cell)
-  if (!$cell || !shape) return null
-  const base = {
-    cell: $cell.pos,
-    ...shape.cellIndex($cell.pos),
-    isMerged: isMerged($cell),
-    hasHeaderRow: shape.headerRows > 0,
-  }
+  const base = $cell && cellBase($cell)
+  if (!base) return null
   if (!(selection instanceof CellSelection)) return { ...base, kind: 'caret', cellCount: 1 }
-  let cellCount = 0
-  selection.forEachCell(() => cellCount++)
   const kind = selection.isRowSelection() ? 'row' : selection.isColSelection() ? 'column' : 'cells'
-  return { ...base, kind, cellCount }
+  return { ...base, kind, cellCount: selection.ranges.length }
 }
 
 function isSameTarget(a: TableTarget | null, b: TableTarget) {
   return !!a && (Object.keys(b) as (keyof TableTarget)[]).every((key) => a[key] === b[key])
 }
 
-/** The position resolved, when it still opens on a cell */
-function cellAt($pos: ResolvedPos): ResolvedPos | null {
-  const role = $pos.nodeAfter?.type.spec.tableRole
-  return role === 'cell' || role === 'header_cell' ? $pos : null
-}
-
-function isMerged($cell: ResolvedPos) {
+/** What a target holds about the cell at `$cell`, whatever the selection; null outside a table */
+function cellBase($cell: ResolvedPos) {
+  const shape = TableShape.around($cell)
+  if (!shape) return null
   const cell = $cell.nodeAfter
-  return !!cell && (cell.attrs.colspan > 1 || cell.attrs.rowspan > 1)
+  return {
+    cell: $cell.pos,
+    ...shape.cellIndex($cell.pos),
+    isMerged: !!cell && (cell.attrs.colspan > 1 || cell.attrs.rowspan > 1),
+    hasHeaderRow: shape.headerRows > 0,
+  }
 }
 
 function cellPosOf(editor: Editor, cell: Element): number | null {
