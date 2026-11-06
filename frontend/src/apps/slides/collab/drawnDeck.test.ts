@@ -26,8 +26,28 @@ describe('drawing a converted deck', () => {
       { id: 'a', background: '#445566FF', elements: [] },
     ])
 
-    expect([first.id, second.id]).toEqual(['b', 'a'])
+    expect([first.clientId, second.clientId]).toEqual(['b', 'a'])
     expect([first.background, second.background]).toEqual(['#112233FF', '#445566FF'])
+  })
+
+  it("keeps each slide's transition and timing from its old row", () => {
+    const [slide] = drawn([
+      {
+        id: 's',
+        transition: 'Fade',
+        transitionDuration: 2,
+        fadeUnmatchedElements: 1,
+        advanceAfter: 5,
+        elements: [],
+      },
+    ])
+
+    expect(slide).toMatchObject({
+      transition: 'Fade',
+      transitionDuration: 2,
+      fadeUnmatchedElements: 1,
+      advanceAfter: 5,
+    })
   })
 
   it('puts a box where the old row had it, with its own settings', () => {

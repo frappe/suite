@@ -1,5 +1,5 @@
-// The deck in the form the slide components draw: one flat element per box,
-// stacked in `order`, with its rich text as HTML
+// The presentation in the form the slide store holds and its components draw: one
+// flat element per box, stacked in `order`, with its rich text as HTML
 
 import { generateHTML, getSchema } from '@tiptap/core'
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
@@ -11,9 +11,8 @@ import { boxText, readSlides, TYPES_WITH_TEXT, type DeckItem } from './deck'
 
 const schema = getSchema(extensions)
 
-export interface DrawnSlide {
-  id: string
-  background?: string
+export interface DrawnSlide extends Record<string, unknown> {
+  clientId: string
   elements: Record<string, unknown>[]
 }
 
@@ -36,10 +35,10 @@ function textOf(doc: Y.Doc, { id, type }: DeckItem) {
 }
 
 export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
-  return readSlides(doc).map((slide) => ({
-    id: slide.id,
-    background: slide.background as string | undefined,
-    elements: slide.boxes.map((box, index) => {
+  return readSlides(doc).map(({ id, boxes, ...slide }) => ({
+    ...slide,
+    clientId: id,
+    elements: boxes.map((box, index) => {
       const { frame, connectorStart: _start, connectorEnd: _end, route: _route, ...fields } = box
       return {
         ...fields,

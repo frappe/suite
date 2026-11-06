@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Component } from 'vue'
+import { applyUpdate, Doc } from 'yjs'
 
 import {
+  collabRoom,
   fakeServer,
   forgetTemplates,
   openedSurface,
@@ -44,6 +46,8 @@ const { toast } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { setActiveElements } = await import('@/apps/slides/stores/element')
+const { convertLegacy } = await import('@/apps/slides/collab/conversion')
+const { addSlide } = await import('@/apps/slides/collab/deck')
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
@@ -261,12 +265,71 @@ describe('a deck on the content layer', () => {
     expect(statusOf(mounted.root)).toBeUndefined()
   })
 
-  it('never draws a converted deck from its rows, and takes no save', async () => {
-    mounted = await openedSurface({ deck: { is_converted: true } })
-    await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+  // the rows hold two slides; the room the server converted them into holds these
+  function convertedRoom(...texts: string[]) {
+    const answer = convertLegacy(
+      {
+        slides: texts.map((text) => ({
+          id: text,
+          elements: [{ id: `box-${text}`, type: 'text', content: `<p>${text}</p>` }],
+        })),
+      },
+      4 * 1024 * 1024,
+    )
+    if (answer.kind !== 'converted') {
+      throw new Error(JSON.stringify(answer))
+    }
 
-    expect(thumbnails(mounted.root)).toHaveLength(0)
+    const doc = new Doc()
+    applyUpdate(doc, answer.state)
+    collabRoom.open.mockResolvedValueOnce({
+      state: 'live',
+      room: { doc, close: vi.fn(async () => {}) },
+    })
+    return doc
+  }
+
+  function drawnTexts() {
+    const drawn = editorSlides.value as Array<{ elements: Array<{ content?: string }> }>
+    return drawn.map((slide) => slide.elements.map((element) => element.content).join())
+  }
+
+  it('draws a converted presentation in the view-only editor from its room, not its rows', async () => {
+    convertedRoom('one', 'two', 'three')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+    expect(drawnTexts()).toEqual(
+      ['one', 'two', 'three'].map((text) => expect.stringContaining(`>${text}</p>`)),
+    )
+    expect(viewOnly.value).toBe(true)
     expect(saves).toEqual([])
+  })
+
+  it('draws a slide the room gains after it opened', async () => {
+    const doc = convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    addSlide(doc)
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+  })
+
+  it('says a converted presentation could not open when its room does not, and draws no rows', async () => {
+    mounted = await openedSurface({ deck: { is_converted: true } })
+
+    await vi.waitFor(() =>
+      expect(mounted!.root.textContent).toContain('Could not open this presentation.'),
+    )
+    expect(thumbnails(mounted.root)).toHaveLength(0)
+  })
+
+  it('puts the notice in the slide area beside the side panel, not above both', async () => {
+    mounted = await openedSurface({ deck: { conversion: { state: 'refused' } } })
+
+    const notice = mounted.root.querySelector('p[role="status"]')
+    expect(notice?.parentElement?.querySelector(':scope > nav')).not.toBeNull()
   })
 })
 

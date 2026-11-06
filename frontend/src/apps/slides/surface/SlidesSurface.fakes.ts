@@ -21,6 +21,10 @@ const versionsPanel = vi.hoisted(() => ({ flush: async () => {} }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
 const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
+// a converted presentation's room; tests hand it a live one
+const collabRoom = vi.hoisted(() => ({
+  open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
+}))
 export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
@@ -146,6 +150,10 @@ vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/apps/slides/stores/visitedCopies')>()),
   rememberVisit: visits.remember,
   cancelVisit: visits.cancel,
+}))
+vi.mock('@/platform/collab', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  openCollabRoom: collabRoom.open,
 }))
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
@@ -431,6 +439,7 @@ export function startsFromEmptyStore() {
 }
 
 export {
+  collabRoom,
   server,
   signedIn,
   versionsPanel,

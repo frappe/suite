@@ -32,6 +32,7 @@ import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
+import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { resetFocus } from '@/apps/slides/stores/element'
@@ -97,7 +98,7 @@ import {
   type MergedCompositeSlide,
 } from './compositeGroups'
 import { conversionNotice, type ConversionStatus } from './conversionNotice'
-import ConvertedDeck from './ConvertedDeck.vue'
+import { watchConvertedSlides } from './convertedSlides'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
@@ -168,8 +169,10 @@ const isSlideInteractionActive = ref(false)
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
-// Read-only until live editing: its rows no longer change
+// Read-only until live editing, and drawn from its room: its rows no longer change
 const isConverted = ref(false)
+let closeConvertedRoom: (() => void) | null = null
+let isLeft = false
 // A deck still on its rows, waiting for conversion or refused by it, is read-only too
 const conversion = ref<ConversionStatus | null>(null)
 const onLayer = computed(() => isConverted.value || !!conversion.value)
@@ -194,6 +197,9 @@ const canRestoreVersions = computed(
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
+const { isNavigationPanelOpen } = useNavigationPanel()
+// the side panel floats over the slide area, so a notice starts at its edge
+const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen.value)
 const editing = computed(() => editable.value && !phone.value)
 const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
   props.session.contentDocname,
@@ -478,6 +484,14 @@ async function load() {
     composite.value = !!doc?.is_composite
     isConverted.value = !!doc?.is_converted
     conversion.value = (doc?.conversion as ConversionStatus | undefined) ?? null
+    closeConvertedRoom?.()
+    closeConvertedRoom = null
+    if (isConverted.value) {
+      await showConvertedSlides(run)
+    }
+
+    if (run !== latestLoad) return
+
     if (composite.value) {
       await loadComposite()
     } else if (!onLayer.value) {
@@ -497,6 +511,26 @@ async function load() {
       loaded.value = true
     }
   }
+}
+
+async function showConvertedSlides(run: number) {
+  const close = await watchConvertedSlides(props.session, (drawn) => {
+    if (run !== latestLoad) return
+
+    slides.value = drawn
+    slidesLength.value = drawn.length
+  })
+  if (!close) {
+    throw new Error(translate('Could not open this presentation.'))
+  }
+
+  if (run !== latestLoad || isLeft) {
+    close()
+    return
+  }
+
+  closeConvertedRoom = close
+  setSlideIndex(presentedSlide.value)
 }
 
 function cancelRunningLoad() {
@@ -648,6 +682,8 @@ onMounted(() => {
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
+  isLeft = true
+  closeConvertedRoom?.()
   cancelVisit()
   stopVisitedMedia()
   void postToServiceWorker('slides-left')
@@ -715,13 +751,6 @@ onBeforeUnmount(() => {
       </template>
     </DriveDocumentHeader>
 
-    <p
-      v-if="notice"
-      role="status"
-      class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-1 px-4 py-2 text-sm text-ink-amber-7"
-    >
-      {{ notice }}
-    </p>
     <div v-if="!access.readable.value" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">
@@ -757,47 +786,58 @@ onBeforeUnmount(() => {
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError }}</p>
     </div>
-    <ConvertedDeck v-else-if="isConverted" :session="session" />
-    <div v-else-if="phone" class="flex min-h-0 flex-1 flex-col bg-surface-gray-1">
-      <div class="relative flex min-h-0 flex-1">
-        <SlideContainer
-          v-if="presentationDoc"
-          v-model:has-ongoing-interaction="isSlideInteractionActive"
-          fit
-        />
-      </div>
-      <nav
-        v-if="slidesLength"
-        class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
-        aria-label="Slides"
+    <div v-else class="relative flex min-h-0 flex-1 flex-col bg-surface-gray-1">
+      <p
+        v-if="notice"
+        role="status"
+        class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-1 px-4 py-2 text-sm text-ink-amber-7"
+        :class="{ 'ml-56': isNoticeBesidePanel }"
       >
-        <Button
-          icon="lucide-chevron-left"
-          aria-label="Previous slide"
-          variant="ghost"
-          :disabled="slidePosition <= 1"
-          @click="showSlide(-1)"
-        />
-        <span class="text-sm tabular-nums text-ink-gray-6"
-          >{{ slidePosition }} of {{ slidesLength }}</span
+        {{ notice }}
+      </p>
+      <template v-if="phone">
+        <div class="relative flex min-h-0 flex-1">
+          <SlideContainer
+            v-if="presentationDoc"
+            v-model:has-ongoing-interaction="isSlideInteractionActive"
+            fit
+          />
+        </div>
+        <nav
+          v-if="slidesLength"
+          class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
+          aria-label="Slides"
         >
-        <Button
-          icon="lucide-chevron-right"
-          aria-label="Next slide"
-          variant="ghost"
-          :disabled="slidePosition >= slidesLength"
-          @click="showSlide(1)"
-        />
-      </nav>
-    </div>
-    <div v-else class="relative flex min-h-0 flex-1 bg-surface-gray-1">
-      <SlideContainer
-        v-if="presentationDoc"
-        v-model:has-ongoing-interaction="isSlideInteractionActive"
-      />
-      <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
-      <Toolbar v-if="editing && presentationDoc" />
-      <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
+          <Button
+            icon="lucide-chevron-left"
+            aria-label="Previous slide"
+            variant="ghost"
+            :disabled="slidePosition <= 1"
+            @click="showSlide(-1)"
+          />
+          <span class="text-sm tabular-nums text-ink-gray-6"
+            >{{ slidePosition }} of {{ slidesLength }}</span
+          >
+          <Button
+            icon="lucide-chevron-right"
+            aria-label="Next slide"
+            variant="ghost"
+            :disabled="slidePosition >= slidesLength"
+            @click="showSlide(1)"
+          />
+        </nav>
+      </template>
+      <template v-else>
+        <div class="relative flex min-h-0 flex-1">
+          <SlideContainer
+            v-if="presentationDoc"
+            v-model:has-ongoing-interaction="isSlideInteractionActive"
+          />
+        </div>
+        <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
+        <Toolbar v-if="editing && presentationDoc" />
+        <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
+      </template>
     </div>
 
     <div
