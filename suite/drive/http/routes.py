@@ -324,7 +324,7 @@ def node_children(
         listing_types=shapes.listing_types(type),
         with_access="access" in asked,
     )
-    rows = [shapes.node_shape(row) for row in result["rows"]]
+    rows = shapes.node_shapes(result["rows"])
     _mark_favourites(principals, rows)
     if "access" in asked:
         for answer, row in zip(rows, result["rows"], strict=True):
