@@ -256,12 +256,12 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
-import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
+import { openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
-import { confirm, ContextMenu, Dropdown, toast, type ToastId } from '@/platform/feedback'
+import { confirm, ContextMenu, Dropdown } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
@@ -269,15 +269,9 @@ import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
-import {
-  announceCopy,
-  announceMove,
-  announceTrash,
-  subject,
-  type MovedItem,
-} from '../features/changeToast'
+import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
-import { settledDownload } from '../features/downloads'
+import { downloadItems } from '../features/downloads'
 import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
@@ -684,8 +678,6 @@ const trashMutation = useMutation(api.drive.nodes.trash)
 const starMutation = useMutation(api.drive.nodes.star)
 const unstarMutation = useMutation(api.drive.nodes.unstar)
 const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
-// The download reports its own refusal, in a toast that names what was asked for.
-const downloadMutation = useMutation(api.drive.downloads.start, { silent: true })
 const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
@@ -954,7 +946,7 @@ const bulkMenu = computed(() => {
         label: __('Download'),
         icon: 'lucide-download',
         disabled: !allow('download'),
-        onClick: () => downloadRows(selectedRows.value),
+        onClick: () => downloadItems(selectedRows.value),
       },
       // A star is personal, so it needs a session.
       ...(signedIn.value
@@ -1345,7 +1337,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
           ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) }]
           : []),
         ...(can.download
-          ? [{ label: 'Download', icon: 'lucide-download', onClick: () => download(row) }]
+          ? [{ label: 'Download', icon: 'lucide-download', onClick: () => downloadItems([row]) }]
           : []),
         { label: 'Details', icon: 'lucide-info', onClick: () => dialogs.showDetails(row.name) },
       ],
@@ -1600,61 +1592,6 @@ async function setStar(row: DriveNode, starred: boolean) {
 /** A share write can change the caller's own access, so the listing is read again. */
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
-}
-/** A folder or a link downloads in a zip; anything else downloads its own bytes. */
-const ZIPPED_KINDS = new Set(['folder', 'link'])
-/** How long a settled download's toast stays, once it stops waiting. */
-const SETTLED_DOWNLOAD_TOAST_MS = 5000
-async function download(row: DriveNode): Promise<void> {
-  if (ZIPPED_KINDS.has(row.kind)) return downloadRows([row])
-  window.location.assign(nodeContentUrl(row.name, { download: true }))
-}
-/**
- * One file downloads at once. Anything else becomes one zip that Drive builds
- * in the background (Drive spec §11.2). A toast stays on the page until the
- * zip is ready, then the download starts here. An Inbox zip is also linked
- * from a notification, for whoever left the page meanwhile.
- */
-async function downloadRows(rows: readonly DriveNode[]): Promise<void> {
-  const [only] = rows
-  if (rows.length === 1 && only && !ZIPPED_KINDS.has(only.kind)) return download(only)
-  const name = subject(rows.map(itemOf))
-  let waiting: ToastId | undefined
-  // Settles the waiting toast in place, or shows a fresh one when none was waiting.
-  const settle = (kind: 'success' | 'error', message: string, description?: string) =>
-    toast[kind](
-      message,
-      waiting === undefined
-        ? { description }
-        : { id: waiting, description, duration: SETTLED_DOWNLOAD_TOAST_MS },
-    )
-  try {
-    const asked = await downloadMutation.run({ nodes: rows.map((row) => row.name) })
-    if (asked.status === 'Preparing') {
-      // Keyed by the download, so asking again for the same selection updates
-      // this toast instead of adding one. The settled states set their own
-      // duration, because an update keeps the one it had.
-      waiting = asked.name
-      toast.loading(__('Preparing {0} for download', [name]), {
-        id: waiting,
-        description:
-          asked.delivery === 'Inbox'
-            ? __(
-                'The download starts here when the zip is ready. A notification will bring it too.',
-              )
-            : __('The download starts here when the zip is ready.'),
-        duration: Infinity,
-      })
-    }
-    const settled = await settledDownload(asked)
-    if (settled.url) {
-      window.location.assign(settled.url)
-      if (waiting !== undefined) settle('success', __('Downloading {0}', [name]))
-    } else settle('error', __('Could not download {0}', [name]), settled.error ?? undefined)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : undefined
-    settle('error', __('Could not download {0}', [name]), reason)
-  }
 }
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return
