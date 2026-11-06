@@ -189,7 +189,7 @@ describe('undo: own steps', () => {
   })
 })
 
-describe('undo: the old undo bugs (ISSUES #11 #13 #15 #16)', () => {
+describe('undo: the old undo bugs (ISSUES #11 #13 #15 #16 #119)', () => {
   it('#11: add then edit a CF rule: two undos, no dead step', async () => {
     const [a, , ua] = await undoTabs()
     const range = { r0: 0, c0: 0, r1: 2, c1: 0 }
