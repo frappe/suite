@@ -11,48 +11,29 @@ import type { TableTarget } from './useTableTarget'
 type Option = DropdownOptions[number]
 type ActionOption = Exclude<Option, { group: string }>
 
+type Line = { axis: Axis; index: number }
+
 interface MenuContext {
   table: TableEditing
   target: TableTarget
   editorElement: Element
 }
 
-/** The row grip's menu */
-export function rowMenu({ table, target, editorElement }: MenuContext): DropdownOptions {
-  const line = { axis: 'row' as const, index: target.row }
+export const rowMenu = (context: MenuContext) => lineMenu('row', context)
+export const columnMenu = (context: MenuContext) => lineMenu('column', context)
+
+/** A row or column grip's menu */
+function lineMenu(axis: Axis, { table, target, editorElement }: MenuContext): DropdownOptions {
+  const line = { axis, index: target[axis] }
+  const labels: [string, string] =
+    axis === 'row'
+      ? [__('Insert above'), __('Insert below')]
+      : [__('Insert left'), __('Insert right')]
   return [
     // The table's first row, offered from every row so it is found from wherever the grip is
-    headerRowItem(table, target),
+    ...(axis === 'row' ? [headerRowItem(table, target)] : []),
     colorItem(editorElement, (name) => table.setBackground(name, line)),
-    {
-      label: __('Insert above'),
-      icon: 'lucide-arrow-up-to-line',
-      onClick: () => table.insertLine('row', target.row, 'before'),
-    },
-    {
-      label: __('Insert below'),
-      icon: 'lucide-arrow-down-to-line',
-      onClick: () => table.insertLine('row', target.row, 'after'),
-    },
-    ...lineItems(table, line),
-  ]
-}
-
-/** The column grip's menu */
-export function columnMenu({ table, target, editorElement }: MenuContext): DropdownOptions {
-  const line = { axis: 'column' as const, index: target.column }
-  return [
-    colorItem(editorElement, (name) => table.setBackground(name, line)),
-    {
-      label: __('Insert left'),
-      icon: 'lucide-arrow-left-to-line',
-      onClick: () => table.insertLine('column', target.column, 'before'),
-    },
-    {
-      label: __('Insert right'),
-      icon: 'lucide-arrow-right-to-line',
-      onClick: () => table.insertLine('column', target.column, 'after'),
-    },
+    ...insertItems(table, line, labels),
     ...lineItems(table, line),
   ]
 }
@@ -77,26 +58,14 @@ export function tableMenu({ table, target }: Omit<MenuContext, 'editorElement'>)
       group: 'insert',
       hideLabel: true,
       options: [
-        {
-          label: __('Insert row above'),
-          icon: 'lucide-arrow-up-to-line',
-          onClick: () => table.insertLine('row', target.row, 'before'),
-        },
-        {
-          label: __('Insert row below'),
-          icon: 'lucide-arrow-down-to-line',
-          onClick: () => table.insertLine('row', target.row, 'after'),
-        },
-        {
-          label: __('Insert column left'),
-          icon: 'lucide-arrow-left-to-line',
-          onClick: () => table.insertLine('column', target.column, 'before'),
-        },
-        {
-          label: __('Insert column right'),
-          icon: 'lucide-arrow-right-to-line',
-          onClick: () => table.insertLine('column', target.column, 'after'),
-        },
+        ...insertItems(table, { axis: 'row', index: target.row }, [
+          __('Insert row above'),
+          __('Insert row below'),
+        ]),
+        ...insertItems(table, { axis: 'column', index: target.column }, [
+          __('Insert column left'),
+          __('Insert column right'),
+        ]),
       ],
     },
     {
@@ -107,6 +76,20 @@ export function tableMenu({ table, target }: Omit<MenuContext, 'editorElement'>)
     },
     deleteTableGroup(table),
   ]
+}
+
+const INSERT_ICONS = {
+  row: ['lucide-arrow-up-to-line', 'lucide-arrow-down-to-line'],
+  column: ['lucide-arrow-left-to-line', 'lucide-arrow-right-to-line'],
+} as const
+
+/** Insert before and after a line, labelled for where they are offered */
+function insertItems(table: TableEditing, line: Line, labels: [string, string]): ActionOption[] {
+  return (['before', 'after'] as const).map((side, i) => ({
+    label: labels[i],
+    icon: INSERT_ICONS[line.axis][i],
+    onClick: () => table.insertLine(line.axis, line.index, side),
+  }))
 }
 
 function headerRowItem(table: TableEditing, target: TableTarget): ActionOption {
@@ -137,7 +120,7 @@ function splitItem(table: TableEditing): ActionOption {
   }
 }
 
-function lineItems(table: TableEditing, line: { axis: Axis; index: number }): DropdownOptions {
+function lineItems(table: TableEditing, line: Line): DropdownOptions {
   return [
     ...(table.canDuplicateLine(line.axis, line.index)
       ? [
