@@ -430,6 +430,7 @@ async function mount(
         props: { destination: 'recent' },
       },
       { path: '/drive/starred', component: FilesPage, props: { destination: 'starred' } },
+      { path: '/drive/trash', component: FilesPage, props: { destination: 'trash' } },
       { path: '/drive/f/:node/:slug?', component: FilesPage, props: { destination: 'folder' } },
       { path: '/d/:node/:slug?', component: { render: () => null } },
     ],
@@ -691,6 +692,34 @@ describe('Sort', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(orders()).toEqual(['owner'])
+  })
+})
+
+describe('Access column', () => {
+  afterEach(() => setTweaks(['t36-access-column'], true))
+  const expansions = (id: string) =>
+    server.calls.filter((call) => call.id === id).map((call) => call.input.expand)
+
+  it('asks for each row’s audience in a folder', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(expansions('node_children')).toEqual(['access,audience'])
+  })
+
+  it('asks for none in Trash', async () => {
+    await mount('/drive/trash')
+    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
+
+    expect(expansions('view_list')).toEqual(['access'])
+  })
+
+  it('asks for no audience with the tweak off', async () => {
+    setTweaks(['t36-access-column'], false)
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(expansions('node_children')).toEqual(['access'])
   })
 })
 

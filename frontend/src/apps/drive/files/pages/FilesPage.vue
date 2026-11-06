@@ -233,6 +233,7 @@
             :menu-target="contextOpen ? contextRow : null"
             :date-column="dateColumn"
             :drag="dragOn"
+            :can-share="(row) => nodeActions(row, signedIn).share"
             @update:selection="picked.selected.value = $event"
             @sort="changeSort"
             @open="openNode"
@@ -240,6 +241,7 @@
             @extend="(from, to) => picked.extend(from.name, to.name)"
             @menu="openContextMenu"
             @preview-error="refreshPreviews"
+            @share="shareRow"
           >
             <template v-if="listingTypes.length" #empty-action>
               <Button label="Clear filter" class="mt-2" @click="setTypes([])" />
@@ -459,9 +461,7 @@ const presentation = computed<PresentationState>(() => {
   const chosen = { ...userPresentation.value, sort: listedSort.value }
   // Decided from the place, not the rows, so the loading skeleton and the
   // loaded list have the same columns.
-  const shown = inOwnSpace.value
-    ? { ...chosen, columns: chosen.columns.filter((column) => column !== 'owner') }
-    : chosen
+  const shown = { ...chosen, columns: chosen.columns.filter(isOfferedColumn) }
   if (isSearching.value || !concreteDestination.value) {
     return { ...shown, sort: 'modified', dir: 'desc' }
   }
@@ -649,6 +649,7 @@ const expansion = computed(() => {
   const parts = ['access']
   if (showsLocation.value) parts.push('breadcrumbs')
   if (presentation.value.view === 'grid') parts.push('preview')
+  else if (presentation.value.columns.includes('access')) parts.push('audience')
   return parts.join(',')
 })
 // Recent shows the files the user opened, without the folders they passed through.
@@ -962,9 +963,19 @@ const arrangeable = computed(() => concreteDestination.value && !isSearching.val
 const dateColumn = computed<FilesDateColumn>(() =>
   props.destination === 'recent' && !isSearching.value ? 'opened' : 'modified',
 )
-const offeredColumns = computed(() =>
-  inOwnSpace.value ? FILES_COLUMNS.filter((column) => column !== 'owner') : FILES_COLUMNS,
-)
+const offeredColumns = computed(() => FILES_COLUMNS.filter(isOfferedColumn))
+/**
+ * Owner says nothing in the user's own space, and Access nothing in Trash.
+ * The listing query reads this early, so it reads no later `const`.
+ */
+function isOfferedColumn(column: string) {
+  if (column === 'owner') return !inOwnSpace.value
+  if (column === 'access') {
+    const inTrash = props.destination === 'trash' && !isSearching.value
+    return isTweakOn('t36-access-column') && !inTrash
+  }
+  return true
+}
 /** The open folder, when the page shows it. A root is named by the sidebar and offers no actions. */
 const openFolder = computed(() => {
   const folder = detail.data

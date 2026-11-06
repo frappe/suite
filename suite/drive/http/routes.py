@@ -59,6 +59,7 @@ from suite.drive._core import activity as activity_core
 from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
 from suite.drive._core.access import describe
+from suite.drive._core.audience import audiences
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
@@ -223,6 +224,8 @@ def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
     _mark_favourites(principals, [answer])
     if "access" in asked:
         answer["access"] = describe(row, principals)
+    if "audience" in asked:
+        answer["audience"] = audiences([row])[row.name]
     if "breadcrumbs" in asked:
         answer["breadcrumbs"] = node_core.breadcrumbs(row, principals)
     if "preview" in asked:
@@ -329,6 +332,7 @@ def node_children(
     if "access" in asked:
         for answer, row in zip(rows, result["rows"], strict=True):
             answer["access"] = row.access
+    _add_audiences(asked, rows, result["rows"])
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:
@@ -342,6 +346,15 @@ def node_children(
         for answer in rows:
             answer["breadcrumbs"] = list(trail)
     return shapes.page(result, rows)
+
+
+def _add_audiences(asked: frozenset, answers: list[shapes.NodeShape], rows: list) -> None:
+    """Add the `audience` expansion to a page, read once for every row."""
+    if "audience" not in asked:
+        return
+    found = audiences(rows)
+    for answer in answers:
+        answer["audience"] = found[answer["name"]]
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -972,7 +985,7 @@ def view_list(
     principals = _principals()
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
-    supported = {"preview", "access"}
+    supported = {"preview", "access", "audience"}
     if name in ("search", "shared", "favourites", "recents"):
         supported.add("breadcrumbs")
     if name == "archived-roots":
@@ -1003,6 +1016,7 @@ def view_list(
             answer["breadcrumbs"] = row.breadcrumbs
         if name == "recents":
             answer["opened_at"] = shapes.stamp(row.opened_at)
+    _add_audiences(asked, rows, result["rows"])
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:

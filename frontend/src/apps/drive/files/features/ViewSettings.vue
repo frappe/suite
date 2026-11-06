@@ -107,6 +107,7 @@ const SORT_LABELS: Record<FilesSort, string> = {
   size: 'Size',
 }
 const COLUMN_LABELS: Record<FilesColumn, string> = {
+  access: 'Access',
   owner: 'Owner',
   modified: 'Modified',
   kind: 'Type',

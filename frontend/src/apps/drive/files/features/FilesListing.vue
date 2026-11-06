@@ -75,6 +75,13 @@
             </span>
             <component :is="headerCell" v-bind="headerProps('title')">Name</component>
           </div>
+          <!-- Access orders nothing, so its header only labels. -->
+          <ListHeaderCell
+            v-if="shows('access')"
+            class="text-sm-medium text-ink-gray-5"
+            :class="wideOnly('access')"
+            >{{ __('Access') }}</ListHeaderCell
+          >
           <component
             :is="headerCell"
             v-if="shows('kind')"
@@ -178,6 +185,21 @@
               <span v-if="showBreadcrumbs" class="ml-2 truncate text-p-sm text-ink-gray-5">{{
                 breadcrumbText(row)
               }}</span>
+            </ListCell>
+            <ListCell v-if="shows('access')" :class="wideOnly('access')">
+              <!-- A click opens the share dialog where the user may share; elsewhere it is the row's. -->
+              <span
+                v-if="row.audience"
+                class="flex min-w-0 items-center gap-1.5 text-base text-ink-gray-7"
+                :class="canShare?.(row) && !selectionMode && 'cursor-pointer hover:text-ink-gray-9'"
+                @click="onAccessClick($event, row)"
+              >
+                <span
+                  :class="[audienceIcon(row.audience), 'size-4 shrink-0 text-ink-gray-5']"
+                  aria-hidden="true"
+                />
+                <span class="truncate">{{ audienceLabel(row.audience) }}</span>
+              </span>
             </ListCell>
             <ListCell v-if="shows('kind')" :class="wideOnly('kind')"
               ><span class="truncate text-base text-ink-gray-7">{{
@@ -381,7 +403,7 @@ import {
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
-import type { DriveNode } from '@/apps/drive/client/types'
+import type { DriveAudience, DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
 import { nodeIcon, nodeIconTint, useNodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
@@ -401,6 +423,7 @@ import type { DropHandlers } from './uploads/drop'
 import type { DragMove } from './useDragMove'
 import { useListingFocus } from './useListingFocus'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
+import { useWorkspaceName } from './useWorkspaceName'
 
 const props = defineProps<{
   query: InfiniteQueryState<DriveNode>
@@ -422,6 +445,8 @@ const props = defineProps<{
   dateColumn?: FilesDateColumn
   /** Drag to move, where the page allows it. Without it a press on an item draws the marquee. */
   drag?: DragMove
+  /** Whether a click on an item's Access cell opens its share dialog. */
+  canShare?: (node: DriveNode) => boolean
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]
@@ -436,6 +461,7 @@ const emit = defineEmits<{
   'preview-error': [node: DriveNode]
   /** Shift and an arrow key moved focus from one item to another, which grows or shrinks the range. */
   extend: [from: DriveNode, to: DriveNode]
+  share: [node: DriveNode]
 }>()
 const listing = ref<HTMLElement | null>(null)
 const sentinel = ref<HTMLElement | null>(null)
@@ -551,6 +577,7 @@ const isBlank = useSkeletonDelay(loading)
 const rows = computed(() => props.query.rows)
 const COLUMN_TRACKS = new Map<string, string>(
   Object.entries({
+    access: '11rem',
     owner: '12rem',
     modified: '8rem',
     kind: '8rem',
@@ -558,9 +585,9 @@ const COLUMN_TRACKS = new Map<string, string>(
   }),
 )
 /** Columns a phone has no room for. Name takes their width. */
-const WIDE_ONLY = new Set(['owner', 'modified', 'kind'])
+const WIDE_ONLY = new Set(['access', 'owner', 'modified', 'kind'])
 // The columns before the date, in the rows' order
-const SIDE_COLUMNS = ['kind', 'owner', 'size']
+const SIDE_COLUMNS = ['access', 'kind', 'owner', 'size']
 const columns = computed(() => props.presentation.columns)
 const columnTracks = computed(() => {
   // In the rows' order, whatever order the columns were chosen in.
@@ -666,6 +693,31 @@ function headerProps(column: FilesSort, align?: 'end') {
     direction: props.presentation.sort === column ? props.presentation.dir : null,
     onClick: () => emit('sort', column),
   }
+}
+const workspaceName = useWorkspaceName()
+const AUDIENCE_ICONS: Record<DriveAudience['kind'], string> = {
+  public: 'lucide-globe',
+  organization: 'lucide-building-2',
+  link: 'lucide-link',
+  people: 'lucide-users',
+}
+function audienceIcon(audience: DriveAudience) {
+  return audience.kind === 'people' && audience.people <= 1
+    ? 'lucide-lock'
+    : AUDIENCE_ICONS[audience.kind]
+}
+/** How widely an item is shared, in a few words. */
+function audienceLabel(audience: DriveAudience) {
+  if (audience.kind === 'public') return __('Public')
+  if (audience.kind === 'organization') return workspaceName.value || __('Your organization')
+  if (audience.kind === 'link') return __('Anyone with the link')
+  return audience.people <= 1 ? __('Only you') : __('{0} people', [audience.people])
+}
+function onAccessClick(event: MouseEvent, row: DriveNode) {
+  if (props.selectionMode || event.metaKey || event.ctrlKey || event.shiftKey) return
+  if (!props.canShare?.(row)) return
+  event.stopPropagation()
+  emit('share', row)
 }
 function rowDate(row: DriveNode) {
   return formatModified(byOpened.value ? (row.opened_at ?? null) : row.modified)

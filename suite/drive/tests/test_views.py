@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 from suite.drive._core import activity
 from suite.drive._core import nodes as nodes_module
 from suite.drive._core.access import effective_roles
+from suite.drive._core.audience import audiences
 from suite.drive._core.errors import DriveConflict, DriveLinkExpired, DriveLocked
 from suite.drive._core.nodes import (
     MAX_PAGE_SIZE,
@@ -27,6 +28,7 @@ from suite.tests.utils import ensure_user
 
 VIEWER = "drive-views-viewer@example.com"
 OTHER = "drive-views-other@example.com"
+THIRD = "drive-views-third@example.com"
 
 
 class TestListingContract(UnitTestCase):
@@ -746,3 +748,91 @@ class TestDriveViews(IntegrationTestCase):
 
         self.assertEqual(page["rows"], [])
         self.assertEqual(decode_cursor(page["next_cursor"]), 1)
+
+    def _group(self, *users: str) -> str:
+        group = frappe.get_doc(
+            {
+                "doctype": "User Group",
+                "name": f"drive-views-{frappe.generate_hash(length=6)}",
+                "user_group_members": [{"user": user} for user in users],
+            }
+        ).insert(ignore_permissions=True)
+        self.addCleanup(frappe.delete_doc, "User Group", group.name, force=True)
+        return f"$GROUP:{group.name}"
+
+    def test_audience_says_how_widely_a_node_is_shared_and_names_nobody(self):
+        ensure_user(THIRD)
+        mine = self._node(self.personal.name, "Mine")
+        with_other = self._node(self.personal.name, "With other")
+        self._grant(with_other.name, OTHER, READ)
+        # A deny nearer the node takes the person back out.
+        taken_back = self._node(with_other.name, "Taken back")
+        self._grant(taken_back.name, OTHER, NONE)
+        # A group counts its members once each, the owner among them.
+        team = self._node(self.personal.name, "Team")
+        self._grant(team.name, self._group(VIEWER, OTHER, THIRD), READ)
+        everyone = self._node(self.personal.name, "Everyone")
+        self._grant(everyone.name, "$GENERAL", READ)
+        published = self._node(self.personal.name, "Published")
+        self._grant(published.name, "$PUBLIC", READ)
+        inside_published = self._node(published.name, "Inside published")
+        unpublished = self._node(published.name, "Unpublished")
+        self._grant(unpublished.name, "$PUBLIC", NONE)
+        linked = self._node(self.personal.name, "Linked")
+        self._grant(linked.name, "$LINK:views-audience-token", READ)
+
+        named = {
+            "mine": mine,
+            "with other": with_other,
+            "taken back": taken_back,
+            "team": team,
+            "everyone": everyone,
+            "published": published,
+            "inside published": inside_published,
+            "unpublished": unpublished,
+            "linked": linked,
+        }
+
+        found = audiences(
+            frappe.get_all(
+                "Drive Node", filters={"root": self.personal.name}, fields=["name", "root", "path", "kind"]
+            )
+        )
+
+        self.assertEqual(
+            {title: found[node.name] for title, node in named.items()},
+            {
+                "mine": {"kind": "people", "people": 1},
+                "with other": {"kind": "people", "people": 2},
+                "taken back": {"kind": "people", "people": 1},
+                "team": {"kind": "people", "people": 3},
+                "everyone": {"kind": "organization", "people": 1},
+                "published": {"kind": "public", "people": 1},
+                "inside published": {"kind": "public", "people": 1},
+                "unpublished": {"kind": "people", "people": 1},
+                "linked": {"kind": "link", "people": 1},
+            },
+        )
+
+    def test_audience_costs_the_same_queries_for_a_short_page_or_a_long_one(self):
+        def queries_for(rows):
+            with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
+                audiences(rows)
+            return sql.call_count
+
+        group = self._group(VIEWER, OTHER)
+        fields = ["name", "root", "path", "kind"]
+        folder = self._node(self.personal.name, "Audience folder")
+        self._grant(folder.name, group, READ)
+        self._node(folder.name, "One")
+        short = frappe.get_all("Drive Node", filters={"parent_node": folder.name}, fields=fields)
+        for index in range(12):
+            nested = self._node(self._node(folder.name, f"Folder {index}").name, f"Inside {index}")
+            self._grant(nested.name, OTHER, READ)
+        long = frappe.get_all("Drive Node", filters={"root": self.personal.name}, fields=fields)
+
+        self.assertGreater(len(long), len(short) * 10)
+        # The first read also loads the group table's metadata.
+        audiences(short)
+        self.assertEqual(queries_for(long), queries_for(short))
+        self.assertLessEqual(queries_for(long), 2)

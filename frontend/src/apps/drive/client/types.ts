@@ -31,6 +31,13 @@ export interface DriveAccess {
   can_manage?: boolean
 }
 
+/** How widely a node is shared: its widest reach, and a head count. It names nobody. */
+export interface DriveAudience {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  /** People who hold a grant, their own or through a group, the owner among them. */
+  people: number
+}
+
 export interface DriveBreadcrumb {
   name: string
   title: string
@@ -74,6 +81,7 @@ export interface DriveNode {
   modified: string | null
   content_modified: string | null
   access?: DriveAccess
+  audience?: DriveAudience
   breadcrumbs?: DriveBreadcrumb[]
   preview?: DrivePreview | null
   opened_at?: string | null

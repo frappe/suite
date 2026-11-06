@@ -29,49 +29,57 @@ describe('presentation state', () => {
       view: 'grid',
       sort: 'title',
       dir: 'asc',
-      columns: ['owner'],
+      // Access is newer than the preference, so it follows its default.
+      columns: ['access', 'owner'],
     })
   })
 
   describe('columns', () => {
     afterEach(() => {
       localStorage.clear()
-      setTweaks(['t35-default-columns'], true)
+      setTweaks(['t35-default-columns', 't36-access-column'], true)
     })
 
     const shown = () => resolvePresentation({}).columns
 
-    it('shows Modified, Type and Size to a user who never chose columns', () => {
-      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
+    it('shows Access, Modified, Type and Size to a user who never chose columns', () => {
+      expect(shown()).toEqual(['access', 'owner', 'modified', 'kind', 'size'])
 
       // Changing the view or the sort is not a column choice.
       writePresentationPreference({ view: 'grid', sort: 'size', dir: 'desc' })
-      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
+      expect(shown()).toEqual(['access', 'owner', 'modified', 'kind', 'size'])
     })
 
     it('keeps a column the user turned off, and the defaults of the others', () => {
       writeColumnChoice(shown(), 'kind', false)
-      expect(shown()).toEqual(['owner', 'modified', 'size'])
+      expect(shown()).toEqual(['access', 'owner', 'modified', 'size'])
 
+      writeColumnChoice(shown(), 'access', false)
       writePresentationPreference({ view: 'grid' })
       expect(shown()).toEqual(['owner', 'modified', 'size'])
     })
 
     it('reads a preference saved before the new defaults', () => {
       writePresentationPreference({ columns: ['owner', 'modified'] })
-      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
+      expect(shown()).toEqual(['access', 'owner', 'modified', 'kind', 'size'])
 
       localStorage.clear()
       writePresentationPreference({ columns: ['modified', 'size'] })
-      expect(shown()).toEqual(['modified', 'size'])
+      expect(shown()).toEqual(['access', 'modified', 'size'])
     })
 
-    it('shows Owner and Modified only, with the tweak off', () => {
-      setTweaks(['t35-default-columns'], false)
+    it('shows Owner and Modified only, with both tweaks off', () => {
+      setTweaks(['t35-default-columns', 't36-access-column'], false)
       expect(shown()).toEqual(['owner', 'modified'])
 
       writeColumnChoice(shown(), 'size', true)
       expect(shown()).toEqual(['owner', 'modified', 'size'])
+    })
+
+    it('never shows Access with its tweak off, even when chosen', () => {
+      writeColumnChoice(shown(), 'access', true)
+      setTweaks(['t36-access-column'], false)
+      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
     })
   })
 

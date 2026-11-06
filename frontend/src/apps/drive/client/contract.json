@@ -85,6 +85,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -295,6 +320,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -468,6 +496,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -678,6 +731,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -836,6 +892,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -1046,6 +1127,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -1217,6 +1301,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -1427,6 +1536,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -1766,6 +1878,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -1976,6 +2113,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -2122,6 +2262,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -2332,6 +2497,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -2487,6 +2655,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -2697,6 +2890,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -2849,6 +3045,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -3059,6 +3280,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -3215,6 +3439,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -3425,6 +3674,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -3576,6 +3828,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -3786,6 +4063,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -4117,6 +4397,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -4279,6 +4584,9 @@
               },
               "access": {
                 "$ref": "#/$defs/AccessShape"
+              },
+              "audience": {
+                "$ref": "#/$defs/AudienceShape"
               },
               "breadcrumbs": {
                 "items": {
@@ -4506,6 +4814,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -4716,6 +5049,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -4874,6 +5210,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -5084,6 +5445,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -5633,6 +5997,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -5843,6 +6232,9 @@
           },
           "access": {
             "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
           },
           "breadcrumbs": {
             "items": {
@@ -7298,6 +7690,31 @@
             "title": "ArchivedRootShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -7460,6 +7877,9 @@
               },
               "access": {
                 "$ref": "#/$defs/AccessShape"
+              },
+              "audience": {
+                "$ref": "#/$defs/AudienceShape"
               },
               "breadcrumbs": {
                 "items": {

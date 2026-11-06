@@ -85,14 +85,16 @@ function mount(options: {
   status?: 'pending' | 'success' | 'error'
   /** Drag to move, as a folder page sets it up. Moves are recorded, not sent. */
   drag?: boolean
+  canShare?: (node: DriveNode) => boolean
 }) {
   const state = reactive({ selection: options.selection ?? [] })
   type ListingEvents = {
     previewErrors: string[]
     opened: string[]
+    shared: string[]
     moved: { items: string[]; to: string }[]
   }
-  const events: ListingEvents = { previewErrors: [], opened: [], moved: [] }
+  const events: ListingEvents = { previewErrors: [], opened: [], shared: [], moved: [] }
   const query = reactive({
     status: options.status ?? 'success',
     rows: options.rows,
@@ -140,6 +142,10 @@ function mount(options: {
           emptyDescription: '',
           menuOptions: () => [],
           drag,
+          canShare: options.canShare,
+          onShare: (node: DriveNode) => {
+            events.shared.push(node.name)
+          },
           'onUpdate:selection': (value: string[]) => {
             picked.selected.value = value
           },
@@ -299,6 +305,56 @@ describe('FilesListing columns', () => {
     expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
       'minmax(0,1fr) 12rem 6rem 8rem 2.5rem',
     )
+  })
+})
+
+describe('FilesListing access column', () => {
+  afterEach(() => {
+    delete window.suite_workspace_name
+  })
+  const shared = (name: string, kind: 'public' | 'organization' | 'link' | 'people', people = 1) =>
+    file(name, `${name}.png`, { audience: { kind, people } })
+  const audienceRows = [
+    shared('mine', 'people'),
+    shared('three', 'people', 3),
+    shared('org', 'organization', 5),
+    shared('link', 'link', 2),
+    shared('public', 'public', 2),
+  ]
+  const accessOf = (root: HTMLElement, name: string) =>
+    root.querySelector(`[data-node="${name}"]`)?.textContent ?? ''
+
+  it('says how widely each item is shared, after the name, and names nobody', async () => {
+    window.suite_workspace_name = 'Northwind Labs'
+    const { root } = mount({ rows: audienceRows, columns: ['access', 'modified'] })
+    await nextTick()
+
+    expect(accessOf(root, 'mine')).toContain('Only you')
+    expect(accessOf(root, 'three')).toContain('3 people')
+    expect(accessOf(root, 'org')).toContain('Northwind Labs')
+    expect(accessOf(root, 'link')).toContain('Anyone with the link')
+    expect(accessOf(root, 'public')).toContain('Public')
+    const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
+    expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
+      'minmax(0,1fr) 11rem 8rem 2.5rem',
+    )
+  })
+
+  it('opens Share from the cell where the user may share, and the row elsewhere', async () => {
+    const { root, events } = mount({
+      rows: audienceRows,
+      columns: ['access'],
+      canShare: (node) => node.name !== 'org',
+    })
+    await nextTick()
+    const words = (text: string) =>
+      [...root.querySelectorAll<HTMLElement>('span')].find((span) => span.textContent === text)!
+
+    words('3 people').click()
+    words('Your organization').click()
+
+    expect(events.shared).toEqual(['three'])
+    expect(events.opened).toEqual(['org'])
   })
 })
 

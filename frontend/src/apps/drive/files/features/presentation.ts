@@ -5,8 +5,8 @@ import { isTweakOn } from '@/platform/tweaks'
 export type FilesViewMode = 'list' | 'grid'
 export type FilesSort = 'title' | 'owner' | 'modified' | 'kind' | 'size'
 export type FilesDirection = 'asc' | 'desc'
-/** The optional list columns, in the order the list shows them. Name is always shown. */
-export const FILES_COLUMNS = ['owner', 'modified', 'kind', 'size'] as const
+/** The optional list columns, in the order View settings offers them. Name is always shown. */
+export const FILES_COLUMNS = ['access', 'owner', 'modified', 'kind', 'size'] as const
 export type FilesColumn = (typeof FILES_COLUMNS)[number]
 /** The date the date column shows. Recent shows when the user opened each file. */
 export type FilesDateColumn = 'modified' | 'opened'
@@ -72,10 +72,18 @@ export function resolvePresentation(
 
 /**
  * The columns the list shows. A column the user never switched follows its
- * default (t35), so a column added later shows without resetting their choices.
+ * default (t35), so a column added later, such as Access (t36), shows without
+ * resetting their choices.
  */
 function resolveColumns(saved: Partial<PresentationPreference>): string[] {
-  if (!isTweakOn('t35-default-columns')) return normalizeColumns(saved.columns)
+  const columns =
+    isTweakOn('t35-default-columns') || isTweakOn('t36-access-column')
+      ? columnsWithDefaults(saved)
+      : normalizeColumns(saved.columns)
+  return isTweakOn('t36-access-column') ? columns : columns.filter((column) => column !== 'access')
+}
+
+function columnsWithDefaults(saved: Partial<PresentationPreference>): string[] {
   const chosen = normalizeColumns(saved.columns)
   const toggled = toggledColumns(saved)
   return FILES_COLUMNS.filter((column) =>
@@ -85,6 +93,7 @@ function resolveColumns(saved: Partial<PresentationPreference>): string[] {
 
 function isDefaultColumn(column: FilesColumn): boolean {
   if (column === 'kind' || column === 'size') return isTweakOn('t35-default-columns')
+  if (column === 'access') return isTweakOn('t36-access-column')
   return true
 }
 

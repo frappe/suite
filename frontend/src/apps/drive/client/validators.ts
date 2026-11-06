@@ -179,6 +179,20 @@ export const operationNodeCreateCreateFolder: Validators<
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -238,6 +252,7 @@ export const operationNodeCreateCreateFolder: Validators<
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -318,6 +333,20 @@ export const operationNodeCreateCreateFile: Validators<
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -377,6 +406,7 @@ export const operationNodeCreateCreateFile: Validators<
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -454,6 +484,20 @@ export const operationNodeCreateCreateLink: Validators<
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -513,6 +557,7 @@ export const operationNodeCreateCreateLink: Validators<
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -593,6 +638,20 @@ export const operationNodeCreateCreateDocument: Validators<
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -652,6 +711,7 @@ export const operationNodeCreateCreateDocument: Validators<
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -822,6 +882,20 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -881,6 +955,7 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -950,6 +1025,20 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -1009,6 +1098,7 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -1082,6 +1172,20 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -1141,6 +1245,7 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -1213,6 +1318,20 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -1272,6 +1391,7 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -1349,6 +1469,21 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
               title: 'AccessShape',
               type: 'object',
             },
+            AudienceShape: {
+              description:
+                'How widely a node is shared. It names nobody, so any reader may see it.',
+              properties: {
+                kind: {
+                  enum: ['public', 'organization', 'link', 'people'],
+                  title: 'Kind',
+                  type: 'string',
+                },
+                people: { title: 'People', type: 'integer' },
+              },
+              required: ['kind', 'people'],
+              title: 'AudienceShape',
+              type: 'object',
+            },
             BreadcrumbShape: {
               properties: {
                 name: { title: 'Name', type: 'string' },
@@ -1408,6 +1543,7 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
               title: 'Content Modified',
             },
             access: { $ref: '#/$defs/AccessShape' },
+            audience: { $ref: '#/$defs/AudienceShape' },
             breadcrumbs: {
               items: { $ref: '#/$defs/BreadcrumbShape' },
               title: 'Breadcrumbs',
@@ -1480,6 +1616,20 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -1539,6 +1689,7 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -1704,6 +1855,20 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -1744,6 +1909,7 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
                 title: 'Content Modified',
               },
               access: { $ref: '#/$defs/AccessShape' },
+              audience: { $ref: '#/$defs/AudienceShape' },
               breadcrumbs: {
                 items: { $ref: '#/$defs/BreadcrumbShape' },
                 title: 'Breadcrumbs',
@@ -1845,6 +2011,20 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -1904,6 +2084,7 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -1978,6 +2159,20 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -2037,6 +2232,7 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -2314,6 +2510,20 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
             title: 'AccessShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -2373,6 +2583,7 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
             title: 'Content Modified',
           },
           access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
           breadcrumbs: {
             items: { $ref: '#/$defs/BreadcrumbShape' },
             title: 'Breadcrumbs',
@@ -3057,6 +3268,20 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
             title: 'ArchivedRootShape',
             type: 'object',
           },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
           BreadcrumbShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -3097,6 +3322,7 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
                 title: 'Content Modified',
               },
               access: { $ref: '#/$defs/AccessShape' },
+              audience: { $ref: '#/$defs/AudienceShape' },
               breadcrumbs: {
                 items: { $ref: '#/$defs/BreadcrumbShape' },
                 title: 'Breadcrumbs',
