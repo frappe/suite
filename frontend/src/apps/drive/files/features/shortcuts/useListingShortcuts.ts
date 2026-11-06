@@ -196,7 +196,8 @@ export function useListingShortcuts(
   ])
 }
 
-function isApple(): boolean {
+/** A Mac, iPhone or iPad, where Cmd takes the place of Ctrl. */
+export function isApple(): boolean {
   return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 }
 

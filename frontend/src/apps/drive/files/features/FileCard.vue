@@ -85,7 +85,10 @@ const props = defineProps<{
   /** Classes for the type icon, such as hiding it while a checkbox takes its place. */
   iconClass?: HTMLAttributes['class']
   /** Makes the title a link with these attributes and listeners. */
-  titleLink?: AnchorHTMLAttributes & { onClick?: (event: MouseEvent) => void }
+  titleLink?: AnchorHTMLAttributes & {
+    onClick?: (event: MouseEvent) => void
+    onPointerenter?: (event: PointerEvent) => void
+  }
 }>()
 const emit = defineEmits<{
   /** A thumbnail failed to load. Refetch the node for a fresh signed URL. Emitted once per file. */

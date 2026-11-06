@@ -418,6 +418,64 @@ describe('FilesListing name links', () => {
     })
   }
 
+  describe('look', () => {
+    const looksLikeLink = (link: Element) => link.hasAttribute('data-new-tab')
+    const key = (type: 'keydown' | 'keyup', init: KeyboardEventInit) =>
+      window.dispatchEvent(new KeyboardEvent(type, init))
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    for (const [platform, held, other] of [
+      ['Linux x86_64', { key: 'Control', ctrlKey: true }, { key: 'Meta', metaKey: true }],
+      ['MacIntel', { key: 'Meta', metaKey: true }, { key: 'Control', ctrlKey: true }],
+    ] as const) {
+      it(`looks like a link only while the pointer is on it and ${held.key} is held, on ${platform}`, async () => {
+        vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+        const { root } = mount({ rows, nodeHref })
+        await nextTick()
+        const link = root.querySelector('[data-listing-item="a"] a[href]')!
+
+        // Holding the key away from the name changes nothing.
+        key('keydown', held)
+        expect(looksLikeLink(link)).toBe(false)
+
+        // Hovering with the key already held shows it at once.
+        link.dispatchEvent(new MouseEvent('pointerenter', held))
+        expect(looksLikeLink(link)).toBe(true)
+
+        // Releasing it, with the pointer still, restores the plain look.
+        key('keyup', { key: held.key })
+        expect(looksLikeLink(link)).toBe(false)
+        key('keydown', other)
+        expect(looksLikeLink(link)).toBe(false)
+        key('keydown', held)
+        expect(looksLikeLink(link)).toBe(true)
+
+        // The window losing focus, as a new tab opens, drops the look.
+        window.dispatchEvent(new Event('blur'))
+        expect(looksLikeLink(link)).toBe(false)
+
+        key('keydown', held)
+        link.dispatchEvent(new MouseEvent('pointerleave'))
+        expect(looksLikeLink(link)).toBe(false)
+        key('keydown', held)
+        expect(looksLikeLink(link)).toBe(false)
+      })
+    }
+
+    it('follows only the name under the pointer', async () => {
+      const { root } = mount({ rows, view: 'grid', nodeHref })
+      await nextTick()
+      const [first, second] = root.querySelectorAll('a[href]')
+
+      first!.dispatchEvent(new MouseEvent('pointerenter', { ctrlKey: true }))
+      second!.dispatchEvent(new MouseEvent('pointerenter', { ctrlKey: true }))
+
+      expect([looksLikeLink(first!), looksLikeLink(second!)]).toEqual([false, true])
+    })
+  })
+
   it('keeps plain text without an address', async () => {
     const { root } = mount({ rows })
     await nextTick()

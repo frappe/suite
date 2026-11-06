@@ -450,6 +450,7 @@ import {
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
+import { watchNewTabKey } from './newTabKey'
 import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
 import type { DragMove } from './useDragMove'
@@ -808,11 +809,15 @@ function audienceLabel(audience: DriveAudience) {
   if (audience.kind === 'link') return __('Anyone with the link')
   return audience.people <= 1 ? __('Only you') : __('{0} people', [audience.people])
 }
-type NameLink = AnchorHTMLAttributes & { onClick: (event: MouseEvent) => void }
+type NameLink = AnchorHTMLAttributes & {
+  onClick: (event: MouseEvent) => void
+  onPointerenter: (event: PointerEvent) => void
+}
 /**
- * An item's name as a link: no Tab stop of its own, no native drag, and an
- * underline only on hover. Cmd/Ctrl-click opens it in a new tab and leaves the
- * selection alone; middle-click opens one natively. Any other click is the
+ * An item's name as a link: no Tab stop of its own and no native drag. It
+ * looks like a link, underlined in the link colour, only while the pointer is
+ * on it and Cmd/Ctrl is held. Cmd/Ctrl-click opens it in a new tab and leaves
+ * the selection alone; middle-click opens one natively. Any other click is the
  * item's, as before, and does not follow the link.
  */
 function nameLink(row: DriveNode): NameLink | undefined {
@@ -822,8 +827,10 @@ function nameLink(row: DriveNode): NameLink | undefined {
     href,
     tabindex: -1,
     draggable: false,
-    class: 'decoration-ink-gray-4 underline-offset-2 hover:underline [-webkit-touch-callout:none]',
+    class:
+      'underline-offset-2 data-[new-tab]:text-ink-blue-link data-[new-tab]:underline [-webkit-touch-callout:none]',
     onClick: onNameClick,
+    onPointerenter: watchNewTabKey,
   }
 }
 function onNameClick(event: MouseEvent) {
