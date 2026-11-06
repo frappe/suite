@@ -1,6 +1,6 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, reactive } from 'vue'
+import { createApp, h, nextTick, reactive, watch } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -9,6 +9,7 @@ import { setTweaks } from '@/platform/tweaks'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
+import { useListingSelection } from './useListingSelection'
 
 /** The New menu's document types, as composition registers them. */
 const NEW_MENU_TYPES: DocumentTypeDefinition[] = (
@@ -43,7 +44,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup?.()
   vi.unstubAllGlobals()
-  setTweaks(['t4-type-names'], true)
+  setTweaks(['t4-type-names', 't13-arrow-keys', 't13-type-ahead'], true)
 })
 
 function file(name: string, title: string, extra: Partial<DriveNode> = {}): DriveNode {
@@ -77,8 +78,8 @@ function mount(options: {
   status?: 'pending' | 'success' | 'error'
 }) {
   const state = reactive({ selection: options.selection ?? [] })
-  type ListingEvents = { previewErrors: string[] }
-  const events: ListingEvents = { previewErrors: [] }
+  type ListingEvents = { previewErrors: string[]; opened: string[] }
+  const events: ListingEvents = { previewErrors: [], opened: [] }
   const query = reactive({
     status: options.status ?? 'success',
     rows: options.rows,
@@ -91,32 +92,40 @@ function mount(options: {
   })
   const root = document.createElement('div')
   document.body.appendChild(root)
+  // The selection lives where the page keeps it.
   const app = createApp({
-    setup: () => () =>
-      h(FilesListing, {
-        query: fromPartial<InstanceType<typeof FilesListing>['$props']['query']>(query),
-        presentation: {
-          ...DEFAULT_PRESENTATION,
-          view: options.view ?? 'list',
-          columns: options.columns ?? DEFAULT_PRESENTATION.columns,
-        },
-        selection: state.selection,
-        selectionMode: state.selection.length > 0,
-        emptyTitle: 'Empty',
-        emptyDescription: '',
-        menuOptions: () => [],
-        'onUpdate:selection': (value: string[]) => {
-          state.selection = value
-        },
-        onSelect: (node: DriveNode) => {
-          state.selection = state.selection.includes(node.name)
-            ? state.selection.filter((name) => name !== node.name)
-            : [...state.selection, node.name]
-        },
-        onPreviewError: (node: DriveNode) => {
-          events.previewErrors.push(node.name)
-        },
-      }),
+    setup() {
+      const picked = useListingSelection(() => query.rows.map((row) => row.name))
+      picked.selected.value = state.selection
+      watch(picked.selected, (selected) => {
+        state.selection = selected
+      })
+      return () =>
+        h(FilesListing, {
+          query: fromPartial<InstanceType<typeof FilesListing>['$props']['query']>(query),
+          presentation: {
+            ...DEFAULT_PRESENTATION,
+            view: options.view ?? 'list',
+            columns: options.columns ?? DEFAULT_PRESENTATION.columns,
+          },
+          selection: picked.selected.value,
+          selectionMode: picked.selectionMode.value,
+          emptyTitle: 'Empty',
+          emptyDescription: '',
+          menuOptions: () => [],
+          'onUpdate:selection': (value: string[]) => {
+            picked.selected.value = value
+          },
+          onSelect: (node: DriveNode, range: boolean) => picked.toggle(node.name, range),
+          onExtend: (from: DriveNode, to: DriveNode) => picked.extend(from.name, to.name),
+          onOpen: (node: DriveNode) => {
+            events.opened.push(node.name)
+          },
+          onPreviewError: (node: DriveNode) => {
+            events.previewErrors.push(node.name)
+          },
+        })
+    },
   })
   app.provide(DOCUMENT_TYPES_KEY, NEW_MENU_TYPES)
   app.mount(root)
@@ -322,5 +331,104 @@ describe('FilesListing loading', () => {
     await nextTick()
     expect(placeholders()).toBe(0)
     expect(root.querySelector('[data-node="a"]')?.textContent).toContain('Alpha.png')
+  })
+})
+
+describe('FilesListing keyboard', () => {
+  const five = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((title) =>
+    file(title.toLowerCase(), `${title}.png`),
+  )
+  /** Presses a key on whatever has focus, as the browser does. */
+  async function press(key: string, init: KeyboardEventInit = {}) {
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }),
+    )
+    await nextTick()
+  }
+  const focused = () => (document.activeElement as HTMLElement | null)?.dataset.node
+  const tabbable = (root: HTMLElement) =>
+    [...root.querySelectorAll<HTMLElement>('[data-node]')]
+      .filter((row) => row.tabIndex === 0)
+      .map((row) => row.dataset.node)
+
+  it('moves focus with the arrow keys and selects a range with Shift, which also shrinks it', async () => {
+    const { root, state } = mount({ rows: five })
+    await nextTick()
+    expect(root.querySelector('[role="grid"]')?.getAttribute('aria-multiselectable')).toBe('true')
+    expect(tabbable(root)).toEqual(['alpha'])
+
+    root.querySelector<HTMLElement>('[data-node="alpha"]')!.focus()
+    await press('ArrowDown')
+    expect(focused()).toBe('beta')
+    expect(state.selection).toEqual([])
+    expect(tabbable(root)).toEqual(['beta'])
+
+    await press('ArrowDown', { shiftKey: true })
+    await press('ArrowDown', { shiftKey: true })
+    expect(state.selection).toEqual(['beta', 'gamma', 'delta'])
+    expect(root.querySelector('[data-node="gamma"]')?.getAttribute('aria-selected')).toBe('true')
+
+    await press('ArrowUp', { shiftKey: true })
+    expect(focused()).toBe('gamma')
+    expect(state.selection).toEqual(['beta', 'gamma'])
+
+    await press('End')
+    expect(focused()).toBe('epsilon')
+    await press('Home')
+    expect(focused()).toBe('alpha')
+    expect(state.selection).toEqual(['beta', 'gamma'])
+
+    await press(' ')
+    expect(state.selection).toEqual(['beta', 'gamma', 'alpha'])
+  })
+
+  it('jumps to the next item whose name starts with what was typed', async () => {
+    const { root } = mount({ rows: five })
+    await nextTick()
+    root.querySelector<HTMLElement>('[data-node="alpha"]')!.focus()
+
+    await press('d')
+    expect(focused()).toBe('delta')
+    await press('E', { shiftKey: true })
+    expect(focused()).toBe('delta')
+  })
+
+  it('hands focus to the next item when the focused one leaves', async () => {
+    const { root, query } = mount({ rows: [...five] })
+    await nextTick()
+    root.querySelector<HTMLElement>('[data-node="gamma"]')!.focus()
+    await nextTick()
+
+    query.rows = query.rows.filter((row) => row.name !== 'gamma')
+    await nextTick()
+    await nextTick()
+
+    expect(focused()).toBe('delta')
+    expect(tabbable(root)).toEqual(['delta'])
+  })
+
+  it('selects a card with Space in grid view, without opening it', async () => {
+    const { root, state, events } = mount({ rows: five, view: 'grid' })
+    await nextTick()
+    const card = root.querySelector<HTMLElement>('[data-node="beta"]')!
+    card.focus()
+
+    await press(' ')
+
+    expect(state.selection).toEqual(['beta'])
+    expect(events.opened).toEqual([])
+  })
+
+  it('keeps every row a Tab stop and the arrow keys still, with the tweaks off', async () => {
+    setTweaks(['t13-arrow-keys', 't13-type-ahead'], false)
+    const { root } = mount({ rows: five })
+    await nextTick()
+    expect(root.querySelector('[role="grid"]')).toBeNull()
+    expect(tabbable(root)).toHaveLength(5)
+
+    root.querySelector<HTMLElement>('[data-node="alpha"]')!.focus()
+    await press('ArrowDown')
+    await press('d')
+    expect(focused()).toBe('alpha')
   })
 })

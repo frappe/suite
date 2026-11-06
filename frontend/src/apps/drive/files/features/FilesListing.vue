@@ -5,9 +5,12 @@
        A new sort reorders the rows in place. The browser's scroll anchoring
        would follow the top row to its new place and move the page, so no row
        is an anchor. -->
+  <!-- With one Tab stop, the listing itself takes focus when its last item leaves. -->
   <div
     ref="listing"
     class="relative pt-3 [overflow-anchor:none]"
+    :tabindex="focus.roving.value ? -1 : undefined"
+    @focusin="focus.onFocusin"
     @keydown="onKeydown"
     @pointerdown="onPointerdown"
     @contextmenu="onContextMenu"
@@ -47,6 +50,7 @@
         :row-height="40"
         class="-mx-3 list-row-px-3"
         :aria-busy="loading || undefined"
+        v-bind="gridRoles"
       >
         <ListHeader>
           <div class="flex min-w-0 items-center">
@@ -107,7 +111,8 @@
             v-for="(row, index) in rows"
             :key="row.name"
             :value="row.name"
-            tabindex="0"
+            :tabindex="focus.roving.value ? stopIndex(row) : 0"
+            :aria-selected="focus.roving.value ? isSelected(row) : undefined"
             :data-node="row.name"
             :data-listing-item="row.name"
             :class="['select-none', runClasses(index)]"
@@ -125,7 +130,7 @@
                 role="checkbox"
                 :aria-checked="isSelected(row)"
                 :aria-label="`Select ${row.title}`"
-                tabindex="0"
+                :tabindex="focus.roving.value ? -1 : 0"
                 class="mr-2 flex size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
                 @keydown.enter.prevent.stop="$emit('select', row, $event.shiftKey)"
                 @keydown.space.prevent.stop="$emit('select', row, $event.shiftKey)"
@@ -179,6 +184,7 @@
                   icon="lucide-ellipsis"
                   variant="ghost"
                   :aria-label="`Actions for ${row.title}`"
+                  :tabindex="focus.roving.value ? stopIndex(row) : undefined"
                   @click.stop
                 />
               </Dropdown>
@@ -224,6 +230,8 @@
               :node="row"
               :meta="cardMeta(row)"
               :selected="isHighlighted(row)"
+              :data-node="focus.roving.value ? row.name : undefined"
+              :tabindex="focus.roving.value ? stopIndex(row) : undefined"
               @click="onRowClick($event, row)"
               @dblclick="$emit('open', row)"
               @pointerdown="startLongPress($event, row)"
@@ -235,6 +243,9 @@
                 <span class="lucide-folder size-3 shrink-0" aria-hidden="true" />
                 <span class="truncate" :title="breadcrumbText(row)">{{ folderOf(row) }}</span>
               </template>
+              <span v-if="focus.roving.value && isSelected(row)" class="sr-only">{{
+                __('Selected')
+              }}</span>
               <!-- Inside the card's button, so the corner it covers still toggles. -->
               <Checkbox
                 v-if="selectionMode"
@@ -255,6 +266,7 @@
                     icon="lucide-ellipsis"
                     variant="ghost"
                     :aria-label="`Actions for ${row.title}`"
+                    :tabindex="focus.roving.value ? stopIndex(row) : undefined"
                     @click.stop
                   />
                 </Dropdown>
@@ -323,6 +335,7 @@ import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 import FileCard from './FileCard.vue'
 import { loadUntilVisible } from './listingWindows'
@@ -330,6 +343,7 @@ import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleto
 import ListSkeletonRows from './ListSkeletonRows.vue'
 import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
+import { useListingFocus } from './useListingFocus'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
 
 const props = defineProps<{
@@ -362,6 +376,8 @@ const emit = defineEmits<{
    */
   menu: [node: DriveNode | null, event: MouseEvent]
   'preview-error': [node: DriveNode]
+  /** Shift and an arrow key moved focus from one item to another, which grows or shrinks the range. */
+  extend: [from: DriveNode, to: DriveNode]
 }>()
 const listing = ref<HTMLElement | null>(null)
 const sentinel = ref<HTMLElement | null>(null)
@@ -387,6 +403,22 @@ const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
     if (props.selection.length) emit('update:selection', [])
   },
 })
+const focus = useListingFocus({
+  root: listing,
+  rows: () => props.query.rows,
+  selection: () => props.selection,
+  grid: () => props.presentation.view === 'grid',
+  extend: (from, to) => emit('extend', from, to),
+})
+defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow })
+/** A grid lets screen readers hand the arrow keys to the page; a table keeps them for reading. */
+const gridRoles = computed(() =>
+  focus.roving.value ? { role: 'grid', 'aria-multiselectable': 'true' } : {},
+)
+/** Only the item that holds the Tab stop is tabbable, with its menu button. */
+function stopIndex(row: DriveNode) {
+  return row.name === focus.tabStop.value ? 0 : -1
+}
 
 /** Cards are narrow on a phone, so their bars are a share of the card. */
 const SKELETON_CARD_NAMES = [
@@ -614,6 +646,7 @@ function cancelLongPress() {
   longPress = null
 }
 function onKeydown(event: KeyboardEvent) {
+  if (focus.onKeydown(event)) return
   const checkedEventTarget = event.target
   if (!(checkedEventTarget instanceof HTMLElement)) return
 

@@ -210,10 +210,11 @@
             :row-drop="rowDrop"
             :menu-target="contextOpen ? contextRow : null"
             :date-column="dateColumn"
-            @update:selection="selection = $event"
+            @update:selection="picked.selected.value = $event"
             @sort="changeSort"
             @open="openNode"
             @select="selectNode"
+            @extend="(from, to) => picked.extend(from.name, to.name)"
             @menu="openContextMenu"
             @preview-error="refreshPreviews"
           >
@@ -330,7 +331,6 @@ import { recentFiles } from '../features/recent'
 import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import { folderMenu, selectionMenu } from '../features/rowMenus'
-import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
 import SelectionBar from '../features/SelectionBar.vue'
 import { copyLink } from '../features/share/shareFormat'
 import {
@@ -353,6 +353,7 @@ import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
 import DropOverlay from '../features/uploads/DropOverlay.vue'
 import { uploadTargetOf } from '../features/uploads/queue'
 import { pastedImages } from '../features/uploads/sources'
+import { useListingSelection } from '../features/useListingSelection'
 import ViewSettings from '../features/ViewSettings.vue'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { LOCATION_LABELS, locationTitle, trashLocation } from '../internal/locations'
@@ -373,7 +374,7 @@ const signedIn = computed(() => session.status.value === 'authenticated')
 // Roots need a session (spec §10.13). A guest only ever opens a shared folder.
 const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
 const presentationVersion = ref(0)
-const selectionState = ref<SelectionState>(clearSelection())
+const picked = useListingSelection(() => listing.rows.map((row) => row.name))
 const searchText = ref(String(route.query.q ?? ''))
 const activeNode = ref<DriveNode | null>(null)
 const contextOptions = ref<DropdownItem[]>([])
@@ -448,13 +449,8 @@ const listedSort = computed<FilesSort>(() => {
 })
 /** What View settings shows: the user's choice, with the sort the folder is read in. */
 const settingsPresentation = computed(() => ({ ...userPresentation.value, sort: listedSort.value }))
-const selection = computed({
-  get: () => selectionState.value.selected,
-  set: (selected: string[]) => {
-    selectionState.value = { selected, anchor: selected.at(-1) ?? null }
-  },
-})
-const selectionMode = computed(() => selection.value.length > 0)
+const selection = picked.selected
+const selectionMode = picked.selectionMode
 const searchTerm = computed(() => String(route.query.q ?? '').trim())
 const isSearching = computed(() => !!searchTerm.value)
 const concreteDestination = computed(() =>
@@ -857,11 +853,7 @@ watch(
 watch(
   () => trash.outcome.value,
   (outcome) => {
-    if (outcome)
-      selectionState.value = {
-        selected: outcome.failed.map((failure) => failure.node),
-        anchor: null,
-      }
+    if (outcome) picked.keepOnly(outcome.failed.map((failure) => failure.node))
   },
 )
 
@@ -1230,23 +1222,17 @@ function clearSearchAndFocus(event: MouseEvent) {
   field?.focus()
 }
 function selectNode(row: DriveNode, range: boolean) {
-  selectionState.value = toggleSelection(
-    selectionState.value,
-    row.name,
-    listing.rows.map((item) => item.name),
-    range,
-  )
+  picked.toggle(row.name, range)
 }
 function selectFirst() {
   const row = listing.rows[0]
   if (row) selectNode(row, false)
 }
 function selectAll() {
-  const ids = listing.rows.map((row) => row.name)
-  selectionState.value = { selected: ids, anchor: ids.at(-1) ?? null }
+  picked.selectAll()
 }
 function clearSelected() {
-  selectionState.value = clearSelection()
+  picked.clear()
 }
 /** A pasted image, such as a screenshot, uploads into the open folder as a picked file would. */
 function onPaste(event: ClipboardEvent) {
@@ -1682,7 +1668,7 @@ async function runBatch(
 
     batchOutcome.value = result
     batchVerb.value = verb
-    selectionState.value = { selected: result.failed.map((failure) => failure.node), anchor: null }
+    picked.keepOnly(result.failed.map((failure) => failure.node))
     return result
   } catch {
     return null
