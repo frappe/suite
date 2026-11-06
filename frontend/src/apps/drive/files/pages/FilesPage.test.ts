@@ -269,7 +269,12 @@ async function mount(path: string): Promise<{ root: HTMLElement; router: Router 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/drive/recent', component: FilesPage, props: { destination: 'recent' } },
+      {
+        path: '/drive/recent',
+        name: 'files-recent',
+        component: FilesPage,
+        props: { destination: 'recent' },
+      },
       { path: '/drive/f/:node/:slug?', component: FilesPage, props: { destination: 'folder' } },
       { path: '/d/:node/:slug?', component: { render: () => null } },
     ],
@@ -603,5 +608,13 @@ describe('Keyboard shortcuts', () => {
         patch: { state: 'Trashed' },
       }),
     )
+  })
+
+  it('open a view by its route', async () => {
+    const { router } = await mount('/drive/f/folder-7/drafts')
+
+    press('Recent')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/recent'))
   })
 })

@@ -1079,14 +1079,14 @@ function shownIn(items: readonly DropdownItem[], option: DropdownActionOption) {
   return shown ? option : undefined
 }
 function openView(view: ListingView) {
-  const path = {
-    personal: '/drive',
-    organization: discovered.data?.organization ? '/drive/organization' : null,
-    shared: '/drive/shared-with-me',
-    recent: '/drive/recent',
-    starred: '/drive/starred',
+  const name = {
+    personal: 'files',
+    organization: discovered.data?.organization ? 'files-organization' : null,
+    shared: 'files-shared-with-me',
+    recent: 'files-recent',
+    starred: 'files-starred',
   }[view]
-  if (path) void router.push(path)
+  if (name) void router.push({ name })
 }
 function setPresentation(change: PresentationChange) {
   clearSelected()
