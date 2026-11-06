@@ -256,7 +256,10 @@ const recentQuery = useQuery(api.drive.views.list, {
   expand: 'preview',
 })
 // Thumbnail URLs are signed and expire, so Recent refetches them as Drive's grid does.
-useDrivePreviewRefresh(() => recentQuery.refetch())
+useDrivePreviewRefresh(
+  () => recentQuery.refetch(),
+  () => recentRows.value,
+)
 const { query: upcomingQuery, events: cachedUpcomingEvents } = useUpcomingEvents(
   () => eventWindow.value,
 )

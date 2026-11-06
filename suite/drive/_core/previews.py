@@ -28,6 +28,7 @@ PREVIEW_LONGEST_SIDE = 512
 MIN_PREVIEW_SIZE = 128
 MAX_PREVIEW_SIZE = 2048
 PREVIEW_TTL_SECONDS = 15 * 60
+PREVIEW_EXPIRY_STEP_SECONDS = 5 * 60
 # One ranged read of a video's source blob. PyAV reads 32 KB at a time; a
 # larger buffer turns those reads into a few requests, not hundreds.
 RANGE_READ_BYTES = 1024 * 1024
@@ -262,14 +263,21 @@ def preview_expansions(nodes: Iterable[str]) -> dict[str, dict]:
         filters={"node": ["in", node_ids]},
         fields=["node", "blob"],
     )
-    expires = int(time.time()) + PREVIEW_TTL_SECONDS
-    return {
-        row.node: {
-            "url": signed_url_for_blob(row.blob, f"{row.node}.webp", PREVIEW_TTL_SECONDS),
-            "expires": expires,
-        }
-        for row in rows
-    }
+    expires = preview_expiry(int(time.time()))
+    previews = {}
+    for row in rows:
+        blob = frappe.get_doc("File Blob", row.blob)
+        # Frappe adds the lifetime to its own clock reading, so read the clock right before it.
+        url = signed_url_for_blob(blob, f"{row.node}.webp", expires - int(time.time()))
+        previews[row.node] = {"url": url, "expires": expires}
+    return previews
+
+
+def preview_expiry(now: int) -> int:
+    """At least the preview lifetime away, rounded up to a step, so that listings a few
+    minutes apart sign the same URL and the browser keeps the image it already has."""
+    step = PREVIEW_EXPIRY_STEP_SECONDS
+    return -(-(now + PREVIEW_TTL_SECONDS) // step) * step
 
 
 def sweep_missing() -> dict:

@@ -270,28 +270,32 @@ class TestPreviewContract(UnitTestCase):
         self.assertEqual(fields["blob"]["options"], "File Blob")
         self.assertEqual(fields["blob"]["search_index"], 1)
 
-    def test_preview_expansion_is_explicit_batched_and_fifteen_minutes(self):
+    def test_preview_expansion_is_explicit_batched_and_at_least_fifteen_minutes(self):
         rows = [frappe._dict(node="node-a", blob="preview-a")]
+        blob = frappe._dict(name="preview-a")
         with (
             patch("suite.drive._core.previews.frappe.get_all", return_value=rows) as get_all,
+            patch("suite.drive._core.previews.frappe.get_doc", return_value=blob),
             patch("suite.drive._core.previews.time.time", return_value=100),
             patch(
                 "suite.drive._core.previews.signed_url_for_blob",
-                return_value="/f/preview-a/node-a.webp?e=1000&s=sig",
+                return_value="/f/preview-a/node-a.webp?e=1200&s=sig",
             ) as signed,
         ):
             self.assertEqual(
                 preview_expansions(["node-a", "node-a"]),
                 {
                     "node-a": {
-                        "url": "/f/preview-a/node-a.webp?e=1000&s=sig",
-                        "expires": 100 + PREVIEW_TTL_SECONDS,
+                        "url": "/f/preview-a/node-a.webp?e=1200&s=sig",
+                        # 100 + 15 minutes, rounded up to a 5-minute step.
+                        "expires": 1200,
                     }
                 },
             )
         get_all.assert_called_once()
         self.assertEqual(get_all.call_args.kwargs["filters"], {"node": ["in", ("node-a",)]})
-        signed.assert_called_once_with("preview-a", "node-a.webp", PREVIEW_TTL_SECONDS)
+        signed.assert_called_once_with(blob, "node-a.webp", 1100)
+        self.assertGreaterEqual(1200 - 100, PREVIEW_TTL_SECONDS)
 
         with patch("suite.drive._core.previews.signed_url_for_blob") as signed:
             self.assertEqual(preview_expansions([]), {})
@@ -690,6 +694,19 @@ class TestPreviews(IntegrationTestCase):
             image = Image.open(stream)
             image.load()
         return image
+
+    def test_listings_minutes_apart_sign_the_same_preview_url(self):
+        node = self._file("photo.png")
+        render(node)
+
+        with patch("time.time", return_value=1_000_000_010):
+            first = preview_expansions([node])[node]
+        with patch("time.time", return_value=1_000_000_130):
+            second = preview_expansions([node])[node]
+
+        self.assertEqual(second, first)
+        self.assertGreaterEqual(first["expires"], 1_000_000_130 + PREVIEW_TTL_SECONDS)
+        self.assertIn(f"e={first['expires']}&", first["url"])
 
     def test_render_makes_a_free_512_longest_side_webp(self):
         node = self._file("wide.png", _png(1024, 256))

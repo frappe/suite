@@ -68,16 +68,20 @@ export { default as DriveFileCard } from '@/apps/drive/files/features/FileCard.v
 
 /**
  * Keeps the signed thumbnail URLs on a card grid fresh while the calling
- * component is mounted: every 10 minutes, and when the tab is shown again.
+ * component is mounted: shortly before the earliest of `rows` expires.
  * Call it in a component's setup.
  */
-export function useDrivePreviewRefresh(refresh: () => unknown): void {
+export function useDrivePreviewRefresh(
+  refresh: () => unknown,
+  rows: () => readonly Pick<DriveNodeSummary, 'preview'>[],
+): void {
   let stop: (() => void) | undefined
   onMounted(() => {
     stop = observePreviewRefresh({
       refresh: async () => {
         await refresh()
       },
+      rows,
     })
   })
   onBeforeUnmount(() => stop?.())
