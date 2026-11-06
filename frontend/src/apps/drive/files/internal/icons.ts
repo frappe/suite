@@ -174,9 +174,14 @@ export function nodeTypeLabel(
   return storedFile(node).label
 }
 
-/** `nodeTypeLabel`, naming documents as the New menu does while tweak t4-type-names is on. */
-export function useNodeTypeLabel(): (node: TypedNode) => string {
-  const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+/**
+ * `nodeTypeLabel`, naming documents as the New menu does while tweak
+ * t4-type-names is on. A dialog mounted outside App.vue passes the types it
+ * was given, since it cannot inject them.
+ */
+export function useNodeTypeLabel(
+  documentTypes: readonly DocumentTypeDefinition[] = inject(DOCUMENT_TYPES_KEY, []),
+): (node: TypedNode) => string {
   const newMenuNames = useTweak('t4-type-names')
   return (node) => nodeTypeLabel(node, newMenuNames.value ? documentTypes : [])
 }

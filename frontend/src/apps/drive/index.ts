@@ -2,6 +2,7 @@ import {
   computed,
   defineAsyncComponent,
   getCurrentInstance,
+  inject,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -23,7 +24,11 @@ import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefres
 import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
-import type { AreaDefinition, PaletteSearchSource } from '@/platform/contracts'
+import {
+  DOCUMENT_TYPES_KEY,
+  type AreaDefinition,
+  type PaletteSearchSource,
+} from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
@@ -420,6 +425,8 @@ export interface DriveDialogs {
 export function useDriveDialogs(): DriveDialogs {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
+  // App.vue provides these to its components, not to the app, so dialogs mounted with the app context get them here.
+  const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
   return {
     move: (node) =>
       presentDialog<DriveNodeSummary>(
@@ -438,6 +445,7 @@ export function useDriveDialogs(): DriveDialogs {
     showDetails: async (node) => {
       await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), {
         node,
+        documentTypes,
       })
     },
     share: (node) =>

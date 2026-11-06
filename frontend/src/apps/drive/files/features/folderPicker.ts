@@ -95,9 +95,13 @@ export interface MoveAccessChange {
   ownRoleAfter: number | null
 }
 
-/** From each item's move preview. `null` when the move goes ahead without asking. */
+/**
+ * From each item's move preview. `null` when the move goes ahead without
+ * asking. `workspace` names everyone at the org.
+ */
 export function moveAccessChange(
   previews: readonly NodeMovePreviewOutput[],
+  workspace = bootedWorkspace(),
 ): MoveAccessChange | null {
   const gains = new Map<string, MoveAccessGain>()
   for (const { principal, role, person } of previews.flatMap((preview) => preview.gains)) {
@@ -107,7 +111,7 @@ export function moveAccessChange(
       principal,
       role,
       person,
-      label: person?.full_name ?? gainLabel(principal),
+      label: person?.full_name ?? gainLabel(principal, workspace),
     })
   }
   const dropped = previews.filter((preview) => preview.role_after < preview.role_now)
@@ -118,12 +122,12 @@ export function moveAccessChange(
   return { gains: [...gains.values()].sort((a, b) => b.role - a.role), ownRoleAfter }
 }
 
-function gainLabel(principal: string): string {
+function gainLabel(principal: string, workspace: string): string {
   switch (principalKind(principal)) {
     case 'group':
       return __('People in {0}', [groupName(principal)])
     case 'general':
-      return __(organizationLabel(bootedWorkspace()))
+      return __(organizationLabel(workspace))
     case 'public':
       return isTweakOn('t4-access-words') ? __('Public on the web') : __('Everyone on the web')
     case 'link':

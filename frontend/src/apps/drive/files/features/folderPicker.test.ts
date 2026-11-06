@@ -433,6 +433,15 @@ describe('move access change', () => {
       'Public on the web',
     ])
   })
+
+  it('names org access after the workspace it is given', () => {
+    const change = moveAccessChange(
+      [{ gains: [{ principal: '$GENERAL', role: 20 }], role_now: 50, role_after: 50 }],
+      'Northwind',
+    )
+    expect(change?.gains.map(({ label }) => label)).toEqual(['Everyone at Northwind'])
+  })
+
   it("reports the mover's lowest role when it drops, even when nobody gains", () => {
     expect(
       moveAccessChange([

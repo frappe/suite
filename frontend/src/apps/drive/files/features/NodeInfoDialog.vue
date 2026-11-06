@@ -28,19 +28,25 @@ import { computed } from 'vue'
 import { api, useQuery } from '@/api'
 import { grantListOf } from '@/apps/drive/client/grants'
 import { canManage, type DriveBreadcrumb } from '@/apps/drive/client/types'
+import type { DocumentTypeDefinition } from '@/platform/contracts'
 import { useTweak } from '@/platform/tweaks'
 
 import { formatBytes, formatDate } from '../internal/format'
 import { useNodeTypeLabel } from '../internal/icons'
 import { useLocationTitle } from '../internal/locations'
 import { sharedWith } from './share/shareModel'
+import { useWorkspaceName } from './useWorkspaceName'
 
 /**
  * Read-only facts about one node: type, size, location, owner, dates and, for
  * someone who may share it, who else can open it. Reading grants takes MANAGE
  * (Drive spec §11.2), so other callers see no sharing line.
  */
-const props = defineProps<{ node: string }>()
+const props = defineProps<{
+  node: string
+  /** The app's document types, which a dialog mounted outside App.vue cannot inject. */
+  documentTypes?: readonly DocumentTypeDefinition[]
+}>()
 const open = defineModel<boolean>('open', { required: true })
 const detail = useQuery(api.drive.nodes.get, () =>
   open.value && props.node ? { node: props.node, expand: 'access,breadcrumbs' } : false,
@@ -51,14 +57,15 @@ const grants = useQuery(api.drive.grants.list, () =>
     ? { node: props.node, inherited: true }
     : false,
 )
+const workspace = useWorkspaceName()
 const sharing = computed(() => {
   const row = detail.data
   if (!row || !grants.data) return []
-  const names = sharedWith(grantListOf(grants.data), row.kind)
+  const names = sharedWith(grantListOf(grants.data), row.kind, new Date(), workspace.value)
   return [{ label: 'Shared with', value: names.join(', ') || 'Not shared', wraps: true }]
 })
 
-const typeLabel = useNodeTypeLabel()
+const typeLabel = useNodeTypeLabel(props.documentTypes)
 const locationTitle = useLocationTitle()
 const sidebarRootNames = useTweak('t4-location')
 /** A root crumb takes the sidebar's name, such as "My files", while t4-location is on. */

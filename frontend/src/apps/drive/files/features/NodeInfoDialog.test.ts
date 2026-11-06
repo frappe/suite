@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
+import type { DocumentTypeDefinition } from '@/platform/contracts'
 import type { Operation } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
@@ -10,6 +11,9 @@ const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehor
 
 const server = vi.hoisted(() => ({
   role: 50,
+  /** The node's kind and document type: a PDF file unless a test sets a document. */
+  kind: 'file',
+  contentDoctype: fromPartial<string | null>(null),
   requests: fromPartial<string[]>([]),
   // An older Personal Root is titled with its owner's name.
   crumbs: [
@@ -34,11 +38,13 @@ vi.mock('@/platform/transport', async (original) => ({
       server.requests.push(operation.id)
       if (operation.id === 'roots_discover')
         return { personal: { node: 'root', title: 'Mira Shah' }, organization: null }
+      if (operation.id === 'site_get') return { workspace_name: 'Northwind', workspace_logo: '' }
       if (operation.id === 'node_get')
         return {
           name: input.node,
           title: 'Report.pdf',
-          kind: 'file',
+          kind: server.kind,
+          content_doctype: server.contentDoctype,
           mime: 'application/pdf',
           size: 2048,
           state: 'Active',
@@ -96,12 +102,24 @@ afterEach(() => {
   unmount?.()
   server.requests.length = 0
   server.role = 50
-  setTweaks(['t4-location'], true)
+  server.kind = 'file'
+  server.contentDoctype = null
+  setTweaks(['t4-location', 't4-access-words', 't4-type-names'], true)
 })
+
+const spreadsheets: DocumentTypeDefinition = {
+  key: 'sheets',
+  contentDoctype: 'Sheet',
+  newLabel: () => 'Spreadsheet',
+  icon: { render: () => null },
+  loadSurface: async () => ({ render: () => null }),
+}
 
 function mount(node: string) {
   const root = document.createElement('div')
-  const app = createApp({ render: () => h(NodeInfoDialog, { node, open: true }) })
+  const app = createApp({
+    render: () => h(NodeInfoDialog, { node, open: true, documentTypes: [spreadsheets] }),
+  })
   app.mount(root)
   unmount = () => app.unmount()
   return root
@@ -119,10 +137,39 @@ describe('Details', () => {
 
     await vi.waitFor(() =>
       expect(field(root, 'Shared with')).toBe(
-        'Asha Rao, Design, Everyone in your organization, 1 share link',
+        'Asha Rao, Design, Everyone at Northwind, 1 share link',
       ),
     )
     expect(field(root, 'Owner')).toBe('Mira Shah')
+  })
+
+  it('says "Everyone in your organization", without asking the site, with the tweak off', async () => {
+    setTweaks(['t4-access-words'], false)
+    const root = mount('report')
+
+    await vi.waitFor(() =>
+      expect(field(root, 'Shared with')).toBe(
+        'Asha Rao, Design, Everyone in your organization, 1 share link',
+      ),
+    )
+    expect(server.requests).not.toContain('site_get')
+  })
+
+  it('names a document type as the New menu does', async () => {
+    server.kind = 'document'
+    server.contentDoctype = 'Sheet'
+    const root = mount('budget')
+
+    await vi.waitFor(() => expect(field(root, 'Type')).toBe('Spreadsheet'))
+  })
+
+  it('shows the raw document type with the tweak off', async () => {
+    setTweaks(['t4-type-names'], false)
+    server.kind = 'document'
+    server.contentDoctype = 'Sheet'
+    const root = mount('budget')
+
+    await vi.waitFor(() => expect(field(root, 'Type')).toBe('Sheet'))
   })
 
   it('shows no sharing to someone who may not share it, and does not ask', async () => {
