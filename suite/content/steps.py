@@ -43,6 +43,7 @@ def open_document(app: str, node: str, *, can_write: bool) -> bytes:
 
     doc = log.find(app, node)
     if doc is None:
+        jobs.request_conversion(app, node)
         return state_frame("unconverted")
 
     try:

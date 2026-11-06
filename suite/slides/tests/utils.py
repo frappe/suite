@@ -4,8 +4,11 @@
 import base64
 import uuid
 from contextlib import contextmanager
+from io import BytesIO
 
 import frappe
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.drive._core.access import grant, revoke
@@ -24,7 +27,7 @@ FIXTURE_OWNER = "slides-fixture-owner@example.com"
 
 PNG_1PX = (
     "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
 )
 WEBP_1PX = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v02aAA="
 
@@ -35,9 +38,38 @@ def unique_bytes(base64_data):
     return base64.b64decode(base64_data.split(",", 1)[-1]) + uuid.uuid4().bytes
 
 
-def make_thumbnail_data():
-    """A distinct webp data URI, in the only format save_presentation_thumbnail accepts."""
-    return "data:image/webp;base64," + base64.b64encode(unique_bytes(WEBP_1PX)).decode()
+def push_capture(presentation_name):
+    """Push one distinct browser capture as the deck's Drive preview, as the session user."""
+    drive.push_preview(node_of(presentation_name), unique_bytes(WEBP_1PX), "image/webp")
+
+
+@contextmanager
+def _in_request(**request):
+    builder = EnvironBuilder(**request)
+    previous = getattr(frappe.local, "request", None)
+    frappe.local.request = Request(builder.get_environ())
+    try:
+        yield
+    finally:
+        frappe.local.request = previous
+
+
+def link_header(*tokens: str):
+    """Carry the given codes in `X-Drive-Links` for the block, as the `/d/` surface does.
+
+    A real `werkzeug` request, not a patched reader: Drive reads the codes by
+    splitting the header, and a stub that hands over a list would skip that.
+    """
+    return _in_request(headers={"X-Drive-Links": ",".join(tokens)})
+
+
+def upload_request(content: bytes, filename: str = "banner.png", mimetype: str = "image/png"):
+    """Carry one file upload for the block, as the editor's uploader sends it to `media.add`."""
+    return _in_request(
+        path="/api/method/suite.slides.api.media.add",
+        method="POST",
+        data={"file": (BytesIO(content), filename, mimetype)},
+    )
 
 
 def make_presentation(title, parent=None, **fields):

@@ -35,6 +35,7 @@ from suite.mail.jmap import (
     get_set_error_message,
     invalidate_jmap_identities_cache,
     invalidate_jmap_mailboxes_cache,
+    is_provisioning,
 )
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
@@ -571,14 +572,15 @@ def build_automation_sieve(account: str, activate: bool = False, raise_exception
     Accounts whose resolved user is disabled or gone are skipped: the JMAP connection is made as
     that user, so the rebuild cannot work (e.g. the personal account of a deactivated employee) and
     would only produce an error log. The script is rebuilt on the next change once the user is
-    enabled again.
+    enabled again. The exception is the setup of a disabled user's new account, which builds the
+    script (see `suite.mail.jmap.provisioning`).
 
     A failed build is logged rather than raised, unless `raise_exception` asks for it — for a caller
     that handles the failure itself, e.g. to retry.
     """
 
     user = get_user_for_jmap_account(account, raise_exception=False)
-    if not user or not frappe.get_cached_value("User", user, "enabled"):
+    if not user or not (frappe.get_cached_value("User", user, "enabled") or is_provisioning(user)):
         return
 
     def _build_automation_sieve(account: str, activate: bool = False) -> None:

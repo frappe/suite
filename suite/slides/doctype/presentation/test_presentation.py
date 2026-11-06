@@ -21,7 +21,6 @@ from suite.slides.doctype.presentation.presentation import (
     get_public_presentation,
     get_templates,
     get_updated_json,
-    save_presentation_thumbnail,
     update_slide_attachments,
     update_theme,
 )
@@ -31,16 +30,14 @@ from suite.slides.tests.utils import (
     make_private,
     make_private_image,
     make_public,
-    make_thumbnail_data,
     node_of,
+    push_capture,
     share,
     title_of,
     trash,
     unique_bytes,
 )
 from suite.tests.utils import ensure_user
-
-SVG = "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
 
 OWNER = "slides-owner@example.com"
 OTHER_USER = "slides-other@example.com"
@@ -61,19 +58,17 @@ class TestPresentationSecurity(IntegrationTestCase):
             cls.other_presentation = make_presentation("Other User Presentation").name
 
     def _write_calls(self, deck):
-        """The three endpoints a linked deck still answers, bound to one deck."""
+        """The two endpoints a linked deck still answers, bound to one deck."""
         return (
             (update_slide_attachments, deck, {"elements": "[]"}),
             (get_updated_json, deck, []),
-            (save_presentation_thumbnail, deck, make_thumbnail_data()),
         )
 
     def test_endpoints_still_answered_hide_a_deck_from_a_stranger(self):
         """The endpoints a linked deck still answers, asked by somebody with no grant.
 
-        `update_slide_attachments`, `get_updated_json`, and
-        `save_presentation_thumbnail` reach Drive for a linked deck, so the
-        refusal comes from `Drive Grant` rather than from a `File`. Below Read
+        `update_slide_attachments` and `get_updated_json` reach Drive for a
+        linked deck, so the refusal comes from `Drive Grant` rather than from a `File`. Below Read
         §5.4 refuses to say the deck exists at all, so the answer is
         `DriveNotFound`, not `DriveForbidden`; both are `ValidationError` and
         neither is a `PermissionError` (§11.6). `get_public_presentation`
@@ -90,7 +85,7 @@ class TestPresentationSecurity(IntegrationTestCase):
                 get_public_presentation(self.owner_presentation)
 
     def test_endpoints_still_answered_refuse_a_reader(self):
-        """The same three, asked by somebody who may read the deck but not write it.
+        """The same two, asked by somebody who may read the deck but not write it.
 
         A reader is told no, not told nothing: §5.4 hides a node only below
         Read. This is the arm that proves the gate is the role and not merely
@@ -152,18 +147,6 @@ class TestPresentationSecurity(IntegrationTestCase):
             "the foreign picture must not be copied onto the caller's own deck",
         )
 
-    def test_image_payload_is_validated_before_anything_is_stored(self):
-        """The data-URI validator, on the one path that reaches it.
-
-        `save_presentation_thumbnail` is the only endpoint that takes a data
-        URI. Neither a URI that is not one nor an SVG gets as far as a stored
-        byte.
-        """
-        for payload in ("not-a-data-uri", SVG, PNG_1PX):
-            with self.subTest(payload=payload[:20]), self.set_user(OWNER):
-                with self.assertRaises(frappe.ValidationError):
-                    save_presentation_thumbnail(self.owner_presentation, payload)
-
     def test_composite_blocks_private_presentation(self):
         with self.set_user("Guest"):
             with self.assertRaises(frappe.PermissionError):
@@ -197,9 +180,8 @@ class TestPresentationSecurity(IntegrationTestCase):
         """
         with self.set_user(OWNER):
             presentation = make_presentation("Linked Thumbnail")
-            answer = save_presentation_thumbnail(presentation.name, make_thumbnail_data())
+            push_capture(presentation.name)
 
-        self.assertEqual(answer, "", "no legacy file url is minted for a linked deck")
         self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), None)
         self.assertTrue(frappe.db.exists("Drive Node Preview", {"node": node_of(presentation.name)}))
         self.assertFalse(
@@ -212,8 +194,8 @@ class TestPresentationSecurity(IntegrationTestCase):
         """One deck holds one preview row, however often the browser captures it."""
         with self.set_user(OWNER):
             presentation = make_presentation("Recaptured Thumbnail")
-            save_presentation_thumbnail(presentation.name, make_thumbnail_data())
-            save_presentation_thumbnail(presentation.name, make_thumbnail_data())
+            push_capture(presentation.name)
+            push_capture(presentation.name)
 
         self.assertEqual(frappe.db.count("Drive Node Preview", {"node": node_of(presentation.name)}), 1)
 
@@ -221,7 +203,7 @@ class TestPresentationSecurity(IntegrationTestCase):
         """§8.9 copies the preview row itself, so a copy opens with a picture."""
         with self.set_user(OWNER):
             source = make_presentation("Duplicated Thumbnail")
-            save_presentation_thumbnail(source.name, make_thumbnail_data())
+            push_capture(source.name)
             copy = create_presentation(duplicate_from=source.name)
 
         self.assertEqual(copy.thumbnail, None, "the legacy column is frozen for a linked deck")
@@ -557,7 +539,7 @@ class TestDeckList(IntegrationTestCase):
         """Its preview is a `Drive Node Preview` on §6.8's signed byte path,
         which this payload has no field for. Blank, never a stale legacy
         path."""
-        save_presentation_thumbnail(self.deck.name, make_thumbnail_data())
+        push_capture(self.deck.name)
         self.assertEqual(self._rows()[self.deck.name]["thumbnail"], "")
 
     def test_a_trashed_deck_leaves_the_list(self):

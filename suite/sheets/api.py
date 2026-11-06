@@ -2,6 +2,9 @@ import frappe
 from frappe import _
 
 from suite import drive
+from suite.content import log
+from suite.content.conversions import refused_attempt, status_of
+from suite.sheets import content as sheets_content
 from suite.sheets import drive as sheets_drive
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.drive import DOCTYPE, NODE_FIELD, docname_for_node
@@ -43,6 +46,29 @@ def get_sheet(name: str, compressed: int = 0) -> dict:
         # `POST /api/suite/drive/nodes/<id>/visit`.
         "node": doc.get(NODE_FIELD),
     }
+
+
+@frappe.whitelist(allow_guest=True)
+def get_conversion(name: str) -> dict:
+    """Answer whether the sheet is converted, waits for its conversion, or was refused; the reason for System Managers.
+
+    A refusal names its outcome, a fixed code such as `too_large` or `check` and never the sheet's data, so
+    every reader can be told what kind of refusal it is.
+    """
+    sheets_drive.require_sheet(name)
+    node = frappe.db.get_value(DOCTYPE, name, NODE_FIELD)
+    if log.find(sheets_content.APP, node):
+        return {"state": "converted"}
+
+    held = refused_attempt(sheets_content.APP, node)
+    status = status_of(sheets_content.APP, node, held)
+    answer = {"state": status["state"]}
+    if held is not None:
+        answer["outcome"] = held.outcome
+    if "reason" in status:
+        answer["reason"] = status["reason"]
+
+    return answer
 
 
 @frappe.whitelist()

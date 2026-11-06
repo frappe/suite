@@ -206,6 +206,8 @@
           @click="reloadPage"
         />
       </div>
+      <!-- The surface's version preview bar -->
+      <slot name="banner" />
 
       <!-- Canvas grid + filter overlay -->
       <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
@@ -791,13 +793,18 @@ import {
 } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import * as Y from 'yjs'
 
+import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
 import { createGrid } from '../../canvas/index'
+import { changedCellMap } from '../../collab/changes'
+import { buildWorkbookFromDoc } from '../../collab/load'
+import { readStoredVersion } from '../../collab/restore'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
@@ -897,6 +904,12 @@ const props = defineProps({
   // with it (useCollabRoom.ts). Without one the sheet opens read-only.
   collabSession: {
     type: Object,
+    default: null,
+  },
+  // A stored version's bytes: the editor shows that version read-only
+  // instead of the sheet, and opens no room (the surface's version preview).
+  version: {
+    type: Uint8Array,
     default: null,
   },
 })
@@ -1044,13 +1057,32 @@ async function runSmartFill() {
 // ── Collaboration (collab v1) ─────────────────────────────────────────────────
 // The sheet's live room (useCollabRoom.ts): every edit is saved through it.
 // 'pending' until the load asks the server. A sheet the room can't open shows
-// its old body read-only: 'unconverted' until the server has converted it,
+// its old body read-only: 'unconverted' until the server has converted it
+// (or while this converter refuses its body),
 // 'disabled' for a guest on a share link (the room takes signed-in people only).
 const collabState = ref(props.collabSession ? 'pending' : 'disabled')
 const collabOn = computed(() => collabState.value === 'live')
 const collab = useCollabRoom({
   session: props.collabSession,
-  getStores: () => ({
+  getStores: _glueStores,
+  getSelection: () => {
+    const sel = grid?.getSelection?.()
+    return sel
+      ? { sheet: currentSheet.value, r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
+      : null
+  },
+  onRemote: (change) => _onRemoteChange(change),
+  onReopen: () => emit('reopen'),
+  readConversion: () =>
+    client.query(
+      api.sheets.documents.conversion,
+      { name: props.id },
+      { context: props.requestContext },
+    ),
+})
+// The side stores a collab doc fills: the live room's, and a version's.
+function _glueStores() {
+  return {
     formats,
     comments,
     validation,
@@ -1066,16 +1098,8 @@ const collab = useCollabRoom({
     charts,
     pivot,
     namedRanges,
-  }),
-  getSelection: () => {
-    const sel = grid?.getSelection?.()
-    return sel
-      ? { sheet: currentSheet.value, r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
-      : null
-  },
-  onRemote: (change) => _onRemoteChange(change),
-  onReopen: () => emit('reopen'),
-})
+  }
+}
 // Zoom is each person's own: the doc leaves it out, so a view from the doc
 // keeps the zoom this tab has.
 function _withLocalZoom(snap) {
@@ -2071,7 +2095,7 @@ const formatMenuOptions = computed(
 let _sheetTabs = null
 // A notice in the top bar (a rejected value, a Smart Fill hint).
 const saveError = ref('')
-const { loadError, legacyCurrent, loadSheet, workbookJson } = usePersistence({
+const { loadError, legacyCurrent, loadSheet, loadBody, workbookJson } = usePersistence({
   engine: {
     start: _startEngine,
     toBytes: _engineBytes,
@@ -2864,7 +2888,7 @@ function _lastTab() {
 // otherwise overwrite with the first sheet.
 let _rememberTab = false
 watch(currentSheet, (sn) => {
-  if (!_rememberTab) return
+  if (!_rememberTab || props.version) return
   try {
     localStorage.setItem(_lastTabKey(), sn)
   } catch {
@@ -2936,8 +2960,42 @@ function _afterWorkbookLoaded() {
   syncFlags()
 }
 
+// A stored version, read-only: built from its Yjs state, or from its old body
+// for a version from before editing together. No room opens.
+async function _openVersion() {
+  try {
+    const stored = await readStoredVersion(props.version)
+    if (!stored) throw new Error('unreadable version')
+    if ('body' in stored) await loadBody(stored.body, { inDrive: true })
+    else await _buildFromState(stored.state)
+  } catch (error) {
+    console.error('[sheets] could not show a version', error)
+    loadError.value = { kind: 'other', message: __("This version can't be shown.") }
+    return
+  }
+  _afterWorkbookLoaded()
+  void _recomputeAllPivots()
+}
+async function _buildFromState(state) {
+  await _startEngine()
+  const doc = new Y.Doc()
+  try {
+    Y.applyUpdate(doc, state)
+    await buildWorkbookFromDoc(doc, _client(), _glueStores())
+  } finally {
+    doc.destroy()
+  }
+}
+// The version preview's changed cells, washed on the canvas; null clears them.
+function showChanges(cells) {
+  grid?.setDiffOverlay(cells ? changedCellMap(cells) : null)
+  grid?.setActiveDiffSheet(currentSheet.value)
+}
+watch(currentSheet, (sheet) => grid?.setActiveDiffSheet(sheet))
+
 async function _loadInitialData() {
   syncFlags()
+  if (props.version) return _openVersion()
   if (props.collabSession && props.id && (await _openCollab())) return
   if (props.id) {
     await loadSheet(props.id)
@@ -2956,6 +3014,8 @@ async function _loadInitialData() {
 // flipped in a finally so a thrown exception never strands the editor with a
 // permanent spinner.
 const isInitialLoad = ref(true)
+let _markLoaded
+const _loaded = new Promise((resolve) => (_markLoaded = resolve))
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
@@ -2963,6 +3023,7 @@ onMounted(async () => {
     await _loadInitialData()
   } finally {
     isInitialLoad.value = false
+    _markLoaded()
   }
   // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
@@ -3740,6 +3801,11 @@ defineExpose({
   closeNotes: () => {
     notesPanel.open = false
   },
+  /** Resolves once the workbook has loaded, or failed to. */
+  whenLoaded: () => _loaded,
+  /** The live room's doc as one Yjs update; null outside a room. */
+  docState: () => collab.docState(),
+  showChanges,
 })
 // Restores version `seq` through the live room (collab/restore.ts). Throws
 // with the message to show when it didn't land.
