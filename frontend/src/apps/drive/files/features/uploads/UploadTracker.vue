@@ -8,11 +8,12 @@
     class="fixed inset-x-2 bottom-20 z-20 flex max-h-96 flex-col overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-elevation-2 shadow-2xl sm:inset-x-auto sm:bottom-4 sm:right-4 sm:w-96"
   >
     <header
-      :class="
+      :class="[
         overall
-          ? 'flex min-h-12 shrink-0 flex-wrap items-center gap-x-2 border-b border-outline-gray-1 py-2 pl-4 pr-2'
-          : 'flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 pl-4 pr-2'
-      "
+          ? 'flex min-h-12 shrink-0 flex-wrap items-center gap-x-2 border-b border-outline-gray-1 py-2 pl-4'
+          : 'flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 pl-4',
+        tidy ? 'pr-4' : 'pr-2',
+      ]"
     >
       <div v-if="overall" class="min-w-0 flex-1">
         <h2 class="truncate text-base-semibold text-ink-gray-8">{{ heading }}</h2>
@@ -45,8 +46,9 @@
         :label="__('Cancel all')"
         @click="queue.cancelAll()"
       />
-      <!-- Closing only hides the list while uploads go on. -->
+      <!-- Closing only hides the list while uploads go on. With t42 it closes only once they are over. -->
       <Button
+        v-if="!(tidy && busy)"
         variant="ghost"
         icon="lucide-x"
         :aria-label="active ? __('Hide uploads') : __('Close uploads')"
@@ -56,7 +58,8 @@
         v-if="overall && active"
         :value="overallPercent"
         size="sm"
-        class="mr-2 mt-2 basis-full"
+        class="mt-2 basis-full"
+        :class="{ 'mr-2': !tidy }"
         :aria-label="__('Upload progress')"
       />
     </header>
@@ -89,18 +92,26 @@
         :key="entry.id"
         data-slot="upload-entry"
         :data-state="entry.state"
-        :class="
-          messages
-            ? 'flex min-h-16 items-center gap-3 px-4 py-2'
-            : 'flex h-16 items-center gap-3 px-4'
-        "
+        :class="rowClass"
       >
-        <span :class="iconClass(entry)" class="size-4 shrink-0" aria-hidden="true" />
+        <!-- With t42 the icon sits on the name's line, and a finished upload gets a filled check. -->
+        <span v-if="tidy" class="flex h-5 shrink-0 items-center self-start" aria-hidden="true">
+          <span
+            v-if="entry.state === 'done'"
+            data-slot="upload-done"
+            class="flex size-4 items-center justify-center rounded-full bg-surface-green-7"
+          >
+            <span class="lucide-check size-3 text-white" />
+          </span>
+          <span v-else :class="iconClass(entry)" class="size-4" />
+        </span>
+        <span v-else :class="iconClass(entry)" class="size-4 shrink-0" aria-hidden="true" />
         <div class="min-w-0 flex-1">
           <RouterLink
             v-if="opens && entry.state === 'done' && entry.node"
             :to="driveNodeRoute({ name: entry.node, title: entry.title, kind: 'file' })"
             class="block truncate text-base text-ink-gray-8 hover:underline focus-visible:underline focus-visible:outline-none"
+            :class="{ 'leading-5': tidy }"
             :title="messages ? entry.title : undefined"
           >
             {{ entry.title }}
@@ -108,6 +119,7 @@
           <p
             v-else
             class="truncate text-base text-ink-gray-8"
+            :class="{ 'leading-5': tidy }"
             :title="messages ? entry.title : undefined"
           >
             {{ entry.title }}
@@ -115,8 +127,9 @@
           <p
             :class="[
               messages && (entry.state === 'failed' || entry.note)
-                ? 'mt-1 line-clamp-2 text-sm'
-                : 'mt-1 truncate text-sm',
+                ? 'line-clamp-2 text-sm'
+                : 'truncate text-sm',
+              tidy ? 'leading-4' : 'mt-1',
               entry.state === 'failed' ? 'text-ink-red-7' : 'text-ink-gray-5',
             ]"
             :title="entry.state === 'failed' ? status(entry) : undefined"
@@ -125,12 +138,20 @@
           </p>
           <!-- Always laid out, so a row keeps its height when it finishes. -->
           <Progress
+            v-if="!tidy"
             :value="percent(entry)"
             size="sm"
             class="mt-1.5"
             :class="{ invisible: !showsProgress(entry) }"
           />
         </div>
+        <!-- With t42 the bar runs along the row's bottom edge, as wide as the dividers. -->
+        <Progress
+          v-if="tidy && showsProgress(entry)"
+          :value="percent(entry)"
+          size="sm"
+          class="absolute inset-x-0 bottom-0"
+        />
         <template v-if="cancels">
           <Button
             v-if="entry.state === 'interrupted'"
@@ -201,7 +222,21 @@ const overall = useTweak('t30-overall-progress')
 const timesLeft = useTweak('t30-time-left')
 const opens = useTweak('t30-open-finished')
 const messages = useTweak('t30-messages')
+const tidy = useTweak('t42-upload-panel')
 const entries = computed(() => queue.entries.value)
+/**
+ * On a 4 px grid with t42: rows inset to the header's edges, so names, bars and dividers line up.
+ * A row is 52 px with its divider, so the divided rows give up 1 px of top padding.
+ */
+const rowClass = computed(() => {
+  if (tidy.value)
+    return messages.value
+      ? 'relative mx-4 flex min-h-[52px] items-center gap-3 pb-2 pt-[7px] first:pt-2'
+      : 'relative mx-4 flex h-[52px] items-center gap-3'
+  return messages.value
+    ? 'flex min-h-16 items-center gap-3 px-4 py-2'
+    : 'flex h-16 items-center gap-3 px-4'
+})
 const count = (state: UploadEntry['state']) =>
   entries.value.filter((entry) => entry.state === state).length
 const stopped = computed(() => count('interrupted'))
@@ -213,6 +248,8 @@ const running = computed(
 )
 /** Uploads still to send, held ones too. */
 const active = computed(() => running.value + count('held'))
+/** Anything still uploading, or a folder still being read or created. */
+const busy = computed(() => active.value > 0 || !!queue.state.preparing || !!queue.state.reading)
 const retryable = computed(
   () =>
     entries.value.filter(
@@ -320,8 +357,13 @@ function showsProgress(entry: UploadEntry) {
   )
 }
 
+/**
+ * A finished upload needs nothing more, and closing the panel clears it, so with
+ * t42 only failed, cancelled and stopped rows keep their Remove.
+ */
 function dismissible(entry: UploadEntry) {
   if (cancels.value && (entry.state === 'cancelled' || entry.state === 'interrupted')) return true
+  if (tidy.value) return entry.state === 'failed'
   return entry.state === 'done' || entry.state === 'skipped' || entry.state === 'failed'
 }
 

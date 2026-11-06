@@ -109,6 +109,7 @@ const SUMMARY: TweakId[] = [
   't30-time-left',
   't30-open-finished',
   't30-messages',
+  't42-upload-panel',
 ]
 
 afterEach(() => {
@@ -174,6 +175,32 @@ describe('Upload tracker rows', () => {
     app!.unmount()
     setTweaks(['t30-open-finished'], false)
     expect(mount(fakeQueue([entry('done')])).root.querySelector('a')).toBeNull()
+  })
+
+  it('with t42, closes only once nothing is uploading, and marks a finished upload without a Remove', () => {
+    const close = (shown: ReturnType<typeof mount>) =>
+      shown.root.querySelector('header button[aria-label$="uploads"]')
+    const removes = (shown: ReturnType<typeof mount>) =>
+      [...shown.root.querySelectorAll('li button[aria-label^="Remove"]')].map((button) =>
+        button.getAttribute('aria-label'),
+      )
+
+    expect(close(mount(fakeQueue([entry('uploading'), entry('done')])))).toBeNull()
+    app!.unmount()
+    expect(close(mount(fakeQueue([], { reading: { found: 3 } })))).toBeNull()
+    app!.unmount()
+
+    const over = mount(fakeQueue([entry('done'), entry('failed')]))
+    expect(close(over)?.getAttribute('aria-label')).toBe('Close uploads')
+    expect(over.root.querySelectorAll("[data-slot='upload-done']")).toHaveLength(1)
+    expect(removes(over)).toEqual(['Remove failed.bin'])
+    app!.unmount()
+
+    setTweaks(['t42-upload-panel'], false)
+    const old = mount(fakeQueue([entry('uploading'), entry('done')]))
+    expect(close(old)?.getAttribute('aria-label')).toBe('Hide uploads')
+    expect(old.root.querySelector("[data-slot='upload-done']")).toBeNull()
+    expect(removes(old)).toEqual(['Remove done.bin'])
   })
 
   it('a full Drive says what to do, without a second Retry all', () => {

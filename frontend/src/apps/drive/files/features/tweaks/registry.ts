@@ -99,6 +99,7 @@ export const tweaks = [
   { id: 't38-delayed-skeleton', item: 38, group: 'Performance', label: 'Calmer folder loading', description: 'A folder stays blank for 200 ms before placeholders show, and an empty folder\'s message fades in instead of snapping in.', ready: true },
   { id: 't40-share-open', item: 40, group: 'Performance', label: 'Share opens at once', description: 'The share dialog opens with the item\'s name and the people field, reads who has access in one round trip, and holds its final layout while it loads.', ready: true },
   { id: 't41-company-files', item: 41, group: 'Merge similar concepts', label: 'Company name on the shared root', description: 'Drive names the Organization files root after your company, such as "Northwind Labs files", wherever it shows.', ready: true },
+  { id: 't42-upload-panel', item: 42, group: 'Slow operations', label: 'Tidier upload panel', description: 'Finished uploads get a filled green check beside the file name, rows are more compact with aligned progress bars, finished rows drop their remove button, and the panel cannot be closed while files upload.', ready: true },
   { id: 't45-home-new', item: 45, group: 'Fewer steps', label: 'New cards on Home', description: 'Home shows a New section above Recent with one card each to create a document, spreadsheet, presentation or drawing in My files.', ready: true },
 ] as const satisfies readonly Tweak[]
 
