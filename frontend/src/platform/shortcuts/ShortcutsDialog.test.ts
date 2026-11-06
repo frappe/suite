@@ -30,6 +30,7 @@ async function openDialog(platform: string) {
           { combo: 'Mod+K', description: 'Search Suite', group: 'Suite', handler },
           { combo: 'Mod+Backspace', description: 'Delete selected items', group: 'Files', handler },
           { combo: 'Escape', description: 'Clear selection', group: 'Files', handler },
+          { combo: 'Mod+End', description: 'Last item', group: 'Files', handler },
           // frappe-ui's Settings dialog registers its toggle with no group.
           { combo: 'Mod+Shift+Comma', description: 'Toggle settings', handler },
         ])
@@ -77,6 +78,7 @@ describe('the shortcuts dialog', () => {
       Files: {
         'Delete selected items': ['⌘', '⌫'],
         'Clear selection': ['⎋'],
+        'Last item': ['⌘', '↘'],
         'Share selected item': ['S'],
       },
       'Go to': { 'My files': ['G', 'then', 'H'] },
@@ -92,7 +94,11 @@ describe('the shortcuts dialog', () => {
         'Search Suite': ['Ctrl', 'K'],
         'Toggle settings': ['Ctrl', 'Shift', ','],
       },
-      Files: { 'Delete selected items': ['Ctrl', 'Backspace'], 'Clear selection': ['Esc'] },
+      Files: {
+        'Delete selected items': ['Ctrl', 'Backspace'],
+        'Clear selection': ['Esc'],
+        'Last item': ['Ctrl', 'End'],
+      },
     })
   })
 

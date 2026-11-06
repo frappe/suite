@@ -1,4 +1,8 @@
+import type { KeyboardShortcutCombo } from 'frappe-ui'
+
 import { translate as __ } from '@/platform/translation'
+
+import type { Letter } from './keySequences'
 
 /**
  * How the shortcuts dialog draws a key. On a Mac every modifier and special key
@@ -42,7 +46,7 @@ export function isMacPlatform(): boolean {
 }
 
 /** The caps for a frappe-ui combo such as `Mod+Shift+K`. `Shift+Slash` is drawn as `?`. */
-export function comboKeycaps(combo: string, mac = isMacPlatform()): KeyStroke {
+export function comboKeycaps(combo: KeyboardShortcutCombo, mac: boolean): KeyStroke {
   const parts = combo.split('+').map((part) => part.toLowerCase())
   const key = parts.pop() ?? ''
   const held = new Set(parts)
@@ -51,8 +55,8 @@ export function comboKeycaps(combo: string, mac = isMacPlatform()): KeyStroke {
 }
 
 /** The cap for one letter key. */
-export function letterKeycap(letter: string): Keycap {
-  return plain(letter.toUpperCase())
+export function letterKeycap(letter: Letter): Keycap {
+  return plain(letter)
 }
 
 function modifierCaps(held: ReadonlySet<string>, mac: boolean): Keycap[] {
@@ -86,8 +90,6 @@ function specialKeys(mac: boolean): Readonly<Record<string, Keycap>> {
     arrowdown: { label: '↓', spoken: __('Down arrow') },
     arrowleft: { label: '←', spoken: __('Left arrow') },
     arrowright: { label: '→', spoken: __('Right arrow') },
-    pageup: plain(__('Page up')),
-    pagedown: plain(__('Page down')),
     space: plain(__('Space')),
   }
   if (mac) {
@@ -98,6 +100,10 @@ function specialKeys(mac: boolean): Readonly<Record<string, Keycap>> {
       backspace: { label: '⌫', spoken: __('Delete') },
       delete: { label: '⌦', spoken: __('Forward delete') },
       tab: { label: '⇥', spoken: __('Tab') },
+      home: { label: '↖', spoken: __('Home') },
+      end: { label: '↘', spoken: __('End') },
+      pageup: { label: '⇞', spoken: __('Page up') },
+      pagedown: { label: '⇟', spoken: __('Page down') },
     }
   }
   return {
@@ -107,6 +113,10 @@ function specialKeys(mac: boolean): Readonly<Record<string, Keycap>> {
     backspace: plain(__('Backspace')),
     delete: plain(__('Delete')),
     tab: plain(__('Tab')),
+    home: plain(__('Home')),
+    end: plain(__('End')),
+    pageup: plain(__('Page up')),
+    pagedown: plain(__('Page down')),
   }
 }
 
