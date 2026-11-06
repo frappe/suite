@@ -152,6 +152,8 @@ export function useThreadChanges({ session, readThreads, readAt, refresh }: Thre
       })),
       // The same client id each time, so Drive posts it once
       send: async () => {
+        change.isNotSent = false
+        changes.value = [...changes.value]
         const isTaken = await send(
           change,
           () => comments.reply(thread, text, authorName, clientId),
@@ -179,13 +181,7 @@ export function useThreadChanges({ session, readThreads, readAt, refresh }: Thre
       isUnsent: (comment: string) => !!findReply(comment),
       /** Whether Drive refused this reply. */
       isNotSent: (comment: string) => !!findReply(comment)?.isNotSent,
-      retryReply(comment: string) {
-        const change = findReply(comment)
-        if (!change) return
-        change.isNotSent = false
-        changes.value = [...changes.value]
-        void change.send()
-      },
+      retryReply: (comment: string) => void findReply(comment)?.send(),
       discardReply(comment: string) {
         const change = findReply(comment)
         if (change) remove(change)
