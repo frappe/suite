@@ -827,6 +827,15 @@ describe('what the deck draws, against the old view', () => {
       ),
     ).toEqual(['a', 'b'])
   })
+
+  it('saves a box that holds only rules as an empty box, as the old view draws it', () => {
+    const { doc, dropped } = converted([
+      textBox('<hr><hr>'),
+      { id: 'empty', type: 'text', content: '' },
+    ])
+    expect(dropped).toEqual([{ kind: 'horizontal-rule' }])
+    expect(bodyOf(doc, 'box')).toEqual(bodyOf(doc, 'empty'))
+  })
 })
 
 describe('refusals', () => {

@@ -303,6 +303,11 @@ function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>)
     dropped.add('horizontal-rule')
   }
 
+  // Rules were all it held, so the old view draws an empty box
+  if (!body.hasChildNodes()) {
+    return null
+  }
+
   const carried = body.cloneNode(true) as HTMLElement
   stateLineHeights(carried, rules)
   carryItemStyles(carried, rules)
@@ -328,7 +333,10 @@ function fillEmptyText(fragment: Y.XmlFragment) {
 function filled(box: OldBox, fragment: Y.XmlFragment, rules: DrawRules, dropped: Set<DroppedKind>) {
   try {
     const parsed = parsedContent(box, rules, dropped)
-    prosemirrorToYXmlFragment(parsed.node, fragment)
+    if (parsed) {
+      prosemirrorToYXmlFragment(parsed.node, fragment)
+    }
+
     return parsed
   } catch {
     // TipTap throws on a document its schema has no place for, and `holdItemLooks` on what no run holds
@@ -351,7 +359,13 @@ function fillText(doc: Y.Doc, box: OldBox, id: string, dropped: Set<DroppedKind>
   }
 
   const rules = rulesOf(box)
-  const { node, source, held } = filled(box, fragment, rules, dropped)
+  const parsed = filled(box, fragment, rules, dropped)
+  if (!parsed) {
+    fillEmptyText(fragment)
+    return
+  }
+
+  const { node, source, held } = parsed
   const read = yXmlFragmentToProseMirrorRootNode(fragment, schema)
   const { isSameBody, isSameMarkers } = compareBodies(
     source,
