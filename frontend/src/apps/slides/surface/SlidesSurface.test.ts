@@ -383,6 +383,22 @@ function answersStartupReads() {
   })
 }
 
+describe('Slides panels', () => {
+  it('offers a signed-out reader of a public presentation no comments or versions', async () => {
+    mounted = await openedSurface({ panels: [] })
+    await nextTick()
+
+    expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('')
+  })
+
+  it('offers everyone else the panels their session names', async () => {
+    mounted = await openedSurface()
+    await nextTick()
+
+    expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('comments,versions')
+  })
+})
+
 describe('Slides offline copy', () => {
   const posted: string[] = []
   const register = vi.fn(async () => ({}))

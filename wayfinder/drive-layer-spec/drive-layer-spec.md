@@ -1414,6 +1414,12 @@ valid 30 days; `expires` is the ticket's Unix expiry. It writes no row anywhere.
 `DriveLinkExpired` when the grant is past `expires_on`, and
 `DriveNotFound` when the token names no grant.
 
+After a `grant`, a `revoke` that removed a row, a `revoke_below` or a
+`rotate_link`, each document at or below the node calls its content type's
+`access_changed(node)` (§10.1) once the request commits. The app uses it to
+make open tabs check their access again. A failing callback is logged and
+never undoes the write.
+
 ### 5.12 The activity row a grant write produces
 
 Every insert, update, or delete of a `Drive Grant` writes exactly one
@@ -2061,6 +2067,9 @@ editor's save over WebDAV.
   instead of refusing: `copy`, restore, and the Build patch. The rule is
   `get_new_file_name`'s: the oldest keeps the plain title, later ones get
   ` (2)`, ` (3)` (`suite/drive/utils/__init__.py:644`).
+- A document created under a title nobody typed, such as "Untitled
+  document", deduplicates too: `POST /nodes` takes `deduplicate_title:
+  true` for a document and writes the free title instead of refusing.
 - A file keeps its extension. A rename that removes or changes it is
   refused with `ValidationError` ("Keep the .pdf extension."). Letter case
   does not count, so `.PDF` may become `.pdf`. The extension is the text
@@ -2389,6 +2398,10 @@ def delete_version(p: Principals, node: str, seq: int) -> None: ...
 def thin(ladder: dict | None = None) -> dict: ...
 ```
 
+Reading the version list or a version needs READ, except for a Guest, who
+needs EDIT. A public reader sees the document but not its history.
+Comments follow the same rule with COMMENT (§9.3).
+
 Who writes a version.
 
 | Trigger | Kind | Role |
@@ -2565,11 +2578,19 @@ def reanchor_threads(p: Principals, node: str, anchors: dict[str, str]) -> list[
 - Adding a comment or resolving a thread needs COMMENT. Editing or deleting
   one needs EDIT, or being its author [005 defaults].
 - A trashed node refuses new comments and edits [005 defaults].
+- Reading threads needs READ, except for a Guest, who needs COMMENT.
 - A guest's comment carries `owner = "Guest"` plus the `author_name` the
   visitor typed. The server sets the author; the client never does
   [008 §6].
-- Mentions go into the comment's `mentions` field and produce one
-  `Drive Notification` each.
+- Mentions go into the comment's `mentions` field, each person once. Only
+  people a picker on that node offers count: enabled users with the Suite User
+  role, and those the node names who can read it. A Guest's or a share link
+  author's comment stores only people who can read. A mention produces one
+  `Drive Notification` for someone with access. Someone without one only gets
+  it from a signed-in author who holds COMMENT on their own access and wrote
+  `@[user]`, and never if a **Deny** naming them or their group keeps them out;
+  an author who holds MANAGE also gives them COMMENT. An edit tells only people
+  the comment's records never named.
 - A create or a reply may carry a `client_id` (1 to 64 letters, digits,
   `-` or `_`), unique per node. A resend with the same id, after its answer
   was lost, writes nothing and answers the thread or comment the first send
@@ -2739,6 +2760,9 @@ class ContentTypeSpec:
 	# (§9.3). The app tells the document's open tabs to read the threads
 	# again; a failure is logged and never undoes the write.
 	threads_changed: Callable[[str], None] | None = None
+	# Called after a grant or link change at or above the node commits (§5.11).
+	# The app makes the document's open tabs check their access again.
+	access_changed: Callable[[str], None] | None = None
 ```
 
 Every callable takes and returns names, never documents. `create_empty`,
@@ -3164,7 +3188,7 @@ page (§11.4).
 | GET | `/nodes/<id>/content` | READ on node | `?format=` for documents; `?download=1` saves a file instead of showing it | 302 to a signed `/f/` URL, or the streamed export | 403 |
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
 | POST | `/nodes/<id>/preview` | EDIT on node | `{image: <base64>, mime}` | `{preview: {...}}` | 403 |
-| GET | `/nodes/<id>/activity` | READ on node | `?limit=&cursor=` | cursor page of activity rows | none |
+| GET | `/nodes/<id>/activity` | READ on node; `share_*` rows need MANAGE | `?limit=&cursor=` | cursor page of activity rows | none |
 | POST | `/nodes/<id>/visit` | READ on node | none | `{count}` | none |
 | PUT | `/nodes/<id>/favourite` | READ on node | none | `{count}` | 403 on a trashed node |
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{count}` | none |

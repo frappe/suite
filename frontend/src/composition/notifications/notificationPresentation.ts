@@ -2,7 +2,12 @@ import { DRIVE_ROLES, type DriveNotification } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 
 type Action = DriveNotification['activity']['action']
-type Sentence = (actor: string, title: string, notification: DriveNotification) => string
+type Sentence = (
+  actor: string,
+  title: string,
+  notification: DriveNotification,
+  reader: string | undefined,
+) => string
 
 // Every action has a sentence. A new server action fails the typecheck here, and
 // the response validator refuses an action it does not know, so the bell never
@@ -12,7 +17,12 @@ const SENTENCES: Record<Action, Sentence> = {
   rename: (actor, title) => __('{0} renamed "{1}"', [actor, title]),
   move: (actor, title) => __('{0} moved "{1}"', [actor, title]),
   edit: (actor, title) => __('{0} edited "{1}"', [actor, title]),
-  comment: (actor, title) => __('{0} mentioned you in "{1}"', [actor, title]),
+  comment: (actor, title, { activity }, reader) => {
+    const mentions = activity.detail.mentions
+    return Array.isArray(mentions) && mentions.includes(reader)
+      ? __('{0} mentioned you in "{1}"', [actor, title])
+      : __('{0} commented on "{1}"', [actor, title])
+  },
   trash: (actor, title) => __('{0} moved "{1}" to Trash', [actor, title]),
   restore: (actor, title) => __('{0} restored "{1}"', [actor, title]),
   delete: (actor, title) => __('{0} deleted "{1}"', [actor, title]),
@@ -40,12 +50,12 @@ const ROLE_PHRASES: Record<number, () => string> = {
 }
 
 /** One plain sentence: who did what to which item, for the reader. */
-export function notificationSentence(notification: DriveNotification): string {
+export function notificationSentence(notification: DriveNotification, reader?: string): string {
   const sentence = SENTENCES[notification.activity.action]
-  return sentence(notification.actor.full_name, notification.node_title, notification)
+  return sentence(notification.actor.full_name, notification.node_title, notification, reader)
 }
 
-/** The comment a mention quotes, or null when the activity carries none. */
+/** The comment a notification quotes, or null when the activity carries none. */
 export function notificationExcerpt(notification: DriveNotification): string | null {
   if (notification.activity.action !== 'comment') return null
   const excerpt = notification.activity.detail.excerpt

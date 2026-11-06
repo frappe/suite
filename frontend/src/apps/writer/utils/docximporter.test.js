@@ -269,7 +269,10 @@ describe('importDocx', () => {
         Collaboration.configure({ document: body, field: 'default' }),
       ],
     })
-    expect(listTabs(peer).map((tab) => tab.label)).toEqual(['Untitled', 'launch brief'])
+    expect(listTabs(peer).map((tab) => tab.label)).toEqual([
+      'Existing line before any impor…',
+      'launch brief',
+    ])
     expect(peer.getText()).toContain('Existing line before any import.')
     expect(peer.getText()).toContain('Imported text')
     expect(changes).toHaveBeenCalled()

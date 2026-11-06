@@ -71,7 +71,7 @@
               class="line-clamp-2 block break-words"
               :class="notification.read ? 'text-base' : 'text-base-semibold'"
             >
-              {{ notificationSentence(notification) }}
+              {{ notificationSentence(notification, session.user.value?.id) }}
             </span>
             <span
               v-if="notificationExcerpt(notification)"
@@ -109,7 +109,11 @@ import {
   notificationSentence,
   notificationTime,
 } from '@/composition/notifications/notificationPresentation'
+import { toast } from '@/platform/feedback'
+import { mentionedByState } from '@/platform/page-meta'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { isRefusal } from '@/platform/transport'
 
 const router = useRouter()
 const open = ref(false)
@@ -117,6 +121,7 @@ const count = useQuery(api.drive.notifications.unreadCount, {})
 const feed = useInfiniteQuery(api.drive.notifications.list, () =>
   open.value ? { limit: 60 } : false,
 )
+const session = useSession()
 const markRead = useMutation(api.drive.notifications.markRead)
 const markAll = useMutation(api.drive.notifications.markAllRead)
 const unread = computed(() => count.data?.unread ?? 0)
@@ -125,9 +130,33 @@ async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
   }
-  const node = await loadDriveNodeSummary(notification.activity.node)
+  let node: Parameters<typeof driveNodeRoute>[0]
+  let mentionedBy = ''
+  try {
+    node = await loadDriveNodeSummary(notification.activity.node)
+  } catch (error) {
+    if (!isRefusal(error)) {
+      toast.error(__('Could not open this notification.'), {
+        action: { label: __('Retry'), onClick: () => void openNotification(notification) },
+      })
+      return
+    }
+
+    // Someone mentioned without access can't load the node. The page they land on says whom to ask.
+    mentionedBy = notification.actor.full_name
+    node = {
+      name: notification.activity.node,
+      title: notification.node_title,
+      kind: notification.node_kind,
+    }
+  }
+
   open.value = false
-  await router.push(driveNodeRoute(node))
+  const destination = driveNodeRoute(node)
+  await router.push({
+    ...destination,
+    state: { ...destination.state, ...mentionedByState(mentionedBy) },
+  })
 }
 
 async function markAllRead() {

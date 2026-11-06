@@ -376,7 +376,7 @@ useDocumentLeaveGuard({
           :save-state="editor?.saveState ?? null"
           :view-only="viewOnly"
           :recoverable="hasRecovery"
-          :panels="['comments', 'versions']"
+          :panels="session.panels.value"
           :panel="panel"
           layout="compact"
           @update:panel="showPanel"
@@ -386,7 +386,12 @@ useDocumentLeaveGuard({
             <component :is="EditorStatus" />
           </template>
           <template #menus>
-            <component :is="EditorMenus" :open-comments="() => showPanel('comments')" />
+            <component
+              :is="EditorMenus"
+              :open-comments="
+                session.panels.value.includes('comments') ? () => showPanel('comments') : null
+              "
+            />
           </template>
           <template #actions>
             <component :is="EditorActions" />

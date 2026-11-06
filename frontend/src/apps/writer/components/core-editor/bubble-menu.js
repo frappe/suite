@@ -1,13 +1,14 @@
 import { TextSelection } from '@tiptap/pm/state'
 
-// Shows the comment button over a text selection
-export function bubbleMenuOptions() {
-  return {
-    shouldShow: ({ state, from, to }) => {
-      if (from === to) return false
+import { isEditingLink } from '@/apps/writer/extensions/link-editing'
 
-      // Only show for text selections — not node selections (images) or cell selections (tables)
-      return state.selection instanceof TextSelection
-    },
+// For a text selection, unless the link popover edits it
+export function bubbleMenuShouldShow() {
+  return ({ state, from, to }) => {
+    if (from === to) return false
+    // Not node selections (images) or cell selections (tables)
+    if (!(state.selection instanceof TextSelection)) return false
+    if (!state.doc.textBetween(from, to).trim()) return false
+    return !isEditingLink(state)
   }
 }

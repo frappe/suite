@@ -1,6 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { prosemirrorJSONToYDoc, yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createAbsolutePositionFromRelativePosition,
   createRelativePositionFromTypeIndex,
@@ -15,8 +15,15 @@ import { encodeAnchor, readAnchor } from '@/apps/writer/collab/anchors'
 import { writerSchema } from '@/apps/writer/schema'
 import type { RestoreResult } from '@/platform/collab'
 
-import { restoreVersion } from './restoreVersion'
+import { othersPresentWarning, restoredByOther, restoreVersion } from './restoreVersion'
 import type { ConvertedVersion } from './versions'
+
+const NAMES: Record<string, string> = { 'amira@northwind.test': 'Amira Haddad' }
+
+vi.mock('@/apps/writer/composables/useUsers', () => ({
+  lookUp: () => Promise.resolve(),
+  fullName: (user: string) => NAMES[user] ?? user,
+}))
 
 const schema = getSchema(writerSchema())
 
@@ -247,5 +254,77 @@ describe('restoreVersion', () => {
 
     await expect(restore).rejects.toThrow('down')
     expect(room.restoreVersion.mock.calls.length).toBe(0)
+  })
+})
+
+describe('restoring under other people', () => {
+  const me = 'me@northwind.test'
+
+  it('warns about nobody when only this person has the document open', () => {
+    const people = [{ id: me, name: 'Me' }]
+
+    expect(othersPresentWarning(people, me)).toBe('')
+  })
+
+  it('names each other person once, even with the document open in two of their tabs', () => {
+    const people = [
+      { id: me, name: 'Me' },
+      { id: 'amira@northwind.test', name: 'Amira Haddad' },
+      { id: 'amira@northwind.test', name: 'Amira Haddad' },
+      { id: 'ben@northwind.test', name: 'Ben Ito' },
+    ]
+
+    expect(othersPresentWarning(people, me)).toBe(
+      'Amira Haddad and Ben Ito have this document open now and will be told you restored it.',
+    )
+  })
+
+  it('names one other person in the singular', () => {
+    const people = [{ id: 'amira@northwind.test', name: 'Amira Haddad' }]
+
+    expect(othersPresentWarning(people, me)).toBe(
+      'Amira Haddad has this document open now and will be told you restored it.',
+    )
+  })
+})
+
+describe('told about another person’s restore', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('names who restored a named version, and the name', async () => {
+    const restored = {
+      by: 'amira@northwind.test',
+      version: { seq: 3, label: 'Draft for review', takenAt: '2026-10-22T05:12:00+00:00' },
+    }
+
+    expect(await restoredByOther(restored)).toBe(
+      'Amira Haddad restored the version “Draft for review”.',
+    )
+  })
+
+  it('names an automatic version by its time today, and by its day before today', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 22, 18, 0))
+    const today = new Date(2026, 9, 22, 10, 42).toISOString()
+    const earlier = new Date(2026, 9, 12, 10, 42).toISOString()
+    const restored = (takenAt: string) => ({
+      by: 'amira@northwind.test',
+      version: { seq: 3, label: null, takenAt },
+    })
+
+    expect(await restoredByOther(restored(today))).toMatch(
+      /^Amira Haddad restored the version from 10:42\sAM\.$/,
+    )
+    expect(await restoredByOther(restored(earlier))).toMatch(
+      /^Amira Haddad restored the version from (Oct 12|12 Oct), 10:42\sAM\.$/,
+    )
+  })
+
+  it('still tells the reader when the notice names no person or no version', async () => {
+    expect(await restoredByOther({ by: null, version: null })).toBe(
+      'Someone restored an earlier version of this document.',
+    )
   })
 })

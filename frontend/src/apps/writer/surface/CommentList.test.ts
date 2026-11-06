@@ -47,6 +47,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('the comments list', () => {
   it('shows each open thread on one row: who, where, when, the first comment and the replies', () => {
     const { host } = showList()
@@ -76,7 +81,7 @@ describe('the comments list', () => {
       [
         expect.stringMatching(/^Ben Ito \S.* Looks good overall$/),
         expect.stringMatching(/^Asha Rao \S.* Is this right\? · 2 replies$/),
-        expect.stringMatching(/^Asha Rao Text deleted \S.* Fixed the title · 1 reply$/),
+        expect.stringMatching(/^Asha Rao \S.* gone Text deleted Fixed the title · 1 reply$/),
       ],
     ])
   })
@@ -294,7 +299,11 @@ describe('threads changed since last opened', () => {
       [],
       [expect.stringMatching(/^Ben Ito Unread \S.* Looks good overall · 1 reply$/)],
       [],
-      [expect.stringMatching(/^Asha Rao Text deleted Unread \S.* Fixed the title · 2 replies$/)],
+      [
+        expect.stringMatching(
+          /^Asha Rao Unread \S.* gone Text deleted Fixed the title · 2 replies$/,
+        ),
+      ],
     ])
   })
 
@@ -357,16 +366,17 @@ describe('people a comment mentions', () => {
       { text: 'Ask @[ben@x.com]', isSent: true },
     ])
     const { host } = showList({ threads: [], drafts: list })
+    const POSTING = expect.stringMatching(/^Asha Rao \S.* Ask @Ben Roy$/)
     const closed = rows(host)
 
     const [, notPosted] = [...host.querySelectorAll('button')].filter(
-      (button) => button.textContent?.trim() === 'You',
+      (button) => button.textContent?.trim() === 'Asha Rao',
     )
     await click(notPosted)
 
     expect([closed, rows(host)]).toEqual([
-      ['You Posting… Ask @Ben Roy', 'You Not posted · Retry Ask @Ben Roy'],
-      ['You Posting… Ask @Ben Roy', 'You Not posted · Retry Ask @Ben Roy Discard'],
+      [POSTING, 'Asha Rao Not posted · Retry Ask @Ben Roy'],
+      [POSTING, 'Asha Rao Not posted · Retry Ask @Ben Roy Discard'],
     ])
   })
 })
@@ -381,11 +391,13 @@ describe('a comment kept from the old Drive', () => {
     ],
   } as unknown as DocumentThread
 
+  // Each person shown, by their photo or, with none, their initials
   function avatars(host: Element) {
-    return [...host.querySelectorAll('[data-avatar]')].map((avatar) => [
-      avatar.getAttribute('data-avatar'),
-      avatar.getAttribute('data-image'),
-    ])
+    return [...host.querySelectorAll('[data-avatar], [data-initials]')].map((avatar) =>
+      avatar.hasAttribute('data-initials')
+        ? ['initials', avatar.getAttribute('data-initials')]
+        : [avatar.getAttribute('data-avatar'), avatar.getAttribute('data-image')],
+    )
   }
 
   it('names the old commenter, with their initials and no photo', async () => {
@@ -397,7 +409,10 @@ describe('a comment kept from the old Drive', () => {
     expect([closed, rows(host), avatars(host)]).toEqual([
       [expect.stringMatching(/^Old Name .*From 2023/)],
       [expect.stringMatching(/^Old Name .*From 2023.*Other Name .*Also 2023/s)],
-      [['Other Name', 'none']],
+      [
+        ['initials', 'ON'],
+        ['initials', 'ON'],
+      ],
     ])
   })
 
@@ -418,7 +433,10 @@ describe('a comment kept from the old Drive', () => {
 
     expect([rows(host), avatars(host)]).toEqual([
       [expect.stringMatching(/^Asha Rao .*Now.*Ben Ito .*Later/s)],
-      [['Ben Ito', '/ben.png']],
+      [
+        ['initials', 'AR'],
+        ['Ben Ito', '/ben.png'],
+      ],
     ])
   })
 
@@ -440,7 +458,10 @@ describe('a comment kept from the old Drive', () => {
 
     expect([rows(host), avatars(host)]).toEqual([
       [expect.stringMatching(/^Asha Rao .*Then.*Ben Ito .*After/s)],
-      [['Ben Ito', '/ben.png']],
+      [
+        ['initials', 'AR'],
+        ['Ben Ito', '/ben.png'],
+      ],
     ])
   })
 })

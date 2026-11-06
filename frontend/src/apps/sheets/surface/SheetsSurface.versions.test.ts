@@ -136,6 +136,7 @@ const session = {
   title: ref('Budget'),
   state: ref('Active'),
   access: computed(() => ({ role: 40 })),
+  panels: ref(['comments', 'versions']),
   folder: ref({ name: 'folder-1', title: 'Finance' }),
   credentials: { context: {}, fetch: fetchVersion },
   versions: {

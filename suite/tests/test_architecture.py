@@ -39,6 +39,14 @@ def _debt(owner, removal, entries):
 
 BASELINE_DEBT = {
     **_debt(
+        "Suite Drive and Slides",
+        "Set the root quota through a Drive test helper instead of writing Drive Root directly.",
+        (
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+        ),
+    ),
+    **_debt(
         "Suite Drive and Meet",
         "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
         ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
@@ -688,7 +696,9 @@ class TestArchitecture(unittest.TestCase):
             (
                 "COMMENT",
                 "EDIT",
+                "IN_DIRECTORY_SQL",
                 "MANAGE",
+                "MAX_MENTIONS",
                 "READ",
                 "UPLOAD",
                 "ContentTypeSpec",
@@ -700,6 +710,7 @@ class TestArchitecture(unittest.TestCase):
                 "DriveLocked",
                 "DriveNotFound",
                 "DriveOverQuota",
+                "PersonOnNode",
                 "Satellite",
                 "administration_usage",
                 "adopt_media",
@@ -714,6 +725,7 @@ class TestArchitecture(unittest.TestCase):
                 "ensure_personal_root",
                 "get_storage_reservation",
                 "get_storage_usage",
+                "get_version",
                 "grow_storage_reservation",
                 "has_blank_old_comment",
                 "import_document",
@@ -724,6 +736,7 @@ class TestArchitecture(unittest.TestCase):
                 "node_owner",
                 "node_title",
                 "node_url",
+                "people_on",
                 "personal_root_for",
                 "preview_user_transfer",
                 "push_preview",

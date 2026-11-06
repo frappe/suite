@@ -169,12 +169,13 @@ vi.mock('@/apps/drive', () => ({
   documentSessionUrls: () => [],
   GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
-    props: { recoverable: Boolean },
+    props: { recoverable: Boolean, panels: { type: Array, default: () => [] } },
     emits: ['download-changes', 'update:panel'],
     setup:
-      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
+      (props: { recoverable: boolean; panels: string[] }, { slots, emit }: SetupContext) =>
       () =>
         h('header', [
+          h('output', { 'data-panels': '' }, props.panels.join()),
           slots.actions?.(),
           slots.primary?.(),
           slots.icon?.({ icon: '' }),
@@ -281,6 +282,7 @@ function session(
   docname: string,
   access: Ref<{ role: number }>,
   media: DocumentSession['media'],
+  panels: string[],
 ): DocumentSession {
   return {
     nodeId: 'node-1',
@@ -289,6 +291,7 @@ function session(
     title: ref('Quarterly plan'),
     state: ref('Active'),
     access,
+    panels: ref(panels),
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
     versions: { restore: (seq: string) => versionRestore.run(seq) },
@@ -303,6 +306,7 @@ export async function openedSurface({
   firstLoad,
   media = (() => undefined) as unknown as DocumentSession['media'],
   composite,
+  panels = ['comments', 'versions'],
 }: {
   path?: string
   role?: number
@@ -310,6 +314,7 @@ export async function openedSurface({
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
   composite?: Record<string, unknown[] | Error>
+  panels?: string[]
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -402,7 +407,7 @@ export async function openedSurface({
     })
   })
   const access = ref({ role })
-  const opened = session(docname, access, media)
+  const opened = session(docname, access, media, panels)
   const view = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
