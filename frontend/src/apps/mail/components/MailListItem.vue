@@ -49,13 +49,31 @@
         v-if="mail.returned && mailTweaks.returnedLook === 'badge'"
         size="sm"
         theme="blue"
-        :label="__('Back')"
+        :label="mail.no_reply ? __('No reply yet') : __('Back')"
       />
       <Bell
         v-if="mail.returned && mailTweaks.returnedLook === 'bell'"
         class="text-ink-gray-5 size-3.5 shrink-0"
-        :aria-label="__('Back')"
+        :aria-label="mail.no_reply ? __('No reply yet') : __('Back')"
       />
+      <!-- Sent mail waiting on an answer: the time it comes back if none arrives. -->
+      <Tooltip
+        v-if="mail.remind_at"
+        :text="
+          __('Reminder on {0} if nobody replies', [
+            formatDateTime(mail.remind_at, 'ddd, MMM D, h:mm A'),
+          ])
+        "
+      >
+        <BellRing
+          class="text-ink-gray-5 size-3.5 shrink-0"
+          :aria-label="
+            __('Reminder on {0} if nobody replies', [
+              formatDateTime(mail.remind_at, 'ddd, MMM D, h:mm A'),
+            ])
+          "
+        />
+      </Tooltip>
       <Pin
         v-if="mail.pinned && (isMobile || mailTweaks.pinLook !== 'tint')"
         class="text-ink-gray-5 size-3.5 shrink-0"
@@ -197,7 +215,7 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Bell, Download, Loader, Pin, UserRoundSearch } from 'lucide-vue-next'
+import { Bell, BellRing, Download, Loader, Pin, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 

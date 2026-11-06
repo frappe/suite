@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import dayjs from '@/apps/mail/utils/dayjs'
 
-import { snoozeChoices } from './snoozeTimes'
+import { reminderChoices, snoozeChoices } from './snoozeTimes'
 
 vi.mock('@/platform/time-zone', () => ({ userTimeZone: () => 'UTC' }))
 
@@ -46,5 +46,23 @@ describe('snooze times', () => {
   it('does not offer next week on a Sunday, when it is tomorrow', () => {
     expect(labels('2026-11-01T10:00:00Z')).not.toContain('Next week')
     expect(shown('2026-11-01T10:00:00Z', 'Tomorrow')?.display).toBe('Mon, Nov 2, 9:00 AM')
+  })
+})
+
+describe('reminder times', () => {
+  const reminders = (when: string) =>
+    reminderChoices(at(when)).map((choice) => [choice.label, choice.display])
+
+  it('counts days from when the mail goes out, each at nine in the morning', () => {
+    expect(reminders('2026-11-04T16:45:00Z')).toEqual([
+      ['Tomorrow', 'Thu, Nov 5, 9:00 AM'],
+      ['In 3 days', 'Sat, Nov 7, 9:00 AM'],
+      ['In a week', 'Wed, Nov 11, 9:00 AM'],
+      ['In 2 weeks', 'Wed, Nov 18, 9:00 AM'],
+    ])
+  })
+
+  it('starts from a scheduled send, not from now', () => {
+    expect(reminders('2026-11-20T08:00:00Z')[0]).toEqual(['Tomorrow', 'Sat, Nov 21, 9:00 AM'])
   })
 })

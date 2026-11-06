@@ -45,6 +45,8 @@ import type {
   BlockSendersOutput,
   BookInput,
   BookOutput,
+  CancelReplyReminderInput,
+  CancelReplyReminderOutput,
   CancelScheduledMailInput,
   CancelScheduledMailOutput,
   ChangeMemberPasswordInput,
@@ -217,6 +219,8 @@ import type {
   GetQuotaOutput,
   GetRecentThreadsFromInput,
   GetRecentThreadsFromOutput,
+  GetReplyReminderInput,
+  GetReplyReminderOutput,
   GetScheduledMailInput,
   GetScheduledMailOutput,
   GetScreenedAddressesInput,
@@ -275,6 +279,8 @@ import type {
   RebuildAutomationScriptForAccountOutput,
   RegionalPreferencesInput,
   RegionalPreferencesOutput,
+  RemindIfNoReplyInput,
+  RemindIfNoReplyOutput,
   RemoveFailedCreationInput,
   RemoveFailedCreationOutput,
   RemoveGroupEmailInput,
@@ -7349,10 +7355,12 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               },
               pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              no_reply: { enum: [0, 1], title: 'No Reply', type: 'integer' },
               snoozed_until: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Snoozed Until',
               },
+              remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7645,10 +7653,12 @@ export const operationGetUnifiedThreads: Validators<
               },
               pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              no_reply: { enum: [0, 1], title: 'No Reply', type: 'integer' },
               snoozed_until: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Snoozed Until',
               },
+              remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -8339,10 +8349,12 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               },
               pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              no_reply: { enum: [0, 1], title: 'No Reply', type: 'integer' },
               snoozed_until: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Snoozed Until',
               },
+              remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -8621,6 +8633,7 @@ export const operationCreateMail: Validators<CreateMailInput, CreateMailOutput> 
           },
           send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
           undo_send: { title: 'Undo Send', type: 'boolean' },
+          remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
           in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
           in_reply_to_id: {
             anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -8759,6 +8772,7 @@ export const operationUpdateDraftMail: Validators<UpdateDraftMailInput, UpdateDr
           },
           send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
           undo_send: { title: 'Undo Send', type: 'boolean' },
+          remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
           id: { title: 'Id', type: 'string' },
           submit: { title: 'Submit', type: 'boolean' },
         },
@@ -8992,6 +9006,99 @@ export const operationUnsnoozeMails: Validators<UnsnoozeMailsInput, UnsnoozeMail
     )
   },
 }
+
+export const operationRemindIfNoReply: Validators<RemindIfNoReplyInput, RemindIfNoReplyOutput> = {
+  validateInput(value: unknown): asserts value is RemindIfNoReplyInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          remind_at: { title: 'Remind At', type: 'string' },
+        },
+        required: ['account', 'ids', 'remind_at'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'remind_if_no_reply input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RemindIfNoReplyOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
+        },
+        required: ['remind_at'],
+        title: 'ReminderResult',
+        type: 'object',
+      },
+      'remind_if_no_reply output',
+    )
+  },
+}
+
+export const operationCancelReplyReminder: Validators<
+  CancelReplyReminderInput,
+  CancelReplyReminderOutput
+> = {
+  validateInput(value: unknown): asserts value is CancelReplyReminderInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          thread_id: { title: 'Thread Id', type: 'string' },
+        },
+        required: ['account', 'thread_id'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'cancel_reply_reminder input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is CancelReplyReminderOutput {
+    assertSchema(value, { type: 'null' }, 'cancel_reply_reminder output')
+  },
+}
+
+export const operationGetReplyReminder: Validators<GetReplyReminderInput, GetReplyReminderOutput> =
+  {
+    validateInput(value: unknown): asserts value is GetReplyReminderInput {
+      assertSchema(
+        value,
+        {
+          type: 'object',
+          properties: {
+            account: { title: 'Account', type: 'string' },
+            thread_id: { title: 'Thread Id', type: 'string' },
+          },
+          required: ['account', 'thread_id'],
+          additionalProperties: false,
+          $defs: {},
+        },
+        'get_reply_reminder input',
+      )
+    },
+    validateOutput(value: unknown): asserts value is GetReplyReminderOutput {
+      assertSchema(
+        value,
+        {
+          properties: {
+            remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
+          },
+          required: ['remind_at'],
+          title: 'ReminderResult',
+          type: 'object',
+        },
+        'get_reply_reminder output',
+      )
+    },
+  }
 
 export const operationSetMailsSeen: Validators<SetMailsSeenInput, SetMailsSeenOutput> = {
   validateInput(value: unknown): asserts value is SetMailsSeenInput {

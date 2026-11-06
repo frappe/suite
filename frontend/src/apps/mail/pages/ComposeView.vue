@@ -56,6 +56,13 @@
         </template>
       </Button>
     </header>
+    <ReplyReminderStrip
+      v-if="remindAt"
+      class="mt-2 shrink-0"
+      :remind-at="remindAt"
+      @change="openRemindModal"
+      @cancel="setRemindAt()"
+    />
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
@@ -270,6 +277,7 @@
     </TextEditor>
 
     <ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
+    <ReminderModal v-model="showRemindModal" :initial-value="remindAt" :save="setRemindAt" />
   </div>
 </template>
 
@@ -278,6 +286,7 @@ import { EditorContent } from '@tiptap/vue-3'
 import { Button, Combobox } from 'frappe-ui'
 import { Icon as FeatherIcon, TextEditor, TextEditorFixedMenu } from 'frappe-ui/experimental'
 import {
+  BellPlus,
   CalendarClock,
   ChevronDown,
   ChevronUp,
@@ -291,7 +300,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch 
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
+import ReminderModal from '@/apps/mail/components/Modals/ReminderModal.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
+import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
 import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type { Attachment, Identity } from '@/apps/mail/types'
@@ -356,6 +367,10 @@ const {
   showScheduleModal,
   openScheduleModal,
   scheduleSend,
+  remindAt,
+  showRemindModal,
+  openRemindModal,
+  setRemindAt,
   openQuotedContent,
   openAttachment,
   mentionExtensions,
@@ -548,10 +563,15 @@ const onFilesSelected = async (e: Event) => {
   }
 }
 
-const ACTIONS = [
+const ACTIONS = computed(() => [
   { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
+  {
+    label: remindAt.value ? __('Change reminder') : __('Remind me if no reply'),
+    onClick: () => openRemindModal(),
+    icon: BellPlus,
+  },
   { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
-]
+])
 
 // Start where there is still something to write: the body on a reply (recipients and subject came
 // with the thread), the subject when the draft arrived addressed but unnamed (a `mailto:` link, or a

@@ -363,7 +363,10 @@
         @append-emoji="(emoji: string) => appendEmoji(emoji)"
         @discard-mail="discardMail"
         @send-mail="sendMail"
+        :remind-at="remindAt"
         @schedule-send="openScheduleModal"
+        @remind="openRemindModal"
+        @clear-remind="setRemindAt()"
         @retry-save="saveDraft"
       />
     </template>
@@ -374,6 +377,7 @@
     @insert="(selections) => mail[insertContactsInto].push(...selections)"
   />
   <ScheduleSendModal v-model="showScheduleModal" :save="scheduleSend" />
+  <ReminderModal v-model="showRemindModal" :initial-value="remindAt" :save="setRemindAt" />
 </template>
 
 <script setup lang="ts">
@@ -412,6 +416,7 @@ import {
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
+import ReminderModal from './Modals/ReminderModal.vue'
 import ScheduleSendModal from './Modals/ScheduleSendModal.vue'
 
 const show = defineModel<boolean>()
@@ -512,6 +517,10 @@ const {
   showScheduleModal,
   openScheduleModal,
   scheduleSend,
+  remindAt,
+  showRemindModal,
+  openRemindModal,
+  setRemindAt,
   openQuotedContent,
   openAttachment,
   mentionExtensions,

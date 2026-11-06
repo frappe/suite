@@ -116,6 +116,18 @@ class UnsnoozeInput(IdsInput):
     leaves: NotRequired[str | None]
 
 
+class RemindInput(IdsInput):
+    remind_at: str
+
+
+class ThreadReminderInput(AccountInput):
+    thread_id: str
+
+
+class ReminderResult(TypedDict):
+    remind_at: str | None
+
+
 class MoveInput(IdsInput):
     mailbox: str
     clear_junk: NotRequired[bool]
@@ -231,6 +243,8 @@ class ComposeInput(AccountInput):
     attachments: NotRequired[list[DraftAttachment] | None]
     send_at: NotRequired[str | None]
     undo_send: NotRequired[bool]
+    # Remind me then if nobody has answered: a UTC `...Z` time after the mail goes out.
+    remind_at: NotRequired[str | None]
 
 
 class CreateInput(ComposeInput):
@@ -386,6 +400,16 @@ _OPERATIONS: tuple[
     (mail.pin_mails, "mutation", "messages.pin", PinInput, PinResult, None),
     (mail.snooze_mails, "mutation", "messages.snooze", SnoozeInput, FiledResult, None),
     (mail.unsnooze_mails, "mutation", "messages.unsnooze", UnsnoozeInput, FiledResult, None),
+    (mail.remind_if_no_reply, "mutation", "messages.remindIfNoReply", RemindInput, ReminderResult, None),
+    (
+        mail.cancel_reply_reminder,
+        "mutation",
+        "messages.cancelReplyReminder",
+        ThreadReminderInput,
+        type(None),
+        None,
+    ),
+    (mail.get_reply_reminder, "query", "messages.replyReminder", ThreadReminderInput, ReminderResult, None),
     (mail.set_mails_seen, "mutation", "messages.seen", SeenInput, list[str], None),
     (mail.move_mails, "mutation", "messages.move", MoveInput, type(None), None),
     (mail.file_mails, "mutation", "messages.file", FileInput, FiledResult, None),

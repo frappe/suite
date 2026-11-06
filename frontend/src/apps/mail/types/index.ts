@@ -205,8 +205,12 @@ export interface Thread {
   pinned?: 0 | 1
   /** Back from waiting, and held near the top of the Inbox for a day. */
   returned?: 0 | 1
+  /** Of the returned: your own mail nobody answered, back to chase. */
+  no_reply?: 0 | 1
   /** On the Snoozed list: when it comes back, a UTC `...Z` time. */
   snoozed_until?: string | null
+  /** On the Sent list: when you are reminded if nobody answers, a UTC `...Z` time. */
+  remind_at?: string | null
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

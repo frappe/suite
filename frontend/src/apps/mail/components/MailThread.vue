@@ -7,8 +7,10 @@
       :can-go-next="canGoNext"
       @set-seen="setThreadSeen"
       @set-pinned="onSetPinned"
+      :remindable="replyReminder.remindable.value"
       @snooze="emit('snoozeThread')"
       @unsnooze="emit('unsnoozeThread')"
+      @remind="showReminder = true"
       @archive-thread="emit('archiveThread')"
       @unarchive-thread="emit('unarchiveThread')"
       @move-thread="onMoveThread"
@@ -84,6 +86,13 @@
                   </template>
                 </Button>
               </h1>
+              <ReplyReminderStrip
+                v-if="!readonly && replyReminder.remindAt.value"
+                class="sm:mb-2"
+                :remind-at="replyReminder.remindAt.value"
+                @change="showReminder = true"
+                @cancel="replyReminder.cancel"
+              />
               <!-- Rows carry their own date until a long thread's fold is opened; from then
 				     a quiet header names each day and the rows keep only the clock. On desktop
 				     the new and more-messages dividers drop the pill outline, as quiet as the
@@ -704,6 +713,11 @@
       @discard-mail="discardLocalDraft(focusedDraft)"
       @discard-started="dropPoppedOutDraft()"
     />
+    <ReminderModal
+      v-model="showReminder"
+      :initial-value="replyReminder.remindAt.value"
+      :save="replyReminder.remind"
+    />
     <AttachmentViewer
       v-model="showAttachmentViewer"
       :attachments="attachments"
@@ -763,7 +777,9 @@ import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
+import ReminderModal from '@/apps/mail/components/Modals/ReminderModal.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
+import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import SenderCard from '@/apps/mail/components/SenderCard.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
@@ -777,6 +793,7 @@ import {
   isComposeWindowOpen,
 } from '@/apps/mail/composables/useComposeWindow'
 import { useMessageReactions } from '@/apps/mail/composables/useMessageReactions'
+import { useReplyReminder } from '@/apps/mail/composables/useReplyReminder'
 import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
 import { useUnsubscribe } from '@/apps/mail/composables/useUnsubscribe'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
@@ -1041,6 +1058,15 @@ const goToMailbox = () =>
 // thread isn't in that list (e.g. a search result, or one on another page), fall back to fetching it
 // directly via `get_thread`.
 const thread = ref<Mail[]>([])
+
+// A reminder if nobody replies to what you sent here: set from the toolbar, shown under the subject.
+const replyReminder = useReplyReminder(
+  () => scopeAccountId.value,
+  () => threadID,
+  () => thread.value ?? [],
+  () => mailboxIds.value.sent,
+)
+const showReminder = ref(false)
 // Use the same messages as the heading: a directly opened thread may never occur in the list.
 usePageTitle(() =>
   threadID && thread.value.length

@@ -16,6 +16,13 @@
       :label="__('Returned row')"
       :options="returnedLooks"
     />
+    <FormControl
+      v-model="mailTweaks.remindEntry"
+      class="mt-2"
+      type="select"
+      :label="__('Reminder in composer')"
+      :options="remindEntries"
+    />
   </div>
 </template>
 
@@ -27,6 +34,10 @@ import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 const returnedLooks = [
   { label: __('Word'), value: 'badge' },
   { label: __('Bell'), value: 'bell' },
+]
+const remindEntries = [
+  { label: __('Toolbar button'), value: 'toolbar' },
+  { label: __('Send menu'), value: 'send-menu' },
 ]
 const pinLooks = [
   { label: __('Pinned section'), value: 'section' },

@@ -44,3 +44,15 @@ export const snoozeChoices = (now: Dayjs = dayjs().tz(userTimeZone())): TimeChoi
     weekday !== 0 ? timeChoice(__('Next week'), morningOf(now.add(8 - weekday, 'day'))) : null,
   ].filter((choice): choice is TimeChoice => !!choice)
 }
+
+/**
+ * The times offered for a reminder if nobody replies, counted in days from when the mail goes out:
+ * now, or the time it is scheduled for. Each is the morning of that day, which is when a nudge gets
+ * read.
+ */
+export const reminderChoices = (sendsAt: Dayjs = dayjs().tz(userTimeZone())): TimeChoice[] => [
+  timeChoice(__('Tomorrow'), morningOf(sendsAt.add(1, 'day'))),
+  timeChoice(__('In 3 days'), morningOf(sendsAt.add(3, 'day'))),
+  timeChoice(__('In a week'), morningOf(sendsAt.add(7, 'day'))),
+  timeChoice(__('In 2 weeks'), morningOf(sendsAt.add(14, 'day'))),
+]

@@ -254,3 +254,13 @@ it('a star cleared from every copy stays cleared, however many writes it took', 
   const after = unstar(['n'], unstar(['o', 'c'], list)) as typeof list
   expect(after.rows[0].flagged).toBe(0)
 })
+
+it('a reminder set, ended or asked for with a send is read again where the thread shows it', () => {
+  for (const read of [
+    readAgainAfter('remind_if_no_reply', 'messages.remindIfNoReply'),
+    readAgainAfter('cancel_reply_reminder', 'messages.cancelReplyReminder'),
+    readAgainAfter('create_mail', 'messages.create'),
+  ])
+    expect(read).toContain('mail.get_reply_reminder')
+  expect(readAgainAfter('pin_mails', 'messages.pin')).not.toContain('mail.get_reply_reminder')
+})

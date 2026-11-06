@@ -5408,7 +5408,9 @@ export type GetThreadsOutputThread = {
   unscreened_senders?: Array<string>
   pinned?: 0 | 1
   returned?: 0 | 1
+  no_reply?: 0 | 1
   snoozed_until?: string | null
+  remind_at?: string | null
   subject: string | null
   preview: string
   recipients: Array<GetThreadsOutputRecipient>
@@ -5561,7 +5563,9 @@ export type GetUnifiedThreadsOutputThread = {
   unscreened_senders?: Array<string>
   pinned?: 0 | 1
   returned?: 0 | 1
+  no_reply?: 0 | 1
   snoozed_until?: string | null
+  remind_at?: string | null
   subject: string | null
   preview: string
   recipients: Array<GetUnifiedThreadsOutputRecipient>
@@ -5935,7 +5939,9 @@ export type SearchMailsOutputSearchRow = {
   unscreened_senders?: Array<string>
   pinned?: 0 | 1
   returned?: 0 | 1
+  no_reply?: 0 | 1
   snoozed_until?: string | null
+  remind_at?: string | null
   subject: string | null
   preview: string
   recipients: Array<SearchMailsOutputRecipient>
@@ -6151,6 +6157,7 @@ export type CreateMailInput = {
   attachments?: Array<CreateMailInputDraftAttachment> | null
   send_at?: string | null
   undo_send?: boolean
+  remind_at?: string | null
   in_reply_to?: string | null
   in_reply_to_id?: string | null
   forwarded_from_id?: string | null
@@ -6232,6 +6239,7 @@ export type UpdateDraftMailInput = {
   attachments?: Array<UpdateDraftMailInputDraftAttachment> | null
   send_at?: string | null
   undo_send?: boolean
+  remind_at?: string | null
   id: string
   submit?: boolean
 }
@@ -6387,6 +6395,85 @@ const operationUnsnoozeMails: MutationRef<
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationUnsnoozeMails,
+}
+
+export type RemindIfNoReplyInput = { account: string; ids: Array<string>; remind_at: string }
+
+export type RemindIfNoReplyOutput = { remind_at: string | null }
+
+export type RemindIfNoReplyError = 'PermissionError' | 'ValidationError'
+
+const operationRemindIfNoReply: MutationRef<
+  RemindIfNoReplyInput,
+  RemindIfNoReplyOutput,
+  RemindIfNoReplyError
+> = {
+  id: 'remind_if_no_reply',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.remindIfNoReply',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.remind_if_no_reply',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationRemindIfNoReply,
+}
+
+export type CancelReplyReminderInput = { account: string; thread_id: string }
+
+export type CancelReplyReminderOutput = null
+
+export type CancelReplyReminderError = 'PermissionError' | 'ValidationError'
+
+const operationCancelReplyReminder: MutationRef<
+  CancelReplyReminderInput,
+  CancelReplyReminderOutput,
+  CancelReplyReminderError
+> = {
+  id: 'cancel_reply_reminder',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.cancelReplyReminder',
+  empty: true,
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.cancel_reply_reminder',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationCancelReplyReminder,
+}
+
+export type GetReplyReminderInput = { account: string; thread_id: string }
+
+export type GetReplyReminderOutput = { remind_at: string | null }
+
+export type GetReplyReminderError = 'PermissionError' | 'ValidationError'
+
+const operationGetReplyReminder: QueryRef<
+  GetReplyReminderInput,
+  GetReplyReminderOutput,
+  GetReplyReminderError
+> = {
+  id: 'get_reply_reminder',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'messages.replyReminder',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.get_reply_reminder',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationGetReplyReminder,
 }
 
 export type SetMailsSeenInput = { account: string; ids: Array<string>; seen: boolean }
@@ -7450,6 +7537,9 @@ export const api = {
     pin: operationPinMails,
     snooze: operationSnoozeMails,
     unsnooze: operationUnsnoozeMails,
+    remindIfNoReply: operationRemindIfNoReply,
+    cancelReplyReminder: operationCancelReplyReminder,
+    replyReminder: operationGetReplyReminder,
     seen: operationSetMailsSeen,
     move: operationMoveMails,
     file: operationFileMails,

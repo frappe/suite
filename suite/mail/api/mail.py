@@ -82,8 +82,18 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
-from suite.mail.pins import INBOX_SORT, PINNED_KEYWORD, is_pinned, is_returned
-from suite.mail.reminders import add_snooze_times, snooze, unsnooze
+from suite.mail.pins import INBOX_SORT, PINNED_KEYWORD, is_no_reply, is_pinned, is_returned
+from suite.mail.reminders import (
+    add_reply_reminders,
+    add_snooze_times,
+    cancel_no_reply,
+    check_reminder_time,
+    get_no_reply,
+    remind_after_send,
+    remind_no_reply,
+    snooze,
+    unsnooze,
+)
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
 from suite.mail.utils.reaction import (
@@ -411,6 +421,7 @@ def get_threads(
                 # Only the Inbox has pins to show; asked of the mail it holds, as its sort does.
                 "pinned": cint(in_inbox and any(is_pinned(m) for m in in_mailbox)),
                 "returned": cint(in_inbox and any(is_returned(m) for m in in_mailbox)),
+                "no_reply": cint(in_inbox and any(is_no_reply(m) for m in in_mailbox)),
             }
         )
 
@@ -419,6 +430,8 @@ def get_threads(
 
     if threads and mailbox == ids_by_role.get("snoozed"):
         add_snooze_times(account, threads)
+    if threads and mailbox == ids_by_role.get("sent"):
+        add_reply_reminders(account, threads)
 
     # Avatars for the list-view summary rows, and for each message in the nested threads.
     add_user_images_to_emails(account, threads, is_thread=False)
@@ -1442,10 +1455,13 @@ def create_mail(
     save_as_draft: bool = False,
     send_at: str | None = None,
     undo_send: bool = False,
+    remind_at: str | None = None,
 ) -> dict:
     """Creates new mail queue. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE;
-    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast."""
+    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast.
+    `remind_at` (UTC `...Z`) asks to be reminded then if nobody has answered (see suite.mail.reminders)."""
 
+    remind_due = None if save_as_draft else check_reminder_time(remind_at, from_utc_z(send_at))
     doc_attachments = attachment_rows(attachments)
 
     recipients = []
@@ -1479,6 +1495,7 @@ def create_mail(
     if not save_as_draft and doc.status == "Submitted":
         create_contacts_if_not_exists(account, doc.recipients)
         auto_accept_recipients(account, doc.recipients)
+        remind_after_send(account, doc.thread_id, doc.id, remind_due)
 
     return {
         "name": doc.name,
@@ -1507,13 +1524,15 @@ def update_draft_mail(
     submit: bool = False,
     send_at: str | None = None,
     undo_send: bool = False,
+    remind_at: str | None = None,
 ) -> dict:
     """Creates new mail queue from existing draft message. `send_at` (UTC `...Z`) schedules delivery
     via FUTURERELEASE; `undo_send` instead holds delivery briefly so the sender can cancel from the
-    undo toast."""
+    undo toast. `remind_at` as in `create_mail`."""
 
     message = frappe.get_doc("Mail Message", f"{account}|{id}")
     message.check_permission(permtype="write")
+    remind_due = check_reminder_time(remind_at, from_utc_z(send_at)) if submit else None
 
     message.from_email = from_email
     message.from_name = from_name
@@ -1544,6 +1563,7 @@ def update_draft_mail(
     if submit and queue.status == "Submitted":
         create_contacts_if_not_exists(account, message.recipients)
         auto_accept_recipients(account, message.recipients)
+        remind_after_send(account, queue.thread_id, queue.id, remind_due)
 
     return {
         "name": queue.name,
@@ -1644,6 +1664,26 @@ def unsnooze_mails(account: str, ids: list[str], leaves: str | None = None) -> F
     """Brings a snoozed conversation back to the Inbox now (see suite.mail.reminders)."""
 
     return unsnooze(account, ids)
+
+
+@frappe.whitelist()
+def remind_if_no_reply(account: str, ids: list[str], remind_at: str) -> dict:
+    """Reminds you at `remind_at` if nobody has answered the latest mail you sent in a conversation,
+    given its messages (see suite.mail.reminders)."""
+
+    return {"remind_at": remind_no_reply(account, ids, remind_at)}
+
+
+@frappe.whitelist()
+def cancel_reply_reminder(account: str, thread_id: str) -> None:
+    cancel_no_reply(account, thread_id)
+
+
+@frappe.whitelist()
+def get_reply_reminder(account: str, thread_id: str) -> dict:
+    """When you are to be reminded about a conversation if nobody answers, if you are."""
+
+    return {"remind_at": get_no_reply(account, thread_id)}
 
 
 @frappe.whitelist()

@@ -9,4 +9,6 @@ export const mailTweaks = reactive({
   pinLook: 'section' as 'section' | 'icon' | 'tint',
   /** How a row back from waiting is marked: a word, or just a bell. */
   returnedLook: 'badge' as 'badge' | 'bell',
+  /** Where the composer offers a reminder if nobody replies: its own button, or under Send. */
+  remindEntry: 'toolbar' as 'toolbar' | 'send-menu',
 })

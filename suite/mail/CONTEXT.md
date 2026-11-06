@@ -73,6 +73,12 @@ a reply reaches the Inbox, it is back in the Inbox; a timed return is unread and
 day. Archiving, trashing or moving it ends the snooze.
 _Avoid_: Deferred, remind me later
 
+**Reply reminder**:
+A date set on a message you sent: if nobody has answered the Conversation by then, your message is
+back in the Inbox, unread and marked "No reply yet". An answer from anyone else, a reaction included,
+ends it quietly; an out-of-office, a bounce or your own follow-up doesn't.
+_Avoid_: Follow-up, nudge
+
 **Starred**:
 The view of conversations you starred. It is not a folder: starring files
 nothing.

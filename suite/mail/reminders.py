@@ -2,6 +2,9 @@
 # For license information, please see license.txt
 """Mail a person can't act on yet: conversations due back in the Inbox at a chosen time.
 
+Two kinds come back. A snoozed conversation, put away until then; and mail you sent that you asked to
+be reminded of if nobody answered it, which is filed in your Inbox at that time only if still unanswered.
+
 Snoozing files a conversation in the Snoozed folder (see suite.mail.filing) and leaves a Mail Reminder
 row saying when it is due. A job every minute takes every row that is due, however late, so a missed
 run only means a late one. A failed run leaves the row due, to be tried again.
@@ -18,6 +21,11 @@ so a crash costs at most the alert rather than a repeat of it.
 A reply that lands in the Inbox while snoozed wakes the conversation early, unmarked: the reply's own
 notification is the one alert. And a daily sweep returns anything in Snoozed that has no row, so nothing
 stays hidden for ever.
+
+Whether mail you sent was answered is also read at its time rather than kept up: anything later in the
+conversation from someone else counts, a reaction included, but not an automatic reply, a bounce or
+junk. If the mail itself is gone, back in Drafts (an undone or cancelled send) or in Trash, the reminder
+goes quietly.
 """
 
 from datetime import datetime, timedelta
@@ -26,6 +34,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime, now_datetime
 
+from suite.mail.bounces import REPORTERS
 from suite.mail.doctype.mail_message.mail_message import (
     _remove_cached_messages,
     _update_emails,
@@ -37,7 +46,7 @@ from suite.mail.doctype.mail_reminder.mail_reminder import reminder_name
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.filing import Filed, account_roles, file_messages
 from suite.mail.jmap import chunked_get, get_account_client, get_cached_mailboxes
-from suite.mail.pins import RETURNED_KEYWORD
+from suite.mail.pins import NO_REPLY_KEYWORD, RETURNED_KEYWORD
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import from_utc_z, to_utc_z
 from suite.mail.utils.user import get_account_emails
@@ -45,6 +54,7 @@ from suite.suite_core.push import notify
 from suite.utils import user_context
 
 SNOOZE = "Snooze"
+NO_REPLY = "No Reply"
 WAITING = "Waiting"
 RETURNED = "Returned"
 
@@ -57,6 +67,9 @@ LOG_EVERY = 60 * 60
 
 DOCTYPE = "Mail Reminder"
 EMAIL_PROPERTIES = ["id", "threadId", "mailboxIds", "keywords", "receivedAt", "subject"]
+# What says whether a message answers yours: who it is from, and whether a person wrote it (RFC 3834).
+AUTO_SUBMITTED = "header:Auto-Submitted:asText"
+REPLY_PROPERTIES = [*EMAIL_PROPERTIES, "from", AUTO_SUBMITTED]
 
 
 def snooze(account: str, ids: list[str], until: str) -> Filed:
@@ -73,6 +86,10 @@ def snooze(account: str, ids: list[str], until: str) -> Filed:
     # One that lands with its commit lost is left for the daily sweep.
     for thread_id in {email["threadId"] for email in emails}:
         _set_row(account, thread_id, due_at)
+        # A reminder that came due is done: the snooze's return marks it now.
+        frappe.db.delete(
+            DOCTYPE, {"account": account, "thread_id": thread_id, "kind": NO_REPLY, "status": RETURNED}
+        )
 
     filed = file_messages(account, ids, "snooze")
     snoozed = account_roles(account).get("snoozed")
@@ -117,6 +134,76 @@ def add_snooze_times(account: str, threads: list[dict]) -> None:
     )
     for thread in threads:
         thread["snoozed_until"] = to_utc_z(due.get(thread["thread_id"]))
+
+
+def check_reminder_time(remind_at: str | None, send_at: str | None = None) -> str | None:
+    """The time to be reminded at, as Frappe stores it, refused unless it is still to come and after the
+    mail goes out. Checked before a send, so a refused time sends nothing."""
+
+    if not remind_at:
+        return None
+    due_at = from_utc_z(remind_at)
+    if not due_at or get_datetime(due_at) <= max(now_datetime(), get_datetime(send_at or now_datetime())):
+        frappe.throw(_("Choose a reminder time after the mail goes out."))
+    return due_at
+
+
+def remind_after_send(account: str, thread_id: str | None, email_id: str | None, due_at: str | None) -> None:
+    """Sets the reminder asked for with a send, once the send is accepted. A send still held (by Undo or
+    a schedule) is fine: the reminder is read against the mail when it comes due."""
+
+    if due_at and thread_id and email_id:
+        _set_row(account, thread_id, due_at, kind=NO_REPLY, email_id=email_id)
+
+
+def remind_no_reply(account: str, ids: list[str], remind_at: str) -> str:
+    """Reminds you at `remind_at` (UTC `...Z`) if nobody has answered the latest mail you sent in this
+    conversation, given its messages. Asked again, it changes the time."""
+
+    get_user_for_jmap_account(account, allow_system_manager=False, raise_exception=True)
+    due_at = check_reminder_time(remind_at)
+    sent = account_roles(account).get("sent")
+    yours = [email for email in _emails(account, ids) if _is_own(email, sent) and not _is_draft(email)]
+    if not yours:
+        frappe.throw(_("Only mail you sent can be followed up."))
+    anchor = max(yours, key=lambda email: email.get("receivedAt") or "")
+    _set_row(account, anchor["threadId"], due_at, kind=NO_REPLY, email_id=anchor["id"])
+    return to_utc_z(due_at)
+
+
+def cancel_no_reply(account: str, thread_id: str) -> None:
+    get_user_for_jmap_account(account, allow_system_manager=False, raise_exception=True)
+    frappe.db.delete(DOCTYPE, {"name": reminder_name(account, thread_id, NO_REPLY), "status": WAITING})
+
+
+def get_no_reply(account: str, thread_id: str) -> str | None:
+    """When you are to be reminded about this conversation if nobody answers, if you are."""
+
+    get_user_for_jmap_account(account, allow_system_manager=False, raise_exception=True)
+    due = frappe.db.get_value(
+        DOCTYPE, {"name": reminder_name(account, thread_id, NO_REPLY), "status": WAITING}, "due_at"
+    )
+    return to_utc_z(due)
+
+
+def add_reply_reminders(account: str, threads: list[dict]) -> None:
+    """Says on each row of the Sent list when a reminder is due, if one is."""
+
+    due = dict(
+        frappe.db.get_all(
+            DOCTYPE,
+            filters={
+                "account": account,
+                "kind": NO_REPLY,
+                "status": WAITING,
+                "thread_id": ["in", [thread["thread_id"] for thread in threads]],
+            },
+            fields=["thread_id", "due_at"],
+            as_list=True,
+        )
+    )
+    for thread in threads:
+        thread["remind_at"] = to_utc_z(due.get(thread["thread_id"]))
 
 
 def wake_on_reply(account: str, messages: list[dict]) -> None:
@@ -233,7 +320,12 @@ def _work(name: str) -> dict | None:
         return None
 
     with user_context(acting):
-        alert = _settle(row) if row.status == RETURNED else _return(row)
+        if row.status == RETURNED:
+            alert = _settle(row)
+        elif row.kind == NO_REPLY:
+            alert = _remind(row)
+        else:
+            alert = _return(row)
         frappe.publish_realtime("mail_changed", user=row.user)
     return alert
 
@@ -249,7 +341,7 @@ def _return(row: dict) -> dict | None:
     """Brings a snoozed conversation back, if it is still waiting."""
 
     roles = account_roles(row.account)
-    snoozed, sent = roles.get("snoozed"), roles.get("sent")
+    snoozed = roles.get("snoozed")
     ids = get_thread_email_ids(row.account, [row.thread_id]).get(row.thread_id, [])
     emails = _emails(row.account, ids)
     waiting = [email for email in emails if snoozed in email.get("mailboxIds", {})]
@@ -259,7 +351,7 @@ def _return(row: dict) -> dict | None:
 
     # Marked before it moves: whichever step fails, it is still in Snoozed for the next run to finish,
     # rather than back in the Inbox with no mark and no alert.
-    _mark_returned(row.account, [e for e in waiting if not _is_own(e, sent)], unread=True)
+    _mark_returned(row.account, waiting, unread=True)
     file_messages(row.account, [email["id"] for email in waiting], "wake")
     _hold(row.name)
 
@@ -273,19 +365,83 @@ def _return(row: dict) -> dict | None:
     }
 
 
+def _remind(row: dict) -> dict | None:
+    """Files your unanswered mail in the Inbox, unread and marked; or, if it was answered or is no
+    longer sent mail, lets the reminder go."""
+
+    roles = account_roles(row.account)
+    ids = get_thread_email_ids(row.account, [row.thread_id]).get(row.thread_id, [])
+    emails = _emails(row.account, ids, REPLY_PROPERTIES)
+    anchor = next((email for email in emails if email["id"] == row.email_id), None)
+    if (
+        not anchor
+        or _is_draft(anchor)
+        or roles["trash"] in anchor.get("mailboxIds", {})
+        or any(_answers(email, anchor, row.account, roles) for email in emails)
+    ):
+        frappe.db.delete(DOCTYPE, {"name": row.name})
+        return None
+
+    _update_emails(
+        row.account,
+        [
+            {
+                "id": anchor["id"],
+                "keywords": {RETURNED_KEYWORD: True, NO_REPLY_KEYWORD: True, "$seen": None},
+                "mailbox_ids": {roles["inbox"]: True},
+            }
+        ],
+    )
+    _remove_cached_messages(row.account, [anchor["id"]])
+    _hold(row.name)
+    return {
+        "user": row.user,
+        "title": _("No reply yet"),
+        "body": anchor.get("subject") or _("[No subject]"),
+        "path": f"/mail/account/{row.account}/mailbox/{roles['inbox']}/{row.thread_id}",
+    }
+
+
+def _answers(email: dict, anchor: dict, account: str, roles: dict) -> bool:
+    """Whether a message in the conversation answers your mail: later than it, written by someone else."""
+
+    if email["id"] == anchor["id"] or (email.get("receivedAt") or "") <= (anchor.get("receivedAt") or ""):
+        return False
+    if (
+        _is_draft(email)
+        or (email.get("keywords") or {}).get("$junk")
+        or roles["junk"] in email.get("mailboxIds", {})
+    ):
+        return False
+    # An out-of-office or other automatic reply is no answer (RFC 3834: absent or "no" means a person).
+    if (email.get(AUTO_SUBMITTED) or "no").strip().lower() != "no":
+        return False
+    senders = [(sender.get("email") or "").lower() for sender in email.get("from") or []]
+    if not senders or any(sender.split("@")[0] in REPORTERS for sender in senders):
+        return False
+    return not set(senders) & {address.lower() for address in get_account_emails(account)}
+
+
 def _settle(row: dict) -> None:
     """A returned conversation's day is up: it falls back to its date."""
 
     ids = get_thread_email_ids(row.account, [row.thread_id]).get(row.thread_id, [])
     marked = [email["id"] for email in _emails(row.account, ids) if _is_marked(email)]
     if marked:
-        _update_emails(row.account, [{"id": id, "keywords": {RETURNED_KEYWORD: None}} for id in marked])
+        _update_emails(
+            row.account,
+            [{"id": id, "keywords": {RETURNED_KEYWORD: None, NO_REPLY_KEYWORD: None}} for id in marked],
+        )
         _remove_cached_messages(row.account, marked)
     frappe.db.delete(DOCTYPE, {"name": row.name})
 
 
 def _is_own(email: dict, sent: str | None) -> bool:
     return bool(sent and sent in email.get("mailboxIds", {}))
+
+
+def _is_draft(email: dict) -> bool:
+    return bool((email.get("keywords") or {}).get("$draft"))
 
 
 def _is_marked(email: dict) -> bool:
@@ -312,25 +468,20 @@ def _hold(name: str) -> None:
     frappe.db.set_value(DOCTYPE, name, {"status": RETURNED, "due_at": now_datetime() + HELD_FOR})
 
 
-def _set_row(account: str, thread_id: str, due_at: str | datetime) -> None:
-    name = reminder_name(account, thread_id, SNOOZE)
+def _set_row(
+    account: str, thread_id: str, due_at: str | datetime, kind: str = SNOOZE, email_id: str | None = None
+) -> None:
+    name = reminder_name(account, thread_id, kind)
+    values = {"status": WAITING, "due_at": due_at, "user": frappe.session.user, "email_id": email_id}
     if frappe.db.exists(DOCTYPE, name):
-        frappe.db.set_value(DOCTYPE, name, {"status": WAITING, "due_at": due_at, "user": frappe.session.user})
+        frappe.db.set_value(DOCTYPE, name, values)
         return
     frappe.get_doc(
-        {
-            "doctype": DOCTYPE,
-            "kind": SNOOZE,
-            "status": WAITING,
-            "user": frappe.session.user,
-            "account": account,
-            "thread_id": thread_id,
-            "due_at": due_at,
-        }
+        {"doctype": DOCTYPE, "kind": kind, "account": account, "thread_id": thread_id, **values}
     ).insert(ignore_permissions=True)
 
 
-def _emails(account: str, ids: list[str]) -> list[dict]:
+def _emails(account: str, ids: list[str], properties: list[str] = EMAIL_PROPERTIES) -> list[dict]:
     if not ids:
         return []
     client = get_account_client(account)
@@ -338,7 +489,7 @@ def _emails(account: str, ids: list[str]) -> list[dict]:
         email.to_wire()
         for email in chunked_get(
             client,
-            lambda b, chunk: b.mail.email.get(ids=chunk, properties=EMAIL_PROPERTIES),
+            lambda b, chunk: b.mail.email.get(ids=chunk, properties=properties),
             list(dict.fromkeys(ids)),
         )
     ]

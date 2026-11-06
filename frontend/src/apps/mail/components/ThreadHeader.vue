@@ -61,6 +61,16 @@
             <AlarmClockOff class="icon" />
           </template>
         </Button>
+        <Button
+          v-if="remindable && !isMobile"
+          variant="ghost"
+          :tooltip="__('Remind me if no reply')"
+          @click="emit('remind')"
+        >
+          <template #icon>
+            <BellPlus class="icon" />
+          </template>
+        </Button>
         <AdaptiveDropdown v-if="!inDrafts" :options="moveToOptions" :title="__('Move To')">
           <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
             <template #icon>
@@ -131,6 +141,7 @@ import {
   ArchiveRestore,
   ArrowLeft,
   ArrowRight,
+  BellPlus,
   ChevronLeft,
   CircleAlert,
   CircleCheck,
@@ -162,16 +173,19 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
-const { thread, threads, canGoNext } = defineProps<{
+const { thread, threads, canGoNext, remindable } = defineProps<{
   thread: Mail[]
   threads: string[]
   canGoNext?: boolean
+  // The last word is yours and nothing is set to chase it (see useReplyReminder).
+  remindable?: boolean
 }>()
 const emit = defineEmits([
   'setSeen',
   'setPinned',
   'snooze',
   'unsnooze',
+  'remind',
   'archiveThread',
   'unarchiveThread',
   'moveThread',
@@ -270,6 +284,9 @@ const laterOptions = computed(() => [
     : []),
   ...(inSnoozed.value
     ? [{ label: __('Unsnooze'), icon: AlarmClockOff, onClick: () => emit('unsnooze') }]
+    : []),
+  ...(remindable
+    ? [{ label: __('Remind me if no reply'), icon: BellPlus, onClick: () => emit('remind') }]
     : []),
 ])
 

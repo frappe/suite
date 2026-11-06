@@ -18,6 +18,8 @@ PINNED_KEYWORD = "pinned"
 
 # Mail that just came back from waiting (see suite.mail.reminders), held under the pins for a day.
 RETURNED_KEYWORD = "returned"
+# Returned because nobody answered it: your own mail, back in the Inbox to chase.
+NO_REPLY_KEYWORD = "noreply"
 
 # What the Inbox sorts by. The newest first within each part, as every list is.
 INBOX_SORT = [
@@ -45,3 +47,9 @@ def is_returned(message: dict) -> bool:
     """Whether a message just came back from waiting."""
 
     return _has_keyword(message, RETURNED_KEYWORD)
+
+
+def is_no_reply(message: dict) -> bool:
+    """Whether a message of yours came back because nobody answered it."""
+
+    return _has_keyword(message, NO_REPLY_KEYWORD)

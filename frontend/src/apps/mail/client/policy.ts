@@ -354,6 +354,9 @@ function messageInvalidates(id: string, publicName: string | undefined, input: u
   if ((id === 'create_mail' || id === 'update_draft_mail') && !sends)
     return id === 'create_mail' ? ['mail.get_mailboxes'] : []
   const readers = [...messageReaders]
+  // A send can ask for a reminder if nobody replies; these set and end one.
+  if (sends || ['remind_if_no_reply', 'cancel_reply_reminder'].includes(id))
+    readers.push('mail.get_reply_reminder')
   if (sends || publicName?.startsWith('scheduled.')) readers.push(...outgoingReaders)
   if (sends) readers.push(...peopleReaders)
   // A verdict on a sender, given outright or with a junking.
