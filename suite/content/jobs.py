@@ -116,7 +116,9 @@ def convert_opened(app: str, node: str) -> None:
     body: a reader's open converts the document too, though the reader can't edit it.
     """
     frappe.set_user("Administrator")
-    conversions.convert_opened(app, node)
+    conversion = spec_of(app).conversion
+    if conversion is not None:
+        conversions.run_one(app, conversion, node, opened=True)
 
 
 def judge(app: str, doc_id: str) -> None:

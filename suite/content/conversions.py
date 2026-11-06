@@ -3,9 +3,9 @@
 `run_pending` is the scheduled job's loop: it pages through the app's documents that have no log, newest
 first, and hands each to `convert_document`, which converts one document. It passes over a document this
 converter refused unless the row changed after the refused attempt began. `run_one` takes one document the
-same way, for the job an import queues. Pausing an app's conversion stops those runs only: `convert_opened`
-converts a document someone opened, paused or not, so a migrated site's documents become editable as people
-open them while the rest wait for the loop.
+same way, for the job an import queues and, with `opened`, for the job an open queues. Pausing an app's
+conversion stops the first two only: a document someone opened converts paused or not, so a migrated site's
+documents become editable as people open them while the rest wait for the loop.
 
 `convert_document` runs the app's converter on the old body the app's `read_old` answers, and installs
 the answer in one transaction under the row's lock: the app's `check` refuses before the first write,
@@ -95,16 +95,13 @@ def run_pending(app: str, conversion: Conversion) -> None:
         page = convert.pending_page(app, conversion.version, page[-1])
 
 
-def run_one(app: str, conversion: Conversion, node: str) -> None:
-    """Convert `node` now, behind the checks `run_pending` makes; a document this can't convert waits for that run."""
+def run_one(app: str, conversion: Conversion, node: str, *, opened: bool = False) -> None:
+    """Convert `node` now, behind the checks `run_pending` makes; a document this can't convert waits for that run.
+
+    `opened` is for a document someone opened, which converts while the app's conversion is paused.
+    """
     if has_prerequisites(app) and converter_runs(app, conversion):
-        convert_node(app, node)
-
-
-def convert_opened(app: str, node: str) -> None:
-    """Convert `node` now because someone opened it, even while the app's conversion is paused."""
-    if has_prerequisites(app) and converter_runs(app, conversion_of(app)):
-        convert_node(app, node, opened=True)
+        convert_node(app, node, opened=opened)
 
 
 def has_prerequisites(app: str) -> bool:
@@ -325,9 +322,9 @@ def conversion_status(app: str, node: str) -> ConversionStatus:
     return status_of(app, node, refused_attempt(app, node))
 
 
-def status_of(app: str, node: str, held: frappe._dict | None) -> ConversionStatus:
-    """Answer `conversion_status` for `node`, given its `refused_attempt`."""
-    if held is None:
+def status_of(app: str, node: str, refused: frappe._dict | None) -> ConversionStatus:
+    """Answer `conversion_status` for `node`, given `refused_attempt(app, node)` (not a `held_attempt` row)."""
+    if refused is None:
         pending: ConversionStatus = {
             "state": "pending",
             "rooms": live.conversion_rooms(app, node),
@@ -340,9 +337,9 @@ def status_of(app: str, node: str, held: frappe._dict | None) -> ConversionStatu
 
     status: ConversionStatus = {"state": "refused"}
     if "System Manager" in frappe.get_roles():
-        status["reason"] = held.outcome
-        if held.reason:
-            status["reason"] = f"{held.outcome}: {held.reason}"
+        status["reason"] = refused.outcome
+        if refused.reason:
+            status["reason"] = f"{refused.outcome}: {refused.reason}"
 
     return status
 
