@@ -439,7 +439,7 @@ function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): stri
 /** What public access reaches. Publishing a folder publishes everything in it, with `t33-public-folder-wording`. */
 function publicReach(): string {
   return folderWording.value && node.value?.kind === 'folder'
-    ? __('Anyone on the internet can view this folder and everything in it')
+    ? __('Anyone can view everything in it')
     : __('Anyone on the internet can view')
 }
 

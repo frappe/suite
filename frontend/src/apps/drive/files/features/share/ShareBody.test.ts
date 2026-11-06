@@ -290,9 +290,7 @@ it('says a public folder shows everything in it, and with t33 off offers no Undo
   const { root, row } = await mount(transport)
   root.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Public on the web"]')!.click()
   await vi.waitFor(() =>
-    expect(row('Public on the web').textContent).toContain(
-      'Anyone on the internet can view this folder and everything in it',
-    ),
+    expect(row('Public on the web').textContent).toContain('Anyone can view everything in it'),
   )
   cleanup?.()
 
