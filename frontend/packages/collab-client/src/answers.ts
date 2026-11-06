@@ -103,32 +103,15 @@ export function toOpenError(answer: Answer, options: OpenOptions) {
   return new CollabOpenError(reply.status, reason)
 }
 
-interface WireVersion {
-  seq: number
-  label: string | null
-  taken_at: string
-}
-
-function isWireVersion(value: unknown): value is WireVersion {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'seq' in value &&
-    typeof value.seq === 'number' &&
-    'taken_at' in value &&
-    typeof value.taken_at === 'string' &&
-    'label' in value &&
-    (value.label === null || typeof value.label === 'string')
-  )
-}
-
 // A `restored` notice's restorer and version; what it lacks or misspells reads as unknown
 export function readRestored(heard: Record<string, unknown>): VersionRestored {
   const by = typeof heard.by === 'string' ? heard.by : null
-  const { version } = heard
-  if (!isWireVersion(version)) {
+  const wire = heard.version as { seq?: unknown; label?: unknown; taken_at?: unknown } | null
+  const { seq, label, taken_at: takenAt } = wire ?? {}
+  const isLabel = label === null || typeof label === 'string'
+  if (typeof seq !== 'number' || typeof takenAt !== 'string' || !isLabel) {
     return { by, version: null }
   }
 
-  return { by, version: { seq: version.seq, label: version.label, takenAt: version.taken_at } }
+  return { by, version: { seq, label, takenAt } }
 }
