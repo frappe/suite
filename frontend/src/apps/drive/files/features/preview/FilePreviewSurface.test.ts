@@ -326,6 +326,10 @@ describe('file preview', () => {
           .map((result) => result.value as unknown)
           .filter((value): value is HTMLImageElement => value instanceof HTMLImageElement)
       const ahead = () => made().find((image) => image.getAttribute('src') === contentOf('e'))
+      await vi.waitFor(() => expect(counter(root)).toBe('2 of 3'))
+      // The pictures beside wait for the one on screen, so they do not slow it down.
+      expect(ahead()).toBeUndefined()
+      root.querySelector('img')!.dispatchEvent(new Event('load'))
       await vi.waitFor(() => expect(ahead()).toBeDefined())
       expect(made().map((image) => image.getAttribute('src'))).toContain(contentOf('a'))
 

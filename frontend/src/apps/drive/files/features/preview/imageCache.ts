@@ -19,10 +19,22 @@ export function previewImage(url: string): HTMLImageElement {
   return image
 }
 
-/** Keeps the images for `urls`, loading any not yet kept, and lets every other go. */
-export function keepImages(urls: readonly string[]): void {
-  for (const url of urls) previewImage(url)
+let keeps = 0
+
+/**
+ * Keeps the picture on screen and the ones `beside` it, and lets every other
+ * go. The pictures beside load once the one on screen has, so they do not
+ * slow it down.
+ */
+export function keepImages(shown: string | null, beside: readonly string[]): void {
+  const keep = ++keeps
+  const urls = shown ? [shown, ...beside] : beside
   for (const url of kept.keys()) if (!urls.includes(url)) kept.delete(url)
+  const loadBeside = () => keep === keeps && beside.forEach(previewImage)
+  const image = shown ? previewImage(shown) : null
+  if (!image || image.complete) return void loadBeside()
+  image.addEventListener('load', loadBeside, { once: true })
+  image.addEventListener('error', loadBeside, { once: true })
 }
 
 /** Marks a preview on screen. The returned function marks it gone. */

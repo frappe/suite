@@ -349,7 +349,7 @@ watch(
     const neighbours = beside
       .filter((row) => !!row && WEB_IMAGES.has(row.mime ?? '') && row.size <= PRELOAD_LIMIT)
       .map((row) => nodeContentUrl(row!.name))
-    keepImages(preview.value.kind === 'image' ? [source.value, ...neighbours] : neighbours)
+    keepImages(preview.value.kind === 'image' ? source.value : null, neighbours)
   },
   { immediate: true },
 )
