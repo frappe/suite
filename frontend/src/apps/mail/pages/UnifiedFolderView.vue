@@ -147,7 +147,7 @@
             </p>
             <div v-for="(rows, key) in groupedRows" :key="key">
               <MailGroupHeader
-                v-if="groupedByDate && !isMobile"
+                v-if="groupHeaderVisible(key)"
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
@@ -206,6 +206,8 @@
                     :is-selected="selections.includes(threadKey(row.thread))"
                     :selection-mode="mobileSelectionMode"
                     :screened="screener.isScreened(row.thread)"
+                    :pinnable="folder === INBOX_FOLDER"
+                    @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned)"
                     :outgoing="isOutgoingFolder"
                     :thread-route-name="UNIFIED_THREAD_ROUTE"
                     :hide-avatar="!isMobile"
@@ -258,6 +260,7 @@
           @set-flagged="
             (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
           "
+          @set-pinned="(ids: string[], pinned: boolean) => pinMails(openRow!.account!, ids, pinned)"
           @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
           @delete-thread="
             isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
@@ -332,6 +335,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
+import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
@@ -572,7 +576,7 @@ const reloadPaneThread = () => refreshThreads()
 // this merged list. And not in the same folders: every row in Sent or Drafts is from the reader, and
 // Starred is curated by hand (see MailboxView's stackingEnabled).
 const {
-  groupedByDate,
+  groupHeaderVisible,
   getGroupThreads,
   isLastGroup,
   collapsedGroups,
@@ -1430,12 +1434,15 @@ const archiveSelected = () => archiveThreads(takeSelected())
 const trashSelected = () => trashThreads(takeSelected())
 const deleteSelected = () => confirmDelete(takeSelected())
 
+const { pinThreads, pinMails } = useThreadPin()
+
 const selectActions = buildSelectActions(
   () => selectedRows.value,
   () => ({
     archive: folder === 'archive',
     trash: isTrashFolder.value,
     drafts: folder === 'drafts',
+    inbox: folder === INBOX_FOLDER,
   }),
   {
     star: () => setThreadsFlagged(takeSelected(), true),
@@ -1448,6 +1455,8 @@ const selectActions = buildSelectActions(
     delete: deleteSelected,
     read: () => setThreadsSeen(takeSelected(), true),
     unread: () => setThreadsSeen(takeSelected(), false),
+    pin: () => pinThreads(takeSelected(), true),
+    unpin: () => pinThreads(takeSelected(), false),
   },
 )
 

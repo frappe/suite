@@ -5,6 +5,8 @@ import {
   CircleCheck,
   Mail as MailIcon,
   MailOpen,
+  Pin,
+  PinOff,
   Star,
   StarOff,
   Trash2,
@@ -37,6 +39,8 @@ export interface SelectHandlers {
   delete: () => void
   read: () => void
   unread: () => void
+  pin: () => void
+  unpin: () => void
 }
 
 /**
@@ -52,6 +56,8 @@ export const selectActions = (
     archive: boolean
     trash: boolean
     drafts: boolean
+    // The list is an Inbox, the one place a pin acts.
+    inbox?: boolean
     sent?: string
     archiveId?: string
     inboxId?: string
@@ -85,6 +91,20 @@ export const selectActions = (
       onClick: run.unstar,
       icon: StarOff,
       condition: notDrafts((t) => t.flagged === 1),
+    },
+    {
+      label: __('Pin to Top'),
+      shortLabel: __('Pin'),
+      onClick: run.pin,
+      icon: Pin,
+      condition: () => !!folder().inbox && some((t) => !t.pinned)(),
+    },
+    {
+      label: __('Unpin'),
+      shortLabel: __('Unpin'),
+      onClick: run.unpin,
+      icon: PinOff,
+      condition: () => !!folder().inbox && some((t) => !!t.pinned)(),
     },
     {
       label: __('Archive (E)'),

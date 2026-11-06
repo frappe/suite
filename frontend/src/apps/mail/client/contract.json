@@ -15492,6 +15492,14 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -15888,6 +15896,14 @@
                 },
                 "title": "Unscreened Senders",
                 "type": "array"
+              },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
               },
               "subject": {
                 "anyOf": [
@@ -16390,6 +16406,14 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -16786,6 +16810,14 @@
                 },
                 "title": "Unscreened Senders",
                 "type": "array"
+              },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
               },
               "subject": {
                 "anyOf": [
@@ -17560,6 +17592,14 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -18332,6 +18372,14 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -18728,6 +18776,14 @@
                 },
                 "title": "Unscreened Senders",
                 "type": "array"
+              },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
               },
               "subject": {
                 "anyOf": [
@@ -20018,6 +20074,72 @@
           "flagged"
         ],
         "title": "FlagResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "pin_mails",
+      "kind": "mutation",
+      "publicName": "messages.pin",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.pin_mails",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "account",
+          "ids",
+          "pinned"
+        ],
+        "title": "PinInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ids",
+          "pinned"
+        ],
+        "title": "PinResult",
         "type": "object"
       },
       "errors": [

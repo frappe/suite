@@ -267,6 +267,8 @@ import type {
   OngoingCalendarExchangeOutput,
   OngoingExchangeInput,
   OngoingExchangeOutput,
+  PinMailsInput,
+  PinMailsOutput,
   ReactInput,
   ReactOutput,
   RebuildAutomationScriptForAccountInput,
@@ -7207,6 +7209,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -7331,6 +7334,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
                 title: 'Unscreened Senders',
                 type: 'array',
               },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7496,6 +7500,7 @@ export const operationGetUnifiedThreads: Validators<
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -7620,6 +7625,7 @@ export const operationGetUnifiedThreads: Validators<
                 title: 'Unscreened Senders',
                 type: 'array',
               },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7926,6 +7932,7 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -8182,6 +8189,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -8306,6 +8314,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
                 title: 'Unscreened Senders',
                 type: 'array',
               },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -8846,6 +8855,41 @@ export const operationSetFlagged: Validators<SetFlaggedInput, SetFlaggedOutput> 
         type: 'object',
       },
       'set_flagged output',
+    )
+  },
+}
+
+export const operationPinMails: Validators<PinMailsInput, PinMailsOutput> = {
+  validateInput(value: unknown): asserts value is PinMailsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          pinned: { title: 'Pinned', type: 'boolean' },
+        },
+        required: ['account', 'ids', 'pinned'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'pin_mails input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is PinMailsOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          pinned: { title: 'Pinned', type: 'boolean' },
+        },
+        required: ['ids', 'pinned'],
+        title: 'PinResult',
+        type: 'object',
+      },
+      'pin_mails output',
     )
   },
 }

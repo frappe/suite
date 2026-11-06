@@ -41,6 +41,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_role,
     omit_none,
 )
+from suite.mail.pins import PINNED_KEYWORD
 from suite.mail.store import (
     Entity,
     get_blob_store,
@@ -810,15 +811,19 @@ def fetch_messages(
 
 
 def fetch_threads(
-    account: str, filter: dict | None = None, position: int = 0, limit: int = 50
+    account: str,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    sort: list[dict] | None = None,
 ) -> dict[str, list[dict]]:
-    """Returns a page of threads matching the filter.
+    """Returns a page of threads matching the filter, newest first unless `sort` says otherwise.
 
     Each thread ID is mapped to the full list of messages in that thread (the entire conversation
     across all mailboxes), ordered oldest to newest.
     """
 
-    return query_threads(account, filter, position, limit)[0]
+    return query_threads(account, filter, position, limit, sort=sort)[0]
 
 
 def query_threads(
@@ -827,6 +832,7 @@ def query_threads(
     position: int = 0,
     limit: int = 50,
     calculate_total: bool = False,
+    sort: list[dict] | None = None,
 ) -> tuple[dict[str, list[dict]], dict[str, str], int]:
     """A page of threads matching the filter, as `fetch_threads` returns them, with each thread's
     newest message that matched (by id, keyed by thread) and, if asked, how many threads match."""
@@ -835,7 +841,7 @@ def query_threads(
     with client.batch() as b:
         q = b.mail.email.query(
             filter=filter or {},
-            sort=[{"property": "receivedAt", "isAscending": False}],
+            sort=sort or [{"property": "receivedAt", "isAscending": False}],
             collapseThreads=True,
             position=position,
             limit=limit,
@@ -1314,6 +1320,36 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
             frappe.get_traceback(with_context=True),
         )
         frappe.throw(_("Failed to set flagged status for mail(s)."))
+
+
+def set_pinned_status(account: str, ids: list[str], pinned: bool = True) -> list[str]:
+    """Pin the conversation these messages are, or unpin it; returns the messages changed.
+
+    The pin goes on what they hold in the Inbox, the one list it acts in (see suite.mail.pins); it
+    comes off all of them, wherever each is now.
+    """
+
+    if not account or not ids:
+        frappe.throw(_("Account and Mail IDs are required."))
+
+    if pinned:
+        inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
+        ids = [mail["id"] for mail in get_messages_mailboxes(account, ids) if inbox in mail["mailbox_ids"]]
+        if not ids:
+            frappe.throw(_("Only mail in the Inbox can be pinned."))
+
+    try:
+        # A null patch removes a keyword; JMAP has no false keyword.
+        value = True if pinned else None
+        _update_emails(account, [{"id": id, "keywords": {PINNED_KEYWORD: value}} for id in ids])
+    except Exception:
+        log_mail_error(_("Failed to change the pin of mail(s)"), frappe.get_traceback(with_context=True))
+        frappe.throw(_("Failed to change the pin of mail(s)."))
+
+    # The cached copies go rather than being patched: a read already on its way can't cache a message
+    # as it was (see get_messages).
+    _remove_cached_messages(account, ids)
+    return ids
 
 
 def set_spam_status(account: str, ids: list[str], spam: bool = True) -> None:

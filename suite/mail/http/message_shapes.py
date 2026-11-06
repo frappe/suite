@@ -66,6 +66,7 @@ class Reaction(TypedDict):
 class Message(Copy):
     message_id: str | None
     in_reply_to: str | None
+    pinned: NotRequired[Flag]
     # What this mail reacts with, when it is a reaction left standing as a message because its target
     # isn't here. A reaction whose target is here shows under the target's `reactions` instead.
     reacts_with: list[str]
@@ -100,6 +101,8 @@ class Thread(Copy, AccountTag):
     reaction_only: NotRequired[Flag]
     # The senders of this thread's unscreened mail, in the order they first wrote.
     unscreened_senders: NotRequired[list[str]]
+    # Held at the top of the Inbox. Only the Inbox has pins to show (see suite.mail.pins).
+    pinned: NotRequired[Flag]
     subject: str | None
     preview: str
     recipients: list[Recipient]
