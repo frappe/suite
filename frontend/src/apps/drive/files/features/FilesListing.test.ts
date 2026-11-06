@@ -204,6 +204,55 @@ describe('FilesListing selection', () => {
   })
 })
 
+describe('FilesListing checkboxes with a mouse', () => {
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(hover: hover) and (pointer: fine)',
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    }))
+  })
+  afterEach(() => setTweaks(['t18-hover-checkbox'], true))
+  const checkbox = (root: HTMLElement, title: string) =>
+    root.querySelector<HTMLElement>(`[aria-label="Select ${title}"]`)
+
+  it('selects a row from its checkbox without opening it, with Select all always there', async () => {
+    const { root, state, events } = mount({ rows })
+    await nextTick()
+    expect(root.querySelector('[aria-label="Select all"]')).not.toBeNull()
+
+    checkbox(root, 'Beta.png')!.click()
+    await nextTick()
+
+    expect(state.selection).toEqual(['b'])
+    expect(events.opened).toEqual([])
+  })
+
+  it('gives a card a labelled checkbox beside its button, which selects without opening', async () => {
+    const { root, state, events } = mount({ rows, view: 'grid' })
+    await nextTick()
+    const box = checkbox(root, 'Alpha.png')!
+    expect(box.closest('button')).toBeNull()
+
+    box.click()
+    await nextTick()
+
+    expect(state.selection).toEqual(['a'])
+    expect(events.opened).toEqual([])
+    expect(checkbox(root, 'Alpha.png')?.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('shows no checkbox until selection starts, with the tweak off', async () => {
+    setTweaks(['t18-hover-checkbox'], false)
+    const { root } = mount({ rows })
+    await nextTick()
+
+    expect(checkbox(root, 'Alpha.png')).toBeNull()
+    expect(root.querySelector('[aria-label="Select all"]')).toBeNull()
+  })
+})
+
 describe('FilesListing selected runs', () => {
   it('rounds only the outer corners of adjacent selected rows', async () => {
     const { root } = mount({ rows: [...rows, file('c', 'Gamma.png')], selection: ['a', 'b'] })

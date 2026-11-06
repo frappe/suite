@@ -7,7 +7,7 @@
 <template>
   <div class="flex min-w-0 items-center gap-2">
     <span class="shrink-0 whitespace-nowrap pr-1 text-base text-ink-gray-7 tabular-nums">{{
-      __('{0} selected', [count])
+      label ?? __('{0} selected', [count])
     }}</span>
     <template v-for="action in actions" :key="action.label">
       <Button
@@ -48,6 +48,8 @@ export interface SelectionAction {
 
 defineProps<{
   count: number
+  /** Words in place of "{count} selected", such as "Select items" while nothing is. */
+  label?: string
   actions: readonly SelectionAction[]
   /** The one selected item's own menu, or empty for several items. */
   menu: DropdownItem[]

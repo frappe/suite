@@ -55,7 +55,7 @@
         <ListHeader>
           <div class="flex min-w-0 items-center">
             <span
-              v-if="selectionMode"
+              v-if="selectionMode || checkboxOnHover"
               role="checkbox"
               :aria-checked="allSelected ? 'true' : someSelected ? 'mixed' : 'false'"
               aria-label="Select all"
@@ -115,7 +115,7 @@
             :aria-selected="focus.roving.value ? isSelected(row) : undefined"
             :data-node="row.name"
             :data-listing-item="row.name"
-            :class="['select-none', runClasses(index)]"
+            :class="['select-none', runClasses(index), checkboxOnHover && 'group/row']"
             v-bind="rowDrop?.(row) ?? {}"
             @click="onRowClick($event, row)"
             @dblclick="$emit('open', row)"
@@ -124,14 +124,21 @@
             @pointercancel="cancelLongPress"
           >
             <ListCell>
-              <!-- Clicks fall through to the row, which toggles in selection mode. -->
+              <!-- Without the hover checkbox, clicks fall through to the row, which toggles in selection mode.
+                   With it, the checkbox takes the icon's place while the row is hovered or focused. -->
               <span
-                v-if="selectionMode"
+                v-if="selectionMode || checkboxOnHover"
                 role="checkbox"
                 :aria-checked="isSelected(row)"
                 :aria-label="`Select ${row.title}`"
-                :tabindex="focus.roving.value ? -1 : 0"
-                class="mr-2 flex size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
+                :tabindex="focus.roving.value || !selectionMode ? -1 : 0"
+                class="mr-2 size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
+                :class="
+                  selectionMode
+                    ? 'flex'
+                    : 'relative hidden before:absolute before:-inset-2 group-hover/row:flex group-focus-visible/row:flex'
+                "
+                @click="onCheckboxClick($event, row)"
                 @keydown.enter.prevent.stop="$emit('select', row, $event.shiftKey)"
                 @keydown.space.prevent.stop="$emit('select', row, $event.shiftKey)"
               >
@@ -143,9 +150,13 @@
                 />
               </span>
               <span
-                v-else
+                v-if="!selectionMode"
                 class="mr-2 size-4 shrink-0"
-                :class="[nodeIcon(row), nodeIconTint(row)]"
+                :class="[
+                  nodeIcon(row),
+                  nodeIconTint(row),
+                  checkboxOnHover && 'group-hover/row:hidden group-focus-visible/row:hidden',
+                ]"
                 aria-hidden="true"
               />
               <span class="min-w-0 truncate text-base text-ink-gray-8" :title="row.title">{{
@@ -248,13 +259,34 @@
               }}</span>
               <!-- Inside the card's button, so the corner it covers still toggles. -->
               <Checkbox
-                v-if="selectionMode"
+                v-if="selectionMode && !hoverCheckbox"
                 :model-value="isSelected(row)"
                 tabindex="-1"
                 aria-hidden="true"
                 class="pointer-events-none absolute end-3 top-3"
               />
               <template #actions="{ onImage }">
+                <!-- A control of its own, over the type icon. Its backdrop hides the icon and keeps it visible on a thumbnail. -->
+                <span
+                  v-if="hoverCheckbox && (selectionMode || checkboxOnHover)"
+                  role="checkbox"
+                  :aria-checked="isSelected(row)"
+                  :aria-label="`Select ${row.title}`"
+                  tabindex="-1"
+                  class="absolute start-2 top-2 flex size-6 cursor-pointer items-center justify-center rounded-2 bg-surface-elevation-3 shadow-sm"
+                  :class="
+                    !selectionMode &&
+                    'opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100'
+                  "
+                  @click="onCheckboxClick($event, row)"
+                >
+                  <Checkbox
+                    :model-value="isSelected(row)"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none"
+                  />
+                </span>
                 <Dropdown v-if="!selectionMode" :options="menuOptions(row)" align="end">
                   <!-- Over a thumbnail the button gets a dark backdrop, so it reads on any image. -->
                   <Button
@@ -307,6 +339,7 @@
 </template>
 
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
 import {
   Alert,
   Avatar,
@@ -336,6 +369,7 @@ import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 
 import FileCard from './FileCard.vue'
 import { loadUntilVisible } from './listingWindows'
@@ -425,6 +459,16 @@ defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow, reveal })
 const gridRoles = computed(() =>
   focus.roving.value ? { role: 'grid', 'aria-multiselectable': 'true' } : {},
 )
+const hoverCheckbox = useTweak('t18-hover-checkbox')
+const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
+/** Where a mouse can hover, an item's checkbox shows on hover and the header's always. */
+const checkboxOnHover = computed(() => hoverCheckbox.value && finePointer.value)
+/** A click on the checkbox selects without opening. With the tweak off it falls through to the item. */
+function onCheckboxClick(event: MouseEvent, row: DriveNode) {
+  if (!hoverCheckbox.value) return
+  event.stopPropagation()
+  emit('select', row, event.shiftKey)
+}
 /** Only the item that holds the Tab stop is tabbable, with its menu button. */
 function stopIndex(row: DriveNode) {
   return row.name === focus.tabStop.value ? 0 : -1

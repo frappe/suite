@@ -58,6 +58,7 @@
             <SelectionBar
               v-if="selectionMode && countFirstSelectionBar"
               :count="selection.length"
+              :label="selectionLabel"
               :actions="bulkActions"
               :menu="onlySelected ? selectionMenu(rowMenuOptions(onlySelected)) : []"
               :compact="narrow"
@@ -73,9 +74,9 @@
                   :disabled="action.disabled"
                   @click="action.onClick"
                 />
-                <span class="truncate pl-1 text-base text-ink-gray-7"
-                  >{{ selection.length }} selected</span
-                >
+                <span class="truncate pl-1 text-base text-ink-gray-7">{{
+                  selectionLabel ?? `${selection.length} selected`
+                }}</span>
               </div>
               <Button variant="ghost" label="Done" @click="clearSelected" />
             </template>
@@ -264,6 +265,7 @@
 </template>
 
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
 import {
   Alert,
   Breadcrumbs,
@@ -742,6 +744,8 @@ const selectedRows = computed(() =>
   listing.rows.filter((row) => selection.value.includes(row.name)),
 )
 const countFirstSelectionBar = useTweak('t3-selection-menu')
+/** The selection bar's words when "N selected" would mislead. */
+const selectionLabel = computed(() => (selection.value.length ? undefined : __('Select items')))
 /** The selected item, when it is the only one. */
 const onlySelected = computed(() =>
   selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
@@ -967,6 +971,16 @@ const folderGroups = computed<DropdownItem[]>(() => {
   const folder = openFolder.value
   return folder ? folderMenu(rowMenuOptions(folder), () => trashOpenFolder(folder)) : []
 })
+const emptySelection = useTweak('t18-select-entry')
+const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
+/** How a touch device starts selecting. A mouse has the checkbox on hover instead. */
+const selectEntry = computed<DropdownActionOption[]>(() => {
+  if (!emptySelection.value)
+    return [{ label: 'Select rows', icon: 'lucide-square-check', onClick: selectFirst }]
+  return finePointer.value
+    ? []
+    : [{ label: __('Select'), icon: 'lucide-square-check', onClick: picked.start }]
+})
 const moreOptions = computed<DropdownItem[]>(() => [
   ...folderGroups.value,
   ...(hasRows.value
@@ -975,7 +989,7 @@ const moreOptions = computed<DropdownItem[]>(() => [
           group: 'Select',
           hideLabel: true,
           options: [
-            { label: 'Select rows', icon: 'lucide-square-check', onClick: selectFirst },
+            ...selectEntry.value,
             {
               key: 'select-all',
               label: 'Select all',
@@ -1037,7 +1051,10 @@ const bulkActions = computed(() => {
         ...(signedIn.value
           ? [
               {
-                label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
+                label:
+                  selectedRows.value.length && selectedRows.value.every((row) => row.favourite)
+                    ? __('Unstar')
+                    : __('Star'),
                 icon: 'lucide-star',
                 disabled: !allow('star'),
                 onClick: () => starRows(selectedRows.value),
@@ -1056,7 +1073,7 @@ const bulkActions = computed(() => {
               {
                 label: 'Remove from Recent',
                 icon: 'lucide-list-x',
-                disabled: clearRecentMutation.isPending,
+                disabled: clearRecentMutation.isPending || !selectedRows.value.length,
                 onClick: () => removeFromRecent(selectedRows.value),
               },
             ]
@@ -1340,6 +1357,7 @@ function startPreviewObservation() {
     refresh: async () => {
       await listing.refetch()
     },
+    rows: () => listing.rows as DriveNode[],
   })
 }
 function refreshPreviews() {

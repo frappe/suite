@@ -845,6 +845,45 @@ describe('Keyboard shortcuts', () => {
   })
 })
 
+describe('Select on a touch screen', () => {
+  afterEach(() => setTweaks(['t18-select-entry'], true))
+  const bar = (root: HTMLElement) =>
+    [...root.querySelectorAll('span')].find((span) => /select/i.test(span.textContent ?? ''))
+      ?.textContent
+  const button = (root: HTMLElement, label: string) =>
+    [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === label,
+    )
+
+  it('starts selecting with nothing checked, and the bar waits for a choice', async () => {
+    const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select'))
+    expect(menuOf(root, 'More file actions')).not.toContain('Select rows')
+
+    choose(root, 'More file actions', 'Select')
+    await nextTick()
+
+    expect(bar(root)).toBe('Select items')
+    expect(button(root, 'Move')?.hasAttribute('disabled')).toBe(true)
+    expect(button(root, 'Move to trash')?.hasAttribute('disabled')).toBe(true)
+
+    menuItem('b', 'Select')?.onClick()
+    await nextTick()
+    expect(bar(root)).toBe('1 selected')
+  })
+
+  it('checks the first row from "Select rows" with the tweak off', async () => {
+    setTweaks(['t18-select-entry'], false)
+    const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select rows'))
+
+    choose(root, 'More file actions', 'Select rows')
+    await nextTick()
+
+    expect(bar(root)).toBe('1 selected')
+  })
+})
+
 describe('Keys', () => {
   afterEach(() => setTweaks(['t14-focused-row'], true))
 
