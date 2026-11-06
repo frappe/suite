@@ -4,7 +4,7 @@ import { useStorage } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
 
 import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
-import { calendarColor } from '@/apps/calendar/utils/calendars'
+import { calendarColor, sharedCalendarVisible } from '@/apps/calendar/utils/calendars'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
 
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
@@ -85,14 +85,49 @@ export const userStore = defineStore('calendar-user', () => {
 		cache: ['calendars', accountId.value],
 		transform: (rows: CalendarRow[]) =>
 			rows.map((cal) =>
-				cal.may_write_all ? cal : { ...cal, visible: hiddenShared.value.includes(cal.name) ? 0 : 1 },
+				cal.may_write_all
+					? cal
+					: {
+							...cal,
+							visible: sharedCalendarVisible(cal, sharedVisibility.value) ? 1 : 0,
+						},
 			),
 	})
 
 	// Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
 	// someone who can write to it change — so a calendar shared read-only is hidden in this
 	// browser instead.
-	const hiddenShared = useStorage<string[]>('calendar-hidden-shared', [])
+	// The reader's choice by calendar, kept only where they made one; the rest stay unticked.
+	const sharedVisibility = useStorage<Record<string, 0 | 1>>('calendar-shared-visibility', {})
+	// Carried over once from the two lists an earlier build kept — the hidden, and the shown —
+	// so nobody's choices are lost to the change of key.
+	for (const [key, visible] of [
+		['calendar-hidden-shared', 0],
+		['calendar-shown-shared', 1],
+	] as const) {
+		try {
+			for (const name of JSON.parse(localStorage.getItem(key) ?? '[]') as string[]) {
+				sharedVisibility.value[name] ??= visible
+			}
+			localStorage.removeItem(key)
+		} catch {
+			// nothing readable under the old key, so nothing to carry
+		}
+	}
+
+	// The account's own calendars, then those shared with the reader from other accounts, as the
+	// sidebar and the phone's view sheet list them. The shared group is there only when something
+	// is shared.
+	const calendarGroups = computed(() => {
+		const rows = calendars.data ?? []
+		const mine = rows.filter((cal) => cal.account === accountId.value)
+		const shared = rows.filter((cal) => cal.account !== accountId.value)
+		const groups = [{ key: 'mine', label: __('My Calendars'), calendars: mine }]
+		if (shared.length) {
+			groups.push({ key: 'shared', label: __('Shared Calendars'), calendars: shared })
+		}
+		return groups
+	})
 
 	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
 	// A calendar shared from another account names that account beneath.
@@ -137,7 +172,8 @@ export const userStore = defineStore('calendar-user', () => {
 		identities,
 		participantIdentities,
 		calendars,
-		hiddenShared,
+		sharedVisibility,
+		calendarGroups,
 		calendarOptions,
 		accountCalendarOptions,
 		organizerIdentity,
