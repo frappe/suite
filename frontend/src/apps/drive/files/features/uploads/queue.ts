@@ -167,6 +167,8 @@ interface Job {
   finishLost: boolean
   /** The sha256 a resumed finish sends, kept across reconnects. */
   checksum: string | null
+  /** A restored handle the browser lets this page read without asking. */
+  canRead: boolean
 }
 
 export interface UploadQueueOptions {
@@ -203,6 +205,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     /** The user looked at the tracker since the last failure. */
     seen: true,
     trackerOpen: false,
+    /** The tracker component is on the page, which happens only in Drive. */
+    trackerMounted: false,
     showDone: false,
   })
   let prompts: UploadPrompts | null = null
@@ -245,6 +249,20 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     if (state.showDone) return { fraction: 1, tone: 'done', attention }
     return attention ? { fraction: null, tone: 'running', attention } : null
   })
+
+  /** Files a reload would stop or lose: queued and held ones have no record yet. */
+  const hasUnsavedWork = computed(() => active.value.length > 0 || state.preparing > 0)
+
+  // The listener is there only while work is, since Firefox keeps no page
+  // with one in its back-forward cache (t29-leave-warning).
+  watch(
+    () => hasUnsavedWork.value && isTweakOn('t29-leave-warning'),
+    (warn) => {
+      if (warn) window.addEventListener('beforeunload', warnBeforeLeaving)
+      else window.removeEventListener('beforeunload', warnBeforeLeaving)
+    },
+    { flush: 'sync' },
+  )
 
   // The indicator turns done, then goes; a new run counts its own bytes.
   watch(
@@ -824,8 +842,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     job.entry.state = 'failed'
     job.entry.error = message
     job.entry.retryable = retryable && !!job.file
-    // An open tracker shows the failure as it happens.
-    if (!state.trackerOpen) state.seen = false
+    // A tracker on screen shows the failure as it happens. It is mounted
+    // only in Drive, so an open one elsewhere shows nothing
+    // (t29-attention-off-screen).
+    const shown = isTweakOn('t29-attention-off-screen')
+      ? state.trackerOpen && state.trackerMounted
+      : state.trackerOpen
+    if (!shown) state.seen = false
   }
 
   async function persist(job: Job) {
@@ -909,31 +932,61 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   async function resume(id: string) {
     const job = jobs.get(id)
     if (!job || job.entry.state !== 'interrupted') return
-    let file = await readHandle(job.handle)
-    if (job.signal.aborted) return
-    if (!file) {
-      const picked = await ask((p) => p.pickFile({ name: job.fileName })).catch((error) => {
-        if (!job.signal.aborted) throw error
-        return null
-      })
-      if (!picked || job.signal.aborted) return
-      const same =
-        picked.name === job.fileName &&
-        picked.size === job.entry.size &&
-        picked.lastModified === job.lastModified
-      if (!same) {
-        const batch: Batch = { size: 1, applied: null }
-        addJob({ file: picked }, job.entry.parent, batch)
-        reveal()
-        pump()
-        return
-      }
-      file = picked
-    }
-    job.file = file
-    job.entry.state = 'queued'
     job.entry.error = null
-    job.run = run
+    // Without a handle the picker opens now, inside the click. After an
+    // await the browser may refuse to open it.
+    const picking = job.handle ? null : pickAgain(job)
+    try {
+      let file = picking ? null : await readHandle(job.handle)
+      if (job.signal.aborted) return
+      if (!file) {
+        const picked = await (picking ?? ask(() => pickAgain(job)))
+        if (!picked || job.signal.aborted) return
+        if (!isSameFile(job, picked)) {
+          addJob({ file: picked }, job.entry.parent, { size: 1, applied: null })
+          reveal()
+          pump()
+          return
+        }
+        file = picked
+      }
+      continueWith(job, file)
+    } catch (error) {
+      if (!job.signal.aborted) job.entry.error = platformError(error).message
+    }
+  }
+
+  function pickAgain(job: Job): Promise<File | null> {
+    if (!prompts) return Promise.reject(new Error('No upload prompts are mounted'))
+    return prompts.pickFile({ name: job.fileName })
+  }
+
+  /**
+   * Resumes every interrupted upload (t29-resume-all). Rows whose handle the
+   * browser still lets this page read start at once. The others take files
+   * from one picker, matched by name, size and time; a file that matches no
+   * row is left alone. `pickFiles` runs now, inside the click.
+   */
+  async function resumeAll(pickFiles: () => Promise<readonly File[]>) {
+    const waiting = [...jobs.values()].filter((job) => job.entry.state === 'interrupted')
+    const picking = waiting.filter((job) => !job.canRead)
+    const picked = picking.length ? pickFiles() : Promise.resolve([])
+    for (const job of waiting) if (job.canRead) void resume(job.entry.id)
+    try {
+      for (const file of await picked) {
+        const job = picking.find(
+          (candidate) => candidate.entry.state === 'interrupted' && isSameFile(candidate, file),
+        )
+        if (job) continueWith(job, file)
+      }
+    } catch (error) {
+      for (const job of picking) job.entry.error = platformError(error).message
+    }
+  }
+
+  function continueWith(job: Job, file: File) {
+    job.file = file
+    requeue(job)
     pump()
   }
 
@@ -968,6 +1021,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           offline: false,
         })
         const direct = record.mode === 'direct'
+        const canRead = await hasReadPermission(record.handle)
+        if (signal.aborted) return
         jobs.set(entry.id, {
           ...control(),
           entry,
@@ -983,9 +1038,12 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           run,
           createdAt: record.createdAt,
           ...freshJob(),
+          canRead,
         })
       }
-      if (found.length) state.seen = false
+      if (!found.length) return
+      state.seen = false
+      if (isTweakOn('t29-reopen-tracker')) state.trackerOpen = true
     })()
     return restored
   }
@@ -1056,6 +1114,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     retry,
     retryAll,
     resume,
+    resumeAll,
     restore,
     dismiss,
     openTracker,
@@ -1063,6 +1122,9 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     forget,
     markSeen: () => {
       state.seen = true
+    },
+    setTrackerMounted: (mounted: boolean) => {
+      state.trackerMounted = mounted
     },
   }
 }
@@ -1134,8 +1196,37 @@ function jitteredBackoff(count: number): number {
   return base * (0.8 + Math.random() * 0.4)
 }
 
-function freshJob(): Pick<Job, 'saving' | 'retries' | 'finishLost' | 'checksum'> {
-  return { saving: Promise.resolve(), retries: null, finishLost: false, checksum: null }
+function freshJob(): Pick<Job, 'saving' | 'retries' | 'finishLost' | 'checksum' | 'canRead'> {
+  return {
+    saving: Promise.resolve(),
+    retries: null,
+    finishLost: false,
+    checksum: null,
+    canRead: false,
+  }
+}
+
+/** Only the same name, size and modified time continue an interrupted upload. */
+function isSameFile(job: Job, file: File): boolean {
+  return (
+    file.name === job.fileName &&
+    file.size === job.entry.size &&
+    file.lastModified === job.lastModified
+  )
+}
+
+async function hasReadPermission(handle: FileSystemFileHandle | undefined): Promise<boolean> {
+  if (!handle) return false
+  const permission = await (handle as PermissionHandle)
+    .queryPermission?.({ mode: 'read' })
+    .catch(() => 'denied' as const)
+  return permission === 'granted'
+}
+
+/** The page asks before it closes: the browser shows its own words. */
+function warnBeforeLeaving(event: BeforeUnloadEvent) {
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 function platformError(cause: unknown): PlatformError {

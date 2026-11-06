@@ -365,7 +365,16 @@ const settled = (queue: UploadQueue) =>
 beforeEach(() => drive.reset())
 afterEach(() => {
   vi.restoreAllMocks()
-  setTweaks(['t28-cancel-upload', 't28-chunk-retry', 't30-steady-chunks'], true)
+  setTweaks(
+    [
+      't28-cancel-upload',
+      't28-chunk-retry',
+      't30-steady-chunks',
+      't29-leave-warning',
+      't29-reopen-tracker',
+    ],
+    true,
+  )
   useSession().expire()
   document.cookie = 'user_id=Guest; path=/'
 })
@@ -781,6 +790,7 @@ describe('Drive upload queue', () => {
     const queue = createUploadQueue({ records: memoryRecords() })
     queue.setPrompts(prompts())
     // An empty file fails at finish; it does not halt the queue.
+    queue.setTrackerMounted(true)
     queue.openTracker()
     await queue.uploadFiles([{ file: new File([], '') }], target)
     await settled(queue)
@@ -1029,6 +1039,88 @@ describe('Cancel and reconnect', () => {
     expect(queue.entries.value[0]!.error).not.toBe(
       'Connection lost. Check your connection and retry.',
     )
+  })
+})
+
+describe('Leaving and coming back', () => {
+  const leave = () => {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+  const session = (size: number) => ({ parent: 'folder', filename: 'x', size, received: 0 })
+
+  it('asks before the page closes while files wait or upload, and not after they finish', async () => {
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
+    queue.setPrompts(prompts())
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    drive.state.before = (method) => (method === 'PUT' ? gate : undefined)
+    expect(leave()).toBe(false)
+
+    await queue.uploadFiles([{ file: file('one.bin', 4) }, { file: file('two.bin', 4) }], target)
+    expect(leave()).toBe(true)
+    setTweaks(['t29-leave-warning'], false)
+    expect(leave()).toBe(false)
+    setTweaks(['t29-leave-warning'], true)
+
+    release()
+    await settled(queue)
+    expect(leave()).toBe(false)
+  })
+
+  it('opens the tracker when a reload left stopped uploads, and not with the tweak off', async () => {
+    const records = memoryRecords()
+    await records.save(stored('u-old', 10))
+    const queue = createUploadQueue({ records })
+    await queue.restore()
+    expect(queue.state.trackerOpen).toBe(true)
+
+    setTweaks(['t29-reopen-tracker'], false)
+    const old = createUploadQueue({ records })
+    await old.restore()
+    expect(old.state.trackerOpen).toBe(false)
+  })
+
+  it('raises the red dot for a failure while the open tracker is not on screen', async () => {
+    const queue = createUploadQueue({ records: memoryRecords() })
+    queue.setPrompts(prompts())
+    // Open in Drive, then the user went to another area.
+    queue.openTracker()
+    queue.setTrackerMounted(false)
+
+    await queue.uploadFiles([{ file: new File([], '') }], target)
+    await settled(queue)
+
+    expect(queue.entries.value[0]!.state).toBe('failed')
+    expect(queue.indicator.value?.attention).toBe(true)
+  })
+
+  it('Resume all starts readable handles at once and matches picked files to the rest', async () => {
+    const records = memoryRecords()
+    const handled = file('photo.jpg', 6, 11)
+    const handle = {
+      queryPermission: async () => 'granted',
+      getFile: async () => handled,
+    } as unknown as FileSystemFileHandle
+    drive.state.sessions.set('u-a', session(6))
+    drive.state.sessions.set('u-b', session(8))
+    await records.save(stored('u-a', 6, { name: 'photo.jpg', lastModified: 11, handle }))
+    await records.save(stored('u-b', 8, { name: 'notes.txt', lastModified: 22 }))
+    const queue = createUploadQueue({ records })
+    queue.setPrompts(prompts())
+    await queue.restore()
+    const pickFiles = vi.fn(async () => [file('notes.txt', 8, 22), file('other.txt', 3, 1)])
+
+    await queue.resumeAll(pickFiles)
+    await settled(queue)
+
+    expect(pickFiles).toHaveBeenCalledOnce()
+    expect(queue.entries.value.map((entry) => [entry.title, entry.state])).toEqual([
+      ['photo.jpg', 'done'],
+      ['notes.txt', 'done'],
+    ])
+    expect(drive.titlesIn('folder')).toEqual(['notes.txt', 'photo.jpg'])
   })
 })
 

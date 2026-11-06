@@ -199,15 +199,24 @@ test("a reload mid-upload leaves an interrupted entry that Resume finishes", asy
 	await useNewMenu(page, "Upload files");
 	await (await chooser).setFiles(bigPath);
 	await expect.poll(() => chunks).toBe(2);
+	// The page asks before it leaves an upload behind. Playwright dismisses
+	// dialogs, which would cancel the reload.
+	page.once("dialog", (dialog) => dialog.accept());
 	await page.reload();
 	await page.unroute(CHUNK_ROUTE);
 
-	// The interrupted upload raises the red dot. The Drive item opens the tracker.
+	// Back in Drive, the tracker opens by itself with the stopped upload.
+	const stopped = page.locator("[data-slot='upload-entry'][data-state='interrupted']");
+	await expect(page.getByRole("heading", { name: "1 upload stopped" })).toBeVisible();
+	await expect(stopped).toContainText("Stopped at");
+
+	// Elsewhere, the interrupted upload raises the red dot. The Drive item opens the tracker.
+	await page.goto("/home");
 	const drive = rail(page).getByRole("link", { name: /^Drive/ });
 	await expect(drive.getByRole("status")).toHaveText("Drive: Needs attention");
 	await expect(drive.locator("[data-slot='area-progress-dot']")).toHaveAttribute("data-attention", "true");
 	await drive.click();
-	await expect(page.locator("[data-slot='upload-entry'][data-state='interrupted']")).toBeVisible();
+	await expect(stopped).toBeVisible();
 
 	const again = page.waitForEvent("filechooser");
 	await page.getByRole("button", { name: "Resume" }).click();

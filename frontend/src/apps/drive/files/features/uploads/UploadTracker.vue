@@ -9,6 +9,12 @@
       <h2 class="min-w-0 flex-1 truncate text-base-semibold text-ink-gray-8">{{ heading }}</h2>
       <Button v-if="retryable > 1" variant="ghost" label="Retry all" @click="queue.retryAll()" />
       <Button
+        v-if="resumesAll && stopped > 1"
+        variant="ghost"
+        :label="__('Resume all')"
+        @click="queue.resumeAll(() => pickFiles({ multiple: true }))"
+      />
+      <Button
         v-if="cancels && active > 1"
         variant="ghost"
         :label="__('Cancel all')"
@@ -114,19 +120,25 @@
 
 <script setup lang="ts">
 import { Alert, Button, Progress } from 'frappe-ui'
-import { computed, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 import { useTweak } from '@/platform/tweaks'
 
 import { formatBytes } from './format'
+import { pickFiles } from './picker'
 import { isFinishing, uploadQueue, type UploadEntry, type UploadQueue } from './queue'
 
 /** The upload list (spec §6.3). Opening it counts as seeing its failures. */
 const props = defineProps<{ queue?: UploadQueue }>()
 const queue = props.queue ?? uploadQueue()
 const cancels = useTweak('t28-cancel-upload')
+const resumesAll = useTweak('t29-resume-all')
+const reopens = useTweak('t29-reopen-tracker')
 const entries = computed(() => queue.entries.value)
+const stopped = computed(
+  () => entries.value.filter((entry) => entry.state === 'interrupted').length,
+)
 const running = computed(
   () =>
     entries.value.filter((entry) =>
@@ -147,6 +159,8 @@ const heading = computed(() => {
   if (running.value)
     return running.value === 1 ? 'Uploading 1 file' : `Uploading ${running.value} files`
   if (queue.state.preparing) return 'Preparing upload'
+  if (reopens.value && stopped.value)
+    return stopped.value === 1 ? __('1 upload stopped') : __('{0} uploads stopped', [stopped.value])
   return 'Uploads'
 })
 
@@ -157,6 +171,8 @@ watch(
   },
   { immediate: true },
 )
+onMounted(() => queue.setTrackerMounted(true))
+onUnmounted(() => queue.setTrackerMounted(false))
 
 function percent(entry: UploadEntry) {
   if (entry.state === 'done') return 100
@@ -212,6 +228,8 @@ function status(entry: UploadEntry): string {
     case 'failed':
       return entry.error ?? 'The upload failed.'
     case 'interrupted':
+      // Why Resume did not start it, such as a picker the browser refused to open.
+      if (entry.error) return entry.error
       return `Stopped at ${formatBytes(entry.sent)} of ${formatBytes(entry.size)}`
     case 'skipped':
       return 'Skipped'

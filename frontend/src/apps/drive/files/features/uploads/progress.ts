@@ -1,5 +1,6 @@
 import { getCurrentInstance, type AppContext } from 'vue'
 
+import { pickFiles } from './picker'
 import { uploadQueue, type UploadIndicator, type UploadPrompts } from './queue'
 
 /**
@@ -47,19 +48,7 @@ function appPrompts(context: AppContext): UploadPrompts {
   }
 }
 
-/** Resume without a stored handle: the native picker, from a throwaway input. */
-function pickFileAgain(): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.hidden = true
-    const settle = (file: File | null) => {
-      input.remove()
-      resolve(file)
-    }
-    input.addEventListener('change', () => settle(input.files?.[0] ?? null), { once: true })
-    input.addEventListener('cancel', () => settle(null), { once: true })
-    document.body.appendChild(input)
-    input.click()
-  })
+/** Resume without a stored handle: the user picks the file again. */
+async function pickFileAgain(): Promise<File | null> {
+  return (await pickFiles())[0] ?? null
 }
