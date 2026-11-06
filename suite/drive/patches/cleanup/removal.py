@@ -152,17 +152,18 @@ def collect_drive_owned_names(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> l
     enumerates is a row gate 1 already accounted for as safe to remove.
 
     One read-only pass over the whole table before anything is deleted, then
-    `_deepest_removed_first` orders the result. Only a Removed row can
-    depend on an ancestor's raw `File` row still being there: Build never
-    gives a Removed row a node (`suite.drive.patches.build.tree`, "Removed
-    rows and everything below them are not migrated"), so its climb has no
-    `Drive Node` fast path and reads `folder` chains directly. Every other
-    candidate — every reachable row gate 1 just proved has a node, and the
-    two roots — resolves through its own node regardless of deletion order.
-    Ordering Removed subtrees deepest-first is therefore enough: an
-    interrupted run only ever removes a Removed row after its Removed
-    descendants are already gone, so a fresh scan on resume always finds
-    intact chains for whatever is left.
+    `_deepest_removed_first` orders the result. A row without a node climbs
+    raw `folder` chains, so it depends on its ancestors' `File` rows still
+    being there. Two kinds of row have no node: a Removed row, because
+    Build never gives one a node (`suite.drive.patches.build.tree`, "Removed
+    rows and everything below them are not migrated"), and, under
+    `drive_build_accept_skips`, an accepted skip, a reachable row Build
+    could not convert. Every other candidate, and the two roots, resolves
+    through its own node. `phase_file_rows` saves this census before phase
+    1 deletes anything, so none of these climbs runs against a partly
+    emptied table. Ordering Removed subtrees deepest-first also means an
+    interrupted run only removes a Removed row after its Removed
+    descendants are gone.
 
     Called exactly once per `run_cleanup` invocation, by `phase_file_rows`,
     which persists the result: nothing past phase 1 calls this again.
