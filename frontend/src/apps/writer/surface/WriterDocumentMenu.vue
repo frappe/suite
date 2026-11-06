@@ -94,17 +94,12 @@ function panelOptions() {
 }
 
 function documentOptions() {
-  const lock = props.isLocked
-    ? {
-        label: __('Unlock document'),
-        icon: 'lucide-lock-open',
-        onClick: () => emit('setLocked', false),
-      }
-    : {
-        label: __('Lock document'),
-        icon: 'lucide-lock',
-        onClick: () => emit('setLocked', true),
-      }
+  const isLocked = props.isLocked
+  const lock = {
+    label: isLocked ? __('Unlock document') : __('Lock document'),
+    icon: isLocked ? 'lucide-lock-open' : 'lucide-lock',
+    onClick: () => emit('setLocked', !isLocked),
+  }
   return [
     ...(props.canSaveVersion
       ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
