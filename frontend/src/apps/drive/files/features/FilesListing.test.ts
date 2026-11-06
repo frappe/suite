@@ -9,7 +9,14 @@ import { setTweaks } from '@/platform/tweaks'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
+import { useDragMove } from './useDragMove'
 import { useListingSelection } from './useListingSelection'
+
+// Drive, for the move preview a drop asks for: nobody gains access, so the move goes ahead without asking.
+vi.hoisted(() => {
+  globalThis.fetch = async () =>
+    Response.json({ data: { gains: [], role_now: 40, role_after: 40 } })
+})
 
 /** The New menu's document types, as composition registers them. */
 const NEW_MENU_TYPES: DocumentTypeDefinition[] = (
@@ -76,10 +83,16 @@ function mount(options: {
   columns?: string[]
   selection?: string[]
   status?: 'pending' | 'success' | 'error'
+  /** Drag to move, as a folder page sets it up. Moves are recorded, not sent. */
+  drag?: boolean
 }) {
   const state = reactive({ selection: options.selection ?? [] })
-  type ListingEvents = { previewErrors: string[]; opened: string[] }
-  const events: ListingEvents = { previewErrors: [], opened: [] }
+  type ListingEvents = {
+    previewErrors: string[]
+    opened: string[]
+    moved: { items: string[]; to: string }[]
+  }
+  const events: ListingEvents = { previewErrors: [], opened: [], moved: [] }
   const query = reactive({
     status: options.status ?? 'success',
     rows: options.rows,
@@ -100,6 +113,19 @@ function mount(options: {
       watch(picked.selected, (selected) => {
         state.selection = selected
       })
+      const drag = options.drag
+        ? useDragMove({
+            enabled: () => true,
+            rows: () => query.rows,
+            selection: () => picked.selected.value,
+            folder: () => null,
+            roots: () => null,
+            move: async ({ items }, folder) => {
+              events.moved.push({ items: items.map((item) => item.name), to: folder.node })
+            },
+            trash: async () => {},
+          })
+        : undefined
       return () =>
         h(FilesListing, {
           query: fromPartial<InstanceType<typeof FilesListing>['$props']['query']>(query),
@@ -113,6 +139,7 @@ function mount(options: {
           emptyTitle: 'Empty',
           emptyDescription: '',
           menuOptions: () => [],
+          drag,
           'onUpdate:selection': (value: string[]) => {
             picked.selected.value = value
           },
@@ -479,5 +506,73 @@ describe('FilesListing keyboard', () => {
     await press('ArrowDown')
     await press('d')
     expect(focused()).toBe('alpha')
+  })
+})
+
+describe('FilesListing drag to move', () => {
+  let frames: FrameRequestCallback[] = []
+  let underPointer: Element | null = null
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(hover: hover) and (pointer: fine)',
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    }))
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      frames.push(callback),
+    )
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    document.elementFromPoint = () => underPointer
+    window.suite_workspace_name = 'Northwind'
+  })
+  afterEach(() => {
+    frames = []
+    underPointer = null
+  })
+  /** Runs the frames the drag asked for, once each. */
+  function nextFrame() {
+    const due = frames
+    frames = []
+    for (const callback of due) callback(0)
+  }
+  function pointer(type: string, target: EventTarget, x: number) {
+    const init = { bubbles: true, pointerType: 'mouse', button: 0, clientX: x, clientY: 0 }
+    target.dispatchEvent(new PointerEvent(type, init))
+  }
+
+  it('moves a row dragged by its name onto a folder row, while a drag from elsewhere on a row still selects', async () => {
+    const editable = { access: { role: 40 } }
+    const rows = [
+      file('f', 'Reports', { kind: 'folder', access: { role: 30 } }),
+      file('a', 'Alpha.png', editable),
+      file('b', 'Beta.png', editable),
+    ]
+    const { root, events } = mount({ rows, drag: true })
+    await nextTick()
+    const name = [...root.querySelectorAll('[data-drag-handle]')].find(
+      (element) => element.textContent === 'Alpha.png',
+    )!
+    underPointer = root.querySelector('[data-node="f"]')
+
+    pointer('pointerdown', name, 0)
+    pointer('pointermove', window, 30)
+    nextFrame()
+    await nextTick()
+    expect(document.body.textContent).toContain('Move to Reports')
+    expect(root.querySelector('.bg-surface-blue-2\\/50')).toBeNull()
+
+    pointer('pointerup', window, 30)
+    await vi.waitFor(() => expect(events.moved).toEqual([{ items: ['a'], to: 'f' }]))
+    expect(document.body.textContent).not.toContain('Move to Reports')
+
+    // The Beta row outside its name draws the marquee, and moves nothing.
+    pointer('pointerdown', root.querySelector('[data-node="b"]')!, 0)
+    pointer('pointermove', window, 30)
+    nextFrame()
+    await nextTick()
+    expect(root.querySelector('.bg-surface-blue-2\\/50')).not.toBeNull()
+    pointer('pointerup', window, 30)
+    expect(events.moved).toHaveLength(1)
   })
 })

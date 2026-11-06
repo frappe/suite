@@ -32,8 +32,9 @@ interface Gesture {
  * scrolls the container near its edges, and swallows the click that ends it.
  *
  * A drag may start on an item, because list rows fill the listing's width and
- * leave little empty space. If Drive adds drag to move, a drag that starts on
- * an item should move it instead, and only one from empty space should select.
+ * leave little empty space. With `t16-drag-move` on, a press on an item's drag
+ * handle (its name in a list, its card in a grid) moves it instead; the
+ * listing hands that press to `useDragMove` and never starts a marquee for it.
  */
 export function useMarquee(options: {
   /** The listing. Item boxes and the rectangle are relative to it. */
@@ -105,17 +106,7 @@ export function useMarquee(options: {
     const area = options.area.value
     if (!gesture?.active || !area) return
     const { scroller, pointer } = gesture
-    const view =
-      scroller === document.scrollingElement
-        ? { top: 0, bottom: window.innerHeight }
-        : scroller.getBoundingClientRect()
-    const speed =
-      pointer.y < view.top + EDGE
-        ? -Math.min(MAX_SPEED, (view.top + EDGE - pointer.y) / 2)
-        : pointer.y > view.bottom - EDGE
-          ? Math.min(MAX_SPEED, (pointer.y - (view.bottom - EDGE)) / 2)
-          : 0
-    if (speed) scroller.scrollTop += speed
+    scrollNearEdge(scroller, pointer.y)
 
     const bounds = area.getBoundingClientRect()
     const end = toArea(area, { clientX: pointer.x, clientY: pointer.y })
@@ -175,7 +166,7 @@ function itemsIn(area: HTMLElement, bounds: DOMRect): MarqueeItem[] {
   })
 }
 
-function scrollParent(element: HTMLElement): HTMLElement {
+export function scrollParent(element: HTMLElement): HTMLElement {
   for (let parent = element.parentElement; parent; parent = parent.parentElement) {
     if (/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) return parent
   }
@@ -183,8 +174,23 @@ function scrollParent(element: HTMLElement): HTMLElement {
   return root instanceof HTMLElement ? root : document.documentElement
 }
 
+/** One frame of scrolling while a drag holds the pointer near or past the scroller's top or bottom edge. */
+export function scrollNearEdge(scroller: HTMLElement, pointerY: number) {
+  const view =
+    scroller === document.scrollingElement
+      ? { top: 0, bottom: window.innerHeight }
+      : scroller.getBoundingClientRect()
+  const speed =
+    pointerY < view.top + EDGE
+      ? -Math.min(MAX_SPEED, (view.top + EDGE - pointerY) / 2)
+      : pointerY > view.bottom - EDGE
+        ? Math.min(MAX_SPEED, (pointerY - (view.bottom - EDGE)) / 2)
+        : 0
+  if (speed) scroller.scrollTop += speed
+}
+
 /** The click that ends a drag lands on whatever is under the pointer. It must not open or toggle it. */
-function swallowNextClick() {
+export function swallowNextClick() {
   const swallow = (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()

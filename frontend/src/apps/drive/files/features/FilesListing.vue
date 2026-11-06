@@ -115,11 +115,13 @@
             :aria-selected="focus.roving.value ? isSelected(row) : undefined"
             :data-node="row.name"
             :data-listing-item="row.name"
+            :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
             :class="[
               'select-none',
               runClasses(index),
               checkboxOnHover && 'group/row',
               flashClasses(row),
+              drag && dragClasses(row, DROP_ROW),
             ]"
             v-bind="rowDrop?.(row) ?? {}"
             @click="onRowClick($event, row)"
@@ -162,11 +164,16 @@
                   nodeIconTint(row),
                   checkboxOnHover && 'group-hover/row:hidden group-focus-visible/row:hidden',
                 ]"
+                :data-drag-handle="drag ? '' : undefined"
                 aria-hidden="true"
               />
-              <span class="min-w-0 truncate text-base text-ink-gray-8" :title="row.title">{{
-                row.title
-              }}</span>
+              <!-- With drag to move, the icon and name are the row's drag handle; the rest of the row draws the marquee. -->
+              <span
+                class="min-w-0 truncate text-base text-ink-gray-8"
+                :title="row.title"
+                :data-drag-handle="drag ? '' : undefined"
+                >{{ row.title }}</span
+              >
               <StarredIcon v-if="row.favourite" class="ml-1.5 size-3.5 shrink-0" />
               <span v-if="showBreadcrumbs" class="ml-2 truncate text-p-sm text-ink-gray-5">{{
                 breadcrumbText(row)
@@ -240,13 +247,16 @@
             role="listitem"
             class="flex min-w-0"
             :data-listing-item="row.name"
+            :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
             v-bind="rowDrop?.(row) ?? {}"
           >
+            <!-- With drag to move, the whole card is its drag handle. -->
             <FileCard
               :node="row"
               :meta="cardMeta(row)"
               :selected="isHighlighted(row)"
-              :class="flashClasses(row)"
+              :class="drag ? [flashClasses(row), dragClasses(row, DROP_CARD)] : flashClasses(row)"
+              :data-drag-handle="drag ? '' : undefined"
               :data-node="focus.roving.value ? row.name : undefined"
               :tabindex="focus.roving.value ? stopIndex(row) : undefined"
               @click="onRowClick($event, row)"
@@ -341,6 +351,7 @@
       }"
       aria-hidden="true"
     />
+    <DragMoveLayer v-if="drag" :drag="drag" />
   </div>
 </template>
 
@@ -377,12 +388,14 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useTweak } from '@/platform/tweaks'
 
+import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
 import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
+import type { DragMove } from './useDragMove'
 import { useListingFocus } from './useListingFocus'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
 
@@ -404,6 +417,8 @@ const props = defineProps<{
   /** The item whose right-click menu is open. It looks selected while the menu shows. */
   menuTarget?: string | null
   dateColumn?: FilesDateColumn
+  /** Drag to move, where the page allows it. Without it a press on an item draws the marquee. */
+  drag?: DragMove
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]
@@ -666,7 +681,19 @@ function onPointerdown(event: PointerEvent) {
   // On touch a long press selects (see `startLongPress`). Marking the press
   // handled keeps the page's context menu from opening on its own long press.
   if (touchPress) event.preventDefault()
-  else startMarquee(event)
+  else if (!startDrag(event)) startMarquee(event)
+}
+/** A press on an item's drag handle that the drag takes. */
+function startDrag(event: PointerEvent) {
+  const row = props.drag && itemAt(event.target)
+  return !!row && !!props.drag?.press(event, row)
+}
+/** A dragged item fades; a folder under the pointer that takes the drop lights up. */
+const DROP_ROW = '!bg-surface-blue-2 ring-1 ring-inset ring-outline-blue-3'
+const DROP_CARD = '!border-outline-blue-3 !bg-surface-blue-2'
+function dragClasses(row: DriveNode, accepting: string) {
+  if (props.drag?.isDragged(row.name)) return 'opacity-50'
+  return props.drag?.accepts(row.name) ? accepting : undefined
 }
 function onContextMenu(event: MouseEvent) {
   // A phone sends `contextmenu` after a long press, which already selected.
