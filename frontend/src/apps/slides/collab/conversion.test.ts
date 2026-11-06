@@ -344,6 +344,25 @@ describe('text', () => {
     })
   })
 
+  it.each(['500', '600'])('keeps a %s weight as it draws', (weight) => {
+    const content = `<p><span style="font-weight: ${weight}">a</span></p>`
+    const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
+    const [mark] = bodyOf(doc, 'box').content[0].content[0].marks
+    expect(mark).toMatchObject({ type: 'textStyle', attrs: { fontWeight: weight } })
+    expect(dropped).toEqual([])
+  })
+
+  it('carries a list item weight to its text, saying its bullet changes', () => {
+    const content = '<ul><li style="font-weight: 600"><p>a</p></li></ul>'
+    const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
+    const [{ content: texts }] = bodyOf(doc, 'box').content[0].content[0].content
+    expect(texts.map(({ text }: { text: string }) => text)).toEqual(['a'])
+    expect(texts[0].marks).toContainEqual(
+      expect.objectContaining({ attrs: expect.objectContaining({ fontWeight: '600' }) }),
+    )
+    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
+  })
+
   it('keeps the bullet of an item whose text alone is bold', () => {
     const content = '<ul><li><p><span style="font-weight: 700">a</span></p></li></ul>'
     expect(converted([{ id: 'box', type: 'text', content }]).dropped).toEqual([])

@@ -47,6 +47,8 @@ const JOINS_WHAT_IS_BEFORE = /^(?!\u200b)[\p{M}\p{Cf}\p{Emoji_Modifier}\u1160-\u
 // A value the browser rejects here does nothing, where an unknown property still counts
 const READ_BY_THE_BROWSER = new Set([...INHERITED, OPACITY])
 const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
+// The editor draws no bullet weight from an item's first text, so a look run can't hold one
+const CARRIED_STYLES = [...ITEM_STYLES, FONT_WEIGHT]
 // Tags the editor reads as its own marks, by the tag it draws them with
 const DRAWN_AS: Record<string, string> = { b: 'strong', i: 'em' }
 // The old view's sanitizer takes these off and keeps what's inside, so they draw nothing
@@ -204,8 +206,10 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
   // The app's preflight draws `strong` one step bolder
   if (tag === 'strong') {
     next.styles.set(FONT_WEIGHT, drawnWeight('bolder', place.styles.get(FONT_WEIGHT)!))
+    next.fromItem.delete(FONT_WEIGHT)
   } else if (tag === 'th') {
     next.styles.set(FONT_WEIGHT, HEADER_WEIGHT)
+    next.fromItem.delete(FONT_WEIGHT)
   }
 
   for (const [name, value] of styleEntries(element)) {
@@ -223,6 +227,7 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
       next.styles.delete(name)
     } else if (name === FONT_WEIGHT) {
       next.styles.set(name, drawnWeight(value, place.styles.get(name)!))
+      next.fromItem[tag === 'li' ? 'add' : 'delete'](name)
     } else if (isInherited(name)) {
       next.styles.set(name, value)
       next.fromItem[tag === 'li' ? 'add' : 'delete'](name)
@@ -556,7 +561,7 @@ export function itemsToHold(old: Element, saved: Element, rules: DrawRules, held
 // hold no style and draw one from their first text, so each run takes what it inherited, on a span of its
 // own so it wins. This changes no words
 function carriedStyle({ styles, fromItem, isFadedByItem, opacity }: Place) {
-  const carried = ITEM_STYLES.filter((name) => fromItem.has(name)).map((name) => {
+  const carried = CARRIED_STYLES.filter((name) => fromItem.has(name)).map((name) => {
     const value = styles.get(name)
     return `${name}: ${value}`
   })

@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import Bold from '@tiptap/extension-bold'
 import BulletList from '@tiptap/extension-bullet-list'
 import Color from '@tiptap/extension-color'
 import ListItem from '@tiptap/extension-list-item'
@@ -26,6 +27,11 @@ const parseElementStyle = (attribute, value) => {
   if (attribute == 'opacity') {
     const val = parseFloat(value)
     return isNaN(val) ? null : Math.round(val * 100)
+  }
+
+  // bold is its own mark and 400 is plain text; `bolder` and `lighter` depend on what's around them
+  if (attribute == 'fontWeight') {
+    return /^\d+$/.test(value) && !['400', '700'].includes(value) ? value : null
   }
 
   return value
@@ -59,7 +65,14 @@ const CustomTextStyle = TextStyle.extend({
   addAttributes() {
     const attrs = {}
 
-    const attributesList = ['fontSize', 'textTransform', 'fontFamily', 'letterSpacing', 'opacity']
+    const attributesList = [
+      'fontSize',
+      'textTransform',
+      'fontFamily',
+      'letterSpacing',
+      'opacity',
+      'fontWeight',
+    ]
 
     attributesList.forEach((attr) => {
       attrs[attr] = {
@@ -70,6 +83,16 @@ const CustomTextStyle = TextStyle.extend({
     })
 
     return attrs
+  },
+})
+
+// 700 alone is bold: any other weight stays that weight, on the text style
+const CustomBold = Bold.extend({
+  parseHTML() {
+    return [
+      ...this.parent().filter((rule) => rule.style !== 'font-weight'),
+      { style: 'font-weight', getAttrs: (value) => /^(bold|700)$/.test(value) && null },
+    ]
   },
 })
 
@@ -1130,7 +1153,9 @@ export const extensions = [
     blockquote: false,
     codeBlock: false,
     horizontalRule: false,
+    bold: false,
   }),
+  CustomBold,
   CustomParagraph,
   CustomListItem,
   CustomTextStyle,

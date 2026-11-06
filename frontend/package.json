@@ -61,6 +61,7 @@
     "@sentry/vue": "^10.0.0",
     "@tanstack/vue-virtual": "^3.13.24",
     "@tiptap/core": "^3.26.0",
+    "@tiptap/extension-bold": "^3.26.0",
     "@tiptap/extension-bullet-list": "^3.26.0",
     "@tiptap/extension-collaboration": "^3.26.0",
     "@tiptap/extension-color": "^3.26.0",

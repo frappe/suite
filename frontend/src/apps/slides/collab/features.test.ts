@@ -44,6 +44,7 @@ const TEXT_STYLE = {
   fontFamily: 'Inter',
   letterSpacing: '1px',
   opacity: 50,
+  fontWeight: '600',
   color: '#112233',
 }
 const LINK = {
