@@ -19,11 +19,13 @@ export function isNewTabKey(event: KeyboardEvent | MouseEvent): boolean {
  */
 export function watchNewTabKey(event: PointerEvent): void {
   const link = event.currentTarget
-  if (!(link instanceof Element)) return
+  if (!(link instanceof HTMLElement)) return
   stopWatching?.()
   const controller = new AbortController()
   const { signal } = controller
-  const mark = (held: boolean) => link.toggleAttribute(NEW_TAB_ATTRIBUTE, held)
+  const mark = (held: boolean) => {
+    link.toggleAttribute(NEW_TAB_ATTRIBUTE, held)
+  }
   const follow = (input: KeyboardEvent | MouseEvent) => mark(isNewTabKey(input))
   window.addEventListener('keydown', follow, { signal })
   window.addEventListener('keyup', follow, { signal })

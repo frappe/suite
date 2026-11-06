@@ -490,7 +490,8 @@ describe('FilesListing name links', () => {
         expect(looksLikeLink(link)).toBe(false)
 
         // Hovering with the key already held shows it at once.
-        link.dispatchEvent(new MouseEvent('pointerenter', held))
+        const modifiers = { ctrlKey: held.key === 'Control', metaKey: held.key === 'Meta' }
+        link.dispatchEvent(new MouseEvent('pointerenter', modifiers))
         expect(looksLikeLink(link)).toBe(true)
 
         // Releasing it, with the pointer still, restores the plain look.
