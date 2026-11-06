@@ -12,9 +12,9 @@
         :loading="loading && !rows.length"
         :filterable="false"
         :disabled="disabled"
-        :placeholder="__('Add people or groups')"
+        :placeholder="fieldLabel"
         :empty-text="__('No people or groups found')"
-        :aria-label="__('Add people, groups or emails')"
+        :aria-label="fieldLabel"
         @update:open="onOpen"
       />
       <Dropdown v-if="staged.length && oneRoleMenu" :options="roleChoices" align="end">
@@ -152,6 +152,10 @@ const roleChoices = computed(() => [
 ])
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// An email address of someone not listed gets a share link, which a root cannot hold.
+const fieldLabel = computed(() =>
+  props.nodeKind === 'root' ? __('Add people or groups') : __('Add people, groups or emails'),
+)
 
 const options = computed(() => [
   ...rows.value

@@ -84,18 +84,19 @@ function mountPicker(
     role: number,
     notify: boolean,
   ) => Promise<PickedPerson[]> = async () => [],
+  nodeKind = 'file',
 ) {
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
-    setup: () => () => h(SharePicker, { nodeKind: 'file', share }),
+    setup: () => () => h(SharePicker, { nodeKind, share }),
   })
   app.mount(root)
   cleanup = () => {
     app.unmount()
     root.remove()
   }
-  return root.querySelector<HTMLInputElement>('input[aria-label="Add people, groups or emails"]')!
+  return root.querySelector<HTMLInputElement>('input[aria-label^="Add people"]')!
 }
 
 async function type(input: HTMLInputElement, text: string) {
@@ -123,6 +124,22 @@ const staged = () =>
   )
 
 describe('Share picker', () => {
+  it('says the same on screen and to a screen reader: emails too, except on a root, which holds no links', async () => {
+    const offersLink = (options: HTMLElement[]) =>
+      options.some((option) => option.textContent?.includes('Send a link to new@example.com'))
+
+    const field = mountPicker()
+    expect(field.placeholder).toBe('Add people, groups or emails')
+    expect(field.getAttribute('aria-label')).toBe('Add people, groups or emails')
+    expect(offersLink(await type(field, 'new@example.com'))).toBe(true)
+    cleanup?.()
+
+    const rootField = mountPicker(undefined, 'root')
+    expect(rootField.placeholder).toBe('Add people or groups')
+    expect(rootField.getAttribute('aria-label')).toBe('Add people or groups')
+    expect(offersLink(await type(rootField, 'new@example.com'))).toBe(false)
+  })
+
   it('closes suggestions after a pick so the person shows, keeping search focused for the next pick', async () => {
     const input = mountPicker()
 
