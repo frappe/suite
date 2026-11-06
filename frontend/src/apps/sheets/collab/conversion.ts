@@ -5,7 +5,8 @@
 // load.ts `writeWorkbookToDoc`, as a tab opening the sheet would write it.
 //
 // IronCalc runs in this process (no Worker): the caller loads its wasm first.
-// `sheets_data` is never written; a refused sheet keeps working on the old path.
+// `sheets_data` is never written; a refused sheet opens read-only from it,
+// with a banner saying it couldn't be upgraded (useCollabRoom.ts).
 
 import * as Y from 'yjs'
 

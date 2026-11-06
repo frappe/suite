@@ -618,8 +618,11 @@ has no `collab` worker. The background run needs the scheduler and a
   document that cannot convert yet, for example with no converter, costs
   one job a minute while someone has it open.
 - A document that the converter refused stays read-only, and opening it
-  does not queue it again. A Sheet still shows the banner above; find
-  these documents with the outcomes query below.
+  does not queue it again. A Sheet shows "This spreadsheet couldn't be
+  upgraded, so it stays read-only." One refused as too large shows "This
+  spreadsheet is too large to edit together, so it stays read-only." A
+  System Manager also sees the reason. Find these documents with the
+  outcomes query below.
 
 ### Clear the pause
 
