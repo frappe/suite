@@ -193,6 +193,7 @@
           <BatchOutcome
             :result="trash.outcome.value ?? batchOutcome"
             :verb="trash.outcome.value ? trash.verb.value : batchVerb"
+            :rows="listing.rows as DriveNode[]"
             class="mt-3"
             @dismiss="dismissOutcome"
           />
@@ -307,6 +308,7 @@ import { useTweak } from '@/platform/tweaks'
 
 import { inBatches } from '../features/batches'
 import BatchOutcome from '../features/BatchOutcome.vue'
+import type { BatchVerb } from '../features/batchResult'
 import {
   announceCopy,
   announceMove,
@@ -403,7 +405,7 @@ const templatesOpen = ref(false)
 const pickerMode = ref<'move' | 'copy'>('move')
 const pickerBulk = ref(false)
 const batchOutcome = ref<DriveBatchResult | null>(null)
-const batchVerb = ref('moved')
+const batchVerb = ref<BatchVerb>('moved')
 const narrow = ref(false)
 let narrowMedia: MediaQueryList | null = null
 let stopRealtime: (() => void) | null = null
@@ -1769,7 +1771,7 @@ async function runBulkTrash() {
 async function runBatch(
   nodes: string[],
   patch: { parent_node?: string; state?: 'Trashed' },
-  verb: string,
+  verb: BatchVerb,
 ): Promise<DriveBatchResult | null> {
   try {
     const result = await inBatches(nodes, (chunk) => batchMutation.run({ nodes: chunk, patch }))

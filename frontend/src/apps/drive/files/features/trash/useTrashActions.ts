@@ -5,6 +5,7 @@ import { canManage, type DriveBatchResult } from '@/apps/drive/client/types'
 import { confirm, toast } from '@/platform/feedback'
 
 import { inBatches } from '../batches'
+import type { BatchVerb } from '../batchResult'
 import { announceRestore, subject, type ChangedItem } from '../changeToast'
 import { presentDialog } from '../dialogHost'
 
@@ -20,7 +21,7 @@ const DESTINATION_REQUIRED = 'DriveRestoreDestinationRequired'
 export function useTrashActions(root: () => string | null) {
   const context = getCurrentInstance()!.appContext
   const outcome = ref<DriveBatchResult | null>(null)
-  const verb = ref('')
+  const verb = ref<BatchVerb>('restored')
   // Silent: a failed request gets a toast with Retry below, not the default one.
   const restoring = useMutation(api.drive.nodes.batch, {
     silent: true,
@@ -179,7 +180,7 @@ export function useTrashActions(root: () => string | null) {
       },
     })
   }
-  function show(result: DriveBatchResult, nextVerb: string) {
+  function show(result: DriveBatchResult, nextVerb: BatchVerb) {
     outcome.value = result
     verb.value = nextVerb
   }

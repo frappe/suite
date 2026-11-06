@@ -1196,8 +1196,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   forever [T006, T007].
 - Successful ids leave the selection and the affected lists. Failed ids
   stay selected [T006].
-- The result reads, for example, `14 moved · 4 failed`. **Details** shows
-  per-node messages [T006].
+- The result reads, for example, `4 of 18 items could not be moved`, and
+  **Details** lists each item by title and icon with a reason chosen by the
+  error type. One failure names the item, `“Budget.pdf” could not be moved`,
+  with its reason and no Details [T006].
 - The outcome has no Retry button. Running the action again is the retry
   [T007].
 - A whole-request failure (network, 5xx, deadlock) applies nothing. It shows

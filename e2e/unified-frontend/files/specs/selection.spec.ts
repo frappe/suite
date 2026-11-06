@@ -111,12 +111,11 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 	await dialog.getByRole("button", { name: destination.title }).click();
 	await dialog.getByRole("button", { name: "Move here", exact: true }).click();
 
-	await expect(page.getByText("1 moved · 1 failed")).toBeVisible();
+	// One failure names the item and says why, with no Details (t32).
+	await expect(page.getByText("“row-a” could not be moved")).toBeVisible();
+	await expect(page.getByText("An item with this name is already there.")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
-
-	await page.getByRole("button", { name: "Details" }).click();
-	await expect(page.getByRole("dialog", { name: "Items that failed" })).toBeVisible();
-	await expect(page.getByText(rows[0]!.name, { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Details" })).toHaveCount(0);
 
 	expect((await getNode(api, rows[1]!.name)).parent_node).toBe(destination.name);
 	expect((await getNode(api, rows[0]!.name)).parent_node).toBe(home.name);

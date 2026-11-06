@@ -70,7 +70,7 @@ export const tweaks = [
   { id: 't29', item: 29, group: 'Slow operations', label: 'Warn before closing mid-upload', description: 'Closing the tab during an upload asks first, and after a reload the tracker offers Resume all.', ready: false },
   { id: 't30', item: 30, group: 'Slow operations', label: 'Upload progress and links', description: 'The upload tracker shows overall progress and time left, and finished rows open the file.', ready: false },
   { id: 't31', item: 31, group: 'Slow operations', label: 'Zip downloads tidy up', description: 'The zip toast closes when the file arrives, and the bell has no unread entry for a download this tab started.', ready: false },
-  { id: 't32', item: 32, group: 'Slow operations', label: 'Readable partial failures', description: 'A partial bulk failure names the items with their icons, such as "2 of 5 items could not be moved".', ready: false },
+  { id: 't32-readable-failures', item: 32, group: 'Slow operations', label: 'Readable partial failures', description: 'A partial bulk failure names its items with their icons and says why each failed, such as "2 of 5 items could not be moved".', ready: true },
   { id: 't33', item: 33, group: 'Slow operations', label: 'Safer public access and link actions', description: 'Making a folder public and deleting a link ask first, and both offer Undo.', ready: false },
 ] as const satisfies readonly Tweak[]
 

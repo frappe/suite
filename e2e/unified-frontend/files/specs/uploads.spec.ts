@@ -329,12 +329,10 @@ test("Delete forever on a mixed batch reports what failed and keeps it selected"
 	await page.getByRole("button", { name: "Delete forever" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Delete forever" }).click();
 
-	await expect(page.getByText("1 deleted forever · 1 failed")).toBeVisible();
+	// One failure names the item by its title and says why (t32).
+	await expect(page.getByText(`“${second.title}” could not be deleted forever`)).toBeVisible();
+	await expect(page.getByText("It was moved or deleted by someone else.")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
-	await page.getByRole("button", { name: "Details" }).click();
-	await expect(
-		page.getByRole("dialog", { name: "Items that failed" }).getByText(second.name, { exact: true }),
-	).toBeVisible();
 	expect(await nodeExists(first.name)).toBe(false);
 });
 
