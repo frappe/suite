@@ -262,6 +262,8 @@ BASELINE_DEBT = {
         "Suite Sheets",
         "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
         (
+            "suite/sheets/content/tests/test_conversion.py|import|suite.drive._core.access",
+            "suite/sheets/content/tests/test_conversion.py|import|suite.drive.framework",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",

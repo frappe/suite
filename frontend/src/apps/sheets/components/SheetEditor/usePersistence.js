@@ -9,8 +9,9 @@ import { isRefusal } from '../../utils/relay.js'
 
 // The sheet's old body (`sheets_data`), read-only. The live room saves every
 // edit (useCollabRoom.ts); this only shows a sheet the room can't open — a
-// guest's, or one still waiting for its conversion — and builds the whole
-// workbook as JSON for the surface's recovery copy.
+// guest's, one still waiting for its conversion, or one the converter
+// refused — and builds the whole workbook as JSON for the surface's recovery
+// copy.
 //
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /
@@ -74,57 +75,9 @@ export function usePersistence({
         },
       )
       const plain = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
-      const saved = JSON.parse(plain || '{}')
-      if (saved.formats) formats.restore(saved.formats)
-      await _startEngine(saved)
-      // A sheet last saved by the develop editor: its cells are typed into
-      // IronCalc here (utils/legacy-sheet.ts); the side stores below restore
-      // from its old shapes as they are.
-      const plan = saved.engine ? null : planLegacySheet(saved.sheet)
-      const converted = plan ? await applyLegacyPlan(engine.client(), plan) : null
-      if (converted && !converted.ok)
-        console.error('[sheets] could not convert a develop sheet:', converted.error)
-      const renamed = converted?.ok ? Object.entries(plan.renamed) : []
-      if (renamed.length && saved.view) saved.view = _renameKeys(saved.view, plan.renamed)
-      if (saved.merge && merge?.restore) merge.restore(saved.merge)
-      // Drive owns a develop sheet's comments: the migration made them Drive
-      // threads and stripped them from the body. A develop body that still has
-      // them is an old version restored; restoring them would show each twice.
-      const commentsInDrive = plan && doc.node
-      if (saved.comments && comments?.restore && !commentsInDrive) comments.restore(saved.comments)
-      if (saved.validation && validation?.restore) validation.restore(saved.validation)
-      if (saved.protection && protection?.restore) protection.restore(saved.protection)
-      if (saved.condFormat && condFormat?.restore) condFormat.restore(saved.condFormat)
-      if (saved.sortFilter && sortFilter?.restore) sortFilter.restore(saved.sortFilter)
-      if (saved.slicers && slicers?.restore) slicers.restore(saved.slicers)
-      if (saved.view && applyViewState) applyViewState(saved.view)
-      if (saved.pivot && pivot?.restore) pivot.restore(saved.pivot)
-      if (saved.charts && charts?.restore) charts.restore(saved.charts)
-      if (saved.namedRanges && namedRanges?.restore) namedRanges.restore(saved.namedRanges)
-      for (const [from, to] of renamed) {
-        for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
-      }
-      if (saved.namedRanges && namedRanges?.restore) {
-        // A name on a sheet the file no longer has (saved before ISSUES #77)
-        // is #REF!, as if that sheet were deleted now: a sheet added later
-        // under its name doesn't bring it back. Checked after a develop
-        // sheet's renames; skipped when its conversion failed (IronCalc then
-        // holds none of its sheets).
-        const sheets = engine.client?.()?.sheets
-        if (sheets && namedRanges.deleteSheet && converted?.ok !== false) {
-          const have = new Set(sheets.map((s) => s.toLowerCase()))
-          for (const e of namedRanges.list())
-            if (e.sheet && !have.has(e.sheet.toLowerCase())) namedRanges.deleteSheet(e.sheet)
-        }
-        // IronCalc started before the names were back, and its saved names
-        // can be out of date (one whose cells were deleted: ISSUES #74).
-        engine.syncDefinedNames?.()
-      } else if (converted?.ok) {
-        // A formula naming a defined name shows #NAME? until IronCalc has the names.
-        engine.syncDefinedNames?.()
-      }
-      legacyCurrent.value = plan?.current ?? null
+      await loadBody(JSON.parse(plain || '{}'), { inDrive: Boolean(doc.node) })
       currentTitle.value = doc.title
+      return doc
     } catch (err) {
       console.error('Load failed:', err)
       const t = err?.type || ''
@@ -138,7 +91,63 @@ export function usePersistence({
         kind,
         message: err?.message || 'Could not open this sheet',
       }
+      return null
     }
+  }
+
+  // Builds the workbook from one old body (`sheets_data`, parsed): the sheet's
+  // own, or a stored version of it. `inDrive`: Drive keeps the sheet's
+  // comments, so a develop body's are not restored.
+  async function loadBody(saved, { inDrive }) {
+    if (saved.formats) formats.restore(saved.formats)
+    await _startEngine(saved)
+    // A sheet last saved by the develop editor: its cells are typed into
+    // IronCalc here (utils/legacy-sheet.ts); the side stores below restore
+    // from its old shapes as they are.
+    const plan = saved.engine ? null : planLegacySheet(saved.sheet)
+    const converted = plan ? await applyLegacyPlan(engine.client(), plan) : null
+    if (converted && !converted.ok)
+      console.error('[sheets] could not convert a develop sheet:', converted.error)
+    const renamed = converted?.ok ? Object.entries(plan.renamed) : []
+    if (renamed.length && saved.view) saved.view = _renameKeys(saved.view, plan.renamed)
+    if (saved.merge && merge?.restore) merge.restore(saved.merge)
+    // Drive owns a develop sheet's comments: the migration made them Drive
+    // threads and stripped them from the body. A develop body that still has
+    // them is an old version restored; restoring them would show each twice.
+    const commentsInDrive = plan && inDrive
+    if (saved.comments && comments?.restore && !commentsInDrive) comments.restore(saved.comments)
+    if (saved.validation && validation?.restore) validation.restore(saved.validation)
+    if (saved.protection && protection?.restore) protection.restore(saved.protection)
+    if (saved.condFormat && condFormat?.restore) condFormat.restore(saved.condFormat)
+    if (saved.sortFilter && sortFilter?.restore) sortFilter.restore(saved.sortFilter)
+    if (saved.slicers && slicers?.restore) slicers.restore(saved.slicers)
+    if (saved.view && applyViewState) applyViewState(saved.view)
+    if (saved.pivot && pivot?.restore) pivot.restore(saved.pivot)
+    if (saved.charts && charts?.restore) charts.restore(saved.charts)
+    if (saved.namedRanges && namedRanges?.restore) namedRanges.restore(saved.namedRanges)
+    for (const [from, to] of renamed) {
+      for (const store of [formats, ...sideStores]) store?.renameSheet?.(from, to)
+    }
+    if (saved.namedRanges && namedRanges?.restore) {
+      // A name on a sheet the file no longer has (saved before ISSUES #77)
+      // is #REF!, as if that sheet were deleted now: a sheet added later
+      // under its name doesn't bring it back. Checked after a develop
+      // sheet's renames; skipped when its conversion failed (IronCalc then
+      // holds none of its sheets).
+      const sheets = engine.client?.()?.sheets
+      if (sheets && namedRanges.deleteSheet && converted?.ok !== false) {
+        const have = new Set(sheets.map((s) => s.toLowerCase()))
+        for (const e of namedRanges.list())
+          if (e.sheet && !have.has(e.sheet.toLowerCase())) namedRanges.deleteSheet(e.sheet)
+      }
+      // IronCalc started before the names were back, and its saved names
+      // can be out of date (one whose cells were deleted: ISSUES #74).
+      engine.syncDefinedNames?.()
+    } else if (converted?.ok) {
+      // A formula naming a defined name shows #NAME? until IronCalc has the names.
+      engine.syncDefinedNames?.()
+    }
+    legacyCurrent.value = plan?.current ?? null
   }
 
   // IronCalc's bytes carry no version of their own, and one IronCalc may not
@@ -193,6 +202,7 @@ export function usePersistence({
     loadError,
     legacyCurrent,
     loadSheet,
+    loadBody,
     workbookJson,
   }
 }
