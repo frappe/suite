@@ -33,7 +33,7 @@ because the E2E workflows require MariaDB and Redis service containers.
 | --- | --- |
 | k3s | `v1.36.3+k3s1` |
 | ARC charts | `0.14.2` |
-| Actions Runner | `2.336.0` |
+| Actions Runner | `2.338.2` |
 | Python | `3.14.7` |
 | Node | `24.12.0` |
 | Yarn | `1.22.22` |
@@ -65,7 +65,7 @@ sudo shred -u /root/github-app.private-key.pem
 ## Build the runner image
 
 Run the `Build ARC Runner Image` workflow once from the protected default branch.
-It publishes `ghcr.io/frappe/suite-actions-runner:2.336.0`. Set the resulting GHCR
+It publishes `ghcr.io/frappe/suite-actions-runner:2.338.2`. Set the resulting GHCR
 package visibility to public so the cluster can pull it without registry
 credentials.
 
