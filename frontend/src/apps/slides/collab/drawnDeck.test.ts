@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { convertLegacy, type OldSlide } from './conversion'
+import { moveSlide } from './deck'
 import { drawnSlides } from './drawnDeck'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -48,6 +49,27 @@ describe('drawing a converted deck', () => {
       fadeUnmatchedElements: 1,
       advanceAfter: 5,
     })
+  })
+
+  it('numbers the slides from 1 in the order the presentation holds them now', () => {
+    const answer = convertLegacy(
+      { slides: ['a', 'b', 'c'].map((id) => ({ id, elements: [] })) },
+      MAX_STATE,
+    )
+    if (answer.kind !== 'converted') {
+      throw new Error(JSON.stringify(answer))
+    }
+
+    const doc = new Y.Doc()
+    Y.applyUpdate(doc, answer.state)
+    moveSlide(doc, 'a', 'c')
+
+    const numbered = drawnSlides(doc).map(({ clientId, idx }) => [clientId, idx])
+    expect(numbered).toEqual([
+      ['b', 1],
+      ['c', 2],
+      ['a', 3],
+    ])
   })
 
   it('puts a box where the old row had it, with its own settings', () => {

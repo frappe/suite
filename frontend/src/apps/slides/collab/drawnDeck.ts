@@ -35,9 +35,11 @@ function textOf(doc: Y.Doc, { id, type }: DeckItem) {
 }
 
 export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
-  return readSlides(doc).map(({ id, boxes, ...slide }) => ({
+  return readSlides(doc).map(({ id, boxes, ...slide }, at) => ({
     ...slide,
     clientId: id,
+    // the thumbnail's number, as a row's idx gave it
+    idx: at + 1,
     elements: boxes.map((box, index) => {
       const { frame, connectorStart: _start, connectorEnd: _end, route: _route, ...fields } = box
       return {
