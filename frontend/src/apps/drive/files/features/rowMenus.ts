@@ -1,4 +1,4 @@
-import type { DropdownItem, DropdownOption } from 'frappe-ui'
+import type { DropdownGroupOption, DropdownItem, DropdownOption } from 'frappe-ui'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -27,18 +27,17 @@ const NOT_FOR_SELECTION: readonly MenuKey[] = ['select', 'remove-from-recent']
  * Moving it to Trash runs `trash`, so the page can leave the folder.
  */
 export function folderMenu(rowMenu: readonly DropdownItem[], trash: () => unknown): DropdownItem[] {
-  const groups = withoutKeys(rowMenu, NOT_FOR_OPEN_FOLDER).map((item) =>
-    'group' in item
-      ? {
-          ...item,
-          options: item.options.map((option) =>
-            option.key === 'trash' ? { ...option, onClick: trash } : option,
-          ),
-        }
-      : item,
-  )
+  const groups = withoutKeys(rowMenu, NOT_FOR_OPEN_FOLDER).map((item): DropdownItem => {
+    if (!isGroup(item)) return item
+    const options = item.options.map((option): DropdownOption =>
+      option.key === 'trash' && !option.submenu && !option.switch
+        ? { ...option, onClick: trash }
+        : option,
+    )
+    return { ...item, options }
+  })
   const [first, ...rest] = groups
-  if (!first || !('group' in first)) return groups
+  if (!first || !isGroup(first)) return groups
   return [{ ...first, group: __('This folder'), hideLabel: false }, ...rest]
 }
 
@@ -50,9 +49,14 @@ export function selectionMenu(rowMenu: readonly DropdownItem[]): DropdownItem[] 
 /** The menu without the options keyed `keys`, and without the groups that leaves empty. */
 function withoutKeys(items: readonly DropdownItem[], keys: readonly MenuKey[]): DropdownItem[] {
   const kept = (option: DropdownOption) => !keys.includes(option.key)
-  return items.flatMap((item) => {
-    if (!('group' in item)) return kept(item) ? [item] : []
+  return items.flatMap((item): DropdownItem[] => {
+    if (!isGroup(item)) return kept(item) ? [item] : []
     const options = item.options.filter(kept)
     return options.length ? [{ ...item, options }] : []
   })
+}
+
+/** Options carry an index signature, so `'group' in item` alone does not narrow. */
+function isGroup(item: DropdownItem): item is DropdownGroupOption {
+  return 'group' in item && Array.isArray(item.options)
 }
