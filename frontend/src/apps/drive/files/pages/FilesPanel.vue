@@ -32,6 +32,12 @@
       />
     </SidebarSection>
     <AreaSidebarFooter>
+      <SidebarItem
+        :label="__('Tweaks')"
+        icon="lucide-flask-conical"
+        :active="isTweakPanelOpen || undefined"
+        @click="isTweakPanelOpen = !isTweakPanelOpen"
+      />
       <StorageMeter />
     </AreaSidebarFooter>
   </div>
@@ -44,8 +50,10 @@ import { useRoute } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import StorageMeter from '@/apps/drive/files/features/StorageMeter.vue'
+import { isTweakPanelOpen } from '@/apps/drive/files/features/tweaks/panel'
 import { locationOf, type FilesLocation } from '@/apps/drive/files/internal/locations'
 import { AreaSidebarFooter } from '@/platform/area-sidebar'
+import { translate as __ } from '@/platform/translation'
 
 const route = useRoute()
 const discovered = useQuery(api.drive.roots.list, {})

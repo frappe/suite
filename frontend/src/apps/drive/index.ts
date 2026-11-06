@@ -357,6 +357,11 @@ export const DriveUploadTracker = defineAsyncComponent(
   () => import('@/apps/drive/files/features/uploads/UploadTracker.vue'),
 )
 
+/** Evaluation scaffolding: the panel that switches each Drive UI change on or off. The app root mounts it on Drive routes. */
+export const DriveTweakPanel = defineAsyncComponent(
+  () => import('@/apps/drive/files/features/tweaks/TweakPanel.vue'),
+)
+
 /** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
 export const DriveUnlockScreen = defineAsyncComponent(
   () => import('@/apps/drive/files/features/UnlockScreen.vue'),

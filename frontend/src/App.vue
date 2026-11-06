@@ -7,6 +7,7 @@
       </template>
     </ShellLayout>
     <DriveUploadTracker v-if="areaWork.showUploadTracker.value" />
+    <DriveTweakPanel v-if="route.meta.area === filesArea.id" />
   </FeedbackProvider>
 </template>
 
@@ -14,7 +15,7 @@
 import { computed, defineAsyncComponent, provide } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { drivePaletteSearch, DriveUploadTracker } from '@/apps/drive'
+import { drivePaletteSearch, DriveTweakPanel, DriveUploadTracker, filesArea } from '@/apps/drive'
 import { findArea, useAppRegistry, useAreaWork } from '@/composition/appRegistry'
 import { documentTypes } from '@/composition/documentRegistry'
 import { settingsGroups } from '@/composition/settings'
