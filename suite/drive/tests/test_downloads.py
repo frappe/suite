@@ -10,6 +10,7 @@ from frappe.storage.gc import blob_reference_columns
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 
+from suite.drive._core import archive as archive_core
 from suite.drive._core import downloads
 from suite.drive._core.access import grant, revoke
 from suite.drive._core.activity import notifications
@@ -116,7 +117,7 @@ class TestDownloads(IntegrationTestCase):
         self.assertEqual(notification.download.status, "Failed")
 
     def test_a_zip_over_the_cap_fails_with_the_cap_named(self):
-        with patch.object(downloads, "MAX_DOWNLOAD_BYTES", 4):
+        with patch.object(archive_core, "MAX_DOWNLOAD_BYTES", 4):
             failed = self.prepare(self.folder)
         self.assertEqual(failed.status, "Failed")
         self.assertIn("larger than", failed.error)
@@ -294,6 +295,6 @@ class TestLargeEntries(UnitTestCase):
     def test_a_file_over_two_gib_fits_in_the_zip(self):
         size = 2**31 + 1
         with zipfile.ZipFile(Discard(), "w", zipfile.ZIP_STORED) as archive:
-            self.assertEqual(downloads._write(archive, "big.bin", Zeros(size), 0), size)
+            self.assertEqual(archive_core._write(archive, "big.bin", Zeros(size), 0), size)
         [entry] = archive.infolist()
         self.assertEqual(entry.file_size, size)
