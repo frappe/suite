@@ -57,7 +57,7 @@
 import { posToDOMRect, type Editor } from '@tiptap/core'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { TextInput } from 'frappe-ui'
-import { computed, nextTick, ref, toRef, useTemplateRef, watch } from 'vue'
+import { nextTick, ref, toRef, useTemplateRef, watch } from 'vue'
 
 import {
   applyLink,
@@ -70,21 +70,15 @@ import {
 import { translate as __ } from '@/platform/translation'
 
 import ToolbarButton from './ToolbarButton.vue'
-import { useEditorVersion } from './useEditorVersion'
+import { useLiveEditorState } from './useEditorVersion'
 
 type ShouldShow = InstanceType<typeof BubbleMenu>['$props']['shouldShow']
 
 const props = defineProps<{ editor: Editor }>()
 
-const version = useEditorVersion(toRef(props, 'editor'))
-const editing = computed(() => {
-  void version.value
-  return isEditingLink(props.editor.state)
-})
-const href = computed((): string => {
-  void version.value
-  return props.editor.getAttributes('link').href ?? ''
-})
+const { live } = useLiveEditorState(toRef(props, 'editor'))
+const editing = live(() => isEditingLink(props.editor.state))
+const href = live((): string => props.editor.getAttributes('link').href ?? '')
 
 const shouldShow: ShouldShow = ({ editor, state, view }) =>
   editor.isEditable &&

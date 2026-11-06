@@ -37,11 +37,11 @@
 
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { computed, toRef } from 'vue'
+import { toRef } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-import { useEditorVersion } from './useEditorVersion'
+import { useLiveEditorState } from './useEditorVersion'
 
 const props = defineProps<{ editor: Editor }>()
 const emit = defineEmits<{ pick: [] }>()
@@ -78,45 +78,42 @@ const palette = Object.fromEntries(
   ),
 )
 
-const version = useEditorVersion(toRef(props, 'editor'))
+const { live } = useLiveEditorState(toRef(props, 'editor'))
 
 function activeName(mark: string) {
   return PALETTE.find((name) => props.editor.isActive(mark, { color: name })) ?? null
 }
 
-const sections = computed(() => {
-  void version.value
-  return [
-    {
-      label: 'Text color',
-      remove: 'Remove text color',
-      letter: true,
-      active: activeName('textStyle'),
-      style: (name: string | null) => ({
-        color: name ? `var(--prose-color-${name})` : 'var(--ink-gray-9)',
-        borderColor: lineOf(name),
-      }),
-      set: (name: string | null) =>
-        name
-          ? props.editor.chain().focus().setColorByName(name).run()
-          : props.editor.chain().focus().unsetColor().run(),
-    },
-    {
-      label: 'Background color',
-      remove: 'Remove background color',
-      letter: false,
-      active: activeName('namedHighlight'),
-      style: (name: string | null) => ({
-        backgroundColor: name ? `var(--prose-highlight-${name})` : undefined,
-        borderColor: lineOf(name),
-      }),
-      set: (name: string | null) =>
-        name
-          ? props.editor.chain().focus().setMark('namedHighlight', { color: name }).run()
-          : props.editor.chain().focus().unsetHighlight().run(),
-    },
-  ]
-})
+const sections = live(() => [
+  {
+    label: 'Text color',
+    remove: 'Remove text color',
+    letter: true,
+    active: activeName('textStyle'),
+    style: (name: string | null) => ({
+      color: name ? `var(--prose-color-${name})` : 'var(--ink-gray-9)',
+      borderColor: lineOf(name),
+    }),
+    set: (name: string | null) =>
+      name
+        ? props.editor.chain().focus().setColorByName(name).run()
+        : props.editor.chain().focus().unsetColor().run(),
+  },
+  {
+    label: 'Background color',
+    remove: 'Remove background color',
+    letter: false,
+    active: activeName('namedHighlight'),
+    style: (name: string | null) => ({
+      backgroundColor: name ? `var(--prose-highlight-${name})` : undefined,
+      borderColor: lineOf(name),
+    }),
+    set: (name: string | null) =>
+      name
+        ? props.editor.chain().focus().setMark('namedHighlight', { color: name }).run()
+        : props.editor.chain().focus().unsetHighlight().run(),
+  },
+])
 
 function lineOf(name: string | null) {
   return name

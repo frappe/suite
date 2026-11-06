@@ -105,6 +105,7 @@ import { bubbleMenuShouldShow } from './core-editor/bubble-menu'
 import { driveFileContent } from './core-editor/driveFileContent'
 import LinkPopover from './core-editor/LinkPopover.vue'
 import TableControls from './core-editor/table/TableControls.vue'
+import { useLiveEditorState } from './core-editor/useEditorVersion'
 import WriterBubbleMenu from './core-editor/WriterBubbleMenu.vue'
 import WriterToolbar from './core-editor/WriterToolbar.vue'
 import DocumentOutline from './DocumentOutline.vue'
@@ -159,22 +160,11 @@ const anchors = ref<unknown[]>([])
 
 const scrollParent = computed(() => document.querySelector<HTMLElement>('#editor-scroll-container'))
 
-// The format painter keeps its flag in plain editor storage, which Vue does
-// not track. Read it again after each transaction.
-const isPainting = ref(false)
+// The format painter keeps its flag in plain editor storage, which Vue does not track
+const { live } = useLiveEditorState(editor)
+const isPainting = live(() => !!editor.value?.storage.styleClipboard?.painting)
 const editorClass = computed(() => [EDITOR_TEXT_CLASS, isPainting.value && 'cursor-crosshair'])
 const isReadOnly = computed(() => !props.editable)
-
-watch(
-  editor,
-  (instance, _previous, onCleanup) => {
-    if (!instance) return
-    const read = () => (isPainting.value = !!instance.storage.styleClipboard?.painting)
-    instance.on('transaction', read)
-    onCleanup(() => instance.off('transaction', read))
-  },
-  { immediate: true },
-)
 
 function onCommentActivated(id: string) {
   if (!id) return

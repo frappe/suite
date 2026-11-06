@@ -76,7 +76,7 @@
 import type { Editor } from '@tiptap/core'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { Dropdown, Popover, type DropdownOptions } from 'frappe-ui'
-import { computed, toRef, useTemplateRef } from 'vue'
+import { toRef, useTemplateRef } from 'vue'
 
 import { SELECTION_MENU } from '@/apps/writer/extensions/link-editing'
 import { translate as __ } from '@/platform/translation'
@@ -84,7 +84,7 @@ import { translate as __ } from '@/platform/translation'
 import ColorPanel from './ColorPanel.vue'
 import { activeBlockStyle, BLOCK_STYLES, MARKS, toggleHighlight } from './formatting'
 import ToolbarButton from './ToolbarButton.vue'
-import { useEditorVersion } from './useEditorVersion'
+import { useLiveEditorState } from './useEditorVersion'
 import { useReturnFocus } from './useReturnFocus'
 
 type ShouldShow = InstanceType<typeof BubbleMenu>['$props']['shouldShow']
@@ -96,7 +96,7 @@ const emit = defineEmits<{ comment: [] }>()
 const bar = useTemplateRef<HTMLElement>('bar')
 
 const returnFocus = useReturnFocus(() => props.editor)
-const version = useEditorVersion(toRef(props, 'editor'))
+const { version, live } = useLiveEditorState(toRef(props, 'editor'))
 
 const chain = () => props.editor.chain().focus()
 const isActive = (name: string) => {
@@ -104,22 +104,15 @@ const isActive = (name: string) => {
   return props.editor.isActive(name)
 }
 
-const activeBlock = computed(() => {
-  void version.value
-  return activeBlockStyle(props.editor)
-})
-const hasColor = computed(() => {
-  void version.value
-  return !!props.editor.getAttributes('textStyle').color
-})
+const activeBlock = live(() => activeBlockStyle(props.editor))
+const hasColor = live(() => !!props.editor.getAttributes('textStyle').color)
 
-const blockOptions = computed((): DropdownOptions => {
-  void version.value
-  return BLOCK_STYLES.map((style) => ({
+const blockOptions = live((): DropdownOptions =>
+  BLOCK_STYLES.map((style) => ({
     label: __(style.label),
     icon: style.icon,
     selected: style === activeBlock.value,
     onClick: () => style.apply(chain()).run(),
-  }))
-})
+  })),
+)
 </script>

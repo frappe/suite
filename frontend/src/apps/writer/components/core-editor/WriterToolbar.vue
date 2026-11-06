@@ -219,7 +219,7 @@ import { INSERTS } from './inserts'
 import { togglePainting, watchPaintTarget } from './paintStyles'
 import TableToolbarButton from './table/TableToolbarButton.vue'
 import ToolbarButton from './ToolbarButton.vue'
-import { useEditorVersion } from './useEditorVersion'
+import { useLiveEditorState } from './useEditorVersion'
 import { useReturnFocus } from './useReturnFocus'
 
 const props = defineProps<{
@@ -239,15 +239,7 @@ const ALIGNMENTS = [
   { value: 'justify', label: 'Justify', icon: 'lucide-align-justify' },
 ] as const
 
-const version = useEditorVersion(toRef(props, 'editor'))
-
-/** Reads editor state again after every transaction. */
-function live<T>(read: () => T) {
-  return computed(() => {
-    void version.value
-    return read()
-  })
-}
+const { version, live } = useLiveEditorState(toRef(props, 'editor'))
 
 const chain = () => props.editor.chain().focus()
 const isActive = (name: string) => {
