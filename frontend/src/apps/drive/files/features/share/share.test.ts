@@ -11,6 +11,7 @@ import {
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import { testClient } from '@/apps/drive/client/testClient'
 import type { Transport } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 import ShareBody from './ShareBody.vue'
 import { shareSections } from './shareModel'
@@ -251,7 +252,32 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     url: '/l/abcdefghijklmnopqrstuv',
   })
 
-  it('disables public access permanently even when the local grant had an expiry', async () => {
+  it('switches public access off by removing the local grant, never by a deny (§5.10)', async () => {
+    let local: DriveGrant | null = grant('$PUBLIC', 10)
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_delete_grant') {
+        local = null
+        return { count: 1 }
+      }
+      return { grants: local ? [local] : [], inherited: [] }
+    })
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+    expect(share.sections.value?.public?.state).toBe('local')
+
+    await share.setPublic(false)
+
+    expect(share.sections.value?.public).toEqual({ state: 'off' })
+    expect(server.calls.filter((call) => call.id === 'node_put_grant')).toEqual([])
+    expect(server.calls.find((call) => call.id === 'node_delete_grant')?.input).toMatchObject({
+      node: 'doc',
+      principal: '$PUBLIC',
+    })
+  })
+
+  it('with t4-public-off off, disables public access permanently even when the local grant had an expiry', async () => {
+    setTweaks(['t4-public-off'], false)
     vi.useFakeTimers()
     vi.setSystemTime(NOW)
     try {
@@ -297,6 +323,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       })
     } finally {
       vi.useRealTimers()
+      setTweaks(['t4-public-off'], true)
     }
   })
 
@@ -500,6 +527,25 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     ])
     expect(server.calls.filter((call) => call.id === 'node_grants')).toHaveLength(2)
     expect(share.changed.value).toBe(true)
+  })
+
+  it('creates a View link with no expiry or password when given no options', async () => {
+    const server = fakeServer((call) =>
+      call.id === 'node_get'
+        ? node('document')
+        : call.id === 'node_grants'
+          ? { grants: [], inherited: [] }
+          : grant('$LINK:new', 10, { url: '/l/new' }),
+    )
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+
+    expect(await share.newLink()).toBe('/l/new')
+    expect(server.calls.find((call) => call.id === 'node_put_grant')?.input).toEqual({
+      node: 'doc',
+      principal: '$LINK',
+      role: 10,
+    })
   })
 
   it('sends a link to an outsider and notifies only users', async () => {
@@ -712,7 +758,7 @@ describe('document session share (spec §8.6, §8.8)', () => {
 })
 
 describe('share dialog words (spec §7.3)', () => {
-  it('says a document is not published on the web, whether web access was never on or was switched off', async () => {
+  it('says a document is not public, and that a deny blocks public access here', async () => {
     const said = async (grants: DriveGrant[]) => {
       const server = fakeServer((call) => {
         if (call.id === 'node_get') return node('document')
@@ -730,9 +776,9 @@ describe('share dialog words (spec §7.3)', () => {
       return words
     }
 
-    expect(await said([])).toContain('Not published on the web')
-    const switchedOff = await said([grant('$PUBLIC', 0)])
-    expect(switchedOff).toContain('Not published on the web')
-    expect(switchedOff).not.toContain('Denied')
+    expect(await said([])).toContain('Not public')
+    const blocked = await said([grant('$PUBLIC', 0)])
+    expect(blocked).toContain('Public access blocked here')
+    expect(blocked).not.toContain('Denied')
   })
 })

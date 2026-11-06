@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h } from 'vue'
+import { createApp, defineComponent, h, type PropType } from 'vue'
 
 import type { PeopleGetOutput } from '@/platform/transport/generated'
+import { setTweaks } from '@/platform/tweaks'
 
 import type { PickedPerson } from './shareModel'
 import SharePicker from './SharePicker.vue'
@@ -11,6 +12,29 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Checkbox')),
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Combobox')),
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Select')),
+  // The menu's items show beside its trigger, so a test can choose one.
+  Dropdown: defineComponent({
+    props: {
+      options: {
+        type: Array as PropType<
+          Array<{ options: Array<{ label: string; onClick: () => unknown }> }>
+        >,
+        default: () => [],
+      },
+    },
+    setup:
+      (props, { slots }) =>
+      () =>
+        h('div', [
+          slots.default?.(),
+          h(
+            'menu',
+            props.options
+              .flatMap((group) => group.options)
+              .map((item) => h('button', { role: 'menuitem', onClick: item.onClick }, item.label)),
+          ),
+        ]),
+  }),
 }))
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -102,14 +126,14 @@ describe('Share picker', () => {
   it('closes suggestions after a pick so the person shows, keeping search focused for the next pick', async () => {
     const input = mountPicker()
 
-    expect(document.querySelector('[aria-label="Access for people you add"]')).toBeNull()
+    expect(document.querySelector('[aria-label^="Access for people you add"]')).toBeNull()
     clickRow(await type(input, 'ma'), 'Maya Fernandes')
     await vi.waitFor(() => {
       expect(staged()).toEqual(['Maya Fernandes'])
       expect(document.activeElement).toBe(input)
       expect(input.value).toBe('')
       expect(input.getAttribute('aria-expanded')).toBe('false')
-      expect(document.querySelector('[aria-label="Access for people you add"]')).not.toBeNull()
+      expect(document.querySelector('[aria-label^="Access for people you add"]')).not.toBeNull()
     })
 
     clickRow(await type(input, 'le'), 'Leah Thomas')
@@ -151,7 +175,41 @@ describe('Share picker', () => {
     document.querySelector<HTMLButtonElement>('[aria-label="Remove Leah Thomas"]')!.click()
     await vi.waitFor(() => expect(staged()).toEqual([]))
     expect(document.querySelector('input[type="checkbox"]')).toBeNull()
-    expect(document.querySelector('[aria-label="Access for people you add"]')).toBeNull()
+    expect(document.querySelector('[aria-label^="Access for people you add"]')).toBeNull()
+  })
+  it('shares with the role chosen from the access menu, which names the current role', async () => {
+    const share = vi.fn(async () => [])
+    const input = mountPicker(share)
+    clickRow(await type(input, 'ma'), 'Maya Fernandes')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes']))
+    const access = () =>
+      document.querySelector<HTMLButtonElement>('[aria-label^="Access for people you add"]')!
+    expect(access().getAttribute('aria-label')).toBe('Access for people you add: View')
+
+    const menu = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    expect(menu.map((item) => item.textContent)).toEqual(['View', 'Comment', 'Edit', 'Manage'])
+    menu.find((item) => item.textContent === 'Edit')!.click()
+    await vi.waitFor(() =>
+      expect(access().getAttribute('aria-label')).toBe('Access for people you add: Edit'),
+    )
+    ;[...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === 'Share')!
+      .click()
+
+    await vi.waitFor(() => expect(share).toHaveBeenCalledWith(expect.any(Array), 40, true))
+  })
+  it('with t5 off, offers the access as a select', async () => {
+    setTweaks(['t5'], false)
+    try {
+      const input = mountPicker()
+      clickRow(await type(input, 'ma'), 'Maya Fernandes')
+      await vi.waitFor(() =>
+        expect(document.querySelector('[aria-label="Access for people you add"]')).not.toBeNull(),
+      )
+      expect(document.querySelector('[role="menuitem"]')).toBeNull()
+    } finally {
+      setTweaks(['t5'], true)
+    }
   })
   it('keeps visible results during search and ignores a response after the query changes', async () => {
     let finishOld: ((page: PeopleGetOutput) => void) | undefined

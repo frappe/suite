@@ -15,6 +15,7 @@ import {
 } from '@/apps/drive/client/grants'
 import { canManage, DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
 import type { ImperativeClient } from '@/platform/server-state/types'
+import { isTweakOn } from '@/platform/tweaks'
 
 import {
   organizationLabel,
@@ -176,6 +177,13 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       ? grants.patch(row.grant.name, write)
       : grants.put(row.grant.principal, write)
 
+  /** Everyone at the org or Public on the web. `null` removes the local row. Keeps the expiry. */
+  const setGeneral = (principal: string, role: number | null) =>
+    change(principal, { principal, role }, async () => {
+      if (role === null) await grants.remove(principal)
+      else await grants.put(principal, { role, ...keep(localGrant(principal)) })
+    })
+
   return {
     node,
     sections,
@@ -227,15 +235,15 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     allowAgain: (row: LocalRow) =>
       write(row.grant.principal, () => grants.remove(row.grant.principal)),
 
-    /** Everyone at the org or Public on the web. `null` removes the local row. Keeps the expiry. */
-    setGeneral: (principal: string, role: number | null) =>
-      change(principal, { principal, role }, async () => {
-        if (role === null) await grants.remove(principal)
-        else await grants.put(principal, { role, ...keep(localGrant(principal)) })
-      }),
+    setGeneral,
 
-    /** Disabling is permanent; re-enabling inherited public access removes its deny (§5.10). */
+    /**
+     * With `t4-public-off`, the switch publishes here or removes the local row,
+     * and never writes a deny (§5.10). Without it, disabling is permanent, and
+     * re-enabling inherited public access removes its deny.
+     */
     setPublic(enabled: boolean) {
+      if (isTweakOn('t4-public-off')) return setGeneral(PUBLIC, enabled ? DRIVE_ROLES.read : null)
       const inherited = list.value?.inherited.find((entry) => entry.grant.principal === PUBLIC)
       const restore = enabled && localGrant(PUBLIC)?.role === 0 && (inherited?.grant.role ?? 0) > 0
       const role = restore ? null : enabled ? DRIVE_ROLES.read : 0

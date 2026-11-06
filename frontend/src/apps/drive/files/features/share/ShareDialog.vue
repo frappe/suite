@@ -55,7 +55,14 @@
       <ShareBody v-model:picked="picked" :state="state" autofocus-picker />
     </div>
     <template v-if="!picked" #actions>
-      <div class="flex justify- gap-2">
+      <div v-if="captionedFooter" class="flex items-center justify-between gap-2">
+        <div v-if="address" class="min-w-0">
+          <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
+          <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ __('For people with access') }}</p>
+        </div>
+        <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="open = false" />
+      </div>
+      <div v-else class="flex justify-between gap-2">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
         </div>
@@ -74,6 +81,7 @@ import { driveNodeRoute } from '@/apps/drive'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
@@ -86,6 +94,7 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ 'after-leave': []; changed: [value: boolean] }>()
 
 const isPhone = useMediaQuery('(max-width: 767px)')
+const captionedFooter = useTweak('t10')
 // While people wait to be added, Share is the one solid action.
 const picked = ref(0)
 const session = useSession()

@@ -17,8 +17,19 @@
         :aria-label="__('Add people, groups or emails')"
         @update:open="onOpen"
       />
+      <Dropdown v-if="staged.length && oneRoleMenu" :options="roleChoices" align="end">
+        <Button
+          variant="ghost"
+          icon-right="lucide-chevron-down"
+          class="shrink-0"
+          :disabled="disabled"
+          :aria-label="__('Access for people you add: {0}', [__(roleLabel(role))])"
+        >
+          {{ __(roleLabel(role)) }}
+        </Button>
+      </Dropdown>
       <Select
-        v-if="staged.length"
+        v-else-if="staged.length"
         v-model="role"
         size="sm"
         variant="outline"
@@ -82,15 +93,17 @@
 
 <script setup lang="ts">
 import { useDebounceFn } from '@vueuse/core'
-import { Button, Checkbox, Combobox, Select } from 'frappe-ui'
+import { Button, Checkbox, Combobox, Dropdown, Select } from 'frappe-ui'
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { api, client } from '@/api'
-import { groupPrincipal, rolesFor } from '@/apps/drive/client/grants'
+import { groupPrincipal, roleLabel, rolesFor } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 import type { PeopleGetOutput } from '@/platform/transport/generated'
+import { useTweak } from '@/platform/tweaks'
 
+import { roleMenu } from './shareMenu'
 import type { PickedPerson } from './shareModel'
 
 type Person = PeopleGetOutput['rows'][number]
@@ -116,6 +129,7 @@ const role = ref<number>(DRIVE_ROLES.read)
 // Notify is on by default for people added (§7.8).
 const notify = ref(true)
 const staged = ref<PickedPerson[]>([])
+const oneRoleMenu = useTweak('t5')
 let request = 0
 watch(
   () => staged.value.length,
@@ -132,6 +146,10 @@ const roleOptions = computed(() =>
     value: option.value,
   })),
 )
+
+const roleChoices = computed(() => [
+  roleMenu('user', props.nodeKind, role.value, (next) => (role.value = next)),
+])
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 

@@ -2,8 +2,9 @@ import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
 import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
+import { isTweakOn } from '@/platform/tweaks'
 
-import { organizationLabel } from './share/shareModel'
+import { bootedWorkspace, organizationLabel } from './share/shareModel'
 
 export type PickerMode = 'move' | 'copy' | 'restore'
 
@@ -122,9 +123,9 @@ function gainLabel(principal: string): string {
     case 'group':
       return __('People in {0}', [groupName(principal)])
     case 'general':
-      return __(organizationLabel())
+      return __(organizationLabel(bootedWorkspace()))
     case 'public':
-      return __('Everyone on the web')
+      return isTweakOn('t4-access-words') ? __('Public on the web') : __('Everyone on the web')
     case 'link':
       return __('Anyone with a share link')
     case 'user':

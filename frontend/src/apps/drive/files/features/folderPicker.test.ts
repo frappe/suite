@@ -417,6 +417,22 @@ describe('move access change', () => {
     expect(change?.ownRoleAfter).toBeNull()
   })
 
+  it('names org and public access as the share dialog does', () => {
+    const change = moveAccessChange([
+      {
+        gains: [
+          { principal: '$PUBLIC', role: 10 },
+          { principal: '$GENERAL', role: 20 },
+        ],
+        role_now: 50,
+        role_after: 50,
+      },
+    ])
+    expect(change?.gains.map(({ label }) => label)).toEqual([
+      'Everyone in your organization',
+      'Public on the web',
+    ])
+  })
   it("reports the mover's lowest role when it drops, even when nobody gains", () => {
     expect(
       moveAccessChange([

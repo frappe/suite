@@ -11,6 +11,7 @@ import {
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
 import type { DrivePerson } from '@/apps/drive/client/types'
+import { isTweakOn } from '@/platform/tweaks'
 
 /**
  * What the share dialog shows, derived from one grants read (unified spec §7.3).
@@ -115,6 +116,14 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
     links: isRoot ? null : local.filter((row) => row.kind === 'link'),
     inherited: [...parts.values()],
   }
+}
+
+/** Whether an ancestor publishes the node: its nearest `$PUBLIC` row above gives access. */
+export function isPublicFromAncestor(sections: ShareSections): boolean {
+  const nearest = sections.inherited
+    .flatMap((part) => part.rows)
+    .find((row) => row.kind === 'public')
+  return (nearest?.entry.grant.role ?? 0) > 0
 }
 
 function generalAccess(
@@ -225,7 +234,12 @@ export function remainingAccess(
  * row decides for its principal over an ancestor's, so a deny here hides an
  * inherited grant. Denied and expired rows give nothing and are left out.
  */
-export function sharedWith(list: GrantList, nodeKind: string, now = new Date()): string[] {
+export function sharedWith(
+  list: GrantList,
+  nodeKind: string,
+  now = new Date(),
+  workspace = bootedWorkspace(),
+): string[] {
   const sections = shareSections(list, nodeKind, now)
   const gives = (grant: DriveGrant) => grant.role > 0 && !isExpired(grant, now)
   const local = new Set(list.grants.map((grant) => grant.principal))
@@ -253,10 +267,18 @@ export function sharedWith(list: GrantList, nodeKind: string, now = new Date()):
   ].filter(gives).length
   return [
     ...new Set(named),
-    ...(open(sections.organization) ? [organizationLabel()] : []),
+    ...(open(sections.organization) ? [organizationLabel(workspace)] : []),
     ...(open(sections.public) ? [principalLabel(PUBLIC)] : []),
     ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
   ]
+}
+
+/**
+ * The workspace name the server page boots, with `t4-access-words`; empty
+ * without it. The Vite dev page boots none.
+ */
+export function bootedWorkspace(): string {
+  return isTweakOn('t4-access-words') ? (window.suite_workspace_name ?? '') : ''
 }
 
 /** Everyone at the org, named after the workspace when its name is known. */

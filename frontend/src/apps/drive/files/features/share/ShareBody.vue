@@ -34,8 +34,15 @@
       <section v-if="!picked" :aria-label="__('Who has access')">
         <div class="mb-1 flex h-7 items-center justify-between gap-3">
           <h3 class="text-base-medium">{{ __('Who has access') }}</h3>
+          <Button
+            v-if="sections.links && newLinkButton"
+            icon-left="lucide-link"
+            :label="__('New link')"
+            :loading="state.isPending(NEW_LINK_ROW)"
+            @click="createLink"
+          />
           <Dropdown
-            v-if="sections.links"
+            v-else-if="sections.links"
             :options="[
               {
                 label: __('Create share link'),
@@ -53,6 +60,11 @@
             />
           </Dropdown>
         </div>
+        <ErrorMessage
+          v-if="newLinkButton && state.errors.get(NEW_LINK_ROW)"
+          class="mb-2"
+          :message="state.errors.get(NEW_LINK_ROW)"
+        />
         <ul>
           <li
             v-for="row in rows"
@@ -89,16 +101,19 @@
                 </div>
               </div>
               <Switch
-                v-if="row.type === 'general' && row.kind === 'public'"
+                v-if="
+                  row.type === 'general' && row.kind === 'public' && showsPublicSwitch(row.access)
+                "
                 size="sm"
                 class="shrink-0"
                 :model-value="publicEnabled(row.access)"
-                :aria-label="__('Everyone on the web')"
+                :aria-label="publicName()"
                 :disabled="state.isPending(PUBLIC)"
                 @update:model-value="(enabled) => state.setPublic(enabled)"
               />
               <Select
                 v-else-if="
+                  !oneRoleMenu &&
                   row.type === 'general' &&
                   row.kind === 'general' &&
                   (row.access.state === 'local' || row.access.state === 'off')
@@ -117,7 +132,9 @@
               <Dropdown v-else-if="hasMenu(row)" :options="rowOptions(row)" align="end">
                 <Button
                   :variant="
-                    row.type !== 'owner' && (row.kind === 'link' || row.kind === 'general')
+                    !oneRoleMenu &&
+                    row.type !== 'owner' &&
+                    (row.kind === 'link' || row.kind === 'general')
                       ? 'subtle'
                       : 'ghost'
                   "
@@ -194,6 +211,7 @@ import {
   Skeleton,
   Switch,
   type DropdownItem,
+  type DropdownOption,
 } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
@@ -204,15 +222,23 @@ import {
   rolesFor,
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
-import type { DrivePerson } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DrivePerson } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 
-import { copyLink, formatDay, stampDay } from './shareFormat'
+import { copyLink, copyNewLink, formatDay, stampDay } from './shareFormat'
 import ShareLinkDialog from './ShareLinkDialog.vue'
-import type { GeneralAccess, InheritedRow, LocalRow, PickedPerson } from './shareModel'
+import { roleMenu } from './shareMenu'
+import {
+  isPublicFromAncestor,
+  type GeneralAccess,
+  type InheritedRow,
+  type LocalRow,
+  type PickedPerson,
+} from './shareModel'
 import SharePicker from './SharePicker.vue'
-import { PICKER, type ShareState } from './useShare'
+import { NEW_LINK_ROW, PICKER, type ShareState } from './useShare'
 
 /** One ordered list of principals, with inherited grants in place by reach. */
 const props = defineProps<{ state: ShareState; autofocusPicker?: boolean }>()
@@ -220,6 +246,11 @@ const picked = defineModel<number>('picked', { default: 0 })
 const node = computed(() => props.state.node.value)
 const sections = computed(() => props.state.sections.value)
 const creatingLink = ref(false)
+const accessWords = useTweak('t4-access-words')
+const publicRemoves = useTweak('t4-public-off')
+const oneRoleMenu = useTweak('t5')
+const newLinkButton = useTweak('t9')
+const publicFromAncestor = computed(() => !!sections.value && isPublicFromAncestor(sections.value))
 // Who put the node here (`node.owner`), when the Owner row does not already
 // name them: always in the Shared root, where no one is Owner.
 const addedBy = computed(() => {
@@ -305,8 +336,12 @@ function rowPrincipal(row: UnifiedRow): string {
 function rowName(row: UnifiedRow): string {
   if (row.type === 'owner') return row.person.full_name
   if (row.kind === 'link') return __('Anyone with this link')
-  if (row.kind === 'public') return __('Everyone on the web')
+  if (row.kind === 'public') return publicName()
   return props.state.label(rowPrincipal(row))
+}
+
+function publicName(): string {
+  return accessWords.value ? __('Public on the web') : __('Everyone on the web')
 }
 
 function personImage(row: UnifiedRow): string | undefined {
@@ -341,14 +376,13 @@ function rowDescription(row: UnifiedRow): string {
   if (row.type === 'general') {
     // Switching web access off writes a deny, so both read as not published.
     const isOff = row.access.state === 'off' || row.access.state === 'denied'
+    if (row.kind === 'public' && row.access.state === 'denied' && publicRemoves.value)
+      return __('Public access blocked here')
+    if (accessWords.value) return generalDescription(row)
     if (row.kind === 'public' && isOff) return __('Not published on the web')
     if (row.access.state === 'off') return __('Workspace access is turned off')
     if (row.access.state === 'denied') return __('Denied here')
-    if (row.access.state === 'expired') {
-      const expired = __('Expired {0}', [formatDay(row.access.row.grant.expires_on ?? '')])
-      if (!row.access.entry) return expired
-      return __('{0} · {1} inherited', [expired, __(roleLabel(row.access.entry.grant.role))])
-    }
+    if (row.access.state === 'expired') return expiredDescription(row.access)
     return row.kind === 'public'
       ? __('Anyone on the internet can view')
       : __('Everyone in this workspace')
@@ -369,6 +403,36 @@ function rowDescription(row: UnifiedRow): string {
   if (grant.has_password) details.push(__('Password set'))
   if (grant.sent_to) details.push(__('Sent to {0}', [grant.sent_to]))
   return details.join(' · ')
+}
+
+/** The subtitle of the org and public rows with `t4-access-words`: what the access lets people do. */
+function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): string {
+  const access = row.access
+  if (access.state === 'off') return row.kind === 'public' ? __('Not public') : __('Not shared')
+  if (access.state === 'denied') return row.kind === 'public' ? __('Not public') : __('Denied here')
+  if (access.state === 'expired') return expiredDescription(access)
+  if (row.kind === 'public') return __('Anyone on the internet can view')
+  const role = access.state === 'local' ? access.row.grant.role : access.entry.grant.role
+  if (role === DRIVE_ROLES.read) return __('Can view')
+  if (role === DRIVE_ROLES.comment) return __('Can comment')
+  if (role === DRIVE_ROLES.upload) return __('Can upload')
+  if (role === DRIVE_ROLES.edit) return __('Can edit')
+  return __(roleLabel(role))
+}
+
+function expiredDescription(access: Extract<GeneralAccess, { state: 'expired' }>): string {
+  const expired = __('Expired {0}', [formatDay(access.row.grant.expires_on ?? '')])
+  if (!access.entry) return expired
+  return __('{0} · {1} inherited', [expired, __(roleLabel(access.entry.grant.role))])
+}
+
+/**
+ * The public row's control is its switch. With `t4-public-off` the switch only
+ * publishes here or removes that grant, so an item public through a parent
+ * folder, or blocked here, gets a menu instead.
+ */
+function showsPublicSwitch(access: GeneralAccess): boolean {
+  return !publicRemoves.value || (!publicFromAncestor.value && access.state !== 'denied')
 }
 
 function publicEnabled(access: GeneralAccess): boolean {
@@ -432,6 +496,19 @@ function rowOptions(row: UnifiedRow): DropdownItem[] {
 
 function generalOptions(row: Extract<UnifiedRow, { type: 'general' }>): DropdownItem[] {
   const access = row.access
+  // A parent folder publishes the item: only an explicit deny unpublishes it here (§5.10).
+  if (
+    row.kind === 'public' &&
+    publicRemoves.value &&
+    (access.state === 'inherited' || access.state === 'local')
+  )
+    return [
+      {
+        label: __('Block public access here'),
+        icon: 'lucide-ban',
+        onClick: () => void props.state.deny(PUBLIC),
+      },
+    ]
   if (access.state === 'inherited')
     return [
       {
@@ -447,6 +524,19 @@ function generalOptions(row: Extract<UnifiedRow, { type: 'general' }>): Dropdown
       { label: __('Remove'), theme: 'red', onClick: () => void props.state.remove(access.row) },
     ]
   const current = access.state === 'local' ? access.row.grant.role : 0
+  if (oneRoleMenu.value) {
+    const roles = roleMenu(row.kind, node.value?.kind ?? 'document', current, (role) =>
+      props.state.setGeneral(row.principal, role),
+    )
+    if (!current) return [roles]
+    const remove: DropdownOption = {
+      label: __('Remove'),
+      icon: 'lucide-x',
+      theme: 'red',
+      onClick: () => void props.state.setGeneral(row.principal, null),
+    }
+    return [roles, { group: 'Remove', hideLabel: true, options: [remove] }]
+  }
   return [
     {
       label: __('No access'),
@@ -475,7 +565,19 @@ function localOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownItem
         onClick: () => void props.state.remove(grantRow),
       },
     ]
-  const options: DropdownItem[] = [
+  const expiry = expiryOptions(row)
+  const link = row.kind === 'link' ? linkOptions(row) : []
+  const removal = removalOptions(row)
+  if (oneRoleMenu.value)
+    return [
+      roleMenu(row.kind, node.value?.kind ?? 'document', grant.role, (role) =>
+        props.state.setRole(grantRow, role),
+      ),
+      { group: 'Expiry', hideLabel: true, options: expiry },
+      ...(link.length ? [{ group: 'Link', hideLabel: true, options: link }] : []),
+      { group: 'Remove', hideLabel: true, options: removal },
+    ]
+  return [
     {
       label: __('Role'),
       submenu: rolesFor(row.kind, node.value?.kind ?? 'document').map((role) => ({
@@ -485,6 +587,15 @@ function localOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownItem
           void (role.value !== grant.role && props.state.setRole(grantRow, role.value)),
       })),
     },
+    ...expiry,
+    ...link,
+    ...removal,
+  ]
+}
+
+function expiryOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownOption[] {
+  const grant = row.grantRow.grant
+  const options: DropdownOption[] = [
     {
       label: grant.expires_on ? __('Change expiry') : __('Set expiry'),
       icon: 'lucide-calendar',
@@ -495,54 +606,75 @@ function localOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownItem
     options.push({
       label: __('Remove expiry'),
       icon: 'lucide-calendar-x',
-      onClick: () => void props.state.setExpiry(grantRow, null),
+      onClick: () => void props.state.setExpiry(row.grantRow, null),
     })
-  if (row.kind === 'link') {
-    const url = grant.url
-    if (url)
-      options.push({
-        label: __('Copy link'),
-        icon: 'lucide-copy',
-        onClick: () => void copyLink(url),
-      })
+  return options
+}
+
+/** A link row's own items, before Delete link. */
+function linkOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownOption[] {
+  const grantRow = row.grantRow
+  const grant = grantRow.grant
+  const options: DropdownOption[] = []
+  const url = grant.url
+  if (url)
     options.push({
-      label: grant.has_password ? __('Change password') : __('Set password'),
-      icon: 'lucide-lock',
-      onClick: () => edit(row, 'password'),
+      label: __('Copy link'),
+      icon: 'lucide-copy',
+      onClick: () => void copyLink(url),
     })
-    if (grant.has_password)
-      options.push({
-        label: __('Remove password'),
-        icon: 'lucide-lock-open',
-        onClick: () => void props.state.setPassword(grantRow, null),
-      })
+  options.push({
+    label: grant.has_password ? __('Change password') : __('Set password'),
+    icon: 'lucide-lock',
+    onClick: () => edit(row, 'password'),
+  })
+  if (grant.has_password)
     options.push({
-      label: __('Get new URL'),
-      icon: 'lucide-refresh-cw',
-      onClick: () => void rotate(grantRow),
+      label: __('Remove password'),
+      icon: 'lucide-lock-open',
+      onClick: () => void props.state.setPassword(grantRow, null),
     })
-    options.push({
-      label: __('Delete link'),
-      icon: 'lucide-trash-2',
-      theme: 'red',
-      onClick: () => void props.state.remove(grantRow),
-    })
-  } else {
-    options.push({
+  options.push({
+    label: __('Get new URL'),
+    icon: 'lucide-refresh-cw',
+    onClick: () => void rotate(grantRow),
+  })
+  return options
+}
+
+function removalOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownOption[] {
+  const grantRow = row.grantRow
+  if (row.kind === 'link')
+    return [
+      {
+        label: __('Delete link'),
+        icon: 'lucide-trash-2',
+        theme: 'red',
+        onClick: () => void props.state.remove(grantRow),
+      },
+    ]
+  const options: DropdownOption[] = [
+    {
       label: __('Remove'),
       icon: 'lucide-x',
       theme: 'red',
       onClick: () => void props.state.remove(grantRow),
+    },
+  ]
+  if (node.value?.kind === 'folder' || node.value?.kind === 'root')
+    options.push({
+      label: __('Remove here and inside'),
+      icon: 'lucide-folder-x',
+      theme: 'red',
+      onClick: () => void props.state.remove(grantRow, true),
     })
-    if (node.value?.kind === 'folder' || node.value?.kind === 'root')
-      options.push({
-        label: __('Remove here and inside'),
-        icon: 'lucide-folder-x',
-        theme: 'red',
-        onClick: () => void props.state.remove(grantRow, true),
-      })
-  }
   return options
+}
+
+/** "New link": a View link with no expiry and no password, copied at once (§7.7). */
+function createLink() {
+  if (props.state.isPending(NEW_LINK_ROW)) return
+  void copyNewLink(props.state.newLink())
 }
 
 function edit(row: UnifiedRow, mode: 'expiry' | 'password') {
