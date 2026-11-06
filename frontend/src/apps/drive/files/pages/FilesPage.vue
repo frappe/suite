@@ -271,7 +271,7 @@ import {
   type InfiniteQueryState,
 } from '@/api'
 import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
-import { openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
+import { createDocument, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
@@ -1672,8 +1672,14 @@ async function setStar(row: DriveNode, starred: boolean) {
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
 }
+const documentOpensAtOnce = useTweak('t8')
+let creatingDocument = false
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return
+  if (kind === 'document' && contentDoctype && documentOpensAtOnce.value) {
+    void createAndOpen({ parent: parentId.value, kind, contentDoctype })
+    return
+  }
   const definition = documentTypes.find((type) => type.contentDoctype === contentDoctype)
   createRequest.value = {
     parent: parentId.value,
@@ -1684,6 +1690,21 @@ function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   createOpen.value = true
   // Loaded while the name is typed, so the new document takes typing as soon as it opens.
   void definition?.loadOpeningEditor?.()
+}
+/** Creates a document with its default title and opens it; a second click meanwhile does nothing. */
+async function createAndOpen(request: CreateRequest & { contentDoctype: string }) {
+  if (creatingDocument) return
+  creatingDocument = true
+  try {
+    // createDocument reports its own errors.
+    const created = await createDocument({
+      parent_node: request.parent,
+      content_doctype: request.contentDoctype,
+    }).catch(() => null)
+    if (created) await onCreated(created, request)
+  } finally {
+    creatingDocument = false
+  }
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {

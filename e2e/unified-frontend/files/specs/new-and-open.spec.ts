@@ -49,16 +49,14 @@ test("New Folder creates a folder in the open destination", async ({ page }) => 
 	expect((await children(api, home.name)).rows.map((row) => row.title)).toContain("made-in-the-browser");
 });
 
+// A new document takes the default title and opens at once, with no name dialog.
 test("New Writer document creates the node and lands on /d/", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Document");
 
-	const dialog = page.getByRole("dialog");
-	await dialog.getByRole("textbox").fill("browser-writer");
-	await dialog.getByRole("button", { name: "Create" }).click();
-
-	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/browser-writer/);
-	const created = (await children(api, home.name)).rows.find((row) => row.title === "browser-writer");
+	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/untitled-document/);
+	await expect(page.getByRole("dialog", { name: "New document" })).toHaveCount(0);
+	const created = (await children(api, home.name)).rows.find((row) => row.title === "Untitled document");
 	expect(created?.content_doctype).toBe("Writer Document");
 	expect(created?.content_docname).toBeTruthy();
 });
@@ -69,12 +67,8 @@ test("New Spreadsheet creates a Sheet and lands on /d/", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Spreadsheet");
 
-	const dialog = page.getByRole("dialog");
-	await dialog.getByRole("textbox").fill("browser-sheet");
-	await dialog.getByRole("button", { name: "Create" }).click();
-
-	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/browser-sheet/);
-	const created = (await children(api, home.name)).rows.find((row) => row.title === "browser-sheet");
+	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/untitled-spreadsheet/);
+	const created = (await children(api, home.name)).rows.find((row) => row.title === "Untitled spreadsheet");
 	expect(created?.content_doctype).toBe("Sheet");
 });
 
@@ -82,12 +76,8 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Presentation");
 
-	const dialog = page.getByRole("dialog");
-	await dialog.getByRole("textbox").fill("browser-deck");
-	await dialog.getByRole("button", { name: "Create" }).click();
-
-	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/browser-deck/);
-	const created = (await children(api, home.name)).rows.find((row) => row.title === "browser-deck");
+	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/untitled-presentation/);
+	const created = (await children(api, home.name)).rows.find((row) => row.title === "Untitled presentation");
 	expect(created?.content_doctype).toBe("Presentation");
 });
 

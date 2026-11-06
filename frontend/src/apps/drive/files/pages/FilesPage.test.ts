@@ -3,6 +3,7 @@ import { createApp, defineComponent, h, nextTick, type PropType } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { TransportError, type Operation } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
@@ -45,6 +46,18 @@ vi.mock('@/platform/transport', async (original) => {
               access: { role: server.folderRole },
               breadcrumbs: [{ name: 'root', title: 'My files' }],
             }
+          case 'node_create.create_document': {
+            const created = {
+              ...(server.nodes.get('a') as DriveNode),
+              name: `doc-${server.nodes.size}`,
+              title: String(input.title),
+              kind: 'document' as const,
+              parent_node: String(input.parent_node),
+              content_doctype: String(input.content_doctype),
+            }
+            server.nodes.set(created.name, created)
+            return created
+          }
           case 'node_patch.trash': {
             const trashed = node(input.node)
             if (trashed) trashed.state = 'Trashed'
@@ -257,6 +270,14 @@ function node(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
   }
 }
 
+const spreadsheets: DocumentTypeDefinition = {
+  key: 'sheets',
+  contentDoctype: 'Sheet',
+  newLabel: () => 'Spreadsheet',
+  icon: quiet(),
+  loadSurface: async () => quiet(),
+}
+
 let unmount: (() => void) | null = null
 beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({
@@ -291,7 +312,7 @@ afterEach(() => {
   dialogs.share.mockClear()
   keys.shortcuts = []
   vi.unstubAllGlobals()
-  setTweaks(['t3-folder-menu', 't3-selection-menu'], true)
+  setTweaks(['t3-folder-menu', 't3-selection-menu', 't8'], true)
   document.body.innerHTML = ''
 })
 
@@ -315,6 +336,7 @@ async function mount(path: string): Promise<{ root: HTMLElement; router: Router 
   document.body.append(root)
   const app = createApp({ render: () => h(RouterView) })
   app.use(router)
+  app.provide(DOCUMENT_TYPES_KEY, [spreadsheets])
   app.mount(root)
   unmount = () => app.unmount()
   return { root, router }
@@ -378,6 +400,45 @@ describe("The open folder's menu", () => {
       'Rename folder',
       'Keyboard shortcuts',
     ])
+  })
+})
+
+describe('New', () => {
+  const newSpreadsheet = (root: HTMLElement) =>
+    [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === 'Spreadsheet',
+    )
+
+  it('creates one spreadsheet with the default title and opens it, however often it is clicked', async () => {
+    server.folderRole = 40
+    const { root, router } = await mount('/drive/f/folder-9/drafts')
+    await vi.waitFor(() => expect(newSpreadsheet(root)).toBeDefined())
+
+    newSpreadsheet(root)?.click()
+    newSpreadsheet(root)?.click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toMatch(/^\/d\//))
+    const created = server.calls.filter((call) => call.id === 'node_create.create_document')
+    expect(created).toHaveLength(1)
+    expect(created[0]?.input).toMatchObject({
+      parent_node: 'folder-9',
+      content_doctype: 'Sheet',
+      title: 'Untitled spreadsheet',
+    })
+    expect(router.currentRoute.value.query.new).toBe('1')
+  })
+
+  it('asks for a name first with the tweak off', async () => {
+    setTweaks(['t8'], false)
+    server.folderRole = 40
+    const { root, router } = await mount('/drive/f/folder-10/drafts')
+    await vi.waitFor(() => expect(newSpreadsheet(root)).toBeDefined())
+
+    newSpreadsheet(root)?.click()
+    await nextTick()
+
+    expect(server.calls.some((call) => call.id === 'node_create.create_document')).toBe(false)
+    expect(router.currentRoute.value.path).toBe('/drive/f/folder-10/drafts')
   })
 })
 
