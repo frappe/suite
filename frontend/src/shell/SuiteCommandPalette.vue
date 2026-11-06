@@ -717,7 +717,7 @@ onScopeDispose(unregisterSuiteCommands)
 
 useKeyboardShortcut({
   combo: 'Mod+Shift+K',
-  description: 'Cycle Theme',
+  description: 'Cycle theme',
   group: 'Suite',
   enabled: canChangeTheme,
   allowInInput: true,

@@ -16,6 +16,7 @@ let cleanup: (() => void) | undefined
 afterEach(() => {
   cleanup?.()
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
 
 /** Mounts a listing whose commands are `offered`, and returns the views it opened. */
@@ -93,16 +94,75 @@ describe('listing shortcuts', () => {
     expect(clearSelection.onClick).not.toHaveBeenCalled()
   })
 
-  it('opens a view with its access key once signed in', () => {
+  it('opens a view with G then a letter once signed in', () => {
     const opened = listing({})
-    press('r', { altKey: true })
-    press('f', { altKey: true })
+    press('g')
+    press('r')
+    press('g')
+    press('f')
     expect(opened).toEqual(['recent', 'starred'])
 
     cleanup?.()
     const guest = listing({}, false)
-    press('r', { altKey: true })
+    press('g')
+    press('r')
     expect(guest).toEqual([])
+  })
+
+  it('shares, uploads and makes a folder from a plain letter', () => {
+    const share = { onClick: vi.fn() }
+    const upload = { onClick: vi.fn() }
+    const newFolder = { onClick: vi.fn() }
+    listing({ share, upload, newFolder })
+
+    press('s')
+    press('u')
+    press('n')
+
+    expect(share.onClick).toHaveBeenCalledOnce()
+    expect(upload.onClick).toHaveBeenCalledOnce()
+    expect(newFolder.onClick).toHaveBeenCalledOnce()
+  })
+
+  it('leaves letters typed in a field, an editor or a dialog, or with a modifier, alone', () => {
+    const share = { onClick: vi.fn() }
+    const opened = listing({ share })
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    document.body.append(editor)
+
+    press('s', {}, document.querySelector('input')!)
+    press('s', {}, editor)
+    press('s', {}, document.querySelector('[role="dialog"] button')!)
+    press('s', { ctrlKey: true })
+    press('s', { metaKey: true })
+    press('S', { shiftKey: true })
+    press('g', {}, document.querySelector('input')!)
+    press('h', {}, document.querySelector('input')!)
+    press('g', { altKey: true })
+    press('h')
+
+    expect(share.onClick).not.toHaveBeenCalled()
+    expect(opened).toEqual([])
+  })
+
+  it('forgets a pending G after any other key or a pause', () => {
+    vi.useFakeTimers()
+    const share = { onClick: vi.fn() }
+    const opened = listing({ share })
+
+    press('g')
+    press('s')
+    press('h')
+    press('g')
+    press('Escape')
+    press('r')
+    press('g')
+    vi.advanceTimersByTime(1600)
+    press('f')
+
+    expect(opened).toEqual([])
+    expect(share.onClick).not.toHaveBeenCalled()
   })
 })
 

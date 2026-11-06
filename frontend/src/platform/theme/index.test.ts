@@ -3,7 +3,17 @@ import { ref } from 'vue'
 
 import type { Session } from '@/platform/session'
 
-import { createTheme } from './index'
+import { createTheme, cycleThemeAndAnnounce } from './index'
+
+const shownToasts: Array<{ kind: string; message: string; options?: { id?: string } }> = []
+vi.mock('@/platform/feedback', () => ({
+  toast: {
+    success: (message: string, options?: { id?: string }) =>
+      shownToasts.push({ kind: 'success', message, options }),
+    error: (message: string, options?: { id?: string }) =>
+      shownToasts.push({ kind: 'error', message, options }),
+  },
+}))
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -29,6 +39,18 @@ describe('theme', () => {
     const theme = createTheme()
     await theme.cycle()
     expect(theme.savedMode.value).toBe('dark')
+  })
+
+  it('announces repeated theme changes in one toast', async () => {
+    document.cookie = 'user_id=Guest; path=/'
+    document.documentElement.setAttribute('data-theme-mode', 'light')
+    shownToasts.length = 0
+    await cycleThemeAndAnnounce()
+    await cycleThemeAndAnnounce()
+    expect(shownToasts.map((shown) => shown.kind)).toEqual(['success', 'success'])
+    expect(shownToasts[0]?.message).not.toBe(shownToasts[1]?.message)
+    expect(shownToasts[0]?.options?.id).toBeTruthy()
+    expect(shownToasts[1]?.options?.id).toBe(shownToasts[0]?.options?.id)
   })
 
   it('reads and writes the Frappe User desk_theme preference', async () => {

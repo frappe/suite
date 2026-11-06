@@ -7,6 +7,7 @@ import {
 } from 'frappe-ui'
 import { getCurrentInstance } from 'vue'
 
+import { useKeySequences, type KeySequenceShortcut, type Letter } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
 /** What a shortcut runs: the menu option that offers the same action, so the menu's rules apply. */
@@ -32,8 +33,6 @@ export interface ListingViews {
   open: (view: ListingView) => unknown
 }
 
-type Letter = 'E' | 'F' | 'H' | 'I' | 'N' | 'R' | 'S' | 'U'
-
 /**
  * The action option labelled `label`, inside the group named `group` when
  * given. Menu labels are unique within a group.
@@ -52,9 +51,14 @@ export function menuCommand(
   )
 }
 
+type Choose = (offered: ListingCommands) => ListingCommand | undefined
+
 /**
  * Registers the listing's keyboard shortcuts while the calling component is
- * mounted. The shell's `?` dialog lists them. Call it in a component's setup.
+ * mounted. The shell's `?` dialog lists them. Share, Upload and New folder are
+ * plain letters and a view is `G` then a letter, Gmail style, so no key clashes
+ * with the browser's or the system's own; none of them fire in a text field.
+ * Call it in a component's setup.
  */
 export function useListingShortcuts(commands: () => ListingCommands, views: ListingViews): void {
   const instance = getCurrentInstance()
@@ -68,25 +72,32 @@ export function useListingShortcuts(commands: () => ListingCommands, views: List
       else console.error(error)
     }
   }
+  const handle = (pick: Choose) => (event: KeyboardEvent) => {
+    const chosen = pick(commands())
+    if (!chosen || chosen.disabled) return
+    event.preventDefault()
+    void run(chosen, event)
+  }
   const command = (
     combo: KeyboardShortcutCombo,
     description: string,
-    pick: (offered: ListingCommands) => ListingCommand | undefined,
+    pick: Choose,
   ): KeyboardShortcutConfig => ({
     combo,
     description,
     group: __('Files'),
     // A key the listing does not use now keeps its usual meaning, such as Escape closing a menu.
     preventDefault: false,
-    handler: (event) => {
-      const chosen = pick(commands())
-      if (!chosen || chosen.disabled) return
-      event.preventDefault()
-      void run(chosen, event)
-    },
+    handler: handle(pick),
   })
-  const view = (letter: Letter, description: string, target: ListingView) => ({
-    combo: accessKey(letter),
+  const letter = (key: Letter, description: string, pick: Choose): KeySequenceShortcut => ({
+    keys: [key],
+    description,
+    group: __('Files'),
+    handler: handle(pick),
+  })
+  const view = (key: Letter, description: string, target: ListingView): KeySequenceShortcut => ({
+    keys: ['G', key],
     description,
     group: __('Go to'),
     enabled: views.enabled,
@@ -98,24 +109,15 @@ export function useListingShortcuts(commands: () => ListingCommands, views: List
     command('Ctrl+M', __('Move selected items'), (offered) => offered.move),
     command('Mod+Backspace', __('Delete selected items'), (offered) => offered.remove),
     command('Mod+Enter', __('Open selected item in a new tab'), (offered) => offered.openInNewTab),
-    command(accessKey('S'), __('Share selected item'), (offered) => offered.share),
-    command(accessKey('U'), __('Upload files'), (offered) => offered.upload),
-    command(accessKey('N'), __('New folder'), (offered) => offered.newFolder),
+  ])
+  useKeySequences([
+    letter('S', __('Share selected item'), (offered) => offered.share),
+    letter('U', __('Upload files'), (offered) => offered.upload),
+    letter('N', __('New folder'), (offered) => offered.newFolder),
     view('H', __('My files'), 'personal'),
     view('E', __('Organization files'), 'organization'),
     view('I', __('Shared with me'), 'shared'),
     view('R', __('Recent'), 'recent'),
     view('F', __('Starred'), 'starred'),
   ])
-}
-
-/**
- * A letter with the modifier that leaves the browser's own shortcuts alone:
- * Control on a Mac, Alt and Shift in Firefox, where Alt opens its menus, and
- * Alt elsewhere.
- */
-function accessKey(letter: Letter): KeyboardShortcutCombo {
-  if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) return `Ctrl+${letter}`
-  if (navigator.userAgent.includes('Firefox')) return `Alt+Shift+${letter}`
-  return `Alt+${letter}`
 }

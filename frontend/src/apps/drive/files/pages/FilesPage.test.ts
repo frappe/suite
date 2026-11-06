@@ -580,6 +580,12 @@ describe('Keyboard shortcuts', () => {
     const shortcut = keys.shortcuts.find((candidate) => candidate.description === description)
     shortcut?.handler(new KeyboardEvent('keydown', { cancelable: true }))
   }
+  /** Letter keys go through Suite's own listener, not frappe-ui's registry. */
+  function type(...letters: string[]) {
+    for (const key of letters) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true }))
+    }
+  }
 
   it('run the item the menus show for them', async () => {
     // A folder of its own, so its rows are not ones an earlier test cached.
@@ -594,7 +600,7 @@ describe('Keyboard shortcuts', () => {
     menuItem('x', 'Select')?.onClick()
     await nextTick()
 
-    press('Share selected item')
+    type('s')
     expect(dialogs.share).toHaveBeenCalledWith('x')
 
     press('Select all')
@@ -613,7 +619,7 @@ describe('Keyboard shortcuts', () => {
   it('open a view by its route', async () => {
     const { router } = await mount('/drive/f/folder-7/drafts')
 
-    press('Recent')
+    type('g', 'r')
 
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/recent'))
   })
