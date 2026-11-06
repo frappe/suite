@@ -106,6 +106,20 @@ class TestConversion(ConversionCase):
 
         self.assertEqual(self.convert(node), "converted")
 
+    def test_each_common_list_converts_as_the_editor_saves_it(self):
+        # The editor puts each item's text in a paragraph, which the old view's marker is drawn on
+        lists = {
+            "bullets": "<ul><li><p>first point</p></li><li><p>second point</p></li></ul>",
+            "numbers": "<ol><li><p>first point</p></li><li><p>second point</p></li></ol>",
+            "nested": "<ul><li><p>first</p><ul><li><p>inner</p></li></ul></li><li><p>second</p></li></ul>",
+            "marked item": "<ul><li><p><strong>first</strong> point</p></li><li><p>second <em>point</em></p></li></ul>",
+        }
+        for name, html in lists.items():
+            with self.subTest(name):
+                node = self.old_deck([text_box("box", content=html)])
+
+                self.assertEqual(self.convert(node), "converted")
+
     def test_a_converted_deck_keeps_its_comments(self):
         node = self.old_deck([text_box("one")])
         reader = principals_for(OWNER)
