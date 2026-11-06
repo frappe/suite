@@ -81,34 +81,34 @@
           <ListHeaderCell
             v-if="shows('access')"
             class="text-sm-medium text-ink-gray-5"
-            :class="wideOnly('access')"
+            :class="columnClass('access')"
             >{{ __('Access') }}</ListHeaderCell
           >
           <component
             :is="headerCell"
             v-if="shows('kind')"
-            :class="wideOnly('kind')"
+            :class="columnClass('kind')"
             v-bind="headerProps('kind')"
             >Type</component
           >
           <component
             :is="headerCell"
             v-if="shows('owner')"
-            :class="wideOnly('owner')"
+            :class="columnClass('owner')"
             v-bind="headerProps('owner')"
             >Owner</component
           >
           <component
             :is="headerCell"
             v-if="shows('size')"
-            :class="wideOnly('size')"
+            :class="columnClass('size')"
             v-bind="headerProps('size', 'end')"
             >Size</component
           >
           <component
             :is="headerCell"
             v-if="shows('modified')"
-            :class="wideOnly('modified')"
+            :class="columnClass('modified')"
             v-bind="headerProps('modified', 'end')"
             >{{ byOpened ? 'Opened' : 'Modified' }}</component
           >
@@ -189,7 +189,7 @@
                 breadcrumbText(row)
               }}</span>
             </ListCell>
-            <ListCell v-if="shows('access')" :class="wideOnly('access')">
+            <ListCell v-if="shows('access')" :class="columnClass('access')">
               <!-- A click opens the share dialog where the user may share; elsewhere it is the row's. -->
               <span
                 v-if="row.audience"
@@ -204,12 +204,12 @@
                 <span class="truncate">{{ audienceLabel(row.audience) }}</span>
               </span>
             </ListCell>
-            <ListCell v-if="shows('kind')" :class="wideOnly('kind')"
+            <ListCell v-if="shows('kind')" :class="columnClass('kind')"
               ><span class="truncate text-base text-ink-gray-7">{{
                 typeLabel(row)
               }}</span></ListCell
             >
-            <ListCell v-if="shows('owner')" :class="wideOnly('owner')">
+            <ListCell v-if="shows('owner')" :class="columnClass('owner')">
               <Avatar
                 size="xs"
                 :image="row.owner.user_image ?? undefined"
@@ -218,12 +218,12 @@
               />
               <span class="truncate text-base text-ink-gray-7">{{ row.owner.full_name }}</span>
             </ListCell>
-            <ListCell v-if="shows('size')" class="justify-end" :class="wideOnly('size')"
+            <ListCell v-if="shows('size')" class="justify-end" :class="columnClass('size')"
               ><span class="truncate text-base text-ink-gray-5">{{
                 row.size ? formatBytes(row.size) : ''
               }}</span></ListCell
             >
-            <ListCell v-if="shows('modified')" class="justify-end" :class="wideOnly('modified')"
+            <ListCell v-if="shows('modified')" class="justify-end" :class="columnClass('modified')"
               ><span class="truncate text-base text-ink-gray-5">{{ rowDate(row) }}</span></ListCell
             >
             <ListCell class="justify-end">
@@ -380,12 +380,21 @@
       }"
       aria-hidden="true"
     />
+    <!-- The Access labels, unseen, so the column sizes to the widest even while it is hidden. -->
+    <div
+      v-if="shows('access')"
+      ref="accessRuler"
+      class="pointer-events-none invisible absolute left-0 top-0 text-base"
+      aria-hidden="true"
+    >
+      <span v-for="label in accessLabels" :key="label" class="block w-max">{{ label }}</span>
+    </div>
     <DragMoveLayer v-if="drag" :drag="drag" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useResizeObserver } from '@vueuse/core'
 import {
   Alert,
   Avatar,
@@ -411,6 +420,7 @@ import {
   onMounted,
   ref,
   shallowRef,
+  useTemplateRef,
   watch,
   type AnchorHTMLAttributes,
 } from 'vue'
@@ -428,6 +438,14 @@ import { useTweak } from '@/platform/tweaks'
 
 import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
+import {
+  ACCESS_MAX_WIDTH,
+  accessWidth,
+  COLUMN_WIDTHS,
+  fitColumns,
+  LIST_COLUMNS,
+  WIDE_ONLY,
+} from './listColumns'
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
@@ -487,6 +505,7 @@ let longPressFired = false
 /** The last press came from touch or a pen, not a mouse. */
 let touchPress = false
 const session = useSession()
+const workspaceName = useWorkspaceName()
 const locationTitle = useLocationTitle()
 const typeLabel = useNodeTypeLabel()
 const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
@@ -632,31 +651,50 @@ watch(
 )
 onBeforeUnmount(() => clearTimeout(emptyFadeTimer))
 const rows = computed(() => props.query.rows)
-const COLUMN_TRACKS = new Map<string, string>(
-  Object.entries({
-    access: '11rem',
-    owner: '12rem',
-    modified: '8rem',
-    kind: '8rem',
-    size: '6rem',
-  }),
-)
-/** Columns a phone has no room for. Name takes their width. */
-const WIDE_ONLY = new Set(['access', 'owner', 'modified', 'kind'])
-// The columns before the date, in the rows' order
-const SIDE_COLUMNS = ['access', 'kind', 'owner', 'size']
 const columns = computed(() => props.presentation.columns)
+/** The chosen columns in the rows' order, whatever order they were chosen in. */
+const shownColumns = computed(() => LIST_COLUMNS.filter(shows))
+const defaultColumns = useTweak('t35-default-columns')
+const accessColumn = useTweak('t36-access-column')
+/** The listing's width, once the browser has measured it. */
+const listingWidth = shallowRef<number>()
+useResizeObserver(listing, ([entry]) => (listingWidth.value = entry?.contentRect.width))
+/** The Access column's width, from its widest label. */
+const accessTrack = shallowRef(ACCESS_MAX_WIDTH)
+function trackWidth(column: string) {
+  return column === 'access' ? accessTrack.value : (COLUMN_WIDTHS[column] ?? 128)
+}
+/**
+ * The columns the desktop layout shows. With t35 or t36, a chosen column the
+ * list has no room for is hidden until there is room again; it stays chosen.
+ */
+const desktopColumns = computed(() => {
+  const width = listingWidth.value
+  if (width === undefined || !(defaultColumns.value || accessColumn.value))
+    return shownColumns.value
+  return fitColumns(shownColumns.value, width, trackWidth)
+})
+/** The rows' Access labels, once each. */
+const accessLabels = computed(() => [
+  ...new Set(rows.value.flatMap((row) => (row.audience ? [audienceLabel(row.audience)] : []))),
+])
+const accessRuler = useTemplateRef('accessRuler')
+watch([accessLabels, accessRuler], measureAccess, { flush: 'post', immediate: true })
+/** Sizes Access to its widest label. A label with no width has had no layout, so it says nothing. */
+function measureAccess() {
+  const labels = [...(accessRuler.value?.children ?? [])]
+  const widths = labels.map((label) => label.getBoundingClientRect().width).filter(Boolean)
+  if (widths.length) accessTrack.value = accessWidth(widths)
+}
 const columnTracks = computed(() => {
-  // In the rows' order, whatever order the columns were chosen in.
-  const shown = [...SIDE_COLUMNS, 'modified'].filter(shows)
   const tracks = (list: string[]) => [
     'minmax(0,1fr)',
-    ...list.map((column) => COLUMN_TRACKS.get(column) ?? '8rem'),
+    ...list.map((column) => `${trackWidth(column)}px`),
     '2.5rem',
   ]
   return {
-    base: tracks(shown.filter((column) => !WIDE_ONLY.has(column))),
-    md: tracks(shown),
+    base: tracks(shownColumns.value.filter((column) => !WIDE_ONLY.has(column))),
+    md: tracks(desktopColumns.value),
   }
 })
 const byOpened = computed(() => props.dateColumn === 'opened')
@@ -690,19 +728,19 @@ onBeforeUnmount(() => {
 function shows(column: string) {
   return columns.value.includes(column)
 }
-function wideOnly(column: string) {
-  return WIDE_ONLY.has(column) ? 'hidden md:flex' : undefined
+/** Hides a chosen column the phone layout, the desktop layout or both leave out. */
+function columnClass(column: string) {
+  const onDesktop = desktopColumns.value.includes(column)
+  if (!WIDE_ONLY.has(column)) return onDesktop ? undefined : 'md:hidden'
+  return onDesktop ? 'hidden md:flex' : 'hidden'
 }
 
 function skeletonCells() {
-  const cells: SkeletonCell[] = SIDE_COLUMNS.flatMap((column) =>
-    shows(column) ? [{ class: wideOnly(column) }] : [],
+  return shownColumns.value.map((column): SkeletonCell =>
+    column === 'modified'
+      ? { class: ['justify-end', columnClass(column)], hasDate: true }
+      : { class: columnClass(column) },
   )
-  if (shows('modified')) {
-    cells.push({ class: ['justify-end', wideOnly('modified')], hasDate: true })
-  }
-
-  return cells
 }
 function isSelected(row: DriveNode) {
   return props.selection.includes(row.name)
@@ -751,7 +789,6 @@ function headerProps(column: FilesSort, align?: 'end') {
     onClick: () => emit('sort', column),
   }
 }
-const workspaceName = useWorkspaceName()
 const AUDIENCE_ICONS: Record<DriveAudience['kind'], string> = {
   public: 'lucide-globe',
   organization: 'lucide-building-2',

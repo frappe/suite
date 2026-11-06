@@ -305,8 +305,59 @@ describe('FilesListing columns', () => {
 
     // Name, Owner, Size, Modified, then the menu.
     expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-      'minmax(0,1fr) 12rem 6rem 8rem 2.5rem',
+      'minmax(0,1fr) 192px 96px 128px 2.5rem',
     )
+  })
+
+  describe('in a narrow list', () => {
+    let listWidth: number
+    beforeEach(() => {
+      listWidth = 600
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(private callback: ResizeObserverCallback) {}
+          observe() {
+            const entry = { contentRect: { width: listWidth } } as ResizeObserverEntry
+            this.callback([entry], this as unknown as ResizeObserver)
+          }
+          disconnect() {}
+        },
+      )
+    })
+    afterEach(() => setTweaks(['t35-default-columns', 't36-access-column'], true))
+    const header = (root: HTMLElement, label: string) =>
+      [...root.querySelectorAll('[role="columnheader"]')].find((cell) =>
+        cell.textContent?.includes(label),
+      )
+
+    it('hides the columns that leave Name too little room on a desktop, and keeps Size on a phone', async () => {
+      const { root } = mount({ rows, columns: ['access', 'kind', 'size', 'modified'] })
+      await nextTick()
+      const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
+
+      // 600 px holds Name at 240 px beside Access and Modified, not Type or Size.
+      expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
+        'minmax(0,1fr) 160px 128px 2.5rem',
+      )
+      expect(list.style.getPropertyValue('--_list-columns-base')).toBe('minmax(0,1fr) 96px 2.5rem')
+      expect(header(root, 'Type')?.classList).toContain('hidden')
+      expect(header(root, 'Type')?.classList).not.toContain('md:flex')
+      expect(header(root, 'Size')?.classList).toContain('md:hidden')
+      expect(header(root, 'Access')?.classList).toContain('md:flex')
+    })
+
+    it('shows every chosen column, as before, with t35 and t36 off', async () => {
+      setTweaks(['t35-default-columns', 't36-access-column'], false)
+      listWidth = 400
+      const { root } = mount({ rows, columns: ['kind', 'owner', 'size', 'modified'] })
+      await nextTick()
+      const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
+
+      expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
+        'minmax(0,1fr) 128px 192px 96px 128px 2.5rem',
+      )
+    })
   })
 })
 
@@ -388,7 +439,7 @@ describe('FilesListing access column', () => {
     expect(accessOf(root, 'public')).toContain('Public')
     const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
     expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-      'minmax(0,1fr) 11rem 8rem 2.5rem',
+      'minmax(0,1fr) 160px 128px 2.5rem',
     )
   })
 
