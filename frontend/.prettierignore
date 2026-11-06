@@ -17,3 +17,6 @@ public/
 
 # Prose keeps its own line breaks.
 *.md
+
+# Mail bodies kept as senders wrote them: the rendering regression set.
+src/apps/mail/components/fixtures/

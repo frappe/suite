@@ -53,11 +53,13 @@ import {
   ListFilter,
   LockOpen,
   Mail as MailIcon,
+  Moon,
   Reply,
   ReplyAll,
   ShieldCheck,
   SquarePen,
   Star,
+  Sun,
   Trash2,
 } from 'lucide-vue-next'
 import { computed, h, inject } from 'vue'
@@ -95,6 +97,7 @@ const {
   dropMail,
   thread,
   hideStar = false,
+  bodyView,
 } = defineProps<{
   mailbox: string
   mail: Mail
@@ -111,8 +114,17 @@ const {
   thread: Mail[]
   /** The host draws the star itself — a folded row, which keeps it at its far right. */
   hideStar?: boolean
+  /** How the message's body is shown in the dark theme; absent when it isn't remapped. */
+  bodyView?: 'adapted' | 'asSent'
 }>()
-const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam', 'deleteMail'])
+const emit = defineEmits([
+  'setFlagged',
+  'syncUnseen',
+  'moveMail',
+  'markMailSpam',
+  'deleteMail',
+  'toggleAsSent',
+])
 const { isMobile } = useScreenSize()
 const route = useRoute()
 const router = useRouter()
@@ -303,6 +315,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
   {
     group: '',
     options: [
+      {
+        label: bodyView === 'asSent' ? __('Show in Dark Theme') : __('Show as Sent'),
+        onClick: () => emit('toggleAsSent'),
+        icon: bodyView === 'asSent' ? Moon : Sun,
+        condition: () => !!bodyView,
+      },
       {
         label: __('Download Email'),
         onClick: () => downloadEmail(),
