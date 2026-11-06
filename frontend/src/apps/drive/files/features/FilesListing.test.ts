@@ -86,6 +86,7 @@ function mount(options: {
   /** Drag to move, as a folder page sets it up. Moves are recorded, not sent. */
   drag?: boolean
   canShare?: (node: DriveNode) => boolean
+  nodeHref?: (node: DriveNode) => string | undefined
 }) {
   const state = reactive({ selection: options.selection ?? [] })
   type ListingEvents = {
@@ -143,6 +144,7 @@ function mount(options: {
           menuOptions: () => [],
           drag,
           canShare: options.canShare,
+          nodeHref: options.nodeHref,
           onShare: (node: DriveNode) => {
             events.shared.push(node.name)
           },
@@ -305,6 +307,56 @@ describe('FilesListing columns', () => {
     expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
       'minmax(0,1fr) 12rem 6rem 8rem 2.5rem',
     )
+  })
+})
+
+describe('FilesListing name links', () => {
+  const nodeHref = (node: DriveNode) => `/d/${node.name}`
+  const press = (target: Element, init: MouseEventInit = {}) => {
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(event)
+    return event
+  }
+
+  for (const view of ['list', 'grid'] as const) {
+    it(`links each name in ${view} view without a Tab stop or a native drag`, async () => {
+      const { root } = mount({ rows, view, nodeHref })
+      await nextTick()
+      const link = root.querySelector<HTMLAnchorElement>('[data-listing-item="a"] a[href]')!
+
+      expect(link.getAttribute('href')).toBe('/d/a')
+      expect(link.textContent).toBe('Alpha.png')
+      expect(link.tabIndex).toBe(-1)
+      expect(link.getAttribute('draggable')).toBe('false')
+    })
+
+    it(`leaves Cmd/Ctrl-click to the link and keeps plain and Shift clicks in ${view} view`, async () => {
+      const { root, state, events } = mount({ rows, view, nodeHref })
+      await nextTick()
+      const link = (name: string) =>
+        root.querySelector<HTMLAnchorElement>(`[data-listing-item="${name}"] a[href]`)!
+
+      // The browser opens the link in a new tab; the listing does nothing.
+      expect(press(link('a'), { metaKey: true }).defaultPrevented).toBe(false)
+      expect(press(link('a'), { ctrlKey: true }).defaultPrevented).toBe(false)
+      expect(state.selection).toEqual([])
+      expect(events.opened).toEqual([])
+
+      // A plain click opens in place, without following the link.
+      expect(press(link('a')).defaultPrevented).toBe(true)
+      expect(events.opened).toEqual(['a'])
+
+      press(link('a'), { shiftKey: true })
+      await nextTick()
+      expect(state.selection).toEqual(['a'])
+    })
+  }
+
+  it('keeps plain text without an address', async () => {
+    const { root } = mount({ rows })
+    await nextTick()
+
+    expect(root.querySelector('a[href]')).toBeNull()
   })
 })
 

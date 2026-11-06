@@ -175,11 +175,13 @@
                   aria-hidden="true"
                 />
                 <!-- With drag to move, the icon and name are the row's drag handle; the rest of the row draws the marquee. -->
-                <span
+                <component
+                  :is="nameLink(row) ? 'a' : 'span'"
                   class="min-w-0 truncate text-base text-ink-gray-8"
                   :title="row.title"
                   :data-drag-handle="drag ? '' : undefined"
-                  >{{ row.title }}</span
+                  v-bind="nameLink(row)"
+                  >{{ row.title }}</component
                 >
               </span>
               <StarredIcon v-if="row.favourite" class="ml-1.5 size-3.5 shrink-0" />
@@ -279,6 +281,7 @@
               :meta="cardMeta(row)"
               :selected="isHighlighted(row)"
               :icon-class="cardIconClass"
+              :title-link="nameLink(row)"
               :class="drag ? [flashClasses(row), dragClasses(row, DROP_CARD)] : flashClasses(row)"
               :data-drag-handle="drag ? '' : undefined"
               :data-node="focus.roving.value ? row.name : undefined"
@@ -448,6 +451,8 @@ const props = defineProps<{
   drag?: DragMove
   /** Whether a click on an item's Access cell opens its share dialog. */
   canShare?: (node: DriveNode) => boolean
+  /** The address an item's name links to, for Cmd/Ctrl-click and middle-click. None keeps plain text. */
+  nodeHref?: (node: DriveNode) => string | undefined
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]
@@ -755,6 +760,27 @@ function audienceLabel(audience: DriveAudience) {
   if (audience.kind === 'organization') return workspaceName.value || __('Your organization')
   if (audience.kind === 'link') return __('Anyone with the link')
   return audience.people <= 1 ? __('Only you') : __('{0} people', [audience.people])
+}
+/**
+ * An item's name as a link: no Tab stop of its own, no native drag, and an
+ * underline only on hover. Cmd/Ctrl-click opens it in a new tab and leaves the
+ * selection alone; middle-click opens one natively. Any other click is the
+ * item's, as before, and does not follow the link.
+ */
+function nameLink(row: DriveNode) {
+  const href = props.nodeHref?.(row)
+  if (!href) return undefined
+  return {
+    href,
+    tabindex: -1,
+    draggable: 'false',
+    class: 'decoration-ink-gray-4 underline-offset-2 hover:underline [-webkit-touch-callout:none]',
+    onClick: onNameClick,
+  }
+}
+function onNameClick(event: MouseEvent) {
+  if (event.metaKey || event.ctrlKey) event.stopPropagation()
+  else event.preventDefault()
 }
 function onAccessClick(event: MouseEvent, row: DriveNode) {
   if (props.selectionMode || event.metaKey || event.ctrlKey || event.shiftKey) return

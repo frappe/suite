@@ -234,6 +234,7 @@
             :date-column="dateColumn"
             :drag="dragOn"
             :can-share="(row) => nodeActions(row, signedIn).share"
+            :node-href="nodeHref"
             @update:selection="picked.selected.value = $event"
             @sort="changeSort"
             @open="openNode"
@@ -1493,21 +1494,31 @@ async function openNode(row: DriveNode, newTab = false) {
     window.open(row.url, '_blank', 'noopener,noreferrer')
     return
   }
-  // A folder keeps the user's view settings. A document's history entry
-  // carries its title, so its tab is named before it loads. A file keeps the
-  // type filter, so its preview steps through the files this listing shows.
-  const target: RouteLocationRaw =
-    row.kind === 'folder'
-      ? { path: nodePath(row), query: presentationQuery.value }
-      : row.kind === 'file'
-        ? { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
-        : driveNodeRoute(row)
+  const target = openTarget(row)
   if (newTab) {
     window.open(router.resolve(target).href, '_blank', 'noopener,noreferrer')
     return
   }
   if (row.kind === 'folder') openedTrail.value = trailOf(row)
   await router.push(target)
+}
+/**
+ * Where opening an item goes. A folder keeps the user's view settings. A
+ * document's history entry carries its title, so its tab is named before it
+ * loads. A file keeps the type filter, so its preview steps through the files
+ * this listing shows.
+ */
+function openTarget(row: DriveNode): RouteLocationRaw {
+  if (row.kind === 'folder') return { path: nodePath(row), query: presentationQuery.value }
+  if (row.kind === 'file')
+    return { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
+  return driveNodeRoute(row)
+}
+/** The address an item's name links to (t39). An external link asks before it opens, so it has none. */
+function nodeHref(row: DriveNode): string | undefined {
+  if (!isTweakOn('t39-name-link') || row.kind === 'link') return undefined
+  if (!nodeActions(row, signedIn.value).openInNewTab) return undefined
+  return router.resolve(openTarget(row)).href
 }
 
 /** Importing beside a file takes UPLOAD on its folder. Outside that folder's listing the role is not known here, and Drive refuses when asked. */

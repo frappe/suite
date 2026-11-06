@@ -36,11 +36,13 @@
       </span>
       <span class="relative flex w-full min-w-0 flex-col gap-0.5">
         <span class="flex w-full min-w-0 items-center">
-          <span
+          <component
+            :is="titleLink ? 'a' : 'span'"
             class="truncate text-base font-medium text-ink-gray-8"
             :title="node.title"
             data-card-title
-            >{{ node.title }}</span
+            v-bind="titleLink"
+            >{{ node.title }}</component
           >
           <StarredIcon v-if="node.favourite" class="ml-1.5 size-3.5 shrink-0" />
         </span>
@@ -60,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type Component, type HTMLAttributes } from 'vue'
+import { computed, type AnchorHTMLAttributes, type Component, type HTMLAttributes } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { nodeIcon, nodeIconTint } from '@/apps/drive/files/internal/icons'
@@ -82,6 +84,8 @@ const props = defineProps<{
   selected?: boolean
   /** Classes for the type icon, such as hiding it while a checkbox takes its place. */
   iconClass?: HTMLAttributes['class']
+  /** Makes the title a link with these attributes and listeners. */
+  titleLink?: AnchorHTMLAttributes & { onClick?: (event: MouseEvent) => void }
 }>()
 const emit = defineEmits<{
   /** A thumbnail failed to load. Refetch the node for a fresh signed URL. Emitted once per file. */
