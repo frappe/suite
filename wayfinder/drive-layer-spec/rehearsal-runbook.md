@@ -614,9 +614,10 @@ has no `collab` worker. The background run needs the scheduler and a
   seconds after the job starts. A Sheet tab checks again every five
   seconds; a Writer tab is told by a realtime event. Both become editable
   without a reload.
-- While a document waits, opens queue it at most once a minute. So a
-  document that cannot convert yet, for example with no converter, costs
-  one job a minute while someone has it open.
+- Each open of a waiting document queues it, at most once a minute
+  however many people open it. A tab that stays open does not queue it
+  again: a document whose job did not convert it, for example with no
+  converter, is asked for again only when someone opens it again.
 - A document that the converter refused stays read-only, and opening it
   does not queue it again. A Sheet shows "This spreadsheet couldn't be
   upgraded, so it stays read-only." One refused as too large shows "This

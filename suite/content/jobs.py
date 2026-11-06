@@ -24,7 +24,7 @@ CHECK_RENDER = "suite.content.jobs.check_render"
 CONVERT = "suite.content.jobs.convert_pending"
 CONVERT_ONE = "suite.content.jobs.convert_one"
 CONVERT_OPENED = "suite.content.jobs.convert_opened"
-# How long an open waits before it asks again for a document still waiting, as an open tab polls every few seconds
+# How long before another open asks again for a document still waiting, as many people may open it at once
 REQUEST_EVERY_S = 60
 
 
