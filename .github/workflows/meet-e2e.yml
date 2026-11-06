@@ -105,12 +105,7 @@ concurrency:
 jobs:
   e2e:
     runs-on: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'suite-e2e-meet' }}
-    # Historical durations keep each self-contained group near the same runtime.
-    strategy:
-      fail-fast: false
-      matrix:
-        group: [1, 2, 3]
-    name: E2E Tests (group ${{ matrix.group }})
+    name: E2E Tests
     timeout-minutes: 60
     permissions:
       contents: read
@@ -271,7 +266,6 @@ jobs:
           BASE_URL: http://meet.test:8000
           SFU_URL: http://localhost:3000
           CI: true
-          MEET_E2E_GROUP: ${{ matrix.group }}
           SFU_E2E_DISCONNECT_TEST: true
           SFU_E2E_DISCONNECT_WAIT_MS: 7000
 
@@ -284,7 +278,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && !cancelled()
         with:
-          name: meet-playwright-report-group-${{ matrix.group }}
+          name: meet-playwright-report
           path: |
             e2e/meet/playwright-report/
             e2e/meet/test-results/
@@ -297,7 +291,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: meet-junit-group-${{ matrix.group }}
+          name: meet-junit
           path: e2e/meet/results.xml
           if-no-files-found: warn
           retention-days: 14
