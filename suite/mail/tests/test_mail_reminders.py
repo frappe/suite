@@ -509,6 +509,18 @@ class TestNoReply(ReminderTestCase):
         self.assertTrue(self.mine()["keywords"].get("returned"))
         self.assertEqual([a["title"] for a in self.told], ["No reply yet", "Back from snooze"])
 
+    def test_set_again_once_back_its_mark_comes_off_until_the_new_date(self):
+        self.remind()
+        self.come_due()
+        self.remind(hours=48)
+
+        self.assertFalse(self.mine()["keywords"].get("noreply"))
+        self.assertEqual(self.row().status, "Waiting")
+
+        self.come_due()
+        self.assertTrue(self.mine()["keywords"].get("noreply"))
+        self.assertEqual(len(self.told), 2)
+
     def test_asked_from_the_conversation_it_follows_your_latest_sent_mail(self):
         self.server.add("draft", "t1", "drafts", sender="me@example.test", **{"$draft": True})
         self.server.add("later", "t1", "sent", sender="me@example.test")

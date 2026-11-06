@@ -153,7 +153,7 @@ def remind_after_send(account: str, thread_id: str | None, email_id: str | None,
     a schedule) is fine: the reminder is read against the mail when it comes due."""
 
     if due_at and thread_id and email_id:
-        _set_row(account, thread_id, due_at, kind=NO_REPLY, email_id=email_id)
+        _set_no_reply(account, thread_id, due_at, email_id)
 
 
 def remind_no_reply(account: str, ids: list[str], remind_at: str) -> str:
@@ -167,8 +167,18 @@ def remind_no_reply(account: str, ids: list[str], remind_at: str) -> str:
     if not yours:
         frappe.throw(_("Only mail you sent can be followed up."))
     anchor = max(yours, key=lambda email: email.get("receivedAt") or "")
-    _set_row(account, anchor["threadId"], due_at, kind=NO_REPLY, email_id=anchor["id"])
+    _set_no_reply(account, anchor["threadId"], due_at, anchor["id"])
     return to_utc_z(due_at)
+
+
+def _set_no_reply(account: str, thread_id: str, due_at: str | datetime, email_id: str) -> None:
+    # One that already came back is done with: its mark comes off now, not on the new date.
+    name = reminder_name(account, thread_id, NO_REPLY)
+    if returned := frappe.db.get_value(
+        DOCTYPE, {"name": name, "status": RETURNED}, ["name", "account", "thread_id"], as_dict=True
+    ):
+        _settle(returned)
+    _set_row(account, thread_id, due_at, kind=NO_REPLY, email_id=email_id)
 
 
 def cancel_no_reply(account: str, thread_id: str) -> None:
