@@ -29,6 +29,12 @@ const server = vi.hoisted(() => ({
   polls: fromPartial<unknown[]>([]),
   /** The cursor a folder listing answers with: set, the folder has more to load. */
   nextCursor: fromPartial<string | null>(null),
+  /** Set, trash and batch writes wait for it before they answer. */
+  gate: fromPartial<Promise<void> | null>(null),
+  /** Set, trash and batch writes are refused with it. */
+  refusal: fromPartial<Error | null>(null),
+  /** The nodes a batch answers as failed, and leaves unchanged. */
+  batchFailures: fromPartial<string[]>([]),
 }))
 
 vi.mock('@/platform/transport', async (original) => {
@@ -69,18 +75,33 @@ vi.mock('@/platform/transport', async (original) => {
             return created
           }
           case 'node_patch.trash': {
+            await server.gate
+            if (server.refusal) throw server.refusal
             const trashed = node(input.node)
             if (trashed) trashed.state = 'Trashed'
             return trashed
           }
           case 'node_batch': {
-            const { nodes, patch } = input as { nodes: string[]; patch: { state: 'Active' } }
-            for (const name of nodes) server.nodes.get(name)!.state = patch.state
-            return { ok: nodes, failed: [] }
+            await server.gate
+            if (server.refusal) throw server.refusal
+            const { nodes, patch } = input as {
+              nodes: string[]
+              patch: { state?: 'Active' | 'Trashed'; parent_node?: string }
+            }
+            const changed = nodes.filter((name) => !server.batchFailures.includes(name))
+            for (const name of changed) Object.assign(server.nodes.get(name)!, patch)
+            return {
+              ok: changed,
+              failed: nodes
+                .filter((name) => server.batchFailures.includes(name))
+                .map((name) => ({ node: name, type: 'DriveForbidden', message: 'No' })),
+            }
           }
           case 'node_children':
             return {
-              rows: [...server.nodes.values()].filter((row) => row.parent_node === input.node),
+              rows: [...server.nodes.values()].filter(
+                (row) => row.parent_node === input.node && row.state === 'Active',
+              ),
               next_cursor: server.nextCursor,
             }
           case 'view_list':
@@ -366,6 +387,9 @@ afterEach(() => {
   server.download = null
   server.polls = []
   server.nextCursor = null
+  server.gate = null
+  server.refusal = null
+  server.batchFailures = []
   vi.useRealTimers()
   feedback.toasts.length = 0
   listing.rows = []
@@ -1089,6 +1113,69 @@ describe('Select all in a folder with more to load', () => {
       message: 'Download up to 200 items at a time.',
     })
     expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([])
+  })
+})
+
+describe('Trash and move before Drive answers', () => {
+  let release: () => void = () => {}
+  beforeEach(() => {
+    server.gate = new Promise((resolve) => (release = resolve))
+  })
+  afterEach(() => setTweaks(['t26-optimistic-remove'], true))
+  const refused = () =>
+    new TransportError({ type: 'DriveForbidden', status: 403, message: 'Not allowed', details: {} })
+
+  it('takes a trashed row out at once, and puts it back with the error when Drive refuses', async () => {
+    server.refusal = refused()
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toEqual(['a.png', 'b.png', 'c.png']))
+
+    const trashing = Promise.resolve(menuItem('b', 'Move to trash')?.onClick())
+
+    await vi.waitFor(() => expect(titles()).toEqual(['a.png', 'c.png']))
+    release()
+    await expect(trashing).rejects.toThrow('Not allowed')
+    expect(titles()).toEqual(['a.png', 'b.png', 'c.png'])
+    await vi.waitFor(() =>
+      expect(feedback.toasts).toContainEqual(
+        expect.objectContaining({ kind: 'error', message: 'Not allowed' }),
+      ),
+    )
+  })
+
+  it('takes a selection out at once, and brings back only the items that failed', async () => {
+    server.nodes.set('d', node('d', 'd.png'))
+    server.nodes.set('e', node('e', 'e.png'))
+    server.batchFailures = ['b', 'd']
+    const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(5))
+    for (const name of ['a', 'b', 'c', 'd', 'e']) menuItem(name, 'Select')?.onClick()
+    await nextTick()
+
+    const trash = [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === 'Move to trash',
+    )
+    trash?.click()
+
+    await vi.waitFor(() => expect(titles()).toEqual([]))
+    release()
+    await vi.waitFor(() => expect(titles()).toEqual(['b.png', 'd.png']))
+    expect(server.nodes.get('a')?.state).toBe('Trashed')
+    expect(server.nodes.get('b')?.state).toBe('Active')
+  })
+
+  it('waits for Drive with the tweak off', async () => {
+    setTweaks(['t26-optimistic-remove'], false)
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    void menuItem('b', 'Move to trash')?.onClick()
+    await vi.waitFor(() => expect(server.calls.at(-1)?.id).toBe('node_patch.trash'))
+    await nextTick()
+
+    expect(titles()).toEqual(['a.png', 'b.png', 'c.png'])
+    release()
+    await vi.waitFor(() => expect(titles()).toEqual(['a.png', 'c.png']))
   })
 })
 

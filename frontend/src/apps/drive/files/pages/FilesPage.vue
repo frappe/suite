@@ -199,7 +199,9 @@
           />
           <FilesListing
             ref="listingView"
-            class="flex-1"
+            class="flex-1 transition-opacity"
+            :class="{ 'opacity-60': rearranging }"
+            :aria-busy="rearranging || undefined"
             :query="listing"
             :presentation="presentation"
             :selection="selection"
@@ -294,6 +296,7 @@ import {
 } from '@/api'
 import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
 import { createDocument, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
+import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
@@ -322,7 +325,7 @@ import { emptyState, emptyStateWithActions, type FilesDestination } from '../fea
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
-import { heldWhileRearranging } from '../features/heldRows'
+import { heldWhileRearranging, withCreatedRows } from '../features/heldRows'
 import { linkAccess } from '../features/linkAccess'
 import { allAllow, nodeActions, type NodeActions } from '../features/nodeActions'
 import {
@@ -469,9 +472,12 @@ const isSearching = computed(() => !!searchTerm.value)
 const concreteDestination = computed(() =>
   ['personal', 'organization', 'folder'].includes(props.destination),
 )
+// The locations the page loaded with stand in until roots load, so My files reads at once (t24).
+const bootLocations = isTweakOn('t24-boot-roots') ? bootRoots() : null
+const knownRoots = computed(() => discovered.data ?? bootLocations)
 const rootLocation = computed(() => {
-  if (props.destination === 'organization') return discovered.data?.organization ?? null
-  return discovered.data?.personal ?? null
+  if (props.destination === 'organization') return knownRoots.value?.organization ?? null
+  return knownRoots.value?.personal ?? null
 })
 const parentId = computed(() =>
   props.destination === 'folder'
@@ -597,8 +603,13 @@ const presentationQuery = computed(() => ({
   dir: userPresentation.value.dir,
 }))
 // A search result, a shared item and a starred item each show where they live.
+const recentLocation = useTweak('t17-recent-location')
 const showsLocation = computed(
-  () => isSearching.value || props.destination === 'shared' || props.destination === 'starred',
+  () =>
+    isSearching.value ||
+    props.destination === 'shared' ||
+    props.destination === 'starred' ||
+    (props.destination === 'recent' && recentLocation.value),
 )
 const expansion = computed(() => {
   const parts = ['access']
@@ -630,8 +641,8 @@ const trashRoot = computed(() => {
   if (props.destination !== 'trash') return null
   return (
     (route.query.root === 'organization'
-      ? discovered.data?.organization?.node
-      : discovered.data?.personal.node) ?? null
+      ? knownRoots.value?.organization?.node
+      : knownRoots.value?.personal.node) ?? null
   )
 })
 const childListing = useInfiniteQuery(api.drive.nodes.children, () =>
@@ -698,18 +709,35 @@ const listingQuery: InfiniteQueryState<DriveNode> = {
     activeListing.value.cancel()
   },
 }
-// A new sort, view or search term keeps the old rows up until the new ones come.
-const listing = heldWhileRearranging(
+// Folders and links this tab created show at once, where the server will list them (t26).
+const createdRows = withCreatedRows(
   recentFiles(listingQuery, () => hidesFolders.value),
   () =>
-    [
-      props.destination,
-      parentId.value,
-      isSearching.value,
-      trashRoot.value,
-      typeQuery(listingTypes.value),
-    ].join('|'),
+    isTweakOn('t26-insert-created') &&
+    !isSearching.value &&
+    concreteDestination.value &&
+    parentId.value &&
+    !listingTypes.value.length
+      ? {
+          place: parentId.value,
+          sort: listedSort.value,
+          ascending: userPresentation.value.dir === 'asc',
+        }
+      : null,
 )
+// A new sort, view or search term keeps the old rows up until the new ones come.
+const listing = heldWhileRearranging(createdRows.listing, () =>
+  [
+    props.destination,
+    parentId.value,
+    isSearching.value,
+    trashRoot.value,
+    typeQuery(listingTypes.value),
+  ].join('|'),
+)
+const pendingSort = useTweak('t26-pending-sort')
+// The old rows dim while the new order loads (t26).
+const rearranging = computed(() => pendingSort.value && listing.isHeld)
 const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
 // A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
@@ -1739,6 +1767,8 @@ async function applyPicker(parent: string, destination: string) {
       ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
       : [],
   )
+  // The moved rows leave the list at once (t26), so the picker closes with them.
+  if (pickerMode.value === 'move' && isTweakOn('t26-optimistic-remove')) pickerOpen.value = false
   if (pickerBulk.value) {
     const result = await runBatch(
       moving.map((item) => item.node),
@@ -1781,6 +1811,9 @@ async function runBatch(
   patch: { parent_node?: string; state?: 'Trashed' },
   verb: BatchVerb,
 ): Promise<DriveBatchResult | null> {
+  // The rows leave at once (t26), and the selection with them. A refusal brings both back.
+  const optimistic = isTweakOn('t26-optimistic-remove')
+  if (optimistic) picked.keepOnly([])
   try {
     const result = await inBatches(nodes, (chunk) => batchMutation.run({ nodes: chunk, patch }))
 
@@ -1789,6 +1822,7 @@ async function runBatch(
     picked.keepOnly(result.failed.map((failure) => failure.node))
     return result
   } catch {
+    if (optimistic) picked.keepOnly(nodes)
     return null
   }
 }
@@ -1858,6 +1892,7 @@ async function onCreated(created: DriveNode, request: CreateRequest) {
   }
   // A search hides what was just added, so the folder shows again.
   if (isSearching.value) clearSearch()
+  else if (created.parent_node === parentId.value) createdRows.add(created)
 }
 function replaceSlug(row: DriveNode) {
   if (props.destination === 'folder' && row.name === route.params.node) {
