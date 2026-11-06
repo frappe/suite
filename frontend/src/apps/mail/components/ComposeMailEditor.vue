@@ -360,6 +360,7 @@
         class="border-t sm:px-4 sm:pb-2.5"
         :class="{ 'border-transparent': isDragging }"
         @select-files="(files: File[]) => uploadFiles(files)"
+        @attach-from-drive="attachFromDrive"
         @append-emoji="(emoji: string) => appendEmoji(emoji)"
         @discard-mail="discardMail"
         @send-mail="sendMail"
@@ -454,7 +455,10 @@ type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: numbe
 const fileUploads = ref<FileUpload[]>([])
 const pendingInlineUploads = ref(0)
 const isUploading = computed(
-  () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
+  () =>
+    pendingInlineUploads.value > 0 ||
+    fileUploads.value.some((upload) => upload.isUploading) ||
+    isAttachingFromDrive.value,
 )
 const user = inject('$user') as UserResource
 
@@ -514,6 +518,8 @@ const {
   scheduleSend,
   openQuotedContent,
   openAttachment,
+  attachFromDrive,
+  isAttachingFromDrive,
   mentionExtensions,
   appendEmoji,
   editorContent,
