@@ -1,3 +1,4 @@
+import type { KeyboardShortcutCombo } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
@@ -6,6 +7,7 @@ import { ShortcutsDialog, useKeySequences } from '@/platform/shortcuts'
 vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../node_modules/frappe-ui/src/components/KeyboardShortcutsDialog')),
   ...(await import('../../../../node_modules/frappe-ui/src/composables/useKeyboardShortcut')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/TextInput')),
 }))
 
 const { useKeyboardShortcut } = await import('frappe-ui')
@@ -18,7 +20,7 @@ afterEach(() => {
 })
 
 /** Opens the dialog over a page that registered Suite's, Drive's and frappe-ui's kinds of shortcut. */
-async function openDialog(platform: string) {
+async function openDialog(platform: string, filler = 0) {
   vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0')
   const handler = () => {}
@@ -33,6 +35,12 @@ async function openDialog(platform: string) {
           { combo: 'Mod+End', description: 'Last item', group: 'Files', handler },
           // frappe-ui's Settings dialog registers its toggle with no group.
           { combo: 'Mod+Shift+Comma', description: 'Toggle settings', handler },
+          ...Array.from({ length: filler }, (_, index) => ({
+            combo: `F${index + 1}` as KeyboardShortcutCombo,
+            description: `Filler ${index + 1}`,
+            group: 'Sheet',
+            handler,
+          })),
         ])
         useKeySequences([
           { keys: ['S'], description: 'Share selected item', group: 'Files', handler },
@@ -107,5 +115,32 @@ describe('the shortcuts dialog', () => {
 
     expect(document.querySelector('[aria-label="G then H"]')).not.toBeNull()
     expect(document.querySelector('[aria-label="Shift Command ,"]')).not.toBeNull()
+  })
+
+  it('offers no search on a short list', async () => {
+    await openDialog('MacIntel')
+
+    expect(document.querySelector('input[aria-label="Search shortcuts"]')).toBeNull()
+  })
+
+  it('searches every row once the list is long, letter keys included', async () => {
+    await openDialog('Linux x86_64', 20)
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="Search shortcuts"]')
+    expect(search).not.toBeNull()
+    async function type(text: string) {
+      search!.value = text
+      search!.dispatchEvent(new Event('input'))
+      await nextTick()
+    }
+
+    await type('share')
+    expect(listing()).toEqual({ Files: { 'Share selected item': ['S'] } })
+
+    await type('g then h')
+    expect(listing()).toEqual({ 'Go to': { 'My files': ['G', 'then', 'H'] } })
+
+    await type('nothing like this')
+    expect(listing()).toEqual({})
+    expect(document.body.textContent).toContain('No shortcuts match your search.')
   })
 })
