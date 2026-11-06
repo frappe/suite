@@ -14,7 +14,6 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
-import { takeShown } from './lastShown'
 import type { FilePreviewSession } from './session'
 
 vi.mock('frappe-ui', async () => ({
@@ -380,20 +379,19 @@ describe('file preview', () => {
     const LISTING = '/drive/f/folder-1/talks'
     afterEach(() => setTweaks(['t15-escape-closes', 't15-arrow-keys', 't15-return-focus'], true))
 
-    it('Escape goes back to the listing, which then focuses the last file shown', async () => {
-      const { root, router } = await mount(
-        session('c', 'c.png', 'image/png'),
-        '/d/c/c-png',
-        LISTING,
-      )
+    it('Escape goes where the way back goes, the listing as it was, which then focuses the last file shown', async () => {
+      const opener = `${LISTING}?view=grid&sort=modified&dir=desc`
+      const { root, router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png', opener)
       await vi.waitFor(() => expect(counter(root)).toBe('3 of 5'))
+      const wayBack = root.querySelector<HTMLAnchorElement>('header a[href^="/drive/f/"]')
+      expect(new URL(wayBack!.href).pathname + new URL(wayBack!.href).search).toBe(opener)
       press('ArrowRight')
       await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
 
       press('Escape')
 
-      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(LISTING))
-      expect(takeShown(LISTING)).toBe('d')
+      await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(opener))
+      expect(router.options.history.state.reveal).toBe('d')
     })
 
     it('Escape does nothing while a menu or dialog is open, but a tooltip does not stop it', async () => {

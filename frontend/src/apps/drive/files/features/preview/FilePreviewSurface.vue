@@ -2,7 +2,7 @@
 import { useEventListener, useMediaQuery } from '@vueuse/core'
 import { Button, Dropdown, TabButtons } from 'frappe-ui'
 import { computed, ref, useTemplateRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type RouteLocationPathRaw } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
@@ -111,11 +111,31 @@ const types = computed(() => typesFromQuery(route.query.type, offeredTypes({ fol
 const typeFilter = computed(() => ({ type: typeQuery(types.value) }))
 
 const folder = computed(() => file.value.folder.value)
+const escapeCloses = useTweak('t15-escape-closes')
+/**
+ * The listing that opened the preview, with its view, sort and filter, when it
+ * shows the file's folder. The way back and Escape both return to it (t15).
+ */
+function openedFromFolder(folderId: string): RouteLocationPathRaw | null {
+  const back = router.options.history.state.back
+  if (!escapeCloses.value || typeof back !== 'string') return null
+  const opener = router.resolve(back)
+  const roots = discovered.data
+  const showsFolder =
+    opener.params.node === folderId ||
+    (opener.path === '/drive' && folderId === roots?.personal.node) ||
+    (opener.path === '/drive/organization' && folderId === roots?.organization?.node)
+  return showsFolder && !opener.query.q ? { path: opener.path, query: opener.query } : null
+}
 const location = computed(() => {
   const crumb = folder.value
   if (!crumb) return null
   const label = locationTitle(crumb)
-  return { label, to: { ...driveNodeRoute(crumb.name, label, 'folder'), query: typeFilter.value } }
+  const to = openedFromFolder(crumb.name) ?? {
+    ...driveNodeRoute(crumb.name, label, 'folder'),
+    query: typeFilter.value,
+  }
+  return { label, to }
 })
 
 // Previous and next walk the folder's files in the order the listing shows them
@@ -167,14 +187,14 @@ watch(
   },
   { immediate: true },
 )
-const escapeCloses = useTweak('t15-escape-closes')
 const arrowsAfterClick = useTweak('t15-arrow-keys')
 const returnFocus = useTweak('t15-return-focus')
-/** Back to the page that opened the preview, or to the file's folder when the preview was opened directly. */
+/** Where the way back in the header goes, or back a page when the header has none. */
 function leave() {
-  if (typeof router.options.history.state.back === 'string') return router.back()
   const state = returnFocus.value ? { reveal: current.value } : undefined
-  void router.push(location.value ? { ...location.value.to, state } : '/drive')
+  if (location.value) return void router.push({ ...location.value.to, state })
+  if (typeof router.options.history.state.back === 'string') return router.back()
+  void router.push('/drive')
 }
 
 // Arrow keys step through the folder unless something on the page has focus,
