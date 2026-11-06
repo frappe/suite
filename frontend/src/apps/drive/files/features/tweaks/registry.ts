@@ -37,7 +37,7 @@ export const tweaks = [
   { id: 't9', item: 9, group: 'Fewer steps', label: 'Share link in one click', description: 'A visible "New link" button creates a view link and copies it.', ready: false },
   { id: 't10', item: 10, group: 'Fewer steps', label: 'Desktop share footer', description: 'The desktop share dialog footer has a captioned Copy link and a Done button, like the phone layout.', ready: false },
   { id: 't11', item: 11, group: 'Fewer steps', label: 'Simpler duplicate-name dialog', description: 'The duplicate-name dialog has one Skip and shows the New name field only when you choose Rename.', ready: false },
-  { id: 't12', item: 12, group: 'Fewer steps', label: 'Empty states with actions', description: 'Each empty view has its own icon, and an empty folder offers New and Upload buttons.', ready: false },
+  { id: 't12', item: 12, group: 'Fewer steps', label: 'Empty states with actions', description: 'Each empty view has its sidebar icon, an empty folder offers an "Upload files" button, and an empty search offers "Clear search".', ready: true },
   { id: 't13', item: 13, group: 'Habits', label: 'Arrow keys move in the list', description: 'The list is one Tab stop, and the arrow keys, Home, End and typing move between rows.', ready: false },
   { id: 't14', item: 14, group: 'Habits', label: 'Delete, F2 and Undo shortcuts', description: 'Delete moves to Trash, F2 renames, Alt+Up opens the parent folder and Mod+Z undoes, also on the focused row.', ready: false },
   { id: 't15', item: 15, group: 'Habits', label: 'Escape closes the preview', description: 'Escape and a close button leave the file preview, and focus returns to the row that was open.', ready: false },

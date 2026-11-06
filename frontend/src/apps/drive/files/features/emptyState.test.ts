@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { emptyState } from './emptyState'
+import { emptyState, emptyStateWithActions } from './emptyState'
 
 describe('empty states', () => {
   it('says a search found nothing, whatever the view', () => {
@@ -52,5 +52,54 @@ describe('empty states', () => {
     expect(emptyState({ destination: 'trash', term: '', canCreate: false }).description).toContain(
       '30 days',
     )
+  })
+})
+
+describe('empty states with actions', () => {
+  const state = (input: Partial<Parameters<typeof emptyStateWithActions>[0]> = {}) =>
+    emptyStateWithActions({
+      destination: 'folder',
+      term: '',
+      canCreate: false,
+      canCreateDocuments: false,
+      ...input,
+    })
+
+  it("shows the sidebar's icon for each view", () => {
+    expect(
+      (['folder', 'organization', 'shared', 'recent', 'starred', 'trash'] as const).map(
+        (destination) => state({ destination }).icon,
+      ),
+    ).toEqual([
+      'lucide-folder-open',
+      'lucide-building-2',
+      'lucide-users',
+      'lucide-clock-3',
+      'lucide-star',
+      'lucide-trash-2',
+    ])
+  })
+
+  it('mentions documents only where the caller can create them', () => {
+    expect(state({ canCreate: true, canCreateDocuments: true }).description).toBe(
+      'Use New to create a folder or a document.',
+    )
+    expect(state({ canCreate: true }).description).toBe('Use New to create a folder.')
+    expect(state().description).toBe('Nothing has been added to this folder yet.')
+  })
+
+  it('names the search term of an empty search', () => {
+    expect(state({ term: 'budget', canCreate: true })).toEqual({
+      title: 'No results for “budget”',
+      description: 'Try a different search term.',
+      icon: 'lucide-search',
+    })
+  })
+
+  it('keeps the type filter copy, with a filter icon', () => {
+    expect(state({ term: 'budget', typeNoun: 'PDFs' })).toMatchObject({
+      title: 'No PDFs match this search',
+      icon: 'lucide-filter',
+    })
   })
 })

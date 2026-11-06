@@ -1,3 +1,5 @@
+import { translate as __ } from '@/platform/translation'
+
 export type FilesDestination =
   'personal' | 'organization' | 'folder' | 'shared' | 'recent' | 'starred' | 'trash'
 
@@ -11,11 +13,46 @@ export interface EmptyStateInput {
   typeNoun?: string
   /** The folder is in Trash, so it keeps what it held when it was trashed. */
   inTrash?: boolean
+  /** What to say where the caller can add items. */
+  addHint?: string
 }
 
 export interface EmptyState {
   title: string
   description: string
+  /** The icon class; the listing draws its own when there is none. */
+  icon?: string
+}
+
+/** The sidebar's icon for each view, so an empty view looks like its entry. */
+const DESTINATION_ICONS: Record<FilesDestination, string> = {
+  personal: 'lucide-folder-open',
+  organization: 'lucide-building-2',
+  folder: 'lucide-folder-open',
+  shared: 'lucide-users',
+  recent: 'lucide-clock-3',
+  starred: 'lucide-star',
+  trash: 'lucide-trash-2',
+}
+
+/**
+ * What an empty listing says when the page offers its actions (tweak t12):
+ * an icon per view, and copy that matches the Upload files and Clear search buttons.
+ */
+export function emptyStateWithActions(
+  input: EmptyStateInput & { canCreateDocuments: boolean },
+): EmptyState {
+  if (input.typeNoun) return { ...emptyState(input), icon: 'lucide-filter' }
+  if (input.term)
+    return {
+      title: __('No results for “{0}”', [input.term]),
+      description: __('Try a different search term.'),
+      icon: 'lucide-search',
+    }
+  const addHint = input.canCreateDocuments
+    ? __('Use New to create a folder or a document.')
+    : __('Use New to create a folder.')
+  return { ...emptyState({ ...input, addHint }), icon: DESTINATION_ICONS[input.destination] }
 }
 
 /** Days an item stays in Trash before the daily job deletes it (`suite.drive.jobs.purge_trashed_nodes`). */
@@ -28,6 +65,7 @@ export function emptyState({
   canCreate,
   typeNoun,
   inTrash,
+  addHint: hint = 'Use New to add a folder, a document, or files.',
 }: EmptyStateInput): EmptyState {
   // The page offers to clear the filter, so the copy names it.
   if (typeNoun) {
@@ -40,7 +78,7 @@ export function emptyState({
   }
   if (term)
     return { title: 'No files match this search', description: 'Try a different search term.' }
-  const addHint = canCreate ? 'Use New to add a folder, a document, or files.' : ''
+  const addHint = canCreate ? hint : ''
   switch (destination) {
     case 'personal':
       return { title: 'No files yet', description: addHint || 'Files you add will appear here.' }

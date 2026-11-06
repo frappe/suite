@@ -202,6 +202,7 @@
             :selection-mode="selectionMode"
             :empty-title="emptyTitle"
             :empty-description="emptyDescription"
+            :empty-icon="empty.icon"
             :show-breadcrumbs="showsLocation"
             :sortable="arrangeable"
             :menu-options="rowMenuOptions"
@@ -217,6 +218,21 @@
           >
             <template v-if="listingTypes.length" #empty-action>
               <Button label="Clear filter" class="mt-2" @click="setTypes([])" />
+            </template>
+            <template v-else-if="emptyActions && isSearching" #empty-action>
+              <Button :label="__('Clear search')" class="mt-2" @click="clearSearch()" />
+            </template>
+            <template v-else-if="emptyActions && canCreate" #empty-action>
+              <div class="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                <Button
+                  :label="__('Upload files')"
+                  icon-left="lucide-upload"
+                  @click="pickUpload('files')"
+                />
+                <span v-if="canDropFiles" class="text-p-sm text-ink-gray-5">{{
+                  __('or drop files here')
+                }}</span>
+              </div>
             </template>
           </FilesListing>
           <DropOverlay :zone="drop.over.value" />
@@ -288,7 +304,7 @@ import BatchOutcome from '../features/BatchOutcome.vue'
 import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
 import { downloadItems } from '../features/downloads'
-import { emptyState, type FilesDestination } from '../features/emptyState'
+import { emptyState, emptyStateWithActions, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
@@ -714,15 +730,21 @@ const countFirstSelectionBar = useTweak('t3-selection-menu')
 const onlySelected = computed(() =>
   selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
 )
-const empty = computed(() =>
-  emptyState({
+const emptyActions = useTweak('t12')
+/** Only a fine pointer can drag files in: phones and tablets cannot. */
+const canDropFiles = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+const empty = computed(() => {
+  const input = {
     destination: props.destination,
     term: searchTerm.value,
     canCreate: canCreate.value,
     typeNoun: listingTypes.value.length ? typeNouns(listingTypes.value) : undefined,
     inTrash: !!trashedFolder.value,
-  }),
-)
+  }
+  return emptyActions.value
+    ? emptyStateWithActions({ ...input, canCreateDocuments: canCreateDocuments.value })
+    : emptyState(input)
+})
 const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
 

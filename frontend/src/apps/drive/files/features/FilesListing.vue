@@ -27,7 +27,10 @@
       v-else-if="!loading && !query.rows.length"
       class="flex flex-col items-center justify-center gap-2 py-16 text-center"
     >
-      <span class="lucide-folder-open size-6 text-ink-gray-4" aria-hidden="true" />
+      <span
+        :class="[emptyIcon ?? 'lucide-folder-open', 'size-6 text-ink-gray-4']"
+        aria-hidden="true"
+      />
       <p class="text-base text-ink-gray-5">{{ emptyTitle }}</p>
       <p class="text-p-sm text-ink-gray-5">{{ emptyDescription }}</p>
       <slot name="empty-action" />
@@ -336,6 +339,8 @@ const props = defineProps<{
   selectionMode: boolean
   emptyTitle: string
   emptyDescription: string
+  /** The empty state's icon class; an open folder when not given. */
+  emptyIcon?: string
   showBreadcrumbs?: boolean
   /** False where the server fixes the order (search, Recent, Starred…): headers then only label. */
   sortable?: boolean
