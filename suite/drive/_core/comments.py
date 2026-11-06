@@ -79,18 +79,8 @@ def insert_thread(
     comment, mentions, reached = _insert_comment(
         principals, thread.name, node_row, text, via_link, author_name=author_name, client_id=None
     )
-    activity = record(
-        principals,
-        node_row.name,
-        "comment",
-        detail={
-            "thread": thread.name,
-            "comment": comment,
-            "resolved": False,
-            "mentions": mentions,
-            "excerpt": excerpt(text, mentions),
-        },
-        via_link=via_link,
+    activity = record_comment(
+        principals, node_row.name, thread.name, comment, False, text, mentions, via_link
     )
     # The owner hears of every new thread on their item, except their own
     owner = [node_row.owner] if node_row.owner != principals.user else []
@@ -162,21 +152,33 @@ def insert_reply(
         author_name=author_name,
         client_id=client_id,
     )
-    activity = record(
-        principals,
-        node.name,
-        "comment",
-        detail={
-            "thread": thread_row.name,
-            "comment": comment,
-            "resolved": bool(thread_row.resolved),
-            "excerpt": excerpt(text, mentions),
-            "mentions": mentions,
-        },
-        via_link=via_link,
+    resolved = bool(thread_row.resolved)
+    activity = record_comment(
+        principals, node.name, thread_row.name, comment, resolved, text, mentions, via_link
     )
     notify_users(activity, reached, reached)
     return comment
+
+
+def record_comment(
+    principals: Principals,
+    node: str,
+    thread: str,
+    comment: str,
+    resolved: bool,
+    text: str,
+    mentions: list[str],
+    via_link: str | None,
+) -> str:
+    """Record a comment's activity, quoting it and naming whom it mentions; answer the activity."""
+    detail = {
+        "thread": thread,
+        "comment": comment,
+        "resolved": resolved,
+        "excerpt": excerpt(text, mentions),
+        "mentions": mentions,
+    }
+    return record(principals, node, "comment", detail=detail, via_link=via_link)
 
 
 def reply(
@@ -476,19 +478,9 @@ def write_comment_edit(
         comment_row.name,
         {"content": text, "mentions": frappe.as_json(mentions)},
     )
-    thread = _thread(comment_row.thread)
-    activity = record(
-        principals,
-        node.name,
-        "comment",
-        detail={
-            "thread": comment_row.thread,
-            "comment": comment_row.name,
-            "resolved": bool(thread.resolved),
-            "excerpt": excerpt(text, mentions),
-            "mentions": mentions,
-        },
-        via_link=via_link,
+    resolved = bool(_thread(comment_row.thread).resolved)
+    activity = record_comment(
+        principals, node.name, comment_row.thread, comment_row.name, resolved, text, mentions, via_link
     )
     notify_users(activity, [user for user in added if user not in named_earlier], added)
 
