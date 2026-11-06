@@ -284,6 +284,7 @@ CONTRACT_ROUTES = (
     ),
 )
 
+_ON_NODE_ERRORS = (frappe.PermissionError, drive.DriveForbidden, drive.DriveNotFound)
 
 ROUTES = (
     *LIFECYCLE_ROUTES,
@@ -375,13 +376,7 @@ ROUTES = (
         "GET",
         "people",
         "people_get",
-        errors=(
-            BadRequest,
-            people.BadCursor,
-            frappe.PermissionError,
-            drive.DriveForbidden,
-            drive.DriveNotFound,
-        ),
+        errors=(BadRequest, people.BadCursor, *_ON_NODE_ERRORS),
         query=PeopleQuery,
         output=people.PeoplePage,
         kind="query",
@@ -392,13 +387,7 @@ ROUTES = (
         "GET",
         "people/lookup",
         "people_lookup",
-        errors=(
-            BadRequest,
-            people.BadLookup,
-            frappe.PermissionError,
-            drive.DriveForbidden,
-            drive.DriveNotFound,
-        ),
+        errors=(BadRequest, people.BadLookup, *_ON_NODE_ERRORS),
         query=PeopleLookupQuery,
         output=list[people.PersonUser],
         kind="query",
