@@ -719,10 +719,12 @@ describe('Sort', () => {
   })
 })
 
+const expansions = (id: string) =>
+  server.calls.filter((call) => call.id === id).map((call) => call.input.expand)
+
 describe('Access column', () => {
-  afterEach(() => setTweaks(['t36-access-column'], true))
-  const expansions = (id: string) =>
-    server.calls.filter((call) => call.id === id).map((call) => call.input.expand)
+  beforeEach(() => setTweaks(['t46-folder-size'], false))
+  afterEach(() => setTweaks(['t36-access-column', 't46-folder-size'], true))
 
   it('asks for each row’s audience in a folder', async () => {
     await mount('/drive/f/folder-1/talks')
@@ -744,6 +746,32 @@ describe('Access column', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(expansions('node_children')).toEqual(['access'])
+  })
+})
+
+describe('Folder size', () => {
+  afterEach(() => setTweaks(['t46-folder-size'], true))
+
+  it('asks for each folder’s total in a listed folder', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(expansions('node_children')).toEqual(['access,audience,contents_size'])
+  })
+
+  it('asks for none in Trash', async () => {
+    await mount('/drive/trash')
+    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
+
+    expect(expansions('view_list')).toEqual(['access'])
+  })
+
+  it('asks for none with the tweak off', async () => {
+    setTweaks(['t46-folder-size'], false)
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(expansions('node_children')).toEqual(['access,audience'])
   })
 })
 

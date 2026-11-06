@@ -52,6 +52,7 @@ export type NodeCreateCreateFolderOutput = {
   access?: NodeCreateCreateFolderOutputAccessShape
   audience?: NodeCreateCreateFolderOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateFolderOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateFolderOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -137,6 +138,7 @@ export type NodeCreateCreateFileOutput = {
   access?: NodeCreateCreateFileOutputAccessShape
   audience?: NodeCreateCreateFileOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateFileOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateFileOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -219,6 +221,7 @@ export type NodeCreateCreateLinkOutput = {
   access?: NodeCreateCreateLinkOutputAccessShape
   audience?: NodeCreateCreateLinkOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateLinkOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateLinkOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -304,6 +307,7 @@ export type NodeCreateCreateDocumentOutput = {
   access?: NodeCreateCreateDocumentOutputAccessShape
   audience?: NodeCreateCreateDocumentOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateDocumentOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateDocumentOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -438,6 +442,7 @@ export type NodeGetOutput = {
   access?: NodeGetOutputAccessShape
   audience?: NodeGetOutputAudienceShape
   breadcrumbs?: Array<NodeGetOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeGetOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -511,6 +516,7 @@ export type NodePatchRenameOutput = {
   access?: NodePatchRenameOutputAccessShape
   audience?: NodePatchRenameOutputAudienceShape
   breadcrumbs?: Array<NodePatchRenameOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchRenameOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -601,6 +607,7 @@ export type NodePatchMoveOutput = {
   access?: NodePatchMoveOutputAccessShape
   audience?: NodePatchMoveOutputAudienceShape
   breadcrumbs?: Array<NodePatchMoveOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchMoveOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -695,6 +702,7 @@ export type NodePatchTrashOutput = {
   access?: NodePatchTrashOutputAccessShape
   audience?: NodePatchTrashOutputAudienceShape
   breadcrumbs?: Array<NodePatchTrashOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchTrashOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -789,6 +797,7 @@ export type NodePatchRestoreOutput = {
   access?: NodePatchRestoreOutputAccessShape
   audience?: NodePatchRestoreOutputAudienceShape
   breadcrumbs?: Array<NodePatchRestoreOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchRestoreOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -883,6 +892,7 @@ export type NodePatchStampOutput = {
   access?: NodePatchStampOutputAccessShape
   audience?: NodePatchStampOutputAudienceShape
   breadcrumbs?: Array<NodePatchStampOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchStampOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1031,6 +1041,7 @@ export type NodeChildrenOutputNodeShape = {
   access?: NodeChildrenOutputAccessShape
   audience?: NodeChildrenOutputAudienceShape
   breadcrumbs?: Array<NodeChildrenOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeChildrenOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1126,6 +1137,7 @@ export type NodeCopyOutput = {
   access?: NodeCopyOutputAccessShape
   audience?: NodeCopyOutputAudienceShape
   breadcrumbs?: Array<NodeCopyOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCopyOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1217,6 +1229,7 @@ export type NodePutContentOutput = {
   access?: NodePutContentOutputAccessShape
   audience?: NodePutContentOutputAudienceShape
   breadcrumbs?: Array<NodePutContentOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePutContentOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1462,6 +1475,7 @@ export type UploadFinishOutput = {
   access?: UploadFinishOutputAccessShape
   audience?: UploadFinishOutputAudienceShape
   breadcrumbs?: Array<UploadFinishOutputBreadcrumbShape>
+  contents_size?: number
   preview?: UploadFinishOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1952,6 +1966,7 @@ export type ViewListOutputNodeShape = {
   access?: ViewListOutputAccessShape
   audience?: ViewListOutputAudienceShape
   breadcrumbs?: Array<ViewListOutputBreadcrumbShape>
+  contents_size?: number
   preview?: ViewListOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean

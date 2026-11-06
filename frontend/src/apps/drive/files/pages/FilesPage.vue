@@ -664,8 +664,17 @@ const expansion = computed(() => {
   if (showsLocation.value) parts.push('breadcrumbs')
   if (presentation.value.view === 'grid') parts.push('preview')
   else if (presentation.value.columns.includes('access')) parts.push('audience')
+  if (showsFolderSize.value) parts.push('contents_size')
   return parts.join(',')
 })
+/** A folder's total size shows in the list's Size column, except in Trash. */
+const showsFolderSize = computed(
+  () =>
+    isTweakOn('t46-folder-size') &&
+    props.destination !== 'trash' &&
+    presentation.value.view === 'list' &&
+    presentation.value.columns.includes('size'),
+)
 // Recent shows the files the user opened, without the folders they passed through.
 const hidesFolders = computed(() => props.destination === 'recent' && !isSearching.value)
 const typeChoices = computed(() => offeredTypes({ folders: !hidesFolders.value }))

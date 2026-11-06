@@ -60,6 +60,7 @@ from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
 from suite.drive._core.access import describe
 from suite.drive._core.audience import audiences
+from suite.drive._core.contents import contents_sizes
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
@@ -226,6 +227,7 @@ def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
         answer["access"] = describe(row, principals)
     if "audience" in asked:
         answer["audience"] = audiences([row])[row.name]
+    _add_contents_sizes(asked, [answer], [row])
     if "breadcrumbs" in asked:
         answer["breadcrumbs"] = node_core.breadcrumbs(row, principals)
     if "preview" in asked:
@@ -333,6 +335,7 @@ def node_children(
         for answer, row in zip(rows, result["rows"], strict=True):
             answer["access"] = row.access
     _add_audiences(asked, rows, result["rows"])
+    _add_contents_sizes(asked, rows, result["rows"])
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:
@@ -355,6 +358,16 @@ def _add_audiences(asked: frozenset, answers: list[shapes.NodeShape], rows: list
     found = audiences(rows)
     for answer in answers:
         answer["audience"] = found[answer["name"]]
+
+
+def _add_contents_sizes(asked: frozenset, answers: list[shapes.NodeShape], rows: list) -> None:
+    """Add the `contents_size` expansion to a page's folders, read once for every folder."""
+    if "contents_size" not in asked:
+        return
+    found = contents_sizes(rows)
+    for answer in answers:
+        if answer["name"] in found:
+            answer["contents_size"] = found[answer["name"]]
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -985,7 +998,7 @@ def view_list(
     principals = _principals()
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
-    supported = {"preview", "access", "audience"}
+    supported = {"preview", "access", "audience", "contents_size"}
     if name in ("search", "shared", "favourites", "recents"):
         supported.add("breadcrumbs")
     if name == "archived-roots":
@@ -1017,6 +1030,7 @@ def view_list(
         if name == "recents":
             answer["opened_at"] = shapes.stamp(row.opened_at)
     _add_audiences(asked, rows, result["rows"])
+    _add_contents_sizes(asked, rows, result["rows"])
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:

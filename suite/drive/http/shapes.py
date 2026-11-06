@@ -34,7 +34,7 @@ from suite.drive._core.activity import ActivityAction
 from suite.drive._core.audience import AudienceKind
 from suite.drive._core.people import Person, people
 
-EXPANSIONS = ("access", "audience", "breadcrumbs", "preview")
+EXPANSIONS = ("access", "audience", "breadcrumbs", "contents_size", "preview")
 USAGE_EXPANSIONS = ("breakdown",)
 
 # §11.5 gives no bound of its own. One gesture is one request, and a page is
@@ -104,6 +104,8 @@ class NodeShape(TypedDict):
     access: NotRequired[AccessShape]
     audience: NotRequired[AudienceShape]
     breadcrumbs: NotRequired[list[BreadcrumbShape]]
+    # A folder's files at every depth, trashed ones left out, in bytes. Only folders carry it.
+    contents_size: NotRequired[int]
     preview: NotRequired[PreviewShape | None]
     opened_at: NotRequired[str | None]
     # The caller's own star. Reads (a detail, a children page, a view) carry

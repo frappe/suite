@@ -105,6 +105,7 @@ export const tweaks = [
   { id: 't45-compact-a', item: 45, group: 'Fewer steps', label: 'New cards: option A', description: 'The New cards are 40 px rows, icon then name, in the same four columns; A wins over B and C, and with A, B and C all off the 56 px cards show.', ready: true },
   { id: 't45-compact-b', item: 45, group: 'Fewer steps', label: 'New cards: option B', description: 'New takes one line: the heading, then four rounded chips that fit their names; B shows when A is off and wins over C.', ready: true },
   { id: 't45-compact-c', item: 45, group: 'Fewer steps', label: 'New cards: option C', description: 'New shows four small tiles with the icon above the name, in a row that fits the names; C shows only when A and B are off.', ready: true },
+  { id: 't46-folder-size', item: 46, group: 'Habits', label: 'Folder sizes', description: 'The list\'s Size column shows the total size of the files in each folder, at every depth, outside Trash.', ready: true },
 ] as const satisfies readonly Tweak[]
 
 /** Adds Drive's ids to `TweakId`, so platform code can read a Drive tweak by a checked id. */

@@ -687,6 +687,31 @@ describe('FilesListing type column', () => {
   })
 })
 
+describe('FilesListing size column', () => {
+  it('shows a folder’s total when the listing read one, and nothing for an empty folder', async () => {
+    const folder = { kind: 'folder', mime: null, size: 0 }
+    const { root } = mount({
+      columns: ['size'],
+      rows: [
+        file('full', 'Projects', { ...folder, contents_size: 3_451_500 }),
+        file('empty', 'Empty', { ...folder, contents_size: 0 }),
+        // A listing that did not ask, such as Trash or the tweak off, has no total.
+        file('unread', 'Archive', folder),
+        file('png', 'Alpha.png', { size: 1_536 }),
+      ],
+    })
+    await nextTick()
+
+    expect(['full', 'empty', 'unread', 'png'].map(typeIn(root))).toEqual([
+      '3.3 MB',
+      '',
+      '',
+      '1.5 KB',
+    ])
+  })
+})
+
+/** The text of the first column after the name. */
 function typeIn(root: HTMLElement) {
   return (name: string) =>
     root

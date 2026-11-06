@@ -223,7 +223,7 @@
               ><span
                 class="truncate text-base text-ink-gray-5"
                 :class="defaultColumns && 'tabular-nums'"
-                >{{ row.size ? formatBytes(row.size) : '' }}</span
+                >{{ rowSize(row) }}</span
               ></ListCell
             >
             <ListCell v-if="shows('modified')" class="justify-end" :class="columnClass('modified')"
@@ -885,6 +885,11 @@ function onAccessDblclick(event: MouseEvent, row: DriveNode) {
 }
 function rowDate(row: DriveNode) {
   return formatModified(byOpened.value ? (row.opened_at ?? null) : row.modified)
+}
+/** A folder shows the total of its files when the listing read it, and nothing when it holds none. */
+function rowSize(row: DriveNode) {
+  const bytes = row.kind === 'folder' ? row.contents_size : row.size
+  return bytes ? formatBytes(bytes) : ''
 }
 function folderOf(row: DriveNode) {
   const parent = row.breadcrumbs?.at(-1)

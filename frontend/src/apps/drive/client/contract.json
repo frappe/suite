@@ -331,6 +331,10 @@
             "title": "Breadcrumbs",
             "type": "array"
           },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
           "preview": {
             "anyOf": [
               {
@@ -742,6 +746,10 @@
             "title": "Breadcrumbs",
             "type": "array"
           },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
           "preview": {
             "anyOf": [
               {
@@ -1137,6 +1145,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -1546,6 +1558,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -2124,6 +2140,10 @@
             "title": "Breadcrumbs",
             "type": "array"
           },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
           "preview": {
             "anyOf": [
               {
@@ -2507,6 +2527,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -2901,6 +2925,10 @@
             "title": "Breadcrumbs",
             "type": "array"
           },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
           "preview": {
             "anyOf": [
               {
@@ -3290,6 +3318,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -3685,6 +3717,10 @@
             "title": "Breadcrumbs",
             "type": "array"
           },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
           "preview": {
             "anyOf": [
               {
@@ -4073,6 +4109,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -4595,6 +4635,10 @@
                 "title": "Breadcrumbs",
                 "type": "array"
               },
+              "contents_size": {
+                "title": "Contents Size",
+                "type": "integer"
+              },
               "preview": {
                 "anyOf": [
                   {
@@ -5060,6 +5104,10 @@
             "title": "Breadcrumbs",
             "type": "array"
           },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
           "preview": {
             "anyOf": [
               {
@@ -5455,6 +5503,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -6242,6 +6294,10 @@
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -7887,6 +7943,10 @@
                 },
                 "title": "Breadcrumbs",
                 "type": "array"
+              },
+              "contents_size": {
+                "title": "Contents Size",
+                "type": "integer"
               },
               "preview": {
                 "anyOf": [

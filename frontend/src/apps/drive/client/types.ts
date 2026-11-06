@@ -84,6 +84,8 @@ export interface DriveNode {
   audience?: DriveAudience
   breadcrumbs?: DriveBreadcrumb[]
   preview?: DrivePreview | null
+  /** A folder's files at every depth, trashed ones left out, in bytes. Only folders carry it. */
+  contents_size?: number
   opened_at?: string | null
   favourite?: boolean
 }
