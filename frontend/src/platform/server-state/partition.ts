@@ -1,6 +1,6 @@
 import { randomId } from '@/platform/random-id'
 
-/** Persisted entity partitions use opaque tokens tied to the browser's current identity. */
+/** Entity partitions use opaque tokens tied to the browser's identity for the tab's session. */
 const KEY = 'suite-api-identity'
 export function identityPartition(identity?: string | null, renew = false): string {
   if (identity === undefined || typeof sessionStorage === 'undefined') return randomId()

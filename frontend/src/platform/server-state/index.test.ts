@@ -54,7 +54,6 @@ beforeEach(() => {
     },
     {
       transport: createTransport({ fetch: fetcher, retryBaseMs: 0 }),
-      persistence: false,
       feedback,
     },
   )

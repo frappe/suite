@@ -70,7 +70,7 @@ function client(fetch: typeof globalThis.fetch) {
               },
       }),
     },
-    { transport: createTransport({ fetch, retryBaseMs: 0 }), persistence: false },
+    { transport: createTransport({ fetch, retryBaseMs: 0 }) },
   )
   clients.push(engine)
   return engine

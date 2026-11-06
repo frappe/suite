@@ -180,8 +180,6 @@ export class Reads {
     apply = true,
   ): Promise<unknown> {
     options.signal?.throwIfAborted()
-    await this.entities.hydrate(record.partition)
-    options.signal?.throwIfAborted()
     if (record.partition !== this.access(record.policy, record.input, record.context))
       throw abortError()
     if (

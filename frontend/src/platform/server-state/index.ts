@@ -9,7 +9,7 @@ import {
   type Transport,
 } from '@/platform/transport'
 
-import { Entities } from './entities'
+import { deleteRetiredEntityStore, Entities } from './entities'
 import { recordMutationFailure } from './errors'
 import { mutationObserver, observe } from './observers'
 import { identityPartition } from './partition'
@@ -44,7 +44,6 @@ export type {
 export interface ClientOptions {
   transport?: Transport
   realtime?: Realtime | false
-  persistence?: boolean
   identity?: string | null
   feedback?: (error: Error) => void
 }
@@ -55,7 +54,8 @@ export function createApiClient(
 ) {
   const feedback = options.feedback ?? reportError
   const transport = options.transport ?? defaultTransport
-  const entities = new Entities(options.persistence ?? true)
+  deleteRetiredEntityStore()
+  const entities = new Entities()
   const reads = new Reads(
     transport,
     entities,
