@@ -80,16 +80,17 @@ import { toRef, useTemplateRef } from 'vue'
 import { SELECTION_MENU } from '@/apps/writer/extensions/link-editing'
 import { translate as __ } from '@/platform/translation'
 
+import { bubbleMenuShouldShow } from './bubble-menu'
 import ColorPanel from './ColorPanel.vue'
 import { activeBlockStyle, BLOCK_STYLES, MARKS, toggleHighlight } from './formatting'
 import ToolbarButton from './ToolbarButton.vue'
 import { useLiveEditorState } from './useEditorVersion'
 import { useReturnFocus } from './useReturnFocus'
 
-type ShouldShow = InstanceType<typeof BubbleMenu>['$props']['shouldShow']
-
-const props = defineProps<{ editor: Editor; shouldShow: ShouldShow }>()
+const props = defineProps<{ editor: Editor }>()
 const emit = defineEmits<{ comment: [] }>()
+
+const shouldShow = bubbleMenuShouldShow()
 
 // Menus open inside the bar, so the editor does not read their focus as a blur and hide it
 const bar = useTemplateRef<HTMLElement>('bar')

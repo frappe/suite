@@ -32,12 +32,7 @@
                   @change="handleEditorChange"
                 >
                   <template #default="{ editor }">
-                    <WriterBubbleMenu
-                      v-if="editor"
-                      :editor
-                      :should-show="shouldShowBubbleMenu"
-                      @comment="addComment"
-                    />
+                    <WriterBubbleMenu v-if="editor" :editor @comment="addComment" />
                     <!-- Stays mounted: BubbleMenu detaches its root, which Vue cannot then remove or patch beside -->
                     <LinkPopover v-if="editor" :editor />
                     <TableControls v-if="editor && editable" :editor />
@@ -101,7 +96,6 @@ import {
   editorTextStyle,
 } from '@/apps/writer/utils/editor-layout'
 
-import { bubbleMenuShouldShow } from './core-editor/bubble-menu'
 import { driveFileContent } from './core-editor/driveFileContent'
 import LinkPopover from './core-editor/LinkPopover.vue'
 import TableControls from './core-editor/table/TableControls.vue'
@@ -202,8 +196,6 @@ const writerEditorOptions = {
 }
 
 const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]
-
-const shouldShowBubbleMenu = bubbleMenuShouldShow()
 
 const gridStyle = computed(() => editorColumns())
 
