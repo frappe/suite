@@ -1,9 +1,11 @@
 import { useNow } from '@vueuse/core'
 import { defineAsyncComponent, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
 import { showEventReminder, type EventReminder } from '@/apps/calendar/reminders'
+import { holdNewEventDraft, type NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import type { AreaDefinition } from '@/platform/contracts'
 import { realtime, type Realtime } from '@/platform/realtime'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
@@ -17,6 +19,20 @@ export { adjustScheduleEndTime, adjustScheduleStartTime } from './utils/schedule
 
 export type { CalendarEvent } from '@/apps/calendar/client/events'
 export { upcomingEventWindow } from './upcomingWindow'
+export type { NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+
+/**
+ * Opens Calendar on a new event filled in from `draft`, for the reader to finish and save. Call it
+ * in a component's setup.
+ */
+export function useNewCalendarEvent(): (draft: NewEventDraft) => Promise<unknown> {
+  const router = useRouter()
+  return (draft) => {
+    holdNewEventDraft(draft)
+    // By path: Calendar's routes load with the area, so from elsewhere its route names are unknown.
+    return router.push({ path: calendarArea.to, query: { new: '1' } })
+  }
+}
 export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
 /** Shared upcoming-event presentation; callers supply their own event window and actions. */
 export { default as UpcomingEventList } from '@/apps/calendar/components/UpcomingEventList.vue'

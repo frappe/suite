@@ -43,6 +43,7 @@
 import { Button, toast } from 'frappe-ui'
 import {
   Ban,
+  CalendarPlus,
   CircleAlert,
   CircleCheck,
   Code,
@@ -64,6 +65,7 @@ import { computed, h, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
+import { useNewCalendarEvent } from '@/apps/calendar'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
@@ -76,6 +78,7 @@ import {
 } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import { eventFromMail } from '@/apps/mail/utils/eventFromMail'
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
@@ -114,6 +117,9 @@ const {
 }>()
 const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam', 'deleteMail'])
 const { isMobile } = useScreenSize()
+// An event from this mail: Calendar opens on it, filled in, for the reader to finish and save.
+const createEvent = useNewCalendarEvent()
+const ownAddresses = () => identities.value.data?.map((identity: Identity) => identity.email) ?? []
 const route = useRoute()
 const router = useRouter()
 // Everything account-scoped resolves through the enclosing pane's scope — the
@@ -303,6 +309,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
   {
     group: '',
     options: [
+      {
+        label: __('Create Event'),
+        onClick: () => void createEvent(eventFromMail(mail, ownAddresses())),
+        icon: CalendarPlus,
+        condition: () => !mail.draft,
+      },
       {
         label: __('Download Email'),
         onClick: () => downloadEmail(),
