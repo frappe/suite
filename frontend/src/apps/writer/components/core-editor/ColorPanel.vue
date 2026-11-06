@@ -41,42 +41,13 @@ import { toRef } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
+import { highlightSwatchStyle, PALETTE, paletteVariables, swatchBorder, SWATCHES } from './palette'
 import { useLiveEditorState } from './useEditorVersion'
 
 const props = defineProps<{ editor: Editor }>()
 const emit = defineEmits<{ pick: [] }>()
 
-// frappe-ui's named palette; the editor stores the name and draws it with these variables
-const PALETTE = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'teal',
-  'cyan',
-  'blue',
-  'indigo',
-  'purple',
-  'pink',
-  'gray',
-] as const
-
-type Swatch = { name: string | null; label: string }
-
-const SWATCHES: readonly Swatch[] = [
-  { name: null, label: 'Default' },
-  ...PALETTE.map((name) => ({ name, label: name[0].toUpperCase() + name.slice(1) })),
-]
-
-// The palette's variables are set on the editor's element, and this panel opens outside it
-const palette = Object.fromEntries(
-  PALETTE.flatMap((name) =>
-    ['color', 'highlight'].map((kind) => {
-      const variable = `--prose-${kind}-${name}`
-      return [variable, getComputedStyle(props.editor.view.dom).getPropertyValue(variable)]
-    }),
-  ),
-)
+const palette = paletteVariables(props.editor.view.dom)
 
 const { live } = useLiveEditorState(toRef(props, 'editor'))
 
@@ -92,7 +63,7 @@ const sections = live(() => [
     active: activeName('textStyle'),
     style: (name: string | null) => ({
       color: name ? `var(--prose-color-${name})` : 'var(--ink-gray-9)',
-      borderColor: lineOf(name),
+      borderColor: swatchBorder(name),
     }),
     set: (name: string | null) =>
       name
@@ -104,22 +75,13 @@ const sections = live(() => [
     remove: 'Remove background color',
     letter: false,
     active: activeName('namedHighlight'),
-    style: (name: string | null) => ({
-      backgroundColor: name ? `var(--prose-highlight-${name})` : undefined,
-      borderColor: lineOf(name),
-    }),
+    style: highlightSwatchStyle,
     set: (name: string | null) =>
       name
         ? props.editor.chain().focus().setMark('namedHighlight', { color: name }).run()
         : props.editor.chain().focus().unsetHighlight().run(),
   },
 ])
-
-function lineOf(name: string | null) {
-  return name
-    ? `color-mix(in srgb, var(--prose-color-${name}) 35%, transparent)`
-    : 'var(--outline-gray-2)'
-}
 
 function pick(set: (name: string | null) => boolean, name: string | null) {
   set(name)

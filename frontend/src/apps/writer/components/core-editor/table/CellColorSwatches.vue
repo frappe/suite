@@ -7,12 +7,7 @@
       type="button"
       class="writer-swatch"
       :class="!swatch.name && 'is-none'"
-      :style="{
-        backgroundColor: swatch.name ? `var(--prose-highlight-${swatch.name})` : undefined,
-        borderColor: swatch.name
-          ? `color-mix(in srgb, var(--prose-color-${swatch.name}) 35%, transparent)`
-          : 'var(--outline-gray-2)',
-      }"
+      :style="highlightSwatchStyle(swatch.name)"
       :aria-label="__(swatch.label)"
       :title="__(swatch.label)"
       @click="emit('pick', swatch.name)"
@@ -23,37 +18,10 @@
 <script setup lang="ts">
 import { translate as __ } from '@/platform/translation'
 
+import { highlightSwatchStyle, paletteVariables, SWATCHES } from '../palette'
+
 const props = defineProps<{ editorElement: Element }>()
 const emit = defineEmits<{ pick: [name: string | null] }>()
 
-// frappe-ui's named palette, as the bubble menu's colour panel offers it
-const PALETTE = [
-  'red',
-  'orange',
-  'yellow',
-  'green',
-  'teal',
-  'cyan',
-  'blue',
-  'indigo',
-  'purple',
-  'pink',
-  'gray',
-] as const
-
-const SWATCHES = [
-  { name: null, label: 'Default' },
-  ...PALETTE.map((name) => ({ name, label: name[0].toUpperCase() + name.slice(1) })),
-]
-
-// The palette's variables are set on the editor's element, and the menu opens outside it
-const style = getComputedStyle(props.editorElement)
-const palette = Object.fromEntries(
-  PALETTE.flatMap((name) =>
-    ['color', 'highlight'].map((kind) => {
-      const variable = `--prose-${kind}-${name}`
-      return [variable, style.getPropertyValue(variable)]
-    }),
-  ),
-)
+const palette = paletteVariables(props.editorElement)
 </script>
