@@ -67,11 +67,7 @@ import { useDocumentTabs } from './useDocumentTabs'
 
 const props = defineProps<{ editor: Editor; editable: boolean }>()
 
-const { tabs, activeTabId } = useDocumentTabs(props.editor)
-
-function selectTab(id: string) {
-  if (id !== activeTabId.value) props.editor.commands.changeTab(id)
-}
+const { tabs, activeTabId, selectTab } = useDocumentTabs(props.editor)
 
 const renamingId = ref<string | null>(null)
 const renamedLabel = ref('')

@@ -30,5 +30,9 @@ export function useDocumentTabs(editor: Editor) {
     editor.view.dom.removeEventListener('tab-renamed', updateTabs)
   })
 
-  return { tabs, activeTabId }
+  function selectTab(id: string) {
+    if (id && id !== activeTabId.value) editor.commands.changeTab(id)
+  }
+
+  return { tabs, activeTabId, selectTab }
 }
