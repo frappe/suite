@@ -157,7 +157,7 @@ class _Found:
 
 @dataclass
 class _Placement:
-    """One distinct content in a page, and where its object ends up.
+    """One distinct content in a page; `place` puts its object at its key.
 
     The first row that reaches the content supplies the legacy key and the
     filename, as it would have copied alone. `blob` is the claimed blob, or
@@ -166,7 +166,6 @@ class _Placement:
 
     first: _Found
     claimed: ClaimedBlob | None
-    destination: str = ""
     blob: str | None = None
 
     def __post_init__(self):
@@ -206,12 +205,18 @@ def _copy_page(env, bucket, pool: ThreadPoolExecutor, prep: StoragePreparation, 
         if checksum not in placements:
             placements[checksum] = _Placement(item, env.storage.claim_blob(checksum))
     key_prefix = env.storage.key_prefix()
-    destinations = pool.map(lambda placement: placement.place(bucket, key_prefix), placements.values())
-    for placement, destination in zip(placements.values(), destinations, strict=True):
-        placement.destination = destination
+    # Every object is placed and verified before the first row is recorded.
+    destinations = dict(
+        zip(
+            placements,
+            pool.map(lambda placement: placement.place(bucket, key_prefix), placements.values()),
+            strict=True,
+        )
+    )
 
     for item in found:
-        _link(env, bucket, prep, item, placements[item.digest.checksum])
+        checksum = item.digest.checksum
+        _link(env, bucket, prep, item, placements[checksum], destinations[checksum])
 
 
 def _legacy_key(prep: StoragePreparation, row) -> str | None:
@@ -230,12 +235,14 @@ def _legacy_key(prep: StoragePreparation, row) -> str | None:
     return legacy_key
 
 
-def _link(env, bucket, prep: StoragePreparation, item: _Found, placement: _Placement) -> None:
-    """Record and link one row whose object is verified at `placement.destination`."""
+def _link(
+    env, bucket, prep: StoragePreparation, item: _Found, placement: _Placement, destination: str
+) -> None:
+    """Record and link one row whose object is verified at `destination`."""
     digest = item.digest
     run = prep.s3_copy_run
     run.bytes_read += digest.size
-    _record_copy(env, bucket, item.row, item.legacy_key, placement.destination, digest)
+    _record_copy(env, bucket, item.row, item.legacy_key, destination, digest)
     if placement.blob:
         env.files.link_blob(item.row.name, placement.blob)
         prep.s3_objects_reused += 1
@@ -244,7 +251,7 @@ def _link(env, bucket, prep: StoragePreparation, item: _Found, placement: _Place
 
     placement.blob = env.storage.insert_blob(
         name=blob_name(digest.checksum),
-        key=placement.destination.removeprefix(PRIVATE_NAMESPACE),
+        key=destination.removeprefix(PRIVATE_NAMESPACE),
         checksum=digest.checksum,
         size=digest.size,
         mime_type=digest.mime_type,
