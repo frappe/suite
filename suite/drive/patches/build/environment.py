@@ -43,7 +43,7 @@ DEFAULT_COPY_WORKERS = 8
 MAX_COPY_WORKERS = 32
 
 
-def copy_workers(value) -> int:
+def copy_workers(value: object) -> int:
     """The copy thread count `drive_build_copy_workers` asks for.
 
     Unset means the default. Anything that is not a whole number from 1 to
@@ -51,15 +51,19 @@ def copy_workers(value) -> int:
     quietly running with a number the operator did not choose."""
     if value is None or value == "":
         return DEFAULT_COPY_WORKERS
+    refusal = ValueError(
+        f"site config `{COPY_WORKERS_CONFIG_KEY}` is {value!r}; set a whole number from 1 to "
+        f"{MAX_COPY_WORKERS}, or remove it to use {DEFAULT_COPY_WORKERS}."
+    )
+    # `int(True)` is 1, so a JSON `true` would otherwise pass as one worker.
+    if isinstance(value, bool):
+        raise refusal
     try:
         workers = int(str(value).strip())
     except ValueError:
-        workers = 0
-    if isinstance(value, bool) or not 1 <= workers <= MAX_COPY_WORKERS:
-        raise ValueError(
-            f"site config `{COPY_WORKERS_CONFIG_KEY}` is {value!r}; set a whole number from 1 to "
-            f"{MAX_COPY_WORKERS}, or remove it to use {DEFAULT_COPY_WORKERS}."
-        )
+        raise refusal from None
+    if not 1 <= workers <= MAX_COPY_WORKERS:
+        raise refusal
     return workers
 
 
