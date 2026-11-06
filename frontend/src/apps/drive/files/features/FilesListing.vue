@@ -50,7 +50,7 @@
         :columns="columnTracks"
         :row-height="40"
         class="-mx-3 list-row-px-3"
-        :class="loading && delayedSkeleton && FADE_IN"
+        :class="[loading && delayedSkeleton && FADE_IN, defaultColumns && 'md:list-gap-6']"
         :aria-busy="loading || undefined"
         v-bind="gridRoles"
       >
@@ -220,9 +220,11 @@
               <span class="truncate text-base text-ink-gray-7">{{ row.owner.full_name }}</span>
             </ListCell>
             <ListCell v-if="shows('size')" class="justify-end" :class="columnClass('size')"
-              ><span class="truncate text-base text-ink-gray-5">{{
-                row.size ? formatBytes(row.size) : ''
-              }}</span></ListCell
+              ><span
+                class="truncate text-base text-ink-gray-5"
+                :class="defaultColumns && 'tabular-nums'"
+                >{{ row.size ? formatBytes(row.size) : '' }}</span
+              ></ListCell
             >
             <ListCell v-if="shows('modified')" class="justify-end" :class="columnClass('modified')"
               ><span class="truncate text-base text-ink-gray-5">{{ rowDate(row) }}</span></ListCell
@@ -381,14 +383,15 @@
       }"
       aria-hidden="true"
     />
-    <!-- The Access labels, unseen, so the column sizes to the widest even while it is hidden. -->
+    <!-- The measured columns' labels, unseen, so each column sizes to its widest even while it is hidden. -->
     <div
-      v-if="shows('access')"
-      ref="accessRuler"
+      ref="ruler"
       class="pointer-events-none invisible absolute left-0 top-0 text-base"
       aria-hidden="true"
     >
-      <span v-for="label in accessLabels" :key="label" class="block w-max">{{ label }}</span>
+      <div v-for="(labels, column) in rulerLabels" :key="column" :data-column="column">
+        <span v-for="label in labels" :key="label" class="block w-max">{{ label }}</span>
+      </div>
     </div>
     <DragMoveLayer v-if="drag" :drag="drag" />
   </div>
@@ -440,12 +443,17 @@ import { useTweak } from '@/platform/tweaks'
 import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
 import {
-  ACCESS_MAX_WIDTH,
-  accessWidth,
+  COLUMN_GAP,
   COLUMN_WIDTHS,
   fitColumns,
+  FITTED_COLUMN_GAP,
+  FITTED_WIDTHS,
+  isMeasuredColumn,
   LIST_COLUMNS,
+  MEASURED_COLUMNS,
+  measuredWidth,
   WIDE_ONLY,
+  type MeasuredColumn,
 } from './listColumns'
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
@@ -661,11 +669,18 @@ const accessColumn = useTweak('t36-access-column')
 /** The listing's width, once the browser has measured it. */
 const listingWidth = shallowRef<number>()
 useResizeObserver(listing, ([entry]) => (listingWidth.value = entry?.contentRect.width))
-/** The Access column's width, from its widest label. */
-const accessTrack = shallowRef(ACCESS_MAX_WIDTH)
-function trackWidth(column: string) {
-  return column === 'access' ? accessTrack.value : (COLUMN_WIDTHS[column] ?? 128)
+/** The measured columns' widths, from their widest labels. */
+const measured = shallowRef<Partial<Record<MeasuredColumn, number>>>({})
+/** Whether a column sizes to its labels: Access always, Type and Owner with t35. */
+function isMeasured(column: string): column is MeasuredColumn {
+  return isMeasuredColumn(column) && (column === 'access' || defaultColumns.value)
 }
+function trackWidth(column: string) {
+  if (isMeasured(column)) return measured.value[column] ?? MEASURED_COLUMNS[column].max
+  return (defaultColumns.value && FITTED_WIDTHS[column]) || (COLUMN_WIDTHS[column] ?? 128)
+}
+/** With t35, the desktop list spaces its columns wider. */
+const columnGap = computed(() => (defaultColumns.value ? FITTED_COLUMN_GAP : COLUMN_GAP))
 /**
  * The columns the desktop layout shows. With t35 or t36, a chosen column the
  * list has no room for is hidden until there is room again; it stays chosen.
@@ -674,19 +689,36 @@ const desktopColumns = computed(() => {
   const width = listingWidth.value
   if (width === undefined || !(defaultColumns.value || accessColumn.value))
     return shownColumns.value
-  return fitColumns(shownColumns.value, width, trackWidth)
+  return fitColumns(shownColumns.value, width, trackWidth, columnGap.value)
 })
-/** The rows' Access labels, once each. */
-const accessLabels = computed(() => [
-  ...new Set(rows.value.flatMap((row) => (row.audience ? [audienceLabel(row.audience)] : []))),
-])
-const accessRuler = useTemplateRef('accessRuler')
-watch([accessLabels, accessRuler], measureAccess, { flush: 'post', immediate: true })
-/** Sizes Access to its widest label. A label with no width has had no layout, so it says nothing. */
-function measureAccess() {
-  const labels = [...(accessRuler.value?.children ?? [])]
-  const widths = labels.map((label) => label.getBoundingClientRect().width).filter(Boolean)
-  if (widths.length) accessTrack.value = accessWidth(widths)
+/** Each shown measured column's labels in the rows, once each. */
+const rulerLabels = computed(() => {
+  const labels: Partial<Record<MeasuredColumn, string[]>> = {}
+  const labelsOf = (column: MeasuredColumn): string[] =>
+    rows.value.flatMap((row) => {
+      if (column === 'kind') return [typeLabel(row)]
+      if (column === 'owner') return [row.owner.full_name]
+      return row.audience ? [audienceLabel(row.audience)] : []
+    })
+  for (const column of shownColumns.value) {
+    if (isMeasured(column)) labels[column] = [...new Set(labelsOf(column))]
+  }
+  return labels
+})
+const ruler = useTemplateRef('ruler')
+watch([rulerLabels, ruler], measureColumns, { flush: 'post', immediate: true })
+// Labels measured before the web font loads have the fallback font's widths.
+onMounted(() => void document.fonts?.ready.then(measureColumns))
+/** Sizes each measured column to its widest label. A label with no width has had no layout, so it says nothing. */
+function measureColumns() {
+  const next = { ...measured.value }
+  for (const group of ruler.value?.children ?? []) {
+    const column = group.getAttribute('data-column')
+    if (!isMeasuredColumn(column)) continue
+    const widths = [...group.children].map((label) => label.getBoundingClientRect().width)
+    if (widths.some(Boolean)) next[column] = measuredWidth(column, widths.filter(Boolean))
+  }
+  measured.value = next
 }
 const columnTracks = computed(() => {
   const tracks = (list: string[]) => [

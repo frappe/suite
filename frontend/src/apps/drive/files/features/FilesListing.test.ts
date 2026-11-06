@@ -318,16 +318,65 @@ describe('FilesListing columns', () => {
     await nextTick()
     const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
 
-    // Name, Owner, Size, Modified, then the menu.
+    // Name, Owner (at its widest until its labels are measured), Size, Modified, then the menu.
     expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-      'minmax(0,1fr) 192px 96px 128px 2.5rem',
+      'minmax(0,1fr) 160px 72px 96px 2.5rem',
     )
+  })
+
+  describe('sized to their labels', () => {
+    beforeEach(() => {
+      // Text 7 px a character wide, as the ruler measures it.
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return { width: (this.textContent?.length ?? 0) * 7 } as DOMRect
+      })
+    })
+    afterEach(() => {
+      vi.restoreAllMocks()
+      setTweaks(['t35-default-columns'], true)
+    })
+    const labelled = [
+      file('a', 'Alpha.png'),
+      file('s', 'Plan', {
+        kind: 'document',
+        content_doctype: 'Sheet',
+        owner: { id: 'leo@example.com', full_name: 'Leo Fernandes', user_image: null },
+      }),
+    ]
+
+    it('fits Type to its longest name and Owner to its longest name beside the avatar', async () => {
+      const { root } = mount({ rows: labelled, columns: ['kind', 'owner', 'size', 'modified'] })
+      await nextTick()
+      await nextTick()
+      const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
+
+      // "Spreadsheet" is 77 px; "Leo Fernandes" is 91 px, and the avatar and its gap 24.
+      expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
+        'minmax(0,1fr) 77px 115px 72px 96px 2.5rem',
+      )
+      expect(list.classList).toContain('md:list-gap-6')
+    })
+
+    it('keeps the fixed widths and the narrow gap with t35 off', async () => {
+      setTweaks(['t35-default-columns'], false)
+      const { root } = mount({ rows: labelled, columns: ['kind', 'owner', 'size', 'modified'] })
+      await nextTick()
+      await nextTick()
+      const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
+
+      expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
+        'minmax(0,1fr) 128px 192px 96px 128px 2.5rem',
+      )
+      expect(list.classList).not.toContain('md:list-gap-6')
+    })
   })
 
   describe('in a narrow list', () => {
     let listWidth: number
     beforeEach(() => {
-      listWidth = 600
+      listWidth = 620
       vi.stubGlobal(
         'ResizeObserver',
         class {
@@ -351,11 +400,11 @@ describe('FilesListing columns', () => {
       await nextTick()
       const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
 
-      // 600 px holds Name at 240 px beside Access and Modified, not Type or Size.
+      // 620 px holds Name at 240 px beside Access and Modified, with 24 px gaps, not Type or Size.
       expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-        'minmax(0,1fr) 160px 128px 2.5rem',
+        'minmax(0,1fr) 160px 96px 2.5rem',
       )
-      expect(list.style.getPropertyValue('--_list-columns-base')).toBe('minmax(0,1fr) 96px 2.5rem')
+      expect(list.style.getPropertyValue('--_list-columns-base')).toBe('minmax(0,1fr) 72px 2.5rem')
       expect(header(root, 'Type')?.classList).toContain('hidden')
       expect(header(root, 'Type')?.classList).not.toContain('md:flex')
       expect(header(root, 'Size')?.classList).toContain('md:hidden')
@@ -512,7 +561,7 @@ describe('FilesListing access column', () => {
     expect(accessOf(root, 'public')).toContain('Public')
     const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
     expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-      'minmax(0,1fr) 160px 128px 2.5rem',
+      'minmax(0,1fr) 160px 96px 2.5rem',
     )
   })
 

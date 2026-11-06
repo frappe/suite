@@ -1,7 +1,7 @@
 /** The list's optional columns, in the rows' order. Name comes before them and the menu after. */
 export const LIST_COLUMNS = ['access', 'kind', 'owner', 'size', 'modified'] as const
 
-/** Column widths in pixels. Access sizes to its labels instead (`accessWidth`). */
+/** Column widths in pixels before t35. Access sizes to its labels instead (`measuredWidth`). */
 export const COLUMN_WIDTHS: Record<string, number> = {
   owner: 192,
   modified: 128,
@@ -9,8 +9,42 @@ export const COLUMN_WIDTHS: Record<string, number> = {
   size: 96,
 }
 
+/**
+ * With t35, Size and Modified fit their longest value, such as "1023.9 KB"
+ * and "Sep 28, 2025", and the other columns their widest label (`MEASURED_COLUMNS`).
+ */
+export const FITTED_WIDTHS: Record<string, number> = {
+  size: 72,
+  modified: 96,
+}
+
+/**
+ * The columns sized to their widest label: the room beside the label (an icon
+ * or an avatar and its gap) and the bounds. The widest is the width before any
+ * label shows, and a longer label truncates. Access always sizes this way;
+ * Type and Owner do with t35.
+ */
+export const MEASURED_COLUMNS = {
+  // Room for "Anyone with the link"; a longer workspace name truncates.
+  access: { beside: 16 + 6, min: 80, max: 160 },
+  // Room for "Spreadsheet", and for the header with its sort arrow.
+  kind: { beside: 0, min: 56, max: 112 },
+  // Room for a typical name such as "Leo Fernandes".
+  owner: { beside: 16 + 8, min: 96, max: 160 },
+} as const
+
+export type MeasuredColumn = keyof typeof MEASURED_COLUMNS
+
+export function isMeasuredColumn(column: string | null): column is MeasuredColumn {
+  return !!column && column in MEASURED_COLUMNS
+}
+
 /** Columns a phone has no room for. Name takes their width. */
 export const WIDE_ONLY: ReadonlySet<string> = new Set(['access', 'owner', 'modified', 'kind'])
+
+/** The List's gap between columns, and the wider one a desktop list has with t35 (`md:list-gap-6`). */
+export const COLUMN_GAP = 8
+export const FITTED_COLUMN_GAP = 24
 
 /**
  * The order columns give way in when the list is too narrow, first to go
@@ -22,13 +56,6 @@ const DROP_ORDER = ['kind', 'size', 'owner', 'access', 'modified']
 /** The narrowest Name column the desktop layout gives way for. */
 const NAME_MIN_WIDTH = 240
 const MENU_WIDTH = 40
-/** The List's gap between columns. */
-const COLUMN_GAP = 8
-/** The icon and the gap after it. */
-const ACCESS_ICON_WIDTH = 16 + 6
-const ACCESS_MIN_WIDTH = 80
-/** Room for "Anyone with the link"; a longer workspace name truncates. The width before any label shows. */
-export const ACCESS_MAX_WIDTH = 160
 
 /**
  * The columns that fit a list `room` pixels wide beside a Name column of at
@@ -38,13 +65,14 @@ export function fitColumns(
   columns: readonly string[],
   room: number,
   widthOf: (column: string) => number,
+  gap = COLUMN_GAP,
 ): string[] {
   let shown = [...columns]
   const needed = () =>
     NAME_MIN_WIDTH +
     MENU_WIDTH +
     shown.reduce((sum, column) => sum + widthOf(column), 0) +
-    (shown.length + 1) * COLUMN_GAP
+    (shown.length + 1) * gap
   for (const column of DROP_ORDER) {
     if (needed() <= room) break
     shown = shown.filter((item) => item !== column)
@@ -52,8 +80,9 @@ export function fitColumns(
   return shown
 }
 
-/** The Access column's width for labels of these text widths: the widest, with its icon, within bounds. */
-export function accessWidth(labelWidths: readonly number[]): number {
-  const widest = Math.ceil(Math.max(0, ...labelWidths) + ACCESS_ICON_WIDTH)
-  return Math.min(ACCESS_MAX_WIDTH, Math.max(ACCESS_MIN_WIDTH, widest))
+/** A measured column's width for labels of these text widths: the widest, with what sits beside it, within bounds. */
+export function measuredWidth(column: MeasuredColumn, labelWidths: readonly number[]): number {
+  const { beside, min, max } = MEASURED_COLUMNS[column]
+  const widest = Math.ceil(Math.max(0, ...labelWidths) + beside)
+  return Math.min(max, Math.max(min, widest))
 }
