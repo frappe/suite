@@ -1,5 +1,6 @@
 import { nextTick } from 'vue'
 import {
+  createMemoryHistory,
   createRouter,
   createWebHistory,
   START_LOCATION,
@@ -189,7 +190,27 @@ router.afterEach(async (to, from, failure) => {
   window.location.reload()
 })
 
-function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
+/**
+ * Starts fetching the code of the page at `path` while the boot requests run, so the first
+ * navigation does not wait for them before it asks for its area's routes and page.
+ */
+export function preloadPage(path: string): void {
+  void import('@/shell/AppContainer.vue')
+  const area = findArea(areaPlaceholderId(router.resolve(path)) ?? '')
+  if (!area) return
+  void area.loadRoutes().then(({ routes: children }) => {
+    const matcher = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: area.to, children }],
+    })
+    for (const record of matcher.resolve(path).matched) {
+      const component = record.components?.default
+      if (typeof component === 'function') void (component as () => Promise<unknown>)()
+    }
+  })
+}
+
+function areaPlaceholderId(to: Pick<RouteLocationNormalizedLoaded, 'matched'>): string | null {
   const matched = to.matched.find((record) =>
     String(record.name ?? '').startsWith('area-placeholder-'),
   )

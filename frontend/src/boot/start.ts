@@ -15,5 +15,9 @@ export async function loadDevBoot(): Promise<void> {
     !message.csrf_token
   )
     throw new Error('Suite boot data has no CSRF token')
-  Object.assign(window, message)
+  const { desk_theme, ...boot } = message
+  // What the server-rendered page carries as `data-theme-mode`.
+  if (typeof desk_theme === 'string')
+    document.documentElement.dataset.themeMode = desk_theme.toLowerCase()
+  Object.assign(window, boot)
 }

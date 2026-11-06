@@ -15,7 +15,7 @@ def get_boot_data() -> dict:
     context = frappe._dict()
     get_context(context)
     frappe.local.response_headers["Cache-Control"] = "no-store"
-    return context.boot
+    return {**context.boot, "desk_theme": context.desk_theme}
 
 
 def get_context(context):

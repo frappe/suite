@@ -15,7 +15,8 @@ import { useSession } from '@/platform/session'
 import { initializeTheme } from '@/platform/theme'
 import { installUserTimeZone } from '@/platform/time-zone'
 import { translationPlugin, ready as translationsReady } from '@/platform/translation'
-import router from '@/router'
+import { isTweakOn } from '@/platform/tweaks'
+import router, { preloadPage } from '@/router'
 
 initializeCursor()
 installUserTimeZone()
@@ -28,10 +29,17 @@ const app = createApp(App)
 // in the platform session, so the next user never receives them.
 useSession().onLogout(clearSlidesUserData)
 
+if (isTweakOn('t24-preload-routes')) {
+  void import('@/shell/ShellLayout.vue')
+  preloadPage(window.location.pathname)
+}
+
+// The page arrives in the user's saved theme, so the preference read need not hold the mount.
+const themeReady = initializeTheme()
 await Promise.all([
   initSentry(app, router),
   translationsReady,
-  initializeTheme(),
+  isTweakOn('t24-theme-nonblocking') || themeReady,
   import('@/boot/config'),
 ])
 

@@ -389,7 +389,12 @@ import {
   type MailFilterOption,
 } from '@/apps/mail/composables/useMailCommandPaletteSearch'
 import { userStore } from '@/apps/mail/stores/user'
-import { mailSearchRoute, useMobileSearch, useScreenSize } from '@/apps/mail/utils/composables'
+import {
+  hasMailSearchQuery,
+  mailSearchRoute,
+  useMobileSearch,
+  useScreenSize,
+} from '@/apps/mail/utils/composables'
 import HighlightedText from '@/components/HighlightedText.vue'
 import {
   PALETTE_SEARCH_KEY,
@@ -399,6 +404,7 @@ import {
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
 import { userTimeZone } from '@/platform/time-zone'
+import { isTweakOn } from '@/platform/tweaks'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
@@ -485,7 +491,10 @@ const root = useRootStore()
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { hasSearchQuery: mailHasSearchQuery } = useMobileSearch()
+// Mail's search composable creates the Mail user store, which loads the mail account on any page.
+const mailHasSearchQuery = isTweakOn('t24-palette-no-mail')
+  ? computed(() => hasMailSearchQuery(route.query))
+  : useMobileSearch().hasSearchQuery
 const removeMailFilterShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
   ? '⌘⌫'
   : 'Ctrl+Backspace'
