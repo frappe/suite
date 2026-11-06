@@ -972,35 +972,25 @@ def _written_mentions(text: str) -> list[str]:
     return [*_BRACKET_MENTION.findall(text), *_EMAIL_MENTION.findall(text), *_DATA_MENTION.findall(text)]
 
 
-def _mentions(node: frappe._dict, text: str) -> tuple[list[str], set[str]]:
-    """Who a comment names, each once in written order, and which of them by an `@[…]` token.
-
-    Only the people a picker on this node offers count; any other id names no one, so a
-    disabled account reads the same as an account that doesn't exist. The comment's text stays.
-    """
-    picked = _BRACKET_MENTION.findall(text)
-    written = _written_mentions(text)
-    known = {user.casefold(): user for user in mentionable_on(node, written)}
-    named = (known.get(user.casefold()) for user in written)
-    return list(dict.fromkeys(filter(None, named))), {
-        known[user.casefold()] for user in picked if user.casefold() in known
-    }
-
-
 def _mentions_by(
     principals: Principals, node: frappe._dict, text: str, via_link: str | None
 ) -> tuple[list[str], set[str]]:
-    """`_mentions` as this author's comment stores them: from a Guest or a link, only people who can read.
+    """Who this author's comment names, each once in written order, and which of them by an `@[…]` token.
 
-    A name kept for anyone else would tell an outsider that the account exists. A signed-in
-    author keeps every name, so a block looks like any other lack of access.
+    Only the people a picker on this node offers count; any other id names no one, so a disabled
+    account reads the same as one that doesn't exist. From a Guest or a link only people who can
+    read count, so no kept name tells an outsider an account exists. A signed-in author keeps every
+    name, so a block looks like any other lack of access. The comment's text stays.
     """
     from suite.drive.framework import principals_for
 
-    named, picked = _mentions(node, text)
-    if via_link is None and principals.user != "Guest":
-        return named, picked
-    return [user for user in named if check(node, READ, principals_for(user))], picked
+    written = _written_mentions(text)
+    known = {user.casefold(): user for user in mentionable_on(node, written)}
+    named = list(dict.fromkeys(filter(None, (known.get(user.casefold()) for user in written))))
+    picked = {known[user.casefold()] for user in _BRACKET_MENTION.findall(text) if user.casefold() in known}
+    if via_link is not None or principals.user == "Guest":
+        named = [user for user in named if check(node, READ, principals_for(user))]
+    return named, picked
 
 
 def _named_earlier(comment: frappe._dict) -> set[str]:
