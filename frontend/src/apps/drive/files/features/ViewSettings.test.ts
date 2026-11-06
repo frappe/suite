@@ -9,7 +9,7 @@ import {
   readPresentationPreference,
   replacePresentation,
   resolvePresentation,
-  writePresentationPreference,
+  writeColumnChoice,
   type FilesColumn,
   type FilesDateColumn,
 } from './presentation'
@@ -46,7 +46,7 @@ afterEach(() => {
   unmount = undefined
   document.body.innerHTML = ''
   localStorage.clear()
-  setTweaks(['t19-sort-direction'], true)
+  setTweaks(['t19-sort-direction', 't35-default-columns'], true)
 })
 
 /**
@@ -87,13 +87,7 @@ async function mountPanel({
         onChange: (change: Parameters<typeof replacePresentation>[2]) =>
           replacePresentation(router, presentation.value, change),
         onToggleColumn: (column: FilesColumn, visible: boolean) => {
-          const chosen = presentation.value
-          writePresentationPreference({
-            ...chosen,
-            columns: visible
-              ? [...chosen.columns, column]
-              : chosen.columns.filter((item) => item !== column),
-          })
+          writeColumnChoice(presentation.value.columns, column, visible)
           saved.value += 1
         },
       }),
@@ -229,18 +223,27 @@ describe('View settings panel', () => {
   it('toggles a column pill and leaves the panel open', async () => {
     await mountPanel({ query: { view: 'list' } })
     await openPanel()
-    expect(pill('Size').getAttribute('aria-pressed')).toBe('false')
-
-    pill('Size').click()
-    await settle()
-
-    expect(readPresentationPreference()?.columns).toContain('size')
-    expect(panel()).not.toBeNull()
     expect(pill('Size').getAttribute('aria-pressed')).toBe('true')
 
     pill('Size').click()
     await settle()
+
     expect(readPresentationPreference()?.columns).not.toContain('size')
+    expect(panel()).not.toBeNull()
+    expect(pill('Size').getAttribute('aria-pressed')).toBe('false')
+
+    pill('Size').click()
+    await settle()
+    expect(readPresentationPreference()?.columns).toContain('size')
+  })
+
+  it('starts with Modified and Owner only, with the default-columns tweak off', async () => {
+    setTweaks(['t35-default-columns'], false)
+    await mountPanel({ query: { view: 'list' } })
+    await openPanel()
+
+    expect(pill('Owner').getAttribute('aria-pressed')).toBe('true')
+    expect(pill('Size').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('still switches the view when the browser refuses to save it', async () => {

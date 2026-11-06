@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
-import { nextSort, resolvePresentation } from './presentation'
+import { setTweaks } from '@/platform/tweaks'
+
+import {
+  nextSort,
+  resolvePresentation,
+  writeColumnChoice,
+  writePresentationPreference,
+} from './presentation'
 
 describe('presentation state', () => {
   it('uses query over preference over defaults', () => {
@@ -23,6 +30,48 @@ describe('presentation state', () => {
       sort: 'title',
       dir: 'asc',
       columns: ['owner'],
+    })
+  })
+
+  describe('columns', () => {
+    afterEach(() => {
+      localStorage.clear()
+      setTweaks(['t35-default-columns'], true)
+    })
+
+    const shown = () => resolvePresentation({}).columns
+
+    it('shows Modified, Type and Size to a user who never chose columns', () => {
+      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
+
+      // Changing the view or the sort is not a column choice.
+      writePresentationPreference({ view: 'grid', sort: 'size', dir: 'desc' })
+      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
+    })
+
+    it('keeps a column the user turned off, and the defaults of the others', () => {
+      writeColumnChoice(shown(), 'kind', false)
+      expect(shown()).toEqual(['owner', 'modified', 'size'])
+
+      writePresentationPreference({ view: 'grid' })
+      expect(shown()).toEqual(['owner', 'modified', 'size'])
+    })
+
+    it('reads a preference saved before the new defaults', () => {
+      writePresentationPreference({ columns: ['owner', 'modified'] })
+      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
+
+      localStorage.clear()
+      writePresentationPreference({ columns: ['modified', 'size'] })
+      expect(shown()).toEqual(['modified', 'size'])
+    })
+
+    it('shows Owner and Modified only, with the tweak off', () => {
+      setTweaks(['t35-default-columns'], false)
+      expect(shown()).toEqual(['owner', 'modified'])
+
+      writeColumnChoice(shown(), 'size', true)
+      expect(shown()).toEqual(['owner', 'modified', 'size'])
     })
   })
 

@@ -352,7 +352,7 @@ import {
   readPresentationPreference,
   replacePresentation,
   resolvePresentation,
-  writePresentationPreference,
+  writeColumnChoice,
   type FilesColumn,
   type FilesDateColumn,
   type FilesSort,
@@ -1338,11 +1338,7 @@ function setPresentation(change: PresentationChange) {
   void replacePresentation(router, userPresentation.value, change)
 }
 function setColumn(column: FilesColumn, visible: boolean) {
-  const chosen = userPresentation.value
-  const columns = visible
-    ? [...new Set([...chosen.columns, column])]
-    : chosen.columns.filter((item) => item !== column)
-  writePresentationPreference({ ...chosen, columns })
+  writeColumnChoice(userPresentation.value.columns, column, visible)
   presentationVersion.value += 1
 }
 const startsInNaturalOrder = useTweak('t19-sort-direction')

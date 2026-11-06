@@ -1,5 +1,7 @@
 import type { LocationQuery, Router } from 'vue-router'
 
+import { isTweakOn } from '@/platform/tweaks'
+
 export type FilesViewMode = 'list' | 'grid'
 export type FilesSort = 'title' | 'owner' | 'modified' | 'kind' | 'size'
 export type FilesDirection = 'asc' | 'desc'
@@ -15,6 +17,12 @@ export interface PresentationState {
   sort: FilesSort
   dir: FilesDirection
   columns: string[]
+}
+
+/** The saved preference: the presentation, and the columns the user switched themselves. */
+export interface PresentationPreference extends PresentationState {
+  /** The columns the user turned on or off. The others follow their defaults. */
+  toggled: string[]
 }
 
 /** A change the View settings menu or a sortable header asks for. Columns change on their own. */
@@ -49,7 +57,7 @@ const KEY = 'suite-drive-files-presentation-v1'
 
 export function resolvePresentation(
   query: LocationQuery,
-  preference: Partial<PresentationState> | null = readPresentationPreference(),
+  preference: Partial<PresentationPreference> | null = readPresentationPreference(),
   /** Narrow screens open in grid: a rem-sized table does not fit a phone. */
   viewOverride: FilesViewMode | null = null,
 ): PresentationState {
@@ -58,8 +66,51 @@ export function resolvePresentation(
     view: oneOf(query.view, ['list', 'grid']) ?? viewOverride ?? saved.view,
     sort: oneOf(query.sort, ['title', 'owner', 'modified', 'kind', 'size']) ?? saved.sort,
     dir: oneOf(query.dir, ['asc', 'desc']) ?? saved.dir,
-    columns: normalizeColumns(saved.columns),
+    columns: resolveColumns(saved),
   }
+}
+
+/**
+ * The columns the list shows. A column the user never switched follows its
+ * default (t35), so a column added later shows without resetting their choices.
+ */
+function resolveColumns(saved: Partial<PresentationPreference>): string[] {
+  if (!isTweakOn('t35-default-columns')) return normalizeColumns(saved.columns)
+  const chosen = normalizeColumns(saved.columns)
+  const toggled = toggledColumns(saved)
+  return FILES_COLUMNS.filter((column) =>
+    toggled.includes(column) ? chosen.includes(column) : isDefaultColumn(column),
+  )
+}
+
+function isDefaultColumn(column: FilesColumn): boolean {
+  if (column === 'kind' || column === 'size') return isTweakOn('t35-default-columns')
+  return true
+}
+
+/**
+ * The columns the user switched. A preference saved before `toggled` existed
+ * and listing other than the old default columns means the user chose them all.
+ */
+function toggledColumns(saved: Partial<PresentationPreference>): string[] {
+  if (Array.isArray(saved.toggled)) return saved.toggled
+  const listed = normalizeColumns(saved.columns)
+  const isOldDefault =
+    listed.length === 2 && listed.includes('owner') && listed.includes('modified')
+  return isOldDefault ? [] : ['owner', 'modified', 'kind', 'size']
+}
+
+/** Saves the user's choice to show or hide one column. `shown` is what the list shows now. */
+export function writeColumnChoice(
+  shown: readonly string[],
+  column: FilesColumn,
+  visible: boolean,
+): void {
+  const toggled = toggledColumns(readPresentationPreference() ?? {})
+  writePresentationPreference({
+    columns: visible ? [...new Set([...shown, column])] : shown.filter((item) => item !== column),
+    toggled: [...new Set([...toggled, column])],
+  })
 }
 
 export async function replacePresentation(
@@ -68,7 +119,8 @@ export async function replacePresentation(
   change: PresentationChange,
 ): Promise<void> {
   const next = { ...state, ...change }
-  writePresentationPreference(next)
+  // Columns stay as saved, so a column the user never chose keeps following its default.
+  writePresentationPreference({ view: next.view, sort: next.sort, dir: next.dir })
   await router.replace({
     query: {
       ...router.currentRoute.value.query,
@@ -79,16 +131,18 @@ export async function replacePresentation(
   })
 }
 
-export function writePresentationPreference({ view, sort, dir, columns }: PresentationState): void {
+/** Saves `change` over the saved preference. */
+export function writePresentationPreference(change: Partial<PresentationPreference>): void {
   if (typeof localStorage === 'undefined') return
   try {
-    localStorage.setItem(KEY, JSON.stringify({ view, sort, dir, columns }))
+    const { view, sort, dir, columns, toggled } = { ...readPresentationPreference(), ...change }
+    localStorage.setItem(KEY, JSON.stringify({ view, sort, dir, columns, toggled }))
   } catch {
     // Storage blocked or full (private windows): the choice still applies through the URL.
   }
 }
 
-export function readPresentationPreference(): Partial<PresentationState> | null {
+export function readPresentationPreference(): Partial<PresentationPreference> | null {
   if (typeof localStorage === 'undefined') return null
   try {
     const parsed = JSON.parse(localStorage.getItem(KEY) ?? 'null')
