@@ -2,9 +2,7 @@ import { useEventListener } from '@vueuse/core'
 import { ref, shallowRef, watch } from 'vue'
 
 import type { DocumentSession, DocumentThread } from '@/apps/drive'
-
-// The transport has no limit of its own, and a read that never answers would hold back every later one
-const READ_LIMIT_MS = 10_000
+import { HOLD_UP_MS } from '@/apps/writer/collab/timeout'
 
 /**
  * A document's comment threads as Drive has them, read again on focus and whenever `refresh` is called.
@@ -32,11 +30,12 @@ export function useDocumentThreads(
   return { threads, readAt, refresh: reader.read }
 }
 
-// A read that gives up never writes the threads, however late its answer comes
+// The transport has no limit of its own, and a read that never answers would hold back every later one.
+// A read that gives up never writes the threads, however late its answer comes.
 function withinLimit<Answer>(read: Promise<Answer>) {
   let timer: ReturnType<typeof setTimeout>
   const limit = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error('The threads took too long to read')), READ_LIMIT_MS)
+    timer = setTimeout(() => reject(new Error('The threads took too long to read')), HOLD_UP_MS)
   })
   return Promise.race([read, limit]).finally(() => clearTimeout(timer))
 }
