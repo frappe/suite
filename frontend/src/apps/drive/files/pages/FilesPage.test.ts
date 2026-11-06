@@ -525,8 +525,8 @@ describe('Show in folder', () => {
   const inTalks = {
     parent_node: 'folder-1',
     breadcrumbs: [
-      { name: 'root', title: 'My files' },
-      { name: 'folder-1', title: 'Talks' },
+      { name: 'root', title: 'My files', kind: 'root', role: 50 },
+      { name: 'folder-1', title: 'Talks', kind: 'folder', role: 50 },
     ],
   }
   // The test server answers every saved view with `server.recents`.
