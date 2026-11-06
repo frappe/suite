@@ -14,6 +14,7 @@ import type { Transport } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
 import ShareBody from './ShareBody.vue'
+import { accessLossMessage } from './shareFormat'
 import { shareSections } from './shareModel'
 import { useShare } from './useShare'
 
@@ -616,12 +617,15 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     winner: false,
   })
 
-  /** A node `doc` under `folder` under `root`, and a caller whose explanation is `rows`. */
-  function setup(local: DriveGrant[], rows: ExplainRow[], role = 50) {
+  /**
+   * A node `doc` under `folder` under `root`, and a caller whose explanation is
+   * `rows`. `asked` records the role each confirm says the caller would keep.
+   */
+  function setup(local: DriveGrant[], rows: ExplainRow[], role = 50, source = 'grant') {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
       if (call.id === 'node_grants' && call.input.principal)
-        return { explain: { role, source: 'grant', rows } }
+        return { explain: { role, source, rows } }
       if (call.id === 'node_grants') return { grants: local, inherited: [] }
       if (call.id === 'node_delete_grant') return { count: 3 }
       return { grant: local[0] }
@@ -631,8 +635,8 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const share = useShare('doc', {
       client: testClient(server.transport),
       me: ME,
-      confirmLoss: async () => {
-        asked.push(1)
+      confirmLoss: async (loss) => {
+        asked.push(loss.after)
         return answer
       },
     })
@@ -670,6 +674,44 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     await share.deny(ME)
     expect(asked).toHaveLength(1)
     expect(writes().map((call) => call.input.principal)).toEqual(['$GROUP:Sales'])
+  })
+
+  it('tells the confirm what the caller keeps when the group that gives them Manage goes to View', async () => {
+    const { share, asked, writes } = setup(
+      [grant('$GROUP:Leads', 50)],
+      [row('doc', 2, '$GROUP:Leads', 50)],
+    )
+    await share.load()
+
+    await share.setRole(share.sections.value!.people[0]!, 10)
+
+    expect(asked).toEqual([10])
+    expect(writes()).toEqual([])
+    expect(accessLossMessage(10, 'document', false)).toBe(
+      'You will only be able to view this item.',
+    )
+    expect(accessLossMessage(0, 'folder', false)).toBe(
+      'You will lose access to this folder and the items inside it.',
+    )
+    expect(accessLossMessage(20, 'document', true)).toBe(
+      'You will only be able to comment on this item. As a Suite Admin you can still change its sharing.',
+    )
+  })
+
+  it("does not ask Drive's own account, which holds every right, and asks it with t1 off", async () => {
+    const { share, asked } = setup([grant('$GENERAL', 10)], [], 50, 'system')
+    await share.load()
+
+    await share.setGeneral('$GENERAL', 20)
+    expect(asked).toEqual([])
+
+    setTweaks(['t1'], false)
+    try {
+      await share.setGeneral('$GENERAL', 20)
+      expect(asked).toHaveLength(1)
+    } finally {
+      setTweaks(['t1'], true)
+    }
   })
 
   it('does not ask when the caller keeps Manage through their own row', async () => {

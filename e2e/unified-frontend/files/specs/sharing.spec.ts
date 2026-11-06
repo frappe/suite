@@ -271,7 +271,7 @@ test("a manager who lowers their own access is asked first, and the row loses Sh
 	await accessButton(row).click();
 	await page.getByRole("menuitem", { name: "View", exact: true }).click();
 	const ask = page.getByRole("dialog", { name: "Change your own access?" });
-	await expect(ask.getByText("You will no longer be able to share this item.")).toBeVisible();
+	await expect(ask.getByText("You will only be able to view this folder and the items inside it.")).toBeVisible();
 	await ask.getByRole("button", { name: "Change" }).click();
 
 	// A non-manager sees no list, only why.

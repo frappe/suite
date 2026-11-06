@@ -32,12 +32,18 @@ export type RowKey = string
 export const PICKER: RowKey = 'picker'
 export const NEW_LINK_ROW: RowKey = 'new-link'
 
+/** A write that lowers the caller's own role from grants: the role they hold, and the one they would keep. */
+export interface AccessLoss {
+  before: number
+  after: number
+}
+
 export interface ShareOptions {
   client?: ImperativeClient
   /** The caller's user id: writes that would lower their own access ask first. */
   me?: string
   /** Asks the caller to confirm losing their own access. Resolves true to go on. */
-  confirmLoss?: () => Promise<boolean>
+  confirmLoss?: (loss: AccessLoss) => Promise<boolean>
   /** The workspace name, which names everyone at the org. Empty or `undefined` while unknown. */
   workspace?: MaybeRefOrGetter<string | undefined>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
@@ -145,8 +151,12 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     if (kind === 'link' || kind === 'public' || (kind === 'user' && change.principal !== me))
       return true
     const explanation = await grants.explain(me).catch(() => null)
-    if (!explanation || roleAfter(explanation, nodeId, change, me) >= explanation.role) return true
-    return confirmLoss()
+    if (!explanation) return true
+    // Drive's own account holds every right, whatever the grants say.
+    if (isTweakOn('t1') && explanation.source === 'system') return true
+    const after = roleAfter(explanation, nodeId, change, me)
+    if (after >= explanation.role) return true
+    return confirmLoss({ before: explanation.role, after })
   }
 
   async function change<T>(

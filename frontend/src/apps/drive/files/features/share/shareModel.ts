@@ -167,7 +167,6 @@ export function roleAfter(
   change: GrantChange,
   me: string,
 ): number {
-  if (explanation.source === 'site admin') return explanation.role
   const rows = explanation.rows
   const nodeDepth =
     rows.find((row) => row.node === node)?.depth ??

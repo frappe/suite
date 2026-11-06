@@ -78,6 +78,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import { driveNodeRoute } from '@/apps/drive'
+import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -86,7 +87,7 @@ import { useTweak } from '@/platform/tweaks'
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
 import ShareBody from './ShareBody.vue'
-import { copyLink } from './shareFormat'
+import { accessLossMessage, copyLink } from './shareFormat'
 import { useShare } from './useShare'
 
 const props = defineProps<{ node: string }>()
@@ -102,15 +103,27 @@ const session = useSession()
 const site = useQuery(api.suite.site.get, () =>
   window.suite_workspace_name === undefined ? {} : false,
 )
+const accurateWarning = useTweak('t1')
 const state = useShare(props.node, {
   me: session.user.value?.id,
-  confirmLoss: () =>
-    confirm({
-      title: 'Change your own access?',
-      message: 'You will no longer be able to share this item.',
-      confirmLabel: 'Change',
+  confirmLoss: ({ after }) => {
+    if (!accurateWarning.value)
+      return confirm({
+        title: 'Change your own access?',
+        message: 'You will no longer be able to share this item.',
+        confirmLabel: 'Change',
+        destructive: true,
+      })
+    const suiteAdmin = !!session.capabilities.value.suiteAdmin
+    // A Suite Admin who keeps Edit loses nothing: they still share through their admin role.
+    if (suiteAdmin && after >= DRIVE_ROLES.edit) return Promise.resolve(true)
+    return confirm({
+      title: __('Change your own access?'),
+      message: accessLossMessage(after, state.node.value?.kind ?? 'file', suiteAdmin),
+      confirmLabel: __('Change'),
       destructive: true,
-    }),
+    })
+  },
   workspace: () => window.suite_workspace_name ?? site.data?.workspace_name,
   placeTitle: useLocationTitle(),
 })
