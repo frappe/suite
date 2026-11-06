@@ -3265,9 +3265,12 @@ link, or an expired zip refuses it. A browser opens this route itself, so a
 refusal answers 404 as an HTML page that says why, not as a JSON envelope. A
 download is visible only to its requester.
 
-A zip expires 24 hours after it is ready. An hourly job fails a download still
-`Preparing` an hour and a quarter after it was asked for, which is the job
-timeout and a margin, and notifies an `Inbox` requester. A download whose job
+A zip expires 24 hours after it is ready. A download still `Preparing` an hour
+and a quarter after it was asked for, which is the job timeout and a margin,
+has stalled: `GET /downloads/<id>` answers it `Failed` at once, so a waiting
+page stops, and asking again neither reuses it nor counts it among the three.
+An hourly job then records it `Failed` and notifies an `Inbox` requester. A
+download whose job
 cannot be queued fails at once. The same job deletes expired downloads and
 their notifications. The storage collector then frees the blob, because
 `Drive Download.blob` is its only reference.

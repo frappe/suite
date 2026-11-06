@@ -235,6 +235,25 @@ class TestDownloads(IntegrationTestCase):
         [notification] = self.inbox()
         self.assertEqual(notification.download.status, "Failed")
 
+    def test_a_stalled_download_stops_the_wait_and_asking_again_starts_afresh(self):
+        link = create_link(self.admin, self.projects, "Site", url="https://example.com")
+        stalled = [downloads.start(self.reader, nodes) for nodes in ([self.folder], [self.notes], [link])]
+        frappe.db.set_value(
+            "Drive Download",
+            {"name": ["in", [row.name for row in stalled]]},
+            "creation",
+            now_datetime() - timedelta(hours=2),
+            update_modified=False,
+        )
+
+        shape = download_shape(downloads.get(self.reader, stalled[0].name))
+        self.assertEqual(shape["status"], "Failed")
+        self.assertIn("too long", shape["error"])
+
+        again = downloads.start(self.reader, [self.folder])
+        self.assertNotEqual(again.name, stalled[0].name)
+        self.assertEqual(again.status, "Preparing")
+
     def test_a_download_that_cannot_be_queued_fails_at_once(self):
         asked = downloads.start(self.reader, [self.folder])
 

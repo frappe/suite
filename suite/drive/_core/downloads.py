@@ -64,6 +64,7 @@ DOWNLOAD_FIELDS = (
     "size",
     "expires_at",
     "error",
+    "creation",
 )
 # The kinds a person can select in a listing. A root is never a row.
 DOWNLOADABLE_KINDS = frozenset({"folder", "file", "document", "link"})
@@ -136,14 +137,27 @@ def get(principals: Principals, download: str) -> frappe._dict:
 
     Every Guest is one requester, so a Guest's download is reached by its
     name alone: 128 random bits that only the page that asked was given. A
-    ready zip past its expiry answers Expired.
+    ready zip past its expiry answers Expired. One still Preparing after
+    STALLED_AFTER lost its job and answers Failed, so a waiting page stops;
+    `purge_expired` records that failure later.
     """
     row = frappe.db.get_value("Drive Download", download, DOWNLOAD_FIELDS, as_dict=True)
     if not row or row.requester != principals.user:
         raise DriveNotFound(_("Drive download {0} was not found").format(download))
     if row.status == "Ready" and row.expires_at and get_datetime(row.expires_at) <= now_datetime():
         row.status = "Expired"
+    if is_stalled(row):
+        row.update(status="Failed", error=stalled_error())
     return row
+
+
+def is_stalled(row: frappe._dict) -> bool:
+    """Whether a download is still Preparing long after its job should have ended."""
+    return row.status == "Preparing" and get_datetime(row.creation) < now_datetime() - STALLED_AFTER
+
+
+def stalled_error() -> str:
+    return _("Drive took too long to prepare this download. Try again.")
 
 
 def without_links(principals: Principals) -> Principals:
@@ -215,9 +229,7 @@ def purge_expired() -> int:
         fields=DOWNLOAD_FIELDS,
     )
     for row in stalled:
-        _finish(
-            row, {"status": "Failed", "error": _("Drive took too long to prepare this download. Try again.")}
-        )
+        _finish(row, {"status": "Failed", "error": stalled_error()})
     expired = frappe.get_all(
         "Drive Download",
         filters={"expires_at": ["<", now_datetime()]},
@@ -315,6 +327,8 @@ def _reusable(principals: Principals, selection: str) -> frappe._dict | None:
     if not rows:
         return None
     row = rows[0]
+    if is_stalled(row):
+        return None
     # A ready zip whose member was unshared since would only be refused.
     if row.status == "Ready" and not _all_readable(principals, frappe.parse_json(row.members) or []):
         return None
@@ -326,7 +340,11 @@ def _check_preparing(requester: str, links: str | None) -> None:
 
     Every Guest is one requester, so Guests are counted per set of links.
     """
-    filters: dict[str, str | None] = {"requester": requester, "status": "Preparing"}
+    filters: dict[str, object] = {
+        "requester": requester,
+        "status": "Preparing",
+        "creation": [">=", now_datetime() - STALLED_AFTER],
+    }
     if requester == "Guest":
         filters["links"] = links
     if frappe.db.count("Drive Download", filters) >= MAX_PREPARING_DOWNLOADS:
