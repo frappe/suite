@@ -107,7 +107,7 @@ sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e-drive \
 ```
 
 Restore the runner limits with the bootstrap script. The split reserves two Drive
-slots while all three Meet shards run concurrently.
+slots while three Meet runs proceed concurrently.
 
 When migrating from the legacy `suite-e2e` scale set, run the bootstrap script
 before merging the workflow label changes. After no queued or running job uses

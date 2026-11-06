@@ -134,7 +134,7 @@ test.describe("E2EE", () => {
 	test.describe("heavy coverage", () => {
 		test.describe.configure({ timeout: 90_000 });
 
-	test("a participant can rejoin an E2EE meeting after leaving", { tag: "@meet-group-2" }, async ({
+	test("a participant can rejoin an E2EE meeting after leaving", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -183,7 +183,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("the host can leave and rejoin an E2EE meeting while a guest stays", { tag: "@meet-group-2" }, async ({
+	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -241,7 +241,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("screen share streams stay healthy in an E2EE meeting", { tag: "@meet-group-1" }, async ({
+	test("screen share streams stay healthy in an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -270,7 +270,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("multiple participants can join an active E2EE meeting and see the same fingerprint", { tag: "@meet-group-1" }, async ({
+	test("multiple participants can join an active E2EE meeting and see the same fingerprint", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
