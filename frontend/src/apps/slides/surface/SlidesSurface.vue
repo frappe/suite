@@ -172,7 +172,6 @@ const restoring = ref(false)
 // Read-only until live editing, and drawn from its room: its rows no longer change
 const isConverted = ref(false)
 let closeConvertedRoom: (() => void) | null = null
-let isLeft = false
 // A deck still on its rows, waiting for conversion or refused by it, is read-only too
 const conversion = ref<ConversionStatus | null>(null)
 const onLayer = computed(() => isConverted.value || !!conversion.value)
@@ -524,7 +523,7 @@ async function showConvertedSlides(run: number) {
     throw new Error(translate('Could not open this presentation.'))
   }
 
-  if (run !== latestLoad || isLeft) {
+  if (run !== latestLoad) {
     close()
     return
   }
@@ -682,7 +681,8 @@ onMounted(() => {
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
-  isLeft = true
+  // a load or room still on its way after this finds itself stale and touches nothing
+  latestLoad++
   closeConvertedRoom?.()
   cancelVisit()
   stopVisitedMedia()

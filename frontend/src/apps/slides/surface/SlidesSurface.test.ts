@@ -266,7 +266,7 @@ describe('a deck on the content layer', () => {
   })
 
   // the rows hold two slides; the room the server converted them into holds these
-  function convertedRoom(...texts: string[]) {
+  function roomOf(...texts: string[]) {
     const answer = convertLegacy(
       {
         slides: texts.map((text) => ({
@@ -282,11 +282,13 @@ describe('a deck on the content layer', () => {
 
     const doc = new Doc()
     applyUpdate(doc, answer.state)
-    collabRoom.open.mockResolvedValueOnce({
-      state: 'live',
-      room: { doc, close: vi.fn(async () => {}) },
-    })
-    return doc
+    return { doc, close: vi.fn(async () => {}) }
+  }
+
+  function convertedRoom(...texts: string[]) {
+    const room = roomOf(...texts)
+    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+    return room.doc
   }
 
   function drawnTexts() {
@@ -314,6 +316,29 @@ describe('a deck on the content layer', () => {
     addSlide(doc)
 
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+  })
+
+  it('drops a room that opens after its presentation was left, so the next one keeps its own slides', async () => {
+    let open!: (opened: unknown) => void
+    collabRoom.open.mockReturnValueOnce(
+      new Promise((resolve) => {
+        open = resolve
+      }),
+    )
+    const opens = collabRoom.open.mock.calls.length
+    const left = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(collabRoom.open.mock.calls.length).toBeGreaterThan(opens))
+    left.app.unmount()
+    left.root.remove()
+    mounted = await openedSurface()
+    const own = drawnTexts()
+
+    const room = roomOf('one', 'two', 'three')
+    open({ state: 'live', room })
+
+    await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
+    expect(drawnTexts()).toEqual(own)
+    expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
   })
 
   it('says a converted presentation could not open when its room does not, and draws no rows', async () => {
