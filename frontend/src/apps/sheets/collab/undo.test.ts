@@ -251,6 +251,26 @@ describe('undo: the old undo bugs (ISSUES #11 #13 #15 #16)', () => {
     await expectConverged(a, b)
   })
 
+  it('#119: redo after several undos of one cell puts each step back', async () => {
+    const [a, b, ua] = await undoTabs()
+    const shown = toolbar(ua)
+    const a1 = () => a.stores.formats.snapshot().Sheet1?.cells?.A1
+    await boldItalicStrike(a)
+    for (let i = 0; i < 3; i++) await ua.undo()
+    const looks = [
+      { bold: true },
+      { bold: true, italic: true },
+      { bold: true, italic: true, strikethrough: true },
+    ]
+    for (const look of looks) {
+      expect(shown.redo).toBe(true)
+      expect(await ua.redo()).toMatchObject({ done: true })
+      expect(a1()).toEqual(look)
+    }
+    expect(shown).toEqual({ undo: true, redo: false })
+    await expectConverged(a, b)
+  })
+
   it('#119: a value, its bold and its fill come off in three undos', async () => {
     const [a, , ua] = await undoTabs()
     const shown = toolbar(ua)

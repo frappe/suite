@@ -242,7 +242,10 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
       if (!item) continue
       // Alive: written by another tab? Deleted, and not by this step: every
       // later step of this tab is undone already, so another tab deleted it.
-      if (item.deleted ? !Y.isDeleted(deletions, item.id) : item.id.client !== doc.clientID) n++
+      // Yjs merges deleted entries written one after another into one item,
+      // whose last clock is the latest value (ISSUES #119).
+      const last = { client: item.id.client, clock: item.id.clock + item.length - 1 }
+      if (item.deleted ? !Y.isDeleted(deletions, last) : item.id.client !== doc.clientID) n++
     }
     return n
   }
