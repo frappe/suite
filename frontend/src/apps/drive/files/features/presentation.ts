@@ -27,6 +27,24 @@ export const DEFAULT_PRESENTATION: PresentationState = {
   columns: ['owner', 'modified'],
 }
 
+/** The order a field starts in when it is chosen: dates newest first, sizes largest first. */
+export const DEFAULT_DIRECTION: Record<FilesSort, FilesDirection> = {
+  title: 'asc',
+  kind: 'asc',
+  owner: 'asc',
+  modified: 'desc',
+  size: 'desc',
+}
+
+/** The sort a header click asks for: a new field starts in its default order, the same field flips. */
+export function nextSort(
+  current: Pick<PresentationState, 'sort' | 'dir'>,
+  column: FilesSort,
+): Pick<PresentationState, 'sort' | 'dir'> {
+  if (current.sort !== column) return { sort: column, dir: DEFAULT_DIRECTION[column] }
+  return { sort: column, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+}
+
 const KEY = 'suite-drive-files-presentation-v1'
 
 export function resolvePresentation(

@@ -154,10 +154,11 @@
                      while rows load, so it does not pop in after them. -->
                 <ViewSettings
                   v-if="!settledEmpty"
-                  :presentation="userPresentation"
+                  :presentation="settingsPresentation"
                   :arrangeable="arrangeable"
                   :columns="offeredColumns"
                   :date-column="dateColumn"
+                  :in-own-space="inOwnSpace"
                   @change="setPresentation"
                   @toggle-column="setColumn"
                 />
@@ -313,6 +314,7 @@ import { linkAccess } from '../features/linkAccess'
 import { allAllow, nodeActions, type NodeActions } from '../features/nodeActions'
 import {
   FILES_COLUMNS,
+  nextSort,
   readPresentationPreference,
   replacePresentation,
   resolvePresentation,
@@ -411,7 +413,7 @@ const userPresentation = computed(() => {
  * order, so they show it without overwriting the user's choice.
  */
 const presentation = computed<PresentationState>(() => {
-  const chosen = userPresentation.value
+  const chosen = { ...userPresentation.value, sort: listedSort.value }
   // Decided from the place, not the rows, so the loading skeleton and the
   // loaded list have the same columns.
   const shown = inOwnSpace.value
@@ -435,6 +437,17 @@ const inOwnSpace = computed(() => {
   const root = trail.value?.[0]?.name
   return !root || root === discovered.data?.personal.node
 })
+const hidesOwnerSort = useTweak('t19-owner-sort')
+/**
+ * The sort the folder is read in. Owner orders nothing in the user's own space,
+ * so Name stands in there, and the saved Owner stays for a shared folder.
+ */
+const listedSort = computed<FilesSort>(() => {
+  const { sort } = userPresentation.value
+  return hidesOwnerSort.value && inOwnSpace.value && sort === 'owner' ? 'title' : sort
+})
+/** What View settings shows: the user's choice, with the sort the folder is read in. */
+const settingsPresentation = computed(() => ({ ...userPresentation.value, sort: listedSort.value }))
 const selection = computed({
   get: () => selectionState.value.selected,
   set: (selected: string[]) => {
@@ -617,7 +630,7 @@ const childListing = useInfiniteQuery(api.drive.nodes.children, () =>
     ? {
         node: parentId.value,
         limit: 60,
-        order_by: userPresentation.value.sort,
+        order_by: listedSort.value,
         ascending: userPresentation.value.dir === 'asc',
         type: listingTypes.value.map((option) => option.value).join(','),
         expand: expansion.value,
@@ -1186,8 +1199,13 @@ function setColumn(column: FilesColumn, visible: boolean) {
   writePresentationPreference({ ...chosen, columns })
   presentationVersion.value += 1
 }
+const startsInNaturalOrder = useTweak('t19-sort-direction')
 function changeSort(column: FilesSort) {
   if (!arrangeable.value) return
+  if (startsInNaturalOrder.value) {
+    setPresentation(nextSort(settingsPresentation.value, column))
+    return
+  }
   const chosen = userPresentation.value
   setPresentation({
     sort: column,

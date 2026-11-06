@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolvePresentation } from './presentation'
+import { nextSort, resolvePresentation } from './presentation'
 
 describe('presentation state', () => {
   it('uses query over preference over defaults', () => {
@@ -24,5 +24,17 @@ describe('presentation state', () => {
       dir: 'asc',
       columns: ['owner'],
     })
+  })
+
+  it('starts a new field in its natural order, and flips the same field', () => {
+    const byName = { sort: 'title', dir: 'asc' } as const
+    expect(nextSort(byName, 'modified')).toEqual({ sort: 'modified', dir: 'desc' })
+    expect(nextSort(byName, 'size')).toEqual({ sort: 'size', dir: 'desc' })
+    expect(nextSort({ sort: 'modified', dir: 'desc' }, 'modified')).toEqual({
+      sort: 'modified',
+      dir: 'asc',
+    })
+    expect(nextSort({ sort: 'size', dir: 'desc' }, 'title')).toEqual({ sort: 'title', dir: 'asc' })
+    expect(nextSort(byName, 'title')).toEqual({ sort: 'title', dir: 'desc' })
   })
 })

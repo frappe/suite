@@ -312,7 +312,7 @@ afterEach(() => {
   dialogs.share.mockClear()
   keys.shortcuts = []
   vi.unstubAllGlobals()
-  setTweaks(['t3-folder-menu', 't3-selection-menu', 't8'], true)
+  setTweaks(['t3-folder-menu', 't3-selection-menu', 't8', 't19-owner-sort'], true)
   document.body.innerHTML = ''
 })
 
@@ -480,6 +480,26 @@ describe('Recent', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(menuItem('a', 'Remove from Recent')).toBeUndefined()
+  })
+})
+
+describe('Sort', () => {
+  const orders = () =>
+    server.calls.filter((call) => call.id === 'node_children').map((call) => call.input.order_by)
+
+  it('reads a folder of My files by name when the saved sort is Owner', async () => {
+    await mount('/drive/f/folder-1/talks?sort=owner')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(orders()).toEqual(['title'])
+  })
+
+  it('reads it by owner with the tweak off', async () => {
+    setTweaks(['t19-owner-sort'], false)
+    await mount('/drive/f/folder-1/talks?sort=owner')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(orders()).toEqual(['owner'])
   })
 })
 

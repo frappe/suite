@@ -2,6 +2,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter, type LocationQueryRaw } from 'vue-router'
 
+import { setTweaks } from '@/platform/tweaks'
+
 import {
   FILES_COLUMNS,
   readPresentationPreference,
@@ -44,6 +46,7 @@ afterEach(() => {
   unmount = undefined
   document.body.innerHTML = ''
   localStorage.clear()
+  setTweaks(['t19-sort-direction'], true)
 })
 
 /**
@@ -55,11 +58,13 @@ async function mountPanel({
   arrangeable = true,
   columns = FILES_COLUMNS,
   dateColumn,
+  inOwnSpace,
 }: {
   query?: LocationQueryRaw
   arrangeable?: boolean
   columns?: readonly FilesColumn[]
   dateColumn?: FilesDateColumn
+  inOwnSpace?: boolean
 } = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -78,6 +83,7 @@ async function mountPanel({
         arrangeable,
         columns,
         dateColumn,
+        inOwnSpace,
         onChange: (change: Parameters<typeof replacePresentation>[2]) =>
           replacePresentation(router, presentation.value, change),
         onToggleColumn: (column: FilesColumn, visible: boolean) => {
@@ -144,8 +150,8 @@ function pills(): string[] {
   )
 }
 
-/** Picks an option from the select labelled `label`, with the keyboard. */
-async function pick(label: string, option: string) {
+/** Opens the select labelled `label`, with the keyboard. */
+async function openSelect(label: string) {
   const field = [...panel()!.querySelectorAll('label')].find(
     (element) => element.textContent?.trim() === label,
   )!
@@ -153,6 +159,17 @@ async function pick(label: string, option: string) {
   trigger.focus()
   trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await settle()
+}
+
+function options(): string[] {
+  return [...document.querySelectorAll('[role="option"]')].map((option) =>
+    option.textContent!.trim(),
+  )
+}
+
+/** Picks an option from the select labelled `label`, with the keyboard. */
+async function pick(label: string, option: string) {
+  await openSelect(label)
   byRole('option', option).dispatchEvent(
     new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
   )
@@ -180,12 +197,33 @@ describe('View settings panel', () => {
 
     await pick('Sort by', 'Modified')
 
-    expect(router.currentRoute.value.query.sort).toBe('modified')
+    expect(router.currentRoute.value.query).toMatchObject({ sort: 'modified', dir: 'desc' })
     expect(readPresentationPreference()?.sort).toBe('modified')
     expect(panel()).not.toBeNull()
 
-    await pick('Order', 'Newest first')
-    expect(router.currentRoute.value.query.dir).toBe('desc')
+    await pick('Order', 'Oldest first')
+    expect(router.currentRoute.value.query.dir).toBe('asc')
+
+    await pick('Sort by', 'Name')
+    expect(router.currentRoute.value.query).toMatchObject({ sort: 'title', dir: 'asc' })
+  })
+
+  it('keeps the order when the sort changes, with the tweak off', async () => {
+    setTweaks(['t19-sort-direction'], false)
+    const { router } = await mountPanel({ query: { view: 'list', sort: 'title', dir: 'asc' } })
+    await openPanel()
+
+    await pick('Sort by', 'Modified')
+
+    expect(router.currentRoute.value.query).toMatchObject({ sort: 'modified', dir: 'asc' })
+  })
+
+  it('offers no Owner sort in the user’s own space', async () => {
+    await mountPanel({ query: { view: 'list' }, inOwnSpace: true })
+    await openPanel()
+    await openSelect('Sort by')
+
+    expect(options()).toEqual(['Name', 'Modified', 'Type', 'Size'])
   })
 
   it('toggles a column pill and leaves the panel open', async () => {

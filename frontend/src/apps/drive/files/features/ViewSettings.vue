@@ -63,14 +63,17 @@
 import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-ui'
 import { computed, useId } from 'vue'
 
-import type {
-  FilesColumn,
-  FilesDateColumn,
-  FilesDirection,
-  FilesSort,
-  FilesViewMode,
-  PresentationChange,
-  PresentationState,
+import { useTweak } from '@/platform/tweaks'
+
+import {
+  DEFAULT_DIRECTION,
+  type FilesColumn,
+  type FilesDateColumn,
+  type FilesDirection,
+  type FilesSort,
+  type FilesViewMode,
+  type PresentationChange,
+  type PresentationState,
 } from './presentation'
 
 const props = defineProps<{
@@ -81,7 +84,11 @@ const props = defineProps<{
   columns: readonly FilesColumn[]
   /** Names the date column's pill as the list heads it. */
   dateColumn?: FilesDateColumn
+  /** My files and its folders, where every item is the user's own, so Owner is no sort. */
+  inOwnSpace?: boolean
 }>()
+const startsInNaturalOrder = useTweak('t19-sort-direction')
+const hidesOwnerSort = useTweak('t19-owner-sort')
 
 const emit = defineEmits<{
   change: [change: PresentationChange]
@@ -122,7 +129,7 @@ function row<T extends string>(
   id: string,
   label: string,
   value: T,
-  labels: Record<T, string>,
+  labels: Partial<Record<T, string>>,
   onPick: (value: T) => void,
 ) {
   // SAFETY: labels is a local closed Record<T, string>; its own keys are exactly the offered values.
@@ -131,7 +138,10 @@ function row<T extends string>(
     id,
     label,
     value,
-    options: values.map((option): SelectOption => ({ value: option, label: labels[option] })),
+    options: values.map((option): SelectOption => ({
+      value: option,
+      label: labels[option] ?? option,
+    })),
     pick: (next: unknown) => {
       const picked = values.find((option) => option === next)
       if (picked && picked !== value) onPick(picked)
@@ -139,10 +149,21 @@ function row<T extends string>(
   }
 }
 
+const sortLabels = computed((): Partial<Record<FilesSort, string>> => {
+  if (!(hidesOwnerSort.value && props.inOwnSpace)) return SORT_LABELS
+  const { owner: _owner, ...others } = SORT_LABELS
+  return others
+})
+
 const rows = computed(() => {
   const { sort, dir } = props.presentation
   return [
-    row(sortId, 'Sort by', sort, SORT_LABELS, (next) => emit('change', { sort: next })),
+    row(sortId, 'Sort by', sort, sortLabels.value, (next) =>
+      emit(
+        'change',
+        startsInNaturalOrder.value ? { sort: next, dir: DEFAULT_DIRECTION[next] } : { sort: next },
+      ),
+    ),
     row(
       orderId,
       'Order',
