@@ -1222,20 +1222,43 @@ function openParent() {
   void router.push(typeof parent === 'string' ? { path: parent, state } : { ...parent, state })
 }
 // A navigation that should land on an item names it in the history entry.
-const revealing = ref<string | null>(null)
+const revealing = ref<{ id: string; highlight: boolean } | null>(null)
 watch(
   () => route.fullPath,
   () => {
-    const id = router.options.history.state.reveal
-    revealing.value = typeof id === 'string' ? id : null
+    const { reveal, highlight } = router.options.history.state
+    revealing.value =
+      typeof reveal === 'string' ? { id: reveal, highlight: highlight === true } : null
   },
   { immediate: true },
 )
-watch([revealing, () => listing.status, listingView], ([id, status, view]) => {
-  if (!id || status === 'pending' || !view) return
+watch([revealing, () => listing.status, listingView], async ([target, status, view]) => {
+  if (!target || status === 'pending' || !view) return
   revealing.value = null
-  void view.reveal(id)
+  const found = await view.reveal(target.id, { highlight: target.highlight })
+  if (found || !target.highlight) return
+  toast.info(
+    listing.hasNext
+      ? __('Opened {0}. The item is further down.', [placeLabel.value])
+      : __('Opened {0}. The item is no longer in it.', [placeLabel.value]),
+  )
 })
+const showInFolder = useTweak('t17-show-in-folder')
+/** The folder a listed item is in, when its trail shows it. Trash rows have none. */
+function shownParent(row: DriveNode) {
+  const parent = row.breadcrumbs?.at(-1)
+  return parent && parent.name === row.parent_node && row.state === 'Active' ? parent : null
+}
+/** Opens the item's folder with the item focused and highlighted. */
+function showRowInFolder(row: DriveNode) {
+  const parent = shownParent(row)
+  if (!parent) return
+  const state = { reveal: row.name, highlight: true }
+  const root = rootPath(parent.name)
+  void router.push(
+    root ? { path: root, query: presentationQuery.value, state } : { ...folderPath(parent), state },
+  )
+}
 function openView(view: ListingView) {
   const name = {
     personal: 'files',
@@ -1490,6 +1513,16 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
                 label: 'Open in new tab',
                 icon: 'lucide-external-link',
                 onClick: () => openNode(row, true),
+              },
+            ]
+          : []),
+        ...(showInFolder.value && shownParent(row)
+          ? [
+              {
+                key: 'show-in-folder',
+                label: __('Show in folder'),
+                icon: 'lucide-folder-search',
+                onClick: () => showRowInFolder(row),
               },
             ]
           : []),

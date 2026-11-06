@@ -115,7 +115,12 @@
             :aria-selected="focus.roving.value ? isSelected(row) : undefined"
             :data-node="row.name"
             :data-listing-item="row.name"
-            :class="['select-none', runClasses(index), checkboxOnHover && 'group/row']"
+            :class="[
+              'select-none',
+              runClasses(index),
+              checkboxOnHover && 'group/row',
+              flashClasses(row),
+            ]"
             v-bind="rowDrop?.(row) ?? {}"
             @click="onRowClick($event, row)"
             @dblclick="$emit('open', row)"
@@ -241,6 +246,7 @@
               :node="row"
               :meta="cardMeta(row)"
               :selected="isHighlighted(row)"
+              :class="flashClasses(row)"
               :data-node="focus.roving.value ? row.name : undefined"
               :tabindex="focus.roving.value ? stopIndex(row) : undefined"
               @click="onRowClick($event, row)"
@@ -444,15 +450,41 @@ const focus = useListingFocus({
   grid: () => props.presentation.view === 'grid',
   extend: (from, to) => emit('extend', from, to),
 })
-/** Loads windows until the item is in the listing, ten at most, then focuses it. Answers whether it could. */
-async function reveal(id: string): Promise<boolean> {
+/**
+ * Loads windows until the item is in the listing, ten at most, then focuses it.
+ * With `highlight`, its background flashes. Answers whether it could.
+ */
+async function reveal(id: string, { highlight = false } = {}): Promise<boolean> {
   const has = () => props.query.rows.some((row) => row.name === id)
   for (let windows = 0; !has() && props.query.hasNext && windows < 10; windows++) {
     await props.query.fetchNext()
     if (props.query.error) break
   }
   await nextTick()
-  return focus.focusRow(id, { reveal: true })
+  const found = focus.focusRow(id, { reveal: true })
+  if (found && highlight) startFlash(id)
+  return found
+}
+const FLASH_MS = 1500
+const FLASH_FADE_MS = 700
+/** The item a reveal highlights, and whether its highlight is fading out. */
+const flash = ref<{ id: string; fading: boolean } | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | undefined
+function startFlash(id: string) {
+  clearTimeout(flashTimer)
+  flash.value = { id, fading: false }
+  flashTimer = setTimeout(() => {
+    flash.value = { id, fading: true }
+    flashTimer = setTimeout(() => (flash.value = null), FLASH_FADE_MS)
+  }, FLASH_MS)
+}
+onBeforeUnmount(() => clearTimeout(flashTimer))
+function flashClasses(row: DriveNode) {
+  if (flash.value?.id !== row.name) return undefined
+  return [
+    'transition-colors duration-700 motion-reduce:transition-none',
+    !flash.value.fading && '!bg-surface-blue-1',
+  ]
 }
 defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow, reveal })
 /** A grid lets screen readers hand the arrow keys to the page; a table keeps them for reading. */

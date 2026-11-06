@@ -167,6 +167,10 @@ const listing = vi.hoisted(() => ({
   /** The row that shows keyboard focus. */
   focused: fromPartial<DriveNode | null>(null),
   revealed: fromPartial<string[]>([]),
+  /** The revealed items asked to flash. */
+  highlighted: fromPartial<string[]>([]),
+  /** Set, a reveal does not find its item. */
+  missing: false,
 }))
 interface MenuGroup {
   group: string
@@ -183,7 +187,11 @@ vi.mock('../features/FilesListing.vue', async () => {
       setup(props, { expose }) {
         expose({
           focusedRow: () => listing.focused,
-          reveal: async (id: string) => listing.revealed.push(id) > 0,
+          reveal: async (id: string, options: { highlight?: boolean } = {}) => {
+            listing.revealed.push(id)
+            if (options.highlight) listing.highlighted.push(id)
+            return !listing.missing
+          },
         })
         return () => {
           listing.rows = props.query.rows
@@ -333,6 +341,8 @@ afterEach(() => {
   listing.menu = null
   listing.focused = null
   listing.revealed = []
+  listing.highlighted = []
+  listing.missing = false
   shortcuts.length = 0
   uploads.upload.mockReset()
   dialogs.showDetails.mockClear()
@@ -353,6 +363,7 @@ async function mount(path: string): Promise<{ root: HTMLElement; router: Router 
         component: FilesPage,
         props: { destination: 'recent' },
       },
+      { path: '/drive/starred', component: FilesPage, props: { destination: 'starred' } },
       { path: '/drive/f/:node/:slug?', component: FilesPage, props: { destination: 'folder' } },
       { path: '/d/:node/:slug?', component: { render: () => null } },
     ],
@@ -506,6 +517,67 @@ describe('Recent', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(menuItem('a', 'Remove from Recent')).toBeUndefined()
+  })
+})
+
+describe('Show in folder', () => {
+  afterEach(() => setTweaks(['t17-show-in-folder'], true))
+  const inTalks = {
+    parent_node: 'folder-1',
+    breadcrumbs: [
+      { name: 'root', title: 'My files' },
+      { name: 'folder-1', title: 'Talks' },
+    ],
+  }
+  // The test server answers every saved view with `server.recents`.
+  function starred(...rows: DriveNode[]) {
+    for (const row of rows) server.nodes.set(row.name, row)
+    server.recents = rows.map((row) => row.name)
+    return mount('/drive/starred')
+  }
+
+  it('opens a starred item’s folder with the item focused and highlighted', async () => {
+    const { router } = await starred(node('a', 'a.png', inTalks))
+    await vi.waitFor(() => expect(menuItem('a', 'Show in folder')).toBeDefined())
+
+    menuItem('a', 'Show in folder')?.onClick()
+
+    await vi.waitFor(() => expect(listing.highlighted).toEqual(['a']))
+    expect(router.currentRoute.value.path).toBe('/drive/f/folder-1/talks')
+    expect(feedback.toasts).toEqual([])
+  })
+
+  it('says so when the folder no longer has the item', async () => {
+    listing.missing = true
+    await starred(node('b', 'b.png', inTalks))
+    await vi.waitFor(() => expect(menuItem('b', 'Show in folder')).toBeDefined())
+
+    menuItem('b', 'Show in folder')?.onClick()
+
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(1))
+    expect(feedback.toasts[0]).toMatchObject({
+      kind: 'info',
+      message: 'Opened Talks. The item is no longer in it.',
+    })
+  })
+
+  it('is not offered without a trail to the folder, or in the folder itself', async () => {
+    await starred(node('c', 'c.png', { breadcrumbs: [] }))
+    await vi.waitFor(() => expect(titles()).toEqual(['c.png']))
+    expect(menuItem('c', 'Show in folder')).toBeUndefined()
+
+    unmount?.()
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    expect(menuItem('a', 'Show in folder')).toBeUndefined()
+  })
+
+  it('is not offered with the tweak off', async () => {
+    setTweaks(['t17-show-in-folder'], false)
+    await starred(node('a', 'a.png', inTalks))
+    await vi.waitFor(() => expect(titles()).toEqual(['a.png']))
+
+    expect(menuItem('a', 'Show in folder')).toBeUndefined()
   })
 })
 
