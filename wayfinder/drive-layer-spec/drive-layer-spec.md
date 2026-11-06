@@ -3268,7 +3268,8 @@ download is visible only to its requester.
 A zip expires 24 hours after it is ready. A download still `Preparing` an hour
 and a quarter after it was asked for, which is the job timeout and a margin,
 has stalled: `GET /downloads/<id>` answers it `Failed` at once, so a waiting
-page stops, and asking again neither reuses it nor counts it among the three.
+page stops, asking again neither reuses it nor counts it among the three, and
+a job that only starts then builds nothing.
 An hourly job then records it `Failed` and notifies an `Inbox` requester. A
 download whose job
 cannot be queued fails at once. The same job deletes expired downloads and

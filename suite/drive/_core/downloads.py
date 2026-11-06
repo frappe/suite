@@ -176,7 +176,8 @@ def build(download: str, principals: Principals) -> None:
     and the notification together when the job returns.
     """
     row = frappe.db.get_value("Drive Download", download, DOWNLOAD_FIELDS, as_dict=True)
-    if not row or row.status != "Preparing":
+    # A stalled row already answers Failed, so a job that starts late builds nothing.
+    if not row or row.status != "Preparing" or is_stalled(row):
         return
     savepoint = f"drive_download_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)

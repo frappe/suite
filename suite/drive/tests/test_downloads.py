@@ -249,6 +249,9 @@ class TestDownloads(IntegrationTestCase):
         shape = download_shape(downloads.get(self.reader, stalled[0].name))
         self.assertEqual(shape["status"], "Failed")
         self.assertIn("too long", shape["error"])
+        # A job that only starts now, behind a long queue, does not turn it Ready.
+        downloads.build(stalled[0].name, self.reader)
+        self.assertEqual(downloads.get(self.reader, stalled[0].name).status, "Failed")
 
         again = downloads.start(self.reader, [self.folder])
         self.assertNotEqual(again.name, stalled[0].name)
