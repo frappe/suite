@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, nextTick } from 'vue'
 import type { CalendarEvent } from '@/apps/calendar'
 import { findDocumentType } from '@/composition/documentRegistry'
 import HomePage from '@/composition/home/HomePage.vue'
+import { setTweaks } from '@/platform/tweaks'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -14,6 +15,7 @@ const state = vi.hoisted(() => ({
   upcomingPending: false,
   push: vi.fn(),
   createDocument: vi.fn(),
+  canCreate: true,
   showSchedule: vi.fn(),
   events: fromPartial<
     | (Partial<Omit<CalendarEvent, 'participants'>> & {
@@ -92,6 +94,7 @@ vi.mock('frappe-ui', async () => {
     SidebarItem: passthrough,
     SidebarLabel: passthrough,
     Skeleton: passthrough,
+    Spinner: passthrough,
     toast: {
       success: vi.fn(),
     },
@@ -171,8 +174,12 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
   useDrivePreviewRefresh: () => {},
   useDriveDocumentCreation: () => ({
     isPending: false,
+    get canCreate() {
+      return state.canCreate
+    },
     run: state.createDocument,
   }),
+  driveDocumentIcon: () => ['lucide-file-text', 'text-ink-blue-5'],
   driveNodeRoute: (node: { name: string }) => ({ path: `/d/${node.name}/document` }),
   newDocumentRoute: (node: { name: string }) => ({
     path: `/d/${node.name}/document`,
@@ -253,6 +260,8 @@ afterEach(() => {
   vi.useRealTimers()
   state.push.mockReset()
   state.createDocument.mockReset()
+  state.canCreate = true
+  setTweaks(['t45-home-new'], true)
   state.recentFails = true
   state.upcomingFails = false
   state.upcomingPending = false
@@ -443,6 +452,89 @@ describe('Home page', () => {
       })
     },
   )
+
+  describe('the New section', () => {
+    const newSection = (root: HTMLElement) =>
+      root.querySelector<HTMLElement>('[aria-labelledby="home-new-heading"]')
+    const card = (root: HTMLElement, label: string) =>
+      [...(newSection(root)?.querySelectorAll('button') ?? [])].find(
+        (button) => button.textContent?.trim() === label,
+      )
+
+    it('sits above Recent with a card for each kind, in the New menu order', () => {
+      const root = mount()
+      const section = newSection(root)
+      const recent = root.querySelector('[aria-labelledby="home-recent-heading"]')
+      expect(section?.compareDocumentPosition(recent!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      expect([...section!.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
+        'Document',
+        'Spreadsheet',
+        'Presentation',
+        'Drawing',
+      ])
+    })
+
+    it.each([
+      ['Document', 'Writer Document'],
+      ['Spreadsheet', 'Sheet'],
+      ['Presentation', 'Presentation'],
+      ['Drawing', 'Drawing'],
+    ])('creates a %s in My files and opens it as new', async (label, contentDoctype) => {
+      state.createDocument.mockResolvedValue({ name: 'new-node' })
+      const root = mount()
+      card(root, label)!.click()
+      await vi.waitFor(() => expect(state.push).toHaveBeenCalled())
+      expect(state.createDocument).toHaveBeenCalledExactlyOnceWith({
+        content_doctype: contentDoctype,
+      })
+      expect(state.push).toHaveBeenCalledWith({
+        path: '/d/new-node/document',
+        query: { new: '1' },
+      })
+    })
+
+    it('marks the card busy and ignores more clicks until the file exists', async () => {
+      let finish: (node: { name: string }) => void = () => {}
+      state.createDocument.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+      const root = mount()
+      card(root, 'Spreadsheet')!.click()
+      await nextTick()
+      expect(card(root, 'Spreadsheet')!.getAttribute('aria-busy')).toBe('true')
+      card(root, 'Spreadsheet')!.click()
+      card(root, 'Drawing')!.click()
+      expect(state.createDocument).toHaveBeenCalledOnce()
+
+      finish({ name: 'new-node' })
+      await vi.waitFor(() =>
+        expect(card(root, 'Spreadsheet')!.getAttribute('aria-busy')).toBe('false'),
+      )
+      expect(state.push).toHaveBeenCalledOnce()
+    })
+
+    it('frees the card again when creation fails', async () => {
+      state.createDocument.mockRejectedValueOnce(new Error('Storage is full'))
+      const root = mount()
+      state.createDocument.mockResolvedValueOnce({ name: 'new-node' })
+      card(root, 'Document')!.click()
+      await new Promise((resolve) => setTimeout(resolve))
+      expect(card(root, 'Document')!.getAttribute('aria-busy')).toBe('false')
+      expect(state.push).not.toHaveBeenCalled()
+
+      card(root, 'Document')!.click()
+      await vi.waitFor(() => expect(state.push).toHaveBeenCalledOnce())
+      expect(state.createDocument).toHaveBeenCalledTimes(2)
+    })
+
+    it('is hidden for someone who has no My files to create in', () => {
+      state.canCreate = false
+      expect(newSection(mount())).toBeNull()
+    })
+
+    it('is hidden when its tweak is off', () => {
+      setTweaks(['t45-home-new'], false)
+      expect(newSection(mount())).toBeNull()
+    })
+  })
 })
 function mount(): HTMLElement {
   const root = document.createElement('div')

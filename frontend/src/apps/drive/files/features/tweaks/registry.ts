@@ -94,6 +94,7 @@ export const tweaks = [
   { id: 't33-undo-remove', item: 33, group: 'Slow operations', label: 'Undo after Remove', description: 'After a plain Remove, the share dialog offers Undo, which puts the role back without an email.', ready: true },
   { id: 't33-public-folder-wording', item: 33, group: 'Slow operations', label: 'Clear public wording', description: 'A public folder says everything in it is public, and Copy link says anyone with the link can view.', ready: true },
   { id: 't34-bulk-trash-confirm', item: 34, group: 'Slow operations', label: 'Ask before trashing several items', description: 'Moving two or more items to Trash, by any route, first asks with the count; one item still goes at once with Undo.', ready: true },
+  { id: 't45-home-new', item: 45, group: 'Fewer steps', label: 'New cards on Home', description: 'Home shows a New section above Recent with one card each to create a document, spreadsheet, presentation or drawing in My files.', ready: true },
 ] as const satisfies readonly Tweak[]
 
 /** Adds Drive's ids to `TweakId`, so platform code can read a Drive tweak by a checked id. */

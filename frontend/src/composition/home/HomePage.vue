@@ -28,6 +28,38 @@
 
     <ScrollArea ref="home-scroll" class="min-h-0 flex-1">
       <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
+        <section
+          v-if="newCards && createDocumentMutation.canCreate"
+          aria-labelledby="home-new-heading"
+        >
+          <h2 id="home-new-heading" class="pb-3 text-lg font-medium text-ink-gray-9">
+            {{ __('New') }}
+          </h2>
+          <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <button
+              v-for="definition in documentTypes"
+              :key="definition.contentDoctype"
+              type="button"
+              class="flex h-14 min-w-0 items-center gap-2.5 rounded-5 border border-outline-gray-1 bg-surface-elevation-1 px-3 text-start transition-colors hover:border-outline-gray-2 hover:bg-surface-gray-1 focus-visible:focus-ring aria-disabled:cursor-default dark:hover:bg-surface-elevation-2"
+              :aria-busy="creatingType === definition.contentDoctype"
+              :aria-disabled="createDocumentMutation.isPending"
+              @click="createFromCard(definition.contentDoctype)"
+            >
+              <span
+                class="size-5 shrink-0"
+                :class="driveDocumentIcon(definition.contentDoctype)"
+                aria-hidden="true"
+              />
+              <span class="min-w-0 flex-1 truncate text-base font-medium text-ink-gray-8">
+                {{ definition.newLabel() }}
+              </span>
+              <Spinner
+                v-if="creatingType === definition.contentDoctype"
+                class="size-4 shrink-0 text-ink-gray-5"
+              />
+            </button>
+          </div>
+        </section>
         <section aria-labelledby="home-recent-heading">
           <div class="flex items-center justify-between pb-3">
             <h2 id="home-recent-heading" class="text-lg font-medium text-ink-gray-9">
@@ -212,6 +244,7 @@ import {
   PageHeaderTitle,
   ScrollArea,
   Skeleton,
+  Spinner,
 } from 'frappe-ui'
 import { computed, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -224,6 +257,7 @@ import {
   type UpcomingEventRow,
 } from '@/apps/calendar'
 import {
+  driveDocumentIcon,
   DriveFileCard,
   driveNodeRoute,
   formatDriveListingDate,
@@ -238,6 +272,7 @@ import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 import { isMobile } from '@/shell/useIsMobile'
 
 const router = useRouter()
@@ -342,6 +377,20 @@ async function createDocument(contentDoctype: string) {
   })
   if (node) {
     await router.push(newDocumentRoute(node))
+  }
+}
+const newCards = useTweak('t45-home-new')
+const creatingType = ref<string | null>(null)
+/** A card creates as the New menu does; a second click while one is created does nothing. */
+async function createFromCard(contentDoctype: string) {
+  if (creatingType.value || createDocumentMutation.isPending) return
+  creatingType.value = contentDoctype
+  try {
+    await createDocument(contentDoctype)
+  } catch {
+    // Drive's creation has already shown why it failed.
+  } finally {
+    creatingType.value = null
   }
 }
 async function startMeeting(type: 'open' | 'restricted') {

@@ -143,6 +143,8 @@ export const loadDriveSettings = () =>
 
 export interface DriveDocumentCreation {
   readonly isPending: boolean
+  /** False once Drive has said the caller has no My files to create in. */
+  readonly canCreate: boolean
   /** Creates a document of this content doctype in My files. Refusals reject. */
   run(input: { content_doctype: string }): Promise<DriveNodeSummary>
 }
@@ -155,6 +157,9 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
   return {
     get isPending() {
       return resolving.value || creating.value
+    },
+    get canCreate() {
+      return discovered.status !== 'error'
     },
     async run({ content_doctype }) {
       resolving.value = true
