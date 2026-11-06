@@ -8,7 +8,7 @@
   <!-- The server folds a document's media into the document, so every listed
        item is one Drive shows. The description says so: those bytes are real. -->
   <SettingsPage
-    :title="__('Statistics')"
+    :title="storageTab ? __('Storage') : __('Statistics')"
     :description="__('Pictures and videos inside a document count towards that document.')"
   >
     <div class="flex flex-col gap-6">
@@ -88,10 +88,12 @@ import { computed } from 'vue'
 import { api, useQuery } from '@/api'
 import { formatBytes } from '@/apps/drive/files/internal/format'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 
 import SettingsPage from './SettingsPage.vue'
 import { storageTypeIcon, storageTypeTint } from './storageTypes'
 
+const storageTab = useTweak('t4-storage-tab')
 const discovered = useQuery(api.drive.roots.list, {})
 const usage = useQuery(api.drive.roots.usage, () => {
   const personal = discovered.data?.personal.node

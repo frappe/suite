@@ -1,5 +1,6 @@
 import { api, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
+import { isTweakOn } from '@/platform/tweaks'
 
 // Held for the session: the group condition and the External access body
 // read the same answer.
@@ -10,7 +11,8 @@ const drive = {
   tabs: [
     {
       id: 'drive.statistics',
-      label: () => __('Statistics'),
+      // The id stays, so saved links to the tab still open it.
+      label: () => (isTweakOn('t4-storage-tab') ? __('Storage') : __('Statistics')),
       icon: 'lucide-chart-pie',
       body: () => import('./StatisticsSettings.vue'),
     },

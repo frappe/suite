@@ -153,7 +153,7 @@
             </ListCell>
             <ListCell v-if="shows('kind')" :class="wideOnly('kind')"
               ><span class="truncate text-base text-ink-gray-7">{{
-                nodeTypeLabel(row)
+                typeLabel(row)
               }}</span></ListCell
             >
             <ListCell v-if="shows('owner')" :class="wideOnly('owner')">
@@ -318,7 +318,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { InfiniteQueryState } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
-import { nodeIcon, nodeIconTint, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
+import { nodeIcon, nodeIconTint, useNodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
@@ -373,6 +373,7 @@ let longPressFired = false
 let touchPress = false
 const session = useSession()
 const locationTitle = useLocationTitle()
+const typeLabel = useNodeTypeLabel()
 const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
   area: listing,
   selection: () => props.selection,

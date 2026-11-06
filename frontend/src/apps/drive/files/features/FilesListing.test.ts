@@ -4,9 +4,27 @@ import { createApp, h, nextTick, reactive } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { requireTestElement } from '@/platform/testing/dom'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
+import { setTweaks } from '@/platform/tweaks'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
+
+/** The New menu's document types, as composition registers them. */
+const NEW_MENU_TYPES: DocumentTypeDefinition[] = (
+  [
+    ['writer', 'Writer Document', 'Document'],
+    ['sheets', 'Sheet', 'Spreadsheet'],
+    ['slides', 'Presentation', 'Presentation'],
+    ['draw', 'Drawing', 'Drawing'],
+  ] as const
+).map(([key, contentDoctype, label]) => ({
+  key,
+  contentDoctype,
+  newLabel: () => label,
+  icon: {},
+  loadSurface: async () => ({}),
+}))
 
 let cleanup: (() => void) | undefined
 let intersect: IntersectionObserverCallback
@@ -25,6 +43,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup?.()
   vi.unstubAllGlobals()
+  setTweaks(['t4-type-names'], true)
 })
 
 function file(name: string, title: string, extra: Partial<DriveNode> = {}): DriveNode {
@@ -99,6 +118,7 @@ function mount(options: {
         },
       }),
   })
+  app.provide(DOCUMENT_TYPES_KEY, NEW_MENU_TYPES)
   app.mount(root)
   cleanup = () => {
     app.unmount()
@@ -206,14 +226,10 @@ describe('FilesListing type column', () => {
       ],
     })
     await nextTick()
-    const type = (name: string) =>
-      root
-        .querySelector(`[data-node="${name}"] [data-slot="list-cell"]:nth-child(2)`)
-        ?.textContent?.trim()
     const icon = (name: string) =>
       root.querySelector(`[data-node="${name}"] [aria-hidden="true"]`)?.className
 
-    expect(['md', 'json', 'csv', 'py', 'bin', 'zip', 'png', 'doc'].map(type)).toEqual([
+    expect(['md', 'json', 'csv', 'py', 'bin', 'zip', 'png', 'doc'].map(typeIn(root))).toEqual([
       'Markdown',
       'JSON',
       'CSV',
@@ -229,7 +245,42 @@ describe('FilesListing type column', () => {
     expect(icon('bin')).toContain('file-icon-file')
     expect(icon('zip')).toContain('file-icon-archive')
   })
+
+  const documents = [
+    file('sheet', 'Budget', { kind: 'document', mime: null, content_doctype: 'Sheet' }),
+    // The older doctype name for a spreadsheet.
+    file('old', 'Q1', { kind: 'document', mime: null, content_doctype: 'Spreadsheet' }),
+    file('draw', 'Sketch', { kind: 'document', mime: null, content_doctype: 'Drawing' }),
+    file('odd', 'Ledger', { kind: 'document', mime: null, content_doctype: 'Ledger Entry' }),
+  ]
+
+  it('names documents as the New menu does, and keeps an unknown doctype', async () => {
+    const { root } = mount({ columns: ['kind'], rows: documents })
+    await nextTick()
+
+    expect(['sheet', 'old', 'draw', 'odd'].map(typeIn(root))).toEqual([
+      'Spreadsheet',
+      'Spreadsheet',
+      'Drawing',
+      'Ledger Entry',
+    ])
+  })
+
+  it('shows the doctype with the tweak off', async () => {
+    setTweaks(['t4-type-names'], false)
+    const { root } = mount({ columns: ['kind'], rows: documents })
+    await nextTick()
+
+    expect(typeIn(root)('sheet')).toBe('Sheet')
+  })
 })
+
+function typeIn(root: HTMLElement) {
+  return (name: string) =>
+    root
+      .querySelector(`[data-node="${name}"] [data-slot="list-cell"]:nth-child(2)`)
+      ?.textContent?.trim()
+}
 
 describe('FilesListing grid previews', () => {
   it('falls back to the type icon when a thumbnail fails, and asks for a fresh URL once', async () => {

@@ -1,4 +1,8 @@
+import { inject } from 'vue'
+
 import type { DriveNode } from '@/apps/drive/client/types'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
+import { useTweak } from '@/platform/tweaks'
 
 import { titleExtension } from './filename'
 import { previewKind, type TextLanguage } from './previewKind'
@@ -150,9 +154,29 @@ export function documentIcon(contentDoctype: string) {
   return [fileTypeIcon(type), fileTypeTint(type)]
 }
 
-export function nodeTypeLabel(node: TypedNode): string {
+/**
+ * The type's name. With `documentTypes`, a document takes its New menu name,
+ * such as "Spreadsheet" for a Sheet; an unknown doctype keeps its own name.
+ */
+export function nodeTypeLabel(
+  node: TypedNode,
+  documentTypes: readonly DocumentTypeDefinition[] = [],
+): string {
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'link') return 'Link'
-  if (node.kind === 'document') return DOCUMENT_LABELS[fileType(node)] ?? 'Document'
+  if (node.kind === 'document') {
+    const type = fileType(node)
+    const definition = documentTypes.find(
+      (candidate) => CONTENT_TYPES[candidate.contentDoctype] === type,
+    )
+    return definition?.newLabel() ?? DOCUMENT_LABELS[type] ?? 'Document'
+  }
   return storedFile(node).label
+}
+
+/** `nodeTypeLabel`, naming documents as the New menu does while tweak t4-type-names is on. */
+export function useNodeTypeLabel(): (node: TypedNode) => string {
+  const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+  const newMenuNames = useTweak('t4-type-names')
+  return (node) => nodeTypeLabel(node, newMenuNames.value ? documentTypes : [])
 }

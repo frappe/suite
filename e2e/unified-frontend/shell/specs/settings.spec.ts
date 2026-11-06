@@ -10,7 +10,7 @@ import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell"
 
 const FIRST_TABS = [
 	{ heading: "Account", tab: "Profile" },
-	{ heading: "Drive", tab: "Statistics" },
+	{ heading: "Drive", tab: "Storage" },
 	{ heading: "Mail", tab: "Credentials" },
 	{ heading: "Calendar", tab: "Calendars" },
 ];
@@ -85,8 +85,8 @@ test.describe("desktop", () => {
 			expect(served.has(body), `${body} before its click`).toBe(false);
 		}
 
-		await settings.getByRole("tab", { name: "Statistics" }).click();
-		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Statistics" })).toBeVisible();
+		await settings.getByRole("tab", { name: "Storage" }).click();
+		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Storage" })).toBeVisible();
 		expect(served.has("StatisticsSettings.vue")).toBe(true);
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
@@ -165,7 +165,7 @@ for (const phone of [false, true]) {
 			await page.goto("/home");
 			if (!phone) {
 				const settings = await openSettingsFromRail(page);
-				await settings.getByRole("tab", { name: "Statistics" }).click();
+				await settings.getByRole("tab", { name: "Storage" }).click();
 				return settings.getByRole("tabpanel");
 			}
 			await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Account" }).click();
@@ -173,9 +173,9 @@ for (const phone of [false, true]) {
 			const settings = page.getByRole("dialog", { name: "Settings" });
 			await settings
 				.getByRole("region", { name: "Drive", exact: true })
-				.getByRole("button", { name: "Statistics", exact: true })
+				.getByRole("button", { name: "Storage", exact: true })
 				.click();
-			return settings.getByRole("region", { name: "Statistics", exact: true });
+			return settings.getByRole("region", { name: "Storage", exact: true });
 		}
 
 		async function headingTops(panel: Locator) {

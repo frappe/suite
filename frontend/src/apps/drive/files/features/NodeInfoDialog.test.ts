@@ -2,12 +2,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
 import type { Operation } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 import NodeInfoDialog from './NodeInfoDialog.vue'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
-const server = vi.hoisted(() => ({ role: 50, requests: fromPartial<string[]>([]) }))
+const server = vi.hoisted(() => ({
+  role: 50,
+  requests: fromPartial<string[]>([]),
+  // An older Personal Root is titled with its owner's name.
+  crumbs: [
+    { name: 'root', title: 'Mira Shah', kind: 'root' },
+    { name: 'reports', title: 'Reports', kind: 'folder' },
+  ],
+}))
 const person = (id: string, full_name: string) => ({ id, full_name, user_image: null })
 const grant = (principal: string, extra: Record<string, unknown> = {}) => ({
   node: 'report',
@@ -23,6 +32,8 @@ vi.mock('@/platform/transport', async (original) => ({
   transport: {
     request: async (operation: Operation, input: { node: string }) => {
       server.requests.push(operation.id)
+      if (operation.id === 'roots_discover')
+        return { personal: { node: 'root', title: 'Mira Shah' }, organization: null }
       if (operation.id === 'node_get')
         return {
           name: input.node,
@@ -33,7 +44,7 @@ vi.mock('@/platform/transport', async (original) => ({
           state: 'Active',
           root: 'root',
           owner: person('me@example.com', 'Mira Shah'),
-          breadcrumbs: [{ name: 'root', title: 'My files', kind: 'root' }],
+          breadcrumbs: server.crumbs,
           access: { role: server.role },
         }
       if (operation.id === 'node_grants')
@@ -73,11 +84,19 @@ vi.mock('@/platform/transport', async (original) => ({
   },
 }))
 
+vi.mock('@/platform/session', async (original) => {
+  const actual = await original<typeof import('@/platform/session')>()
+  const { ref } = await import('vue')
+  const status = ref('authenticated')
+  return { ...actual, useSession: () => ({ ...actual.useSession(), status }) }
+})
+
 let unmount: (() => void) | undefined
 afterEach(() => {
   unmount?.()
   server.requests.length = 0
   server.role = 50
+  setTweaks(['t4-location'], true)
 })
 
 function mount(node: string) {
@@ -113,5 +132,18 @@ describe('Details', () => {
     await vi.waitFor(() => expect(field(root, 'Owner')).toBe('Mira Shah'))
     expect(field(root, 'Shared with')).toBeUndefined()
     expect(server.requests).not.toContain('node_grants')
+  })
+
+  it('names the root in Location as the sidebar does', async () => {
+    const root = mount('report')
+
+    await vi.waitFor(() => expect(field(root, 'Location')).toBe('My files / Reports'))
+  })
+
+  it("shows the root's stored title in Location with the tweak off", async () => {
+    setTweaks(['t4-location'], false)
+    const root = mount('report')
+
+    await vi.waitFor(() => expect(field(root, 'Location')).toBe('Mira Shah / Reports'))
   })
 })
