@@ -2,7 +2,7 @@
 import { Textarea } from 'frappe-ui'
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 
-import MentionPerson from '@/apps/writer/components/MentionPerson.vue'
+import MentionList from '@/apps/writer/components/MentionList.vue'
 import { fullName, lookUp, searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
 import type { WriterUser } from '@/apps/writer/drive'
 import { isAuthenticated as isLoggedIn } from '@/platform/session'
@@ -43,16 +43,13 @@ let written: string | null = null
 
 const offered = computed(() => users.value.slice(0, MAX_SHOWN))
 const isListOpen = computed(() => isLoggedIn.value && query.value !== null)
-const isListEmpty = computed(() => !offered.value.length)
-// Rows from an older query stay shown, faded, until the answer to this one arrives
 const isAnswerCurrent = computed(() => answeredQuery.value === query.value?.query)
-const isListBusy = computed(() => !isAnswerCurrent.value)
 const activeOption = computed(() => {
   if (!isListOpen.value || !offered.value.length) {
     return undefined
   }
 
-  return optionId(active.value)
+  return `${listId}-${active.value}`
 })
 
 function showStored(value: string) {
@@ -168,27 +165,6 @@ function onKey(event: KeyboardEvent) {
   }
 }
 
-function optionId(index: number) {
-  return `${listId}-${index}`
-}
-
-function isActive(index: number) {
-  return index === active.value
-}
-
-function optionClass(index: number) {
-  const tint = isActive(index) ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'
-  if (isAnswerCurrent.value) {
-    return tint
-  }
-
-  return `${tint} opacity-60`
-}
-
-function setActive(index: number) {
-  active.value = index
-}
-
 function focus() {
   field.value?.focus()
 }
@@ -233,37 +209,16 @@ defineExpose({ focus })
       @update:model-value="onInput"
       @click="closeList"
     />
-    <div
+    <MentionList
       v-if="isListOpen"
       :id="listId"
-      role="listbox"
-      :aria-label="__('People')"
-      :aria-busy="isListBusy"
-      class="absolute left-0 top-full z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-6 border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
-    >
-      <button
-        v-for="(person, index) in offered"
-        :id="optionId(index)"
-        :key="person.name"
-        type="button"
-        role="option"
-        tabindex="-1"
-        class="flex w-full items-center gap-2 rounded-4 px-2 py-1.5 text-left text-sm"
-        :class="optionClass(index)"
-        :aria-selected="isActive(index)"
-        @mousedown.prevent="pick(person)"
-        @mouseenter="setActive(index)"
-      >
-        <MentionPerson :person="person" />
-      </button>
-      <p
-        v-if="isListEmpty"
-        role="option"
-        aria-disabled="true"
-        class="px-2 py-1.5 text-sm text-ink-gray-5"
-      >
-        {{ __('No people found') }}
-      </p>
-    </div>
+      class="absolute left-0 top-full z-50 mt-1 w-full"
+      :people="offered"
+      :active
+      :is-current="isAnswerCurrent"
+      :empty-text="__('No people found')"
+      @pick="pick"
+      @hover="active = $event"
+    />
   </div>
 </template>
