@@ -2,7 +2,8 @@
   The tweak panel: evaluation scaffolding that switches each Drive UI change
   on or off. It does not block the page. On a phone it sits at the top, clear
   of the upload tracker; from `md` up it docks to the right edge and ends
-  above the tracker while the tracker shows. Where the Drive sidebar's Tweaks
+  above the tracker while the tracker shows, and the page gives up the room it
+  takes, so nothing sits under it. Where the Drive sidebar's Tweaks
   item is out of reach (a phone, a document), a floating button opens it.
 -->
 <template>
@@ -82,7 +83,7 @@
 
 <script setup lang="ts">
 import { Button, Switch } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, onScopeDispose, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { translate as __ } from '@/platform/translation'
@@ -92,8 +93,16 @@ import { uploadQueue } from '../uploads/queue'
 import { isTweakPanelOpen } from './panel'
 import { tweakGroups, tweaks } from './registry'
 
+const DOCKED = 'data-tweak-panel-docked'
+
 const route = useRoute()
 const queue = uploadQueue()
+
+// The page makes room for the docked panel; see the style below.
+watch(isTweakPanelOpen, (open) => document.documentElement.toggleAttribute(DOCKED, open), {
+  immediate: true,
+})
+onScopeDispose(() => document.documentElement.removeAttribute(DOCKED))
 
 const ids = tweaks.map((tweak) => tweak.id)
 const groups = tweakGroups
@@ -109,3 +118,12 @@ const isTrackerShown = computed(
     (queue.entries.value.length > 0 || queue.state.preparing > 0 || !!queue.state.reading),
 )
 </script>
+
+<style>
+/* The docked panel's width and its gap from the edge (`md:w-80 md:right-2`). */
+@media (min-width: 768px) {
+  html[data-tweak-panel-docked] #app {
+    padding-right: 20.5rem;
+  }
+}
+</style>
