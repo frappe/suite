@@ -144,11 +144,14 @@ def get(principals: Principals, download: str) -> frappe._dict:
     """Return one of the caller's own downloads. Anyone else's is not found.
 
     Every Guest is one requester, so a Guest's download is reached by its
-    name alone: 128 random bits that only the page that asked was given.
+    name alone: 128 random bits that only the page that asked was given. A
+    ready zip past its expiry answers Expired.
     """
     row = frappe.db.get_value("Drive Download", download, DOWNLOAD_FIELDS, as_dict=True)
     if not row or row.requester != principals.user:
         raise DriveNotFound(_("Drive download {0} was not found").format(download))
+    if row.status == "Ready" and row.expires_at and get_datetime(row.expires_at) <= now_datetime():
+        row.status = "Expired"
     return row
 
 
@@ -199,7 +202,7 @@ def ready_blob(principals: Principals, download: str) -> tuple[Document, str]:
     revoking that link refuses it.
     """
     row = get(principals, download)
-    if row.status != "Ready" or get_datetime(row.expires_at) <= now_datetime():
+    if row.status != "Ready":
         raise DriveNotFound(_("This download has expired. Download the items again."))
     if not _all_readable(_holder(principals, row), frappe.parse_json(row.members) or []):
         raise DriveNotFound(_("An item in this download was moved, deleted or unshared. Download it again."))

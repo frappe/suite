@@ -27,7 +27,6 @@ from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, now_datetime
 from pydantic import with_config
 
 from suite.drive._core import nodes, times
@@ -880,15 +879,12 @@ def download_notification_shape(row: Mapping) -> DownloadNotificationShape:
 
 
 def download_shape(row: Mapping) -> DownloadShape:
-    """Return one download. Its `url` is the content route, while the zip is ready and unexpired."""
-    status, expires_at = row.get("status"), row.get("expires_at")
-    if status == "Ready" and expires_at and get_datetime(expires_at) <= now_datetime():
-        status = "Expired"
-    ready = status == "Ready"
+    """Return one download. Its `url` is the content route while the zip is Ready."""
+    ready = row.get("status") == "Ready"
     return {
         "name": row.get("name"),
         "title": row.get("title"),
-        "status": status,
+        "status": row.get("status"),
         "delivery": row.get("delivery"),
         "size": row.get("size") if ready else None,
         "expires_at": stamp(row.get("expires_at")),
