@@ -809,6 +809,7 @@ import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
+import { fontSizeOps } from '../../engine/font-size.js'
 import { formatScope } from '../../engine/format-scope.js'
 import { createFormatsEngine } from '../../engine/formats.js'
 import { detectHyperlink, isAutoLinkText } from '../../engine/links.js'
@@ -4188,39 +4189,10 @@ function _patchFmtOps(patch) {
   }
 }
 const _clampFont = (v) => Math.max(8, Math.min(72, v))
+// A whole column/row also changes the cells in it with their own size
+// (fontSizeOps), so one undo step covers the layer and those cells.
 function adjustFontSize(delta) {
-  _recordScopedFormatOp({
-    cols: (cols, sn) => {
-      for (const c of cols)
-        formats.setCol(
-          c,
-          {
-            fontSize: _clampFont((formats.getCol(c, sn).fontSize || 13) + delta),
-          },
-          sn,
-        )
-    },
-    rows: (rows, sn) => {
-      for (const r of rows)
-        formats.setRow(
-          r,
-          {
-            fontSize: _clampFont((formats.getRow(r, sn).fontSize || 13) + delta),
-          },
-          sn,
-        )
-    },
-    cells: (ids, sn) => {
-      for (const id of ids)
-        formats.applyToRange(
-          [id],
-          {
-            fontSize: _clampFont((formats.get(id, sn).fontSize || 13) + delta),
-          },
-          sn,
-        )
-    },
-  })
+  _recordScopedFormatOp(fontSizeOps(formats, (size) => _clampFont(size + delta)))
   refreshActiveFormat()
   grid?.render()
   syncFlags()
@@ -4233,11 +4205,7 @@ function adjustFontSize(delta) {
 // Enter or blur) and its list of common sizes.
 function setFontSize(px) {
   const n = _clampFont(parseInt(px, 10) || 13)
-  _recordScopedFormatOp(
-    _patchFmtOps({
-      fontSize: n,
-    }),
-  )
+  _recordScopedFormatOp(fontSizeOps(formats, () => n))
   refreshActiveFormat()
   grid?.render()
   syncFlags()
