@@ -18,6 +18,7 @@ export const FOLDER_ICON_MAP = {
   drafts: 'pencil-line',
   archive: 'archive',
   important: 'bookmark',
+  snoozed: 'clock',
 }
 
 export const FOLDER_ICON_COLOR_MAP = {

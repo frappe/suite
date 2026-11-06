@@ -200,7 +200,7 @@
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
-                v-if="groupedByDate && !isMobile"
+                v-if="groupHeaderVisible(key)"
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
@@ -268,6 +268,10 @@
                     :hide-sender="row.inStack"
                     :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
                     :screened="screener.active.value && screener.isScreened(row.thread)"
+                    :pinnable="mailbox === mailboxIds.inbox"
+                    :snoozable="canSnooze"
+                    @snooze="askSnooze([row.thread.thread_id])"
+                    @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned)"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
@@ -332,6 +336,9 @@
           "
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
+          @set-pinned="(ids: string[], pinned: boolean) => pinMails(store.accountId, ids, pinned)"
+          @snooze-thread="askSnooze([threadID!])"
+          @unsnooze-thread="unsnoozeThreads([threadID!])"
           @archive-thread="handleArchiveThreads([threadID!])"
           @unarchive-thread="handleUnarchiveThreads([threadID!])"
           @move-thread="
@@ -373,6 +380,7 @@
   <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
   <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
   <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
+  <SnoozeModal v-model="showSnooze" :initial-value="snoozedUntil" :save="saveSnooze" />
   <MobileSelectionBar
     :open="mobileSelectionMode"
     :actions="selectActions"
@@ -401,6 +409,7 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import SnoozeModal from '@/apps/mail/components/Modals/SnoozeModal.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
@@ -412,6 +421,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
+import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import {
@@ -515,7 +525,7 @@ const screener = useScreener()
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
-  groupedByDate,
+  groupHeaderVisible,
   groupedThreads,
   getGroupThreads,
   isLastGroup,
@@ -734,6 +744,9 @@ const selectActions = buildSelectActions(
     archive: mailbox === mailboxIds.archive,
     trash: mailbox === mailboxIds.trash,
     drafts: mailbox === mailboxIds.drafts,
+    inbox: mailbox === mailboxIds.inbox,
+    snoozable: canSnooze.value && mailbox !== mailboxIds.snoozed,
+    snoozed: !!mailbox && mailbox === mailboxIds.snoozed,
     sent: mailboxIds.sent,
     archiveId: mailboxIds.archive,
     inboxId: mailboxIds.inbox,
@@ -749,8 +762,44 @@ const selectActions = buildSelectActions(
     delete: () => junkOrDeleteThreads(selections.value, false),
     read: () => handleSetSeen({ 1: selections.value }),
     unread: () => handleSetSeen({ 0: selections.value }),
+    pin: () => pinSelected(true),
+    unpin: () => pinSelected(false),
+    snooze: () => askSnooze([...selections.value]),
+    unsnooze: () => {
+      unsnoozeThreads([...selections.value])
+      resetSelections()
+    },
   },
 )
+
+// Snoozing: what is asked of the reader is held here, a row's hover actions being gone by the time
+// they answer.
+const canSnooze = computed(() =>
+  [mailboxIds.inbox, mailboxIds.archive, mailboxIds.snoozed].includes(mailbox),
+)
+const showSnooze = ref(false)
+const snoozing = ref<string[]>([])
+const snoozedUntil = computed(
+  () =>
+    (snoozing.value.length === 1 &&
+      threadRows.value?.find((row) => row.thread_id === snoozing.value[0])?.snoozed_until) ||
+    undefined,
+)
+const askSnooze = (threadIds: string[]) => {
+  snoozing.value = threadIds
+  showSnooze.value = true
+}
+const saveSnooze = async (until: string) => {
+  const ids = snoozing.value
+  resetSelections()
+  await snoozeThreads(ids, until)
+}
+
+const { pinThreads, pinMails } = useThreadPin()
+const pinSelected = (pinned: boolean) => {
+  pinThreads(selectedRows.value, pinned)
+  resetSelections()
+}
 
 // Search
 
@@ -1131,6 +1180,8 @@ const {
   handleMoveThreads,
   handleArchiveThreads,
   handleUnarchiveThreads,
+  snoozeThreads,
+  unsnoozeThreads,
   handleSetSpamStatus,
   handleAddThreadsToMailbox,
   handleRemoveThreadsFromMailbox,

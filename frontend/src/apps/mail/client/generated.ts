@@ -953,7 +953,8 @@ export type GetMailboxesOutputMailbox = {
   name: string
   id: string
   _name: string
-  role: ('inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important') | null
+  role:
+    ('inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important' | 'snoozed') | null
   total_emails: number
   total_threads: number
   unread_threads: number
@@ -5352,6 +5353,7 @@ export type GetThreadsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<GetThreadsOutputReaction>
   mailing_list: 0 | 1
@@ -5404,6 +5406,9 @@ export type GetThreadsOutputThread = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
+  returned?: 0 | 1
+  snoozed_until?: string | null
   subject: string | null
   preview: string
   recipients: Array<GetThreadsOutputRecipient>
@@ -5501,6 +5506,7 @@ export type GetUnifiedThreadsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<GetUnifiedThreadsOutputReaction>
   mailing_list: 0 | 1
@@ -5553,6 +5559,9 @@ export type GetUnifiedThreadsOutputThread = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
+  returned?: 0 | 1
+  snoozed_until?: string | null
   subject: string | null
   preview: string
   recipients: Array<GetUnifiedThreadsOutputRecipient>
@@ -5743,6 +5752,7 @@ export type GetThreadOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<GetThreadOutputReaction>
   mailing_list: 0 | 1
@@ -5870,6 +5880,7 @@ export type SearchMailsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned?: 0 | 1
   reacts_with: Array<string>
   reactions?: Array<SearchMailsOutputReaction>
   mailing_list: 0 | 1
@@ -5922,6 +5933,9 @@ export type SearchMailsOutputSearchRow = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
+  returned?: 0 | 1
+  snoozed_until?: string | null
   subject: string | null
   preview: string
   recipients: Array<SearchMailsOutputRecipient>
@@ -6298,6 +6312,81 @@ const operationSetFlagged: MutationRef<SetFlaggedInput, SetFlaggedOutput, SetFla
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationSetFlagged,
+}
+
+export type PinMailsInput = { account: string; ids: Array<string>; pinned: boolean }
+
+export type PinMailsOutput = { ids: Array<string>; pinned: boolean }
+
+export type PinMailsError = 'PermissionError' | 'ValidationError'
+
+const operationPinMails: MutationRef<PinMailsInput, PinMailsOutput, PinMailsError> = {
+  id: 'pin_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.pin',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.pin_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationPinMails,
+}
+
+export type SnoozeMailsInput = {
+  account: string
+  ids: Array<string>
+  until: string
+  leaves?: string | null
+}
+
+export type SnoozeMailsOutput = { updated: Array<string>; left_inbox: boolean }
+
+export type SnoozeMailsError = 'PermissionError' | 'ValidationError'
+
+const operationSnoozeMails: MutationRef<SnoozeMailsInput, SnoozeMailsOutput, SnoozeMailsError> = {
+  id: 'snooze_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.snooze',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.snooze_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationSnoozeMails,
+}
+
+export type UnsnoozeMailsInput = { account: string; ids: Array<string>; leaves?: string | null }
+
+export type UnsnoozeMailsOutput = { updated: Array<string>; left_inbox: boolean }
+
+export type UnsnoozeMailsError = 'PermissionError' | 'ValidationError'
+
+const operationUnsnoozeMails: MutationRef<
+  UnsnoozeMailsInput,
+  UnsnoozeMailsOutput,
+  UnsnoozeMailsError
+> = {
+  id: 'unsnooze_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.unsnooze',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.unsnooze_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationUnsnoozeMails,
 }
 
 export type SetMailsSeenInput = { account: string; ids: Array<string>; seen: boolean }
@@ -7358,6 +7447,9 @@ export const api = {
     updateDraft: operationUpdateDraftMail,
     deleteDraft: operationDeleteMail,
     flag: operationSetFlagged,
+    pin: operationPinMails,
+    snooze: operationSnoozeMails,
+    unsnooze: operationUnsnoozeMails,
     seen: operationSetMailsSeen,
     move: operationMoveMails,
     file: operationFileMails,

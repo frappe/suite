@@ -31,6 +31,36 @@
             <component :is="action.icon" class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
           </template>
         </Button>
+        <Button
+          v-if="pinnable && !isMobile"
+          variant="ghost"
+          :tooltip="pinned ? __('Unpin') : __('Pin to Top')"
+          @click="emit('setPinned', !pinned)"
+        >
+          <template #icon>
+            <component :is="pinned ? PinOff : Pin" class="icon" />
+          </template>
+        </Button>
+        <Button
+          v-if="(snoozable || inSnoozed) && !isMobile"
+          variant="ghost"
+          :tooltip="inSnoozed ? __('Change snooze time') : __('Snooze')"
+          @click="emit('snooze')"
+        >
+          <template #icon>
+            <Clock class="icon" />
+          </template>
+        </Button>
+        <Button
+          v-if="inSnoozed && !isMobile"
+          variant="ghost"
+          :tooltip="__('Unsnooze')"
+          @click="emit('unsnooze')"
+        >
+          <template #icon>
+            <AlarmClockOff class="icon" />
+          </template>
+        </Button>
         <AdaptiveDropdown v-if="!inDrafts" :options="moveToOptions" :title="__('Move To')">
           <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
             <template #icon>
@@ -48,6 +78,18 @@
           <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Folders')">
             <template #icon>
               <Folders class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+            </template>
+          </Button>
+        </AdaptiveDropdown>
+        <!-- A phone's toolbar is full: what is left goes in a sheet. -->
+        <AdaptiveDropdown
+          v-if="isMobile && laterOptions.length"
+          :options="laterOptions"
+          :title="__('More')"
+        >
+          <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :aria-label="__('More')">
+            <template #icon>
+              <Ellipsis class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
             </template>
           </Button>
         </AdaptiveDropdown>
@@ -84,6 +126,7 @@
 import { Button, Checkbox } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
 import {
+  AlarmClockOff,
   Archive,
   ArchiveRestore,
   ArrowLeft,
@@ -91,9 +134,13 @@ import {
   ChevronLeft,
   CircleAlert,
   CircleCheck,
+  Clock,
+  Ellipsis,
   FolderInput,
   Folders,
   Mail as MailIcon,
+  Pin,
+  PinOff,
   Trash2,
 } from 'lucide-vue-next'
 import { computed, h, type Component } from 'vue'
@@ -122,6 +169,9 @@ const { thread, threads, canGoNext } = defineProps<{
 }>()
 const emit = defineEmits([
   'setSeen',
+  'setPinned',
+  'snooze',
+  'unsnooze',
   'archiveThread',
   'unarchiveThread',
   'moveThread',
@@ -172,6 +222,56 @@ const holdsReceived = computed(() =>
     mailboxIds.value.sent,
   ),
 )
+
+// A pin acts in the Inbox only, on the mail the conversation holds there (see suite/mail/pins.py).
+const inInbox = computed(() =>
+  (thread ?? []).filter(
+    (mail: Mail) =>
+      mail.id &&
+      !mail.draft &&
+      mail.mailboxes.some((box) => box.mailbox_id === mailboxIds.value.inbox),
+  ),
+)
+const pinnable = computed(() => !inDrafts.value && inInbox.value.length > 0)
+const pinned = computed(() => inInbox.value.some((mail: Mail) => mail.pinned))
+
+// Snoozing takes what it finds in the Inbox or Archive (see suite/mail/filing.py).
+const received = computed(() => (thread ?? []).filter((mail: Mail) => mail.id && !mail.draft))
+const isIn = (mail: Mail, box: string) => mail.mailboxes.some((m) => m.mailbox_id === box)
+const inSnoozed = computed(() =>
+  received.value.some((mail: Mail) => isIn(mail, mailboxIds.value.snoozed)),
+)
+const snoozable = computed(
+  () =>
+    !inSnoozed.value &&
+    received.value.some(
+      (mail: Mail) => isIn(mail, mailboxIds.value.inbox) || isIn(mail, mailboxIds.value.archive),
+    ),
+)
+
+const laterOptions = computed(() => [
+  ...(pinnable.value
+    ? [
+        {
+          label: pinned.value ? __('Unpin') : __('Pin to Top'),
+          icon: pinned.value ? PinOff : Pin,
+          onClick: () => emit('setPinned', !pinned.value),
+        },
+      ]
+    : []),
+  ...(snoozable.value || inSnoozed.value
+    ? [
+        {
+          label: inSnoozed.value ? __('Change snooze time') : __('Snooze'),
+          icon: Clock,
+          onClick: () => emit('snooze'),
+        },
+      ]
+    : []),
+  ...(inSnoozed.value
+    ? [{ label: __('Unsnooze'), icon: AlarmClockOff, onClick: () => emit('unsnooze') }]
+    : []),
+])
 
 const moreActions = computed((): Action[] => [
   {

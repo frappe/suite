@@ -329,6 +329,7 @@ scheduler_events = {
         "suite.drive.jobs.sweep_unused_document_media",
         # mail
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
+        "suite.mail.reminders.return_unheld",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
         "suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
@@ -352,6 +353,9 @@ scheduler_events = {
     ],
     "cron": {
         "* * * * *": [
+            # mail
+            "suite.mail.reminders.run_due",
+            # meet
             "suite.meet.api.recording.reconcile_pending_recordings",
             "suite.meet.recording.ingest.reconcile_due_finalizations",
         ],

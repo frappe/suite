@@ -333,6 +333,9 @@ const peopleReaders = ['get_contacts', 'get_contact_cards', 'get_email_suggestio
 // Mail on its way out: the Outbox, and the mail waiting for its time.
 const outgoingReaders = ['get_submissions', 'get_scheduled_mail'].map((id) => `mail.${id}`)
 
+// What says which list a conversation leaves, rows coming off that list at once.
+const FILINGS = ['file_mails', 'snooze_mails', 'unsnooze_mails']
+
 /**
  * What a write to mail reads again, beyond what its optimistic update already shows. Every write
  * read everything once — the lists page by page, every count, the contacts — and some come with
@@ -386,7 +389,13 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             return data.filter((row) => !isRecord(row) || !senders.has(row.from_email))
           }
           const field =
-            id === 'set_mails_seen' ? 'seen' : id === 'set_flagged' ? 'flagged' : undefined
+            id === 'set_mails_seen'
+              ? 'seen'
+              : id === 'set_flagged'
+                ? 'flagged'
+                : id === 'pin_mails'
+                  ? 'pinned'
+                  : undefined
           const patch = (row: unknown): unknown => {
             if (
               !isRecord(row) ||
@@ -422,6 +431,8 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               ...(duplicates ? { duplicates } : {}),
               ...(ids.has(row.id) ? { [field]: input[field] ? 1 : 0 } : {}),
               ...flagged,
+              // A pin is the conversation's, whichever of its messages the row stands for.
+              ...(field === 'pinned' && touched ? { pinned: input.pinned ? 1 : 0 } : {}),
             }
           }
           if (field) {
@@ -501,7 +512,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             'delete_messages',
             'delete_mail',
             'empty_user_mailbox',
-            'file_mails',
+            ...FILINGS,
           ].includes(id)
           if (
             !removing ||
@@ -510,7 +521,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
                 (input.mailbox === 'inbox' && queryInput.folder === 'inbox'))) ||
             // A filing says which list the conversation leaves; every other list keeps its rows
             // (an Archive from a folder of yours, a move from Sent) until it is read again.
-            (id === 'file_mails' &&
+            (FILINGS.includes(id) &&
               (!input.leaves ||
                 (input.leaves !== queryInput.mailbox && input.leaves !== queryInput.folder)))
           )

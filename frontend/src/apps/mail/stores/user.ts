@@ -6,7 +6,8 @@ import router from '@/apps/mail/router'
 import type { UserAccount } from '@/apps/mail/types'
 import { useSession } from '@/platform/session'
 
-export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
+export type MailboxRole =
+  'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important' | 'snoozed'
 
 /** Destinations rather than places mail is read — the folder lists (desktop sidebar,
  * mobile folder sheet) keep these behind their More row, in this order: the mail kept first,
@@ -25,6 +26,12 @@ export const PRIMARY_MAILBOX_ROLES: readonly string[] = [
   'drafts',
   'sent',
 ] satisfies readonly MailboxRole[]
+
+/** Snoozed shows only while it holds something: most people never have mail waiting there. */
+export const isHiddenFolder = (folder: {
+  role?: string | null
+  total_threads?: number | null
+}): boolean => folder.role === 'snoozed' && !folder.total_threads
 
 const primaryRank = (role?: string | null) => {
   const rank = PRIMARY_MAILBOX_ROLES.indexOf(role ?? '')
@@ -58,6 +65,7 @@ export const deriveMailboxIds = (
     junk: '',
     archive: '',
     important: '',
+    snoozed: '',
   }
   mailboxes?.forEach((m) => {
     if (m.role) ids[m.role] = m.id
