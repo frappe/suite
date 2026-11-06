@@ -21,6 +21,7 @@
     :content="editorContent"
     :upload-function="uploadInlineImage"
     class="flex flex-col"
+    :inert="isSending"
     :class="[
       { 'pointer-events-none opacity-50': !show },
       fillsHost || windowed ? 'sm:min-h-0 sm:flex-1' : '',
@@ -32,6 +33,14 @@
     @drop.prevent="handleDrop"
   >
     <template #top>
+      <ComposeDraftNotice
+        :is-gone="saveState.status === 'gone'"
+        :copy="recoverableCopy"
+        @keep-as-new="keepAsNewDraft"
+        @discard="discardMail"
+        @restore="restoreCopy"
+        @ignore="ignoreCopy"
+      />
       <!-- Desktop, in the composer window and in a thread alike: one row per field, each led by its
            name in a column of its own, so the values line up down the page; neither host pads the
            composer, so every row carries its own inset. A reply in a thread leaves From and
@@ -143,7 +152,7 @@
                   {{ __('Bcc') }}
                 </button>
               </Tooltip>
-              <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
+              <RecipientInput ref="bccInput" v-model="mail.bcc" field="bcc" @move="moveRecipient" />
             </div>
           </template>
         </div>
@@ -356,7 +365,9 @@
       <ComposeMailToolbar
         :is-recipients-empty
         :is-uploading
-        :save-failed="isSaveFailed"
+        :is-sending
+        :save-state
+        :in-thread="isInThread"
         class="border-t sm:px-4 sm:pb-2.5"
         :class="{ 'border-transparent': isDragging }"
         @select-files="(files: File[]) => uploadFiles(files)"
@@ -364,7 +375,7 @@
         @discard-mail="discardMail"
         @send-mail="sendMail"
         @schedule-send="openScheduleModal"
-        @retry-save="saveDraft"
+        @retry-save="retrySave"
       />
     </template>
   </TextEditor>
@@ -392,6 +403,7 @@ import {
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
+import ComposeDraftNotice from '@/apps/mail/components/ComposeDraftNotice.vue'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type {
@@ -448,14 +460,11 @@ const showsFromAndSubject = computed(() => !isInThread || !mailDetails?.type)
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
+const bccInput = useTemplateRef('bccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 // An upload in flight, with the name and size of the file it is carrying.
 type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: number }
 const fileUploads = ref<FileUpload[]>([])
-const pendingInlineUploads = ref(0)
-const isUploading = computed(
-  () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
-)
 const user = inject('$user') as UserResource
 
 // The server refuses a file over the Mail attachment limit (`upload_file`); saying so here
@@ -481,12 +490,7 @@ const uploadFailure = (file: File, reason: unknown) =>
     : __('Failed to upload {0}', [file.name])
 const uploadInlineImage = async (file: File) => {
   if (refuseOversized(file)) throw new Error(__('{0} is too large to attach.', [file.name]))
-  pendingInlineUploads.value++
-  try {
-    return await uploadFunction(file)
-  } finally {
-    pendingInlineUploads.value--
-  }
+  return trackUpload(file.name, uploadFunction(file))
 }
 const imageExtension = CustomImageExtension.configure({
   uploadFunction: uploadInlineImage,
@@ -502,8 +506,17 @@ const {
   isRecipientsEmpty,
   moveRecipient,
   onOpened,
-  saveDraft,
-  isSaveFailed,
+  saveState,
+  retrySave,
+  keepAsNewDraft,
+  recoverableCopy,
+  restoreCopy,
+  ignoreCopy,
+  isSending,
+  isUploading,
+  trackUpload,
+  leave,
+  handOff,
   payListDebt,
   sendMail,
   discardMail,
@@ -527,7 +540,8 @@ const {
   onDiscardUnsaved: () => emit('discardMail'),
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  commitTypedRecipients: () =>
+    [toInput, ccInput, bccInput].forEach((input) => input.value?.commitTyped()),
   // The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
   // rather than at <body>, where it would be unreachable.
   mentionContainer: () =>
@@ -601,12 +615,13 @@ onMounted(() => {
 let handedOff = false
 const popOut = () => {
   handedOff = true
-  emit('popOut', mail)
+  emit('popOut', handOff())
 }
 
 // Otherwise this is the last chance to keep what was typed since the autosave last ran. Closing a
 // composer now unmounts this editor outright — the dialog drops it, the phone leaves the compose
-// route — so the debounced save that would have caught up in a second's time never gets to.
+// route — so the debounced save that would have caught up in a second's time never gets to. A file
+// still uploading finishes first, and goes in with it (see `leave`).
 //
 // And then the list is told, if a draft in a thread has been going to the server without it (see
 // payListDebt). After the save, so the reload finds the draft as it was left rather than as it was
@@ -614,7 +629,7 @@ const popOut = () => {
 // and it tells the list itself.
 onUnmounted(async () => {
   if (handedOff) return
-  await saveDraft()
+  await leave()
   payListDebt()
 })
 
@@ -626,6 +641,8 @@ defineExpose({
   discardMail,
   // Nothing written yet: the window has nothing to keep, so leaving it closes it (see SendMail).
   isUntouched,
+  saveState,
+  retrySave,
   openScheduleModal,
 })
 
@@ -732,7 +749,9 @@ const handleDrop = (e: DragEvent) => {
 const uploadFiles = async (files: File[]) => {
   const accepted = files.filter((file) => !refuseOversized(file))
   if (!accepted.length) return
-  const results = await Promise.allSettled(accepted.map(uploadFile))
+  const results = await Promise.allSettled(
+    accepted.map((file) => trackUpload(file.name, uploadFile(file))),
+  )
   results.forEach((res, i) => {
     if (res.status === 'rejected') raiseToast(uploadFailure(accepted[i], res.reason), 'error')
   })

@@ -5,6 +5,8 @@ import { createApp, type App as VueApp } from 'vue'
 
 import App from '@/App.vue'
 import { installEventReminders } from '@/apps/calendar'
+import { flushDraftSavers, stopDraftSavers } from '@/apps/mail/composables/draftSaver'
+import { clearDraftCopies } from '@/apps/mail/utils/draftCopies'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
 import { watchBuild } from '@/platform/build'
@@ -27,6 +29,13 @@ const app = createApp(App)
 // The Slides service worker keeps this user's responses. Every logout path ends
 // in the platform session, so the next user never receives them.
 useSession().onLogout(clearSlidesUserData)
+// Mail's composers land what they can first; what's left, and any local copies, go with the session.
+useSession().onLogout(flushDraftSavers, { whileSignedIn: true })
+useSession().onLogout(() => {
+  const user = useSession().user.value?.id
+  stopDraftSavers()
+  if (user) clearDraftCopies(user)
+})
 
 await Promise.all([
   initSentry(app, router),

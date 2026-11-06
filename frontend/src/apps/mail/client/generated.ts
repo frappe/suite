@@ -6137,6 +6137,7 @@ export type CreateMailInput = {
   attachments?: Array<CreateMailInputDraftAttachment> | null
   send_at?: string | null
   undo_send?: boolean
+  draft_key?: string | null
   in_reply_to?: string | null
   in_reply_to_id?: string | null
   forwarded_from_id?: string | null
@@ -6218,6 +6219,7 @@ export type UpdateDraftMailInput = {
   attachments?: Array<UpdateDraftMailInputDraftAttachment> | null
   send_at?: string | null
   undo_send?: boolean
+  draft_key?: string | null
   id: string
   submit?: boolean
 }
