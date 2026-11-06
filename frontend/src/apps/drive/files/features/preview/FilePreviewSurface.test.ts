@@ -126,7 +126,13 @@ vi.mock('@/platform/transport', async (original) => ({
       if (operation.id !== 'node_children') throw new Error(`Unexpected request ${operation.id}`)
       const types = input.type?.split(',')
       const rows = FOLDER.filter((row) => !types || types.includes(typeOf(row)))
-      const listed = rows.map((row) => ({ ...row, state: folderState }))
+      const trashRoot = folderState === 'Trashed' ? input.node : null
+      const listed = rows.map((row) => ({
+        ...row,
+        parent_node: input.node,
+        state: folderState,
+        trash_root: trashRoot,
+      }))
       return { rows: listed.sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
     },
   },
