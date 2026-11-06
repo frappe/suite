@@ -12,6 +12,7 @@ from frappe.utils import add_to_date, now_datetime
 
 from suite.mail import filing, reminders
 from suite.mail.doctype.mail_reminder.mail_reminder import reminder_name
+from suite.mail.utils.dt import to_utc_z
 
 ACCOUNT = "reminder-test-account"
 USER = "Administrator"
@@ -114,9 +115,9 @@ class TestSnooze(IntegrationTestCase):
         self.addCleanup(patch.stop)
 
     def snooze(self, thread_id="t1", hours=2):
-        until = add_to_date(now_datetime(), hours=hours).astimezone(tz=None)
+        until = to_utc_z(add_to_date(now_datetime(), hours=hours))
         ids = [id for id, e in self.server.emails.items() if e["threadId"] == thread_id]
-        return reminders.snooze(ACCOUNT, ids, until.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        return reminders.snooze(ACCOUNT, ids, until)
 
     def row(self, thread_id="t1"):
         return frappe.db.get_value(
@@ -293,6 +294,10 @@ class TestSnooze(IntegrationTestCase):
                 reminders.wake_on_reply(ACCOUNT, [message])
                 self.assertEqual(self.server.boxes("t1"), {"snoozed"})
                 self.assertEqual(self.row().status, "Waiting")
+
+    def test_mail_in_no_snoozed_conversation_asks_the_mail_server_nothing(self):
+        with mock.patch.object(reminders, "account_roles", side_effect=ConnectionError):
+            reminders.wake_on_reply(ACCOUNT, [self.message(thread_id="never-snoozed")])
 
     def test_bringing_it_back_by_hand_tops_the_list_with_no_alert_and_as_read_as_it_was(self):
         self.snooze()

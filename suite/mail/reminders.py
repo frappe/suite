@@ -123,9 +123,21 @@ def wake_on_reply(account: str, messages: list[dict]) -> None:
     """Wakes the snoozed conversations these newly arrived messages reply to. Only one that reached the
     Inbox wakes it: a reply a rule filed elsewhere, or Junk, is not asking to be read now."""
 
+    # The rows first: most mail arrives in no snoozed conversation, and then nothing else is asked.
+    threads = {message["thread_id"] for message in messages if not message["draft"]}
+    if not threads:
+        return
+    rows = frappe.db.get_all(
+        DOCTYPE,
+        filters={"account": account, "kind": SNOOZE, "status": WAITING, "thread_id": ["in", list(threads)]},
+        fields=["name", "thread_id"],
+    )
+    if not rows:
+        return
+
     inbox = account_roles(account)["inbox"]
     own = set(get_account_emails(account))
-    threads = {
+    replied = {
         message["thread_id"]
         for message in messages
         if not message["draft"]
@@ -134,15 +146,7 @@ def wake_on_reply(account: str, messages: list[dict]) -> None:
         and not read_reactions(message)
         and not is_unscreened_message(message)
     }
-    if not threads:
-        return
-
-    rows = frappe.db.get_all(
-        DOCTYPE,
-        filters={"account": account, "kind": SNOOZE, "status": WAITING, "thread_id": ["in", list(threads)]},
-        fields=["name", "thread_id"],
-    )
-    for row in rows:
+    for row in (row for row in rows if row.thread_id in replied):
         ids = get_thread_email_ids(account, [row.thread_id]).get(row.thread_id, [])
         if ids:
             file_messages(account, ids, "wake")
