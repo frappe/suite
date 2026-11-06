@@ -1,6 +1,6 @@
 import type { KeyboardShortcutCombo } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 import { ShortcutsDialog, useKeySequences } from '@/platform/shortcuts'
 
@@ -13,6 +13,7 @@ vi.mock('frappe-ui', async () => ({
 const { useKeyboardShortcut } = await import('frappe-ui')
 
 let cleanup: (() => void) | undefined
+const dialogOpen = ref(true)
 afterEach(() => {
   cleanup?.()
   vi.restoreAllMocks()
@@ -21,6 +22,7 @@ afterEach(() => {
 
 /** Opens the dialog over a page that registered Suite's, Drive's and frappe-ui's kinds of shortcut. */
 async function openDialog(platform: string, filler = 0) {
+  dialogOpen.value = true
   vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0')
   const handler = () => {}
@@ -46,7 +48,11 @@ async function openDialog(platform: string, filler = 0) {
           { keys: ['S'], description: 'Share selected item', group: 'Files', handler },
           { keys: ['G', 'H'], description: 'My files', group: 'Go to', handler },
         ])
-        return () => h(ShortcutsDialog, { open: true })
+        return () =>
+          h(ShortcutsDialog, {
+            open: dialogOpen.value,
+            'onUpdate:open': (open: boolean) => (dialogOpen.value = open),
+          })
       },
     }),
   )
@@ -142,5 +148,15 @@ describe('the shortcuts dialog', () => {
     await type('nothing like this')
     expect(listing()).toEqual({})
     expect(document.body.textContent).toContain('No shortcuts match your search.')
+
+    dialogOpen.value = false
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
+    dialogOpen.value = true
+    await vi.waitFor(() =>
+      expect(Object.keys(listing())).toEqual(['Suite', 'Files', 'Sheet', 'Go to']),
+    )
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Search shortcuts"]')?.value,
+    ).toBe('')
   })
 })
