@@ -67,6 +67,7 @@ import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
 import { locationTitle } from '../internal/locations'
+import { SKELETON_BAR } from './listSkeleton'
 
 /** The folder a Drive picker shows. `label` is its name as the breadcrumbs show it. */
 export interface BrowserLocation {
@@ -100,8 +101,6 @@ const props = withDefaults(
 )
 const location = defineModel<BrowserLocation | null>('location', { default: null })
 
-// The listing's skeleton look (FilesListing.vue).
-const SKELETON_BAR = '!bg-surface-gray-2 motion-reduce:animate-none'
 const SKELETON_WIDTHS = ['w-40', 'w-28', 'w-48', 'w-32']
 const listElement = useTemplateRef<HTMLElement>('listElement')
 const discovered = useQuery(api.drive.roots.list, {})
