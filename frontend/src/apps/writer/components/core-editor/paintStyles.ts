@@ -51,15 +51,14 @@ export function watchPaintTarget(editor: Editor): () => void {
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.key === 'Shift' || !event.shiftKey) pending = setTimeout(paint, PAINT_PAUSE_MS)
   }
-  const dom = editor.view.dom
-  dom.addEventListener('mouseup', afterMouseUp)
-  dom.addEventListener('keydown', onKeyDown)
-  dom.addEventListener('keyup', onKeyUp)
+  const listening = new AbortController()
+  const { signal } = listening
+  editor.view.dom.addEventListener('mouseup', afterMouseUp, { signal })
+  editor.view.dom.addEventListener('keydown', onKeyDown, { signal })
+  editor.view.dom.addEventListener('keyup', onKeyUp, { signal })
   return () => {
     clearTimeout(pending)
-    dom.removeEventListener('mouseup', afterMouseUp)
-    dom.removeEventListener('keydown', onKeyDown)
-    dom.removeEventListener('keyup', onKeyUp)
+    listening.abort()
   }
 }
 
