@@ -497,12 +497,9 @@ def install_threads(node: str, anchors: dict[str, str], new_threads: list[dict])
 
 
 def people_on(node: str, users: Iterable[str] = ()) -> dict[str, PersonOnNode]:
-    """Answer which users can read `node`: the ones it names, and `users`.
+    """Answer which of `users` and the people `node` names (its creator and grantees) can read it.
 
-    A picker on a node, such as a comment's mention list, ranks people with
-    this. The node names its creator and the users its grants name. Needs
-    COMMENT, and answers whether each user can read, not their role. Only a
-    caller who manages the node also gets `is_blocked`.
+    For a picker on the node, so it needs COMMENT; only a manager also gets `is_blocked`.
     """
     from suite.drive._core.access import people_on as _people_on
 
@@ -510,11 +507,9 @@ def people_on(node: str, users: Iterable[str] = ()) -> dict[str, PersonOnNode]:
 
 
 def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
-    """Store a node's current bytes as an immutable version and return its seq.
+    """Store a node's current bytes as an immutable version and return its seq; needs EDIT.
 
-    The caller needs EDIT. `actor` names who made the changes the version
-    holds, when that is not the caller: a sweep that versions other people's
-    edits. It defaults to the caller.
+    `actor` credits someone other than the caller, as a sweep versioning other people's edits does.
     """
     from suite.drive._core.versions import take_version as _take_version
 

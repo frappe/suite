@@ -621,13 +621,9 @@ def explain(node: Mapping, principals: Principals, *, subject: Principals | None
 def people_on(node_id: str, principals: Principals, users: Iterable[str]) -> dict[str, PersonOnNode]:
     """Answer who can read a node, for a picker there: the users it names, and `users`.
 
-    Each of `users` says whether they can read the node now, and so does each
-    named user who can: a named user who can't is left out, so a deny or an
-    expiry looks like never having been named. A mention picker ranks people
-    by this, so it needs COMMENT, the right to mention anyone here. It answers
-    who can read the node, never their role or where it comes from: that stays
-    with MANAGE and the share dialog (§7.2). Only someone who manages the node
-    also learns who is blocked: to anyone else a block is any other lack of access.
+    A named user who can't read is left out, so a deny or an expiry looks like never having been
+    named. Needs COMMENT, the right to mention anyone here. Never answers a role or its source: that
+    stays with MANAGE and the share dialog (§7.2). Only a manager learns who is blocked.
     """
     from suite.drive.framework import principals_for
 

@@ -74,9 +74,7 @@ def room_key(app: str, doc_id: str, lineage: str, epoch: int) -> str:
 def close_rooms(app: str, doc_id: str, lineage: str) -> None:
     """Move the document to new rooms and tell the tabs in the old one to pull.
 
-    A tab that may still read gets the new rooms from its pull. A tab that
-    may not is refused, and nothing reaches its old rooms again, whatever
-    keys it kept.
+    A tab that may still read gets the new rooms from its pull; one that may not is refused.
     """
     old_room = room_key(app, doc_id, lineage, int(time.time() // EPOCH_SECONDS))
     frappe.cache.set_value(generation_key(app, doc_id), secrets.token_hex(8))

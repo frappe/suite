@@ -724,13 +724,11 @@ def reach_mentioned(
 ) -> dict[str, str | None]:
     """The people among `users` a comment notifies, shared with at Comment if the author manages the node.
 
-    Someone with access always is. Someone without is only when the author can comment on
-    their own access, not a Guest or a share link, named them with `@[…]`, and no block stands.
-    Only MANAGE hands out access, and nobody's role is lowered. Each person maps to the node's
-    title if they still can't read it, which is all their notification may ever name.
-
-    An author who doesn't manage the node tells at most `MAX_OUTSIDERS_TOLD` people per comment,
-    and each of them once a day per node. The name stays in the comment either way.
+    Someone with access always is. Someone without is only when the author comments on their own
+    access (not as a Guest or by link), picked them with `@[…]`, and no block stands. Nobody's role
+    is lowered. Each maps to the node's title while they can't read it, all their bell may name.
+    A non-manager tells at most `MAX_OUTSIDERS_TOLD` people per comment, each once a day per node;
+    the name stays in the comment either way.
     """
     from suite.drive.framework import principals_for
 

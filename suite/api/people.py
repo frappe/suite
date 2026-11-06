@@ -103,11 +103,8 @@ def search(query: str | None = None, cursor: str | None = None, node: str | None
     Rows sort by what a picker shows: a user's full name, or else their
     email, and a group's name. The cursor is opaque to callers.
 
-    With `node`, the page is for naming someone on that node, as a mention
-    does: users only, not the caller, the ones who can open the node first,
-    each marked with `has_access`. Only someone who manages the node also gets `is_blocked`:
-    to anyone else a block looks like any other lack of access. It adds the people the node
-    names, such as its creator, and is one page with no cursor.
+    With `node`, it is one page with no cursor for naming someone there: users only, not the
+    caller, those who can open the node first, plus the people it names, such as its creator.
     """
     frappe.only_for("Suite User")
     if node:
@@ -134,8 +131,7 @@ def search(query: str | None = None, cursor: str | None = None, node: str | None
 def look_up(node: str, users: list[str]) -> list[PersonUser]:
     """Answer whether exactly `users` can open `node`, as `search` marks them with `node`.
 
-    It offers no one a search on the node would not, and leaves out anyone else. A lookup answers one
-    comment, so it names as many people as a comment can.
+    It offers no one a search on the node would not, and names at most as many as a comment can.
     """
     frappe.only_for("Suite User")
     if len(users) > drive.MAX_MENTIONS:
