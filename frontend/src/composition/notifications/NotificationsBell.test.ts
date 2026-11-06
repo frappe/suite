@@ -4,6 +4,7 @@ import { createApp, nextTick } from 'vue'
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
 import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 const state = vi.hoisted(() => ({
   push: vi.fn(),
@@ -72,6 +73,7 @@ vi.mock('@/apps/drive', () => ({
     path: `/d/${node.name}/item`,
     state: { openingTitle: 'Title' },
   }),
+  formatDriveBytes: (bytes: number) => `${bytes / 1024} KB`,
   driveNotifications: () => ({
     test: 'feed',
   }),
@@ -209,6 +211,20 @@ describe('Notifications bell', () => {
     expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-4'] })
     expect(assign).toHaveBeenCalledWith('/api/suite/drive/downloads/notice-4/content')
     expect(state.loadNode).not.toHaveBeenCalled()
+  })
+  it("shows a ready zip's size and until when it can be downloaded", () => {
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+    expect(row?.textContent).toMatch(/2 KB · Available until \S/)
+  })
+  it('shows no size or expiry with t31-bell-details off', () => {
+    setTweaks(['t31-bell-details'], false)
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+    setTweaks(['t31-bell-details'], true)
+    expect(row?.textContent).not.toContain('Available until')
   })
   it('says why a download could not be prepared', () => {
     const row = notificationRows(mount()).find((button) =>
@@ -383,7 +399,7 @@ function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expire
       status,
       delivery: 'Inbox',
       size: ready ? 2048 : null,
-      expires_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + (ready ? 86_400_000 : 0)).toISOString(),
       error: ready ? null : 'An item in folder Talks cannot be read',
       url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },

@@ -3,14 +3,31 @@ import type { DownloadGetOutput } from '@/apps/drive/client/generated'
 import { nodeContentUrl } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { toast, type ToastId } from '@/platform/feedback'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
 import { MAX_BATCH_NODES } from './batches'
 import { subject } from './changeToast'
+import { formatBytes } from '../internal/format'
 
 export type DriveDownload = DownloadGetOutput
 
 export const DOWNLOAD_POLL_MS = 2000
+/** After the first minute a zip is large, so polls slow down. */
+const SLOW_POLL_MS = 5000
+const SLOW_AFTER_MS = 60_000
+/** The server's `STALLED_AFTER` (`suite/drive/_core/downloads.py`): it gives up on a zip then. */
+const GIVE_UP_AFTER_MS = 75 * 60_000
+const BACKOFF_MS = [2000, 4000, 8000, 15_000]
+const TRANSIENT_STATUSES = new Set([0, 408, 429, 502, 503, 504])
+
+export interface SettleOptions {
+  /** `false` while a poll cannot reach the server, `true` when one gets through again. */
+  onConnection?: (connected: boolean) => void
+  now?: () => number
+}
 
 /** A folder or a link downloads in a zip; anything else downloads its own bytes. */
 const ZIPPED_KINDS = new Set(['folder', 'link'])
@@ -53,26 +70,36 @@ export async function downloadItems(
       { nodes: rows.map((row) => row.name) },
       { silent: true },
     )
-    if (asked.status === 'Preparing') {
-      // Keyed by the download, so asking again for the same selection updates
-      // this toast instead of adding one. The settled states set their own
-      // duration, because an update keeps the one it had.
-      waiting = asked.name
+    const description =
+      asked.delivery === 'Inbox'
+        ? __('The download starts here when the zip is ready. A notification will bring it too.')
+        : __('The download starts here when the zip is ready.')
+    // Keyed by the download, so asking again for the same selection updates
+    // this toast instead of adding one. vue-sonner reads `duration` once, when
+    // a toast mounts, so an infinite one never closes (t31-toast-closes); a
+    // loading toast stays without it.
+    const showWaiting = (text: string) =>
       toast.loading(__('Preparing {0} for download', [name]), {
-        id: waiting,
-        description:
-          asked.delivery === 'Inbox'
-            ? __(
-                'The download starts here when the zip is ready. A notification will bring it too.',
-              )
-            : __('The download starts here when the zip is ready.'),
-        duration: Infinity,
+        id: asked.name,
+        description: text,
+        ...(isTweakOn('t31-toast-closes') ? {} : { duration: Infinity }),
       })
+    if (asked.status === 'Preparing') {
+      waiting = asked.name
+      showWaiting(description)
     }
-    const settled = await settledDownload(asked)
+    const settled = await settledDownload(asked, {
+      onConnection: (connected) =>
+        showWaiting(connected ? description : __('Waiting for connection…')),
+    })
     if (settled.url) {
       window.location.assign(settled.url)
-      if (waiting !== undefined) settle('success', __('Downloading {0}', [name]))
+      void markDownloadDelivered(settled)
+      const size =
+        isTweakOn('t31-toast-closes') && settled.size !== null
+          ? formatBytes(settled.size)
+          : undefined
+      if (waiting !== undefined) settle('success', __('Downloading {0}', [name]), size)
     } else settle('error', __('Could not download {0}', [name]), settled.error ?? undefined)
   } catch (error) {
     const reason = error instanceof Error ? error.message : undefined
@@ -83,13 +110,127 @@ export async function downloadItems(
 /**
  * Waits for a Page download, one whose access comes through a share link,
  * until its zip is ready or has failed. No notification brings it, so the
- * page that asked polls for it (Drive spec §11.2).
+ * page that asked polls for it (Drive spec §11.2). While t31-poll-survives is
+ * on, a dropped connection waits and polls again, polls slow down after a
+ * minute, sign out stops the wait, and the wait ends when the server gives up.
  */
-export async function settledDownload(download: DriveDownload): Promise<DriveDownload> {
+export async function settledDownload(
+  download: DriveDownload,
+  options: SettleOptions = {},
+): Promise<DriveDownload> {
+  if (!isTweakOn('t31-poll-survives')) return pollUntilSettled(download)
+  const stop = new AbortController()
+  const forget = useSession().onLogout(() => stop.abort())
+  try {
+    return await pollPatiently(download, stop.signal, options)
+  } finally {
+    forget()
+  }
+}
+
+async function pollUntilSettled(download: DriveDownload): Promise<DriveDownload> {
   let current = download
   while (current.status === 'Preparing') {
     await new Promise((resolve) => setTimeout(resolve, DOWNLOAD_POLL_MS))
     current = await client.query(api.drive.downloads.get, { download: current.name })
   }
   return current
+}
+
+async function pollPatiently(
+  download: DriveDownload,
+  signal: AbortSignal,
+  { onConnection, now = Date.now }: SettleOptions,
+): Promise<DriveDownload> {
+  const started = now()
+  let current = download
+  let failures = 0
+  let connected = true
+  const setConnected = (value: boolean) => {
+    if (value !== connected) onConnection?.(value)
+    connected = value
+  }
+  while (current.status === 'Preparing') {
+    const waited = now() - started
+    if (waited >= GIVE_UP_AFTER_MS)
+      return { ...current, status: 'Failed', error: __('The zip took too long. Try again.') }
+    const delay = failures
+      ? BACKOFF_MS[Math.min(failures, BACKOFF_MS.length) - 1]!
+      : waited < SLOW_AFTER_MS
+        ? DOWNLOAD_POLL_MS
+        : SLOW_POLL_MS
+    await pause(delay, signal)
+    if (!navigator.onLine) {
+      setConnected(false)
+      await online(signal)
+    }
+    try {
+      current = await client.query(api.drive.downloads.get, { download: current.name }, { signal })
+      setConnected(true)
+      failures = 0
+    } catch (cause) {
+      if (signal.aborted || !isTransient(cause)) throw cause
+      setConnected(false)
+      failures += 1
+    }
+  }
+  return current
+}
+
+function isTransient(cause: unknown): boolean {
+  return cause instanceof TransportError && TRANSIENT_STATUSES.has(cause.status)
+}
+
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(done, ms)
+    function done() {
+      signal.removeEventListener('abort', stopped)
+      resolve()
+    }
+    function stopped() {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', stopped, { once: true })
+  })
+}
+
+function online(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const back = () => {
+      signal.removeEventListener('abort', stopped)
+      resolve()
+    }
+    const stopped = () => {
+      window.removeEventListener('online', back)
+      reject(signal.reason)
+    }
+    window.addEventListener('online', back, { once: true })
+    signal.addEventListener('abort', stopped, { once: true })
+  })
+}
+
+/**
+ * The server notifies the bell when an Inbox zip is ready, also when this tab
+ * delivered it. While t31-bell-read is on, that notification is marked read
+ * here, so the bell counts only downloads nobody has started. It stays in the
+ * bell, as the download's link until it expires.
+ */
+export async function markDownloadDelivered(download: DriveDownload): Promise<void> {
+  if (!isTweakOn('t31-bell-read') || download.delivery !== 'Inbox') return
+  try {
+    const unread = await client.query(api.drive.notifications.list, { unread: true, limit: 60 })
+    const row = unread.rows.find(
+      (notification) => 'download' in notification && notification.download.name === download.name,
+    )
+    if (!row) return
+    await client.mutation(
+      api.drive.notifications.markRead,
+      { notifications: [row.name] },
+      { silent: true },
+    )
+  } catch {
+    // The bell keeps an unread row; the download itself has started.
+  }
 }

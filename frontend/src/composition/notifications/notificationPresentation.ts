@@ -1,5 +1,7 @@
-import { DRIVE_ROLES, type DriveNotification } from '@/apps/drive'
+import { DRIVE_ROLES, formatDriveBytes, type DriveNotification } from '@/apps/drive'
+import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
+import { isTweakOn } from '@/platform/tweaks'
 
 /** A notification about somebody's action on an item, as opposed to one about the reader's own download. */
 type ActivityNotification = Extract<DriveNotification, { activity: unknown }>
@@ -65,9 +67,15 @@ export function notificationSentence(notification: DriveNotification, reader?: s
   return sentence(notification.actor.full_name, notification.node_title, notification, reader)
 }
 
-/** The comment a notification quotes, why a download failed, or null. */
-export function notificationExcerpt(notification: DriveNotification): string | null {
-  if ('download' in notification) return notification.download.error
+/** The comment a mention quotes, why a download failed, a ready zip's size and expiry, or null. */
+export function notificationExcerpt(
+  notification: DriveNotification,
+  now = new Date(),
+): string | null {
+  if ('download' in notification) {
+    if (isTweakOn('t31-bell-details')) return downloadDetails(notification.download, now)
+    return notification.download.error
+  }
   if (notification.activity.action !== 'comment') return null
   const excerpt = notification.activity.detail.excerpt
   return typeof excerpt === 'string' && excerpt.trim() ? excerpt : null
@@ -93,6 +101,23 @@ export function notificationTime(value: string | null | undefined, now = new Dat
           ? [Math.round(seconds / 3_600), 'hour']
           : [Math.round(seconds / 86_400), 'day']
   return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(amount, unit)
+}
+
+type DownloadNotice = Extract<DriveNotification, { download: unknown }>['download']
+
+/** The list may be older than the expiry, so a Ready row past it reads as expired here. */
+function downloadDetails(download: DownloadNotice, now: Date): string | null {
+  if (download.status !== 'Ready') return download.error
+  const expires = download.expires_at ? new Date(download.expires_at) : null
+  if (expires && expires.getTime() <= now.getTime()) return __('Expired')
+  const size = download.size === null ? null : formatDriveBytes(download.size)
+  if (!expires || Number.isNaN(expires.getTime())) return size
+  const until = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: userTimeZone(),
+  }).format(expires)
+  return size ? __('{0} · Available until {1}', [size, until]) : __('Available until {0}', [until])
 }
 
 function removed(actor: string, title: string): string {

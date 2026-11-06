@@ -69,7 +69,10 @@ export const tweaks = [
   { id: 't28', item: 28, group: 'Slow operations', label: 'Cancel uploads and retry on drop', description: 'Uploads can be cancelled or removed, and a failed chunk retries when the connection returns.', ready: false },
   { id: 't29', item: 29, group: 'Slow operations', label: 'Warn before closing mid-upload', description: 'Closing the tab during an upload asks first, and after a reload the tracker offers Resume all.', ready: false },
   { id: 't30', item: 30, group: 'Slow operations', label: 'Upload progress and links', description: 'The upload tracker shows overall progress and time left, and finished rows open the file.', ready: false },
-  { id: 't31', item: 31, group: 'Slow operations', label: 'Zip downloads tidy up', description: 'The zip toast closes when the file arrives, and the bell has no unread entry for a download this tab started.', ready: false },
+  { id: 't31-toast-closes', item: 31, group: 'Slow operations', label: 'Zip toast closes', description: 'The "Preparing … for download" toast closes a few seconds after the zip starts downloading, and says its size.', ready: true },
+  { id: 't31-poll-survives', item: 31, group: 'Slow operations', label: 'Zip wait survives a dropped connection', description: 'While a zip is prepared, a dropped connection says "Waiting for connection…" and the wait goes on, instead of failing.', ready: true },
+  { id: 't31-bell-read', item: 31, group: 'Slow operations', label: 'No unread bell entry for a zip you got', description: 'A zip this tab started downloading is marked read in the bell, so the badge counts only zips nobody has started.', ready: true },
+  { id: 't31-bell-details', item: 31, group: 'Slow operations', label: 'Zip size and expiry in the bell', description: 'A ready zip in the bell shows its size and until when it can be downloaded.', ready: true },
   { id: 't32-readable-failures', item: 32, group: 'Slow operations', label: 'Readable partial failures', description: 'A partial bulk failure names its items with their icons and says why each failed, such as "2 of 5 items could not be moved".', ready: true },
   { id: 't33', item: 33, group: 'Slow operations', label: 'Safer public access and link actions', description: 'Making a folder public and deleting a link ask first, and both offer Undo.', ready: false },
 ] as const satisfies readonly Tweak[]

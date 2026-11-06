@@ -89,6 +89,29 @@ vi.mock('@/platform/transport', async (original) => {
             return server.download?.()
           case 'download_get':
             return server.polls.shift()
+          case 'notifications_list':
+            return {
+              rows: [
+                {
+                  name: 'notice-1',
+                  read: 0,
+                  creation: null,
+                  download: {
+                    name: 'download-1',
+                    title: 'Photos.zip',
+                    status: 'Ready',
+                    delivery: 'Inbox',
+                    size: 2048,
+                    expires_at: null,
+                    error: null,
+                    url: '/api/suite/drive/downloads/download-1/content',
+                  },
+                },
+              ],
+              next_cursor: null,
+            }
+          case 'notifications_read.notification_names':
+            return { count: 1 }
           case 'node_put_favourite':
           case 'node_delete_favourite': {
             const starred = node(input.node)
@@ -348,7 +371,10 @@ afterEach(() => {
   dialogs.showDetails.mockClear()
   dialogs.share.mockClear()
   vi.unstubAllGlobals()
-  setTweaks(['t3-folder-menu', 't3-selection-menu', 't8', 't19-owner-sort'], true)
+  setTweaks(
+    ['t3-folder-menu', 't3-selection-menu', 't8', 't19-owner-sort', 't31-toast-closes'],
+    true,
+  )
   document.body.innerHTML = ''
 })
 
@@ -724,7 +750,6 @@ describe('Downloading a folder', () => {
           id: 'download-1',
           description:
             'The download starts here when the zip is ready. A notification will bring it too.',
-          duration: Infinity,
         },
       },
     ])
@@ -736,8 +761,34 @@ describe('Downloading a folder', () => {
     expect(feedback.toasts[1]).toEqual({
       kind: 'success',
       message: 'Downloading “Photos”',
-      options: { id: 'download-1', description: undefined, duration: 5000 },
+      options: { id: 'download-1', description: '2 KB', duration: 5000 },
     })
+    // The bell's notification for this zip is read: this tab delivered it.
+    await vi.waitFor(() =>
+      expect(
+        server.calls.filter((call) => call.id === 'notifications_read.notification_names'),
+      ).toEqual([
+        { id: 'notifications_read.notification_names', input: { notifications: ['notice-1'] } },
+      ]),
+    )
+  })
+
+  it('keeps the old endless loading toast with t31-toast-closes off', async () => {
+    setTweaks(['t31-toast-closes'], false)
+    server.download = () => preparing
+    server.polls = [{ ...preparing, status: 'Ready', size: 2048, url: '/zip' }]
+    const assign = vi.fn()
+    await mount('/drive/f/folder-5/drafts')
+    await vi.waitFor(() => expect(titles()).toEqual(['Photos']))
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+
+    const downloading = menuItem('photos', 'Download')?.onClick()
+    await vi.advanceTimersByTimeAsync(2000)
+    await downloading
+
+    expect(feedback.toasts[0]?.options?.duration).toBe(Infinity)
+    expect(feedback.toasts[1]?.options?.description).toBeUndefined()
   })
 
   it('waits on the page for a zip asked for through a share link, then downloads it', async () => {
