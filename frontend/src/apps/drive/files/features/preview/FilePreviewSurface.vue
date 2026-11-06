@@ -21,10 +21,12 @@ import { copyLink } from '../share/shareFormat'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import { uploadTargetOf } from '../uploads/queue'
+import { keepImages } from './imageCache'
 import { arrowsStep, escapeLeaves } from './keys'
 import { rememberShown } from './lastShown'
 import PdfPreview from './PdfPreview.vue'
 import PreviewFallback from './PreviewFallback.vue'
+import PreviewImage from './PreviewImage.vue'
 import type { FilePreviewSession } from './session'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
 import TextPreview from './TextPreview.vue'
@@ -331,6 +333,32 @@ const WEB_IMAGES = new Set([
 const source = computed(() =>
   WEB_IMAGES.has(mime.value) || !previewUrl.value ? contentUrl.value : previewUrl.value,
 )
+
+const keptImages = useTweak('t27-preview-preload')
+const loadingStates = useTweak('t27-image-loading')
+const pagerSpace = useTweak('t27-pager-space')
+/** Larger pictures are not loaded before they are asked for. */
+const PRELOAD_LIMIT = 20 * 1024 * 1024
+// The pictures either side of this file load while it shows, so a step shows them at once.
+watch(
+  [keptImages, files, source, preview],
+  () => {
+    if (!keptImages.value) return
+    const own = files.value.findIndex((row) => row.name === props.session.nodeId)
+    const beside = own === -1 ? [] : [files.value[own - 1], files.value[own + 1]]
+    const neighbours = beside
+      .filter((row) => !!row && WEB_IMAGES.has(row.mime ?? '') && row.size <= PRELOAD_LIMIT)
+      .map((row) => nodeContentUrl(row!.name))
+    keepImages(preview.value.kind === 'image' ? [source.value, ...neighbours] : neighbours)
+  },
+  { immediate: true },
+)
+const videoFailed = ref(false)
+watch(contentUrl, () => (videoFailed.value = false))
+/** While the folder loads, the pager keeps its room, so the header does not shift when it comes. */
+const pagerLoading = computed(
+  () => pagerSpace.value && !!folder.value && siblings.status === 'pending',
+)
 </script>
 
 <template>
@@ -384,6 +412,11 @@ const source = computed(() =>
             @click="show(next)"
           />
         </template>
+        <div v-else-if="pagerLoading" class="invisible flex items-center gap-1" aria-hidden="true">
+          <Button variant="ghost" icon="lucide-chevron-left" disabled />
+          <span class="text-sm tabular-nums max-md:hidden">{{ __('{0} of {1}', [1, 2]) }}</span>
+          <Button variant="ghost" icon="lucide-chevron-right" disabled />
+        </div>
         <!-- A CSV has a text preview, so the "No preview" page never offers this. -->
         <Button
           v-if="opensAsSheet && preview.kind === 'text' && !empty"
@@ -431,11 +464,25 @@ const source = computed(() =>
         :rendered="markdown && markdownView === 'preview'"
       />
       <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
+      <PreviewImage
+        v-else-if="preview.kind === 'image' && (keptImages || loadingStates)"
+        :src="source"
+        :alt="session.title.value"
+        :download="downloadUrl"
+        :kept="keptImages"
+        :states="loadingStates"
+      />
       <img
         v-else-if="preview.kind === 'image'"
         :src="source"
         :alt="session.title.value"
         class="m-auto max-h-full min-h-0 max-w-full object-contain p-4"
+      />
+      <PreviewFallback
+        v-else-if="preview.kind === 'video' && videoFailed"
+        :title="__('Could not load the preview')"
+        :message="__('Download this file to open it.')"
+        :download="downloadUrl"
       />
       <audio
         v-else-if="preview.kind === 'audio'"
@@ -448,6 +495,7 @@ const source = computed(() =>
         :src="contentUrl"
         controls
         class="m-auto max-h-full min-h-0 max-w-full"
+        @error="videoFailed = loadingStates"
       />
       <PdfPreview
         v-else-if="preview.kind === 'pdf'"

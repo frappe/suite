@@ -75,7 +75,7 @@ vi.mock('../document/DocumentHeader.vue', () => ({
 // A folder of mixed files, and a server that keeps the types `?type=` names, as Drive does.
 type Row = Pick<
   DriveNode,
-  'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified'
+  'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified' | 'size'
 >
 const file = (name: string, title: string, mime: string): Row => ({
   name,
@@ -85,6 +85,7 @@ const file = (name: string, title: string, mime: string): Row => ({
   state: 'Active',
   parent_node: 'folder-1',
   modified: '2026-10-01 10:00:00',
+  size: 100,
 })
 const FOLDER: Row[] = [
   file('a', 'a.png', 'image/png'),
@@ -311,6 +312,60 @@ describe('file preview', () => {
     expect(root.querySelector('.cm-content')).toBeNull()
   })
 
+  describe('pictures', () => {
+    const IMAGE_TWEAKS = ['t27-preview-preload', 't27-image-loading'] as const
+    afterEach(() => setTweaks([...IMAGE_TWEAKS], true))
+    const contentOf = (node: string) => `/api/suite/drive/nodes/${node}/content`
+
+    it('loads the pictures either side, and a step shows the one already loaded', async () => {
+      const created = vi.spyOn(document, 'createElement')
+      const opened = shallowRef(session('c', 'c.png', 'image/png'))
+      const { root } = await mount(opened, '/d/c/c-png?type=image')
+      const made = () =>
+        created.mock.results
+          .map((result) => result.value as unknown)
+          .filter((value): value is HTMLImageElement => value instanceof HTMLImageElement)
+      const ahead = () => made().find((image) => image.getAttribute('src') === contentOf('e'))
+      await vi.waitFor(() => expect(ahead()).toBeDefined())
+      expect(made().map((image) => image.getAttribute('src'))).toContain(contentOf('a'))
+
+      opened.value = session('e', 'e.jpg', 'image/jpeg')
+
+      await vi.waitFor(() => expect(root.querySelector('img')).toBe(ahead()))
+    })
+
+    it('shows a spinner after a short wait, then the picture, or Download when it fails', async () => {
+      const opened = shallowRef(session('c', 'c.png', 'image/png'))
+      const { root } = await mount(opened, '/d/c/c-png')
+      const spinner = () => root.querySelector('[role="status"]')
+      expect(spinner()).toBeNull()
+      await vi.waitFor(() => expect(spinner()).not.toBeNull(), { timeout: 1000 })
+      root.querySelector('img')!.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect(spinner()).toBeNull())
+      expect(root.querySelector('img')?.style.opacity).toBe('')
+
+      opened.value = session('a', 'a.png', 'image/png')
+      await vi.waitFor(() =>
+        expect(root.querySelector('img')?.getAttribute('src')).toBe(contentOf('a')),
+      )
+      root.querySelector('img')!.dispatchEvent(new Event('error'))
+      await vi.waitFor(() => expect(root.textContent).toContain('Could not load the preview'))
+      expect(root.querySelector('img')).toBeNull()
+      expect(root.querySelector('a[href*="download=1"]')).not.toBeNull()
+    })
+
+    it('with both tweaks off, shows the plain picture in the stage', async () => {
+      setTweaks([...IMAGE_TWEAKS], false)
+      const { root } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+      const image = root.querySelector('img')
+      expect(image?.parentElement).toBe(root.querySelector('header + div'))
+      image?.dispatchEvent(new Event('error'))
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      expect(root.querySelector('[role="status"]')).toBeNull()
+      expect(root.textContent).not.toContain('Could not load the preview')
+    })
+  })
+
   describe('keys', () => {
     const LISTING = '/drive/f/folder-1/talks'
     afterEach(() => setTweaks(['t15-escape-closes', 't15-arrow-keys', 't15-return-focus'], true))
@@ -427,7 +482,7 @@ describe('file preview', () => {
         root.querySelector<HTMLButtonElement>('[aria-label="Fullscreen"]')?.click()
 
         expect(requestFullscreen).toHaveBeenCalledOnce()
-        expect(requestFullscreen.mock.contexts[0]).toBe(root.querySelector('img')?.parentElement)
+        expect(requestFullscreen.mock.contexts[0]).toBe(root.querySelector('header + div'))
       } finally {
         Reflect.deleteProperty(document, 'fullscreenEnabled')
         Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen')
