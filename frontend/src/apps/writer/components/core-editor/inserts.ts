@@ -15,8 +15,34 @@ export interface Insert {
   insert: (editor: Editor) => void
 }
 
+type InsertCommand =
+  | 'selectAndUploadImage'
+  | 'selectAndUploadVideo'
+  | 'selectAndUploadFile'
+  | 'openIframeDialog'
+  | 'setHorizontalRule'
+  | 'setPageBreak'
+  | 'createTab'
+
 const has = (command: string) => (editor: Editor) => command in editor.commands
 const always = () => true
+
+/** An insert that runs one command. Without `isAvailable`, it is offered when the command exists. */
+function command(
+  label: string,
+  icon: string,
+  group: Insert['group'],
+  name: InsertCommand,
+  isAvailable = has(name),
+): Insert {
+  return {
+    label,
+    icon,
+    group,
+    isAvailable,
+    insert: (editor) => editor.chain().focus()[name]().run(),
+  }
+}
 
 function fromStyle(value: string): Insert {
   const style = BLOCK_STYLES.find((block) => block.value === value) as BlockStyle
@@ -31,27 +57,9 @@ function fromStyle(value: string): Insert {
 
 /** What the Insert menu and the slash menu add to a document, with one name each, in menu order. */
 export const INSERTS: readonly Insert[] = [
-  {
-    label: 'Image',
-    icon: 'lucide-image',
-    group: 'Media',
-    isAvailable: has('selectAndUploadImage'),
-    insert: (editor) => editor.chain().focus().selectAndUploadImage().run(),
-  },
-  {
-    label: 'Video',
-    icon: 'lucide-video',
-    group: 'Media',
-    isAvailable: has('selectAndUploadVideo'),
-    insert: (editor) => editor.chain().focus().selectAndUploadVideo().run(),
-  },
-  {
-    label: 'Attachment',
-    icon: 'lucide-paperclip',
-    group: 'Media',
-    isAvailable: has('selectAndUploadFile'),
-    insert: (editor) => editor.chain().focus().selectAndUploadFile().run(),
-  },
+  command('Image', 'lucide-image', 'Media', 'selectAndUploadImage'),
+  command('Video', 'lucide-video', 'Media', 'selectAndUploadVideo'),
+  command('Attachment', 'lucide-paperclip', 'Media', 'selectAndUploadFile'),
   {
     label: 'From Drive',
     icon: 'lucide-hard-drive',
@@ -59,13 +67,7 @@ export const INSERTS: readonly Insert[] = [
     isAvailable: (editor) => has('insertFromDrive')(editor) && editor.can().insertFromDrive(),
     insert: (editor) => editor.chain().focus().insertFromDrive().run(),
   },
-  {
-    label: 'Embed',
-    icon: 'lucide-code-xml',
-    group: 'Media',
-    isAvailable: has('openIframeDialog'),
-    insert: (editor) => editor.chain().focus().openIframeDialog().run(),
-  },
+  command('Embed', 'lucide-code-xml', 'Media', 'openIframeDialog'),
   {
     label: 'Table',
     icon: 'lucide-table',
@@ -76,25 +78,7 @@ export const INSERTS: readonly Insert[] = [
   },
   fromStyle('codeBlock'),
   fromStyle('blockquote'),
-  {
-    label: 'Divider',
-    icon: 'lucide-minus',
-    group: 'Blocks',
-    isAvailable: always,
-    insert: (editor) => editor.chain().focus().setHorizontalRule().run(),
-  },
-  {
-    label: 'Page break',
-    icon: 'lucide-separator-horizontal',
-    group: 'Blocks',
-    isAvailable: always,
-    insert: (editor) => editor.chain().focus().setPageBreak().run(),
-  },
-  {
-    label: 'Tab',
-    icon: 'lucide-panel-top',
-    group: 'Blocks',
-    isAvailable: has('createTab'),
-    insert: (editor) => editor.chain().focus().createTab().run(),
-  },
+  command('Divider', 'lucide-minus', 'Blocks', 'setHorizontalRule', always),
+  command('Page break', 'lucide-separator-horizontal', 'Blocks', 'setPageBreak', always),
+  command('Tab', 'lucide-panel-top', 'Blocks', 'createTab'),
 ]
