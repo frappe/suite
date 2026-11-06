@@ -8,9 +8,10 @@ import {
   type ExplainRow,
   type GrantList,
 } from '@/apps/drive/client/grants'
+import { driveLinks } from '@/apps/drive/client/links'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import { testClient } from '@/apps/drive/client/testClient'
-import type { Transport } from '@/platform/transport'
+import { TransportError, type Transport } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
 import ShareBody from './ShareBody.vue'
@@ -742,6 +743,41 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
       expires_on: endOfDay(2027, 3, 1),
     })
     expect(share.notice.value).toMatch(/^Removed from 2 items inside\./)
+  })
+
+  it('drops what the page behind read only when a write takes away the caller’s own access, and after every write with t2 off', async () => {
+    const invalidate = vi.spyOn(driveLinks, 'invalidateAccess')
+    /** Removes the caller's row; `loses` says whether the item is then gone for them. */
+    const removeMine = async (loses: boolean) => {
+      invalidate.mockClear()
+      let removed = false
+      const { transport } = fakeServer((call) => {
+        if (call.id === 'node_get')
+          return removed && loses
+            ? new TransportError({ type: 'DriveNotFound', message: 'Not found', status: 404 })
+            : node('document')
+        if (call.id === 'node_grants') return { grants: [grant(ME, 50)], inherited: [] }
+        removed = true
+        return { count: 1 }
+      })
+      const share = useShare('doc', { client: testClient(transport) })
+      await share.load()
+      await share.remove(share.sections.value!.people[0]!)
+      return share
+    }
+    try {
+      await removeMine(false)
+      expect(invalidate).not.toHaveBeenCalled()
+      expect((await removeMine(true)).loadError.value).toBe('Not found')
+      expect(invalidate).toHaveBeenCalledTimes(1)
+
+      setTweaks(['t2'], false)
+      await removeMine(false)
+      expect(invalidate).toHaveBeenCalledTimes(1)
+    } finally {
+      setTweaks(['t2'], true)
+      invalidate.mockRestore()
+    }
   })
 
   it('shares concurrent reads while only the newest load publishes', async () => {

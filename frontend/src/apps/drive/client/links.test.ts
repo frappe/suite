@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSession } from '@/platform/session'
 import { transport, type Operation, type Transport } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import { api } from './api'
 import { createLinkStore, driveLinks, LINK_CAP } from './links'
@@ -469,28 +468,18 @@ describe('access partitions', () => {
       session: createSession({ request: async () => ({}) } as unknown as Transport),
       events: new EventTarget(),
     })
-  afterEach(() => setTweaks(['t2'], true))
-
-  it('keeps the partition of a read with no link code after a grant write, and moves one with a code', () => {
+  it('keeps a read in its partition until access is invalidated, with or without a link code', () => {
     const links = store()
     links.seed(code(1), 'shared')
     const mine = links.partition(['my-file'])
     const shared = links.partition(['shared'])
-
-    links.invalidateAccess()
-
     expect(links.partition(['my-file'])).toBe(mine)
-    expect(links.partition(['shared'])).not.toBe(shared)
-  })
-
-  it('moves every read to a new partition after a grant write with t2 off', () => {
-    setTweaks(['t2'], false)
-    const links = store()
-    const mine = links.partition(['my-file'])
+    expect(links.partition(['shared'])).toBe(shared)
 
     links.invalidateAccess()
 
     expect(links.partition(['my-file'])).not.toBe(mine)
+    expect(links.partition(['shared'])).not.toBe(shared)
   })
 })
 

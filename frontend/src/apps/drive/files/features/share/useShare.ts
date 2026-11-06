@@ -13,9 +13,11 @@ import {
   type GrantPatch,
   type GrantWrite,
 } from '@/apps/drive/client/grants'
+import { driveLinks } from '@/apps/drive/client/links'
 import { canManage, DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
 import type { ImperativeClient } from '@/platform/server-state/types'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 import { isTweakOn } from '@/platform/tweaks'
 
 import {
@@ -112,7 +114,10 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       for (const person of peopleIn(freshList)) names.set(person.id, person.full_name)
       loadError.value = ''
     } catch (error) {
-      if (read === reads) loadError.value = messageOf(error, 'Could not load who has access.')
+      if (read !== reads) return
+      loadError.value = messageOf(error, 'Could not load who has access.')
+      // A write here took away the caller's own access: the page behind drops what it read before.
+      if (changed.value && isTweakOn('t2') && isRefusal(error)) driveLinks.invalidateAccess()
     }
   }
 
@@ -379,4 +384,9 @@ function managesNode(node: DriveNode | null): boolean {
 
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+/** The server no longer lets the caller read the item. */
+function isRefusal(error: unknown): boolean {
+  return error instanceof TransportError && [403, 404, 410].includes(error.status)
 }

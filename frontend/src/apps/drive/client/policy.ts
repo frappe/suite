@@ -1,6 +1,7 @@
 /** Drive owns link scope, membership, optimism, and reader effects. */
 import type { Effects, OwnerRegistration, Policy, TransferContext } from '@/platform/server-state'
 import type { Operation, TransferRef } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
 import { announceAccessChange } from './accessChanges'
 import type { TransferInput } from './api'
@@ -41,7 +42,9 @@ const access: Effects = {
   touches: node,
   invalidates: ACCESS,
   settled(input) {
-    driveLinks.invalidateAccess()
+    // With t2, reads keep their data while they refetch. The share dialog drops
+    // it when the caller loses access to the item.
+    if (!isTweakOn('t2')) driveLinks.invalidateAccess()
     for (const id of node(input)) announceAccessChange(id)
   },
 }
