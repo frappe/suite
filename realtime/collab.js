@@ -33,18 +33,7 @@ function is_room(room) {
 }
 
 function has_caret_slot(members, entry) {
-	if (entry.hasCaret) {
-		return true;
-	}
-
-	let caretCount = 0;
-	for (const other of members.values()) {
-		if (other.hasCaret) {
-			caretCount++;
-		}
-	}
-
-	return caretCount < CARETS_MAX;
+	return entry.hasCaret || [...members.values()].filter((other) => other.hasCaret).length < CARETS_MAX;
 }
 
 function string_bytes(text, budget) {
