@@ -219,6 +219,57 @@ test("a reload mid-upload leaves an interrupted entry that Resume finishes", asy
 	expect((await getNode(api, rows[0]!.name)).size).toBe(big.length);
 });
 
+test("an upload that loses the network waits, then finishes when it returns", async ({ page, context }) => {
+	await openFolder(page, home);
+	const big = Buffer.alloc(6 * 1024 * 1024, 7);
+	let chunks = 0;
+	await page.route(CHUNK_ROUTE, async (route) => {
+		chunks += 1;
+		if (chunks !== 2) return route.continue();
+		await context.setOffline(true);
+		await route.abort("internetdisconnected");
+	});
+
+	const chooser = page.waitForEvent("filechooser");
+	await useNewMenu(page, "Upload files");
+	await (await chooser).setFiles({ name: "big.bin", mimeType: "application/octet-stream", buffer: big });
+	await expect(page.locator("[data-slot='upload-entry'][data-state='reconnecting']")).toBeVisible();
+	await expect(page.getByText("Waiting for connection…")).toBeVisible();
+
+	await context.setOffline(false);
+	await expect(doneEntries(page)).toHaveCount(1, { timeout: 30_000 });
+	await page.unroute(CHUNK_ROUTE);
+	const rows = (await children(api, home.name)).rows;
+	expect(rows.map((row) => row.title)).toEqual(["big.bin"]);
+	expect((await getNode(api, rows[0]!.name)).size).toBe(big.length);
+});
+
+test("Cancel stops an upload, and Retry finishes it", async ({ page }) => {
+	await openFolder(page, home);
+	let release: (() => void) | undefined;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await page.route(CHUNK_ROUTE, async (route) => {
+		await held;
+		// The cancelled request is gone by now.
+		await route.continue().catch(() => undefined);
+	});
+
+	const chooser = page.waitForEvent("filechooser");
+	await useNewMenu(page, "Upload files");
+	await (await chooser).setFiles({ name: "slow.txt", mimeType: "text/plain", buffer: Buffer.from("slow bytes") });
+	await page.getByRole("button", { name: "Cancel upload of slow.txt" }).click();
+	await expect(page.locator("[data-slot='upload-entry'][data-state='cancelled']")).toBeVisible();
+	await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+
+	release!();
+	await page.getByRole("button", { name: "Retry", exact: true }).click();
+	await expect(doneEntries(page)).toHaveCount(1);
+	await page.unroute(CHUNK_ROUTE);
+	expect((await children(api, home.name)).rows.map((row) => row.title)).toEqual(["slow.txt"]);
+});
+
 test("a folder upload from New creates the tree", async ({ page }) => {
 	await openFolder(page, home);
 

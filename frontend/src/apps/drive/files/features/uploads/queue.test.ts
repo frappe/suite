@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useSession } from '@/platform/session'
 import { transport } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
 import {
   createUploadQueue,
@@ -55,6 +56,12 @@ const drive = vi.hoisted(() => {
     creates: 0,
     /** Runs before the server answers, as time passing between requests. */
     before: fromPartial<((method: string, path: string) => Promise<void> | void) | null>(null),
+    /** A proxy in front: a larger body gets its bare 413. */
+    bodyLimit: Infinity,
+    /** Answers a request with a network failure or a status instead of the server. */
+    drop: fromPartial<((method: string, path: string) => 'network' | number | null) | null>(null),
+    /** Runs after the server handled a request, before its reply leaves. */
+    lose: fromPartial<((method: string, path: string) => boolean) | null>(null),
     nextId: 0,
   }
   const ok = (data: unknown, status = 200) => new Response(JSON.stringify({ data }), { status })
@@ -73,7 +80,8 @@ const drive = vi.hoisted(() => {
     is_template: 0,
     owner: { id: 'owner@example.com', full_name: 'Owner', user_image: null },
     creation: null,
-    modified: `m${state.nextId++}`,
+    // Unique, and a real time, as the lost-finish check compares it.
+    modified: new Date(Date.now() + state.nextId++).toISOString(),
     content_modified: null,
     access: { role: 40, via_link: null },
   })
@@ -104,6 +112,17 @@ const drive = vi.hoisted(() => {
     const path = parsed.pathname.replace('/api/suite/drive/', '')
     const method = init.method ?? 'GET'
     await state.before?.(method, path)
+    const dropped = state.drop?.(method, path)
+    if (dropped === 'network') throw new TypeError('Failed to fetch')
+    if (typeof dropped === 'number') return new Response('Busy', { status: dropped })
+    if (init.body instanceof Blob && init.body.size > state.bodyLimit)
+      return new Response('<html>413 Request Entity Too Large</html>', { status: 413 })
+    const response = await answer(parsed, path, method, init)
+    if (state.lose?.(method, path)) throw new TypeError('Failed to fetch')
+    return response
+  }
+
+  const answer = async (parsed: URL, path: string, method: string, init: RequestInit) => {
     const json = () =>
       fromPartial<Record<string, string & number>>(JSON.parse(String(init.body ?? '{}')))
     let match: RegExpMatchArray | null
@@ -254,6 +273,9 @@ const drive = vi.hoisted(() => {
       state.posts = []
       state.creates = 0
       state.before = null
+      state.bodyLimit = Infinity
+      state.drop = null
+      state.lose = null
       state.nodes.set('folder', {
         name: 'folder',
         title: 'Folder',
@@ -335,7 +357,7 @@ const settled = (queue: UploadQueue) =>
   until(
     () =>
       queue.entries.value.every(
-        (entry) => !['queued', 'checking', 'uploading'].includes(entry.state),
+        (entry) => !['queued', 'checking', 'uploading', 'reconnecting'].includes(entry.state),
       ),
     'the queue to settle',
   )
@@ -343,6 +365,7 @@ const settled = (queue: UploadQueue) =>
 beforeEach(() => drive.reset())
 afterEach(() => {
   vi.restoreAllMocks()
+  setTweaks(['t28-cancel-upload', 't28-chunk-retry', 't30-steady-chunks'], true)
   useSession().expire()
   document.cookie = 'user_id=Guest; path=/'
 })
@@ -504,7 +527,20 @@ describe('Drive upload queue', () => {
     expect(drive.titlesIn('folder')).toEqual(['notes.txt', 'report (1).pdf', 'report.pdf'])
   })
 
-  it('sends a large file in 16 MiB chunks, one after another', async () => {
+  it('sends a large file in chunks one after another, from 2 MiB and doubling on a fast link', async () => {
+    const queue = createUploadQueue({ records: memoryRecords() })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('video.mp4', 16 * drive.MiB + 5) }], target)
+    await settled(queue)
+
+    // Chunks of 2, 4 and 8 MiB, then the rest.
+    expect(drive.state.chunkOffsets).toEqual([0, 2, 6, 14].map((mib) => mib * drive.MiB))
+    expect(drive.titlesIn('folder')).toEqual(['video.mp4'])
+  })
+
+  it('sends 16 MiB chunks with t30-steady-chunks off', async () => {
+    setTweaks(['t30-steady-chunks'], false)
     const queue = createUploadQueue({ records: memoryRecords() })
     queue.setPrompts(prompts())
 
@@ -512,7 +548,20 @@ describe('Drive upload queue', () => {
     await settled(queue)
 
     expect(drive.state.chunkOffsets).toEqual([0, 16 * drive.MiB])
-    expect(drive.titlesIn('folder')).toEqual(['video.mp4'])
+  })
+
+  it('halves a chunk a proxy refuses as too large, and the queue goes on', async () => {
+    drive.state.bodyLimit = 3 * drive.MiB
+    const queue = createUploadQueue({ records: memoryRecords() })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('video.mp4', 8 * drive.MiB) }], target)
+    await settled(queue)
+
+    // 2 MiB passes, 4 MiB is refused and goes again as 2 MiB, which then stays.
+    expect(drive.state.chunkOffsets).toEqual([0, 2, 4, 6].map((mib) => mib * drive.MiB))
+    expect(queue.entries.value[0]!.state).toBe('done')
+    expect(queue.state.halted).toBeNull()
   })
 
   it('offers to upload what fits when the root is short of space', async () => {
@@ -531,7 +580,7 @@ describe('Drive upload queue', () => {
     expect(drive.titlesIn('folder')).toEqual(['small.bin'])
   })
 
-  it('stops the queue on a 413 and starts it again with Retry all', async () => {
+  it('stops the queue on a full Drive and starts it again with Retry all', async () => {
     drive.state.createLimit = 50
     const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
     queue.setPrompts(prompts())
@@ -670,7 +719,7 @@ describe('Drive upload queue', () => {
     await settled(queue)
 
     expect(queue.entries.value.map((entry) => entry.state)).toEqual(['done'])
-    expect(drive.state.chunkOffsets).toEqual([0, 16 * drive.MiB])
+    expect(drive.state.chunkOffsets).toEqual([0, 2, 6, 14].map((mib) => mib * drive.MiB))
   })
 
   it('starts again, and says so, when the server lost the session', async () => {
@@ -836,6 +885,150 @@ describe('Drive upload queue', () => {
     const june = [...drive.state.nodes.values()].find((node) => node.title === 'june')!
     expect(june.parent).toBe(year.name)
     expect(drive.titlesIn(june.name)).toEqual(['beach.jpg'])
+  })
+})
+
+describe('Cancel and reconnect', () => {
+  const PUT = (method: string) => method === 'PUT'
+
+  it('cancel stops an upload and forgets its record, and Retry goes on from the bytes the server holds', async () => {
+    const records = memoryRecords()
+    const queue = createUploadQueue({ records })
+    queue.setPrompts(prompts())
+    let release: (() => void) | null = null
+    let chunks = 0
+    drive.state.before = (method) => {
+      if (PUT(method) && ++chunks === 2) return new Promise((resolve) => (release = resolve))
+    }
+    await queue.uploadFiles([{ file: file('movie.mp4', 6 * drive.MiB) }], target)
+    await until(() => release !== null, 'the second chunk')
+    const entry = queue.entries.value[0]!
+    expect(records.all.size).toBe(1)
+
+    queue.cancel(entry.id)
+    release!()
+    expect(entry.state).toBe('cancelled')
+    await until(() => records.all.size === 0, 'the record to go')
+
+    queue.retry(entry.id)
+    await settled(queue)
+    expect(entry.state).toBe('done')
+    expect(drive.state.creates).toBe(1)
+    expect(drive.state.chunkOffsets).toEqual([0, 2 * drive.MiB])
+    expect(drive.titlesIn('folder')).toEqual(['movie.mp4'])
+  })
+
+  it('skips the title question of an upload cancelled while it waits its turn', async () => {
+    drive.add({ title: 'a.txt', kind: 'file', parent: 'folder', size: 1 })
+    drive.add({ title: 'b.txt', kind: 'file', parent: 'folder', size: 1 })
+    const queue = createUploadQueue({ records: memoryRecords() })
+    let answer: (() => void) | null = null
+    const asked = prompts({
+      collision: async (input) => {
+        asked.asked.push(input.title)
+        await new Promise<void>((resolve) => (answer = resolve))
+        return { action: 'keep-both', applyToAll: false }
+      },
+    })
+    queue.setPrompts(asked)
+    await queue.uploadFiles([{ file: file('a.txt', 3) }, { file: file('b.txt', 3) }], target)
+    await until(() => answer !== null, 'the first question')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    queue.cancel(queue.entries.value[1]!.id)
+    answer!()
+    await settled(queue)
+
+    expect(asked.asked).toEqual(['a.txt'])
+    expect(queue.entries.value.map((entry) => entry.state)).toEqual(['done', 'cancelled'])
+    expect(drive.titlesIn('folder')).toEqual(['a (1).txt', 'a.txt', 'b.txt'])
+  })
+
+  it('offline, waits for the network without a limit while other files keep waiting', async () => {
+    let offline = false
+    let dropped = false
+    vi.spyOn(navigator, 'onLine', 'get').mockImplementation(() => !offline)
+    // The network goes during the first chunk.
+    drive.state.before = (method) => {
+      if (PUT(method) && !dropped) offline = dropped = true
+    }
+    drive.state.drop = (method) => (PUT(method) && offline ? 'network' : null)
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('one.bin', 10) }, { file: file('two.bin', 10) }], target)
+    await until(() => queue.entries.value[0]!.state === 'reconnecting', 'the reconnect')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(queue.entries.value.map((entry) => [entry.state, entry.offline])).toEqual([
+      ['reconnecting', true],
+      ['queued', false],
+    ])
+    expect(queue.indicator.value).toMatchObject({ tone: 'paused' })
+
+    offline = false
+    window.dispatchEvent(new Event('online'))
+    await settled(queue)
+    expect(queue.entries.value.map((entry) => entry.state)).toEqual(['done', 'done'])
+    expect(drive.titlesIn('folder')).toEqual(['one.bin', 'two.bin'])
+  })
+
+  it('ends as done when a finish arrived but its reply was lost', async () => {
+    let lost = false
+    drive.state.lose = (method, path) => {
+      if (method !== 'POST' || !path.endsWith('/finish') || lost) return false
+      return (lost = true)
+    }
+    const queue = createUploadQueue({ records: memoryRecords(), backoff: () => 0 })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('report.pdf', 10) }], target)
+    await settled(queue)
+
+    expect(queue.entries.value[0]).toMatchObject({ state: 'done', node: expect.any(String) })
+    expect(drive.state.finished).toHaveLength(1)
+    expect(drive.titlesIn('folder')).toEqual(['report.pdf'])
+  })
+
+  it('gives up after five minutes of busy replies, and Retry finishes the file', async () => {
+    let clock = 0
+    let tries = 0
+    drive.state.drop = (method) => {
+      if (!PUT(method)) return null
+      tries += 1
+      clock += 30_000
+      return 503
+    }
+    const queue = createUploadQueue({
+      records: memoryRecords(),
+      now: () => clock,
+      backoff: () => 0,
+    })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('one.bin', 10) }], target)
+    await settled(queue)
+    expect(queue.entries.value[0]).toMatchObject({ state: 'failed', retryable: true })
+    expect(tries).toBeGreaterThan(5)
+
+    drive.state.drop = null
+    queue.retry(queue.entries.value[0]!.id)
+    await settled(queue)
+    expect(queue.entries.value[0]!.state).toBe('done')
+  })
+
+  it('fails a file on its first dropped chunk with t28-chunk-retry off', async () => {
+    setTweaks(['t28-chunk-retry'], false)
+    drive.state.drop = (method) => (PUT(method) ? 'network' : null)
+    const queue = createUploadQueue({ records: memoryRecords(), backoff: () => 0 })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('one.bin', 10) }], target)
+    await settled(queue)
+
+    expect(queue.entries.value[0]).toMatchObject({ state: 'failed', retryable: true })
+    expect(queue.entries.value[0]!.error).not.toBe(
+      'Connection lost. Check your connection and retry.',
+    )
   })
 })
 

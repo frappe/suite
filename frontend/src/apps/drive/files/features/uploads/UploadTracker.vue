@@ -9,9 +9,16 @@
       <h2 class="min-w-0 flex-1 truncate text-base-semibold text-ink-gray-8">{{ heading }}</h2>
       <Button v-if="retryable > 1" variant="ghost" label="Retry all" @click="queue.retryAll()" />
       <Button
+        v-if="cancels && active > 1"
+        variant="ghost"
+        :label="__('Cancel all')"
+        @click="queue.cancelAll()"
+      />
+      <!-- Closing only hides the list while uploads go on. -->
+      <Button
         variant="ghost"
         icon="lucide-x"
-        aria-label="Close uploads"
+        :aria-label="active ? __('Hide uploads') : 'Close uploads'"
         @click="queue.closeTracker()"
       />
     </header>
@@ -59,23 +66,47 @@
             :class="{ invisible: !showsProgress(entry) }"
           />
         </div>
-        <Button
-          v-if="entry.state === 'interrupted'"
-          label="Resume"
-          @click="queue.resume(entry.id)"
-        />
-        <Button
-          v-else-if="(entry.state === 'failed' && entry.retryable) || entry.state === 'held'"
-          label="Retry"
-          @click="queue.retry(entry.id)"
-        />
-        <Button
-          v-else-if="dismissible(entry)"
-          variant="ghost"
-          icon="lucide-x"
-          :aria-label="`Remove ${entry.title}`"
-          @click="queue.dismiss(entry.id)"
-        />
+        <template v-if="cancels">
+          <Button
+            v-if="entry.state === 'interrupted'"
+            :label="__('Resume')"
+            @click="queue.resume(entry.id)"
+          />
+          <Button v-else-if="canRetry(entry)" :label="__('Retry')" @click="queue.retry(entry.id)" />
+          <Button
+            v-if="canCancel(entry)"
+            variant="ghost"
+            icon="lucide-x"
+            :aria-label="__('Cancel upload of {0}', [entry.title])"
+            @click="queue.cancel(entry.id)"
+          />
+          <Button
+            v-else-if="dismissible(entry)"
+            variant="ghost"
+            icon="lucide-x"
+            :aria-label="__('Remove {0}', [entry.title])"
+            @click="queue.dismiss(entry.id)"
+          />
+        </template>
+        <template v-else>
+          <Button
+            v-if="entry.state === 'interrupted'"
+            label="Resume"
+            @click="queue.resume(entry.id)"
+          />
+          <Button
+            v-else-if="(entry.state === 'failed' && entry.retryable) || entry.state === 'held'"
+            label="Retry"
+            @click="queue.retry(entry.id)"
+          />
+          <Button
+            v-else-if="dismissible(entry)"
+            variant="ghost"
+            icon="lucide-x"
+            :aria-label="`Remove ${entry.title}`"
+            @click="queue.dismiss(entry.id)"
+          />
+        </template>
       </li>
     </ul>
   </section>
@@ -85,17 +116,26 @@
 import { Alert, Button, Progress } from 'frappe-ui'
 import { computed, watch } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
+
 import { formatBytes } from './format'
-import { uploadQueue, type UploadEntry, type UploadQueue } from './queue'
+import { isFinishing, uploadQueue, type UploadEntry, type UploadQueue } from './queue'
 
 /** The upload list (spec §6.3). Opening it counts as seeing its failures. */
 const props = defineProps<{ queue?: UploadQueue }>()
 const queue = props.queue ?? uploadQueue()
+const cancels = useTweak('t28-cancel-upload')
 const entries = computed(() => queue.entries.value)
 const running = computed(
   () =>
-    entries.value.filter((entry) => ['queued', 'checking', 'uploading'].includes(entry.state))
-      .length,
+    entries.value.filter((entry) =>
+      ['queued', 'checking', 'uploading', 'reconnecting'].includes(entry.state),
+    ).length,
+)
+/** Uploads still to send, held ones too. */
+const active = computed(
+  () => running.value + entries.value.filter((entry) => entry.state === 'held').length,
 )
 const retryable = computed(
   () =>
@@ -127,13 +167,27 @@ function showsProgress(entry: UploadEntry) {
   return (
     entry.state === 'uploading' ||
     entry.state === 'checking' ||
+    entry.state === 'reconnecting' ||
     entry.state === 'held' ||
     entry.state === 'interrupted'
   )
 }
 
 function dismissible(entry: UploadEntry) {
+  if (cancels.value && (entry.state === 'cancelled' || entry.state === 'interrupted')) return true
   return entry.state === 'done' || entry.state === 'skipped' || entry.state === 'failed'
+}
+
+function canRetry(entry: UploadEntry) {
+  if (entry.state === 'held' || entry.state === 'cancelled') return true
+  return entry.state === 'failed' && entry.retryable
+}
+
+function canCancel(entry: UploadEntry) {
+  return (
+    ['queued', 'checking', 'uploading', 'reconnecting', 'held'].includes(entry.state) &&
+    !isFinishing(entry)
+  )
 }
 
 function status(entry: UploadEntry): string {
@@ -145,7 +199,12 @@ function status(entry: UploadEntry): string {
     case 'checking':
       return 'Checking the file…'
     case 'uploading':
+      if (cancels.value && isFinishing(entry)) return __('Finishing…')
       return `${formatBytes(entry.sent)} of ${formatBytes(entry.size)}`
+    case 'reconnecting':
+      return entry.offline ? __('Waiting for connection…') : __('Connection lost. Retrying…')
+    case 'cancelled':
+      return __('Cancelled')
     case 'held':
       return 'Paused: storage is full'
     case 'done':
@@ -168,7 +227,10 @@ function iconClass(entry: UploadEntry): string {
     case 'held':
     case 'interrupted':
       return 'lucide-circle-pause text-ink-amber-6'
+    case 'reconnecting':
+      return 'lucide-wifi-off text-ink-amber-6'
     case 'skipped':
+    case 'cancelled':
       return 'lucide-circle-minus text-ink-gray-5'
     default:
       return 'lucide-file-up text-ink-gray-6'

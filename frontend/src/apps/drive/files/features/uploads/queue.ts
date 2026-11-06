@@ -5,6 +5,7 @@ import { findChild } from '@/apps/drive/client/nodes'
 import { readRootUsage } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, hasRole, type DriveNode } from '@/apps/drive/client/types'
 import {
+  isProxyRefusal,
   isSessionGone,
   openUpload,
   probeUpload,
@@ -16,7 +17,9 @@ import { readMaxFileSize } from '@/platform/boot'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError, type PlatformError } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
+import { isTransient, online, pause } from '../network'
 import { sha256 } from './checksum'
 import { formatSize } from './format'
 import { createUploadRecords, type UploadRecord, type UploadRecords } from './records'
@@ -34,17 +37,26 @@ export const DONE_MS = 3000
 
 const EXPIRED_NOTE = 'The earlier upload expired. This file starts again.'
 const DIRECT_NOTE = 'This upload cannot continue where it stopped. It starts again.'
+/** How long an upload keeps trying while the browser reports a network. */
+export const RETRY_FOR_MS = 5 * 60_000
+const BACKOFF_MS = [1000, 2000, 4000, 8000, 16_000, 30_000]
+/** A server clock a little behind this tab's still counts a finished file as new. */
+const CLOCK_SKEW_MS = 60_000
 
 export type UploadState =
   | 'queued'
   | 'checking'
   | 'uploading'
+  /** The connection dropped. It tries again and keeps its place in the queue. */
+  | 'reconnecting'
   /** Stopped because the root is full. Retry all starts it again. */
   | 'held'
   | 'done'
   | 'failed'
   /** Stopped by a reload. Resume continues it. */
   | 'interrupted'
+  /** Stopped by the user. Retry continues it. */
+  | 'cancelled'
   | 'skipped'
 
 export interface UploadEntry {
@@ -65,6 +77,8 @@ export interface UploadEntry {
   note: string | null
   /** The created or replaced node, once done. */
   node: string | null
+  /** Reconnecting while the browser reports no network. */
+  offline: boolean
 }
 
 /** Where a batch lands. `root` is the root node, for the quota check. */
@@ -126,6 +140,8 @@ interface Batch {
 }
 
 interface Job {
+  /** Aborts this job only; `forget()` aborts every job. Cancel and Retry replace it. */
+  controller: AbortController
   signal: AbortSignal
   entry: UploadEntry
   file: File | null
@@ -143,6 +159,14 @@ interface Job {
   batch: Batch
   run: number
   createdAt: number
+  /** The last record save, so a cancel removes the record after it. */
+  saving: Promise<void>
+  /** Since the connection dropped: the first failure, time offline, and tries. */
+  retries: { since: number; offlineMs: number; count: number } | null
+  /** Every byte was sent when the connection dropped, so the finish may have arrived. */
+  finishLost: boolean
+  /** The sha256 a resumed finish sends, kept across reconnects. */
+  checksum: string | null
 }
 
 export interface UploadQueueOptions {
@@ -151,15 +175,18 @@ export interface UploadQueueOptions {
   parallel?: number
   /** The site's per-file limit in bytes, or `null` when unknown. Defaults to the boot's. */
   maxFileSize?: () => number | null
+  /** The wait before a dropped connection's next try, from try 0. */
+  backoff?: (count: number) => number
 }
 
-const ACTIVE: readonly UploadState[] = ['queued', 'checking', 'uploading', 'held']
+const ACTIVE: readonly UploadState[] = ['queued', 'checking', 'uploading', 'reconnecting', 'held']
 
 export function createUploadQueue(options: UploadQueueOptions = {}) {
   const records = options.records ?? createUploadRecords({ now: options.now })
   const now = options.now ?? Date.now
   const parallel = options.parallel ?? PARALLEL_FILES
   const maxFileSize = options.maxFileSize ?? readMaxFileSize
+  const backoff = options.backoff ?? jitteredBackoff
   const jobs = shallowReactive(new Map<string, Job>())
   interface UploadQueueState {
     halted: string | null
@@ -210,7 +237,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       )
       return {
         fraction: size ? sent / size : 0,
-        tone: state.halted ? 'paused' : 'running',
+        // Spec §6.3: paused or retrying, when no file moves.
+        tone: state.halted || isStalled(active.value) ? 'paused' : 'running',
         attention,
       }
     }
@@ -273,9 +301,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       retryable: true,
       note: null,
       node: null,
+      offline: false,
     })
     jobs.set(entry.id, {
-      signal: lifetime.signal,
+      ...control(),
       entry,
       file: picked.file,
       handle: picked.handle,
@@ -288,8 +317,19 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       batch,
       run,
       createdAt: now(),
+      ...freshJob(),
     })
     return entry
+  }
+
+  /** A job's abort, which `forget()` also triggers. */
+  function control(): Pick<Job, 'controller' | 'signal'> {
+    const controller = new AbortController()
+    lifetime.signal.addEventListener('abort', () => controller.abort(), {
+      once: true,
+      signal: controller.signal,
+    })
+    return { controller, signal: controller.signal }
   }
 
   /** Files into one folder. Returns after the quota check; the uploads go on. */
@@ -455,6 +495,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     for (const job of jobs.values()) {
       if (running.size >= parallel) return
       if (job.entry.state !== 'queued' || running.has(job)) continue
+      // A cancelled job's run has returned, so Retry can arm it again.
+      if (job.signal.aborted) Object.assign(job, control())
       running.add(job)
       void execute(job).finally(() => {
         running.delete(job)
@@ -466,14 +508,46 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   async function execute(job: Job) {
     try {
       await clearing
-      job.signal.throwIfAborted()
-      if (job.session && !(await continueSession(job))) return
-      if (!job.session && !(await open(job))) return
-      job.signal.throwIfAborted()
-      await transfer(job)
+      while (true) {
+        try {
+          job.signal.throwIfAborted()
+          if (job.session && !(await continueSession(job))) return
+          if (!job.session && !(await open(job))) return
+          job.signal.throwIfAborted()
+          return await transfer(job)
+        } catch (cause) {
+          if (!(await reconnect(job, cause))) throw cause
+        }
+      }
     } catch (cause) {
-      fail(job, platformError(cause).message)
+      fail(job, failureText(cause))
     }
+  }
+
+  /**
+   * After a dropped connection (t28-chunk-retry): waits, then `true` to go on
+   * from what the server holds. Offline it waits for the network without a
+   * limit; online it tries for `RETRY_FOR_MS`.
+   */
+  async function reconnect(job: Job, cause: unknown): Promise<boolean> {
+    if (!isTweakOn('t28-chunk-retry') || job.signal.aborted || !isTransient(cause)) return false
+    const { entry } = job
+    const retries = (job.retries ??= { since: now(), offlineMs: 0, count: 0 })
+    if (job.session && entry.sent === entry.size) job.finishLost = true
+    entry.state = 'reconnecting'
+    if (!navigator.onLine) {
+      const offlineAt = now()
+      entry.offline = true
+      await online(job.signal).finally(() => {
+        entry.offline = false
+      })
+      retries.offlineMs += now() - offlineAt
+    } else {
+      if (now() - retries.since - retries.offlineMs >= RETRY_FOR_MS) return false
+      await pause(cause.retryAfterMs ?? backoff(retries.count++), job.signal, { wake: true })
+    }
+    entry.state = 'uploading'
+    return true
   }
 
   /**
@@ -492,13 +566,36 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       return true
     } catch (cause) {
       const error = platformError(cause)
+      if (isTweakOn('t28-chunk-retry') && isTransient(cause)) throw cause
       if (!isSessionGone(error)) {
         fail(job, error.message)
+        return false
+      }
+      if (job.finishLost) {
+        await confirmArrival(job)
         return false
       }
       restart(job, EXPIRED_NOTE)
       return true
     }
+  }
+
+  /**
+   * A finish whose reply was lost may have made the file, and its session is
+   * gone. It is done when the file there has this size and changed since the
+   * upload began; otherwise the user checks before uploading again.
+   */
+  async function confirmArrival(job: Job) {
+    const { entry } = job
+    const node = await (
+      entry.replaces
+        ? client.query(api.drive.nodes.get, { node: entry.replaces }, { signal: job.signal })
+        : findChild(entry.parent, entry.title, job.signal)
+    ).catch(() => null)
+    job.signal.throwIfAborted()
+    const changed = Date.parse(node?.modified ?? '') >= job.createdAt - CLOCK_SKEW_MS
+    if (node && node.size === entry.size && changed) return complete(job, node)
+    fail(job, __('Could not confirm the upload. Check the folder before you retry.'))
   }
 
   function restart(job: Job, note: string) {
@@ -540,8 +637,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         await persist(job)
         return true
       } catch (cause) {
-        const error = platformError(cause)
-        if (await settleRefusal(job, error)) continue
+        if (await settleRefusal(job, cause)) continue
         return false
       }
     }
@@ -551,24 +647,26 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     const { entry } = job
     if (!job.file || !job.session) return
     if (job.session.mode === 'direct') return transferDirect(job, job.file, job.session)
-    let checksum: string | undefined
-    if (job.resumed) {
+    if (job.resumed && !job.checksum) {
       entry.state = 'checking'
-      checksum = await sha256(job.file)
+      job.checksum = await sha256(job.file)
     }
-    job.signal.throwIfAborted()
-    entry.state = 'uploading'
     entry.error = null
     while (true) {
       job.signal.throwIfAborted()
+      entry.state = 'uploading'
       const upload = useUpload(api.drive.uploads.transfer, { silent: true })
       const cancel = () => upload.cancel()
       job.signal.addEventListener('abort', cancel, { once: true })
       const stop = watch(
         () => upload.progress,
         (progress) => {
-          if (progress === null) return
-          entry.sent = Math.round((progress / 100) * entry.size)
+          // A run reports 0 before its start offset; the bytes sent never go back.
+          const sent = Math.round(((progress ?? 0) / 100) * entry.size)
+          if (sent <= entry.sent) return
+          // Bytes moved, so the connection is back.
+          job.retries = null
+          entry.sent = sent
           void persist(job)
         },
       )
@@ -580,16 +678,15 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           start: { session: job.session, offset: entry.sent },
         }
         if (entry.replaces) input.replaces = entry.replaces
-        if (checksum) input.checksum = checksum
+        if (job.resumed && job.checksum) input.checksum = job.checksum
         const node = await upload.run(input)
         return complete(job, node)
       } catch (cause) {
-        if (!(await settleRefusal(job, platformError(cause)))) return
+        if (!(await settleRefusal(job, cause))) return
       } finally {
         job.signal.removeEventListener('abort', cancel)
         stop()
       }
-      entry.state = 'uploading'
     }
   }
 
@@ -624,6 +721,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     while (true) {
       try {
         job.signal.throwIfAborted()
+        entry.state = 'uploading'
         const node = await client.mutation(
           api.drive.uploads.finish,
           {
@@ -637,13 +735,12 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         )
         return complete(job, node)
       } catch (cause) {
-        if (!(await settleRefusal(job, platformError(cause)))) return
+        if (!(await settleRefusal(job, cause))) return
       }
-      entry.state = 'uploading'
     }
   }
 
-  async function complete(job: Job, node: DriveNode) {
+  async function complete(job: Job, node: Pick<DriveNode, 'name'>) {
     if (job.signal.aborted) return
     job.entry.state = 'done'
     job.entry.sent = job.entry.size
@@ -654,10 +751,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   /**
    * Handles a refusal of open or finish. `true` means try again with the
-   * entry as the user changed it.
+   * entry as the user changed it. A dropped connection is thrown on to
+   * `execute`, which reconnects.
    */
-  async function settleRefusal(job: Job, error: PlatformError): Promise<boolean> {
+  async function settleRefusal(job: Job, cause: unknown): Promise<boolean> {
     if (job.signal.aborted) return false
+    if (isTweakOn('t28-chunk-retry') && isTransient(cause)) throw cause
+    const error = platformError(cause)
     const { entry } = job
     // One file over the site's limit: only it fails, and Retry cannot help it.
     if (error.type === 'DriveFileTooLarge') {
@@ -670,9 +770,13 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       state.halted = error.message
       return false
     }
+    if (job.finishLost && isSessionGone(error)) {
+      await confirmArrival(job)
+      return false
+    }
     const freeTitle = error.free_title
     if (error.type !== 'DriveConflict' || typeof freeTitle !== 'string') {
-      fail(job, error.message)
+      fail(job, failureText(cause))
       return false
     }
     const choice = await resolveCollision(job, freeTitle)
@@ -694,6 +798,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   ): Promise<CollisionChoice & { node?: string }> {
     const { entry, batch } = job
     return ask(async (p) => {
+      // Cancelled while the question waited its turn: skip it.
+      job.signal.throwIfAborted()
       const existing = await findChild(entry.parent, entry.title).catch(() => null)
       job.signal.throwIfAborted()
       const canReplace =
@@ -738,22 +844,42 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     }
     if (job.handle) record.handle = job.handle
     if (job.entry.replaces) record.replaces = job.entry.replaces
-    await records.save(record).catch(() => undefined)
+    job.saving = records.save(record).catch(() => undefined)
+    await job.saving
+  }
+
+  /**
+   * Stops one upload (t28-cancel-upload). The file and session stay, so Retry
+   * continues from the bytes the server holds; the record goes, so a reload
+   * does not offer it again.
+   */
+  function cancel(id: string) {
+    const job = jobs.get(id)
+    if (!job || !ACTIVE.includes(job.entry.state) || isFinishing(job.entry)) return
+    job.controller.abort()
+    job.entry.state = 'cancelled'
+    job.entry.error = null
+    job.entry.offline = false
+    const session = job.session
+    if (session) void job.saving.then(() => records.remove(session.upload_id))
+  }
+
+  function cancelAll() {
+    for (const entry of active.value) cancel(entry.id)
   }
 
   /** Retry resumes from the bytes the server holds (spec §6.11). */
   function retry(id: string) {
     const job = jobs.get(id)
-    if (!job || (job.entry.state !== 'failed' && job.entry.state !== 'held')) return
+    if (!job || !['failed', 'held', 'cancelled'].includes(job.entry.state)) return
     if (!job.file || !job.entry.retryable) return
     // Retrying is the user saying the queue may start again.
     state.halted = null
-    job.entry.state = 'queued'
-    job.entry.error = null
-    job.run = run
+    requeue(job)
     pump()
   }
 
+  /** Failed and held uploads. Cancelled ones stay cancelled. */
   function retryAll() {
     state.halted = null
     for (const job of jobs.values()) {
@@ -761,13 +887,17 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         (job.entry.state === 'failed' || job.entry.state === 'held') &&
         job.file &&
         job.entry.retryable
-      ) {
-        job.entry.state = 'queued'
-        job.entry.error = null
-        job.run = run
-      }
+      )
+        requeue(job)
     }
     pump()
+  }
+
+  function requeue(job: Job) {
+    job.entry.state = 'queued'
+    job.entry.error = null
+    job.run = run
+    job.retries = null
   }
 
   /**
@@ -835,10 +965,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           // A direct target lasts minutes and takes the whole file at once.
           note: record.mode === 'direct' ? DIRECT_NOTE : null,
           node: null,
+          offline: false,
         })
         const direct = record.mode === 'direct'
         jobs.set(entry.id, {
-          signal,
+          ...control(),
           entry,
           file: null,
           handle: record.handle,
@@ -851,6 +982,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           batch: { size: 1, applied: null },
           run,
           createdAt: record.createdAt,
+          ...freshJob(),
         })
       }
       if (found.length) state.seen = false
@@ -865,17 +997,18 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       !job ||
       job.entry.state === 'uploading' ||
       job.entry.state === 'checking' ||
-      job.entry.state === 'queued'
+      job.entry.state === 'queued' ||
+      job.entry.state === 'reconnecting'
     )
       return
     jobs.delete(id)
     if (job.session && job.entry.state !== 'done') await records.remove(job.session.upload_id)
   }
 
-  /** Clears finished entries: done and skipped. */
+  /** Clears finished entries: done, skipped and cancelled. */
   function clearFinished() {
     for (const [id, job] of jobs) {
-      if (job.entry.state === 'done' || job.entry.state === 'skipped') jobs.delete(id)
+      if (['done', 'skipped', 'cancelled'].includes(job.entry.state)) jobs.delete(id)
     }
   }
 
@@ -918,6 +1051,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     uploadFiles,
     uploadFolders,
     replaceFile,
+    cancel,
+    cancelAll,
     retry,
     retryAll,
     resume,
@@ -961,9 +1096,46 @@ function tooLargeMessage(limit: number, size: number): string {
   ])
 }
 
-/** A full root answers `DriveOverQuota`; a proxy's body cap answers a bare 413. */
+/**
+ * A full root answers `DriveOverQuota`. A proxy's body cap answers a bare
+ * 413, which counts as full only while t28-chunk-retry is off.
+ */
 function isOverQuota(error: PlatformError): boolean {
-  return error.type === 'DriveOverQuota' || error.status === 413
+  if (error.type === 'DriveOverQuota') return true
+  return error.status === 413 && !isTweakOn('t28-chunk-retry')
+}
+
+/** Some upload is reconnecting and none is sending; queued ones wait behind them. */
+function isStalled(active: readonly UploadEntry[]): boolean {
+  return (
+    active.some((entry) => entry.state === 'reconnecting') &&
+    !active.some((entry) => entry.state === 'uploading' || entry.state === 'checking')
+  )
+}
+
+/** Every byte is sent and the finish is on its way: Cancel could leave a file behind. */
+export function isFinishing(entry: UploadEntry): boolean {
+  return entry.state === 'uploading' && entry.size > 0 && entry.sent === entry.size
+}
+
+/** With t28-chunk-retry on, a lost connection and a proxy's refusal read plainly. */
+function failureText(cause: unknown): string {
+  if (isTweakOn('t28-chunk-retry')) {
+    if (isTransient(cause) && cause.status === 0)
+      return __('Connection lost. Check your connection and retry.')
+    if (isProxyRefusal(cause)) return __('The server refused this upload.')
+  }
+  return platformError(cause).message
+}
+
+/** 1, 2, 4, 8, 16, then 30 seconds, each within 20% either way. */
+function jitteredBackoff(count: number): number {
+  const base = BACKOFF_MS[Math.min(count, BACKOFF_MS.length - 1)]!
+  return base * (0.8 + Math.random() * 0.4)
+}
+
+function freshJob(): Pick<Job, 'saving' | 'retries' | 'finishLost' | 'checksum'> {
+  return { saving: Promise.resolve(), retries: null, finishLost: false, checksum: null }
 }
 
 function platformError(cause: unknown): PlatformError {

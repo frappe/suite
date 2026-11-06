@@ -5,12 +5,12 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { toast, type ToastId } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { TransportError } from '@/platform/transport'
 import { isTweakOn } from '@/platform/tweaks'
 
+import { formatBytes } from '../internal/format'
 import { MAX_BATCH_NODES } from './batches'
 import { subject } from './changeToast'
-import { formatBytes } from '../internal/format'
+import { isTransient, online, pause } from './network'
 
 export type DriveDownload = DownloadGetOutput
 
@@ -21,7 +21,6 @@ const SLOW_AFTER_MS = 60_000
 /** The server's `STALLED_AFTER` (`suite/drive/_core/downloads.py`): it gives up on a zip then. */
 const GIVE_UP_AFTER_MS = 75 * 60_000
 const BACKOFF_MS = [2000, 4000, 8000, 15_000]
-const TRANSIENT_STATUSES = new Set([0, 408, 429, 502, 503, 504])
 
 export interface SettleOptions {
   /** `false` while a poll cannot reach the server, `true` when one gets through again. */
@@ -175,40 +174,6 @@ async function pollPatiently(
     }
   }
   return current
-}
-
-function isTransient(cause: unknown): boolean {
-  return cause instanceof TransportError && TRANSIENT_STATUSES.has(cause.status)
-}
-
-function pause(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(done, ms)
-    function done() {
-      signal.removeEventListener('abort', stopped)
-      resolve()
-    }
-    function stopped() {
-      clearTimeout(timer)
-      reject(signal.reason)
-    }
-    signal.addEventListener('abort', stopped, { once: true })
-  })
-}
-
-function online(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const back = () => {
-      signal.removeEventListener('abort', stopped)
-      resolve()
-    }
-    const stopped = () => {
-      window.removeEventListener('online', back)
-      reject(signal.reason)
-    }
-    window.addEventListener('online', back, { once: true })
-    signal.addEventListener('abort', stopped, { once: true })
-  })
 }
 
 /**

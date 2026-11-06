@@ -2,12 +2,19 @@
 import { api, client, type InputOf } from '@/api'
 import type { TransferContext } from '@/platform/server-state'
 import { transport, TransportError, type Transport } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
 import type { TransferInput } from './api'
 import { driveLinks } from './links'
 import type { DriveNode } from './types'
 
-export const MAX_CHUNK_BYTES = 16 * 1024 * 1024
+const MiB = 1024 * 1024
+export const MAX_CHUNK_BYTES = 16 * MiB
+const MIN_CHUNK_BYTES = MiB
+const STEADY_START_BYTES = 2 * MiB
+/** A chunk faster than this doubles the next one; slower than `SLOW_CHUNK_MS` halves it. */
+const FAST_CHUNK_MS = 2000
+const SLOW_CHUNK_MS = 8000
 export type UploadSession =
   | { upload_id: string; mode: 'chunked' }
   | { upload_id: string; mode: 'direct'; url: string; fields: Record<string, string> }
@@ -53,7 +60,7 @@ export async function transfer(
       { signal, silent: true },
     ))
   signal.throwIfAborted()
-  let offset = input.start?.offset ?? 0
+  const offset = input.start?.offset ?? 0
   if (!Number.isInteger(offset) || offset < 0 || offset > input.file.size)
     throw new TypeError('Invalid resume offset')
   progress(input.file.size ? (offset / input.file.size) * 100 : 0)
@@ -65,15 +72,11 @@ export async function transfer(
       signal,
     )
   } else {
-    while (offset < input.file.size) {
-      const bytes = input.file.slice(offset, offset + MAX_CHUNK_BYTES)
-      const reply = await chunk(session.upload_id, input.parent_node, offset, bytes, signal, wire)
-      signal.throwIfAborted()
-      if (reply.received <= offset || reply.received > input.file.size)
-        throw new TypeError('Invalid transfer progress')
-      offset = reply.received
-      progress((offset / input.file.size) * 100)
-    }
+    await sendChunks(input.file, session.upload_id, input.parent_node, offset, {
+      signal,
+      progress,
+      wire,
+    })
   }
   const finish: InputOf<typeof api.drive.uploads.finish> = {
     upload_id: session.upload_id,
@@ -86,6 +89,83 @@ export async function transfer(
   const node = await requester.mutation(api.drive.uploads.finish, finish, { signal, silent: true })
   progress(100)
   return node
+}
+
+/**
+ * The chunks from `offset` on, one after another. The server takes a chunk
+ * again at any offset up to what it holds, so the size may change between
+ * chunks. A bare 413 is a proxy's body limit, not a full Drive: with
+ * t28-chunk-retry on, the chunk goes again at half the size.
+ */
+async function sendChunks(
+  file: Blob,
+  uploadId: string,
+  parent: string,
+  offset: number,
+  {
+    signal,
+    progress,
+    wire,
+  }: { signal: AbortSignal; progress(value: number): void; wire: Transport },
+) {
+  const size = new ChunkSize(isTweakOn('t30-steady-chunks'))
+  while (offset < file.size) {
+    const started = Date.now()
+    let reply: { received: number }
+    try {
+      reply = await chunk(
+        uploadId,
+        parent,
+        offset,
+        file.slice(offset, offset + size.bytes),
+        signal,
+        wire,
+      )
+    } catch (cause) {
+      if (isTweakOn('t28-chunk-retry') && isProxyRefusal(cause) && size.shrink()) continue
+      throw cause
+    }
+    signal.throwIfAborted()
+    if (reply.received <= offset || reply.received > file.size)
+      throw new TypeError('Invalid transfer progress')
+    size.took(Date.now() - started)
+    offset = reply.received
+    progress((offset / file.size) * 100)
+  }
+}
+
+/**
+ * The next chunk's size. Steady chunks start small and follow the link's
+ * speed, so progress moves on a slow link and a lost chunk costs seconds.
+ * Otherwise every chunk is the largest.
+ */
+export class ChunkSize {
+  bytes: number
+  /** The largest size the way to the server accepts. */
+  private ceiling = MAX_CHUNK_BYTES
+
+  constructor(private readonly steady: boolean) {
+    this.bytes = steady ? STEADY_START_BYTES : MAX_CHUNK_BYTES
+  }
+
+  /** After a chunk that took `ms`. */
+  took(ms: number) {
+    if (!this.steady) return
+    if (ms < FAST_CHUNK_MS) this.bytes = Math.min(this.bytes * 2, this.ceiling)
+    else if (ms > SLOW_CHUNK_MS) this.bytes = Math.max(this.bytes / 2, MIN_CHUNK_BYTES)
+  }
+
+  /** The chunk was too large for a proxy. `false` when it is already the smallest. */
+  shrink(): boolean {
+    if (this.bytes <= MIN_CHUNK_BYTES) return false
+    this.bytes = this.ceiling = Math.max(this.bytes / 2, MIN_CHUNK_BYTES)
+    return true
+  }
+}
+
+/** A 413 without Drive's own type: a proxy refused the body. */
+export function isProxyRefusal(cause: unknown): boolean {
+  return cause instanceof TransportError && cause.status === 413 && cause.type !== 'DriveOverQuota'
 }
 
 // Raw chunk traffic is a byte protocol, so it does not join the ordinary write queue.
