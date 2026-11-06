@@ -45,7 +45,7 @@ import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 
 import { translate as __ } from '@/platform/translation/translate'
 
-import type { Box } from './selectionRing'
+import { boxStyle, type Box } from './selectionRing'
 
 /**
  * The rows-by-columns grid that sizes a new table, from frappe-ui
@@ -79,12 +79,7 @@ useEventListener(
   { capture: true },
 )
 
-const anchorStyle = computed(() => ({
-  left: `${props.anchor.left}px`,
-  top: `${props.anchor.top}px`,
-  width: `${props.anchor.width}px`,
-  height: `${props.anchor.height}px`,
-}))
+const anchorStyle = computed(() => boxStyle(props.anchor))
 
 onMounted(() => void nextTick(() => grid.value?.focus()))
 

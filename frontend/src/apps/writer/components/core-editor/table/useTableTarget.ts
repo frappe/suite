@@ -4,7 +4,7 @@ import { cellAround, CellSelection, pointsAtCell } from '@tiptap/pm/tables'
 import { useEventListener } from '@vueuse/core'
 import { ref, shallowRef, watch, type Ref } from 'vue'
 
-import { boxOf, fitSelectionBox, unionBox, type Box } from './selectionRing'
+import { fitSelectionBox, unionBox, type Box } from './selectionRing'
 import { TableShape } from './tableShape'
 
 /** What the selection is: the caret's cell, a run of cells, a row or a column */
@@ -80,13 +80,14 @@ export function useTableTarget(
     if (!instance || !frame?.isConnected || !origin || !current) return clear()
     const cell = instance.view.nodeDOM(current.cell)
     if (!(cell instanceof HTMLElement)) return clear()
-    const local = (box: Box): Box => ({
-      ...box,
-      left: box.left - origin.left,
-      top: box.top - origin.top,
+    const local = ({ left, top, width, height }: Box): Box => ({
+      left: left - origin.left,
+      top: top - origin.top,
+      width,
+      height,
     })
 
-    const table = boxOf(frame.getBoundingClientRect())
+    const table = frame.getBoundingClientRect()
     const rowElement = cell.closest('tr')
     const cellRect = cell.getBoundingClientRect()
     const shownLeft = Math.max(cellRect.left, table.left)
@@ -101,7 +102,7 @@ export function useTableTarget(
 
     boxes.value = {
       table: local(table),
-      row: rowElement && local(boxOf(rowElement.getBoundingClientRect())),
+      row: rowElement && local(rowElement.getBoundingClientRect()),
       column:
         shownWidth >= MIN_COLUMN_SHOWN
           ? local({ left: shownLeft, top: table.top, width: shownWidth, height: table.height })

@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { createApp, type App } from 'vue'
 
-import { boxOf, type Box } from './selectionRing'
+import type { Box } from './selectionRing'
 import TableSizePicker from './TableSizePicker.vue'
 
 let open: { app: App; host: HTMLElement } | null = null
@@ -12,7 +12,7 @@ let open: { app: App; host: HTMLElement } | null = null
  */
 export function openTableSizePicker(editor: Editor, anchor?: Element) {
   closeTableSizePicker()
-  const box = anchor ? boxOf(anchor.getBoundingClientRect()) : caretBox(editor)
+  const box = anchor ? anchor.getBoundingClientRect() : caretBox(editor)
   mount(editor, box)
 }
 

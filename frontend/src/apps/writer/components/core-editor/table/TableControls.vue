@@ -93,7 +93,7 @@ import { computed, nextTick, reactive, toRef, useTemplateRef, watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-import type { Box } from './selectionRing'
+import { boxStyle, type Box } from './selectionRing'
 import { TableEditing } from './tableEditing'
 import TableGrip from './TableGrip.vue'
 import { cellMenu, columnMenu, rowMenu } from './tableMenus'
@@ -229,13 +229,7 @@ function addLine(axis: Axis) {
 }
 
 function place(box: Box | null | undefined) {
-  if (!box) return { display: 'none' }
-  return {
-    left: `${box.left}px`,
-    top: `${box.top}px`,
-    width: `${box.width}px`,
-    height: `${box.height}px`,
-  }
+  return box ? boxStyle(box) : { display: 'none' }
 }
 
 // A right-click on a cell selects it, unless it is already selected, and opens the cell menu

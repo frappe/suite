@@ -5,11 +5,12 @@ export interface Box {
   height: number
 }
 
-export const boxOf = (rect: DOMRect): Box => ({
-  left: rect.left,
-  top: rect.top,
-  width: rect.width,
-  height: rect.height,
+/** A box as the `left`, `top`, `width` and `height` of an absolutely placed element */
+export const boxStyle = ({ left, top, width, height }: Box) => ({
+  left: `${left}px`,
+  top: `${top}px`,
+  width: `${width}px`,
+  height: `${height}px`,
 })
 
 /** The smallest box around every element's rect */
