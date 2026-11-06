@@ -8,9 +8,14 @@ import UploadTracker from './UploadTracker.vue'
 
 vi.mock('frappe-ui', () => ({
   Alert: defineComponent({
-    props: ['title', 'description', 'primaryAction'],
+    props: ['title', 'description', 'primaryAction', 'secondaryAction'],
     setup: (props) => () =>
-      h('div', { 'data-slot': 'alert' }, [h('p', props.title), h('p', props.description)]),
+      h('div', { 'data-slot': 'alert' }, [
+        h('p', props.title),
+        h('p', props.description),
+        props.secondaryAction &&
+          h('button', { onClick: props.secondaryAction.onClick }, props.secondaryAction.label),
+      ]),
   }),
   Button: defineComponent({
     props: ['label'],
@@ -21,6 +26,9 @@ vi.mock('frappe-ui', () => ({
   }),
   Progress: defineComponent({ setup: () => () => h('div', { 'data-slot': 'progress' }) }),
 }))
+
+const settings = vi.hoisted(() => ({ openSettings: vi.fn() }))
+vi.mock('@/platform/settings', () => settings)
 
 vi.mock('@/apps/drive', () => ({
   driveNodeRoute: ({ name }: { name: string }) => ({ path: `/d/${name}` }),
@@ -172,7 +180,9 @@ describe('Upload tracker rows', () => {
     const rows = [entry('held'), entry('held')]
     const shown = mount(fakeQueue(rows, { halted: 'This upload exceeds the Drive root quota' }))
     const alert = shown.root.querySelector("[data-slot='alert']")!
-    expect(alert.textContent).toBe('Storage is fullFree up space, then retry.')
+    expect(alert.textContent).toBe('Storage is fullFree up space, then retry.Manage storage')
+    alert.querySelector('button')!.click()
+    expect(settings.openSettings).toHaveBeenCalledWith('drive.statistics')
     const header = shown.root.querySelector('header')!
     expect(
       [...header.querySelectorAll('button')].map((button) => button.textContent),
@@ -181,7 +191,9 @@ describe('Upload tracker rows', () => {
     app!.unmount()
     setTweaks(['t30-messages'], false)
     const old = mount(fakeQueue(rows, { halted: 'This upload exceeds the Drive root quota' }))
-    expect(old.root.querySelector("[data-slot='alert']")!.textContent).toContain('Drive root quota')
+    expect(old.root.querySelector("[data-slot='alert']")!.textContent).toBe(
+      'Storage is fullThis upload exceeds the Drive root quota',
+    )
     expect(old.root.querySelector('header')!.textContent).toContain('Retry all')
   })
 })

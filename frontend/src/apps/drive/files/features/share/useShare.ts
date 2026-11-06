@@ -115,9 +115,12 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       loadError.value = ''
     } catch (error) {
       if (read !== reads) return
-      loadError.value = messageOf(error, 'Could not load who has access.')
       // A write here took away the caller's own access: the page behind drops what it read before.
-      if (changed.value && isTweakOn('t2') && isRefusal(error)) driveLinks.invalidateAccess()
+      const lostAccess = changed.value && isRefusal(error)
+      loadError.value = lostAccess
+        ? __('You no longer have access to this item.')
+        : messageOf(error, __('Could not load who has access.'))
+      if (lostAccess && isTweakOn('t2')) driveLinks.invalidateAccess()
     }
   }
 

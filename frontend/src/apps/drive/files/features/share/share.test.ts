@@ -768,7 +768,9 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     try {
       await removeMine(false)
       expect(invalidate).not.toHaveBeenCalled()
-      expect((await removeMine(true)).loadError.value).toBe('Not found')
+      expect((await removeMine(true)).loadError.value).toBe(
+        'You no longer have access to this item.',
+      )
       expect(invalidate).toHaveBeenCalledTimes(1)
 
       setTweaks(['t2'], false)

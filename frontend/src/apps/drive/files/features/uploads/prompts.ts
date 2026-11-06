@@ -1,6 +1,7 @@
 import type { AppContext } from 'vue'
 
 import { confirm, toast } from '@/platform/feedback'
+import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import { isTweakOn } from '@/platform/tweaks'
 
@@ -57,6 +58,7 @@ async function quota({ total, free, fitting, count }: Parameters<UploadPrompts['
         count === 1
           ? __('This file needs {0}, and only {1} is free.', sizes)
           : __('These files need {0}, and only {1} is free.', sizes),
+      action: { label: __('Manage storage'), onClick: () => openSettings('drive.statistics') },
     })
     return 'cancel'
   }

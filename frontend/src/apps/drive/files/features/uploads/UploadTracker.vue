@@ -67,6 +67,11 @@
       :title="__('Storage is full')"
       :description="messages ? __('Free up space, then retry.') : queue.state.halted"
       :primary-action="{ label: __('Retry all'), onClick: () => queue.retryAll() }"
+      :secondary-action="
+        messages
+          ? { label: __('Manage storage'), onClick: () => openSettings('drive.statistics') }
+          : undefined
+      "
     />
     <p
       v-if="queue.state.preparing && !overall"
@@ -177,6 +182,7 @@ import { Alert, Button, Progress } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { driveNodeRoute } from '@/apps/drive'
+import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import { useTweak } from '@/platform/tweaks'
 

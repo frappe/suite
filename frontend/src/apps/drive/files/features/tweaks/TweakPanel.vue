@@ -102,7 +102,10 @@ const groups = tweakGroups
 const onCount = computed(() => tweaks.filter((tweak) => isTweakOn(tweak.id)).length)
 /** Drive's own pages show the sidebar with the Tweaks item from `md` up. */
 const hasSidebar = computed(() => String(route.name ?? '').startsWith('files'))
+/** As the tracker decides whether it shows. */
 const isTrackerShown = computed(
-  () => queue.state.trackerOpen && (queue.entries.value.length > 0 || queue.state.preparing > 0),
+  () =>
+    queue.state.trackerOpen &&
+    (queue.entries.value.length > 0 || queue.state.preparing > 0 || !!queue.state.reading),
 )
 </script>
