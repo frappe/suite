@@ -1,13 +1,18 @@
-import { watchDebounced } from '@vueuse/core'
 import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
-import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
+import {
+  classifySaveError,
+  createDraftSaver,
+  type WriteOptions,
+} from '@/apps/mail/composables/draftSaver'
+import { withdrawDraftCopyOffer } from '@/apps/mail/composables/useDraftRecovery'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
-import { commitAfterUndo, processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
+import { commitAfterUndo, processInlineImages, raiseToast } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import {
   useComposeMail as useComposeRequest,
@@ -15,6 +20,14 @@ import {
   useListReload,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import {
+  findDraftCopy,
+  heldDraftCopyKeys,
+  holdDraftCopy,
+  removeDraftCopy,
+  writeDraftCopy,
+  type DraftCopy,
+} from '@/apps/mail/utils/draftCopies'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import {
@@ -22,6 +35,7 @@ import {
   type RecipientField,
 } from '@/apps/mail/utils/recipientFields'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { randomId } from '@/platform/random-id'
 
 /** The mounted TextEditor instance, as far as this composable cares about it. */
 interface EditorHost {
@@ -61,8 +75,11 @@ interface ComposeMailOptions {
   onDiscardStarted?: () => void
   /** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
   host: () => EditorHost | null | undefined
-  /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
-  isUploading?: () => boolean
+  /**
+   * Addresses typed but not yet made into recipients: they are on screen, so a send has to include
+   * them. The fields are the host's.
+   */
+  commitTypedRecipients?: () => void
   /**
    * Where the mention dropdown should render. The dialog on desktop, which holds the rest of the
    * page inert; null anywhere `<body>` will do.
@@ -71,35 +88,21 @@ interface ComposeMailOptions {
 }
 
 /**
- * Everything a composition *is*, with no opinion on how it's laid out: the draft itself, saving,
- * sending, scheduling, discarding, attachments and mentions.
+ * Everything a composition *is*, with no opinion on how it's laid out: the draft itself, saving
+ * (see draftSaver), sending, scheduling, discarding, attachments and mentions.
  *
  * Split out because compose has two very different shapes — a dialog on desktop, a full page on
  * mobile — and the only way to keep those from drifting into two subtly different mail clients is
  * for the behaviour to live in one place and only the markup to differ.
  */
+const newDraftKey = () => randomId()
+
 export const useComposeMail = (options: ComposeMailOptions) => {
   const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
 
-  // A composer that has gone away must not still be writing drafts of its own accord. Saving is
-  // debounced by two seconds, and the timer outlives the component: pop a draft out inside that
-  // window and the editor left behind in the thread would wake up and create a second draft, next
-  // to the one the composer window creates. The window's copy is the only one that should land.
-  //
-  // Stopping the watcher is not enough to arrange that. @vueuse's debounceFilter keeps its timer
-  // in a closure and returns only the watch handle, so a call already pending arrives whether or
-  // not anything is still listening — which is why the guard is a flag read at the last moment.
-  //
-  // It gates the debounced callback and nothing else. An explicit save is a decision, not a
-  // leftover timer, and the composer makes one on the way out: Vue's unmountComponent stops the
-  // effect scope — running this hook — before it so much as queues `onUnmounted`, which is a
-  // post-render effect on top of that, so a `saveDraft` gated on disposal would be a no-op exactly
-  // when it is needed most, and everything typed since the last tick would go with the component.
-  let disposed = false
   const { requestCompose } = useComposeRequest()
   const { requestListReload } = useListReload()
   const { holdDraft, releaseDraft, restoreDraft } = useDiscardingDrafts()
-  onScopeDispose(() => (disposed = true))
   const router = useRouter()
   const route = useRoute()
 
@@ -149,14 +152,43 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     in_reply_to_id: mailDetails?.in_reply_to_id || '',
     forwarded_from_id: mailDetails?.forwarded_from_id || '',
     composed: true,
+    // Set as the draft is handed to another composer with text not yet saved; see `handOff`.
+    restored: false,
+    // Which composition this is, across the id each save gives it (see `draft_key` on the server).
+    draft_key: mailDetails?.draft_key || newDraftKey(),
   })
-  const originalMail = ref<ComposeMailData>()
-  const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
-  const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
+  // Everything that makes up what the writer sees, and nothing the server gives back.
+  const writing = () =>
+    JSON.stringify([
+      mail.from_email,
+      mail.to,
+      mail.cc,
+      mail.bcc,
+      mail.subject,
+      mail.html_body,
+      mail.quoted_content,
+      mail.attachments,
+    ])
 
   // ── What's in the mail ──────────────────────────────────────────────────────────────────────
 
   const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
+
+  // Files on their way up. Not yet part of the draft, so they count as unsaved: they keep leaving
+  // from warning and sending from going, and a composer that closes waits for them to finish.
+  const uploads = ref<string[]>([])
+  const inUpload = new Set<Promise<unknown>>()
+  const isUploading = computed(() => uploads.value.length > 0)
+  const trackUpload = <T>(name: string, upload: Promise<T>): Promise<T> => {
+    uploads.value = [...uploads.value, name]
+    const done = upload.finally(() => {
+      const index = uploads.value.indexOf(name)
+      uploads.value = uploads.value.filter((_, at) => at !== index)
+      inUpload.delete(done)
+    })
+    inUpload.add(done)
+    return done
+  }
 
   /**
    * Re-addressing someone: To → Cc, Cc → Bcc, either way round. Held here because the draft owns
@@ -195,6 +227,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const isUntouched = computed(
     () =>
       !isSavedDraft &&
+      !uploads.value.length &&
       fieldsOf() === openedWith &&
       bodyText(mail.html_body) === bodyText(buildSignature(mail.from_email) + prefilledBody) &&
       // Text alone missed a pasted or inserted image: a body that was only that read as untouched,
@@ -270,18 +303,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // ── Sending, saving, discarding ─────────────────────────────────────────────────────────────
 
-  const isSavingDraft = ref(false)
   const isDiscarding = ref(false)
-  // The last save was refused: what is on screen is ahead of the server until a save lands.
-  const isSaveFailed = ref(false)
-
-  // Discarding is the end of this composition, and nothing may save after it. `isDiscarding` cannot
-  // say that on its own: the host clears it through `onClosed` as soon as the composer is off
-  // screen, which is well before the component is torn down — so the save on the way out would find
-  // the flag down and write back a draft that is already being deleted, or worse, create one for a
-  // message that was never saved in the first place. This one is not cleared, because there is
-  // nothing to come back to.
-  let discarded = false
+  const isSending = ref(false)
 
   // Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
   let listOwesReload = false
@@ -300,50 +323,246 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // A draft is not edited in place: each save replaces it, under a new id. A list that has not
   // reloaded since still shows it by an earlier one, so a discard has to hold all of them.
   const formerIds = new Set<string>()
-  let pendingSave: Promise<void> | undefined
-  const saveDraft = async () => {
-    if (pendingSave || discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value)
-      return
-    isSavingDraft.value = true
-    pendingSave = mail.id
-      ? updateDraftSubmit({
-          submit: false,
-        })
-      : !isMailEmpty.value
-        ? createMailSubmit({
-            save_as_draft: true,
-          })
-        : Promise.resolve()
-    try {
-      await pendingSave
-      isSaveFailed.value = false
-    } catch {
-      // The draft stays dirty, so the next edit or Retry saves it again.
-      isSaveFailed.value = true
-      if (!isOpen()) keepUnsavedDraft()
-    } finally {
-      isSavingDraft.value = false
-      pendingSave = undefined
+
+  // The account a draft on the server belongs to, whichever the scope has moved on to. The composer
+  // window outlives the account it was opened in, and a draft's id means nothing in another one.
+  let savedIn = mailDetails?.id ? scopeAccountId.value : ''
+  const draftAccount = () => savedIn || scopeAccountId.value
+
+  // ── The local copy, for while the server can't take the draft ───────────────────────────────
+
+  const copyUser = () => user.data?.name
+  // What can't be saved is kept here only if this says so. Blocked or full storage leaves nothing
+  // behind, which is what leaving warns about.
+  const isCopyKept = ref(false)
+  let releaseCopy: (() => void) | undefined
+  const keepCopy = () => {
+    const owner = copyUser()
+    if (!owner) return
+    const copy: DraftCopy = {
+      key: mail.draft_key,
+      user: owner,
+      account: draftAccount(),
+      ids: [mail.id, ...formerIds].filter(Boolean),
+      savedAt: Date.now(),
+      uploading: [...uploads.value],
+      mail: JSON.parse(
+        JSON.stringify({
+          from_email: mail.from_email,
+          to: mail.to,
+          cc: mail.cc,
+          bcc: mail.bcc,
+          subject: mail.subject,
+          html_body: mail.html_body,
+          quoted_content: mail.quoted_content,
+          attachments: mail.attachments,
+          in_reply_to: mail.in_reply_to,
+          in_reply_to_id: mail.in_reply_to_id,
+          forwarded_from_id: mail.forwarded_from_id,
+        }),
+      ),
     }
+    isCopyKept.value = writeDraftCopy(copy)
+    // While this composer runs, the copy is its own and not one for another tab to offer back.
+    if (isCopyKept.value) releaseCopy ??= holdDraftCopy(mail.draft_key)
   }
-  watchDebounced(
-    mail,
-    () => {
-      if (disposed) return
-      saveDraft()
+  const dropCopy = () => {
+    const owner = copyUser()
+    if (owner) removeDraftCopy(owner, draftAccount(), mail.draft_key)
+    withdrawDraftCopyOffer(mail.draft_key)
+    isCopyKept.value = false
+    releaseCopy?.()
+    releaseCopy = undefined
+  }
+
+  // ── Saving ──────────────────────────────────────────────────────────────────────────────────
+
+  let finished = false
+  const saver = createDraftSaver({
+    read: writing,
+    canSave: () => !!mail.id || !isMailEmpty.value,
+    write: (options) =>
+      mail.id
+        ? updateDraftSubmit({ submit: false }, options)
+        : createMailSubmit({ save_as_draft: true }, options),
+    keepCopy,
+    dropCopy: () => {
+      dropCopy()
+      settledAfterLeaving()
     },
-    {
-      debounce: 2000,
+    onRefused: (message) => raiseToast(__('Draft not saved. {0}', [message]), 'error'),
+    onStopped: () => {
+      finished = true
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      document.removeEventListener('visibilitychange', onHidden)
+      releaseCopy?.()
+      releaseCopy = undefined
     },
+  })
+  watch(writing, () => saver.edited())
+
+  /**
+   * Save now: a decision rather than a leftover timer, and not gated on the composer still being
+   * there, because the composer makes one on the way out. Resolves true if the server has it all.
+   */
+  const saveDraft = () => saver.saveNow()
+
+  // What the save state shows. Uploads come first: until a file is up, "Saved" would be untrue.
+  const saveState = computed(() => ({
+    status: saver.status.value,
+    failure: saver.failure.value,
+    isCopyKept: isCopyKept.value,
+    isRetrying: saver.isWriting.value,
+    isUploading: isUploading.value,
+  }))
+
+  // ── Leaving ─────────────────────────────────────────────────────────────────────────────────
+
+  // Nothing is lost if this tab closes now: on the server, or kept on the device.
+  const isSafeToClose = computed(
+    () =>
+      !isUploading.value &&
+      (!saver.hasUnsaved.value || (saver.status.value !== 'saving' && isCopyKept.value)),
   )
+
+  // Beyond a page's last moments only a keepalive request gets through, and browsers refuse one with
+  // a body over 64KB outright, so a long mail goes as an ordinary request and takes its chances.
+  const KEEPALIVE_LIMIT = 60_000
+  const leavingOptions = (): WriteOptions =>
+    writing().length < KEEPALIVE_LIMIT ? { keepalive: true } : {}
+
+  const onBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (isSafeToClose.value) return
+    void saver.saveNow(leavingOptions())
+    event.preventDefault()
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- older browsers still need it
+    event.returnValue = ''
+  }
+  // A phone gets no warning: the page is just put away, and may never run again. So it saves as it
+  // goes, and what fails there is in the local copy by then.
+  const onHidden = () => {
+    if (document.visibilityState === 'hidden' && saver.isDirty.value)
+      void saver.saveNow(leavingOptions())
+  }
+  window.addEventListener('beforeunload', onBeforeUnload)
+  document.addEventListener('visibilitychange', onHidden)
+
+  // The end of this composition's saving. The copy stays for whoever comes back to it, if it holds
+  // anything the server doesn't.
+  const finish = () => saver.stop()
+
+  let left = false
+  let unsavedToast: ReturnType<typeof toast.error> | undefined
+  // Off screen and in sync at last: the composition has nothing more to do. Not while a file is still
+  // on its way up: `leave` saves that one once it arrives.
+  function settledAfterLeaving() {
+    if (!left || uploads.value.length) return
+    if (unsavedToast !== undefined) {
+      toast.dismiss(unsavedToast)
+      unsavedToast = undefined
+      raiseToast(__('Draft saved.'))
+    }
+    finish()
+  }
+
+  /**
+   * The composer is coming off screen. Files still on their way are waited for: they would otherwise
+   * finish with nothing left to save them. After that, whatever is left is saved; failing that, the
+   * writer is told, and it goes on trying from here, off screen, until it lands.
+   */
+  const leave = async () => {
+    if (finished) return
+    left = true
+    await Promise.allSettled(inUpload)
+    const saved = await saver.saveNow()
+    if (finished) return
+    if (saved || !saver.hasUnsaved.value) finish()
+    else keepUnsavedDraft()
+  }
+
+  /** Reopen a draft this composer left behind: the new composer takes over from it. */
+  const takeBack = () => {
+    finish()
+    if (unsavedToast !== undefined) toast.dismiss(unsavedToast)
+    unsavedToast = undefined
+  }
+
+  /**
+   * Another composer takes over this very draft (popping out of a thread). This one stops where it
+   * is, and says whether the other has text to save: what it opens with otherwise counts as saved.
+   */
+  const handOff = () => {
+    mail.restored = saver.isDirty.value
+    finish()
+    return mail
+  }
 
   /**
    * The composer is on screen. What it opened with counts as saved, so only an edit saves it —
-   * except a draft Undo brought back, whose text may never have reached the server: that is saved
-   * now, or closing it unedited lost the last of it, and a draft never saved at all went with it.
-   * Every composer calls this once mounted: the window, a thread's reply and the phone's page.
+   * except a draft Undo or a recovery brought back, whose text may never have reached the server:
+   * that is saved now, or closing it unedited lost the last of it, and a draft never saved at all
+   * went with it. Every composer calls this once mounted: the window, a thread's reply and the
+   * phone's page.
    */
-  const onOpened = () => (mailDetails?.restored ? void saveDraft() : updateOriginalMail())
+  const onOpened = () => {
+    if (mailDetails?.restored) void saver.saveNow()
+    else saver.baseline(!!mailDetails?.id)
+    void offerCopyOfThisDraft()
+  }
+
+  // ── Recovering ──────────────────────────────────────────────────────────────────────────────
+
+  // A local copy of the very draft just opened, written on the id it opened with or an earlier one,
+  // so the server hasn't moved on: the copy is the newer. It is only offered: the writer may have
+  // meant to leave it. One another tab is still working on isn't this tab's to offer.
+  const recoverableCopy = ref<DraftCopy>()
+  const offerCopyOfThisDraft = async () => {
+    const owner = copyUser()
+    if (!owner || !mailDetails?.id || mailDetails.restored) return
+    const copy = findDraftCopy(owner, draftAccount(), mailDetails.id)
+    if (!copy || (await heldDraftCopyKeys()).has(copy.key)) return
+    recoverableCopy.value = copy
+  }
+  const restoreCopy = () => {
+    const copy = recoverableCopy.value
+    if (!copy) return
+    recoverableCopy.value = undefined
+    withdrawDraftCopyOffer(copy.key)
+    Object.assign(mail, copy.mail, { draft_key: copy.key })
+    void saver.saveNow()
+  }
+  const ignoreCopy = () => {
+    const copy = recoverableCopy.value
+    if (!copy) return
+    recoverableCopy.value = undefined
+    withdrawDraftCopyOffer(copy.key)
+    removeDraftCopy(copy.user, copy.account, copy.key)
+  }
+
+  /**
+   * The draft this was written on is gone: sent or discarded elsewhere, or saved over by another tab.
+   * The writing is still on screen, and still in the local copy. Keeping it makes a new draft, so
+   * nothing written elsewhere is overwritten and both stay in Drafts.
+   */
+  const detachFromGoneDraft = () => {
+    dropCopy()
+    formerIds.clear()
+    savedIn = ''
+    mail.id = ''
+    // The server knows the old key as the draft that went away.
+    mail.draft_key = newDraftKey()
+    // A draft opened from the list carries its own message id here rather than what it answers,
+    // and the conversation it was written against may not be there any more.
+    if (mailDetails?.id) {
+      mail.in_reply_to = ''
+      mail.in_reply_to_id = ''
+      mail.forwarded_from_id = ''
+    }
+  }
+  const keepAsNewDraft = () => {
+    detachFromGoneDraft()
+    return saver.startOver()
+  }
 
   // The Undo toast lives for the period the server actually held delivery for (it echoes it back
   // with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
@@ -361,7 +580,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
-    if (options.isUploading?.()) {
+    if (isSending.value) return
+    options.commitTypedRecipients?.()
+    if (saver.status.value === 'gone') {
+      const message = __('This draft is no longer there. Keep it as a new draft to send it.')
+      if (sendAt) throw new Error(message)
+      return raiseToast(message, 'error')
+    }
+    if (isUploading.value) {
       const message = __('Please wait for attachments to finish uploading.')
       if (sendAt) throw new Error(message)
       return raiseToast(message, 'error')
@@ -372,10 +598,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       return raiseToast(message, 'error')
     }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
-    isSavingDraft.value = false
+    isSending.value = true
+    // Nothing on screen can change from here: see `isSending` in the hosts. The write carries the
+    // text itself, in one step with the submission, so what goes is what the writer is looking at
+    // even with a save under way or failing.
+    await saver.hold()
     try {
-      await pendingSave
-      sentAs = scopeAccountId.value
+      sentAs = draftAccount()
       if (mail.id)
         await updateDraftSubmit({
           submit: true,
@@ -388,22 +617,44 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           send_at: sendAt,
           undo_send: !sendAt,
         })
+      // Sent, so there's nothing left to keep.
+      dropCopy()
+      finish()
       close()
     } catch (error) {
+      saver.resume(error)
+      reportNotSent(error)
       if (sendAt) throw error /* Keep the composer open after refusal. */
+    } finally {
+      isSending.value = false
     }
   }
-  // The composer is gone and its last save was refused: the draft lives only in this copy, which a
-  // toast holds until it is reopened, where it saves again (see onOpened).
+  const reportNotSent = (error: unknown) => {
+    const result = classifySaveError(error, navigator.onLine)
+    if (result.kind === 'gone')
+      raiseToast(__('Not sent. This draft was sent, discarded or changed somewhere else.'), 'error')
+    else if (result.kind === 'offline') raiseToast(__("Not sent. You're offline."), 'error')
+    else if (result.kind === 'unavailable')
+      raiseToast(__('Not sent. Could not reach the server.'), 'error')
+    else raiseToast(__('Not sent. {0}', [result.message]), 'error')
+    host()?.editor?.commands.focus()
+  }
+  // The composer is gone and its last save did not land. It is still trying, and the draft lives in
+  // this copy and on the device until it does. The toast offers it back meanwhile.
   const keepUnsavedDraft = () => {
     const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
     const account = scopeAccountId.value
-    toast.error(__('Draft not saved.'), {
-      description: __('Your changes are kept here until you reopen the draft.'),
+    unsavedToast = toast.error(__('Draft not saved.'), {
+      description: isCopyKept.value
+        ? __('Kept on this device until it saves or you reopen it.')
+        : __('Your changes are kept here until you reopen the draft.'),
       duration: Infinity,
       action: {
         label: __('Reopen'),
-        onClick: () => requestCompose({ ...draft, account, restored: true }),
+        onClick: () => {
+          takeBack()
+          requestCompose({ ...draft, account, restored: true })
+        },
       },
     })
   }
@@ -412,18 +663,17 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // composer that held it is gone, and nothing on the server has changed.
   const discardMail = async () => {
     isDiscarding.value = true
-    try {
-      await pendingSave
-    } catch {
-      /* A failed last save leaves the draft as the server has it, which is what Undo brings back. */
-    }
+    await saver.hold()
+    // Nothing of it left on the server, so there is nothing there to remove.
+    if (saver.status.value === 'gone') detachFromGoneDraft()
+    dropCopy()
+    finish()
     const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
     const account = scopeAccountId.value
     // Discarded from a thread, it comes back to that thread on Undo — not into a composer window.
     // Read before the composer closes: the last draft in Drafts takes the pane back to the list,
     // and Undo returns it here.
     const thread = isInThread && draft.id ? router.currentRoute.value.fullPath : undefined
-    discarded = true
     options.onDiscardUnsaved?.()
     options.onDiscardStarted?.()
     close()
@@ -471,7 +721,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   /** Reset the in-flight flags once the composer is off screen. */
   const onClosed = () => {
     isDiscarding.value = false
-    isSavingDraft.value = false
   }
 
   // Schedule send (FUTURERELEASE)
@@ -556,12 +805,11 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   }: OutputOf<typeof api.mail.messages.create>) => {
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
-    if (error) {
-      const failure = new Error(error)
-      raiseError(failure)
-      throw failure
-    }
-    updateOriginalMail()
+    if (error) throw new Error(error)
+    // Only these two are what was asked for. Anything else, error or not, is a mail that isn't
+    // saved or sent, and must not be taken for one that is.
+    if (status !== 'Drafted' && status !== 'Submitted')
+      throw new Error(__('The server could not process this message.'))
     if (isDiscarding.value) return
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
@@ -574,8 +822,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // when the editor goes — see `payListDebt`.
     else if (status === 'Drafted') listOwesReload = true
     if (isOpen() && status !== 'Submitted') return
-    if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
-    else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
+    if (status === 'Drafted') {
+      // Saying so is the unsaved toast's to do, if there is one standing.
+      if (unsavedToast === undefined) raiseToast(__('Draft saved.'))
+    } else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
       offerUndoSend(
         sentAs,
         submission_id,
@@ -609,18 +859,21 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // ── Resources ───────────────────────────────────────────────────────────────────────────────
 
-  const createMail = useMutation(api.mail.messages.create)
-  async function createMailSubmit({
-    save_as_draft,
-    send_at,
-    undo_send,
-  }: {
-    save_as_draft: boolean
-    send_at?: string
-    undo_send?: boolean
-  }) {
+  async function createMailSubmit(
+    {
+      save_as_draft,
+      send_at,
+      undo_send,
+    }: {
+      save_as_draft: boolean
+      send_at?: string
+      undo_send?: boolean
+    },
+    write: WriteOptions = {},
+  ) {
+    const account = draftAccount()
     const input: InputOf<typeof api.mail.messages.create> = {
-      account: scopeAccountId.value,
+      account,
       from_email: mail.from_email,
       to: mail.to,
       cc: mail.cc,
@@ -636,22 +889,30 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       save_as_draft,
       send_at,
       undo_send,
+      draft_key: mail.draft_key,
     }
-    const result = await createMail.run(input)
-    await onMailUpdateSuccess(result)
+    // Silent: the save state and the send's own report say what happened, once, not each retry.
+    const result = await client.mutation(api.mail.messages.create, input, {
+      ...write,
+      silent: true,
+    })
+    savedIn = account
+    onMailUpdateSuccess(result)
   }
-  const updateDraft = useMutation(api.mail.messages.updateDraft)
-  async function updateDraftSubmit({
-    submit,
-    send_at,
-    undo_send,
-  }: {
-    submit: boolean
-    send_at?: string
-    undo_send?: boolean
-  }) {
+  async function updateDraftSubmit(
+    {
+      submit,
+      send_at,
+      undo_send,
+    }: {
+      submit: boolean
+      send_at?: string
+      undo_send?: boolean
+    },
+    write: WriteOptions = {},
+  ) {
     const input: InputOf<typeof api.mail.messages.updateDraft> = {
-      account: scopeAccountId.value,
+      account: draftAccount(),
       id: mail.id,
       from_email: mail.from_email,
       to: mail.to,
@@ -665,11 +926,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       submit,
       send_at,
       undo_send,
+      draft_key: mail.draft_key,
     }
-    const result = await updateDraft.run(input)
-    await onMailUpdateSuccess(result)
+    const result = await client.mutation(api.mail.messages.updateDraft, input, {
+      ...write,
+      silent: true,
+    })
+    onMailUpdateSuccess(result)
   }
-  const isLoading = computed(() => createMail.isPending || updateDraft.isPending)
+  const isLoading = computed(() => saver.isWriting.value || isSending.value)
 
   // ── Attachments ─────────────────────────────────────────────────────────────────────────────
 
@@ -751,19 +1016,28 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     scopeAccountId,
     identities,
     getIdentity,
-    updateOriginalMail,
     onOpened,
-    isDraftUpdated,
+    isDraftUpdated: saver.isDirty,
     isRecipientsEmpty,
     moveRecipient,
     isBodyEmpty,
     isMailEmpty,
     isUntouched,
     isLoading,
-    isSavingDraft,
-    isSaveFailed,
+    isSending,
     isDiscarding,
+    saveState,
+    isSafeToClose,
     saveDraft,
+    retrySave: saver.retry,
+    keepAsNewDraft,
+    recoverableCopy,
+    restoreCopy,
+    ignoreCopy,
+    isUploading,
+    trackUpload,
+    leave,
+    handOff,
     payListDebt,
     sendMail,
     discardMail,

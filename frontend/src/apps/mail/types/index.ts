@@ -163,9 +163,12 @@ export interface ComposeMailData {
   // The draft has been in a composer already — a reply popped out of its thread, handed over as
   // it stood — so its body is what was written there, signature and all.
   composed?: boolean
-  // Brought back by Undo as it stood in the editor, which may be ahead of the server — the last few
-  // keystrokes before the discard, or a draft never saved at all. It opens unsaved, and is saved.
+  // Brought back by Undo or from a local copy, as it stood in the editor, which may be ahead of the
+  // server — the last few keystrokes, or a draft never saved at all. It opens unsaved, and is saved.
   restored?: boolean
+  // Which composition this is: kept across saves and hand-offs, so a retry of a save whose answer
+  // was lost picks up where it landed. Not saved with the draft.
+  draft_key?: string
 }
 export interface Thread {
   name: string

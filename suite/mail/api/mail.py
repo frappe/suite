@@ -1399,6 +1399,28 @@ def reaction_recipients(identities: list[dict], target: dict, from_email: str) -
     return rows
 
 
+# A composition's last answer, so a retry of a save whose answer was lost picks up where that save
+# landed: long enough for a connection to come back, and nothing depends on it lasting longer.
+DRAFT_KEY_TTL = 60 * 60
+
+
+def _draft_key_cache_key(account: str, draft_key: str) -> str:
+    return f"mail:draft_key:{frappe.session.user}:{account}:{draft_key}"
+
+
+def _last_answer(account: str, draft_key: str | None) -> dict | None:
+    """What the composition `draft_key` was last told, if anything. Each save replaces a draft under
+    a new id, and creating one twice makes two: a client that lost an answer can't tell what happened,
+    but can send the same key and have it settled here."""
+
+    return frappe.cache.get_value(_draft_key_cache_key(account, draft_key)) if draft_key else None
+
+
+def _remember_answer(account: str, draft_key: str | None, answer: dict) -> None:
+    if draft_key and answer["id"] and answer["status"] in ("Drafted", "Submitted"):
+        frappe.cache.set_value(_draft_key_cache_key(account, draft_key), answer, expires_in_sec=DRAFT_KEY_TTL)
+
+
 @frappe.whitelist()
 def create_mail(
     account: str,
@@ -1416,9 +1438,32 @@ def create_mail(
     save_as_draft: bool = False,
     send_at: str | None = None,
     undo_send: bool = False,
+    draft_key: str | None = None,
 ) -> dict:
     """Creates new mail queue. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE;
-    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast."""
+    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast.
+    `draft_key` identifies the composition: see `_last_answer`."""
+
+    if answer := _last_answer(account, draft_key):
+        # The answer to an earlier try got lost. Already sent stays sent, once.
+        if answer["status"] == "Submitted":
+            return answer
+        return update_draft_mail(
+            account,
+            answer["id"],
+            from_email,
+            to,
+            cc,
+            bcc,
+            subject,
+            html_body,
+            from_name,
+            attachments,
+            submit=not save_as_draft,
+            send_at=send_at,
+            undo_send=undo_send,
+            draft_key=draft_key,
+        )
 
     doc_attachments = attachment_rows(attachments)
 
@@ -1454,7 +1499,7 @@ def create_mail(
         create_contacts_if_not_exists(account, doc.recipients)
         auto_accept_recipients(account, doc.recipients)
 
-    return {
+    answer = {
         "name": doc.name,
         "id": doc.id,
         "status": doc.status,
@@ -1464,6 +1509,8 @@ def create_mail(
         "send_at": to_utc_z(doc.send_at),
         "undo_send_period": undo_send_period,
     }
+    _remember_answer(account, draft_key, answer)
+    return answer
 
 
 @frappe.whitelist()
@@ -1481,13 +1528,25 @@ def update_draft_mail(
     submit: bool = False,
     send_at: str | None = None,
     undo_send: bool = False,
+    draft_key: str | None = None,
 ) -> dict:
     """Creates new mail queue from existing draft message. `send_at` (UTC `...Z`) schedules delivery
     via FUTURERELEASE; `undo_send` instead holds delivery briefly so the sender can cancel from the
-    undo toast."""
+    undo toast. `draft_key` identifies the composition: see `_last_answer`.
+
+    Raises DoesNotExistError when `id` is no longer a draft. Each save replaces a draft under a new
+    id, so that means someone else got there first: another tab saved over it, or it was sent or
+    deleted. The caller's text has not overwritten theirs, and it is the caller's to decide about."""
+
+    if answer := _last_answer(account, draft_key):
+        if answer["status"] == "Submitted":
+            return answer
+        id = answer["id"]
 
     message = frappe.get_doc("Mail Message", f"{account}|{id}")
     message.check_permission(permtype="write")
+    if not message.draft:
+        frappe.throw(_("This message is no longer a draft."), frappe.DoesNotExistError)
 
     message.from_email = from_email
     message.from_name = from_name
@@ -1519,7 +1578,7 @@ def update_draft_mail(
         create_contacts_if_not_exists(account, message.recipients)
         auto_accept_recipients(account, message.recipients)
 
-    return {
+    answer = {
         "name": queue.name,
         "id": queue.id,
         "status": queue.status,
@@ -1529,6 +1588,8 @@ def update_draft_mail(
         "send_at": to_utc_z(queue.send_at),
         "undo_send_period": undo_send_period,
     }
+    _remember_answer(account, draft_key, answer)
+    return answer
 
 
 @frappe.whitelist()
