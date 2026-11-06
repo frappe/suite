@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core'
+import { Extension, generateHTML } from '@tiptap/core'
 import Bold from '@tiptap/extension-bold'
 import BulletList from '@tiptap/extension-bullet-list'
 import Color from '@tiptap/extension-color'
@@ -1204,3 +1204,31 @@ export const extensions = [
   EmptyCellCaret,
   ColumnWidths,
 ]
+
+function markWithoutFontWeight(mark) {
+  if (mark.type !== 'textStyle' || !mark.attrs) {
+    return mark
+  }
+
+  const { fontWeight: _ignored, ...attrs } = mark.attrs
+  return { ...mark, attrs }
+}
+
+function withoutFontWeight(json) {
+  const cleaned = { ...json }
+  if (json.content) {
+    cleaned.content = json.content.map(withoutFontWeight)
+  }
+
+  if (json.marks) {
+    cleaned.marks = json.marks.map(markWithoutFontWeight)
+  }
+
+  return cleaned
+}
+
+// an element saved as a document was saved before the text style read a weight,
+// and the old view drew it without one
+export function oldBodyHTML(json) {
+  return generateHTML(withoutFontWeight(json), extensions)
+}

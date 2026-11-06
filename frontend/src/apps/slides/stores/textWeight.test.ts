@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
-const { extensions } = await import('./tiptapSetup')
+const { extensions, oldBodyHTML } = await import('./tiptapSetup')
 
 // What HTML coming in, pasted or converted, saves as
 function marksOf(html: string) {
@@ -45,5 +45,15 @@ describe('a weight coming in', () => {
     expect(
       marks.find(({ type }: { type: string }) => type === 'textStyle')?.attrs.fontWeight,
     ).toBeFalsy()
+  })
+})
+
+describe('an old saved document', () => {
+  it('draws without the weight the editor never read from it', () => {
+    const marks = [{ type: 'textStyle', attrs: { fontWeight: '600', color: 'red' } }]
+    const paragraph = { type: 'paragraph', content: [{ type: 'text', text: 'A', marks }] }
+    const html = oldBodyHTML({ type: 'doc', content: [paragraph] })
+    expect(html).not.toContain('font-weight')
+    expect(html).toContain('color: red')
   })
 })

@@ -352,6 +352,19 @@ describe('text', () => {
     expect(dropped).toEqual([])
   })
 
+  it('ignores a weight an old saved document holds, as the old view did', () => {
+    const marks = [{ type: 'textStyle', attrs: { fontWeight: '600' } }]
+    const paragraph = { type: 'paragraph', content: [{ type: 'text', text: 'A', marks }] }
+    const content = { type: 'doc', content: [paragraph] }
+    const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
+    const [text] = bodyOf(doc, 'box').content[0].content
+    expect(text.text).toBe('A')
+    expect(text.marks ?? []).not.toContainEqual(
+      expect.objectContaining({ attrs: expect.objectContaining({ fontWeight: '600' }) }),
+    )
+    expect(dropped).toEqual([])
+  })
+
   it('carries a list item weight to its text, saying its bullet changes', () => {
     const content = '<ul><li style="font-weight: 600"><p>a</p></li></ul>'
     const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])

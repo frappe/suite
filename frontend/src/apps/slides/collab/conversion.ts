@@ -6,12 +6,12 @@
 // A refusal names the rule only, never a key or a value: reasons reach System Managers and server logs,
 // and a key or value can be a person's data
 
-import { generateHTML, getSchema } from '@tiptap/core'
+import { getSchema } from '@tiptap/core'
 import { DOMSerializer, DOMParser as PMDOMParser, type Node as PMNode } from '@tiptap/pm/model'
 import { prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
 
-import { extensions } from '@/apps/slides/stores/tiptapSetup'
+import { extensions, oldBodyHTML } from '@/apps/slides/stores/tiptapSetup'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 
@@ -276,7 +276,7 @@ function rulesOf(box: OldBox): DrawRules {
 // An editor can save a box's body as the document itself; the old view turned it into HTML to draw it
 function oldHtml(content: unknown) {
   if (typeof content === 'object') {
-    return generateHTML(content as Parameters<typeof generateHTML>[0], extensions)
+    return oldBodyHTML(content)
   }
 
   return String(content)
