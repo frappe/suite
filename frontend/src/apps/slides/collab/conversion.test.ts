@@ -300,6 +300,39 @@ describe('text', () => {
     expect(bodyOf(doc, 'box').content[0].content[0].marks).toContainEqual({ type: 'italic' })
   })
 
+  it.each(['700', 'bold'])('takes a %s weight as bold', (weight) => {
+    const content = `<p><span style="font-weight: ${weight}">a</span></p>`
+    const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
+    expect(bodyOf(doc, 'box').content[0].content[0].marks).toContainEqual({ type: 'bold' })
+    expect(dropped).toEqual([])
+  })
+
+  it.each([
+    ['alone', '<p><span style="font-weight: 400">a</span></p>'],
+    ['inside bold', '<p><strong><span style="font-weight: 400">a</span></strong></p>'],
+    ['written as normal', '<p><span style="font-weight: normal">a</span></p>'],
+  ])('takes a normal weight %s as plain text', (_name, content) => {
+    const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
+    expect(bodyOf(doc, 'box').content[0].content[0].marks ?? []).not.toContainEqual({
+      type: 'bold',
+    })
+    expect(dropped).toEqual([])
+  })
+
+  it('takes a bold list item, saying its bullet changes and adding no text', () => {
+    const content = '<ul><li style="font-weight: 700"><p>a</p></li></ul>'
+    const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
+    const [{ content: texts }] = bodyOf(doc, 'box').content[0].content[0].content
+    expect(texts.map(({ text }: { text: string }) => text)).toEqual(['a'])
+    expect(texts[0].marks).toContainEqual({ type: 'bold' })
+    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
+  })
+
+  it('keeps the bullet of an item whose text alone is bold', () => {
+    const content = '<ul><li><p><span style="font-weight: 700">a</span></p></li></ul>'
+    expect(converted([{ id: 'box', type: 'text', content }]).dropped).toEqual([])
+  })
+
   it('keeps whitespace the old view draws', () => {
     const { doc, dropped } = converted([{ id: 'box', type: 'text', content: '<p>A  B\tC\nD</p>' }])
     expect(bodyOf(doc, 'box').content[0].content[0].text).toBe('A  B\tC\nD')
@@ -806,6 +839,23 @@ describe('what the deck draws, against the old view', () => {
       '<table style="min-width: 25px"><colgroup><col style="min-width: 25px"></colgroup><tbody><tr><td colspan="1" rowspan="1"><p>a</p></td></tr></tbody></table>'
     const { dropped } = converted([{ id: 'box', type: 'table', width: 100, content }])
     expect(dropped).toEqual([])
+  })
+
+  it('keeps bold in a header cell', () => {
+    const content =
+      '<table style="min-width: 25px"><colgroup><col style="min-width: 25px"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p><strong>a</strong></p></th></tr></tbody></table>'
+    expect(converted([{ id: 'box', type: 'table', width: 100, content }]).dropped).toEqual([])
+  })
+
+  // A header cell draws at 600, so its bold draws heavier than 700
+  it('refuses a 700 weight in a header cell, which saved as bold would draw heavier', () => {
+    const content =
+      '<table style="min-width: 25px"><colgroup><col style="min-width: 25px"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p><span style="font-weight: 700">a</span></p></th></tr></tbody></table>'
+    expect(refusal({ type: 'table', width: 100, content })).toEqual({
+      kind: 'failed',
+      reason: 'check',
+      detail: 'html',
+    })
   })
 
   it.each([

@@ -8,11 +8,31 @@ const INHERITED = [
   'color',
   'font-family',
   'font-size',
+  'font-weight',
   'letter-spacing',
   'line-height',
   'text-align',
   'text-transform',
 ]
+const FONT_WEIGHT = 'font-weight'
+// What `.tableElement table th` gives a header cell
+const HEADER_WEIGHT = '600'
+const WEIGHT_KEYWORDS: Record<string, string> = { normal: '400', bold: '700' }
+// CSS's steps for `bolder` and `lighter`: below each bound, the weight drawn, where null keeps the one inherited
+const RELATIVE_WEIGHTS: Record<string, [below: number, weight: number | null][]> = {
+  bolder: [
+    [350, 400],
+    [550, 700],
+    [900, 900],
+    [Infinity, null],
+  ],
+  lighter: [
+    [100, null],
+    [550, 100],
+    [750, 400],
+    [Infinity, 700],
+  ],
+}
 const MARKER_OPACITY = '--marker-opacity'
 const OPACITY = 'opacity'
 // Removes the floats' own noise from a product of opacities and nothing a browser could draw
@@ -89,6 +109,8 @@ type Character = [text: string, look: string, block: number, isBoxed?: boolean]
 interface Drawing {
   blocks: string[]
   markers: string[]
+  // Apart from `markers`: a marker takes its weight from its paragraph, which no look run changes
+  markerWeights: string[]
   runs: Run[]
   items: { paragraph: Element; place: Place }[]
 }
@@ -155,6 +177,17 @@ function clampedOpacity(value: string) {
   return Math.min(1, Math.max(0, Number(value)))
 }
 
+// The weight a character draws at, as a number where CSS gives one
+function drawnWeight(value: string, inherited: string) {
+  const steps = RELATIVE_WEIGHTS[value]
+  if (!steps || Number.isNaN(Number(inherited))) {
+    return WEIGHT_KEYWORDS[value] ?? value
+  }
+
+  const [, weight] = steps.find(([below]) => Number(inherited) < below)!
+  return String(weight ?? inherited)
+}
+
 // `own` holds what isn't inherited: for a mark, what it adds to its text
 function entered(element: Element, tag: string, place: Place, own: Map<string, string>): Place {
   const next: Place = {
@@ -166,6 +199,13 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
     next.styles.delete('line-height')
   }
 
+  // The app's preflight draws `strong` one step bolder
+  if (tag === 'strong') {
+    next.styles.set(FONT_WEIGHT, drawnWeight('bolder', place.styles.get(FONT_WEIGHT)!))
+  } else if (tag === 'th') {
+    next.styles.set(FONT_WEIGHT, HEADER_WEIGHT)
+  }
+
   for (const [name, value] of styleEntries(element)) {
     const isKeyword = isInherited(name) && INHERIT_KEYWORDS.has(value.toLowerCase())
     if (name === OPACITY) {
@@ -175,6 +215,8 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
       next.styles.set(name, place.styles.get(name)!)
     } else if (isKeyword) {
       next.styles.delete(name)
+    } else if (name === FONT_WEIGHT) {
+      next.styles.set(name, drawnWeight(value, place.styles.get(name)!))
     } else if (isInherited(name)) {
       next.styles.set(name, value)
       next.fromItem[tag === 'li' ? 'add' : 'delete'](name)
@@ -235,7 +277,7 @@ function blockAttributes(element: Element, tag: string, own: Map<string, string>
 
   // An ordered item's marker column is measured in `ch` of its own font, so its font reaches its text
   if (isOrderedItem(element, tag)) {
-    own.set('font', place.styles.get('font-family') ?? '')
+    own.set('font', [place.styles.get('font-family'), place.styles.get(FONT_WEIGHT)].join(' '))
   }
 }
 
@@ -258,14 +300,16 @@ function drawBlock(element: Element, place: Place, rules: DrawRules, drawing: Dr
   next.lineFit = lineFit(next.styles)
   if (tag === 'p' && place.parentTag === 'li' && !element.previousElementSibling) {
     drawing.markers.push(markerEntry(next, element.parentElement))
+    drawing.markerWeights.push(next.styles.get(FONT_WEIGHT)!)
     drawing.items.push({ paragraph: element, place: next })
   }
 
   drawChildren(element, next, rules, drawing)
 }
 
+// Bold is the weight it draws, in the run's styles
 function formatsOf(element: Element, drawn: string, own: Map<string, string>) {
-  if (element.localName !== 'span') {
+  if (element.localName !== 'span' && drawn !== 'strong') {
     own.set(drawn, '')
   }
 
@@ -355,10 +399,13 @@ function drawChildren(parent: Element, place: Place, rules: DrawRules, drawing: 
 }
 
 function drawingOf(root: Element, rules: DrawRules): Drawing {
-  const drawing: Drawing = { blocks: [], markers: [], runs: [], items: [] }
+  const drawing: Drawing = { blocks: [], markers: [], markerWeights: [], runs: [], items: [] }
   const place: Place = {
-    // The app's own line height, which the rule above only overrides on a line and an item
-    styles: new Map([['line-height', '1.5']]),
+    // The app's own line height, which the rule above only overrides on a line and an item, and weight
+    styles: new Map([
+      ['line-height', '1.5'],
+      [FONT_WEIGHT, '400'],
+    ]),
     formats: new Map(),
     opacity: 1,
     fromItem: new Set(),
@@ -469,7 +516,9 @@ export function compareBodies(old: Element, saved: Element, rules: DrawRules, he
     isSameBody:
       sameList(oldDrawing.blocks, savedDrawing.blocks) &&
       sameList(characters(oldDrawing, rules, new Set()), characters(savedDrawing, rules, held)),
-    isSameMarkers: sameList(oldDrawing.markers, savedDrawing.markers),
+    isSameMarkers:
+      sameList(oldDrawing.markers, savedDrawing.markers) &&
+      sameList(oldDrawing.markerWeights, savedDrawing.markerWeights),
   }
 }
 
