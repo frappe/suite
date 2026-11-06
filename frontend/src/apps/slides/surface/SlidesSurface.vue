@@ -516,8 +516,14 @@ async function showConvertedSlides(run: number) {
   const close = await watchConvertedSlides(props.session, (drawn) => {
     if (run !== latestLoad) return
 
+    // a redraw keeps the shown slide, or the one in its place when it was deleted
+    const at = slideIndex.value ?? 0
+    const kept = drawn.findIndex(({ clientId }) => clientId === slides.value[at]?.clientId)
     slides.value = drawn
     slidesLength.value = drawn.length
+    if (drawn.length) {
+      setSlideIndex((kept === -1 ? at : kept) + 1)
+    }
   })
   if (!close) {
     throw new Error(translate('Could not open this presentation.'))

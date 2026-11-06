@@ -47,7 +47,7 @@ const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow'
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { setActiveElements } = await import('@/apps/slides/stores/element')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
-const { addSlide } = await import('@/apps/slides/collab/deck')
+const { addSlide, deleteSlide } = await import('@/apps/slides/collab/deck')
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
@@ -316,6 +316,35 @@ describe('a deck on the content layer', () => {
     addSlide(doc)
 
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+  })
+
+  function shownText() {
+    const texts = drawnTexts()
+    return texts[slideIndex.value ?? 0]
+  }
+
+  it('moves to a slide that is left when the shown one is deleted in the room', async () => {
+    const doc = convertedRoom('one', 'two')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+    slideIndex.value = 1
+
+    deleteSlide(doc, 'two')
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    expect(shownText()).toContain('>one</p>')
+  })
+
+  it('keeps showing the same slide when one before it is deleted in the room', async () => {
+    const doc = convertedRoom('one', 'two', 'three')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+    slideIndex.value = 1
+
+    deleteSlide(doc, 'one')
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+    expect(shownText()).toContain('>two</p>')
   })
 
   it('drops a room that opens after its presentation was left, so the next one keeps its own slides', async () => {
