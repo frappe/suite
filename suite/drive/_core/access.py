@@ -1481,7 +1481,7 @@ def _write_activity(
 
 def announce_access(node: Mapping) -> None:
     """Call `access_changed` for each document at or below `node` once this write commits."""
-    from suite.drive._core.content import registry
+    from suite.drive._core.content import call_app_after_commit, registry
 
     callbacks = {doctype: spec.access_changed for doctype, spec in registry().items() if spec.access_changed}
     if not callbacks:
@@ -1501,19 +1501,8 @@ def announce_access(node: Mapping) -> None:
             "prefix": "" if is_root else f"{node.get('path') or '/'}{node.get('name')}/%",
         },
     )
-    if documents:
-        frappe.db.after_commit.add(lambda: _send_access_changed(callbacks, documents))
-
-
-def _send_access_changed(callbacks: Mapping[str, Callable[[str], None]], documents) -> None:
-    from suite.drive._core.content import call_app
-
     for name, doctype in documents:
-        try:
-            call_app(callbacks[doctype], name)
-        except Exception:
-            # A file log: an Error Log row written after the request's commit would never be committed
-            frappe.logger("suite.drive").exception("Drive: could not announce the access of %s", name)
+        call_app_after_commit(callbacks[doctype], name, "access")
 
 
 def _single_address(value) -> bool:

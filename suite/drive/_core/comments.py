@@ -818,15 +818,7 @@ def announce_threads(node: frappe._dict) -> None:
     """Call the node's `threads_changed` callback once this write commits."""
     spec = content.registry().get(node.content_doctype)
     if spec and spec.threads_changed:
-        frappe.db.after_commit.add(lambda: send_threads_changed(spec.threads_changed, node.name))
-
-
-def send_threads_changed(callback: Callable[[str], None], node: str) -> None:
-    try:
-        content.call_app(callback, node)
-    except Exception:
-        # A file log: an Error Log row written after the request's commit would never be committed
-        frappe.logger("suite.drive").exception("Drive: could not announce the threads of %s", node)
+        content.call_app_after_commit(spec.threads_changed, node.name, "threads")
 
 
 def _require_editor_or_author(

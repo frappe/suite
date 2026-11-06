@@ -257,6 +257,19 @@ def call_app(callback: Callable, /, *args, **kwargs):
         return callback(*args, **kwargs)
 
 
+def call_app_after_commit(callback: Callable[[str], None], node: str, what: str) -> None:
+    """Call `callback(node)` once this write commits, logging a failure as one to announce `what`."""
+
+    def send() -> None:
+        try:
+            call_app(callback, node)
+        except Exception:
+            # A file log: an Error Log row written after the request's commit would never be committed
+            frappe.logger("suite.drive").exception("Drive: could not announce the %s of %s", what, node)
+
+    frappe.db.after_commit.add(send)
+
+
 def call_app_stream(callback: Callable, /, *args, **kwargs) -> tuple[IO[bytes], str]:
     """Call a `(stream, mime)` callback and guard the stream it answered.
 
