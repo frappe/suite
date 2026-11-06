@@ -29,6 +29,7 @@
     <div
       v-else-if="!loading && !query.rows.length"
       class="flex flex-col items-center justify-center gap-2 py-16 text-center"
+      :class="emptyFades && FADE_IN"
     >
       <span
         :class="[emptyIcon ?? 'lucide-folder-open', 'size-6 text-ink-gray-4']"
@@ -49,6 +50,7 @@
         :columns="columnTracks"
         :row-height="40"
         class="-mx-3 list-row-px-3"
+        :class="loading && delayedSkeleton && FADE_IN"
         :aria-busy="loading || undefined"
         v-bind="gridRoles"
       >
@@ -239,7 +241,7 @@
     </template>
 
     <template v-else>
-      <section v-if="loading" aria-busy="true">
+      <section v-if="loading" aria-busy="true" :class="delayedSkeleton && FADE_IN">
         <div
           class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-3"
           aria-hidden="true"
@@ -399,7 +401,7 @@ import {
   ListHeaderCellSort,
   ListRow,
 } from 'frappe-ui/list'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
 import type { DriveAudience, DriveNode } from '@/apps/drive/client/types'
@@ -595,7 +597,26 @@ const SKELETON_CARD_NAMES = [
 ]
 
 const loading = computed(() => props.query.status === 'pending' && !props.query.rows.length)
-const isBlank = useSkeletonDelay(loading)
+const delayedSkeleton = useTweak('t38-delayed-skeleton')
+const isBlank = useSkeletonDelay(loading, () => (delayedSkeleton.value ? 200 : 180))
+/** A 150 ms fade as an element appears, none under reduced motion. Placeholders a load soon replaces barely show. */
+const FADE_IN = 'motion-safe:animate-[files-listing-fade-in_150ms_ease-out]'
+/**
+ * The empty state fades in when a load ends in it, so it does not snap in after
+ * the blank or the placeholders. One the cache already knew shows at once.
+ */
+const emptyFades = shallowRef(false)
+let emptyFadeTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  loading,
+  (isLoading) => {
+    clearTimeout(emptyFadeTimer)
+    if (isLoading) emptyFades.value = delayedSkeleton.value
+    else emptyFadeTimer = setTimeout(() => (emptyFades.value = false), 300)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => clearTimeout(emptyFadeTimer))
 const rows = computed(() => props.query.rows)
 const COLUMN_TRACKS = new Map<string, string>(
   Object.entries({
@@ -865,3 +886,12 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 </script>
+
+<style>
+/* Not scoped: a scoped name would not match the Tailwind class that uses it. */
+@keyframes files-listing-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+</style>

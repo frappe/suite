@@ -465,6 +465,7 @@ describe('FilesListing grid previews', () => {
 describe('FilesListing loading', () => {
   afterEach(() => {
     vi.useRealTimers()
+    setTweaks(['t38-delayed-skeleton'], true)
   })
 
   it('shows placeholders only when a load is slow, then the files in their place', async () => {
@@ -485,6 +486,48 @@ describe('FilesListing loading', () => {
     await nextTick()
     expect(placeholders()).toBe(0)
     expect(root.querySelector('[data-node="a"]')?.textContent).toContain('Alpha.png')
+  })
+
+  const placeholders = (root: HTMLElement) =>
+    root.querySelectorAll('[data-slot="list-row"][aria-hidden="true"]').length
+  const emptyState = (root: HTMLElement) =>
+    [...root.querySelectorAll('p')].find((p) => p.textContent === 'Empty')?.parentElement
+
+  it('stays blank for 200 ms, and fades the empty state in after a load', async () => {
+    vi.useFakeTimers()
+    const { root, query } = mount({ rows: [], status: 'pending' })
+    await nextTick()
+
+    vi.advanceTimersByTime(190)
+    await nextTick()
+    expect(placeholders(root)).toBe(0)
+
+    query.status = 'success'
+    await nextTick()
+    expect(placeholders(root)).toBe(0)
+    expect(emptyState(root)?.className).toContain('animate-')
+  })
+
+  it('shows an empty folder the cache already knew at once, without a fade', async () => {
+    const { root } = mount({ rows: [], status: 'success' })
+    await nextTick()
+
+    expect(emptyState(root)?.className).not.toContain('animate-')
+  })
+
+  it('shows placeholders after 180 ms and no fade, with the tweak off', async () => {
+    setTweaks(['t38-delayed-skeleton'], false)
+    vi.useFakeTimers()
+    const { root, query } = mount({ rows: [], status: 'pending' })
+    await nextTick()
+
+    vi.advanceTimersByTime(190)
+    await nextTick()
+    expect(placeholders(root)).toBeGreaterThan(0)
+
+    query.status = 'success'
+    await nextTick()
+    expect(emptyState(root)?.className).not.toContain('animate-')
   })
 })
 
