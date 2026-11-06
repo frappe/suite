@@ -14,11 +14,12 @@
     :preview-italic="!mail.preview"
     :account-label="accountLabel"
     :draggable
+    :stacked="stacked || (isSearchRow && tweaks.match !== 'line')"
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
     @drag-start="(e: DragEvent) => emit('dragStart', e)"
     @drag-end="emit('dragEnd')"
   >
-    <template #sender><HighlightedText :text="header" :term="searchTerm" /></template>
+    <template #sender><HighlightedText :text="header" :term="markedWords" /></template>
 
     <template #badges>
       <!-- How many messages the thread holds — only worth saying once it holds more than one. -->
@@ -41,10 +42,20 @@
     </template>
 
     <template #subject>
-      <HighlightedText :text="mail.subject || __('[No subject]')" :term="searchTerm" />
+      <HighlightedText :text="mail.subject || __('[No subject]')" :term="markedWords" />
     </template>
     <template #preview>
-      <HighlightedText :text="mail.preview || __('— No message body —')" :term="searchTerm" />
+      <!-- Each matching message lists itself below, so here only a match with no words of its own. -->
+      <SearchMatch
+        v-if="newestMatch?.snippet && !listsMatches"
+        :match="newestMatch"
+        :wrap="tweaks.match === 'lines'"
+      />
+      <HighlightedText
+        v-else-if="!listsMatches"
+        :text="mail.preview || __('— No message body —')"
+        :term="markedWords"
+      />
     </template>
 
     <template #trailing="{ isHovered }">
@@ -63,6 +74,33 @@
     </template>
 
     <template #extra="{ isFullWidth }">
+      <template v-if="listsMatches">
+        <button
+          v-for="found in shownMatches"
+          :key="found.id"
+          class="hover:bg-surface-gray-2 -mx-1 flex w-[calc(100%+0.5rem)] min-w-0 items-baseline gap-1.5 rounded-4 px-1 text-left text-sm !leading-[1.5]"
+          @click.stop.prevent="emit('openMatch', found.id)"
+        >
+          <span class="text-ink-gray-8 shrink-0">{{ found.from_name || found.from_email }}</span>
+          <span class="text-ink-gray-5 truncate">
+            <SearchMatch v-if="found.snippet" :match="found" />
+          </span>
+        </button>
+        <p v-if="unlistedMatches" class="text-ink-gray-5 text-xs">
+          {{ __('+{0} more', [String(unlistedMatches)]) }}
+        </p>
+      </template>
+      <p
+        v-else-if="isSearchRow && tweaks.match === 'line' && earlierMatches"
+        class="text-ink-gray-5 text-xs"
+        :class="{ 'shrink-0 whitespace-nowrap': isFullWidth }"
+      >
+        {{
+          earlierMatches === 1
+            ? __('Also in 1 earlier message')
+            : __('Also in {0} earlier messages', [String(earlierMatches)])
+        }}
+      </p>
       <div
         v-if="
           attachments.length ||
@@ -178,7 +216,9 @@ import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
+import SearchMatch from '@/apps/mail/components/SearchMatch.vue'
 import { useScreener } from '@/apps/mail/composables/useScreener'
+import { useSearchTweaks } from '@/apps/mail/composables/useSearchTweaks'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
@@ -191,6 +231,7 @@ import {
   threadParticipants,
 } from '@/apps/mail/utils/participants'
 import { isReceived, receivedFolders, searchFolders } from '@/apps/mail/utils/receivedMail'
+import { searchWords } from '@/apps/mail/utils/searchFilters'
 import { mailboxParam, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import HighlightedText from '@/components/HighlightedText.vue'
 
@@ -209,6 +250,7 @@ const {
   hideAvatar = false,
   outgoing,
   screened = false,
+  stacked = false,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -242,6 +284,8 @@ const {
   outgoing?: boolean
   // A screened thread mixed into the inbox: an ordinary row, marked with the New sender icon.
   screened?: boolean
+  // Forwarded to MailRow — see there.
+  stacked?: boolean
 }>()
 
 const emit = defineEmits([
@@ -254,6 +298,7 @@ const emit = defineEmits([
   'setSelected',
   'dragStart',
   'dragEnd',
+  'openMatch',
 ])
 
 const route = useRoute()
@@ -348,9 +393,22 @@ const messageCount = computed(() => mail.messages?.length ?? 0)
 const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail))
 
 // In search results, the words the row was found by are marked.
-const searchTerm = computed(() =>
-  mailbox === 'search' ? ((route.query.text as string) || '').trim() : '',
+const isSearchRow = computed(() => mailbox === 'search')
+const markedWords = computed(() =>
+  isSearchRow.value ? searchWords(route.query.text as string, mail.marked_words) : '',
 )
+
+// How the row says which of its messages matched.
+const { tweaks } = useSearchTweaks()
+const MATCHES_LISTED = 3
+const newestMatch = computed(() => (isSearchRow.value ? mail.matches?.[0] : undefined))
+const earlierMatches = computed(() => Math.max((mail.matches?.length ?? 0) - 1, 0))
+const shownMatches = computed(() => mail.matches?.slice(0, MATCHES_LISTED) ?? [])
+// A single match has nothing to choose between, and says all it can in the row's own preview.
+const listsMatches = computed(
+  () => tweaks.value.match === 'messages' && shownMatches.value.length > 1,
+)
+const unlistedMatches = computed(() => Math.max((mail.matches?.length ?? 0) - MATCHES_LISTED, 0))
 
 const showAttachmentViewer = ref(false)
 const attachmentIndex = ref(0)

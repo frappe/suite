@@ -842,6 +842,7 @@ const {
   slide,
   account,
   landOn,
+  searchWords,
 } = defineProps<{
   mailbox: string
   threadID?: string
@@ -849,6 +850,8 @@ const {
   messages?: Mail[]
   // The message to open on, for a search: its newest match (see scrollToLanding).
   landOn?: string
+  /** The words to mark in the message it opens on, where they aren't simply what was typed. */
+  searchWords?: string
   canGoNext?: boolean
   // The thread's owning account, when it isn't the active one (All Inboxes opens
   // cross-account threads without switching): the pane and everything inside it —
@@ -1119,7 +1122,7 @@ const sourceMessages = (): Mail[] | undefined => {
 let landsPending = true
 // The words the search found the thread by, marked in the message it opens on.
 const searchTerm = computed(() =>
-  mailbox === 'search' ? ((route.query.text as string) || '').trim() : '',
+  mailbox === 'search' ? searchWords || ((route.query.text as string) || '').trim() : '',
 )
 const isMatch = (mail: Mail) => !!landOn && mailCopyIds(mail).includes(landOn)
 // The message the pane opens on, unfolded: undefined while it can't be told yet, null for the top.
@@ -1174,7 +1177,9 @@ const scrollToLanding = (data: Mail[]): boolean => {
 }
 watch(
   () => [mailboxIds.value.drafts, landOn],
-  () => {
+  ([, match], [, previous]) => {
+    // Another match of the open thread was asked for: it lands again, there.
+    if (match && previous && match !== previous) landsPending = true
     if (landsPending && thread.value.length && scrollToLanding(thread.value)) landsPending = false
   },
 )

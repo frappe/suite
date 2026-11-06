@@ -150,6 +150,9 @@ export function observe<I, O>(
           : [],
       )
     },
+    get lastPage() {
+      return materializedPages().at(-1)
+    },
     get hasNext() {
       const last = materializedPages().at(-1)
       if (!isRecord(last)) return false

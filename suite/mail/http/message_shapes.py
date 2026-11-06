@@ -124,14 +124,35 @@ class TabCount(TypedDict):
     unread_threads: int
 
 
+class SearchSegment(TypedDict):
+    text: str
+    hit: bool
+
+
+class SearchMatch(TypedDict):
+    id: str
+    from_name: str | None
+    from_email: str | None
+    received_at: str
+    # Empty where the search had no words to mark, or the words were elsewhere than the body.
+    snippet: list[SearchSegment] | None
+    in_attachment: Flag
+
+
 class SearchRow(Thread):
     # The conversation's newest message that matched, which the row describes and opens on.
     match_id: str
+    # The messages that matched, newest first. Only the first few carry their words.
+    matches: list[SearchMatch]
+    # The words as the mail spells them, for marking them wherever else they fall.
+    marked_words: list[str]
 
 
 class SearchPage(TypedDict):
     rows: list[SearchRow]
     total: int
+    # Searching across accounts: the ones that couldn't be reached.
+    unavailable_accounts: NotRequired[list[str]]
 
 
 SearchFilter = TypedDict(

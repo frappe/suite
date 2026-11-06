@@ -156,6 +156,7 @@ const {
   selectionMode = false,
   hideAvatar = false,
   accountLabel,
+  stacked = false,
 } = defineProps<{
   // Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
   to?: RouteLocationRaw
@@ -183,6 +184,9 @@ const {
   // Whether the row can be dragged onto a folder. Off on touch, where the browser
   // gives HTML5 drag no events at all and a long press already means selection.
   draggable?: boolean
+  // Lines stacked even with the reading pane off: for a row with more to say than a column holds, or
+  // a list that has just made room for a thread beside it.
+  stacked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -227,7 +231,7 @@ const onRowClick = (e: MouseEvent) => {
 
 // With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
 // instead of a stacked block.
-const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value))
+const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value || stacked))
 
 // A stack member's sender is worth dropping only in the stacked layout, where the sender owns a whole
 // line and repeating the same name down a run costs a third of every row's height. Full-width keeps it:

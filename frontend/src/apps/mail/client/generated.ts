@@ -5900,6 +5900,15 @@ export type SearchMailsOutputRecipient = {
 
 export type SearchMailsOutputReplyAddress = { email: string; display_name: string | null }
 
+export type SearchMailsOutputSearchMatch = {
+  id: string
+  from_name: string | null
+  from_email: string | null
+  received_at: string
+  snippet: Array<SearchMailsOutputSearchSegment> | null
+  in_attachment: 0 | 1
+}
+
 export type SearchMailsOutputSearchRow = {
   name: string
   id: string
@@ -5929,7 +5938,11 @@ export type SearchMailsOutputSearchRow = {
   messages: Array<SearchMailsOutputMessage>
   user_image?: string | null
   match_id: string
+  matches: Array<SearchMailsOutputSearchMatch>
+  marked_words: Array<string>
 }
+
+export type SearchMailsOutputSearchSegment = { text: string; hit: boolean }
 
 export type SearchMailsInput = {
   account: string
@@ -5939,7 +5952,11 @@ export type SearchMailsInput = {
   all_accounts?: boolean
 }
 
-export type SearchMailsOutput = { rows: Array<SearchMailsOutputSearchRow>; total: number }
+export type SearchMailsOutput = {
+  rows: Array<SearchMailsOutputSearchRow>
+  total: number
+  unavailable_accounts?: Array<string>
+}
 
 export type SearchMailsError = 'PermissionError' | 'ValidationError'
 
