@@ -102,11 +102,13 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	// The room keeps the state a restore replaces as a version of its own.
 	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring version" });
 	await expect(before).toHaveCount(0);
-	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "Restore" }).click();
+	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
+	await page.getByRole("menuitem", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 	await expect(before).toHaveCount(1);
-	await expect(versions.getByRole("listitem").first()).toContainText("Before restoring version");
+	// The first row is the current version; the newest saved version comes next.
+	await expect(versions.getByRole("listitem").nth(1)).toContainText("Before restoring version");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).
