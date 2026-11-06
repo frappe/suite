@@ -1,6 +1,35 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
-import { formatModified } from './format'
+import { setTweaks } from '@/platform/tweaks'
+
+import { formatBytes, formatModified } from './format'
+
+describe('byte counts', () => {
+  afterEach(() => setTweaks(['t6'], true))
+
+  it('counts in 1024s, with one decimal below 100 and none when it is whole', () => {
+    expect(
+      [0, 1023, 1024, 1126, 150 * 1024, 2.4 * 1024 ** 3, 10 * 1024 ** 3].map((bytes) =>
+        formatBytes(bytes, { locale: 'en' }),
+      ),
+    ).toEqual(['0 B', '1,023 B', '1 KB', '1.1 KB', '150 KB', '2.4 GB', '10 GB'])
+  })
+
+  it("uses the reader's decimal separator", () => {
+    expect(formatBytes(2.4 * 1024 ** 3, { locale: 'de' })).toBe('2,4 GB')
+  })
+
+  it('rounds up for a limit, so a file just over it never reads as the limit', () => {
+    expect(formatBytes(1025, { locale: 'en' })).toBe('1 KB')
+    expect(formatBytes(1025, { roundUp: true, locale: 'en' })).toBe('1.1 KB')
+  })
+
+  it('counts in 1000s with the tweak off', () => {
+    setTweaks(['t6'], false)
+    expect(formatBytes(10_000_000_000)).toBe('10.0 GB')
+    expect(formatBytes(900_000)).toBe('900 KB')
+  })
+})
 
 describe('listing dates', () => {
   const now = new Date(2026, 9, 2, 15, 0)

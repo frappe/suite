@@ -146,14 +146,15 @@ async function holdUsage(page: Page, breakdown: Record<string, unknown>) {
 	return release;
 }
 
+// Sizes are whole KB in base 1024, as Drive counts them.
 const FILLED = {
 	by_type: [
-		{ type: "PDF", bytes: 900_000 },
-		{ type: "Image", bytes: 500_000 },
+		{ type: "PDF", bytes: 900 * 1024 },
+		{ type: "Image", bytes: 500 * 1024 },
 	],
 	largest: [
-		{ node: "n1", title: "report.pdf", size: 900_000, mime: "application/pdf", kind: "file", type: "PDF" },
-		{ node: "n2", title: "photo.png", size: 500_000, mime: "image/png", kind: "file", type: "Image" },
+		{ node: "n1", title: "report.pdf", size: 900 * 1024, mime: "application/pdf", kind: "file", type: "PDF" },
+		{ node: "n2", title: "photo.png", size: 500 * 1024, mime: "image/png", kind: "file", type: "Image" },
 	],
 };
 

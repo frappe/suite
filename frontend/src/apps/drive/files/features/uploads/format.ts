@@ -1,7 +1,11 @@
+import { formatBytes as formatDriveBytes } from '@/apps/drive/files/internal/format'
+import { isTweakOn } from '@/platform/tweaks'
+
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB']
 
-/** A byte count as people read it: `0 B`, `12.4 MB`. Base 1024, like the storage settings. */
+/** A byte count as people read it: `0 B`, `12.4 MB`. Drive's own format while t6 is on. */
 export function formatBytes(bytes: number): string {
+  if (isTweakOn('t6')) return formatDriveBytes(Math.max(0, bytes))
   let value = Math.max(0, bytes)
   let unit = 0
   while (value >= 1024 && unit < UNITS.length - 1) {
@@ -19,6 +23,7 @@ export function formatBytes(bytes: number): string {
  * of the same refusal this way.
  */
 export function formatSize(bytes: number, { roundUp = false }: { roundUp?: boolean } = {}): string {
+  if (isTweakOn('t6')) return formatDriveBytes(Math.max(0, bytes), { roundUp })
   let value = Math.max(0, bytes)
   let unit = 0
   while (value >= 1024 && unit < UNITS.length - 1) {
