@@ -532,7 +532,6 @@ const pagerLoading = computed(
         :download="downloadUrl"
       >
         <Button
-          variant="solid"
           :label="__('Open as spreadsheet')"
           icon-left="lucide-sheet"
           :loading="openingAsSheet"
