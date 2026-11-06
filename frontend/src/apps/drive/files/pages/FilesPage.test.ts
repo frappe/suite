@@ -155,10 +155,17 @@ vi.mock('../features/uploads/DriveUploads.vue', async () => {
     }),
   }
 })
-const dialogs = vi.hoisted(() => ({ showDetails: vi.fn(async () => {}) }))
+const dialogs = vi.hoisted(() => ({
+  showDetails: vi.fn(async () => {}),
+  share: vi.fn(async () => false),
+}))
 vi.mock('@/apps/drive', async (original) => ({
   ...(await original<typeof import('@/apps/drive')>()),
-  useDriveDialogs: () => ({ ...dialogs, move: vi.fn(), share: vi.fn() }),
+  useDriveDialogs: () => ({ ...dialogs, move: vi.fn() }),
+}))
+// The page's keyboard shortcuts, as it registers them.
+const keys = vi.hoisted(() => ({
+  shortcuts: [] as Array<{ description: string; handler: (event: KeyboardEvent) => void }>,
 }))
 
 const quiet = () =>
@@ -178,7 +185,7 @@ vi.mock('frappe-ui', () => ({
   PageHeaderMobile: quiet(),
   TabButtons: quiet(),
   TextInput: quiet(),
-  useKeyboardShortcut: () => {},
+  useKeyboardShortcut: (shortcuts: typeof keys.shortcuts) => keys.shortcuts.push(...shortcuts),
 }))
 for (const part of [
   '../features/ViewSettings.vue',
@@ -252,6 +259,8 @@ afterEach(() => {
   listing.menu = null
   uploads.upload.mockReset()
   dialogs.showDetails.mockClear()
+  dialogs.share.mockClear()
+  keys.shortcuts = []
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
@@ -558,5 +567,41 @@ describe('A selection', () => {
     await vi.waitFor(() => expect(bulkButton(root, 'Star')).toBeDefined())
     const unstarred = server.calls.filter((call) => call.id === 'node_delete_favourite')
     expect(unstarred.map((call) => call.input.node).sort()).toEqual(['a', 'c'])
+  })
+})
+
+describe('Keyboard shortcuts', () => {
+  function press(description: string) {
+    const shortcut = keys.shortcuts.find((candidate) => candidate.description === description)
+    shortcut?.handler(new KeyboardEvent('keydown', { cancelable: true }))
+  }
+
+  it('run the item the menus show for them', async () => {
+    // A folder of its own, so its rows are not ones an earlier test cached.
+    for (const name of ['x', 'y', 'z']) {
+      server.nodes.set(
+        name,
+        node(name, `${name}.png`, { parent_node: 'folder-6', access: { role: 50 } }),
+      )
+    }
+    const { root } = await mount('/drive/f/folder-6/drafts')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    menuItem('x', 'Select')?.onClick()
+    await nextTick()
+
+    press('Share selected item')
+    expect(dialogs.share).toHaveBeenCalledWith('x')
+
+    press('Select all')
+    await nextTick()
+    expect(root.textContent).toContain('3 selected')
+
+    press('Delete selected items')
+    await vi.waitFor(() =>
+      expect(server.calls.find((call) => call.id === 'node_batch')?.input).toEqual({
+        nodes: ['x', 'y', 'z'],
+        patch: { state: 'Trashed' },
+      }),
+    )
   })
 })

@@ -58,7 +58,7 @@
             <template v-if="selectionMode">
               <div class="flex min-w-0 items-center gap-2">
                 <Button
-                  v-for="action in bulkActions"
+                  v-for="action in bulkMenu.options"
                   :key="action.label"
                   :label="action.label"
                   :icon-left="action.icon"
@@ -303,11 +303,7 @@ import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
 import { copyLink } from '../features/share/shareFormat'
-import {
-  menuCommand,
-  useListingShortcuts,
-  type ListingView,
-} from '../features/shortcuts/useListingShortcuts'
+import { useListingShortcuts, type ListingView } from '../features/shortcuts/useListingShortcuts'
 import TemplatePicker from '../features/TemplatePicker.vue'
 import { useTrashActions } from '../features/trash/useTrashActions'
 import {
@@ -874,6 +870,22 @@ const trashedNotice = computed<{
     secondary: restore && remove,
   }
 })
+// Options a keyboard shortcut also runs, defined once so the key finds the item its menu shows.
+const selectAllOption: DropdownActionOption = {
+  label: 'Select all',
+  icon: 'lucide-list-checks',
+  onClick: selectAll,
+}
+const newFolderOption = typedOption(
+  'Folder',
+  { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
+  () => create('folder'),
+)
+const uploadFilesOption: DropdownActionOption = {
+  label: 'Files',
+  icon: 'lucide-upload',
+  onClick: () => pickUpload('files'),
+}
 const moreOptions = computed<DropdownItem[]>(() => [
   ...(folderActions.value.length ? [{ group: 'This folder', options: folderActions.value }] : []),
   ...(hasRows.value
@@ -883,7 +895,7 @@ const moreOptions = computed<DropdownItem[]>(() => [
           hideLabel: true,
           options: [
             { label: 'Select rows', icon: 'lucide-square-check', onClick: selectFirst },
-            { label: 'Select all', icon: 'lucide-list-checks', onClick: selectAll },
+            selectAllOption,
           ],
         },
       ]
@@ -901,66 +913,74 @@ const moreOptions = computed<DropdownItem[]>(() => [
         },
       ]),
 ])
-/** What a selection of several items offers, in the toolbar and on right-click. */
+/**
+ * What a selection of several items offers, in the toolbar and on right-click,
+ * and the options among them that a keyboard shortcut runs.
+ */
 // An action is enabled only when every selected row allows it (spec §5.8).
-const bulkActions = computed(() => {
+const bulkMenu = computed(() => {
   const allow = (action: keyof NodeActions) => allAllow(selectedRows.value, action, signedIn.value)
-  return trashActions.value
-    ? [
-        {
-          label: 'Restore',
-          icon: 'lucide-undo-2',
-          disabled: trash.pending.value || !allow('restore'),
-          onClick: runRestore,
-        },
-        {
-          label: 'Delete forever',
-          icon: 'lucide-trash-2',
-          disabled: trash.pending.value || !allow('deleteForever'),
-          onClick: runPurge,
-        },
-      ]
-    : [
-        {
-          label: 'Move',
-          icon: 'lucide-folder-input',
-          disabled: !allow('move'),
-          onClick: beginBulkMove,
-        },
-        {
-          label: __('Download'),
-          icon: 'lucide-download',
-          disabled: !allow('download'),
-          onClick: () => downloadRows(selectedRows.value),
-        },
-        // A star is personal, so it needs a session.
-        ...(signedIn.value
-          ? [
-              {
-                label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
-                icon: 'lucide-star',
-                disabled: !allow('star'),
-                onClick: () => starRows(selectedRows.value),
-              },
-            ]
-          : []),
-        {
-          label: 'Move to trash',
-          icon: 'lucide-trash-2',
-          disabled: !allow('trash'),
-          onClick: runBulkTrash,
-        },
-        ...(recentActions.value
-          ? [
-              {
-                label: 'Remove from Recent',
-                icon: 'lucide-list-x',
-                disabled: clearRecentMutation.isPending,
-                onClick: () => removeFromRecent(selectedRows.value),
-              },
-            ]
-          : []),
-      ]
+  if (trashActions.value) {
+    const restore = {
+      label: 'Restore',
+      icon: 'lucide-undo-2',
+      disabled: trash.pending.value || !allow('restore'),
+      onClick: runRestore,
+    }
+    const remove = {
+      label: 'Delete forever',
+      icon: 'lucide-trash-2',
+      disabled: trash.pending.value || !allow('deleteForever'),
+      onClick: runPurge,
+    }
+    return { options: [restore, remove], commands: { move: undefined, remove } }
+  }
+  const move = {
+    label: 'Move',
+    icon: 'lucide-folder-input',
+    disabled: !allow('move'),
+    onClick: beginBulkMove,
+  }
+  const remove = {
+    label: 'Move to trash',
+    icon: 'lucide-trash-2',
+    disabled: !allow('trash'),
+    onClick: runBulkTrash,
+  }
+  return {
+    options: [
+      move,
+      {
+        label: __('Download'),
+        icon: 'lucide-download',
+        disabled: !allow('download'),
+        onClick: () => downloadRows(selectedRows.value),
+      },
+      // A star is personal, so it needs a session.
+      ...(signedIn.value
+        ? [
+            {
+              label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
+              icon: 'lucide-star',
+              disabled: !allow('star'),
+              onClick: () => starRows(selectedRows.value),
+            },
+          ]
+        : []),
+      remove,
+      ...(recentActions.value
+        ? [
+            {
+              label: 'Remove from Recent',
+              icon: 'lucide-list-x',
+              disabled: clearRecentMutation.isPending,
+              onClick: () => removeFromRecent(selectedRows.value),
+            },
+          ]
+        : []),
+    ],
+    commands: { move, remove },
+  }
 })
 /** A menu row led by the type icon the listing shows for what it creates. */
 function typedOption(
@@ -985,11 +1005,7 @@ const newOptions = computed<DropdownItem[]>(() => {
     {
       group: 'Create',
       options: [
-        typedOption(
-          'Folder',
-          { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
-          () => create('folder'),
-        ),
+        newFolderOption,
         ...documents.map((definition) =>
           typedOption(
             definition.newLabel(),
@@ -1025,7 +1041,7 @@ const newOptions = computed<DropdownItem[]>(() => {
           {
             group: 'Upload',
             options: [
-              { label: 'Files', icon: 'lucide-upload', onClick: () => pickUpload('files') },
+              uploadFilesOption,
               // Phone pickers offer no folders (spec §5.12).
               ...(narrow.value
                 ? []
@@ -1047,22 +1063,29 @@ const newOptions = computed<DropdownItem[]>(() => {
 useListingShortcuts(
   () => {
     const [only, ...others] = selectedRows.value
-    const rowMenu = only && !others.length ? rowMenuOptions(only) : []
-    const selected = selectionMode.value ? bulkActions.value : []
+    const row = only && !others.length ? rowCommands(only) : undefined
+    const selected = selectionMode.value ? bulkMenu.value.commands : undefined
     const createMenu = canCreate.value ? newOptions.value : []
     return {
-      selectAll: menuCommand(moreOptions.value, 'Select all'),
+      selectAll: shownIn(moreOptions.value, selectAllOption),
       clearSelection: selectionMode.value ? { onClick: clearSelected } : undefined,
-      move: menuCommand(selected, 'Move'),
-      remove: menuCommand(selected, trashActions.value ? 'Delete forever' : 'Move to trash'),
-      openInNewTab: menuCommand(rowMenu, 'Open in new tab'),
-      share: menuCommand(rowMenu, 'Share'),
-      upload: menuCommand(createMenu, 'Files', 'Upload'),
-      newFolder: menuCommand(createMenu, 'Folder', 'Create'),
+      move: selected?.move,
+      remove: selected?.remove,
+      openInNewTab: row?.openInNewTab,
+      share: row?.share,
+      upload: shownIn(createMenu, uploadFilesOption),
+      newFolder: shownIn(createMenu, newFolderOption),
     }
   },
   { enabled: () => signedIn.value, open: openView },
 )
+/** `option` when `items` show it, by identity rather than by its translated label. */
+function shownIn(items: readonly DropdownItem[], option: DropdownActionOption) {
+  const shown = items.some((item) =>
+    'group' in item ? item.options.includes(option) : item === option,
+  )
+  return shown ? option : undefined
+}
 function openView(view: ListingView) {
   const path = {
     personal: '/drive',
@@ -1292,7 +1315,7 @@ function onPaneContextMenu(event: MouseEvent) {
 function itemContextOptions(row: DriveNode): DropdownItem[] {
   const selected = selection.value
   if (selected.length > 1 && selected.includes(row.name)) {
-    return [{ group: `${selected.length} selected`, options: bulkActions.value }]
+    return [{ group: `${selected.length} selected`, options: bulkMenu.value.options }]
   }
   if (selected.length && !(selected.length === 1 && selected[0] === row.name)) clearSelected()
   return rowMenuOptions(row)
@@ -1300,21 +1323,14 @@ function itemContextOptions(row: DriveNode): DropdownItem[] {
 /** A row's own menu. `nodeActions` decides what it offers, so a trashed row offers only what Trash allows. */
 function rowMenuOptions(row: DriveNode): DropdownItem[] {
   const can = nodeActions(row, signedIn.value)
+  const { openInNewTab, share } = rowCommands(row, can)
   const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
     {
       group: 'Open',
       hideLabel: true,
       options: [
         { label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
-        ...(can.openInNewTab
-          ? [
-              {
-                label: 'Open in new tab',
-                icon: 'lucide-external-link',
-                onClick: () => openNode(row, true),
-              },
-            ]
-          : []),
+        ...(openInNewTab ? [openInNewTab] : []),
         ...(can.copy && opensAsSpreadsheet(row) && mayUploadBeside(row)
           ? [
               {
@@ -1324,9 +1340,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
               },
             ]
           : []),
-        ...(can.share
-          ? [{ label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }]
-          : []),
+        ...(share ? [share] : []),
         ...(can.copyLink
           ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) }]
           : []),
@@ -1419,6 +1433,21 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
     },
   ]
   return groups.filter((group) => group.options.length)
+}
+/** The options of a row's menu that a keyboard shortcut runs, when the row allows them. */
+function rowCommands(row: DriveNode, can = nodeActions(row, signedIn.value)) {
+  return {
+    openInNewTab: can.openInNewTab
+      ? {
+          label: 'Open in new tab',
+          icon: 'lucide-external-link',
+          onClick: () => openNode(row, true),
+        }
+      : undefined,
+    share: can.share
+      ? { label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }
+      : undefined,
+  }
 }
 /**
  * A row's trail, as far as the page knows it. Search rows carry their path. A
