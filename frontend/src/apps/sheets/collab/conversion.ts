@@ -6,7 +6,7 @@
 //
 // IronCalc runs in this process (no Worker): the caller loads its wasm first.
 // `sheets_data` is never written; a refused sheet opens read-only from it,
-// with a banner saying it couldn't be upgraded (useCollabRoom.ts).
+// with the banner `notUpgradedBanner` (messages.ts) gives.
 
 import * as Y from 'yjs'
 
