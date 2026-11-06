@@ -328,6 +328,22 @@ describe('text', () => {
     expect(dropped).toEqual([{ kind: 'list-marker-style' }])
   })
 
+  it.each(['margin: 0', 'margin: 0px 0', 'margin-bottom: 0'])(
+    'takes a paragraph with %s, which draws as it would with none',
+    (margin) => {
+      const content = `<p style="${margin}">a</p>`
+      expect(converted([{ id: 'box', type: 'text', content }]).dropped).toEqual([])
+    },
+  )
+
+  it('refuses a paragraph margin that moves its text', () => {
+    expect(refusal({ content: '<p style="margin: 4px">a</p>' })).toEqual({
+      kind: 'failed',
+      reason: 'check',
+      detail: 'html',
+    })
+  })
+
   it('keeps the bullet of an item whose text alone is bold', () => {
     const content = '<ul><li><p><span style="font-weight: 700">a</span></p></li></ul>'
     expect(converted([{ id: 'box', type: 'text', content }]).dropped).toEqual([])

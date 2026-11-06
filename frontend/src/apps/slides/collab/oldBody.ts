@@ -33,6 +33,8 @@ const RELATIVE_WEIGHTS: Record<string, [below: number, weight: number | null][]>
     [Infinity, 700],
   ],
 }
+// The app's preflight gives a paragraph no margin, so a zero one draws nothing
+const ZERO_MARGIN = /^margin(-(top|right|bottom|left))?: 0(px)?( 0(px)?)*$/
 const MARKER_OPACITY = '--marker-opacity'
 const OPACITY = 'opacity'
 // Removes the floats' own noise from a product of opacities and nothing a browser could draw
@@ -207,6 +209,10 @@ function entered(element: Element, tag: string, place: Place, own: Map<string, s
   }
 
   for (const [name, value] of styleEntries(element)) {
+    if (tag === 'p' && ZERO_MARGIN.test(`${name}: ${value}`)) {
+      continue
+    }
+
     const isKeyword = isInherited(name) && INHERIT_KEYWORDS.has(value.toLowerCase())
     if (name === OPACITY) {
       next.opacity *= clampedOpacity(value)
