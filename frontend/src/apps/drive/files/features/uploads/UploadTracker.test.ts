@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, reactive, type App } from 'vue'
 
-import { setTweaks } from '@/platform/tweaks'
+import { setTweaks, type TweakId } from '@/platform/tweaks'
 
 import type { UploadEntry, UploadQueue, UploadState } from './queue'
 import UploadTracker from './UploadTracker.vue'
@@ -96,7 +96,12 @@ function mount(queue: UploadQueue) {
   }
 }
 
-const SUMMARY = ['t30-overall-progress', 't30-time-left', 't30-open-finished', 't30-messages']
+const SUMMARY: TweakId[] = [
+  't30-overall-progress',
+  't30-time-left',
+  't30-open-finished',
+  't30-messages',
+]
 
 afterEach(() => {
   app?.unmount()
