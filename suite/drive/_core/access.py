@@ -1079,9 +1079,6 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
     node = _node_or_not_found(node_id)
     _require_manage(node, principals)
     _refuse_owner_loss(node, principal)
-    is_root = node.kind == "root"
-    root = node.name if is_root else node.root
-    prefix = "" if is_root else f"{node.path or '/'}{node.name}/%"
 
     savepoint = f"drive_revoke_below_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -1097,13 +1094,7 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
                 OR (n.root = %(root)s AND (%(is_root)s OR n.path LIKE %(prefix)s))
               )
             """,
-            {
-                "principal": principal,
-                "node": node.name,
-                "root": root,
-                "is_root": is_root,
-                "prefix": prefix,
-            },
+            {"principal": principal, **subtree_values(node)},
         )
         deleted = frappe.db._cursor.rowcount
         _write_activity(
@@ -1334,6 +1325,13 @@ def _tree(node: Mapping) -> str:
     return node.get("name") if node.get("kind") == "root" else node.get("root")
 
 
+def subtree_values(node: Mapping) -> dict[str, object]:
+    """The SQL values that match `node` and everything below it in its tree."""
+    is_root = node.get("kind") == "root"
+    prefix = "" if is_root else f"{node.get('path') or '/'}{node.get('name')}/%"
+    return {"node": node.get("name"), "root": _tree(node), "is_root": is_root, "prefix": prefix}
+
+
 def _require_manage(node: Mapping, principals: Principals) -> None:
     if not check(node, MANAGE, principals):
         raise DriveForbidden(
@@ -1486,20 +1484,13 @@ def announce_access(node: Mapping) -> None:
     callbacks = {doctype: spec.access_changed for doctype, spec in registry().items() if spec.access_changed}
     if not callbacks:
         return
-    is_root = node.get("kind") == "root"
     documents = frappe.db.sql(
         """
         SELECT name, content_doctype FROM `tabDrive Node`
         WHERE content_doctype IN %(doctypes)s
           AND (name = %(node)s OR (root = %(root)s AND (%(is_root)s OR path LIKE %(prefix)s)))
         """,
-        {
-            "doctypes": tuple(callbacks),
-            "node": node.get("name"),
-            "root": node.get("name") if is_root else node.get("root"),
-            "is_root": is_root,
-            "prefix": "" if is_root else f"{node.get('path') or '/'}{node.get('name')}/%",
-        },
+        {"doctypes": tuple(callbacks), **subtree_values(node)},
     )
     for name, doctype in documents:
         call_app_after_commit(callbacks[doctype], name, "access")
