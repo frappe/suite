@@ -43,7 +43,7 @@
       <ComposeSaveState
         v-if="saveState && draftSavePlacement === 'send'"
         :state="saveState"
-        class="shrink-0"
+        class="shrink-[100]"
         @retry="emit('retrySave')"
       />
 
@@ -70,11 +70,13 @@
       </div>
 
       <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. Next to
-           Discard, the one other thing on the bar that is about the draft rather than its text. -->
+           Discard, the one other thing on the bar that is about the draft rather than its text.
+           Short of room, it wraps before the editor buttons scroll out of sight: a failing save is
+           no time to lose Attach. -->
       <ComposeSaveState
         v-if="saveState && (draftSavePlacement === 'toolbar' || inThread)"
         :state="saveState"
-        class="ml-auto shrink-0"
+        class="ml-auto shrink-[100]"
         @retry="emit('retrySave')"
       />
       <Button

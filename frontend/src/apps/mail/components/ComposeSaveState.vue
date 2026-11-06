@@ -1,13 +1,16 @@
 <template>
-  <span class="flex min-w-0 items-center gap-1 whitespace-nowrap" role="status" aria-live="polite">
+  <span class="flex items-center gap-1" role="status" aria-live="polite">
+    <!-- Two pieces that wrap apart, so a cramped bar breaks the line rather than losing the end of
+         it: where the text is is half the news. -->
     <span
       v-if="label"
-      class="text-p-sm truncate"
+      class="text-p-sm flex flex-wrap gap-x-1"
       :class="isFailing ? 'text-ink-red-5' : 'text-ink-gray-5'"
       :aria-hidden="isFailing ? undefined : 'true'"
       :title="detail"
     >
-      {{ label }}
+      <span class="whitespace-nowrap">{{ isKept ? `${label} ·` : label }}</span>
+      <span v-if="isKept" class="whitespace-nowrap">{{ __('Kept on this device') }}</span>
     </span>
     <Button
       v-if="canRetry"
@@ -41,14 +44,12 @@ const emit = defineEmits(['retry'])
 const isFailing = computed(() => state.status === 'failed' || state.status === 'gone')
 const canRetry = computed(() => state.status === 'failed')
 
+const isKept = computed(() => isFailing.value && state.isCopyKept)
 const label = computed(() => {
-  if (isFailing.value) {
-    const headline =
-      state.status === 'failed' && state.failure?.kind === 'offline'
-        ? __('Offline')
-        : __('Not saved')
-    return state.isCopyKept ? `${headline} · ${__('Kept on this device')}` : headline
-  }
+  if (isFailing.value)
+    return state.status === 'failed' && state.failure?.kind === 'offline'
+      ? __('Offline')
+      : __('Not saved')
   if (state.isUploading) return __('Uploading…')
   if (state.status === 'saving') return __('Saving…')
   if (state.status === 'saved') return __('Saved')

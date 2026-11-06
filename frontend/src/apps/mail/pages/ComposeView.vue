@@ -32,7 +32,7 @@
       </Button>
       <!-- Left to shrink, so the state gives way before the buttons do. -->
       <div class="flex min-w-0 flex-1 flex-col">
-        <h2 v-if="!stateInTitle" class="text-ink-gray-8 truncate text-base font-medium">
+        <h2 class="text-ink-gray-8 truncate text-base font-medium">
           {{ __('Compose Mail') }}
         </h2>
         <ComposeSaveState
@@ -396,11 +396,6 @@ const {
   commitTypedRecipients: () =>
     [toInput, ccInput, bccInput].forEach((input) => input.value?.commitTyped()),
 })
-
-// On a phone the state can stand in for the title, once there is a state to show.
-const stateInTitle = computed(
-  () => draftSavePlacement.value === 'title' && saveState.value.status !== 'idle',
-)
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
 
