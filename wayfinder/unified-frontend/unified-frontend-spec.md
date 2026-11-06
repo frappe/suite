@@ -819,15 +819,15 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 | Open folder detail and header | `access,breadcrumbs` |
 | Folder and root list rows | `access` |
 | Folder and root grid tiles | `access,preview` |
-| Saved-view list rows | `access` |
-| Saved-view grid tiles | `access,preview` |
+| Saved-view list rows | `access`; Shared with me, Starred and Recent add `breadcrumbs` |
+| Saved-view grid tiles | `access,preview`; Shared with me, Starred and Recent add `breadcrumbs` |
 | Search rows | `access,breadcrumbs`, plus `preview` in grid |
 
 [T006, Drive §11.3]
 
 - Breadcrumbs describe the open folder once. They are not repeated on each
-  child. Search is the exception: each result shows its path, for example
-  `My files > Finance` [T006].
+  child. Search, Shared with me, Starred and Recent are the exception: each
+  row shows its path, for example `My files > Finance` [T006].
 
 ### 5.5 Grid previews
 

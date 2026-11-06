@@ -961,10 +961,10 @@ def view_list(
     list for every anonymous visitor on the site.
 
     Access and preview expansions are built once for the whole page. Search,
-    shared, and favourites also accept breadcrumbs, whose ancestor titles are
-    fetched as one union: a folder opened from those lists shows its trail at
-    once. Recents hides folders and trash shows the trash root's own trail, so
-    neither takes them.
+    shared, favourites, and recents also accept breadcrumbs, whose ancestor
+    titles are fetched as one union: a row shows the folder it lives in, and a
+    folder opened from those lists shows its trail at once. Trash shows the
+    trash root's own trail, so it does not take them.
 
     `archived-roots` answers root metadata, not nodes (§5.5), so its rows are
     passed through as they are.
@@ -973,7 +973,7 @@ def view_list(
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
     supported = {"preview", "access"}
-    if name in ("search", "shared", "favourites"):
+    if name in ("search", "shared", "favourites", "recents"):
         supported.add("breadcrumbs")
     if name == "archived-roots":
         supported = set()

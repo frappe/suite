@@ -3427,8 +3427,8 @@ points, not general node views. No view returns the children of a document node
 [012 §1, 014].
 
 Every node-valued view accepts `expand=access`; the workflow resolves roles
-with one grant union for the page. `search`, `shared` and `favourites` also
-accept `expand=breadcrumbs`, because their rows come from anywhere in the
+with one grant union for the page. `search`, `shared`, `favourites` and
+`recents` also accept `expand=breadcrumbs`, because their rows come from anywhere in the
 tree and the page shows where each one lives; the ancestor titles come from
 one union for the page. There is no per-row access or breadcrumb query.
 
@@ -3586,8 +3586,8 @@ copy archive state or quota counters into the node's stored fields.
 
 `access` is available on every node-valued detail, children page, and frozen
 view. It is resolved in one batch per page. `breadcrumbs` is available on a
-node detail and children page, and on the `search`, `shared` and
-`favourites` views with one ancestor-title union per page. A `recents` row additionally carries `opened_at`; this is a view field,
+node detail and children page, and on the `search`, `shared`,
+`favourites` and `recents` views with one ancestor-title union per page. A `recents` row additionally carries `opened_at`; this is a view field,
 not a stored node field.
 
 Every node-valued detail, children page, and node view also carries

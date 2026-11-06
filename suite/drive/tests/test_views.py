@@ -716,6 +716,27 @@ class TestDriveViews(IntegrationTestCase):
         self.assertTrue(all(row.opened_at for row in rows))
         self.assertTrue(all(row.access["role"] >= READ for row in rows))
 
+    def test_recent_breadcrumbs_cost_the_same_for_one_folder_or_many(self):
+        from suite.drive._core.activity import visit
+
+        def queries_for_recents():
+            with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
+                rows = views(self.principals, "recents", with_access=True, with_breadcrumbs=True)["rows"]
+            return sql.call_count, rows
+
+        first = self._node(self._node(self.personal.name, "Crumbs A").name, "Recent in A")
+        visit(self.principals, first.name)
+        one, _ = queries_for_recents()
+        for index in range(6):
+            folder = self._node(self.personal.name, f"Crumbs {index}")
+            visit(self.principals, self._node(folder.name, f"Recent {index}").name)
+        many, rows = queries_for_recents()
+
+        self.assertEqual(many, one)
+        trail = {row.name: [crumb["name"] for crumb in row.breadcrumbs] for row in rows}
+        self.assertEqual(trail[first.name][0], self.personal.name)
+        self.assertEqual(len(trail[first.name]), 2)
+
     def test_fully_hidden_search_window_advances_by_the_sql_window(self):
         hidden = self._node(self.other.name, "hidden-window-token")
         self._grant(self.other.name, VIEWER, READ)
