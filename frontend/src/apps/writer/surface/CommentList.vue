@@ -18,7 +18,7 @@ import { translate as __ } from '@/platform/translation'
 import { commentExcerpt, isEdited } from './commentDetails'
 import CommentDraftCard from './CommentDraftCard.vue'
 import CommentDraftRow from './CommentDraftRow.vue'
-import { isComposing } from './commentMentions'
+import { submitOnEnter } from './commentMentions'
 import CommentText from './CommentText.vue'
 import { confirmMentionAccess } from './mentionAccess'
 import MentionTextarea from './MentionTextarea.vue'
@@ -365,27 +365,6 @@ async function submitReply(thread: DocumentThread) {
   replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
   if (await props.actions.reply(thread.name, text, takeGuestName())) {
     announce()
-  }
-}
-
-// Enter sends in every comment box; Shift+Enter and a word still being composed stay in the box
-function sendOnEnter(event: KeyboardEvent, thread: DocumentThread) {
-  if (event.shiftKey || isComposing(event)) {
-    return
-  }
-
-  event.preventDefault()
-  void submitReply(thread)
-}
-
-function saveOnEnter(event: KeyboardEvent, comment: ThreadComment) {
-  if (event.shiftKey || isComposing(event)) {
-    return
-  }
-
-  event.preventDefault()
-  if (!isEditBlank.value) {
-    void saveEdit(comment)
   }
 }
 
@@ -805,7 +784,7 @@ function rowClass(thread: DocumentThread) {
                     :rows="2"
                     :aria-label="__('Edit comment')"
                     @keydown.esc.stop.prevent="stopEdit"
-                    @keydown.enter="saveOnEnter($event, comment)"
+                    @keydown.enter="submitOnEnter($event, () => isEditBlank || saveEdit(comment))"
                   />
                   <div class="flex justify-end gap-1">
                     <Button size="sm" variant="ghost" :label="__('Cancel')" @click="stopEdit" />
@@ -876,7 +855,7 @@ function rowClass(thread: DocumentThread) {
                     class="pr-8"
                     :placeholder="__('Reply')"
                     :aria-label="__('Reply')"
-                    @keydown.enter="sendOnEnter($event, row.thread)"
+                    @keydown.enter="submitOnEnter($event, () => submitReply(row.thread))"
                   />
                   <!-- 3px puts the glyph at the textarea's 9px text inset, border included -->
                   <Button
