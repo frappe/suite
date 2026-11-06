@@ -1849,6 +1849,15 @@ async function applyPicker(parent: string, destination: string) {
 }
 async function runBulkTrash() {
   const trashing = selectedRows.value.map(itemOf)
+  if (trashing.length > 1 && isTweakOn('t34-bulk-trash-confirm')) {
+    const agreed = await confirm({
+      title: __('Move {0} items to trash?', [trashing.length]),
+      message: __('You can restore them from Trash.'),
+      confirmLabel: __('Move to trash'),
+      destructive: true,
+    })
+    if (!agreed) return
+  }
   const result = await runBatch(
     trashing.map((item) => item.node),
     { state: 'Trashed' },

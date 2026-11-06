@@ -167,7 +167,11 @@ interface ShownToast {
   message: string
   options?: { id?: unknown; description?: string; duration?: number }
 }
-const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
+const feedback = vi.hoisted(() => ({
+  toasts: fromPartial<ShownToast[]>([]),
+  /** Every confirmation the page asked for, answered yes unless a test says otherwise. */
+  confirm: vi.fn(async (_options: { title: string; destructive?: boolean }) => true),
+}))
 vi.mock('@/platform/feedback', async () => {
   const { defineComponent, h } = await import('vue')
   const slotOnly = defineComponent({
@@ -199,7 +203,7 @@ vi.mock('@/platform/feedback', async () => {
   return {
     ContextMenu: slotOnly,
     Dropdown: menu,
-    confirm: async () => true,
+    confirm: feedback.confirm,
     reportMutationError: (error: Error) => show('error')(error.message),
     toast: {
       success: show('success'),
@@ -392,6 +396,7 @@ afterEach(() => {
   server.batchFailures = []
   vi.useRealTimers()
   feedback.toasts.length = 0
+  feedback.confirm.mockClear()
   listing.rows = []
   listing.menu = null
   listing.focused = null
@@ -980,6 +985,51 @@ describe('A selection', () => {
     await vi.waitFor(() => expect(bulkButton(root, 'Star')).toBeDefined())
     const unstarred = server.calls.filter((call) => call.id === 'node_delete_favourite')
     expect(unstarred.map((call) => call.input.node).sort()).toEqual(['a', 'c'])
+  })
+
+  describe('moved to Trash', () => {
+    afterEach(() => setTweaks(['t34-bulk-trash-confirm'], true))
+    const trashed = () =>
+      [...server.nodes.values()].filter((row) => row.state === 'Trashed').map((row) => row.name)
+
+    it('asks first for two or more items, from the bar and from the Delete key', async () => {
+      const root = await select('a', 'c')
+      feedback.confirm.mockResolvedValueOnce(false)
+
+      bulkButton(root, 'Move to trash')?.click()
+      await vi.waitFor(() => expect(feedback.confirm).toHaveBeenCalledOnce())
+      expect(feedback.confirm.mock.calls[0]?.[0]).toMatchObject({
+        title: 'Move 2 items to trash?',
+        destructive: true,
+      })
+      await nextTick()
+      expect(trashed()).toEqual([])
+
+      press('Delete')
+      await vi.waitFor(() => expect(trashed()).toEqual(['a', 'c']))
+      expect(feedback.confirm).toHaveBeenCalledTimes(2)
+      expect(feedback.toasts.at(-1)?.message).toBe('Moved 2 items to Trash')
+    })
+
+    it('moves one item at once, with Undo', async () => {
+      const root = await select('b')
+
+      bulkButton(root, 'Move to trash')?.click()
+
+      await vi.waitFor(() => expect(trashed()).toEqual(['b']))
+      expect(feedback.confirm).not.toHaveBeenCalled()
+      expect(feedback.toasts.at(-1)?.message).toBe('Moved “b.png” to Trash')
+    })
+
+    it('does not ask with the tweak off', async () => {
+      setTweaks(['t34-bulk-trash-confirm'], false)
+      const root = await select('a', 'c')
+
+      bulkButton(root, 'Move to trash')?.click()
+
+      await vi.waitFor(() => expect(trashed()).toEqual(['a', 'c']))
+      expect(feedback.confirm).not.toHaveBeenCalled()
+    })
   })
 })
 
