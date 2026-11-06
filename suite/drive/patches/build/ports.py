@@ -1220,7 +1220,7 @@ class SiteTree:
             DocShareRow(
                 name=row.name,
                 share_name=row.share_name,
-                user=row.user or "",
+                user=row.user,
                 read=cint(row.read),
                 write=cint(row.write),
                 everyone=cint(row.everyone),

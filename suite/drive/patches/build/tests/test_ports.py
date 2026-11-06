@@ -603,6 +603,28 @@ class TestSiteTree(StubbedDatabase):
         self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
         self.assertEqual(get_all.call_args.kwargs["limit"], 25)
 
+    def test_an_everyone_share_with_no_user_keeps_null_for_its_restore(self):
+        stored = frappe._dict(
+            name="d1",
+            share_doctype="Sheet",
+            share_name="sheet-1",
+            user=None,
+            read=1,
+            write=0,
+            share=0,
+            submit=0,
+            everyone=1,
+            owner="owner@example.com",
+            creation="2020-01-01 00:00:00",
+            modified="2020-01-02 00:00:00",
+            modified_by="owner@example.com",
+        )
+        with patch.object(frappe, "get_all", return_value=[stored]):
+            (row,) = SiteTree().docshares("", 10)
+
+        # §14.11 puts the journaled row back as it was: NULL, not ""
+        self.assertIsNone(row.preimage()["user"])
+
 
 # One root pair, in the shape `root_pairs` hands it over: only the columns
 # that row decides. Everything else is `_values`' job to default.
