@@ -48,11 +48,9 @@ async function openFolder(page: Page, folder: DriveNode) {
 	await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
 }
 
-/** New's Upload group comes after Create, whose "Folder" shares the upload folder's label. */
 async function useNewMenu(page: Page, item: "Upload files" | "Upload folder") {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	const label = item === "Upload files" ? "Files" : "Folder";
-	await page.getByRole("menuitem", { name: label, exact: true }).last().click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 async function openTrash(page: Page) {
@@ -226,7 +224,7 @@ test("a folder upload from New creates the tree", async ({ page }) => {
 
 	const chooser = page.waitForEvent("filechooser");
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.locator('[data-slot="group"]', { hasText: "Upload" }).getByRole("menuitem", { name: "Folder", exact: true }).click();
+	await page.getByRole("menuitem", { name: "Upload folder", exact: true }).click();
 	await (await chooser).setFiles(resolve(__dirname, "fixtures/upload-folder"));
 
 	await expect(doneEntries(page)).toHaveCount(2);

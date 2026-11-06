@@ -33,7 +33,6 @@ test.afterEach(async () => {
 
 async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	// The Upload group repeats "Folder"; the Create group comes first.
 	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
 }
 
@@ -92,15 +91,17 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 	expect(created?.content_doctype).toBe("Presentation");
 });
 
-test("New offers Files and then Folder under Upload", async ({ page }) => {
+test("New ends with Upload files and Upload folder, so only Create says Folder", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
 	const menu = page.getByRole("menu", { name: "New" });
-	await expect(menu.getByText("Upload", { exact: true })).toBeVisible();
+	await expect(menu.getByRole("menuitem", { name: "Upload files" })).toBeVisible();
+	// The items name the verb, so the Upload heading is not shown.
+	await expect(menu.getByText("Upload", { exact: true })).toBeHidden();
 	const labels = (await menu.getByRole("menuitem").allInnerTexts()).map((label) => label.trim());
-	// Create starts with Folder; the Upload group closes the menu with Files, then Folder.
 	expect(labels[0]).toBe("Folder");
-	expect(labels.slice(-2)).toEqual(["Files", "Folder"]);
+	expect(labels.filter((label) => label === "Folder")).toHaveLength(1);
+	expect(labels.slice(-2)).toEqual(["Upload files", "Upload folder"]);
 });
 
 test("each registered document type opens its own surface", async ({ page }) => {
