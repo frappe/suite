@@ -1336,7 +1336,7 @@ def node_delete_favourite(node: Given = None) -> shapes.Count:
 def notifications_list(
     limit: Given = None, cursor: Given = None, unread: Given = None
 ) -> shapes.Page[shapes.NotificationShape | shapes.DownloadNotificationShape]:
-    """Page the caller's own inbox. A notification points at one activity row."""
+    """Page the caller's own inbox. A notification points at one activity row or at one of the caller's downloads."""
     result = activity_core.notifications(
         _principals(),
         only_unread=shapes.flag(unread, "unread", False),
