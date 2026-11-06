@@ -9,6 +9,7 @@ import {
   type RequestOutcome,
   type RequestScope,
 } from '@/platform/transport'
+import { isTweakOn } from '@/platform/tweaks'
 
 import { api } from './generated'
 
@@ -157,6 +158,7 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
   const accessPartition = shallowRef(randomId())
   let lastAccess = ''
   let accessEpoch = randomId()
+  const codelessPartition = randomId()
   const selections = new Map<string, { signature: string; token: string }>()
   function syncAccess(state: State): void {
     const access = JSON.stringify([
@@ -334,6 +336,9 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
         return mappedValue ? [mappedValue] : []
       })
       const selectedCodes = [...new Set(credentials)].sort()
+      // A read with no link code keeps its partition through a grant write, so it
+      // keeps its data while it refetches.
+      if (!selectedCodes.length && isTweakOn('t2')) return codelessPartition
       const signature = JSON.stringify([
         accessEpoch,
         selectedCodes.map((code) => [code, state.links.get(code)?.ticket]),
