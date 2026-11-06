@@ -102,6 +102,9 @@ export const tweaks = [
   { id: 't41-company-files', item: 41, group: 'Merge similar concepts', label: 'Company name on the shared root', description: 'Drive names the Organization files root after your company, such as "Northwind Labs files", wherever it shows.', ready: true },
   { id: 't42-upload-panel', item: 42, group: 'Slow operations', label: 'Tidier upload panel', description: 'Finished uploads get a filled green check beside the file name, rows are more compact with aligned progress bars, finished rows drop their remove button, and the panel cannot be closed while files upload.', ready: true },
   { id: 't45-home-new', item: 45, group: 'Fewer steps', label: 'New cards on Home', description: 'Home shows a New section above Recent with one card each to create a document, spreadsheet, presentation or drawing in My files.', ready: true },
+  { id: 't45-compact-a', item: 45, group: 'Fewer steps', label: 'New cards: option A', description: 'The New cards are 40 px rows, icon then name, in the same four columns; A wins over B and C, and with A, B and C all off the 56 px cards show.', ready: true },
+  { id: 't45-compact-b', item: 45, group: 'Fewer steps', label: 'New cards: option B', description: 'New takes one line: the heading, then four rounded chips that fit their names; B shows when A is off and wins over C.', ready: true },
+  { id: 't45-compact-c', item: 45, group: 'Fewer steps', label: 'New cards: option C', description: 'New shows four small tiles with the icon above the name, in a row that fits the names; C shows only when A and B are off.', ready: true },
 ] as const satisfies readonly Tweak[]
 
 /** Adds Drive's ids to `TweakId`, so platform code can read a Drive tweak by a checked id. */

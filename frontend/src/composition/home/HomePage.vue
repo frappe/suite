@@ -31,30 +31,43 @@
         <section
           v-if="newCards && createDocumentMutation.canCreate"
           aria-labelledby="home-new-heading"
+          :class="newCardStyle.section"
+          :data-variant="newCardVariant"
         >
-          <h2 id="home-new-heading" class="pb-3 text-lg font-medium text-ink-gray-9">
+          <h2
+            id="home-new-heading"
+            class="text-lg font-medium text-ink-gray-9"
+            :class="newCardStyle.heading"
+          >
             {{ __('New') }}
           </h2>
-          <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div :class="newCardStyle.list">
             <button
               v-for="definition in documentTypes"
               :key="definition.contentDoctype"
               type="button"
-              class="flex h-14 min-w-0 items-center gap-2.5 rounded-5 border border-outline-gray-1 bg-surface-elevation-1 px-3 text-start transition-colors hover:border-outline-gray-2 hover:bg-surface-gray-1 focus-visible:focus-ring aria-disabled:cursor-default dark:hover:bg-surface-elevation-2"
+              class="border border-outline-gray-1 bg-surface-elevation-1 transition-colors hover:border-outline-gray-2 hover:bg-surface-gray-1 focus-visible:focus-ring aria-disabled:cursor-default dark:hover:bg-surface-elevation-2"
+              :class="newCardStyle.card"
               :aria-busy="creatingType === definition.contentDoctype"
               :aria-disabled="createDocumentMutation.isPending"
               @click="createFromCard(definition.contentDoctype)"
             >
+              <Spinner
+                v-if="newCardStyle.spinnerAsIcon && creatingType === definition.contentDoctype"
+                class="shrink-0 text-ink-gray-5"
+                :class="newCardStyle.icon"
+              />
               <span
-                class="size-5 shrink-0"
-                :class="driveDocumentIcon(definition.contentDoctype)"
+                v-else
+                class="shrink-0"
+                :class="[newCardStyle.icon, driveDocumentIcon(definition.contentDoctype)]"
                 aria-hidden="true"
               />
-              <span class="min-w-0 flex-1 truncate text-base font-medium text-ink-gray-8">
+              <span class="font-medium text-ink-gray-8" :class="newCardStyle.label">
                 {{ definition.newLabel() }}
               </span>
               <Spinner
-                v-if="creatingType === definition.contentDoctype"
+                v-if="!newCardStyle.spinnerAsIcon && creatingType === definition.contentDoctype"
                 class="size-4 shrink-0 text-ink-gray-5"
               />
             </button>
@@ -268,11 +281,12 @@ import {
 import { ScheduleMeetingDialog } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
 import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
+import { variantOf, type NewCardVariant } from '@/composition/home/newCardVariant'
 import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
+import { isTweakOn, useTweak } from '@/platform/tweaks'
 import { isMobile } from '@/shell/useIsMobile'
 
 const router = useRouter()
@@ -380,6 +394,61 @@ async function createDocument(contentDoctype: string) {
   }
 }
 const newCards = useTweak('t45-home-new')
+const newCardVariant = computed(() =>
+  variantOf({
+    a: isTweakOn('t45-compact-a'),
+    b: isTweakOn('t45-compact-b'),
+    c: isTweakOn('t45-compact-c'),
+  }),
+)
+interface NewCardStyle {
+  section: string
+  heading: string
+  list: string
+  card: string
+  icon: string
+  label: string
+  /** The spinner takes the icon's place, so a card that hugs its label keeps its width. */
+  spinnerAsIcon: boolean
+}
+const rowCard = {
+  section: '',
+  heading: 'pb-3',
+  list: 'grid grid-cols-2 gap-3 lg:grid-cols-4',
+  label: 'min-w-0 flex-1 truncate text-base',
+  spinnerAsIcon: false,
+}
+const newCardStyles: Record<NewCardVariant, NewCardStyle> = {
+  current: {
+    ...rowCard,
+    card: 'flex h-14 min-w-0 items-center gap-2.5 rounded-5 px-3 text-start',
+    icon: 'size-5',
+  },
+  a: {
+    ...rowCard,
+    card: 'flex h-10 min-w-0 items-center gap-2 rounded-5 px-3 text-start',
+    icon: 'size-4.5',
+  },
+  b: {
+    section: 'flex flex-wrap items-center gap-x-4 gap-y-3',
+    heading: '',
+    list: 'flex flex-wrap gap-2',
+    card: 'flex h-8 items-center gap-1.5 rounded-full ps-2.5 pe-3',
+    icon: 'size-4',
+    label: 'whitespace-nowrap text-base',
+    spinnerAsIcon: true,
+  },
+  c: {
+    section: '',
+    heading: 'pb-3',
+    list: 'grid grid-cols-2 gap-3 sm:inline-grid sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none',
+    card: 'flex h-16 min-w-0 flex-col items-center justify-center gap-1.5 rounded-5 px-3 sm:min-w-20',
+    icon: 'size-5',
+    label: 'max-w-full truncate text-sm',
+    spinnerAsIcon: true,
+  },
+}
+const newCardStyle = computed(() => newCardStyles[newCardVariant.value])
 const creatingType = ref<string | null>(null)
 /** A card creates as the New menu does; a second click while one is created does nothing. */
 async function createFromCard(contentDoctype: string) {
