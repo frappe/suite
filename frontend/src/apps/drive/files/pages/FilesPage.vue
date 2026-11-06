@@ -6,11 +6,27 @@
       title="Drive"
       :loading="discovered.status === 'pending' && !discovered.data"
     >
-      <FilesPanel />
+      <FilesPanel :drag="dragOn" />
     </AreaSidebar>
     <PageHeader class="hidden md:flex">
       <div class="flex w-full items-center justify-between gap-3">
-        <Breadcrumbs :items="breadcrumbs" />
+        <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
+        <Breadcrumbs
+          :items="breadcrumbs"
+          :data-drop-crumbs="dragOn ? '' : undefined"
+          :class="
+            dragOn &&
+            '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
+          "
+        >
+          <template v-if="dragOn" #prefix="{ item }">
+            <span
+              v-if="typeof item.node === 'string'"
+              :data-drop-target="item.node"
+              :data-drop-over="dragOn.accepts(item.node) || undefined"
+            />
+          </template>
+        </Breadcrumbs>
         <Dropdown v-if="canCreate" :options="newOptions" align="end">
           <Button variant="subtle" label="New" icon-right="lucide-chevron-down" />
         </Dropdown>
@@ -215,6 +231,7 @@
             :row-drop="rowDrop"
             :menu-target="contextOpen ? contextRow : null"
             :date-column="dateColumn"
+            :drag="dragOn"
             @update:selection="picked.selected.value = $event"
             @sort="changeSort"
             @open="openNode"
@@ -321,6 +338,7 @@ import {
 } from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
 import { downloadItems } from '../features/downloads'
+import type { DraggedItems } from '../features/dragMove'
 import { emptyState, emptyStateWithActions, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
@@ -369,6 +387,7 @@ import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
 import DropOverlay from '../features/uploads/DropOverlay.vue'
 import { uploadTargetOf } from '../features/uploads/queue'
 import { pastedImages } from '../features/uploads/sources'
+import { useDragMove } from '../features/useDragMove'
 import { useListingSelection } from '../features/useListingSelection'
 import ViewSettings from '../features/ViewSettings.vue'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
@@ -565,7 +584,9 @@ const destinationLabel = computed(() => (isSearching.value ? 'Search results' : 
 const breadcrumbs = computed(() => {
   if (isSearching.value)
     return [{ label: `Search results for “${searchTerm.value}”`, route: route.fullPath }]
-  if (props.destination !== 'folder') return [{ label: placeLabel.value, route: route.path }]
+  // `node` names each crumb's folder, for drag to move.
+  if (props.destination !== 'folder')
+    return [{ label: placeLabel.value, route: route.path, node: parentId.value }]
   const whole = folderTitle.value === null ? null : trail.value
   // Unknown until the details load. The header keeps its height meanwhile.
   if (!whole) return []
@@ -576,6 +597,7 @@ const breadcrumbs = computed(() => {
   const known = from >= 0 ? whole.slice(from) : whole
   const items = known.slice(0, -1).map((crumb) => ({
     label: locationTitle(crumb, discovered.data),
+    node: crumb.name,
     route: {
       path:
         rootPath(crumb.name) ??
@@ -586,7 +608,11 @@ const breadcrumbs = computed(() => {
   const trashCrumb = trashedFolder.value
     ? [{ label: 'Trash', route: trashPath(trashedFolder.value) }]
     : []
-  return [...trashCrumb, ...items, { label: placeLabel.value, route: route.fullPath }]
+  return [
+    ...trashCrumb,
+    ...items,
+    { label: placeLabel.value, route: route.fullPath, node: parentId.value },
+  ]
 })
 usePageTitle(() => {
   if (isSearching.value) return `Search results for “${searchTerm.value}”`
@@ -1717,6 +1743,32 @@ function pickUpload(source: 'files' | 'folder') {
 /** Folder rows decide drops by their own access. Saved views and search take none (spec §6.7). */
 function rowDrop(row: DriveNode) {
   return concreteDestination.value && !isSearching.value ? rowDropHandlers(drop, row) : null
+}
+/** Drag to move (t16-drag-move), in a folder the user can rearrange. Saved views, search and a trashed folder have none. */
+const dragMove = useDragMove({
+  enabled: () =>
+    signedIn.value && concreteDestination.value && !isSearching.value && !trashedFolder.value,
+  rows: () => listing.rows as DriveNode[],
+  selection: () => selection.value,
+  folder: () => (detail.data?.name === parentId.value ? detail.data : null),
+  roots: () => discovered.data,
+  move: moveDragged,
+  trash: trashDragged,
+})
+const dragOn = computed(() => (dragMove.isOn() ? dragMove : undefined))
+/** A drop moves as the Move dialog does: the selection in a batch, one row on its own. */
+async function moveDragged(
+  { items, fromSelection }: DraggedItems,
+  folder: { node: string; title: string },
+) {
+  pickerMode.value = 'move'
+  pickerBulk.value = fromSelection
+  if (!fromSelection) activeNode.value = items[0] ?? null
+  await applyPicker(folder.node, folder.title)
+}
+async function trashDragged({ items: [only], fromSelection }: DraggedItems) {
+  if (fromSelection) await runBulkTrash()
+  else if (only) await trashRow(only)
 }
 function itemOf(row: Pick<DriveNode, 'name' | 'title'>) {
   return { node: row.name, title: row.title }
