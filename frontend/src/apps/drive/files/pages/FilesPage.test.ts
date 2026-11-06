@@ -31,6 +31,8 @@ const server = vi.hoisted(() => ({
   nextCursor: fromPartial<string | null>(null),
   /** Set, trash and batch writes wait for it before they answer. */
   gate: fromPartial<Promise<void> | null>(null),
+  /** Set, a folder's details wait for it before they answer. */
+  detailGate: fromPartial<Promise<void> | null>(null),
   /** Set, trash and batch writes are refused with it. */
   refusal: fromPartial<Error | null>(null),
   /** The nodes a batch answers as failed, and leaves unchanged. */
@@ -50,6 +52,7 @@ vi.mock('@/platform/transport', async (original) => {
             return { personal: { node: 'root', title: 'My files' }, organization: null }
           // Any other id is a folder of its own, so no test reads an answer another test cached.
           case 'node_get':
+            await server.detailGate
             return {
               ...(node(input.node) ?? {
                 name: input.node,
@@ -392,6 +395,7 @@ afterEach(() => {
   server.polls = []
   server.nextCursor = null
   server.gate = null
+  server.detailGate = null
   server.refusal = null
   server.batchFailures = []
   vi.useRealTimers()
@@ -531,6 +535,26 @@ describe('New', () => {
     })
     expect(router.currentRoute.value.query.new).toBe('1')
   })
+
+  const newButtons = (root: HTMLElement) => [...root.querySelectorAll('[label="New"]')]
+  for (const [role, shows] of [
+    [30, true],
+    [10, false],
+  ] as const) {
+    it(`keeps its room unseen while the folder loads, then ${shows ? 'shows it' : 'drops it'} for role ${role}`, async () => {
+      let answer = () => {}
+      server.detailGate = new Promise((resolve) => (answer = resolve))
+      server.folderRole = role
+      const { root } = await mount(`/drive/f/loading-${role}/drafts`)
+      await vi.waitFor(() => expect(newButtons(root)).not.toHaveLength(0))
+      expect(newButtons(root).every((button) => button.classList.contains('invisible'))).toBe(true)
+
+      answer()
+
+      const seen = () => newButtons(root).map((button) => !button.classList.contains('invisible'))
+      await vi.waitFor(() => expect(seen()).toEqual(shows ? [true] : []))
+    })
+  }
 
   it('asks for a name first with the tweak off', async () => {
     setTweaks(['t8'], false)

@@ -27,8 +27,13 @@
             />
           </template>
         </Breadcrumbs>
-        <Dropdown v-if="canCreate" :options="newOptions" align="end">
-          <Button variant="subtle" label="New" icon-right="lucide-chevron-down" />
+        <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
+          <Button
+            variant="subtle"
+            label="New"
+            icon-right="lucide-chevron-down"
+            :class="!canCreate && 'invisible'"
+          />
         </Dropdown>
       </div>
     </PageHeader>
@@ -48,8 +53,13 @@
         destinationLabel
       }}</span>
       <template #suffix>
-        <Dropdown v-if="canCreate" :options="newOptions" align="end">
-          <Button variant="subtle" label="New" icon-right="lucide-chevron-down" />
+        <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
+          <Button
+            variant="subtle"
+            label="New"
+            icon-right="lucide-chevron-down"
+            :class="!canCreate && 'invisible'"
+          />
         </Dropdown>
       </template>
     </PageHeaderMobile>
@@ -804,6 +814,10 @@ const paneDrop = drop.zone(
 // New stays while a search shows. It adds to the folder the search started from.
 // A trashed folder takes no new items, so it offers no New.
 const canCreate = computed(() => concreteDestination.value && !!uploadTargetOf(detail.data))
+/** Until the folder's details load, New keeps its room unseen, so it does not pop into the header. */
+const newPending = computed(
+  () => concreteDestination.value && !detail.data && detail.status === 'pending',
+)
 const newUploadTarget = computed(() =>
   concreteDestination.value ? uploadTargetOf(detail.data) : null,
 )
