@@ -173,7 +173,7 @@ test("a batch upload asks about a taken title and keeps both", async ({ page }) 
 	const dialog = page.getByRole("dialog", { name: "A file with this name exists" });
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole("radio", { name: "Keep both" }).check();
-	await dialog.getByRole("button", { name: "Continue" }).click();
+	await dialog.getByRole("button", { name: "Keep both" }).click();
 
 	await expect(doneEntries(page)).toHaveCount(2);
 	await expect(page.getByText("report (2).pdf", { exact: true }).first()).toBeVisible();

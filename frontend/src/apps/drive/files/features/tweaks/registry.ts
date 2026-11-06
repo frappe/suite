@@ -40,7 +40,7 @@ export const tweaks = [
   { id: 't8', item: 8, group: 'Fewer steps', label: 'New document opens at once', description: 'A new document, spreadsheet, presentation or drawing opens with the default title instead of asking for a name.', ready: true },
   { id: 't9', item: 9, group: 'Fewer steps', label: 'Share link in one click', description: 'A visible "New link" button creates a view link and copies it.', ready: true },
   { id: 't10', item: 10, group: 'Fewer steps', label: 'Desktop share footer', description: 'The desktop share dialog footer has a captioned Copy link and a Done button, like the phone layout.', ready: true },
-  { id: 't11', item: 11, group: 'Fewer steps', label: 'Simpler duplicate-name dialog', description: 'The duplicate-name dialog has one Skip and shows the New name field only when you choose Rename.', ready: false },
+  { id: 't11', item: 11, group: 'Fewer steps', label: 'Simpler duplicate-name dialog', description: 'The duplicate-name dialog has one Skip, shows the New name field only for Rename, and names its button after the choice.', ready: true },
   { id: 't12', item: 12, group: 'Fewer steps', label: 'Empty states with actions', description: 'Each empty view has its sidebar icon, an empty folder offers an "Upload files" button, and an empty search offers "Clear search".', ready: true },
   { id: 't13-arrow-keys', item: 13, group: 'Habits', label: 'Arrow keys move in the list', description: 'The list and the grid are one Tab stop, the arrow keys, Home and End move focus, Shift with them selects a range, and Space selects a card.', ready: true },
   { id: 't13-type-ahead', item: 13, group: 'Habits', label: 'Type to jump', description: 'Typing the start of a name moves focus to the next item with that name.', ready: true },
