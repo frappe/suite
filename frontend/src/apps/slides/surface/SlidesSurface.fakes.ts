@@ -331,7 +331,7 @@ export async function openedSurface({
   slides?: unknown[]
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
-  composite?: Record<string, unknown[] | Error>
+  composite?: Record<string, unknown[] | Error | Promise<unknown[]>>
   deck?: Record<string, unknown>
   panels?: DocumentSession['panels']['value']
 } = {}) {
@@ -390,7 +390,8 @@ export async function openedSurface({
 
     if (composite && url.includes('composite_group')) {
       const [reference] = JSON.parse(String(init?.body)).references
-      const group = composite[reference]
+      // a test can hold a group back
+      const group = await composite[reference]
       if (group instanceof Error) {
         throw group
       }

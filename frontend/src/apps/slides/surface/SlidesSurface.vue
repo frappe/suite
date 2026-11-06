@@ -467,7 +467,8 @@ function exportPdf() {
     }, 200)
   })
 }
-async function loadComposite() {
+
+async function loadComposite(run: number) {
   // Sent with every held link code: the server names the node of each
   // reference those codes open, and each group then sends only its own codes.
   const manifest = await client.query(
@@ -479,6 +480,8 @@ async function loadComposite() {
       context: props.session.credentials.heldContext,
     },
   )
+  if (!isCurrent(run)) return
+
   let shown: MergedCompositeSlide[] = []
   const loader = new CompositeGroupLoader(
     manifest,
@@ -495,6 +498,8 @@ async function loadComposite() {
         },
       ),
     (items) => {
+      if (!isCurrent(run)) return
+
       compositeItems.value = items.map((item) => ({
         ...item,
       }))
@@ -520,7 +525,14 @@ async function loadComposite() {
 // latest load may end the loading state: an earlier one returns no document, and
 // ending it then draws the panels before any slide is there.
 let latestLoad = 0
+// a surface left behind loads nothing more, so a late reply can't land in the next presentation
+let isLeft = false
+function isCurrent(run: number) {
+  return !isLeft && run === latestLoad
+}
 async function load() {
+  if (isLeft) return
+
   const run = ++latestLoad
   loading.value = true
   loadError.value = ''
@@ -531,9 +543,9 @@ async function load() {
     // Refused with no holder: the surface closed while the request waited.
     const held =
       readonly || (await acquireEditLock(props.session.contentDocname, keepDraftForTakeover))
-    if (run !== latestLoad || (!held && !lockedElsewhere.value)) return
+    if (!isCurrent(run) || (!held && !lockedElsewhere.value)) return
     const doc = await initPresentationDoc(props.session.contentDocname, readonly)
-    if (run !== latestLoad) return
+    if (!isCurrent(run)) return
 
     clearOnlyCopy()
     if (doc) {
@@ -562,25 +574,27 @@ async function load() {
       await showConvertedSlides(run)
     }
 
-    if (run !== latestLoad) return
+    if (!isCurrent(run)) return
 
     if (composite.value) {
-      await loadComposite()
+      await loadComposite(run)
     } else if (!onLayer.value) {
       void offerTheme()
     }
+
+    if (!isCurrent(run)) return
 
     // a group that didn't load names none of its pictures, so their bytes would pass for orphans
     if (!composite.value || compositeItems.value.every((item) => item.status === 'ready')) {
       pruneOfflineCopy(presentationId.value).catch(() => {})
     }
   } catch (error) {
-    if (run !== latestLoad) return
+    if (!isCurrent(run)) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
     // The server may have rewritten the deck, so an earlier save's capture would send old slides.
     previewCapture.value?.cancelCapture()
   } finally {
-    if (run === latestLoad) {
+    if (isCurrent(run)) {
       loading.value = false
       loaded.value = true
     }
@@ -589,7 +603,7 @@ async function load() {
 
 async function showConvertedSlides(run: number) {
   const close = await watchConvertedSlides(props.session, (drawn) => {
-    if (run !== latestLoad) return
+    if (!isCurrent(run)) return
 
     // a redraw keeps the shown slide, or the one in its place when it was deleted
     const at = slideIndex.value ?? 0
@@ -604,7 +618,7 @@ async function showConvertedSlides(run: number) {
     throw new Error(translate('Could not open this presentation.'))
   }
 
-  if (run !== latestLoad) {
+  if (!isCurrent(run)) {
     close()
     return
   }
@@ -771,7 +785,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   // a load or room still on its way after this finds itself stale and touches nothing
-  latestLoad++
+  isLeft = true
   closeConvertedRoom?.()
   cancelVisit()
   stopVisitedMedia()

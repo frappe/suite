@@ -197,6 +197,11 @@ const startLoad = () => ++latestLoad
 
 const isLatestLoad = (load) => load === latestLoad
 
+// work that waited may land only in the presentation it started in
+function isOpen(id) {
+  return id != null && presentationId.value === id
+}
+
 // an offline copy warms exactly this url and param order (utils/pinTargets.ts).
 // Guest-reachable, so a share link's holder loads the deck to edit it too.
 const fetchDoc = (name) =>
@@ -494,6 +499,7 @@ export {
   writesBlocked,
   savePresentationDoc,
   initPresentationDoc,
+  isOpen,
   showsSlides,
   startLoad,
   resetEditorState,

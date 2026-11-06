@@ -28,6 +28,7 @@ import {
 
 const {
   duplicateSlide,
+  handleInsertSlide,
   saveSlide,
   slideIndex,
   slides: editorSlides,
@@ -43,7 +44,7 @@ const {
   savingFor,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
-const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
+const { initPresentationDoc, inReadonlyMode, loadTemplates, presentationId, viewOnly } =
   await import('@/apps/slides/stores/presentation')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
@@ -2535,3 +2536,97 @@ function isSavedSlide(value: unknown): value is SavedSlidePayload {
     typeof value.elements === 'string'
   )
 }
+
+describe('a presentation left while a request is out', () => {
+  // only the next presentation has a black slide
+  const slideB = { clientId: 'b1', background: '#000000ff', elements: [] }
+
+  function shownBackgrounds() {
+    return editorSlides.value.map((slide) => slide.background)
+  }
+
+  function leave() {
+    mounted?.app.unmount()
+    mounted?.root.remove()
+  }
+
+  it('keeps the next presentation when a group of the left one arrives', async () => {
+    const group = Promise.withResolvers<unknown[]>()
+    mounted = await openedSurface({ composite: { a: group.promise } })
+    await vi.waitFor(() =>
+      expect(server.fetch.mock.calls.some(([url]) => String(url).includes('composite_group'))).toBe(
+        true,
+      ),
+    )
+
+    leave()
+    mounted = await openedSurface({ slides: [slideB] })
+    group.resolve([{ name: 'a1', idx: 1, parent: 'a', background: '#ffffffff', elements: [] }])
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(presentationId.value).toBe(mounted.docname)
+    expect(shownBackgrounds()).toEqual(['#000000ff'])
+  })
+
+  it('keeps the next presentation when a theme change of the left one finishes', async () => {
+    mounted = await openedSurface()
+    const presentationA = mounted.docname
+    const readA = server.fetch.getMockImplementation()!
+    const write = Promise.withResolvers<void>()
+    server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes('theme')) {
+        await write.promise
+        return new Response(JSON.stringify({ message: { modified: 'M2', base_modified: 'M1' } }), {
+          status: 200,
+        })
+      }
+
+      return readA(url, init)
+    })
+    themeChange.update('Dark')
+    await vi.waitFor(() =>
+      expect(server.fetch.mock.calls.some(([url]) => String(url).includes('theme'))).toBe(true),
+    )
+
+    leave()
+    mounted = await openedSurface({ slides: [slideB] })
+    const readB = server.fetch.getMockImplementation()!
+    // the left presentation's own read still answers with its own slides
+    server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(init?.body).includes(presentationA)) {
+        return readA(url, init)
+      }
+
+      return readB(url, init)
+    })
+    write.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(presentationId.value).toBe(mounted.docname)
+    expect(shownBackgrounds()).toEqual(['#000000ff'])
+  })
+  it('keeps the next presentation when a layout slide of the left one is measured', async () => {
+    mounted = await openedSurface()
+    const fonts = Promise.withResolvers<void>()
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { ready: fonts.promise },
+    })
+    const centred = {
+      type: 'text',
+      content: 'Title',
+      left: 480,
+      top: 270,
+      transform: 'translate(-50%, -50%)',
+    }
+    handleInsertSlide(0, { elements: [centred] })
+
+    leave()
+    mounted = await openedSurface({ slides: [slideB] })
+    fonts.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    Reflect.deleteProperty(document, 'fonts')
+
+    expect(shownBackgrounds()).toEqual(['#000000ff'])
+  })
+})
