@@ -563,14 +563,16 @@ const WIDE_ONLY = new Set(['owner', 'modified', 'kind'])
 const SIDE_COLUMNS = ['kind', 'owner', 'size']
 const columns = computed(() => props.presentation.columns)
 const columnTracks = computed(() => {
+  // In the rows' order, whatever order the columns were chosen in.
+  const shown = [...SIDE_COLUMNS, 'modified'].filter(shows)
   const tracks = (list: string[]) => [
     'minmax(0,1fr)',
     ...list.map((column) => COLUMN_TRACKS.get(column) ?? '8rem'),
     '2.5rem',
   ]
   return {
-    base: tracks(columns.value.filter((column) => !WIDE_ONLY.has(column))),
-    md: tracks(columns.value),
+    base: tracks(shown.filter((column) => !WIDE_ONLY.has(column))),
+    md: tracks(shown),
   }
 })
 const byOpened = computed(() => props.dateColumn === 'opened')

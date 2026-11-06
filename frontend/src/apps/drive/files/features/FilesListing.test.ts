@@ -289,6 +289,19 @@ describe('FilesListing checkboxes with a mouse', () => {
   })
 })
 
+describe('FilesListing columns', () => {
+  it('sizes each column by its place in the row, whatever order they were chosen in', async () => {
+    const { root } = mount({ rows, columns: ['size', 'modified', 'owner'] })
+    await nextTick()
+    const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
+
+    // Name, Owner, Size, Modified, then the menu.
+    expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
+      'minmax(0,1fr) 12rem 6rem 8rem 2.5rem',
+    )
+  })
+})
+
 describe('FilesListing selected runs', () => {
   it('rounds only the outer corners of adjacent selected rows', async () => {
     const { root } = mount({ rows: [...rows, file('c', 'Gamma.png')], selection: ['a', 'b'] })
