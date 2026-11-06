@@ -345,6 +345,8 @@ import type {
   SignupOutput,
   SubscribeMailboxInput,
   SubscribeMailboxOutput,
+  SyncChangesInput,
+  SyncChangesOutput,
   UndoScreeningVerdictInput,
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
@@ -2680,6 +2682,33 @@ export const operationScreenEmailAddresses: Validators<
   },
   validateOutput(value: unknown): asserts value is ScreenEmailAddressesOutput {
     assertSchema(value, { type: 'null' }, 'screen_email_addresses output')
+  },
+}
+
+export const operationSyncChanges: Validators<SyncChangesInput, SyncChangesOutput> = {
+  validateInput(value: unknown): asserts value is SyncChangesInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'sync_changes input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SyncChangesOutput {
+    assertSchema(
+      value,
+      {
+        description:
+          'What a fetch of changes found for the lists: as announced over the socket, and returned.',
+        properties: {
+          new_mail_in: { items: { type: 'string' }, title: 'New Mail In', type: 'array' },
+          changed: { title: 'Changed', type: 'boolean' },
+        },
+        required: ['new_mail_in', 'changed'],
+        title: 'ListChanges',
+        type: 'object',
+      },
+      'sync_changes output',
+    )
   },
 }
 

@@ -1620,6 +1620,28 @@ const operationScreenEmailAddresses: MutationRef<
   loadValidators: async () => (await import('./validators')).operationScreenEmailAddresses,
 }
 
+export type SyncChangesInput = Record<string, never>
+
+export type SyncChangesOutput = { new_mail_in: Array<string>; changed: boolean }
+
+export type SyncChangesError = 'PermissionError' | 'AuthenticationError'
+
+const operationSyncChanges: MutationRef<SyncChangesInput, SyncChangesOutput, SyncChangesError> = {
+  id: 'sync_changes',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'changes.sync',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.sync_changes',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'AuthenticationError'],
+  loadValidators: async () => (await import('./validators')).operationSyncChanges,
+}
+
 export type UnscreenEmailAddressesInput = { account: string; emails: Array<string> }
 
 export type UnscreenEmailAddressesOutput = null
@@ -7338,6 +7360,9 @@ export const api = {
     delete: operationDeleteSieveScript,
     createAutomation: operationCreateAutomationScript,
     rebuildAutomation: operationRebuildAutomationScriptForAccount,
+  },
+  changes: {
+    sync: operationSyncChanges,
   },
   calendar: {
     clientConfig: operationGetCalendarClientConfig,

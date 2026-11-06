@@ -382,7 +382,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -412,6 +412,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
+import { useMailSocket } from '@/apps/mail/socket'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import {
@@ -462,7 +463,7 @@ const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 const { dropViewUndo } = useUndo()
-const socket = inject('$socket')
+const socket = useMailSocket()
 // MailLayout's overlay layer; see the selection bar's Teleport.
 const store = userStore()
 const { mailboxes, mailboxIds } = store
@@ -1042,12 +1043,18 @@ const pollForChanges = async () => {
 // Mail was read, moved or deleted somewhere else (another device, another tab). Which mailboxes it
 // touched isn't known — a deleted mail can no longer be asked — so every list refreshes.
 const onMailChanged = () => refreshThreads()
+// New mail in this folder, or in Sent or Drafts: a reply written in another client lands there and
+// in a conversation this list holds, whose open thread would otherwise go on without it.
+const onNewMail = (updatedMailboxes: string[]) => {
+  if (
+    [mailbox, mailboxIds.sent, mailboxIds.drafts].some((id) => id && updatedMailboxes.includes(id))
+  )
+    refreshThreads()
+}
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
   reloadInterval.value = setInterval(pollForChanges, 30000)
-  socket.on('new_mail_created', (updatedMailboxes: string[]) => {
-    if (updatedMailboxes.includes(mailbox)) refreshThreads()
-  })
+  socket.on('new_mail_created', onNewMail)
   socket.on('mail_changed', onMailChanged)
   socket.on('mail_exchange_completed', (payload: { success: boolean; message: string }) =>
     raiseToast(payload.message, payload.success ? 'success' : 'error'),
@@ -1059,6 +1066,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   if (reloadInterval.value) clearInterval(reloadInterval.value)
+  socket.off('new_mail_created', onNewMail)
   socket.off('mail_changed', onMailChanged)
   // Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
   dropViewUndo()

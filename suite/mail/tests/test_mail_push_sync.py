@@ -125,6 +125,147 @@ class FetchChangesRealtime(unittest.TestCase):
     def test_nothing_is_announced_when_nothing_changed(self):
         self.assertEqual(self._events(), [])
 
+    def _created(self, *messages: dict) -> list[mock.call]:
+        mailboxes = [
+            {"id": "inbox", "isSubscribed": True, "role": "inbox"},
+            {"id": "sent", "isSubscribed": True, "role": "sent"},
+            {"id": "drafts", "isSubscribed": True, "role": "drafts"},
+            {"id": "old", "isSubscribed": False, "role": None},
+        ]
+        with (
+            mock.patch.object(mail_message, "get_messages", return_value=list(messages)),
+            mock.patch.object(mail_message, "get_cached_mailboxes", return_value=mailboxes),
+            mock.patch.object(mail_message.frappe.db, "get_all", return_value=[]),
+            mock.patch.object(mail_message, "PushNotification") as push,
+        ):
+            push.return_value.is_enabled.return_value = False
+            return self._events(created=[message["id"] for message in messages])
+
+    def test_new_mail_is_announced_with_its_folder(self):
+        received = {"id": "e1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "inbox"}]}
+
+        self.assertEqual(self._created(received), [mock.call("new_mail_created", ["inbox"], user=USER)])
+
+    def test_a_reply_sent_from_another_client_is_announced_too(self):
+        # Sent mail arrives read; it still belongs on the lists, and in the conversation it answers.
+        sent = {"id": "e2", "draft": 0, "seen": 1, "mailboxes": [{"mailbox_id": "sent"}]}
+
+        self.assertEqual(self._created(sent), [mock.call("new_mail_created", ["sent"], user=USER)])
+
+    def test_a_draft_saved_elsewhere_is_announced_too(self):
+        draft = {"id": "e3", "draft": 1, "seen": 1, "mailboxes": [{"mailbox_id": "drafts"}]}
+
+        self.assertEqual(self._created(draft), [mock.call("new_mail_created", ["drafts"], user=USER)])
+
+    def test_mail_in_an_unsubscribed_folder_moves_no_list(self):
+        hidden = {"id": "e4", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "old"}]}
+
+        self.assertEqual(self._created(hidden), [])
+
+
+class FetchChangesFound(unittest.TestCase):
+    """``fetch_changes`` returns what it announced, for a caller that has no socket to hear it on."""
+
+    def test_returns_the_folders_with_new_mail_and_whether_mail_changed(self):
+        server = _server()
+        server.respond("Email/changes", _changes(created=["e1"], updated=["e2"]))
+        received = {"id": "e1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "inbox"}]}
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
+            mock.patch.object(mail_message, "_remove_cached_messages"),
+            mock.patch.object(mail_message, "_without_classification_echoes", return_value=["e2"]),
+            mock.patch.object(mail_message, "get_messages", return_value=[received]),
+            mock.patch.object(
+                mail_message,
+                "get_cached_mailboxes",
+                return_value=[{"id": "inbox", "isSubscribed": True, "role": "inbox"}],
+            ),
+            mock.patch.object(mail_message.frappe.db, "get_all", return_value=[]),
+            mock.patch.object(mail_message, "PushNotification") as push,
+            mock.patch.object(mail_message.frappe, "publish_realtime"),
+        ):
+            push.return_value.is_enabled.return_value = False
+            found = mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        self.assertEqual(found, {"new_mail_in": ["inbox"], "changed": True})
+
+    def test_a_reaction_changes_the_lists_without_being_new_mail(self):
+        server = _server()
+        server.respond("Email/changes", _changes(created=["e1"]))
+        reaction = {"id": "e1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "inbox"}]}
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
+            mock.patch.object(mail_message, "_remove_cached_messages"),
+            mock.patch.object(mail_message, "get_messages", return_value=[reaction]),
+            mock.patch.object(
+                mail_message,
+                "get_cached_mailboxes",
+                return_value=[{"id": "inbox", "isSubscribed": True, "role": "inbox"}],
+            ),
+            mock.patch.object(mail_message, "read_reactions", return_value=["👍"]),
+            mock.patch.object(mail_message, "try_set_seen"),
+            mock.patch.object(mail_message.frappe.db, "get_all", return_value=[]),
+            mock.patch.object(mail_message, "PushNotification") as push,
+            mock.patch.object(mail_message.frappe, "publish_realtime"),
+        ):
+            push.return_value.is_enabled.return_value = False
+            found = mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        self.assertEqual(found, {"new_mail_in": [], "changed": True})
+
+    def test_returns_nothing_found_when_the_state_is_unchanged(self):
+        with mock.patch.object(mail_message, "get_sync_state", return_value="s2"):
+            found = mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        self.assertEqual(found, {"new_mail_in": [], "changed": False})
+
+
+class SyncAccountChanges(unittest.TestCase):
+    """``sync_account_changes`` — the client's ask runs the push path, once at a time."""
+
+    def test_fetches_the_changes_under_the_push_lock(self):
+        with (
+            mock.patch.object(mail_message, "acquire_lock", return_value="lock-1") as acquire,
+            mock.patch.object(mail_message, "release_lock") as release,
+            mock.patch.object(
+                mail_message, "fetch_changes", return_value={"new_mail_in": ["inbox"], "changed": False}
+            ) as fetch_changes,
+        ):
+            found = mail_message.sync_account_changes(USER, ACCOUNT)
+
+        self.assertEqual(found, {"new_mail_in": ["inbox"], "changed": False})
+        acquire.assert_called_once_with(f"fetch_changes:{USER}:{ACCOUNT}", acquire_timeout=0)
+        fetch_changes.assert_called_once()
+        self.assertEqual(fetch_changes.call_args.args, (USER, ACCOUNT))
+        release.assert_called_once_with(f"fetch_changes:{USER}:{ACCOUNT}", "lock-1")
+
+    def test_leaves_it_to_a_fetch_already_under_way(self):
+        with (
+            mock.patch.object(mail_message, "acquire_lock", return_value=None),
+            mock.patch.object(mail_message, "fetch_changes") as fetch_changes,
+        ):
+            found = mail_message.sync_account_changes(USER, ACCOUNT)
+
+        fetch_changes.assert_not_called()
+        self.assertEqual(found, {"new_mail_in": [], "changed": False})
+
+    def test_releases_the_lock_when_the_fetch_fails(self):
+        with (
+            mock.patch.object(mail_message, "acquire_lock", return_value="lock-1"),
+            mock.patch.object(mail_message, "release_lock") as release,
+            mock.patch.object(mail_message, "fetch_changes", side_effect=RuntimeError),
+            self.assertRaises(RuntimeError),
+        ):
+            mail_message.sync_account_changes(USER, ACCOUNT)
+
+        release.assert_called_once_with(f"fetch_changes:{USER}:{ACCOUNT}", "lock-1")
+
 
 class FetchChangesReactions(unittest.TestCase):
     """``fetch_changes`` — a reaction is a mark on a message, not mail to read."""
