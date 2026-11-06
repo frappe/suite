@@ -34,7 +34,6 @@
   "src/apps/mail/components/Settings/ContactsExportSettings.vue": 1,
   "src/apps/mail/components/Settings/IdentitySettings.vue": 4,
   "src/apps/mail/components/Settings/MailExportSettings.vue": 1,
-  "src/apps/mail/components/Settings/VacationResponseSettings.vue": 1,
   "src/apps/mail/pages/ForgotPasswordView.vue": 1,
   "src/apps/mail/pages/InviteSetupView.vue": 3,
   "src/apps/mail/pages/LoginView.vue": 1,
