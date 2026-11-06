@@ -16,7 +16,9 @@
         :items="[
           {
             label: mailboxName,
-            route: { name: 'mail-mailbox', params: { accountId, mailbox } },
+            // By the folder's slug, as every link to it is: its id makes a URL that only works
+            // while the app intercepts the click, not opened in a new tab.
+            route: { name: 'mail-mailbox', params: { accountId, mailbox: mailboxInUrl() } },
           },
         ]"
       />
@@ -50,13 +52,10 @@
     class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
     :class="showDeleteBanner ? 'h-[calc(100dvh-6.125rem)]' : 'h-[calc(100dvh-3.0625rem)]'"
   >
-    <!-- Loading -->
-    <div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
-      <div class="text-ink-gray-5 flex items-center space-x-2">
-        <LoaderCircle class="h-5 w-5 animate-spin" />
-        <span>{{ __('Loading...') }}</span>
-      </div>
-    </div>
+    <!-- Loading: the list's rows in outline, in the list's own column. -->
+    <ThreadPane v-if="isLoading" :thread-open="false">
+      <template #list><MailListSkeleton /></template>
+    </ThreadPane>
 
     <template
       v-else-if="threadRows.length || filter || filterChanged || mailbox === 'search' || inboxTab"
@@ -204,7 +203,7 @@
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
-                :focused="focusedRowKey === `group:${key}`"
+                :focused="cursorShown && focusedRowKey === `group:${key}`"
                 :selected="isGroupSelected(key)"
                 @toggle="toggleGroupCollapse(key)"
               >
@@ -398,6 +397,7 @@ import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActi
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
+import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -525,6 +525,7 @@ const {
   visibleThreadCount,
   navigableRows,
   focusedRowKey,
+  cursorShown,
   onListFocusIn,
   focusedRow,
   focusRow,
