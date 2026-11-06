@@ -8,11 +8,20 @@
   </component>
   <ShortcutsModal v-model:open="showShortcuts" />
   <OldMailDialog v-if="!mailServerUnavailable" />
+  <MailTweakPanel v-if="MailTweakPanel" />
 </template>
 
 <script setup lang="ts">
 import { providePortalTarget } from 'frappe-ui'
-import { computed, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  onScopeDispose,
+  onUnmounted,
+  provide,
+  watch,
+} from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
@@ -51,6 +60,11 @@ import { useRootStore } from '@/stores/root'
  * do not need the $user/$dayjs/$socket injects.
  */
 const { userResource, mailboxIds, accountId } = userStore()
+// A dev build's alone: the condition compiles away in production, and the panel's chunk with it.
+const MailTweakPanel = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('@/apps/mail/components/MailTweakPanel.vue'))
+  : null
+
 const router = useRouter()
 const route = useRoute()
 

@@ -4,7 +4,8 @@ import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { dateGroup } from '@/apps/mail/utils/dateGroups'
+import { dateGroup, PINNED_GROUP, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
+import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
 /**
@@ -73,16 +74,31 @@ export const useListRows = ({
   // collapse state is gated on the same thing, because only a header's own click can fill it.
   const headersVisible = computed(() => groupedByDate.value && !isMobile.value)
 
+  // Pinned conversations lead, whether or not this list is grouped by date: their own group, so a
+  // pin dated last month neither heads a month nor drags the months out of order.
+  const pinnedHeaderVisible = computed(() => mailTweaks.pinLook === 'section')
+  const groupHeaderVisible = (key: string) =>
+    headersVisible.value && (key !== PINNED_GROUP || pinnedHeaderVisible.value)
+
   // ── Date groups ─────────────────────────────────────────────────────────────────────────────────
 
-  const groupedThreads = computed<Record<string, Thread[]>>(() =>
-    threads().reduce((groups: Record<string, Thread[]>, thread: Thread) => {
-      const date = dateGroup(thread.received_at)
-      if (!groups[date]) groups[date] = []
-      groups[date].push(thread)
-      return groups
-    }, {}),
-  )
+  const groupedThreads = computed<Record<string, Thread[]>>(() => {
+    const pinned = threads().filter((thread) => thread.pinned)
+    const returned = threads().filter((thread) => !thread.pinned && thread.returned)
+    return threads().reduce(
+      (groups: Record<string, Thread[]>, thread: Thread) => {
+        if (thread.pinned || thread.returned) return groups
+        const date = dateGroup(thread.received_at)
+        if (!groups[date]) groups[date] = []
+        groups[date].push(thread)
+        return groups
+      },
+      {
+        ...(pinned.length ? { [PINNED_GROUP]: pinned } : {}),
+        ...(returned.length ? { [RETURNED_GROUP]: returned } : {}),
+      },
+    )
+  })
 
   const getGroupThreads = (group: string) => groupedThreads.value[group]?.map(threadKey)
 
@@ -151,8 +167,9 @@ export const useListRows = ({
   const navigableRows = computed<NavRow[]>(() => {
     const rows: NavRow[] = []
     for (const [dateKey, groupRows] of Object.entries(groupedRows.value)) {
-      if (headersVisible.value) rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
-      if (headersVisible.value && collapsedGroups.value.includes(dateKey)) continue
+      if (groupHeaderVisible(dateKey))
+        rows.push({ type: 'group', key: `group:${dateKey}`, dateKey })
+      if (groupHeaderVisible(dateKey) && collapsedGroups.value.includes(dateKey)) continue
       rows.push(...groupRows)
     }
     return rows
@@ -247,6 +264,8 @@ export const useListRows = ({
     [CURSOR_BAR_CLASS]: row.key === focusedRowKey.value && !isOpenRow(row),
     '!bg-surface-gray-1': isOpenRow(row),
     '!pl-10 sm:!pl-12': row.type === 'thread' && !!row.inStack,
+    '!bg-surface-amber-1':
+      row.type === 'thread' && !!row.thread.pinned && mailTweaks.pinLook === 'tint',
   })
 
   // ── Folding ─────────────────────────────────────────────────────────────────────────────────────
@@ -315,6 +334,7 @@ export const useListRows = ({
 
   return {
     groupedByDate,
+    groupHeaderVisible,
     groupedThreads,
     getGroupThreads,
     isLastGroup,

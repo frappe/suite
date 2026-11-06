@@ -64,7 +64,7 @@ class Mailbox(TypedDict):
     name: str
     id: str
     _name: str
-    role: Literal["inbox", "sent", "drafts", "trash", "junk", "archive", "important"] | None
+    role: Literal["inbox", "sent", "drafts", "trash", "junk", "archive", "important", "snoozed"] | None
     total_emails: int
     total_threads: int
     unread_threads: int

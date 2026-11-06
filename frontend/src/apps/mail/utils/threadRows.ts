@@ -63,5 +63,6 @@ export function threadRow(row: WireThread | SearchRow, account: string): Thread 
     draft: 'draft' in row ? row.draft : 0,
     junk: 'junk' in row ? row.junk : 0,
     flagged: 'flagged' in row ? row.flagged : 0,
+    pinned: 'pinned' in row ? row.pinned : 0,
   }
 }

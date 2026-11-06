@@ -5,6 +5,7 @@ import { createApp, type App as VueApp } from 'vue'
 
 import App from '@/App.vue'
 import { installEventReminders } from '@/apps/calendar'
+import { installMailReminders } from '@/apps/mail'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
 import { watchBuild } from '@/platform/build'
@@ -21,6 +22,7 @@ initializeCursor()
 installUserTimeZone()
 watchBuild()
 installEventReminders({ open: (path) => void router.push(path) })
+installMailReminders({ open: (path) => void router.push(path) })
 
 const app = createApp(App)
 

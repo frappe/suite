@@ -58,7 +58,51 @@
             <Paperclip class="text-ink-gray-8 h-4 w-4" />
           </template>
         </Button>
+        <Button
+          v-if="!remindAt && (isMobile || mailTweaks.remindEntry === 'toolbar')"
+          variant="ghost"
+          class="max-h-6 max-w-6"
+          :tooltip="__('Remind me if no reply')"
+          :aria-label="__('Remind me if no reply')"
+          @click="emit('remind')"
+        >
+          <template #icon>
+            <BellPlus class="text-ink-gray-8 h-4 w-4" />
+          </template>
+        </Button>
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+      </div>
+
+      <!-- Asked for: says when, opens to change it, and has its own way out. -->
+      <div v-if="remindAt" class="flex shrink-0 items-center">
+        <Button
+          variant="subtle"
+          size="sm"
+          class="!rounded-r-none"
+          :label="formatDateTime(remindAt, 'MMM D')"
+          :tooltip="
+            __('Reminder on {0} if nobody replies', [
+              formatDateTime(remindAt, 'ddd, MMM D, h:mm A'),
+            ])
+          "
+          @click="emit('remind')"
+        >
+          <template #prefix>
+            <BellRing class="size-3.5" />
+          </template>
+        </Button>
+        <Button
+          variant="subtle"
+          size="sm"
+          class="!rounded-l-none"
+          :aria-label="__('Don\'t remind me')"
+          :tooltip="__('Don\'t remind me')"
+          @click="emit('clearRemind')"
+        >
+          <template #icon>
+            <X class="size-3.5" />
+          </template>
+        </Button>
       </div>
 
       <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
@@ -87,17 +131,29 @@
 <script setup lang="ts">
 import { Button, Dropdown } from 'frappe-ui'
 import { TextEditorFixedMenu } from 'frappe-ui/experimental'
-import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
+import {
+  BellPlus,
+  BellRing,
+  CalendarClock,
+  ChevronDown,
+  Laugh,
+  Paperclip,
+  X,
+} from 'lucide-vue-next'
 import { computed, useTemplateRef } from 'vue'
 
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
+import { mailTweaks } from '@/apps/mail/utils/mailTweaks'
 
-const { isRecipientsEmpty, isUploading, saveFailed } = defineProps<{
+const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
   isUploading?: boolean
   saveFailed?: boolean
+  // When to be reminded if nobody replies, once asked for (see useComposeMail).
+  remindAt?: string
 }>()
 
 const emit = defineEmits([
@@ -106,18 +162,29 @@ const emit = defineEmits([
   'discardMail',
   'sendMail',
   'scheduleSend',
+  'remind',
+  'clearRemind',
   'retrySave',
 ])
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
-const sendOptions = [
+const sendOptions = computed(() => [
   {
     label: __('Schedule send'),
     icon: CalendarClock,
     onClick: () => emit('scheduleSend'),
   },
-]
+  ...(mailTweaks.remindEntry === 'send-menu'
+    ? [
+        {
+          label: remindAt ? __('Change reminder') : __('Remind me if no reply'),
+          icon: BellPlus,
+          onClick: () => emit('remind'),
+        },
+      ]
+    : []),
+])
 
 const { isMobile } = useScreenSize()
 const { buttons } = useTextEditorButtons(() => true)

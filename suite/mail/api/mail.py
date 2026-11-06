@@ -41,6 +41,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     remove_messages_from_mailbox,
     set_flagged_status,
     set_messages_mailboxes,
+    set_pinned_status,
     set_seen_status,
     set_spam_status,
     set_unscreened_status,
@@ -81,6 +82,18 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
+from suite.mail.pins import INBOX_SORT, PINNED_KEYWORD, is_no_reply, is_pinned, is_returned
+from suite.mail.reminders import (
+    add_reply_reminders,
+    add_snooze_times,
+    cancel_no_reply,
+    check_reminder_time,
+    get_no_reply,
+    remind_after_send,
+    remind_no_reply,
+    snooze,
+    unsnooze,
+)
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
 from suite.mail.utils.reaction import (
@@ -117,7 +130,7 @@ ALL_INBOX_MAX_FETCH = 500
 STARRED_FOLDER = "starred"
 
 # The order the system folders take in the unified folder list; any other role follows them.
-UNIFIED_ROLE_ORDER = ("inbox", "sent", "drafts", "important", "junk", "archive", "trash")
+UNIFIED_ROLE_ORDER = ("inbox", "sent", "drafts", "important", "snoozed", "junk", "archive", "trash")
 
 
 def get_undo_send_hold() -> tuple[int, datetime]:
@@ -340,11 +353,15 @@ def get_threads(
     if category:
         conditions.append(tab_filter(validate_tab(category), classification.inbox_tabs()))
 
-    conversations = fetch_threads(account, all_of(conditions), start, limit)
-
     # Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
     # every `get_mailbox_id_by_role` resolves the account's user and client again on the way in.
     ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_cached_mailboxes(account)}
+    in_inbox = mailbox == ids_by_role.get("inbox")
+
+    conversations = fetch_threads(
+        account, all_of(conditions), start, limit, sort=INBOX_SORT if in_inbox else None
+    )
+
     trash_mailbox = ids_by_role.get("trash")
     junk_mailbox = ids_by_role.get("junk")
     # Sent and Drafts are about the message you wrote, so their rows describe the latest message in
@@ -401,11 +418,20 @@ def get_threads(
                     sent_mailbox=ids_by_role.get("sent"),
                 ),
                 "reaction_only": cint(reaction_only),
+                # Only the Inbox has pins to show; asked of the mail it holds, as its sort does.
+                "pinned": cint(in_inbox and any(is_pinned(m) for m in in_mailbox)),
+                "returned": cint(in_inbox and any(is_returned(m) for m in in_mailbox)),
+                "no_reply": cint(in_inbox and any(is_no_reply(m) for m in in_mailbox)),
             }
         )
 
     if unread_reactions:
         try_set_seen(account, unread_reactions, True)
+
+    if threads and mailbox == ids_by_role.get("snoozed"):
+        add_snooze_times(account, threads)
+    if threads and mailbox == ids_by_role.get("sent"):
+        add_reply_reminders(account, threads)
 
     # Avatars for the list-view summary rows, and for each message in the nested threads.
     add_user_images_to_emails(account, threads, is_thread=False)
@@ -628,10 +654,20 @@ def mailbox_slug(mailbox: dict) -> str | None:
     return re.sub(r"[\W_]+", "-", name.lower()).strip("-") or None
 
 
+def is_empty_snoozed(mailbox: dict) -> bool:
+    return (mailbox.get("role") or "").lower() == "snoozed" and not mailbox.get("totalThreads")
+
+
 def is_listed_mailbox(mailbox: dict) -> bool:
     """Whether a mailbox shows in the folder list: system folders always, others while subscribed."""
 
     return bool(mailbox.get("role") or mailbox.get("isSubscribed"))
+
+
+def unified_order(thread: dict) -> tuple:
+    """Where a row sorts in a merged Inbox, as each account's own Inbox sorts it (see INBOX_SORT)."""
+
+    return (thread["pinned"], thread["returned"], thread["received_at"])
 
 
 @frappe.whitelist()
@@ -689,7 +725,8 @@ def get_unified_threads(
                 thread["trash"] = ids_by_role.get("trash")
                 merged.append(thread)
 
-    merged.sort(key=lambda thread: thread["received_at"], reverse=True)
+    # Each account pins first (see suite.mail.pins), so the merged list does too.
+    merged.sort(key=unified_order, reverse=True)
     rows = merged[start : start + limit]
     return {"rows": rows, "has_more": len(rows) == limit and start + limit < ALL_INBOX_MAX_FETCH}
 
@@ -796,8 +833,8 @@ def clearing_filter(mailbox: str, tab: Category | None, read: bool, filter_by: s
         conditions.append(tab_filter(tab, classification.inbox_tabs()))
     if condition := list_filter(filter_by):
         conditions.append(condition)
-    if read:
-        conditions.append({"notKeyword": "$seen"})
+    # Reading a pinned conversation takes nothing away; clearing it away would undo the pin's point.
+    conditions.append({"notKeyword": "$seen"} if read else {"notKeyword": PINNED_KEYWORD})
     return all_of(conditions)
 
 
@@ -910,7 +947,8 @@ def get_unified_folders() -> list[dict]:
 
         for mailbox in mailboxes:
             slug = mailbox_slug(mailbox)
-            if not slug or not is_listed_mailbox(mailbox):
+            # Snoozed shows only while it holds something (see isHiddenFolder).
+            if not slug or not is_listed_mailbox(mailbox) or is_empty_snoozed(mailbox):
                 continue
 
             folder = folders.setdefault(
@@ -1120,6 +1158,7 @@ def serialize_mail(mail: dict) -> dict:
         "reacts_with": read_reactions(mail),
         "mailing_list": cint(mail.get("mailing_list")),
         "unscreened": cint(is_unscreened_message(mail)),
+        "pinned": cint(is_pinned(mail)),
         "attachments": serialize_attachments(mail.get("attachments", [])),
         # The part has no filename, so it never survives `serialize_attachments`: the UI asks for
         # the parsed report by the message's id instead (see DeliveryStatusBanner).
@@ -1416,10 +1455,13 @@ def create_mail(
     save_as_draft: bool = False,
     send_at: str | None = None,
     undo_send: bool = False,
+    remind_at: str | None = None,
 ) -> dict:
     """Creates new mail queue. `send_at` (UTC `...Z`) schedules delivery via FUTURERELEASE;
-    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast."""
+    `undo_send` instead holds delivery briefly so the sender can cancel from the undo toast.
+    `remind_at` (UTC `...Z`) asks to be reminded then if nobody has answered (see suite.mail.reminders)."""
 
+    remind_due = None if save_as_draft else check_reminder_time(remind_at, from_utc_z(send_at))
     doc_attachments = attachment_rows(attachments)
 
     recipients = []
@@ -1453,6 +1495,7 @@ def create_mail(
     if not save_as_draft and doc.status == "Submitted":
         create_contacts_if_not_exists(account, doc.recipients)
         auto_accept_recipients(account, doc.recipients)
+        remind_after_send(account, doc.thread_id, doc.id, remind_due)
 
     return {
         "name": doc.name,
@@ -1481,13 +1524,15 @@ def update_draft_mail(
     submit: bool = False,
     send_at: str | None = None,
     undo_send: bool = False,
+    remind_at: str | None = None,
 ) -> dict:
     """Creates new mail queue from existing draft message. `send_at` (UTC `...Z`) schedules delivery
     via FUTURERELEASE; `undo_send` instead holds delivery briefly so the sender can cancel from the
-    undo toast."""
+    undo toast. `remind_at` as in `create_mail`."""
 
     message = frappe.get_doc("Mail Message", f"{account}|{id}")
     message.check_permission(permtype="write")
+    remind_due = check_reminder_time(remind_at, from_utc_z(send_at)) if submit else None
 
     message.from_email = from_email
     message.from_name = from_name
@@ -1518,6 +1563,7 @@ def update_draft_mail(
     if submit and queue.status == "Submitted":
         create_contacts_if_not_exists(account, message.recipients)
         auto_accept_recipients(account, message.recipients)
+        remind_after_send(account, queue.thread_id, queue.id, remind_due)
 
     return {
         "name": queue.name,
@@ -1596,6 +1642,48 @@ def set_flagged(account: str, ids: list[str], flagged: bool) -> dict:
     set_flagged_status(account, ids, flagged)
 
     return {"ids": ids, "flagged": flagged}
+
+
+@frappe.whitelist()
+def pin_mails(account: str, ids: list[str], pinned: bool) -> dict:
+    """Pins or unpins a conversation, given its messages (see suite.mail.pins)."""
+
+    return {"ids": set_pinned_status(account, ids, pinned), "pinned": pinned}
+
+
+@frappe.whitelist()
+def snooze_mails(account: str, ids: list[str], until: str, leaves: str | None = None) -> Filed:
+    """Hides a conversation until `until`, given its messages (see suite.mail.reminders). `leaves`
+    names the list it leaves: the client's own hint, as in `file_mails`."""
+
+    return snooze(account, ids, until)
+
+
+@frappe.whitelist()
+def unsnooze_mails(account: str, ids: list[str], leaves: str | None = None) -> Filed:
+    """Brings a snoozed conversation back to the Inbox now (see suite.mail.reminders)."""
+
+    return unsnooze(account, ids)
+
+
+@frappe.whitelist()
+def remind_if_no_reply(account: str, ids: list[str], remind_at: str) -> dict:
+    """Reminds you at `remind_at` if nobody has answered the latest mail you sent in a conversation,
+    given its messages (see suite.mail.reminders)."""
+
+    return {"remind_at": remind_no_reply(account, ids, remind_at)}
+
+
+@frappe.whitelist()
+def cancel_reply_reminder(account: str, thread_id: str) -> None:
+    cancel_no_reply(account, thread_id)
+
+
+@frappe.whitelist()
+def get_reply_reminder(account: str, thread_id: str) -> dict:
+    """When you are to be reminded about a conversation if nobody answers, if you are."""
+
+    return {"remind_at": get_no_reply(account, thread_id)}
 
 
 @frappe.whitelist()

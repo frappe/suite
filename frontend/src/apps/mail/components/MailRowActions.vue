@@ -6,6 +6,23 @@
       </button>
     </Tooltip>
   </template>
+  <Tooltip v-if="snoozable && isHovered && !isMobile" :text="__('Snooze')">
+    <button class="action-btn" :aria-label="__('Snooze')" @click.stop.prevent="emit('snooze')">
+      <Clock class="icon text-ink-gray-5" />
+    </button>
+  </Tooltip>
+  <Tooltip
+    v-if="pinnable && isHovered && !isMobile"
+    :text="pinned ? __('Unpin') : __('Pin to Top')"
+  >
+    <button
+      class="action-btn"
+      :aria-label="pinned ? __('Unpin') : __('Pin to Top')"
+      @click.stop.prevent="emit('setPinned', !pinned)"
+    >
+      <component :is="pinned ? PinOff : Pin" class="icon text-ink-gray-5" />
+    </button>
+  </Tooltip>
   <Tooltip v-if="starrable && !isMobile" :text="flagged ? __('Unstar') : __('Star')">
     <button class="action-btn" @click.stop.prevent="emit('setFlagged', !flagged)">
       <Star
@@ -33,7 +50,17 @@
 
 <script setup lang="ts">
 import { Tooltip } from 'frappe-ui'
-import { Archive, ArchiveRestore, Mail, MailOpen, Star, Trash2 } from 'lucide-vue-next'
+import {
+  Archive,
+  ArchiveRestore,
+  Clock,
+  Mail,
+  MailOpen,
+  Pin,
+  PinOff,
+  Star,
+  Trash2,
+} from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
@@ -54,6 +81,8 @@ const {
   showStar = true,
   unarchive = false,
   drafts = false,
+  pinnable = false,
+  snoozable = false,
 } = defineProps<{
   isHovered: boolean
   // One thread for a mail row; the whole run for a stack row.
@@ -65,9 +94,22 @@ const {
   // The list is Drafts: its bin discards rather than trashes. Asked of the list, not the thread —
   // a conversation with a reply draft is filed in Drafts and in Inbox alike.
   drafts?: boolean
+  // The list is an Inbox, the one place a pin acts. Not on a stack, whose members are never pinned.
+  pinnable?: boolean
+  // The list is one a conversation can be snoozed from.
+  snoozable?: boolean
 }>()
 
-const emit = defineEmits(['setSeen', 'archive', 'unarchive', 'trash', 'delete', 'setFlagged'])
+const emit = defineEmits([
+  'setSeen',
+  'archive',
+  'unarchive',
+  'trash',
+  'delete',
+  'setFlagged',
+  'setPinned',
+  'snooze',
+])
 
 const { isMobile } = useScreenSize()
 const { mailboxIds } = userStore()
@@ -76,6 +118,7 @@ const many = computed(() => threads.length > 1)
 const count = computed(() => String(threads.length))
 
 const flagged = computed(() => !!threads[0]?.flagged)
+const pinned = computed(() => !!threads[0]?.pinned)
 
 // Members of a stack always share an account (it is part of the stack key), so the first row's own
 // Archive/Trash ids speak for the run. Falling back to the active account covers a plain row whose
